@@ -67,6 +67,7 @@ require (
 	github.com/dschmidt/go-layerfs v0.2.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776
+	github.com/frioux/shellquote v0.0.2
 	github.com/go-git/go-git/v5 v5.16.3
 	github.com/gofrs/flock v0.13.0
 	github.com/gogo/googleapis v1.4.1
@@ -256,7 +257,6 @@ require (
 	github.com/extism/go-sdk v1.7.0 // indirect
 	github.com/felixge/fgprof v0.9.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/frioux/shellquote v0.0.2 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.2 // indirect
