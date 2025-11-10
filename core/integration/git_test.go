@@ -1367,6 +1367,31 @@ func (GitSuite) TestIsRemotePublic(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	defer func() {
+		require.NoError(t, c.Close())
+	}()
+
+	const repoURL = "https://github.com/dagger/dagger-test-modules"
+	repo := c.Git(repoURL)
+
+	commit, err := repo.Head().Commit(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, commit)
+
+	branchCommit, err := repo.Branch("main").Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, commit, branchCommit, "both selections should resolve the same commit in a single session")
+
+	// Resolve the same ref through a fresh Git node so the second call exercises the
+	// per-session ls-remote cache (the first one warmed it).
+	repo2 := c.Git(repoURL, dagger.GitOpts{KeepGitDir: true})
+	commit2, err := repo2.Head().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, commit, commit2)
+}
+
 func (GitSuite) TestGitUncommittedRemote(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

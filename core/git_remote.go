@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,11 +29,14 @@ import (
 	"github.com/moby/sys/mount"
 	"golang.org/x/sys/unix"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	enginecache "github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type RemoteGitRepository struct {
@@ -62,7 +66,103 @@ func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defin
 	return nil, nil
 }
 
-func (repo *RemoteGitRepository) Remote(ctx context.Context) (*gitutil.Remote, error) {
+func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Remote, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "git remote metadata", telemetry.Internal())
+	defer telemetry.End(span, func() error { return rerr })
+
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query server: %w", err)
+	}
+	cacheKey, err := repo.remoteCacheKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("remote git repository %q: %w", repo.URL.Remote(), err)
+	}
+
+	if srv == nil || srv.Cache == nil {
+		slog.Info("git remote cache unavailable; running ls-remote", "cache_key", cacheKey)
+		return repo.runLsRemote(ctx)
+	}
+
+	cacheRes, err := srv.Cache.GetOrInitialize(ctx, enginecache.CacheKey[string]{
+		CallKey:        cacheKey,
+		ConcurrencyKey: cacheKey,
+	}, func(ctx context.Context) (dagql.AnyResult, error) {
+		remote, err := repo.runLsRemote(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		slog.Info("caching git remote metadata", "cache_key", cacheKey)
+		// Serialize to JSON so the cache can persist a plain string payload without
+		// requiring gitutil.Remote to satisfy dagql's typing interfaces. The decode
+		// step also hands each repo its own copy, so later tweaks (e.g. setting
+		// repo.Remote.Head) stay scoped to that caller
+		payload, err := json.Marshal(remote)
+		if err != nil {
+			return nil, err
+		}
+
+		return dagql.NewResultForCurrentID(ctx, dagql.NewString(string(payload)))
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Info("loaded git remote metadata", "cache_hit", cacheRes.HitCache(), "cache_key", cacheKey)
+
+	val := cacheRes.Result()
+	strRes, ok := dagql.UnwrapAs[dagql.Result[dagql.String]](val)
+	if !ok {
+		return nil, fmt.Errorf("unexpected cache value type %T", val)
+	}
+
+	var remote gitutil.Remote
+	if err := json.Unmarshal([]byte(strRes.Self().String()), &remote); err != nil {
+		return nil, fmt.Errorf("decode cached remote: %w", err)
+	}
+	return &remote, nil
+}
+
+func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (GitRefBackend, error) {
+	return &RemoteGitRef{
+		repo: repo,
+		Ref:  target,
+	}, nil
+}
+
+func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	inputs := []string{clientMetadata.SessionID, repo.URL.Remote()}
+	inputs = append(inputs, repo.remoteCacheScope()...)
+	return hashutil.HashStrings(inputs...).String(), nil
+}
+
+// Pipelines could query the same remote with different creds (e.g. a pipeline checking that creds were properly rotated)
+// instead of being too smart, we just scope the cache key to the auth configuration: less chance of cache poisoning
+func (repo *RemoteGitRepository) remoteCacheScope() []string {
+	scope := make([]string, 0, 4)
+	if token := repo.AuthToken; token.Self() != nil && token.ID() != nil {
+		scope = append(scope, "token:"+token.ID().Digest().String())
+	}
+	if header := repo.AuthHeader; header.Self() != nil && header.ID() != nil {
+		scope = append(scope, "header:"+header.ID().Digest().String())
+	}
+	if repo.AuthUsername != "" {
+		scope = append(scope, "username:"+repo.AuthUsername)
+	}
+	if sshSock := repo.SSHAuthSocket; sshSock.Self() != nil {
+		scope = append(scope, "ssh-sock:"+sshSock.Self().IDDigest.String())
+	}
+	return scope
+}
+
+func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remote, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -83,18 +183,11 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (*gitutil.Remote, e
 	}
 	defer cleanup()
 
-	out, err := git.LsRemote(ctx, repo.URL.Remote())
+	remote, err := git.LsRemote(ctx, repo.URL.Remote())
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
-}
-
-func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (GitRefBackend, error) {
-	return &RemoteGitRef{
-		repo: repo,
-		Ref:  target,
-	}, nil
+	return remote, nil
 }
 
 func (repo *RemoteGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], _ error) {
