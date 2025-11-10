@@ -593,8 +593,7 @@ func (span *Span) FailedReason() (bool, []string) {
 }
 
 func (span *Span) IsCanceled() bool {
-	canceled, _ := span.CanceledReason()
-	return canceled
+	return span.Canceled || len(span.CanceledLinks.Order) > 0
 }
 
 func (span *Span) CanceledReason() (bool, []string) {
@@ -706,8 +705,29 @@ func (span *Span) IsRunningOrEffectsRunning() bool {
 }
 
 func (span *Span) IsPending() bool {
-	pending, _ := span.PendingReason()
-	return pending
+	// NB: keep this in extremely close alignment with PendingReason, we don't
+	// re-use it so we can minimize allocations
+
+	if span.Final {
+		return span.Pending_
+	}
+	if span.IsRunningOrEffectsRunning() {
+		return false
+	}
+	if len(span.EffectIDs) > 0 {
+		for _, digest := range span.EffectIDs {
+			effectSpans := span.db.EffectSpans[digest]
+			if effectSpans != nil && len(effectSpans.Order) > 0 {
+				return false
+			}
+			if span.db.CompletedEffects[digest] {
+				return false
+			}
+		}
+		// there's an output but no linked spans yet, so we're pending
+		return true
+	}
+	return false
 }
 
 func (span *Span) PendingReason() (bool, []string) {
@@ -747,8 +767,47 @@ func (span *Span) PendingReason() (bool, []string) {
 }
 
 func (span *Span) IsCached() bool {
-	cached, _ := span.CachedReason()
-	return cached
+	// NB: keep this in extremely close alignment with CachedReason, we don't
+	// re-use it so we can minimize allocations
+
+	if span.Final {
+		return span.Cached_
+	}
+	if span.Cached {
+		return true
+	}
+	if span.ChildCount > 0 {
+		return false
+	}
+	if span.HasLogs {
+		return false
+	}
+	var anyCached bool
+	for _, effect := range span.EffectIDs {
+		// first check for spans we've seen for the effect
+		effectSpans := span.db.EffectSpans[effect]
+		if effectSpans != nil && len(effectSpans.Order) > 0 {
+			for _, span := range effectSpans.Order {
+				if span.IsCached() {
+					anyCached = true
+				} else {
+					// if any effects were not cache hits, we're definitely not cached
+					return false
+				}
+			}
+		} else {
+			// if the effect is completed but we never saw a span for it, that
+			// might mean it was a multiple-layers-deep cache hit. or, some
+			// buildkit bug caused us to never see the span. or, another parallel
+			// client completed it. in all of those cases, we'll at least consider
+			// it cached so it's not stuck 'pending' forever.
+			if span.db.CompletedEffects[effect] {
+				anyCached = true
+			}
+		}
+	}
+	// some effects were not cached
+	return anyCached
 }
 
 func (span *Span) CachedReason() (bool, []string) {
