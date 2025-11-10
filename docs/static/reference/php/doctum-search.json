@@ -2755,6 +2755,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\CurrentModule::dependencies",
+			"p": "Dagger/CurrentModule.html#method_dependencies",
+			"d": "<p>The dependencies of the module.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModule::generatedContextDirectory",
+			"p": "Dagger/CurrentModule.html#method_generatedContextDirectory",
+			"d": "<p>The generated files and directories made on top of the module source's context directory.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CurrentModule::id",
 			"p": "Dagger/CurrentModule.html#method_id",
 			"d": "<p>A unique identifier for this CurrentModule.</p>"

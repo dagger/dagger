@@ -3226,6 +3226,48 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
+// The dependencies of the module.
+func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
+	q := r.query.Select("dependencies")
+
+	q = q.Select("id")
+
+	type dependencies struct {
+		Id ModuleID
+	}
+
+	convert := func(fields []dependencies) []Module {
+		out := []Module{}
+
+		for i := range fields {
+			val := Module{id: &fields[i].Id}
+			val.query = q.Root().Select("loadModuleFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dependencies
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The generated files and directories made on top of the module source's context directory.
+func (r *CurrentModule) GeneratedContextDirectory() *Directory {
+	q := r.query.Select("generatedContextDirectory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // A unique identifier for this CurrentModule.
 func (r *CurrentModule) ID(ctx context.Context) (CurrentModuleID, error) {
 	if r.id != nil {
