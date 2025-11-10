@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+            <title>Dagger PHP SDK</title>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="../">
+    <link rel="icon" href="images/favicon.ico"/>
+    <link rel="stylesheet" href="css/normalize.css">
+    <link rel="stylesheet" href="css/base.css">
+            <link rel="preconnect" href="https://fonts.gstatic.com">
+        <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@100;200;300;400;600;700&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="css/template.css">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.0/css/all.min.css" integrity="sha256-ybRkN9dBjhcS2qrW1z+hfCxq+1aBdwyQM5wlQoQVt/0=" crossorigin="anonymous" />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/themes/prism-okaidia.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/line-numbers/prism-line-numbers.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/line-highlight/prism-line-highlight.css">
+                <script src="https://cdn.jsdelivr.net/npm/fuse.js@3.4.6"></script>
+        <script src="https://cdn.jsdelivr.net/npm/css-vars-ponyfill@2"></script>
+        <script src="js/template.js"></script>
+        <script src="js/search.js"></script>
+        <script defer src="js/searchIndex.js"></script>
+    </head>
+<body id="top">
+    <header class="phpdocumentor-header phpdocumentor-section">
+    <h1 class="phpdocumentor-title"><a href="" class="phpdocumentor-title__link">Dagger PHP SDK</a></h1>
+    <input class="phpdocumentor-header__menu-button" type="checkbox" id="menu-button" name="menu-button" />
+    <label class="phpdocumentor-header__menu-icon" for="menu-button">
+        <i class="fas fa-bars"></i>
+    </label>
+    <section data-search-form class="phpdocumentor-search">
+    <label>
+        <span class="visually-hidden">Search for</span>
+        <svg class="phpdocumentor-search__icon" width="21" height="20" viewBox="0 0 21 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="7.5" cy="7.5" r="6.5" stroke="currentColor" stroke-width="2"/>
+            <line x1="12.4892" y1="12.2727" x2="19.1559" y2="18.9393" stroke="currentColor" stroke-width="3"/>
+        </svg>
+        <input type="search" class="phpdocumentor-field phpdocumentor-search__field" placeholder="Loading .." disabled />
+    </label>
+</section>
+
+    <nav class="phpdocumentor-topnav">
+    <ul class="phpdocumentor-topnav__menu">
+        </ul>
+</nav>
+</header>
+
+    <main class="phpdocumentor">
+        <div class="phpdocumentor-section">
+            <input class="phpdocumentor-sidebar__menu-button" type="checkbox" id="sidebar-button" name="sidebar-button" />
+<label class="phpdocumentor-sidebar__menu-icon" for="sidebar-button">
+    Menu
+</label>
+<aside class="phpdocumentor-column -three phpdocumentor-sidebar">
+                                        <section class="phpdocumentor-sidebar__category -namespaces">
+                  <h2 class="phpdocumentor-sidebar__category-header">Namespaces</h2>
+                                    <h4 class="phpdocumentor-sidebar__root-namespace">
+    <a href="namespaces/dagger.html" class="">Dagger</a>
+</h4>
+    <ul class="phpdocumentor-list">
+                    <li>
+                <a href="namespaces/dagger-attribute.html" class="">Attribute</a>
+                
+            </li>
+            </ul>
+
+                                  </section>
+                        </aside>
+
+            <div class="phpdocumentor-column -nine phpdocumentor-content">
+                                <section>
+                                        <ul class="phpdocumentor-breadcrumbs">
+            <li class="phpdocumentor-breadcrumb"><a href="namespaces/dagger.html">Dagger</a></li>
+    </ul>
+
+    <article class="phpdocumentor-element -class">
+        <h2 class="phpdocumentor-content__title">
+    Binding
+
+        <span class="phpdocumentor-element__extends">
+        extends <abbr title="\Dagger\Client\AbstractObject">AbstractObject</abbr>
+    </span>
+    
+    
+            <span class="phpdocumentor-element__implements">
+            implements
+                            <abbr title="\Dagger\Client\IdAble">IdAble</abbr>                    </span>
+    
+    </h2>
+
+<div class="phpdocumentor-label-line">
+
+
+</div>
+
+        
+        
+
+
+
+
+
+
+
+
+<h3 id="toc">
+    Table of Contents
+    <a href="classes/Dagger-Binding.html#toc" class="headerlink"><i class="fas fa-link"></i></a>
+
+</h3>
+
+
+
+
+
+
+
+
+
+<h4 id="toc-methods">
+    Methods
+    <a href="classes/Dagger-Binding.html#toc-methods" class="headerlink"><i class="fas fa-link"></i></a>
+
+</h4>
+<dl class="phpdocumentor-table-of-contents">
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asAddress">asAddress()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Address.html"><abbr title="\Dagger\Address">Address</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Address</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asCacheVolume">asCacheVolume()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-CacheVolume.html"><abbr title="\Dagger\CacheVolume">CacheVolume</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type CacheVolume</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asChangeset">asChangeset()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Changeset.html"><abbr title="\Dagger\Changeset">Changeset</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Changeset</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asCheck">asCheck()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Check.html"><abbr title="\Dagger\Check">Check</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Check</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asCheckGroup">asCheckGroup()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-CheckGroup.html"><abbr title="\Dagger\CheckGroup">CheckGroup</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type CheckGroup</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asCloud">asCloud()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Cloud.html"><abbr title="\Dagger\Cloud">Cloud</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Cloud</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asContainer">asContainer()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Container.html"><abbr title="\Dagger\Container">Container</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Container</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asDirectory">asDirectory()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Directory</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asEnv">asEnv()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Env.html"><abbr title="\Dagger\Env">Env</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Env</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asEnvFile">asEnvFile()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-EnvFile.html"><abbr title="\Dagger\EnvFile">EnvFile</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type EnvFile</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asFile">asFile()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-File.html"><abbr title="\Dagger\File">File</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type File</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asGitRef">asGitRef()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-GitRef.html"><abbr title="\Dagger\GitRef">GitRef</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type GitRef</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asGitRepository">asGitRepository()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-GitRepository.html"><abbr title="\Dagger\GitRepository">GitRepository</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type GitRepository</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asJSONValue">asJSONValue()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-JsonValue.html"><abbr title="\Dagger\JsonValue">JsonValue</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type JSONValue</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asModule">asModule()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Module.html"><abbr title="\Dagger\Module">Module</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Module</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asModuleConfigClient">asModuleConfigClient()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleConfigClient.html"><abbr title="\Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type ModuleConfigClient</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asModuleSource">asModuleSource()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type ModuleSource</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asSearchResult">asSearchResult()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-SearchResult.html"><abbr title="\Dagger\SearchResult">SearchResult</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type SearchResult</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asSearchSubmatch">asSearchSubmatch()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-SearchSubmatch.html"><abbr title="\Dagger\SearchSubmatch">SearchSubmatch</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type SearchSubmatch</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asSecret">asSecret()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Secret.html"><abbr title="\Dagger\Secret">Secret</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Secret</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asService">asService()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Service.html"><abbr title="\Dagger\Service">Service</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Service</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asSocket">asSocket()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Socket.html"><abbr title="\Dagger\Socket">Socket</abbr></a>    </span>
+</dt>
+<dd>Retrieve the binding value, as type Socket</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_asString">asString()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>Returns the binding&#039;s string value</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_digest">digest()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>Returns the digest of the binding value</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_id">id()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-BindingId.html"><abbr title="\Dagger\BindingId">BindingId</abbr></a>    </span>
+</dt>
+<dd>A unique identifier for this Binding.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_isNull">isNull()</a>
+    <span>
+                                &nbsp;: bool    </span>
+</dt>
+<dd>Returns true if the binding is null</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_name">name()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>Returns the binding name</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-Binding.html#method_typeName">typeName()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>Returns the binding type</dd>
+
+    </dl>
+
+
+        
+
+        
+
+            <section class="phpdocumentor-methods">
+        <h3 class="phpdocumentor-elements__header" id="methods">
+            Methods
+            <a href="classes/Dagger-Binding.html#methods" class="headerlink"><i class="fas fa-link"></i></a>
+
+        </h3>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asAddress">
+        asAddress()
+        <a href="classes/Dagger-Binding.html#method_asAddress" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Address</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asAddress</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Address.html"><abbr title="\Dagger\Address">Address</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Address.html"><abbr title="\Dagger\Address">Address</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asCacheVolume">
+        asCacheVolume()
+        <a href="classes/Dagger-Binding.html#method_asCacheVolume" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type CacheVolume</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asCacheVolume</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-CacheVolume.html"><abbr title="\Dagger\CacheVolume">CacheVolume</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-CacheVolume.html"><abbr title="\Dagger\CacheVolume">CacheVolume</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asChangeset">
+        asChangeset()
+        <a href="classes/Dagger-Binding.html#method_asChangeset" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Changeset</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asChangeset</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Changeset.html"><abbr title="\Dagger\Changeset">Changeset</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Changeset.html"><abbr title="\Dagger\Changeset">Changeset</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asCheck">
+        asCheck()
+        <a href="classes/Dagger-Binding.html#method_asCheck" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Check</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asCheck</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Check.html"><abbr title="\Dagger\Check">Check</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Check.html"><abbr title="\Dagger\Check">Check</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asCheckGroup">
+        asCheckGroup()
+        <a href="classes/Dagger-Binding.html#method_asCheckGroup" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type CheckGroup</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asCheckGroup</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-CheckGroup.html"><abbr title="\Dagger\CheckGroup">CheckGroup</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-CheckGroup.html"><abbr title="\Dagger\CheckGroup">CheckGroup</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asCloud">
+        asCloud()
+        <a href="classes/Dagger-Binding.html#method_asCloud" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Cloud</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asCloud</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Cloud.html"><abbr title="\Dagger\Cloud">Cloud</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Cloud.html"><abbr title="\Dagger\Cloud">Cloud</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asContainer">
+        asContainer()
+        <a href="classes/Dagger-Binding.html#method_asContainer" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Container</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asContainer</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Container.html"><abbr title="\Dagger\Container">Container</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Container.html"><abbr title="\Dagger\Container">Container</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asDirectory">
+        asDirectory()
+        <a href="classes/Dagger-Binding.html#method_asDirectory" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Directory</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asDirectory</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asEnv">
+        asEnv()
+        <a href="classes/Dagger-Binding.html#method_asEnv" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Env</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asEnv</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Env.html"><abbr title="\Dagger\Env">Env</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Env.html"><abbr title="\Dagger\Env">Env</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asEnvFile">
+        asEnvFile()
+        <a href="classes/Dagger-Binding.html#method_asEnvFile" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type EnvFile</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asEnvFile</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-EnvFile.html"><abbr title="\Dagger\EnvFile">EnvFile</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-EnvFile.html"><abbr title="\Dagger\EnvFile">EnvFile</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asFile">
+        asFile()
+        <a href="classes/Dagger-Binding.html#method_asFile" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type File</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asFile</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-File.html"><abbr title="\Dagger\File">File</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-File.html"><abbr title="\Dagger\File">File</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asGitRef">
+        asGitRef()
+        <a href="classes/Dagger-Binding.html#method_asGitRef" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type GitRef</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asGitRef</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-GitRef.html"><abbr title="\Dagger\GitRef">GitRef</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-GitRef.html"><abbr title="\Dagger\GitRef">GitRef</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asGitRepository">
+        asGitRepository()
+        <a href="classes/Dagger-Binding.html#method_asGitRepository" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type GitRepository</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asGitRepository</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-GitRepository.html"><abbr title="\Dagger\GitRepository">GitRepository</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-GitRepository.html"><abbr title="\Dagger\GitRepository">GitRepository</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asJSONValue">
+        asJSONValue()
+        <a href="classes/Dagger-Binding.html#method_asJSONValue" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type JSONValue</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asJSONValue</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-JsonValue.html"><abbr title="\Dagger\JsonValue">JsonValue</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-JsonValue.html"><abbr title="\Dagger\JsonValue">JsonValue</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asModule">
+        asModule()
+        <a href="classes/Dagger-Binding.html#method_asModule" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Module</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asModule</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Module.html"><abbr title="\Dagger\Module">Module</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Module.html"><abbr title="\Dagger\Module">Module</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asModuleConfigClient">
+        asModuleConfigClient()
+        <a href="classes/Dagger-Binding.html#method_asModuleConfigClient" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type ModuleConfigClient</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asModuleConfigClient</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleConfigClient.html"><abbr title="\Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleConfigClient.html"><abbr title="\Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asModuleSource">
+        asModuleSource()
+        <a href="classes/Dagger-Binding.html#method_asModuleSource" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type ModuleSource</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asModuleSource</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asSearchResult">
+        asSearchResult()
+        <a href="classes/Dagger-Binding.html#method_asSearchResult" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type SearchResult</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asSearchResult</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-SearchResult.html"><abbr title="\Dagger\SearchResult">SearchResult</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-SearchResult.html"><abbr title="\Dagger\SearchResult">SearchResult</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asSearchSubmatch">
+        asSearchSubmatch()
+        <a href="classes/Dagger-Binding.html#method_asSearchSubmatch" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type SearchSubmatch</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asSearchSubmatch</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-SearchSubmatch.html"><abbr title="\Dagger\SearchSubmatch">SearchSubmatch</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-SearchSubmatch.html"><abbr title="\Dagger\SearchSubmatch">SearchSubmatch</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asSecret">
+        asSecret()
+        <a href="classes/Dagger-Binding.html#method_asSecret" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Secret</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asSecret</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Secret.html"><abbr title="\Dagger\Secret">Secret</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Secret.html"><abbr title="\Dagger\Secret">Secret</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asService">
+        asService()
+        <a href="classes/Dagger-Binding.html#method_asService" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Service</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asService</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Service.html"><abbr title="\Dagger\Service">Service</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Service.html"><abbr title="\Dagger\Service">Service</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asSocket">
+        asSocket()
+        <a href="classes/Dagger-Binding.html#method_asSocket" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Retrieve the binding value, as type Socket</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asSocket</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Socket.html"><abbr title="\Dagger\Socket">Socket</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Socket.html"><abbr title="\Dagger\Socket">Socket</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asString">
+        asString()
+        <a href="classes/Dagger-Binding.html#method_asString" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Returns the binding&#039;s string value</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asString</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_digest">
+        digest()
+        <a href="classes/Dagger-Binding.html#method_digest" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Returns the digest of the binding value</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">digest</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_id">
+        id()
+        <a href="classes/Dagger-Binding.html#method_id" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">A unique identifier for this Binding.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">id</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-BindingId.html"><abbr title="\Dagger\BindingId">BindingId</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-BindingId.html"><abbr title="\Dagger\BindingId">BindingId</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_isNull">
+        isNull()
+        <a href="classes/Dagger-Binding.html#method_isNull" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Returns true if the binding is null</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">isNull</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">bool</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">bool</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_name">
+        name()
+        <a href="classes/Dagger-Binding.html#method_name" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Returns the binding name</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">name</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_typeName">
+        typeName()
+        <a href="classes/Dagger-Binding.html#method_typeName" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Returns the binding type</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">typeName</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+            </section>
+
+        <div class="phpdocumentor-modal" id="source-view">
+    <div class="phpdocumentor-modal-bg" data-exit-button></div>
+    <div class="phpdocumentor-modal-container">
+        <div class="phpdocumentor-modal-content">
+            <pre style="max-height: 500px; overflow-y: scroll" data-src="files/generated/Binding.php.txt" class="language-php line-numbers linkable-line-numbers"></pre>
+        </div>
+        <button data-exit-button class="phpdocumentor-modal__close">&times;</button>
+    </div>
+</div>
+
+    <script type="text/javascript">
+        (function () {
+            function loadExternalCodeSnippet(el, url, line) {
+                Array.prototype.slice.call(el.querySelectorAll('pre[data-src]')).forEach((pre) => {
+                    const src = url || pre.getAttribute('data-src').replace(/\\/g, '/');
+                    const language = 'php';
+
+                    const code = document.createElement('code');
+                    code.className = 'language-' + language;
+                    pre.textContent = '';
+                    pre.setAttribute('data-line', line)
+                    code.textContent = 'Loading…';
+                    pre.appendChild(code);
+
+                    var xhr = new XMLHttpRequest();
+
+                    xhr.open('GET', src, true);
+
+                    xhr.onreadystatechange = function () {
+                        if (xhr.readyState !== 4) {
+                            return;
+                        }
+
+                        if (xhr.status < 400 && xhr.responseText) {
+                            code.textContent = xhr.responseText;
+                            Prism.highlightElement(code);
+                            d=document.getElementsByClassName("line-numbers");
+                            d[0].scrollTop = d[0].children[1].offsetTop;
+                            return;
+                        }
+
+                        if (xhr.status === 404) {
+                            code.textContent = '✖ Error: File could not be found';
+                            return;
+                        }
+
+                        if (xhr.status >= 400) {
+                            code.textContent = '✖ Error ' + xhr.status + ' while fetching file: ' + xhr.statusText;
+                            return;
+                        }
+
+                        code.textContent = '✖ Error: An unknown error occurred';
+                    };
+
+                    xhr.send(null);
+                });
+            }
+
+            const modalButtons = document.querySelectorAll("[data-modal]");
+            const openedAsLocalFile = window.location.protocol === 'file:';
+            if (modalButtons.length > 0 && openedAsLocalFile) {
+                console.warn(
+                    'Viewing the source code is unavailable because you are opening this page from the file:// scheme; ' +
+                    'browsers block XHR requests when a page is opened this way'
+                );
+            }
+
+            modalButtons.forEach(function (trigger) {
+                if (openedAsLocalFile) {
+                    trigger.setAttribute("hidden", "hidden");
+                }
+
+                trigger.addEventListener("click", function (event) {
+                    event.preventDefault();
+                    const modal = document.getElementById(trigger.dataset.modal);
+                    if (!modal) {
+                        console.error(`Modal with id "${trigger.dataset.modal}" could not be found`);
+                        return;
+                    }
+                    modal.classList.add("phpdocumentor-modal__open");
+
+                    loadExternalCodeSnippet(modal, trigger.dataset.src || null, trigger.dataset.line)
+                    const exits = modal.querySelectorAll("[data-exit-button]");
+                    exits.forEach(function (exit) {
+                        exit.addEventListener("click", function (event) {
+                            event.preventDefault();
+                            modal.classList.remove("phpdocumentor-modal__open");
+                        });
+                    });
+                });
+            });
+        })();
+    </script>
+
+    </article>
+                                </section>
+                <section class="phpdocumentor-on-this-page__sidebar">
+                                
+    <section class="phpdocumentor-on-this-page__content">
+        <strong class="phpdocumentor-on-this-page__title">On this page</strong>
+
+        <ul class="phpdocumentor-list -clean">
+            <li class="phpdocumentor-on-this-page-section__title">Table Of Contents</li>
+            <li>
+                <ul class="phpdocumentor-list -clean">
+                                                                                <li><a href="classes/Dagger-Binding.html#toc-methods">Methods</a></li>
+                                    </ul>
+            </li>
+            
+            
+                        <li class="phpdocumentor-on-this-page-section__title">Methods</li>
+            <li>
+                <ul class="phpdocumentor-list -clean">
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asAddress">asAddress()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asCacheVolume">asCacheVolume()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asChangeset">asChangeset()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asCheck">asCheck()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asCheckGroup">asCheckGroup()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asCloud">asCloud()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asContainer">asContainer()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asDirectory">asDirectory()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asEnv">asEnv()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asEnvFile">asEnvFile()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asFile">asFile()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asGitRef">asGitRef()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asGitRepository">asGitRepository()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asJSONValue">asJSONValue()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asModule">asModule()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asModuleConfigClient">asModuleConfigClient()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asModuleSource">asModuleSource()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asSearchResult">asSearchResult()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asSearchSubmatch">asSearchSubmatch()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asSecret">asSecret()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asService">asService()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asSocket">asSocket()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_asString">asString()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_digest">digest()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_id">id()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_isNull">isNull()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_name">name()</a></li>
+                                            <li class=""><a href="classes/Dagger-Binding.html#method_typeName">typeName()</a></li>
+                                    </ul>
+            </li>
+                    </ul>
+    </section>
+
+                </section>
+                            </div>
+            <section data-search-results class="phpdocumentor-search-results phpdocumentor-search-results--hidden">
+    <section class="phpdocumentor-search-results__dialog">
+        <header class="phpdocumentor-search-results__header">
+            <h2 class="phpdocumentor-search-results__title">Search results</h2>
+            <button class="phpdocumentor-search-results__close"><i class="fas fa-times"></i></button>
+        </header>
+        <section class="phpdocumentor-search-results__body">
+            <ul class="phpdocumentor-search-results__entries"></ul>
+        </section>
+    </section>
+</section>
+        </div>
+        <a href="classes/Dagger-Binding.html#top" class="phpdocumentor-back-to-top"><i class="fas fa-chevron-circle-up"></i></a>
+
+    </main>
+
+    <script>
+        cssVars({});
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/line-highlight/prism-line-highlight.min.js"></script>
+</body>
+</html>

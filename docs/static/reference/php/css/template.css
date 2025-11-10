@@ -1,0 +1,294 @@
+
+.phpdocumentor-content {
+    position: relative;
+    display: flex;
+    gap: var(--spacing-md);
+}
+
+.phpdocumentor-content > section:first-of-type {
+    width: 75%;
+    flex: 1 1 auto;
+}
+
+@media (min-width: 1900px) {
+    .phpdocumentor-content > section:first-of-type {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+}
+
+.phpdocumentor .phpdocumentor-content__title {
+    margin-top: 0;
+}
+.phpdocumentor-summary {
+    font-style: italic;
+}
+.phpdocumentor-description {
+    margin-bottom: var(--spacing-md);
+}
+.phpdocumentor-element {
+    position: relative;
+}
+
+.phpdocumentor-element .phpdocumentor-element {
+    border: 1px solid var(--primary-color-lighten);
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-xs);
+    border-radius: 5px;
+}
+
+.phpdocumentor-element.-deprecated .phpdocumentor-element__name {
+    text-decoration: line-through;
+}
+
+@media (min-width: 550px) {
+    .phpdocumentor-element .phpdocumentor-element {
+        margin-bottom: var(--spacing-lg);
+        padding: var(--spacing-md);
+    }
+}
+
+.phpdocumentor-element__modifier {
+    font-size: var(--text-xxs);
+    padding: calc(var(--spacing-base-size) / 4) calc(var(--spacing-base-size) / 2);
+    color: var(--text-color);
+    background-color: var(--light-gray);
+    border-radius: 3px;
+    text-transform: uppercase;
+}
+
+.phpdocumentor .phpdocumentor-elements__header {
+    margin-top: var(--spacing-xxl);
+    margin-bottom: var(--spacing-lg);
+}
+
+.phpdocumentor .phpdocumentor-element__name {
+    line-height: 1;
+    margin-top: 0;
+    font-weight: 300;
+    font-size: var(--text-lg);
+    word-break: break-all;
+    margin-bottom: var(--spacing-sm);
+}
+
+@media (min-width: 550px) {
+    .phpdocumentor .phpdocumentor-element__name {
+        font-size: var(--text-xl);
+        margin-bottom: var(--spacing-xs);
+    }
+}
+
+@media (min-width: 1200px) {
+    .phpdocumentor .phpdocumentor-element__name {
+        margin-bottom: var(--spacing-md);
+    }
+}
+
+.phpdocumentor-element__package,
+.phpdocumentor-element__extends,
+.phpdocumentor-element__implements {
+    display: block;
+    font-size: var(--text-xxs);
+    font-weight: normal;
+    opacity: .7;
+}
+
+.phpdocumentor-element__package .phpdocumentor-breadcrumbs {
+    display: inline;
+}
+.phpdocumentor .phpdocumentor-signature {
+    display: block;
+    font-size: var(--text-sm);
+    border: 1px solid #f0f0f0;
+    margin-bottom: calc(var(--spacing-sm));
+}
+
+.phpdocumentor .phpdocumentor-signature.-deprecated .phpdocumentor-signature__name {
+    text-decoration: line-through;
+}
+
+@media (min-width: 550px) {
+    .phpdocumentor .phpdocumentor-signature {
+        margin-left: calc(var(--spacing-xl) * -1);
+        width: calc(100% + var(--spacing-xl));
+    }
+}
+
+.phpdocumentor-table-of-contents {
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry {
+    margin-bottom: var(--spacing-xxs);
+    margin-left: 2rem;
+    display: flex;
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry > a {
+    flex: 0 1 auto;
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry > a.-deprecated {
+    text-decoration: line-through;
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry > span {
+    flex: 1;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry:after {
+    content: '';
+    height: 12px;
+    width: 12px;
+    left: 16px;
+    position: absolute;
+}
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-private:after {
+    background: url('data:image/svg+xml;utf8,<svg width="8" height="10" viewBox="0 0 8 10" fill="none" xmlns="http://www.w3.org/2000/svg"><rect y="4" width="8" height="6" rx="1.4" fill="%23EE6749"/><path d="M2 4C2 3 2.4 1 4 1C5.6 1 6 3 6 4" stroke="%23EE6749" stroke-width="1.4"/></svg>') no-repeat;
+}
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-protected:after {
+    left: 13px;
+    background: url('data:image/svg+xml;utf8,<svg width="11" height="9" viewBox="0 0 11 9" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="8" height="6" rx="1.4" fill="%23EE9949"/><path d="M5 4C5 3 4.6 1 3 1C1.4 1 1 3 1 4" stroke="%23EE9949" stroke-width="1.4"/></svg>') no-repeat;
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry:before {
+    width: 1.25rem;
+    height: 1.25rem;
+    line-height: 1.25rem;
+    background: transparent url('data:image/svg+xml;utf8,<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="10" fill="hsl(    96, 57%, 60%)"/></svg>') no-repeat center center;
+    content: '';
+    position: absolute;
+    left: 0;
+    border-radius: 50%;
+    font-weight: 600;
+    color: white;
+    text-align: center;
+    font-size: .75rem;
+    margin-top: .2rem;
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-method:before {
+    content: 'M';
+    color: '';
+    background-image: url('data:image/svg+xml;utf8,<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="10" fill="hsl(    96, 57%, 60%)"/></svg>');
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-function:before {
+    content: 'M';
+    color: '    96';
+    background-image: url('data:image/svg+xml;utf8,<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="10" fill="hsl(    96, 57%, 60%)"/></svg>');
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-property:before {
+    content: 'P'
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-constant:before {
+    content: 'C';
+    background-color: transparent;
+    background-image: url('data:image/svg+xml;utf8,<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="-3.05176e-05" y="9.99998" width="14.1422" height="14.1422" transform="rotate(-45 -3.05176e-05 9.99998)" fill="hsl(    96, 57%, 60%)"/></svg>');
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-class:before {
+    content: 'C'
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-interface:before {
+    content: 'I'
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-trait:before {
+    content: 'T'
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-namespace:before {
+    content: 'N'
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-package:before {
+    content: 'P'
+}
+
+.phpdocumentor-table-of-contents .phpdocumentor-table-of-contents__entry.-enum:before {
+    content: 'E'
+}
+
+.phpdocumentor-table-of-contents dd {
+    font-style: italic;
+    margin-left: 2rem;
+}
+.phpdocumentor-element-found-in {
+    display: none;
+}
+
+@media (min-width: 550px) {
+    .phpdocumentor-element-found-in {
+        display: block;
+        font-size: var(--text-sm);
+        color: gray;
+        margin-bottom: 1rem;
+    }
+}
+
+@media (min-width: 1200px) {
+    .phpdocumentor-element-found-in {
+        position: absolute;
+        top: var(--spacing-sm);
+        right: var(--spacing-sm);
+        font-size: var(--text-sm);
+        margin-bottom: 0;
+    }
+}
+
+.phpdocumentor-element-found-in .phpdocumentor-element-found-in__source {
+    flex: 0 1 auto;
+    display: inline-flex;
+}
+
+.phpdocumentor-element-found-in .phpdocumentor-element-found-in__source:after {
+    width: 1.25rem;
+    height: 1.25rem;
+    line-height: 1.25rem;
+    background: transparent url('data:image/svg+xml;utf8,<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="gray"><path d="M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z" stroke="gray" stroke-width="1.4"/></svg>') no-repeat center center;
+    content: '';
+    left: 0;
+    border-radius: 50%;
+    font-weight: 600;
+    text-align: center;
+    font-size: .75rem;
+    margin-top: .2rem;
+}
+.phpdocumentor-class-graph {
+    width: 100%; height: 600px; border:1px solid black; overflow: hidden
+}
+
+.phpdocumentor-class-graph__graph {
+    width: 100%;
+}
+.phpdocumentor-tag-list__definition {
+    display: flex;
+}
+
+.phpdocumentor-tag-link {
+    margin-right: var(--spacing-sm);
+}
+:root {
+    --font-primary: 'General Sans Medium', 'General Sans Medium Placeholder', system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont;
+    --font-secondary: 'General Sans Medium', 'General Sans Medium Placeholder', system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont;
+    --font-monospace: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --title-text-color: #0d0c1b;
+
+    --primary-color: #171718;
+
+    --link-color-primary: var(--primary-color);
+    --link-hover-color-primary: #3a8798;
+}
+
+body {
+    background-color: #f8f4ef;
+}
+.phpdocumentor-uml-diagram svg {
+    cursor: zoom-in;
+}
