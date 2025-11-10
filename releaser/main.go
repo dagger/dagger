@@ -5,12 +5,13 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"dagger/releaser/internal/dagger"
 	_ "embed"
 	"fmt"
 	"strings"
 	"text/template"
 	"time"
+
+	"dagger/releaser/internal/dagger"
 
 	sprig "github.com/go-task/slim-sprig/v3"
 	"golang.org/x/mod/semver"
@@ -152,8 +153,17 @@ func (r *Releaser) Publish(
 	discordWebhook *dagger.Secret, // +optional
 ) (*ReleaseReport, error) {
 	version := ""
+	validVersion := false
+	isPublicRelease := false
+	isPreRelease := false
+	trimmedVersion := ""
 	if semver.IsValid(tag) {
 		version = tag
+		validVersion = true
+		preReleasePart := semver.Prerelease(version)
+		isPublicRelease = preReleasePart == ""
+		isPreRelease = preReleasePart != ""
+		trimmedVersion = strings.TrimPrefix(version, "v")
 	}
 
 	report := ReleaseReport{
@@ -170,8 +180,7 @@ func (r *Releaser) Publish(
 	}
 
 	tags := []string{tag, commit}
-	if semver.IsValid(version) && semver.Prerelease(version) == "" {
-		// this is a public release
+	if isPublicRelease {
 		tags = append(tags, "latest")
 	}
 	err := dag.DaggerEngine().Publish(ctx, tags, dagger.DaggerEnginePublishOpts{
@@ -220,8 +229,7 @@ func (r *Releaser) Publish(
 		return &report, nil
 	}
 
-	isPrerelease := semver.IsValid(version) && semver.Prerelease(version) != ""
-	if isPrerelease {
+	if isPreRelease {
 		// early-exit if this is a pre-release
 		return &report, nil
 	}
@@ -265,7 +273,7 @@ func (r *Releaser) Publish(
 			name: "🐍 Python SDK",
 			path: "sdk/python/",
 			tag:  "sdk/python/",
-			link: "https://pypi.org/project/dagger-io/" + strings.TrimPrefix(version, "v"),
+			link: "https://pypi.org/project/dagger-io/" + trimmedVersion,
 			publish: func() error {
 				return r.Dagger.SDK().Python().Publish(ctx, tag, dagger.DaggerDevPythonSDKPublishOpts{
 					PypiToken: pypiToken,
@@ -278,7 +286,7 @@ func (r *Releaser) Publish(
 			name: "⬢ TypeScript SDK",
 			path: "sdk/typescript/",
 			tag:  "sdk/typescript/",
-			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
+			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + trimmedVersion,
 			publish: func() error {
 				return r.Dagger.SDK().Typescript().Publish(ctx, tag, dagger.DaggerDevTypescriptSDKPublishOpts{
 					NpmToken: npmToken,
@@ -290,7 +298,7 @@ func (r *Releaser) Publish(
 			name: "🧪 Elixir SDK",
 			path: "sdk/elixir/",
 			tag:  "sdk/elixir/",
-			link: "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
+			link: "https://hex.pm/packages/dagger/" + trimmedVersion,
 			publish: func() error {
 				return r.Dagger.SDK().Elixir().Publish(ctx, tag, dagger.DaggerDevElixirSDKPublishOpts{
 					HexApikey: hexAPIKey,
@@ -302,7 +310,7 @@ func (r *Releaser) Publish(
 			name: "⚙️ Rust SDK",
 			path: "sdk/rust/",
 			tag:  "sdk/rust/",
-			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
+			link: "https://crates.io/crates/dagger-sdk/" + trimmedVersion,
 			publish: func() error {
 				return r.Dagger.SDK().Rust().Publish(ctx, tag, dagger.DaggerDevRustSDKPublishOpts{
 					CargoRegistryToken: cargoRegistryToken,
@@ -339,10 +347,10 @@ func (r *Releaser) Publish(
 	artifacts := make([]*ReleaseReportArtifact, len(components))
 	var eg errgroup.Group
 	for i, component := range components {
-		if component.dev || semver.IsValid(version) {
+		if component.dev || validVersion {
 			eg.Go(func() error {
 				target := ""
-				if semver.IsValid(version) {
+				if validVersion {
 					target = strings.TrimSuffix(component.tag, "/") + "/" + version
 				}
 
@@ -360,7 +368,7 @@ func (r *Releaser) Publish(
 					return nil
 				}
 
-				if semver.IsValid(version) {
+				if validVersion {
 					notes := dag.Changelog().LookupEntry(component.path, version)
 					if err := r.githubRelease(ctx, "https://github.com/dagger/dagger", commit, target, notes, githubToken, dryRun); err != nil {
 						artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
@@ -382,7 +390,7 @@ func (r *Releaser) Publish(
 		report.Artifacts = append(report.Artifacts, artifact)
 	}
 
-	if semver.IsValid(version) {
+	if validVersion {
 		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
 			Name: "❄️ Nix",
 			Link: "https://github.com/dagger/nix",
@@ -407,7 +415,7 @@ func (r *Releaser) Publish(
 		})
 	}
 
-	if semver.IsValid(version) && discordWebhook != nil {
+	if validVersion && discordWebhook != nil {
 		if err := report.notify(ctx, discordWebhook); err != nil {
 			report.Errors = append(report.Errors, dag.Error(err.Error()))
 		}
