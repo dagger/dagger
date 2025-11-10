@@ -1,0 +1,207 @@
+type TypescriptSdkDev {
+
+  pub nodeVersionPrevLts: String! = "20.18.1"
+  pub nodeVersionLts  = "22.11.0"
+	pub bunVersion = "1.1.38"
+
+	pub workspace: Directory!
+	 @defaultPath(path:"/")
+	 @ignorePatterns(patterns:[
+	  "*"
+    "!sdk/typescript"
+	 ])
+
+	pub sourcePath: String! ="sdk/typescript"
+
+	pub source: Directory! {
+	  workspace.directory(sourcePath)
+	}
+
+	pub lintTypescript: Void! {
+	  nodejsDevContainer().withExec(["yarn", "lint"]).sync
+		null
+	}
+
+	#pub lindDocsSnippets(
+	#  docsWorkspace: Directory! @defaultPath("/") @ignorePatterns(
+	#		  "*"
+	#			"!**/*.mts"
+	#			"!**/*.mjs"
+	#			"!**/*.ts"
+	#			"!**/*.js"
+	#			"!*prettier*"
+	#			"!*eslint*"
+	#	  )
+	#): Void! {
+	# let path = "docs/current_docs"
+  # devContainerNodejs().
+  # # Add docs snippets on top of the already-mounted SDK source
+  # withDirectory(".", docsWorkspace).
+  # withExec(["yarn", "docs:lint"]).
+  # sync
+  # null
+  #}
+
+	"""Test the SDK with LTS version of Node"""
+	pub testNodejsLts: Void! {
+   testNodejs(nodeVersionLts)
+	}
+
+	"""Test the SDK with previous LTS version of Node"""
+	pub testNodejsPrevLts: Void! {
+	  testNodejs(nodeVersionPrevLts)
+	}
+
+	"""Test the SDK with the given version of NodeJS"""
+	pub testNodejs(nodeVersion: String!): Void! {
+    nodejsDevContainer(nodeVersion).
+    withExec(["yarn", "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"]).
+    sync
+    null
+	}
+
+	"""Test the SDK with BunJS"""
+	pub testBunjs: Void! {
+    daggerEngine().installClient(bunjsDevContainer()).
+    withExec(["bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"]).
+    sync
+   null
+	}
+
+	"""Generate the Typescript client library"""
+	pub generate: Changeset! {
+	  let ctr=nodejsBase(nodeVersionPrevLts).
+     withMountedDirectory(".", workspace).
+     withExec(["yarn", "--cwd", sourcePath, "install"])
+    let ctr=daggerEngine().installClient(ctr)
+    ctr.
+    withFile("/usr/local/bin/codegen", codegen().binary()).
+		withExec(["codegen", "generate-library", "--lang", "typescript", "-o", "./sdk/typescript/src/api/"]).
+	  withExec(["yarn", "--cwd", sourcePath, "eslint", "--max-warnings=0", "--fix", "./src/api/"]).
+		directory(".").
+		# FIXME: more efficient way to exclude node_modules from the diff?
+		withoutDirectory(sourcePath + "/node_modules").
+		# FIXME: since we know this is purely additive, compare to empty dir for more efficient diff?
+		changes(workspace)
+	}
+
+	pub releaseDryRun: Void! {
+	  release(
+			dryRun:true,
+			sourceTag:"HEAD",
+			npmToken:null,
+		)
+	}
+
+ pub release(
+   """Source git tag to release"""
+   sourceTag: String!,
+   """NPM authentication token"""
+   npmToken: Secret!,
+   """Execute a dry-run release, with no side effects"""
+   dryRun: Boolean,
+ ): Void! {
+   let version=versionFromTag(sourceTag)
+   let versionFlag =
+    if(isSemver(version)) {
+     version.trimPrefix("v")
+    } else {
+      "prepatch"
+   }
+   let build = nodejsDevContainer.
+    withExec(["npm", "run", "build"]).
+    withExec(["npm", "version", versionFlag])
+   # Check that dist/ exists in the build
+   build.directory("dist").entries
+   let publishArgs=["npm", "publish", "--access", "public"]
+   let publish = if (dryRun == true) {
+      build.withExec(publishArgs + ["--dry-run"])
+   } else {
+     let npmrc=[
+       "//registry.npmjs.org/:_authToken=" + npmToken.plaintext,
+       "registry=https://registry.npmjs.org/",
+       "always-auth=true",
+     ].join("\n")
+     build.
+     withMountedSecret(".npmrc", setSecret("npmrc", npmrc)).
+     withExec(publishArgs)
+   }
+   publish.sync
+   null
+ }
+
+ let isSemver(version: String!): Boolean! {
+     let binary=go(source:currentModule.source.directory("is-semver")).binary(".")
+     let exitCode=container.
+      from("alpine").
+      withFile("/bin/is-semver", binary).
+      withExec(["is-semver", version], expect: ReturnType.ANY).
+      exitCode
+     exitCode == 0
+ }
+
+
+
+ let versionFromTag(tag: String!): String! {
+   tag.trimPrefix(sourcePath.trimRight("/") + "/")
+ }
+
+
+ """Bump the Typescript SDK's engine dependency"""
+ pub bump(version: String!): Changeset! {
+    # FIXME
+    directory.changes(directory)
+ }
+
+# Build a nodejs dev environment, with the SDK source code mounted and its dependencies installed
+# FIXME: use baseNodejs() to avoid duplication
+pub nodejsDevContainer(nodeVersion: String! =nodeVersionPrevLts): Container! {
+	let mountPath = "/" + sourcePath
+	container.
+		# ⚠️  Keep this in sync with the engine version defined in package.json
+		from("node:" + nodeVersion + "-alpine").
+		withWorkdir(mountPath).
+		withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion)).
+		#withFile(mountPath + "/package.json", source.file("package.json")).
+		#withFile(mountPath + "/yarn.lock", source.file("yarn.lock")).
+		#withFile(mountPath + "/eslint.config.js", source.file("eslint.config.js")).
+		withExec(["yarn", "install"]).
+		withDirectory(mountPath, source)
+}
+
+# Build a nodejs base image, without any source code mounted
+pub nodejsBase(nodeVersion: String! = nodeVersionPrevLts): Container! {
+  container.
+  from("node:"+nodeVersion+"-alpine").
+	withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:"+nodeVersion)).
+  withWorkdir("/app")
+}
+
+let bunjsDevContainer: Container! {
+ 	let mountPath = "/" + sourcePath
+  container.
+    from("oven/bun:"+bunVersion+"-alpine").
+		withWorkdir(mountPath).
+		withMountedCache("/root/.bun/install/cache", cacheVolume("bun_cache")).
+		withFile(mountPath + "/package.json", source.file("package.json")).
+		withExec(["bun", "install"]).
+		withDirectory(mountPath, source)
+}
+
+
+ #####
+
+  pub source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "*"
+    "!cmd/codegen"
+    "!go.mod"
+    "!go.sum"
+    "!**/*.go"
+    "!sdk/go"
+    "!**/*.graphql"
+  ])
+
+  pub binary: File! {
+    go(source).binary("./cmd/codegen", noSymbols:true, noDwarf:true)
+  }
+}

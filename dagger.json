@@ -20,6 +20,10 @@
     {
       "name": "sdks",
       "source": "toolchains/all-sdks"
+    },
+    {
+      "name": "typescript-sdk",
+      "source": "toolchains/typescript-sdk-dev"
     }
   ],
   "include": [

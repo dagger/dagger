@@ -17,6 +17,14 @@
     {
       "name": "php-sdk-dev",
       "source": "../php-sdk-dev"
+    },
+    {
+      "name": "python-sdk-dev",
+      "source": "../python-sdk-dev"
+    },
+    {
+      "name": "typescript-sdk-dev",
+      "source": "../typescript-sdk-dev"
     }
   ]
 }

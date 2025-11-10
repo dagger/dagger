@@ -78,6 +78,8 @@ func all[T any]() []namedSDK[T] {
 	}{
 		{"go", dag.GoSDKDev()},
 		{"php", dag.PhpSDKDev()},
+		{"typescript", dag.TypescriptSDKDev()},
+		{"python", dag.PythonSDKDev()},
 	} {
 		if casted, ok := entry.sdk.(T); ok {
 			result = append(result, namedSDK[T]{
