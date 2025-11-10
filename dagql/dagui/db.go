@@ -966,7 +966,7 @@ func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 		clear(reveal)
 		for _, span := range rootCauses.Order {
 			if tree, ok := rows.BySpan[span.ID]; ok {
-				collect(tree, false)
+				reveal[tree] = struct{}{}
 			} else {
 				slog.Warn("tree not found for error origin span:", "id", span.ID, "name", span.Name)
 			}
