@@ -17,6 +17,7 @@ func (dev *DaggerDev) LintMisc(ctx context.Context) error {
 }
 
 // Perform a dry run of the release process
+// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
 func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) error {
 	return parallel.New().
 		WithJob("Helm chart", dag.Helm().ReleaseDryRun).

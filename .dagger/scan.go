@@ -13,7 +13,7 @@ func (dev *DaggerDev) Scan(
 	ctx context.Context,
 	// +defaultPath="/"
 	repo *dagger.GitRepository,
-) (MyCheckStatus, error) {
+) error {
 	src := repo.Head().Tree().WithChanges(repo.Uncommitted())
 	ignoreFiles := dag.Directory().WithDirectory("/", src, dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
@@ -24,7 +24,7 @@ func (dev *DaggerDev) Scan(
 	})
 	ignoreFileNames, err := ignoreFiles.Entries(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 
 	ctr := dag.Container().
@@ -44,7 +44,7 @@ func (dev *DaggerDev) Scan(
 		commonArgs = append(commonArgs, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
 	}
 
-	return CheckCompleted, parallel.New().
+	return parallel.New().
 		WithJob("scan the source code", func(ctx context.Context) error {
 			args := []string{
 				"trivy",
