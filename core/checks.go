@@ -106,6 +106,11 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			return nil, fmt.Errorf("run checks for module %q: serve core schema: %w", r.Module.Name(), err)
 		}
 	}
+	for _, tcMod := range r.Module.ToolchainModules {
+		if err := tcMod.Install(ctx, dag); err != nil {
+			return nil, fmt.Errorf("run checks for module %q: serve toolchain module %q: %w", r.Module.Name(), tcMod.Name(), err)
+		}
+	}
 	if err := r.Module.Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("run checks for module %q: serve module: %w", r.Module.Name(), err)
 	}
