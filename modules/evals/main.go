@@ -55,6 +55,7 @@ func (es *Evals) Check(
 		"writable",
 		"modelContextProtocol",
 		"envPropagation",
+		"nestedObjects",
 	} {
 		// TODO: replace with self-calls
 		evaluatorEvals = append(evaluatorEvals, (&dagger.EvaluatorEval{}).WithGraphQLQuery(
