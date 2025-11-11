@@ -332,14 +332,7 @@ func spanNames(spans []sdktrace.ReadOnlySpan) []string {
 func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	slog.ExtraDebug("pubsub exporting spans", "client", ps.client.clientID, "count", len(spans))
 
-	tx, err := ps.client.db.Begin()
-	if err != nil {
-		return fmt.Errorf("export spans %+v: begin tx: %w", spanNames(spans), err)
-	}
-	defer tx.Rollback()
-
-	queries := clientdb.New(tx)
-
+	var inserts []*clientdb.InsertSpanParams
 	for _, span := range spans {
 		traceID := span.SpanContext().TraceID().String()
 		spanID := span.SpanContext().SpanID().String()
@@ -388,7 +381,7 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			continue
 		}
 
-		_, err = queries.InsertSpan(ctx, clientdb.InsertSpanParams{
+		inserts = append(inserts, &clientdb.InsertSpanParams{
 			TraceID:    traceID,
 			SpanID:     spanID,
 			TraceState: traceState,
@@ -412,6 +405,18 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			InstrumentationScope:   instrumentationScope,
 			Resource:               resource,
 		})
+	}
+
+	tx, err := ps.client.db.Begin()
+	if err != nil {
+		return fmt.Errorf("export spans %+v: begin tx: %w", spanNames(spans), err)
+	}
+	defer tx.Rollback()
+
+	queries := clientdb.New(tx)
+
+	for _, insert := range inserts {
+		_, err = queries.InsertSpan(ctx, *insert)
 		if err != nil {
 			return fmt.Errorf("insert span: %w", err)
 		}
@@ -440,13 +445,28 @@ type clientLogs struct {
 var _ sdklog.Processor = clientLogs{}
 
 func (ps clientLogs) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	return insertLogRecord(ctx, clientdb.New(ps.client.db), rec)
+	insert, err := insertLogRecordParam(ctx, rec)
+	if err != nil {
+		return fmt.Errorf("prepare log record %v: %w", rec, err)
+	}
+	queries := clientdb.New(ps.client.db)
+	_, err = queries.InsertLog(ctx, *insert)
+	return err
 }
 
 var _ sdklog.Exporter = clientLogs{}
 
 func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	slog.ExtraDebug("pubsub exporting logs", "client", ps.client.clientID, "count", len(logs))
+
+	var inserts []*clientdb.InsertLogParams
+	for _, rec := range logs {
+		insert, err := insertLogRecordParam(ctx, &rec)
+		if err != nil {
+			return fmt.Errorf("prepare log record %v: %w", rec, err)
+		}
+		inserts = append(inserts, insert)
+	}
 
 	tx, err := ps.client.db.Begin()
 	if err != nil {
@@ -456,8 +476,8 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	queries := clientdb.New(tx)
 
-	for _, rec := range logs {
-		if err := insertLogRecord(ctx, queries, &rec); err != nil {
+	for _, insert := range inserts {
+		if _, err := queries.InsertLog(ctx, *insert); err != nil {
 			slog.Warn("failed to insert log record", "error", err)
 			continue
 		}
@@ -473,7 +493,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientLogs) Shutdown(context.Context) error       { return nil }
 
-func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog.Record) error {
+func insertLogRecordParam(ctx context.Context, rec *sdklog.Record) (*clientdb.InsertLogParams, error) {
 	traceID := rec.TraceID().String()
 	spanID := rec.SpanID().String()
 	timestamp := rec.Timestamp().UnixNano()
@@ -484,7 +504,7 @@ func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog
 		var err error
 		body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
 		if err != nil {
-			return fmt.Errorf("marshal log record body: %w", err)
+			return nil, fmt.Errorf("marshal log record body: %w", err)
 		}
 	}
 
@@ -498,21 +518,21 @@ func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog
 	})
 	attributes, err := clientdb.MarshalProtoJSONs(attrs)
 	if err != nil {
-		return fmt.Errorf("marshal log record attributes: %w", err)
+		return nil, fmt.Errorf("marshal log record attributes: %w", err)
 	}
 
 	scope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(rec.InstrumentationScope()))
 	if err != nil {
-		return fmt.Errorf("marshal log record instrumentation scope: %w", err)
+		return nil, fmt.Errorf("marshal log record instrumentation scope: %w", err)
 	}
 
 	res := rec.Resource()
 	resource, err := protojson.Marshal(telemetry.ResourcePtrToPB(res))
 	if err != nil {
-		return fmt.Errorf("marshal log record resource: %w", err)
+		return nil, fmt.Errorf("marshal log record resource: %w", err)
 	}
 
-	_, err = queries.InsertLog(ctx, clientdb.InsertLogParams{
+	return &clientdb.InsertLogParams{
 		TraceID: sql.NullString{
 			String: traceID,
 			Valid:  rec.TraceID().IsValid(),
@@ -529,11 +549,7 @@ func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog
 		InstrumentationScope: scope,
 		Resource:             resource,
 		ResourceSchemaUrl:    res.SchemaURL(),
-	})
-	if err != nil {
-		return fmt.Errorf("insert log: %w", err)
-	}
-	return nil
+	}, nil
 }
 
 func (ps *PubSub) Metrics(client *daggerClient) sdkmetric.Exporter {
@@ -555,14 +571,6 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 
 	slog.ExtraDebug("pubsub exporting metrics", "client", ps.client.clientID, "count", len(metrics.ScopeMetrics))
 
-	tx, err := ps.client.db.Begin()
-	if err != nil {
-		return fmt.Errorf("export metrics %+v: begin tx: %w", metrics, err)
-	}
-	defer tx.Rollback()
-
-	queries := clientdb.New(tx)
-
 	pbMetrics, err := telemetry.ResourceMetricsToPB(metrics)
 	if err != nil {
 		return fmt.Errorf("convert metrics to pb: %w", err)
@@ -573,13 +581,11 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 		return fmt.Errorf("marshal metrics to pb: %w", err)
 	}
 
+	queries := clientdb.New(ps.client.db)
+
 	_, err = queries.InsertMetric(ctx, metricsPBBytes)
 	if err != nil {
 		return fmt.Errorf("insert metrics: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
 	}
 
 	return nil
