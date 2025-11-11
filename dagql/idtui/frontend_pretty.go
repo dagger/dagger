@@ -1260,6 +1260,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		if !fe.editlineFocused {
 			return fe, nil
 		}
+
+		// reset prompt error state
+		fe.promptErr = nil
+
 		value := fe.editline.Value()
 		fe.editline.AddHistoryEntry(value)
 		fe.promptFg = termenv.ANSIYellow
@@ -1286,6 +1290,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case shellDoneMsg:
+		// show error result above the prompt
 		fe.promptErr = msg.err
 		if msg.err == nil {
 			fe.promptFg = termenv.ANSIGreen
