@@ -25,7 +25,20 @@ const (
 
 func New(
 	// +defaultPath="/"
-	// +ignore=[".git", "bin", "**/.dagger", "**/.DS_Store", "**/node_modules", "**/__pycache__", "**/.venv", "**/.mypy_cache", "**/.pytest_cache", "**/.ruff_cache", "sdk/python/dist", "sdk/python/**/sdk", "go.work", "go.work.sum", "**/*_test.go", "**/target", "**/deps", "**/cover", "**/_build", "docs"]
+	// +ignore[
+	// "*",
+	// "!**/go.*",
+	// "!version",
+	// "!core",
+	// "!engine",
+	// "!util",
+	// "!network",
+	// "!dagql",
+	// "!analytics",
+	// "!auth",
+	// "!cmd",
+	// "!internal"
+	// ]
 	source *dagger.Directory,
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
