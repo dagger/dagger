@@ -2219,8 +2219,18 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span, !empty)
-		r.renderMetrics(out, span)
+
+		// Render RollUp dots after status/duration for collapsed RollUp spans
+		if span.RollUpSpans {
+			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
+			if dots != "" {
+				fmt.Fprint(out, " ")
+				fmt.Fprint(out, dots)
+			}
+		}
+
 		fe.renderStatus(out, span)
+		r.renderMetrics(out, span)
 
 		for effect := range span.EffectSpans {
 			if effect.Passthrough {
@@ -2244,15 +2254,6 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 				fmt.Fprintf(out, " %s %s",
 					out.String(icon).Foreground(color).Faint(),
 					out.String(strconv.Itoa(count)).Faint())
-			}
-		}
-
-		// Render RollUp dots after status/duration for collapsed RollUp spans
-		if span.RollUpSpans {
-			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
-			if dots != "" {
-				fmt.Fprint(out, " ")
-				fmt.Fprint(out, dots)
 			}
 		}
 	}
