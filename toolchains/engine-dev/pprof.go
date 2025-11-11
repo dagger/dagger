@@ -66,12 +66,10 @@ func (dev *EngineDev) TestDump(
 	if err != nil {
 		return nil, err
 	}
-
 	i, err := time.ParseDuration(interval)
 	if err != nil {
 		return nil, err
 	}
-
 	ctr, debugEndpoint, err := dev.testContainer(ctx)
 	if err != nil {
 		return nil, err

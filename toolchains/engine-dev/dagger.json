@@ -35,6 +35,10 @@
     {
       "name": "wolfi",
       "source": "../../modules/wolfi"
+    },
+    {
+         "name": "notify",
+         "source": "notify"
     }
   ]
 }
