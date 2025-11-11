@@ -32,8 +32,9 @@ func (dev *DaggerDev) Scan(
 		WithMountedDirectory("/mnt/ignores", ignoreFiles).
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache"), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModeLocked,
-		}).
-		With(dev.withDockerCfg)
+		})
+	// [shykes] FIXME: we used to inject a now-deprecated "dockerCfg" global variable
+	//  I suspect it is not actually needed, so I removed it.
 
 	commonArgs := []string{
 		"--exit-code=1",

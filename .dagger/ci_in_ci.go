@@ -20,16 +20,15 @@ func (dev *DaggerDev) CiInCi(
 	repo *dagger.GitRepository,
 ) error {
 	source := repo.Head().Tree().WithChanges(repo.Uncommitted())
+	engine := dag.EngineDev()
 	cmd := []string{"dagger", "call"}
-	if dev.DockerCfg != nil {
+	if engine.ClientDockerConfig() != nil {
 		cmd = append(cmd, "--docker-cfg=file:$HOME/.docker/config.json")
 	}
 	cmd = append(cmd, "test-sdks")
 	_, err := dag.EngineDev().
 		Playground().
-		With(dev.withDockerCfg).
 		WithMountedDirectory("./dagger", source).
-		WithMountedDirectory("./dagger/.git/", dev.Git.Head().Tree().Directory(".git/")).
 		WithWorkdir("./dagger").
 		WithExec(cmd, dagger.ContainerWithExecOpts{Expand: true}).
 		Sync(ctx)

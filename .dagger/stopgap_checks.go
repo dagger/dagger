@@ -23,20 +23,14 @@ func (dev *DaggerDev) LintMisc(ctx context.Context) error {
 			_, err := dev.Docs().Lint(ctx)
 			return err
 		}).
-		WithJob("Helm chart", func(ctx context.Context) error {
-			_, err := dev.LintHelm(ctx)
-			return err
-		}).
+		WithJob("Helm chart", dag.Helm().Lint).
 		Run(ctx)
 }
 
-// DryRun performs a dry run of the release process
+// Perform a dry run of the release process
 func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
 	return CheckCompleted, parallel.New().
-		WithJob("Helm chart", func(ctx context.Context) error {
-			_, err := dag.Helm().ReleaseDryRun(ctx)
-			return err
-		}).
+		WithJob("Helm chart", dag.Helm().ReleaseDryRun).
 		WithJob("CLI", func(ctx context.Context) error {
 			_, err := dag.DaggerCli().ReleaseDryRun(ctx)
 			return err
