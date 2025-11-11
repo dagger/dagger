@@ -22,11 +22,6 @@ const (
 func New(
 	// Project source directory
 	// +defaultPath="/"
-	// +ignore[
-	//  "go.mod",
-	//  "go.sum",
-	//  "**/*.go"
-	// ]
 	source *dagger.Directory,
 	// Go version
 	// +optional
