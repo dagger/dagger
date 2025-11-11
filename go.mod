@@ -187,7 +187,7 @@ require (
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
-	modernc.org/sqlite v1.39.1
+	modernc.org/sqlite v1.40.0
 	mvdan.cc/sh/v3 v3.12.0
 	resenje.org/singleflight v0.4.3
 )
