@@ -495,4 +495,9 @@ func Close() {
 			slog.Error("failed to shut down logger provider", "error", err)
 		}
 	}
+	if meterProvider := MeterProvider(ctx); meterProvider != nil {
+		if err := meterProvider.Shutdown(flushCtx); err != nil {
+			slog.Error("failed to shut down meter provider", "error", err)
+		}
+	}
 }
