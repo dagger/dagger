@@ -6,8 +6,16 @@
   },
   "toolchains": [
     {
+      "name": "engine-dev",
+      "source": "toolchains/engine-dev"
+    },
+    {
       "name": "go-sdk",
       "source": "toolchains/go-sdk-dev"
+    },
+    {
+      "name": "helm",
+      "source": "toolchains/helm-dev"
     },
     {
       "name": "php-sdk",
@@ -59,10 +67,6 @@
       "source": "docs"
     },
     {
-      "name": "dagger-engine",
-      "source": "cmd/engine"
-    },
-    {
       "name": "doug",
       "source": "github.com/vito/daggerverse/doug@main",
       "pin": "776610fc77055f983a3dca99f5f55946616c624e"
@@ -70,10 +74,6 @@
     {
       "name": "go",
       "source": "modules/go"
-    },
-    {
-      "name": "helm",
-      "source": "helm"
     },
     {
       "name": "notify",

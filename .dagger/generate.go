@@ -38,7 +38,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 		}).
 		WithJob("engine", func(ctx context.Context) error {
 			var err error
-			genEngine, err = dag.DaggerEngine().Generate().Sync(ctx)
+			genEngine, err = dag.EngineDev().Generate().Sync(ctx)
 			if err != nil {
 				return err
 			}

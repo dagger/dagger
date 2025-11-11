@@ -11,28 +11,27 @@ import (
 // selected for maximum coverage of Dagger features with limited compute expenditure.
 // The actual checks being performed is an implementation detail, and should NOT be relied on.
 // In other words, don't skip running <foo> just because it happens to be run here!
+//
+// +check
 func (dev *DaggerDev) CiInCi(
 	ctx context.Context,
 	// The Dagger repository to run CI against
 	// +defaultPath="/"
 	repo *dagger.GitRepository,
-) (MyCheckStatus, error) {
+) error {
 	source := repo.Head().Tree().WithChanges(repo.Uncommitted())
-	ctr, err := dev.Playground(ctx, nil, false, false)
-	if err != nil {
-		return CheckCompleted, err
-	}
 	cmd := []string{"dagger", "call"}
 	if dev.DockerCfg != nil {
 		cmd = append(cmd, "--docker-cfg=file:$HOME/.docker/config.json")
 	}
 	cmd = append(cmd, "test-sdks")
-	_, err = ctr.
+	_, err := dag.EngineDev().
+		Playground().
 		With(dev.withDockerCfg).
 		WithMountedDirectory("./dagger", source).
 		WithMountedDirectory("./dagger/.git/", dev.Git.Head().Tree().Directory(".git/")).
 		WithWorkdir("./dagger").
 		WithExec(cmd, dagger.ContainerWithExecOpts{Expand: true}).
 		Sync(ctx)
-	return CheckCompleted, err
+	return err
 }

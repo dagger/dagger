@@ -1,5 +1,5 @@
 {
-  "name": "helm",
+  "name": "helm-dev",
   "engineVersion": "v0.19.6",
   "sdk": {
     "source": "go"
@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "dagger-cli",
-      "source": "../cmd/dagger"
+      "source": "../../cmd/dagger"
     },
     {
       "name": "k3s",
@@ -16,8 +16,8 @@
     },
     {
       "name": "wolfi",
-      "source": "../modules/wolfi"
+      "source": "../../modules/wolfi"
     }
   ],
-  "source": ".dagger"
+  "source": "."
 }

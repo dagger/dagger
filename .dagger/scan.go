@@ -79,7 +79,7 @@ func (dev *DaggerDev) Scan(
 			engineTarball := "/mnt/engine.tar"
 			args = append(args, "--input", engineTarball)
 
-			target := dag.DaggerEngine().Container()
+			target := dag.EngineDev().Container()
 			_, err = ctr.
 				WithMountedFile(engineTarball, target.AsTarball()).
 				WithExec(args).

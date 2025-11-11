@@ -25,8 +25,7 @@ type GoSdkDev {
       env().
       withWorkdir(sourcePath)
     # "sdk" is an arbitrary name for state persistence
-    let devEngine = daggerEngine().service("sdk")
-    daggerEngine().installClient(ctr, devEngine)
+    engineDev().installClient(ctr, engineDev().service("sdk"))
   }
 
   pub name: String! {

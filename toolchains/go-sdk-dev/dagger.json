@@ -6,8 +6,8 @@
   },
   "dependencies": [
     {
-      "name": "dagger-engine",
-      "source": "../../cmd/engine"
+      "name": "engine-dev",
+      "source": "../../toolchains/engine-dev"
     },
     {
       "name": "git-releaser",

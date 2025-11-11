@@ -41,10 +41,7 @@ func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) 
 			_, err := dag.DaggerCli().ReleaseDryRun(ctx)
 			return err
 		}).
-		WithJob("Engine", func(ctx context.Context) error {
-			_, err := dag.DaggerEngine().ReleaseDryRun(ctx)
-			return err
-		}).
+		WithJob("Engine", dag.EngineDev().ReleaseDryRun).
 		WithJob("SDKs", dag.Sdks().ReleaseDryRun).
 		Run(ctx)
 }
