@@ -6,6 +6,10 @@
   },
   "toolchains": [
     {
+      "name": "ci",
+      "source": "toolchains/ci"
+    },
+    {
       "name": "engine-dev",
       "source": "toolchains/engine-dev"
     },
