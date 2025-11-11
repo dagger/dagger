@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Dagger.SDK.SourceGenerator.Tests/Dagger.SDK.SourceGenerator.Tests.csproj" />
+  <Project Path="Dagger.SDK.SourceGenerator/Dagger.SDK.SourceGenerator.csproj" />
+  <Project Path="Dagger.SDK.Tests/Dagger.SDK.Tests.csproj" />
+  <Project Path="Dagger.SDK/Dagger.SDK.csproj" />
+</Solution>

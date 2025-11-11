@@ -61,7 +61,7 @@ public class SourceGeneratorTests
             .GetRunResult();
 
         // Assert
-        Assert.IsTrue(diagnostics.Contains(SourceGenerator.NoSchemaFileFound));
+        Assert.Contains(SourceGenerator.NoSchemaFileFound, diagnostics);
     }
 
     [TestMethod]
@@ -84,6 +84,6 @@ public class SourceGeneratorTests
             .GetRunResult();
 
         // Assert
-        Assert.IsTrue(diagnostics.Contains(SourceGenerator.FailedToParseSchemaFile));
+        Assert.Contains(SourceGenerator.FailedToParseSchemaFile, diagnostics);
     }
 }
