@@ -2727,6 +2727,7 @@ func (ts *wrapCommand) Run() error {
 type TermOutput interface {
 	io.Writer
 	String(...string) termenv.Style
+	ColorProfile() termenv.Profile
 }
 
 type promptMsg struct {

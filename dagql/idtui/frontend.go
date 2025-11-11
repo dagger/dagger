@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dustin/go-humanize"
-	"github.com/frioux/shellquote"
 	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
 	"github.com/vito/bubbline/editline"
@@ -308,30 +307,11 @@ func (r *renderer) renderCall( //nolint: gocyclo
 	var specialTitle bool
 	var elideArgs map[string]struct{}
 	if r.Verbosity < dagui.ShowDigestsVerbosity {
-		if call.Field == "withExec" {
-			elideArgs = map[string]struct{}{"args": {}}
-			for _, arg := range call.Args {
-				switch arg.Name {
-				case "args":
-					argList := arg.Value.GetList()
-					if argList == nil || len(argList.Values) == 0 {
-						break
-					}
-					var cmdline []string
-					for _, val := range argList.Values {
-						cmdline = append(cmdline, val.GetString_())
-					}
-					quoted, err := shellquote.Quote(cmdline)
-					if err != nil {
-						quoted = fmt.Sprintf("<quote error %q for %v>", err, cmdline)
-					}
-					// prevent multiline titles
-					quoted = strings.ReplaceAll(quoted, "\n", `\n`)
-					fmt.Fprint(out, out.String("exec").Foreground(termenv.ANSIBlue).String()+" ")
-					fmt.Fprint(out, quoted)
-					specialTitle = true
-				}
-			}
+		// Use the DSL to render field calls
+		if title, elidedArgs, isSpecial := r.renderFieldCall(call, out, prefix, depth); isSpecial {
+			fmt.Fprint(out, title)
+			specialTitle = isSpecial
+			elideArgs = elidedArgs
 		}
 	}
 
