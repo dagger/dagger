@@ -25,6 +25,45 @@ func checksTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
 		WithDirectory("app", c.Directory())
 }
 
+func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// install hello-with-checks as blueprint
+	modGen := checksTestEnv(t, c).
+		WithWorkdir("hello-with-checks")
+	// list checks
+	out, err := modGen.
+		With(daggerExec("checks", "-l")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "passing-check")
+	require.Contains(t, out, "failing-check")
+	require.Contains(t, out, "passing-container")
+	require.Contains(t, out, "failing-container")
+	// run a specific passing check
+	out, err = modGen.
+		With(daggerExec("--progress=report", "checks", "passing*")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Regexp(t, `passingCheck.*OK`, out)
+	require.Regexp(t, `passingContainer.*OK`, out)
+	// run a specific failing check
+	out, err = modGen.
+		With(daggerExecFail("--progress=report", "checks", "failing*")).
+		CombinedOutput(ctx)
+	require.Regexp(t, "failingCheck.*ERROR", out)
+	require.Regexp(t, "failingContainer.*ERROR", out)
+	require.NoError(t, err)
+	// run all checks
+	out, err = modGen.
+		With(daggerExecFail("--progress=report", "checks")).
+		CombinedOutput(ctx)
+	require.Regexp(t, `passingCheck.*OK`, out)
+	require.Regexp(t, `passingContainer.*OK`, out)
+	require.Regexp(t, "failingCheck.*ERROR", out)
+	require.Regexp(t, "failingContainer.*ERROR", out)
+	require.NoError(t, err)
+}
+
 func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("run checks from a blueprint (Go)", func(ctx context.Context, t *testctx.T) {
