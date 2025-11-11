@@ -659,7 +659,7 @@ func (srv *Server) initializeDaggerClient(
 		sdklog.WithProcessor(clientLogs{client: client}),
 	}
 
-	const metricReaderInterval = 1 * time.Second
+	const metricReaderInterval = 5 * time.Second
 
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),

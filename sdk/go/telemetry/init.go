@@ -464,7 +464,7 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		meterOpts := []sdkmetric.Option{
 			sdkmetric.WithResource(cfg.Resource),
 		}
-		const metricsExportInterval = 1 * time.Second
+		const metricsExportInterval = 5 * time.Second
 		for _, exp := range cfg.LiveMetricExporters {
 			MetricExporters = append(MetricExporters, exp)
 			reader := sdkmetric.NewPeriodicReader(exp,
