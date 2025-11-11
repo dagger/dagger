@@ -36,12 +36,10 @@ func (s Scripts) Lint(ctx context.Context,
 ) error {
 	return parallel.New().
 		WithJob("install.sh", func(ctx context.Context) error {
-			_, err := s.LintSh(ctx, scripts.File("install.sh"))
-			return err
+			return s.LintSh(ctx, scripts.File("install.sh"))
 		}).
 		WithJob("install.ps1", func(ctx context.Context) error {
-			_, err := s.LintPowershell(ctx, scripts.File("install.ps1"))
-			return err
+			return s.LintPowershell(ctx, scripts.File("install.ps1"))
 		}).
 		Run(ctx)
 }

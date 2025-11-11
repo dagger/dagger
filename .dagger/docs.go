@@ -16,8 +16,7 @@ type Docs struct{}
 
 // Lint the documentation
 func (d *Docs) Lint(ctx context.Context) error {
-	_, err := dag.DaggerDocs().Lint(ctx)
-	return err
+	return dag.DaggerDocs().Lint(ctx)
 }
 
 // Generate the documentation
