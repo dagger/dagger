@@ -2201,7 +2201,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 			empty = true
 		}
 	} else if call := span.Call(); call != nil {
-		if err := r.renderCall(out, span, call, prefix, chained, depth, span.Internal, row); err != nil {
+		if err := r.renderCall(out, span, call, prefix, chained, depth+1, span.Internal, row); err != nil {
 			return err
 		}
 	} else if span != nil {
@@ -2401,32 +2401,46 @@ func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 }
 
 func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
-	var toggler termenv.Style
+	// First, render chevron or placeholder for alignment
+	var chevron termenv.Style
 	if row.HasChildren || row.Span.HasLogs {
 		if row.Expanded {
-			toggler = out.String(CaretDownFilled)
+			chevron = out.String(CaretDownFilled)
 		} else {
-			toggler = out.String(CaretRightFilled)
+			chevron = out.String(CaretRightFilled)
 		}
+		chevron = chevron.Foreground(termenv.ANSIBrightBlack)
 	} else {
-		icon, _ := fe.statusIcon(row.Span)
-		toggler = out.String(icon)
+		// Use a placeholder symbol for items without children
+		chevron = out.String(DotFilled)
+		chevron = chevron.Foreground(termenv.ANSIBrightBlack)
 	}
-	toggler = toggler.Foreground(statusColor(row.Span))
+
+	// Apply focus highlighting to chevron only
+	if isFocused {
+		chevron = hl(chevron)
+	}
+	fmt.Fprint(out, chevron.String())
+
+	// Space between chevron and status icon
+	fmt.Fprint(out, " ")
+
+	// Then render the status icon (without focus highlighting)
+	var statusIcon termenv.Style
+	icon, _ := fe.statusIcon(row.Span)
+	statusIcon = out.String(icon)
+	statusIcon = statusIcon.Foreground(statusColor(row.Span))
+
 	if row.Span.Message != "" {
 		switch row.Span.LLMRole {
 		case telemetry.LLMRoleUser:
-			toggler = out.String(Block).Foreground(termenv.ANSIMagenta)
+			statusIcon = out.String(Block).Foreground(termenv.ANSIMagenta)
 		case telemetry.LLMRoleAssistant:
-			toggler = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
+			statusIcon = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
 		}
 	}
 
-	if isFocused {
-		toggler = hl(toggler)
-	}
-
-	fmt.Fprint(out, toggler.String())
+	fmt.Fprint(out, statusIcon.String())
 }
 
 func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
