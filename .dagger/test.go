@@ -90,7 +90,7 @@ func (t *Test) Telemetry(
 	envFile *dagger.Secret,
 	// +optional
 	testVerbose bool,
-) (*dagger.Directory, error) {
+) (*dagger.Changeset, error) {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return nil, err
@@ -114,10 +114,7 @@ func (t *Test) Telemetry(
 	if err != nil {
 		return nil, err
 	}
-	return dag.Directory().WithDirectory(
-		"./dagql/idtui/testdata/",
-		ran.Directory("./dagql/idtui/testdata/"),
-	), nil
+	return ran.Directory(".").Changes(t.Dagger.Source), nil
 }
 
 // List all tests
