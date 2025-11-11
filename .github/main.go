@@ -32,6 +32,7 @@ type CI struct {
 	Workflows *dagger.Gha
 
 	AltRunner          *dagger.Gha // +private
+	AltSilverRunner    *dagger.Gha // +private
 	AltRunnerWithCache *dagger.Gha // +private
 }
 
@@ -57,6 +58,13 @@ func New() *CI {
 		AltRunner: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
 				Runner:         AltGoldRunner(),
+				TimeoutMinutes: timeoutMinutes,
+			}),
+			WorkflowDefaults: workflow,
+		}),
+		AltSilverRunner: dag.Gha(dagger.GhaOpts{
+			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+				Runner:         AltSilverRunner(),
 				TimeoutMinutes: timeoutMinutes,
 			}),
 			WorkflowDefaults: workflow,
@@ -99,7 +107,7 @@ func (ci *CI) Generate(
 
 // Add a simple workflow that runs 'dagger call' in a standard template
 func (ci *CI) withSimpleDaggerCheck(command, name string) *CI {
-	template := ci.AltRunnerWithCache
+	template := ci.AltSilverRunner
 	ci.Workflows = ci.Workflows.WithWorkflow(
 		template.
 			Workflow(name).
@@ -338,6 +346,11 @@ func AltBronzeRunnerWithCache() []string {
 // Alternative Silver runner with caching: Single-tenant, 8 cpu
 func AltSilverRunnerWithCache() []string {
 	return Alt2Runner(8, true)
+}
+
+// Alternative Silver runner without caching: Single-tenant, 8 cpu
+func AltSilverRunner() []string {
+	return Alt2Runner(8, false)
 }
 
 // Alternative Gold runner: Single-tenant with Docker, 16 cpu
