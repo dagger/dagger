@@ -22,6 +22,7 @@ type TypescriptSdkDev {
 		null
 	}
 
+	# FIXME
 	#pub lindDocsSnippets(
 	#  docsWorkspace: Directory! @defaultPath("/") @ignorePatterns(
 	#		  "*"
@@ -73,7 +74,7 @@ type TypescriptSdkDev {
 	  let ctr=nodejsBase(nodeVersionPrevLts).
      withMountedDirectory(".", workspace).
      withExec(["yarn", "--cwd", sourcePath, "install"])
-    let ctr=daggerEngine().installClient(ctr)
+    ctr=daggerEngine().installClient(ctr)
     ctr.
     withFile("/usr/local/bin/codegen", codegen().binary()).
 		withExec(["codegen", "generate-library", "--lang", "typescript", "-o", "./sdk/typescript/src/api/"]).
