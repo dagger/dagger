@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -99,6 +100,13 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		return true
 	}
 	if span.Call() != nil {
+		if strings.HasPrefix(span.Call().Field, "_") && verbosity < ShowInternalVerbosity {
+			// treat underscore-prefixed calls as internal
+			//
+			// NOTE: this should arguably be done at emitting side, but we'll "defense
+			// in depth" against ugliness anyhow
+			return false
+		}
 		if span.Call().ReceiverDigest == "" {
 			if ShouldSkipFunction("Query", span.Call().Field) {
 				return false
