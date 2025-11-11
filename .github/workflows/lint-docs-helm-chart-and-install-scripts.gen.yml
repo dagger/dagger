@@ -21,7 +21,6 @@ jobs:
     lint-docs-helm-chart-and-install-scripts:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.6' || 'ubuntu-24.04' }}
         name: Lint docs, helm chart and install scripts
         steps:
             - name: Checkout
