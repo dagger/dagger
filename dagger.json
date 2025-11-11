@@ -14,6 +14,38 @@
       "source": "toolchains/engine-dev"
     },
     {
+      "name": "go-dev",
+      "source": "modules/go",
+      "arguments": [
+        {
+          "function": [],
+          "name": "source",
+          "ignore": [
+              "bin",
+              ".git",
+              "**/node_modules",
+              "**/.venv",
+              "**/__pycache__",
+              "docs/node_modules",
+              "sdk/typescript/node_modules",
+              "sdk/typescript/dist",
+              "sdk/rust/examples/backend/target",
+              "sdk/rust/target",
+              "sdk/php/vendor"
+          ]
+        },
+        {
+          "function": ["lint"],
+          "name": "exclude",
+          "default": "[\"docs/**\",\"core/integration/**\",\"dagql/idtui/viztest/broken/**\",\"modules/evals/**\",\"**/broken*/**\"]"
+        },
+        {
+          "function": ["checkTidy"],
+          "name": "exclude",
+          "default": "[\"docs/**\",\"core/integration/**\",\"dagql/idtui/viztest/broken/**\",\"modules/evals/**\",\"**/broken*/**\"]"       }
+      ]
+    },
+    {
       "name": "go-sdk",
       "source": "toolchains/go-sdk-dev"
     },
