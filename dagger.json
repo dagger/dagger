@@ -32,6 +32,10 @@
     {
       "name": "typescript-sdk",
       "source": "toolchains/typescript-sdk-dev"
+    },
+    {
+      "name": "ci",
+      "source": "toolchains/ci"
     }
   ],
   "include": [
@@ -51,10 +55,6 @@
       "source": ".changes"
     },
     {
-      "name": "ci",
-      "source": ".github"
-    },
-    {
       "name": "codegen",
       "source": "cmd/codegen"
     },
@@ -65,11 +65,6 @@
     {
       "name": "dagger-docs",
       "source": "docs"
-    },
-    {
-      "name": "doug",
-      "source": "github.com/vito/daggerverse/doug@main",
-      "pin": "776610fc77055f983a3dca99f5f55946616c624e"
     },
     {
       "name": "go",
@@ -91,10 +86,6 @@
     {
       "name": "version",
       "source": "version"
-    },
-    {
-      "name": "wolfi",
-      "source": "modules/wolfi"
     }
   ],
   "source": ".dagger"

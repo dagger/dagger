@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "gha",
-      "source": "../modules/gha"
+      "source": "../../modules/gha"
     }
   ]
 }

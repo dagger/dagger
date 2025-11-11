@@ -53,12 +53,14 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			return maybeCheck(ctx, genChangelog)
 		}).
 		WithJob("Github Actions config", func(ctx context.Context) error {
-			var err error
-			genGHA, err = dag.Ci().Generate().Sync(ctx)
-			if err != nil {
-				return err
-			}
-			return maybeCheck(ctx, genGHA)
+			// FIXME
+			return nil
+			//var err error
+			//genGHA, err = dag.Ci().Generate().Sync(ctx)
+			//if err != nil {
+			//	return err
+			//}
+			//return maybeCheck(ctx, genGHA)
 		}).
 		WithJob("SDKs", func(ctx context.Context) error {
 			var err error

@@ -13,7 +13,7 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.1
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/dagger/engine/distconsts v0.19.5
+	github.com/dagger/dagger/engine/distconsts v0.19.6
 	github.com/dagger/dagger/sdk/typescript/runtime v0.0.0-00010101000000-000000000000
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/vektah/gqlparser/v2 v2.5.30
