@@ -161,6 +161,7 @@ type daggerClient struct {
 
 	// SQLite database storing telemetry + anything else
 	db             *sql.DB
+	dbQueries      *clientdb.Queries // comes with prepared statements
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
 	meterProvider  *sdkmetric.MeterProvider
@@ -371,6 +372,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 			errs = errors.Join(errs, client.ShutdownTelemetry(ctx))
 
 			// Close client DB for writing; subscribers will have their own connection
+			errs = errors.Join(errs, client.dbQueries.Close())
 			errs = errors.Join(errs, client.db.Close())
 
 			return errs
@@ -814,6 +816,10 @@ func (srv *Server) getOrInitClient(
 		client.db, err = srv.clientDBs.Create(client.clientID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("open client DB: %w", err)
+		}
+		client.dbQueries, err = clientdb.Prepare(ctx, client.db)
+		if err != nil {
+			return nil, nil, fmt.Errorf("prepare client DB queries: %w", err)
 		}
 
 		parent, parentExists := sess.clients[opts.CallerClientID]

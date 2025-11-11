@@ -195,7 +195,7 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 const otlpBatchSize = 1000
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, dbQueries *clientdb.Queries, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -203,8 +203,7 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
-		q := clientdb.New(db)
-		spans, err := q.SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
+		spans, err := dbQueries.SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
@@ -236,7 +235,7 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 
 //nolint:dupl
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, dbQueries *clientdb.Queries, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -244,8 +243,7 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
-		q := clientdb.New(db)
-		logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
+		logs, err := dbQueries.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
@@ -273,7 +271,7 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 
 //nolint:dupl
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, dbQueries *clientdb.Queries, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -281,8 +279,7 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
-		q := clientdb.New(db)
-		metrics, err := q.SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
+		metrics, err := dbQueries.SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
@@ -413,7 +410,7 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 	}
 	defer tx.Rollback()
 
-	queries := clientdb.New(tx)
+	queries := ps.client.dbQueries.WithTx(tx)
 
 	for _, insert := range inserts {
 		_, err = queries.InsertSpan(ctx, *insert)
@@ -449,8 +446,7 @@ func (ps clientLogs) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 	if err != nil {
 		return fmt.Errorf("prepare log record %v: %w", rec, err)
 	}
-	queries := clientdb.New(ps.client.db)
-	_, err = queries.InsertLog(ctx, *insert)
+	_, err = ps.client.dbQueries.InsertLog(ctx, *insert)
 	return err
 }
 
@@ -474,7 +470,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	}
 	defer tx.Rollback()
 
-	queries := clientdb.New(tx)
+	queries := ps.client.dbQueries.WithTx(tx)
 
 	for _, insert := range inserts {
 		if _, err := queries.InsertLog(ctx, *insert); err != nil {
@@ -581,7 +577,7 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 		return fmt.Errorf("marshal metrics to pb: %w", err)
 	}
 
-	queries := clientdb.New(ps.client.db)
+	queries := ps.client.dbQueries
 
 	_, err = queries.InsertMetric(ctx, metricsPBBytes)
 	if err != nil {
@@ -602,7 +598,7 @@ func (ps clientMetrics) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregat
 func (ps clientMetrics) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientMetrics) Shutdown(context.Context) error       { return nil }
 
-type Fetcher func(ctx context.Context, db *sql.DB, since string) (*sse.Event, bool, error)
+type Fetcher func(ctx context.Context, dbQueries *clientdb.Queries, since string) (*sse.Event, bool, error)
 
 func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, fetcher Fetcher) error {
 	slog := slog.With("client", client.clientID, "path", r.URL.Path)
@@ -625,6 +621,11 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 		return fmt.Errorf("open client db: %w", err)
 	}
 	defer db.Close()
+	dbQueries, err := clientdb.Prepare(r.Context(), db)
+	if err != nil {
+		return fmt.Errorf("prepare client db queries: %w", err)
+	}
+	defer dbQueries.Close()
 
 	// Send an initial event just to indicate that the client has subscribed.
 	//
@@ -638,7 +639,7 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 
 	var terminating bool
 	for {
-		event, hasData, err := fetcher(r.Context(), db, since)
+		event, hasData, err := fetcher(r.Context(), dbQueries, since)
 		if err != nil {
 			slog.Warn("error fetching event", "err", err)
 			return fmt.Errorf("fetch: %w", err)
