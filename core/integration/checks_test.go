@@ -35,28 +35,28 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 		// list checks
 		out, err := modGen.
 			With(daggerExec("checks", "-l")).
-			Stdout(ctx)
+			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "passing-check")
 		require.Contains(t, out, "failing-check")
 		// run a specific passing check
-		_, err = modGen.
-			With(daggerExec("checks", "passing-check")).
-			Stdout(ctx)
+		out, err = modGen.
+			With(daggerExec("--progress=report", "checks", "passing-check")).
+			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+		require.Regexp(t, `passingCheck.*OK`, out)
 		// run a specific failing check
 		out, err = modGen.
-			With(daggerExec("checks", "failing-check")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
+			With(daggerExecFail("--progress=report", "checks", "failing-check")).
+			CombinedOutput(ctx)
+		require.Regexp(t, "failingCheck.*ERROR", out)
 		require.NoError(t, err)
 		// run all checks
 		out, err = modGen.
-			With(daggerExec("checks")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+			With(daggerExecFail("--progress=report", "checks")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 	})
 	t.Run("run checks from a blueprint (TypeScript)", func(ctx context.Context, t *testctx.T) {
@@ -67,28 +67,28 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 		// list checks
 		out, err := modGen.
 			With(daggerExec("checks", "-l")).
-			Stdout(ctx)
+			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "passing-check")
 		require.Contains(t, out, "failing-check")
 		// run a specific passing check
-		_, err = modGen.
-			With(daggerExec("checks", "passing-check")).
-			Stdout(ctx)
+		out, err = modGen.
+			With(daggerExec("--progress=report", "checks", "passing-check")).
+			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+		require.Regexp(t, `passingCheck.*OK`, out)
 		// run a specific failing check
 		out, err = modGen.
-			With(daggerExec("checks", "failing-check")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
+			With(daggerExecFail("--progress=report", "checks", "failing-check")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 		// run all checks
 		out, err = modGen.
-			With(daggerExec("checks")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+			With(daggerExecFail("--progress=report", "checks")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 	})
 	t.Run("run checks from a blueprint (Python)", func(ctx context.Context, t *testctx.T) {
@@ -99,28 +99,28 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 		// list checks
 		out, err := modGen.
 			With(daggerExec("checks", "-l")).
-			Stdout(ctx)
+			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "passing-check")
 		require.Contains(t, out, "failing-check")
 		// run a specific passing check
-		_, err = modGen.
-			With(daggerExec("checks", "passing-check")).
-			Stdout(ctx)
+		out, err = modGen.
+			With(daggerExec("--progress=report", "checks", "passing-check")).
+			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+		require.Regexp(t, `passingCheck.*OK`, out)
 		// run a specific failing check
 		out, err = modGen.
-			With(daggerExec("checks", "failing-check")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
+			With(daggerExecFail("--progress=report", "checks", "failing-check")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 		// run all checks
 		out, err = modGen.
-			With(daggerExec("checks")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+			With(daggerExecFail("--progress=report", "checks")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 	})
 }
@@ -136,28 +136,28 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 		// list checks
 		out, err := modGen.
 			With(daggerExec("checks", "-l")).
-			Stdout(ctx)
+			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello-with-checks/passing-check")
 		require.Contains(t, out, "hello-with-checks/failing-check")
 		// run a specific passing check
-		_, err = modGen.
-			With(daggerExec("checks", "hello-with-checks/passing-check")).
-			Stdout(ctx)
+		out, err = modGen.
+			With(daggerExec("--progress=report", "checks", "hello-with-checks/passing-check")).
+			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+		require.Regexp(t, `passingCheck.*OK`, out)
 		// run a specific failing check
 		out, err = modGen.
-			With(daggerExec("checks", "hello-with-checks/failing-check")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
+			With(daggerExecFail("--progress=report", "checks", "hello-with-checks/failing-check")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 		// run all checks
 		out, err = modGen.
-			With(daggerExec("checks")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+			With(daggerExecFail("--progress=report", "checks")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 	})
 	t.Run("run checks from a toolchain (TypeScript)", func(ctx context.Context, t *testctx.T) {
@@ -169,28 +169,28 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 		// list checks
 		out, err := modGen.
 			With(daggerExec("checks", "-l")).
-			Stdout(ctx)
+			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello-with-checks-ts/passing-check")
 		require.Contains(t, out, "hello-with-checks-ts/failing-check")
 		// run a specific passing check
-		_, err = modGen.
-			With(daggerExec("checks", "hello-with-checks-ts/passing-check")).
-			Stdout(ctx)
+		out, err = modGen.
+			With(daggerExec("--progress=report", "checks", "hello-with-checks-ts/passing-check")).
+			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+		require.Regexp(t, `passingCheck.*OK`, out)
 		// run a specific failing check
 		out, err = modGen.
-			With(daggerExec("checks", "hello-with-checks-ts/failing-check")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
+			With(daggerExecFail("--progress=report", "checks", "hello-with-checks-ts/failing-check")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 		// run all checks
 		out, err = modGen.
-			With(daggerExec("checks")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+			With(daggerExecFail("--progress=report", "checks")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 	})
 	t.Run("run checks from a toolchain (Python)", func(ctx context.Context, t *testctx.T) {
@@ -202,28 +202,28 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 		// list checks
 		out, err := modGen.
 			With(daggerExec("checks", "-l")).
-			Stdout(ctx)
+			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello-with-checks-py/passing-check")
 		require.Contains(t, out, "hello-with-checks-py/failing-check")
 		// run a specific passing check
-		_, err = modGen.
-			With(daggerExec("checks", "hello-with-checks-py/passing-check")).
-			Stdout(ctx)
+		out, err = modGen.
+			With(daggerExec("--progress=report", "checks", "hello-with-checks-py/passing-check")).
+			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+		require.Regexp(t, `passingCheck.*OK`, out)
 		// run a specific failing check
 		out, err = modGen.
-			With(daggerExec("checks", "hello-with-checks-py/failing-check")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
+			With(daggerExecFail("--progress=report", "checks", "hello-with-checks-py/failing-check")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 		// run all checks
 		out, err = modGen.
-			With(daggerExec("checks")).
-			Stdout(ctx)
-		require.Contains(t, out, "🔴")
-		// require.Contains(t, out, "🟢") // BROKEN FOR NOW
+			With(daggerExecFail("--progress=report", "checks")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 	})
 }

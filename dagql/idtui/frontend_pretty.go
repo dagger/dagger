@@ -2429,7 +2429,10 @@ func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isF
 }
 
 func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
-	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+	if span.CheckPassed {
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("OK").Foreground(termenv.ANSIGreen))
+	} else if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
 		if span.ErrorOrigin != nil && !fe.reportOnly && !fe.finalRender {

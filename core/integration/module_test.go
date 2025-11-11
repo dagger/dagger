@@ -6385,7 +6385,7 @@ func (m *Test) CallFoo(ctx context.Context, foo Fooer, value int) (string, error
   export interface Fooer {
     /** @deprecated Use Bar instead */
     foo(value: number): Promise<string>
-    
+
     bar(value: number): Promise<string>
   }`
 
@@ -7656,6 +7656,15 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func daggerExecFail(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
 		})
 	}
 }

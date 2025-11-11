@@ -1,8 +1,7 @@
 /**
  * A module for HelloWithChecksTs functions
  */
-import { object, func, check } from "@dagger.io/dagger";
-import { dag } from "./dagger/index.js";
+import { dag, object, func, check } from "@dagger.io/dagger";
 
 @object()
 class HelloWithChecksTs {

@@ -1,8 +1,6 @@
 {
-  "name": "hello-with-checks-ts",
-  "version": "0.0.0",
   "type": "module",
   "dependencies": {
-    "@dagger.io/dagger": "../../../../../../sdk/typescript"
+    "typescript": "5.9.3"
   }
 }
