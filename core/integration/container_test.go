@@ -5115,7 +5115,7 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 
 	out, err = dockerc.WithExec([]string{"docker", "inspect", imageName}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "No such object")
+	require.Contains(t, strings.ToLower(out), "no such object")
 
 	out, err = alt.WithExec([]string{
 		"dagger", "shell", "-c",
@@ -5160,7 +5160,7 @@ func (m *Test) Try(ctx context.Context) error {
 
 	out, err = dockerc.WithExec([]string{"docker", "inspect", "foobar:latest"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "No such object")
+	require.Contains(t, strings.ToLower(out), "no such object")
 }
 
 func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {

@@ -72,6 +72,7 @@ type frontendPretty struct {
 	shellCtx        context.Context
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
+	promptErr       error
 	editline        *editline.Model
 	editlineFocused bool
 	autoModeSwitch  bool
@@ -1101,7 +1102,11 @@ func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) 
 }
 
 func (fe *frontendPretty) editlineView() string {
-	return fe.editline.View()
+	view := fe.editline.View()
+	if fe.promptErr != nil {
+		view = fe.viewOut.String("ERROR: "+fe.promptErr.Error()).Foreground(termenv.ANSIBrightRed).String() + "\n" + view
+	}
+	return view
 }
 
 func (fe *frontendPretty) formView() string {
@@ -1255,6 +1260,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		if !fe.editlineFocused {
 			return fe, nil
 		}
+
+		// reset prompt error state
+		fe.promptErr = nil
+
 		value := fe.editline.Value()
 		fe.editline.AddHistoryEntry(value)
 		fe.promptFg = termenv.ANSIYellow
@@ -1267,6 +1276,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.shellInterrupt = cancel
 			fe.shellRunning = true
 
+			// switch back to following the bottom and re-enter nav mode
+			fe.goEnd()
 			fe.enterNavMode(true)
 
 			return fe, tea.Batch(
@@ -1281,6 +1292,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case shellDoneMsg:
+		// show error result above the prompt
+		fe.promptErr = msg.err
 		if msg.err == nil {
 			fe.promptFg = termenv.ANSIGreen
 		} else {
@@ -1520,7 +1533,6 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 			if fe.shellInterrupt != nil {
 				fe.shellInterrupt(errors.New("interrupted"))
 			}
-			fe.editline.Reset()
 		} else {
 			return fe.quit(ErrInterrupted)
 		}

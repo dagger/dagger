@@ -5,13 +5,13 @@
   },
   {
     "role": "assistant",
-    "content": "Hello! 👋 How can I assist you today?",
+    "content": "Hello! 👋 \n\nI'm here to help you work with the tool system. I can help you read logs from executions or check user-provided values. \n\nI see you've provided a cache-busting UUID (958a6800-3e34-4af3-b4c2-cfc1d5c83c3e), so if you need to work with any logs or perform operations with the available tools, just let me know what you'd like to do!\n\nHow can I assist you today?",
     "token_usage": {
-      "input_tokens": 310,
-      "output_tokens": 12,
+      "input_tokens": 940,
+      "output_tokens": 117,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 322
+      "total_tokens": 1057
     }
   }
 ]

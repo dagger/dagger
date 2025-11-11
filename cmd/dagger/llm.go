@@ -145,6 +145,12 @@ func NewLLMSession(
 		s.reset()
 	}
 
+	// Grab the model to check for a valid config
+	s.model, err = s.llm.Model(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return s, nil
 }
 

@@ -1,0 +1,26 @@
+type ObjectFields {
+  """
+  Returns an object that has locally defined object fields.
+  """
+  pub one: AnotherObject! {
+    AnotherObject(SubObject(
+      container
+        .from("alpine")
+        .withExec(["echo", "potato"]),
+    ))
+  }
+}
+
+type SubObject {
+  """
+  A container.
+  """
+  pub three: Container!
+}
+
+type AnotherObject {
+  """
+  A locally defined object.
+  """
+  pub two: SubObject! # TODO: should be able to forward-reference
+}
