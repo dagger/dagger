@@ -1276,6 +1276,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.shellInterrupt = cancel
 			fe.shellRunning = true
 
+			// switch back to following the bottom and re-enter nav mode
+			fe.goEnd()
 			fe.enterNavMode(true)
 
 			return fe, tea.Batch(
