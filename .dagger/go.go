@@ -29,27 +29,8 @@ func (dev *DaggerDev) Go(
 	// "sdk/php/vendor"
 	// ]
 	source *dagger.Directory,
-) (*GoToolchain, error) {
-	v := dag.Version()
-	version, err := v.Version(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tag, err := v.ImageTag(ctx)
-	if err != nil {
-		return nil, err
-	}
-	g := &GoToolchain{
-		Go: dag.Go(dagger.GoOpts{
-			Source: source,
-			Values: []string{
-				"github.com/dagger/dagger/engine.Version=" + version,
-				"github.com/dagger/dagger/engine.Tag=" + tag,
-			},
-		},
-		),
-	}
-	return g, nil
+) *GoToolchain {
+	return &GoToolchain{dag.Go(dagger.GoOpts{Source: source})}
 }
 
 // An exclude filter for modules that are known to be broken, and should not be linted, checked or generated.
@@ -81,8 +62,4 @@ func (g *GoToolchain) Tidy() *dagger.Changeset {
 	return g.Go.Tidy(dagger.GoTidyOpts{
 		Exclude: knownBrokenModules,
 	})
-}
-
-func (g *GoToolchain) Env() *dagger.Container {
-	return g.Go.Env()
 }
