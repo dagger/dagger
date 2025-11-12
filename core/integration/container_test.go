@@ -2310,7 +2310,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				"id": id,
 			}})
 		require.Error(t, err)
-		requireErrOut(t, err, "bogus: no such file or directory")
+		requireErrOut(t, err, "bogus: file does not exist")
 	})
 
 	t.Run("get directory as file", func(ctx context.Context, t *testctx.T) {
@@ -5172,6 +5172,23 @@ func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
 	exists, err := ctr.Exists(ctx, "subdir/data")
 	require.NoError(t, err)
 	require.Equal(t, true, exists)
+}
+
+func (ContainerSuite) TestStat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithWorkdir("/sub").
+		WithNewFile("subdir/data", "contents")
+	stat := ctr.Stat("subdir/data")
+
+	fileType, err := stat.FileType(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.FileTypeRegularType, fileType)
+
+	fileSize, err := stat.Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 8, fileSize)
 }
 
 func (ContainerSuite) TestWithoutFileOnMountedFile(ctx context.Context, t *testctx.T) {
