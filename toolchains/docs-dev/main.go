@@ -16,29 +16,21 @@ import (
 func New(
 	// +defaultPath="/"
 	// +ignore=[
-	// "bin",
-	// ".git",
-	// "**/node_modules",
-	// "**/.venv",
-	// "**/__pycache__",
-	// "docs/node_modules",
-	// "sdk/typescript/node_modules",
-	// "sdk/typescript/dist",
-	// "sdk/rust/examples/backend/target",
-	// "sdk/rust/target",
-	// "sdk/php/vendor"
+	// "*",
+	// "!docs",
+	// "!**/.markdownlintignore.yaml"
 	// ]
 	source *dagger.Directory,
-	// +defaultPath="nginx.conf"
+	// +defaultPath="/docs/nginx.conf"
 	nginxConfig *dagger.File,
-) Docs {
-	return Docs{
+) DocsDev {
+	return DocsDev{
 		Source:      source,
 		NginxConfig: nginxConfig,
 	}
 }
 
-type Docs struct {
+type DocsDev struct {
 	Source      *dagger.Directory
 	NginxConfig *dagger.File // +private
 }
@@ -56,7 +48,7 @@ slug: "/reference/cli"
 `
 
 // Build the docs website
-func (d Docs) Site() *dagger.Directory {
+func (d DocsDev) Site() *dagger.Directory {
 	opts := dagger.DocusaurusOpts{
 		Dir:  "./docs",
 		Yarn: true,
@@ -65,7 +57,7 @@ func (d Docs) Site() *dagger.Directory {
 }
 
 // Build the docs server
-func (d Docs) Server() *dagger.Container {
+func (d DocsDev) Server() *dagger.Container {
 	return dag.
 		Container().
 		From("nginx").
@@ -77,7 +69,7 @@ func (d Docs) Server() *dagger.Container {
 }
 
 // Lint documentation files
-func (d Docs) Lint(ctx context.Context) error {
+func (d DocsDev) Lint(ctx context.Context) error {
 	_, err := dag.Container().
 		From("tmknom/markdownlint:"+markdownlintVersion).
 		WithMountedDirectory("/src", d.Source).
@@ -97,7 +89,7 @@ func (d Docs) Lint(ctx context.Context) error {
 }
 
 // Regenerate the API schema and CLI reference docs
-func (d Docs) Generate(
+func (d DocsDev) Generate(
 	ctx context.Context,
 	// Dagger version to generate API docs for
 	// +optional
@@ -170,7 +162,7 @@ func formatJSONFile(ctx context.Context, f *dagger.File) (*dagger.File, error) {
 	return dag.File(name, out.String()), nil
 }
 
-func (d Docs) Introspection(
+func (d DocsDev) Introspection(
 	version string, // +optional
 ) *dagger.File {
 	return dag.
@@ -183,7 +175,7 @@ func (d Docs) Introspection(
 }
 
 // Bump the Go SDK's Engine dependency
-func (d Docs) Bump(version string) (*dagger.Changeset, error) {
+func (d DocsDev) Bump(version string) (*dagger.Changeset, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
@@ -198,7 +190,7 @@ export const daggerVersion = "%s";
 
 // Deploys a current build of the docs.
 // +cache="session"
-func (d Docs) Deploy(
+func (d DocsDev) Deploy(
 	ctx context.Context,
 	message string,
 	netlifyToken *dagger.Secret,
@@ -227,7 +219,7 @@ func (d Docs) Deploy(
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
 // +cache="session"
-func (d Docs) Publish(
+func (d DocsDev) Publish(
 	ctx context.Context,
 	netlifyToken *dagger.Secret,
 	// +optional
