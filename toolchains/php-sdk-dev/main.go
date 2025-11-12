@@ -25,14 +25,14 @@ type PhpSdkDev struct {
 	Workspace         *dagger.Directory // +private
 	DoctumConfigPath  string            // +private
 	SourcePath        string            // +private
-	BaseContainer     *dagger.Container // +private
+	BaseContainer     *dagger.Container
 }
 
 // Develop the Dagger PHP SDK (experimental)
 func New(
 	// A directory with all the files needed to develop the SDK
 	// +defaultPath="/"
-	// +ignore=["*", "!sdk/php", "sdk/php/vendor", "!docs/doctum-config.php"]
+	// +ignore=["*", "!sdk/php", "!docs/doctum-config.php"]
 	workspace *dagger.Directory,
 	// The path of the SDK source in the workspace
 	// +default="sdk/php"
