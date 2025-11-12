@@ -2419,7 +2419,7 @@ func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isF
 
 	// Apply focus highlighting to chevron only
 	if isFocused {
-		chevron = hl(chevron)
+		chevron = hl(chevron.Foreground(statusColor(row.Span)))
 	}
 	fmt.Fprint(out, chevron.String())
 
