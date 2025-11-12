@@ -347,14 +347,27 @@ func isIntrospection(id *call.ID) bool {
 			"__schemaVersion",
 			"currentTypeDefs",
 			"currentFunctionCall",
-			"currentModule":
+			"currentModule",
+			"typeDef",
+			"sourceMap":
 			return true
 		default:
 			return false
 		}
-	} else {
-		return isIntrospection(id.Receiver())
 	}
+
+	switch id.Receiver().Type().NamedType() {
+	case "Function":
+		switch id.Field() {
+		case "withCachePolicy",
+			"withArg",
+			"withSourceMap",
+			"withDescription":
+			return true
+		}
+	}
+
+	return isIntrospection(id.Receiver())
 }
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
