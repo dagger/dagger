@@ -2409,12 +2409,13 @@ func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isF
 		} else {
 			chevron = out.String(CaretRightFilled)
 		}
-		chevron = chevron.Foreground(termenv.ANSIBrightBlack)
 	} else {
 		// Use a placeholder symbol for items without children
 		chevron = out.String(DotFilled)
-		chevron = chevron.Foreground(termenv.ANSIBrightBlack)
 	}
+
+	// Match the color of the span
+	chevron = chevron.Foreground(termenv.ANSIBrightBlack)
 
 	// Apply focus highlighting to chevron only
 	if isFocused {
