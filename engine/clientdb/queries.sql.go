@@ -42,7 +42,7 @@ type InsertLogParams struct {
 }
 
 func (q *Queries) InsertLog(ctx context.Context, arg InsertLogParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, insertLog,
+	row := q.queryRow(ctx, q.insertLogStmt, insertLog,
 		arg.TraceID,
 		arg.SpanID,
 		arg.Timestamp,
@@ -67,7 +67,7 @@ VALUES
 `
 
 func (q *Queries) InsertMetric(ctx context.Context, data []byte) (int64, error) {
-	row := q.db.QueryRowContext(ctx, insertMetric, data)
+	row := q.queryRow(ctx, q.insertMetricStmt, insertMetric, data)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -146,7 +146,7 @@ type InsertSpanParams struct {
 }
 
 func (q *Queries) InsertSpan(ctx context.Context, arg InsertSpanParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, insertSpan,
+	row := q.queryRow(ctx, q.insertSpanStmt, insertSpan,
 		arg.TraceID,
 		arg.SpanID,
 		arg.TraceState,
@@ -204,7 +204,7 @@ type SelectLogsBeneathSpanParams struct {
 }
 
 func (q *Queries) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {
-	rows, err := q.db.QueryContext(ctx, selectLogsBeneathSpan, arg.SpanID, arg.ID, arg.Limit)
+	rows, err := q.query(ctx, q.selectLogsBeneathSpanStmt, selectLogsBeneathSpan, arg.SpanID, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ type SelectLogsSinceParams struct {
 }
 
 func (q *Queries) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams) ([]Log, error) {
-	rows, err := q.db.QueryContext(ctx, selectLogsSince, arg.ID, arg.Limit)
+	rows, err := q.query(ctx, q.selectLogsSinceStmt, selectLogsSince, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +312,7 @@ type SelectLogsTimespanParams struct {
 }
 
 func (q *Queries) SelectLogsTimespan(ctx context.Context, arg SelectLogsTimespanParams) ([]Log, error) {
-	rows, err := q.db.QueryContext(ctx, selectLogsTimespan, arg.Start, arg.End, arg.Limit)
+	rows, err := q.query(ctx, q.selectLogsTimespanStmt, selectLogsTimespan, arg.Start, arg.End, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +365,7 @@ type SelectMetricsSinceParams struct {
 }
 
 func (q *Queries) SelectMetricsSince(ctx context.Context, arg SelectMetricsSinceParams) ([]Metric, error) {
-	rows, err := q.db.QueryContext(ctx, selectMetricsSince, arg.ID, arg.Limit)
+	rows, err := q.query(ctx, q.selectMetricsSinceStmt, selectMetricsSince, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +403,7 @@ type SelectSpanParams struct {
 }
 
 func (q *Queries) SelectSpan(ctx context.Context, arg SelectSpanParams) (Span, error) {
-	row := q.db.QueryRowContext(ctx, selectSpan, arg.TraceID, arg.SpanID)
+	row := q.queryRow(ctx, q.selectSpanStmt, selectSpan, arg.TraceID, arg.SpanID)
 	var i Span
 	err := row.Scan(
 		&i.ID,
@@ -450,7 +450,7 @@ type SelectSpansSinceParams struct {
 }
 
 func (q *Queries) SelectSpansSince(ctx context.Context, arg SelectSpansSinceParams) ([]Span, error) {
-	rows, err := q.db.QueryContext(ctx, selectSpansSince, arg.ID, arg.Limit)
+	rows, err := q.query(ctx, q.selectSpansSinceStmt, selectSpansSince, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
