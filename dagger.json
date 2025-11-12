@@ -95,10 +95,6 @@
       "source": "cmd/codegen"
     },
     {
-      "name": "dagger-docs",
-      "source": "docs"
-    },
-    {
       "name": "go",
       "source": "modules/go"
     },
