@@ -47,7 +47,7 @@ func AroundFunc(
 	context.Context,
 	func(res dagql.AnyResult, cached bool, rerr error),
 ) {
-	if dagql.IsSkipped(ctx) || isIntrospection(id) || isMeta(id) || isDagOp(id) {
+	if dagql.IsSkipped(ctx) || isIntrospection(ctx, id) || isMeta(id) || isDagOp(id) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
@@ -339,7 +339,7 @@ func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, s
 //
 // These queries tend to be very large and are not interesting for users to
 // see.
-func isIntrospection(id *call.ID) bool {
+func isIntrospection(ctx context.Context, id *call.ID) bool {
 	if id.Receiver() == nil {
 		switch id.Field() {
 		case "__schema",
@@ -357,18 +357,21 @@ func isIntrospection(id *call.ID) bool {
 	}
 
 	//nolint:gocritic
-	switch id.Receiver().Type().NamedType() {
-	case "Function":
-		switch id.Field() {
-		case "withCachePolicy",
-			"withArg",
-			"withSourceMap",
-			"withDescription":
-			return true
+	// disable these unless debug is set in OTEL baggage
+	if !slog.IsDebug(ctx) {
+		switch id.Receiver().Type().NamedType() {
+		case "Function":
+			switch id.Field() {
+			case "withCachePolicy",
+				"withArg",
+				"withSourceMap",
+				"withDescription":
+				return true
+			}
 		}
 	}
 
-	return isIntrospection(id.Receiver())
+	return isIntrospection(ctx, id.Receiver())
 }
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
