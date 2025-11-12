@@ -41,15 +41,28 @@ func New(
 	// +default="docs/doctum-config.php"
 	doctumConfigPath string,
 ) *PhpSdkDev {
+	composerBinary := dag.Container().
+		From(phpSDKComposerImage).
+		File("/usr/bin/composer")
+
 	// Extract the PHP base container from the native SDK dev module
 	// - We build the base container eagerly, to avoid keeping a reference to DaggerDev
 	// - But we build the full dev container *lazily*, because we may have mutated our workspace with generated files
-	baseContainer := dag.
-		Native(dagger.NativeOpts{Source: nil}).
-		Base().
+	baseContainer := dag.Container().
+		From(phpSDKImage).
+		WithMountedFile("/usr/bin/composer", composerBinary).
+		WithMountedCache(
+			"/root/.composer",
+			dag.CacheVolume(fmt.Sprintf("composer-%s", phpSDKImage)),
+		).
+		WithEnvVariable("COMPOSER_HOME", "/root/.composer").
+		WithEnvVariable("COMPOSER_NO_INTERACTION", "1").
+		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1").
+		WithWorkdir("/src").
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine().InstallClient(c)
 		})
+
 	return &PhpSdkDev{
 		Workspace:         workspace,
 		OriginalWorkspace: workspace,
@@ -61,10 +74,23 @@ func New(
 
 // Returns the PHP SDK workspace mounted in a dev container,
 // and working directory set to the SDK source
-func (t PhpSdkDev) DevContainer() *dagger.Container {
-	return t.BaseContainer.
+func (t PhpSdkDev) DevContainer(
+	// Run composer install before returning the container
+	//+default="false"
+	runInstall bool,
+) *dagger.Container {
+	ctr := t.BaseContainer.
 		WithMountedDirectory(".", t.Workspace).
 		WithWorkdir(t.SourcePath)
+
+	if runInstall {
+		ctr = ctr.WithExec([]string{"composer", "install"}).
+			WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{
+				Expand: true,
+			})
+	}
+
+	return ctr
 }
 
 // Source returns the source directory for the PHP SDK
@@ -80,27 +106,30 @@ func (t PhpSdkDev) DoctumConfig() *dagger.File {
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
 // +check
 func (t PhpSdkDev) PhpCodeSniffer(ctx context.Context) error {
-	_, err := dag.Native(dagger.NativeOpts{Source: t.Source()}).
-		Lint().
+	_, err := t.DevContainer(true).
+		WithExec([]string{"phpcs"}).
 		Sync(ctx)
+
 	return err
 }
 
 // Analyze the PHP code with PHPStan (https://phpstan.org)
 // +check
 func (t PhpSdkDev) PhpStan(ctx context.Context) error {
-	_, err := dag.Native(dagger.NativeOpts{Source: t.Source()}).
-		Analyze().
+	_, err := t.
+		DevContainer(true).
+		WithExec([]string{"phpstan", "--no-progress", "--memory-limit=1G"}).
 		Sync(ctx)
+
 	return err
 }
 
-// Test the PHP SDK
+// Test the PHP SDK with PHPUnit (https://phpunit.de/)
+// +check
 func (t PhpSdkDev) Test(ctx context.Context) error {
-	base := t.DevContainer().
-		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})
-	dev := dag.Native(dagger.NativeOpts{Container: base, Source: t.Source()})
-	_, err := dev.Test().Sync(ctx)
+	_, err := t.DevContainer(true).
+		WithExec([]string{"phpunit"}).Sync(ctx)
+
 	return err
 }
 
@@ -120,7 +149,7 @@ func (t *PhpSdkDev) Changes() *dagger.Changeset {
 }
 
 func (t *PhpSdkDev) WithGeneratedClient() *PhpSdkDev {
-	relLayer := t.DevContainer().
+	relLayer := t.DevContainer(false).
 		WithoutDirectory("generated").
 		WithDirectory("generated", dag.Directory()).
 		// FIXME: why not inject the right dagger binary, instead of leaking this env var?
@@ -141,7 +170,7 @@ func (t *PhpSdkDev) WithGeneratedClient() *PhpSdkDev {
 // NOTE: it's the caller's responsibility to ensure the generated client is up-to-date
 // (see WithGeneratedClient)
 func (t *PhpSdkDev) WithGeneratedDocs(ctx context.Context) (*PhpSdkDev, error) {
-	relLayer := t.DevContainer().
+	relLayer := t.DevContainer(false).
 		WithFile(
 			"/usr/bin/doctum",
 			dag.HTTP(fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", phpDoctumVersion)),
