@@ -289,6 +289,9 @@ type SocketID string
 // The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 type SourceMapID string
 
+// The `StatID` scalar type represents an identifier for an object of type Stat.
+type StatID string
+
 // The `TerminalID` scalar type represents an identifier for an object of type Terminal.
 type TerminalID string
 
@@ -738,6 +741,15 @@ func (r *Binding) AsSocket() *Socket {
 	q := r.query.Select("asSocket")
 
 	return &Socket{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Stat
+func (r *Binding) AsStat() *Stat {
+	q := r.query.Select("asStat")
+
+	return &Stat{
 		query: q,
 	}
 }
@@ -2052,6 +2064,28 @@ func (r *Container) Rootfs() *Directory {
 	q := r.query.Select("rootfs")
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// ContainerStatOpts contains options for Container.Stat
+type ContainerStatOpts struct {
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Return file status
+func (r *Container) Stat(path string, opts ...ContainerStatOpts) *Stat {
+	q := r.query.Select("stat")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Stat{
 		query: q,
 	}
 }
@@ -3879,6 +3913,28 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 	return convert(response), nil
 }
 
+// DirectoryStatOpts contains options for Directory.Stat
+type DirectoryStatOpts struct {
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Return file status
+func (r *Directory) Stat(path string, opts ...DirectoryStatOpts) *Stat {
+	q := r.query.Select("stat")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
@@ -5633,6 +5689,30 @@ func (r *Env) WithSocketInput(name string, value *Socket, description string) *E
 // Declare a desired Socket output to be assigned in the environment
 func (r *Env) WithSocketOutput(name string, description string) *Env {
 	q := r.query.Select("withSocketOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Stat in the environment
+func (r *Env) WithStatInput(name string, value *Stat, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withStatInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Stat output to be assigned in the environment
+func (r *Env) WithStatOutput(name string, description string) *Env {
+	q := r.query.Select("withStatOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -11425,6 +11505,16 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	}
 }
 
+// Load a Stat from its ID.
+func (r *Client) LoadStatFromID(id StatID) *Stat {
+	q := r.query.Select("loadStatFromID")
+	q = q.Arg("id", id)
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // Load a Terminal from its ID.
 func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
 	q := r.query.Select("loadTerminalFromID")
@@ -12506,6 +12596,115 @@ func (r *SourceMap) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// A file or directory status object.
+type Stat struct {
+	query *querybuilder.Selection
+
+	fileType    *FileType
+	id          *StatID
+	name        *string
+	permissions *int
+	size        *int
+}
+
+func (r *Stat) WithGraphQLQuery(q *querybuilder.Selection) *Stat {
+	return &Stat{
+		query: q,
+	}
+}
+
+// file type
+func (r *Stat) FileType(ctx context.Context) (FileType, error) {
+	if r.fileType != nil {
+		return *r.fileType, nil
+	}
+	q := r.query.Select("fileType")
+
+	var response FileType
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Stat.
+func (r *Stat) ID(ctx context.Context) (StatID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response StatID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Stat) XXX_GraphQLType() string {
+	return "Stat"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Stat) XXX_GraphQLIDType() string {
+	return "StatID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Stat) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Stat) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// file name
+func (r *Stat) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// permission bits
+func (r *Stat) Permissions(ctx context.Context) (int, error) {
+	if r.permissions != nil {
+		return *r.permissions, nil
+	}
+	q := r.query.Select("permissions")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// file size
+func (r *Stat) Size(ctx context.Context) (int, error) {
+	if r.size != nil {
+		return *r.size, nil
+	}
+	q := r.query.Select("size")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // An interactive terminal that clients can connect to.
 type Terminal struct {
 	query *querybuilder.Selection
@@ -13122,6 +13321,77 @@ const (
 
 	// Tests path is a symlink
 	ExistsTypeSymlinkType ExistsType = "SYMLINK_TYPE"
+)
+
+// File type.
+type FileType string
+
+func (FileType) IsEnum() {}
+
+func (v FileType) Name() string {
+	switch v {
+	case FileTypeRegularType:
+		return "REGULAR_TYPE"
+	case FileTypeDirectoryType:
+		return "DIRECTORY_TYPE"
+	case FileTypeSymlinkType:
+		return "SYMLINK_TYPE"
+	case FileTypeUnknownType:
+		return "UNKNOWN_TYPE"
+	default:
+		return ""
+	}
+}
+
+func (v FileType) Value() string {
+	return string(v)
+}
+
+func (v *FileType) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *FileType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "DIRECTORY_TYPE":
+		*v = FileTypeDirectoryType
+	case "REGULAR_TYPE":
+		*v = FileTypeRegularType
+	case "SYMLINK_TYPE":
+		*v = FileTypeSymlinkType
+	case "UNKNOWN_TYPE":
+		*v = FileTypeUnknownType
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// regular file type
+	FileTypeRegularType FileType = "REGULAR_TYPE"
+
+	// directory file type
+	FileTypeDirectoryType FileType = "DIRECTORY_TYPE"
+
+	// symlink file type
+	FileTypeSymlinkType FileType = "SYMLINK_TYPE"
+
+	// unknown file type
+	FileTypeUnknownType FileType = "UNKNOWN_TYPE"
 )
 
 // The behavior configured for function result caching.
