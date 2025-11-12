@@ -356,6 +356,7 @@ func isIntrospection(id *call.ID) bool {
 		}
 	}
 
+	//nolint:gocritic
 	switch id.Receiver().Type().NamedType() {
 	case "Function":
 		switch id.Field() {

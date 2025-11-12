@@ -442,7 +442,7 @@ type clientLogs struct {
 var _ sdklog.Processor = clientLogs{}
 
 func (ps clientLogs) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	insert, err := insertLogRecordParam(ctx, rec)
+	insert, err := insertLogRecordParam(rec)
 	if err != nil {
 		return fmt.Errorf("prepare log record %v: %w", rec, err)
 	}
@@ -457,7 +457,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	var inserts []*clientdb.InsertLogParams
 	for _, rec := range logs {
-		insert, err := insertLogRecordParam(ctx, &rec)
+		insert, err := insertLogRecordParam(&rec)
 		if err != nil {
 			return fmt.Errorf("prepare log record %v: %w", rec, err)
 		}
@@ -489,7 +489,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientLogs) Shutdown(context.Context) error       { return nil }
 
-func insertLogRecordParam(ctx context.Context, rec *sdklog.Record) (*clientdb.InsertLogParams, error) {
+func insertLogRecordParam(rec *sdklog.Record) (*clientdb.InsertLogParams, error) {
 	traceID := rec.TraceID().String()
 	spanID := rec.SpanID().String()
 	timestamp := rec.Timestamp().UnixNano()
