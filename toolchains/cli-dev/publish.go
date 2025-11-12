@@ -9,8 +9,8 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 	"golang.org/x/mod/semver"
 
-	"github.com/dagger/dagger/cmd/dagger/.dagger/internal/dagger"
-	"github.com/dagger/dagger/cmd/dagger/.dagger/util"
+	"dagger/cli-dev/internal/dagger"
+	"dagger/cli-dev/util"
 )
 
 const (
@@ -21,7 +21,7 @@ const (
 
 // Publish the CLI using GoReleaser
 // +cache="session"
-func (cli *DaggerCli) Publish(
+func (cli *CliDev) Publish(
 	ctx context.Context,
 	tag string,
 
@@ -136,7 +136,7 @@ func optSecretVariable(name string, val *dagger.Secret) dagger.WithContainerFunc
 }
 
 // +cache="session"
-func (cli *DaggerCli) PublishMetadata(
+func (cli *CliDev) PublishMetadata(
 	ctx context.Context,
 
 	awsAccessKeyID *dagger.Secret,
@@ -196,7 +196,7 @@ func s3Path(bucket string, path string, args ...any) string {
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (cli *DaggerCli) ReleaseDryRun(ctx context.Context) error {
+func (cli *CliDev) ReleaseDryRun(ctx context.Context) error {
 	return parallel.New().
 		WithJob(
 			"dry-run build on all targets",
@@ -221,7 +221,7 @@ func (cli *DaggerCli) ReleaseDryRun(ctx context.Context) error {
 		Run(ctx)
 }
 
-func (cli *DaggerCli) goreleaserBinaries() *dagger.Directory {
+func (cli *CliDev) goreleaserBinaries() *dagger.Directory {
 	oses := []string{"linux", "windows", "darwin"}
 	arches := []string{"amd64", "arm64", "arm"}
 

@@ -22,7 +22,7 @@
     },
     {
       "name": "dagger-cli",
-      "source": "../../cmd/dagger"
+      "source": "../cli-dev"
     },
     {
       "name": "go",

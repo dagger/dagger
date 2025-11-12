@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 
-	"github.com/dagger/dagger/cmd/dagger/.dagger/internal/dagger"
+	"dagger/cli-dev/internal/dagger"
+
+	"github.com/containerd/platforms"
 )
 
 func New(
@@ -14,13 +16,28 @@ func New(
 
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["*", ".*", "!cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go", "!vendor/**/*", "!**.graphql", "!.goreleaser*.yml", "!.changes", "!LICENSE", "!install.sh", "!install.ps1", "!**/*.sql"]
+	// +ignore=[
+	//   "*",
+	//   ".*",
+	//   "!cmd/dagger/*",
+	//   "!**/go.sum",
+	//   "!**/go.mod",
+	//   "!**/*.go",
+	//   "!vendor/**/*",
+	//   "!**.graphql",
+	//   "!.goreleaser*.yml",
+	//   "!.changes",
+	//   "!LICENSE",
+	//   "!install.sh",
+	//   "!install.ps1",
+	//   "!**/*.sql"
+	// ]
 	source *dagger.Directory,
 
 	// Base image for go build environment
 	// +optional
 	base *dagger.Container,
-) (*DaggerCli, error) {
+) (*CliDev, error) {
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
 	v := dag.Version()
@@ -41,7 +58,7 @@ func New(
 		values = append(values, "main.RunnerHost="+runnerHost)
 	}
 
-	return &DaggerCli{
+	return &CliDev{
 		Version: version,
 		Tag:     version,
 		Go: dag.Go(dagger.GoOpts{
@@ -52,7 +69,7 @@ func New(
 	}, nil
 }
 
-type DaggerCli struct {
+type CliDev struct {
 	Version string
 	Tag     string
 
@@ -60,7 +77,7 @@ type DaggerCli struct {
 }
 
 // Build the dagger CLI binary for a single platform
-func (cli DaggerCli) Binary(
+func (cli CliDev) Binary(
 	// +optional
 	platform dagger.Platform,
 ) *dagger.File {
@@ -72,7 +89,7 @@ func (cli DaggerCli) Binary(
 }
 
 // Generate a markdown CLI reference doc
-func (cli DaggerCli) Reference(
+func (cli CliDev) Reference(
 	// +optional
 	frontmatter string,
 	// +optional
@@ -90,4 +107,29 @@ func (cli DaggerCli) Reference(
 		Env().
 		WithExec(cmd).
 		File("cli.mdx")
+}
+
+// Build dev CLI binaries
+// TODO: remove this
+func (dev *CliDev) DevBinaries(
+	// +optional
+	runnerHost string,
+	// +optional
+	platform dagger.Platform,
+) *dagger.Directory {
+	p := platforms.MustParse(string(platform))
+	bin := dev.Binary(platform)
+	binName := "dagger"
+	if p.OS == "windows" {
+		binName += ".exe"
+	}
+	dir := dag.Directory().WithFile(binName, bin)
+	if p.OS != "linux" {
+		p2 := p
+		p2.OS = "linux"
+		p2.OSFeatures = nil
+		p2.OSVersion = ""
+		dir = dir.WithFile("dagger-linux", dev.Binary(dagger.Platform(platforms.Format(p2))))
+	}
+	return dir
 }

@@ -5,7 +5,7 @@
   "dependencies": [
     {
       "name": "dagger-cli",
-      "source": "../../cmd/dagger"
+      "source": "../../toolchains/cli-dev"
     },
     {
       "name": "docker",

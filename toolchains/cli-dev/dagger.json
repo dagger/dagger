@@ -1,5 +1,5 @@
 {
-  "name": "dagger-cli",
+  "name": "cli-dev",
   "engineVersion": "v0.19.6",
   "sdk": {
     "source": "go"
@@ -23,5 +23,5 @@
       "source": "../../version"
     }
   ],
-  "source": ".dagger"
+  "source": "."
 }

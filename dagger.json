@@ -68,10 +68,6 @@
     {
       "name": "typescript-sdk",
       "source": "toolchains/typescript-sdk-dev"
-    },
-    {
-      "name": "ci",
-      "source": "toolchains/ci"
     }
   ],
   "include": [
@@ -93,10 +89,6 @@
     {
       "name": "codegen",
       "source": "cmd/codegen"
-    },
-    {
-      "name": "dagger-cli",
-      "source": "cmd/dagger"
     },
     {
       "name": "dagger-docs",

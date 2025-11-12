@@ -1,10 +1,10 @@
-module github.com/dagger/dagger/cmd/dagger/.dagger
+module dagger/cli-dev
 
 go 1.24.4
 
 replace (
-	github.com/dagger/dagger => ../../..
-	github.com/dagger/dagger/engine/distconsts => ../../../engine/distconsts
+	github.com/dagger/dagger => ../..
+	github.com/dagger/dagger/engine/distconsts => ../../engine/distconsts
 )
 
 require (

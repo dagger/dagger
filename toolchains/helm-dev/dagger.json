@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "dagger-cli",
-      "source": "../../cmd/dagger"
+      "source": "../cli-dev"
     },
     {
       "name": "k3s",

@@ -21,7 +21,7 @@ func (dev *DaggerDev) LintMisc(ctx context.Context) error {
 func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) error {
 	return parallel.New().
 		WithJob("Helm chart", dag.Helm().ReleaseDryRun).
-		WithJob("CLI", dag.DaggerCli().ReleaseDryRun).
+		WithJob("CLI", dag.Cli().ReleaseDryRun).
 		WithJob("Engine", dag.EngineDev().ReleaseDryRun).
 		WithJob("SDKs", dag.Sdks().ReleaseDryRun).
 		Run(ctx)
