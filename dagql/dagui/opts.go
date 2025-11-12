@@ -20,6 +20,9 @@ type FrontendOpts struct {
 	// mechanism - mostly for tests.
 	RevealNoisySpans bool
 
+	// Whether to leave steps expanded when they complete.
+	ExpandCompleted bool
+
 	// Don't show things that completed beneath this duration. (default 100ms)
 	TooFastThreshold time.Duration
 
@@ -68,11 +71,11 @@ const (
 	HideErrorsVerbosity       = -1
 	HideCompletedVerbosity    = 0
 	ShowCompletedVerbosity    = 1
-	ExpandCompletedVerbosity  = 2
 	ShowInternalVerbosity     = 3
 	ShowEncapsulatedVerbosity = 3
 	ShowSpammyVerbosity       = 4
 	ShowDigestsVerbosity      = 4
+	ExpandCompletedVerbosity  = 5
 )
 
 func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {

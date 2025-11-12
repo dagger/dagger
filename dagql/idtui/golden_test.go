@@ -329,6 +329,10 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		daggerArgs = append(daggerArgs, "-"+strings.Repeat("v", ex.Verbosity))
 	}
 
+	// For most of these tests we need to see what actually happened at least
+	// within the example.
+	ex.Env = append(ex.Env, "DAGGER_EXPAND_COMPLETED=1")
+
 	if ex.RevealNoisySpans {
 		ex.Env = append(ex.Env, "DAGGER_REVEAL=1")
 	}

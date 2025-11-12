@@ -291,7 +291,8 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 
 	alwaysExpand := row.Span.IsFailedOrCausedFailure() ||
 		row.Span.IsCanceled() ||
-		opts.Verbosity >= ExpandCompletedVerbosity
+		opts.Verbosity >= ExpandCompletedVerbosity ||
+		opts.ExpandCompleted
 
 	// never expand tool calls by default, tends to show a bunch of guts that
 	// distracts from the overall history
