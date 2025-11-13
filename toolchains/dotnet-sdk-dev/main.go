@@ -24,11 +24,13 @@ func New(
 	// +default="sdk/dotnet/sdk"
 	sourcePath string,
 ) *DotnetSdkDev {
-	baseContainer := dag.Container().
+	baseContainer := dag.
+		Container().
 		From(dotnetSDKImage).
-		WithWorkdir("/src").With(func(c *dagger.Container) *dagger.Container {
-		return dag.DaggerEngine().InstallClient(c)
-	})
+		WithWorkdir("/src").
+		With(func(c *dagger.Container) *dagger.Container {
+			return dag.DaggerEngine().InstallClient(c)
+		})
 
 	return &DotnetSdkDev{
 		Workspace:         workspace,
@@ -91,6 +93,23 @@ func (t *DotnetSdkDev) WithInstall() *DotnetSdkDev {
 				"Dagger.SDK/introspection.json",
 				dag.DaggerEngine().IntrospectionJSON(),
 			))
+
+	return t
+}
+
+// Run Cshapier (https://csharpier.com) on the SDK source code and
+// save it back to the workspace.
+func (t *DotnetSdkDev) WithFormat() *DotnetSdkDev {
+	t.Workspace = dag.Directory().
+		// We need to create a root directory to get the result or it will not
+		//  be comparable with the original workspace
+		WithDirectory("/",
+			t.DevContainer().
+				WithExec([]string{"dotnet", "tool", "restore"}).
+				WithExec([]string{"dotnet", "csharpier", "."}).
+				Rootfs().
+				Directory("/src"),
+		)
 
 	return t
 }
