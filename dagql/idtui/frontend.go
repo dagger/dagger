@@ -315,14 +315,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 		}
 	}
 
-	var subtitleBuf *strings.Builder
-	var origOut TermOutput
-	if specialTitle {
-		subtitleBuf = new(strings.Builder)
-		// strip color from remainder
-		origOut = out
-		out = termenv.NewOutput(subtitleBuf, termenv.WithProfile(termenv.Ascii))
-	} else {
+	if !specialTitle {
 		if call.ReceiverDigest != "" {
 			if !chained {
 				r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
@@ -424,10 +417,6 @@ func (r *renderer) renderCall( //nolint: gocyclo
 
 	if r.Verbosity > dagui.ShowDigestsVerbosity {
 		fmt.Fprint(out, out.String(fmt.Sprintf(" = %s", call.Digest)).Foreground(faintColor))
-	}
-
-	if subtitleBuf != nil {
-		fmt.Fprint(origOut, origOut.String(subtitleBuf.String()).Faint())
 	}
 
 	return nil
