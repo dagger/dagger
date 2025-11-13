@@ -8069,6 +8069,11 @@ impl File {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Parse the file contents as JSON.
+    pub async fn as_json(&self) -> Result<Json, DaggerError> {
+        let query = self.selection.select("asJSON");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Change the owner of the file recursively.
     ///
     /// # Arguments
