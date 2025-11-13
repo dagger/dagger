@@ -1837,6 +1837,14 @@
     ],
     "directives": [
       {
+        "args": [],
+        "description": "Indicates that this function is a check.",
+        "locations": [
+          "FIELD_DEFINITION"
+        ],
+        "name": "check"
+      },
+      {
         "args": [
           {
             "defaultValue": null,
