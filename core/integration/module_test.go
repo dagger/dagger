@@ -4724,7 +4724,7 @@ export class Test {
 					out, err := modGen.With(daggerCall("non-existing-file")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
-					requireErrOut(t, err, "no such file or directory")
+					requireErrOut(t, err, "file does not exist")
 				})
 			})
 		}
@@ -5666,7 +5666,7 @@ func (t *Test) GetFileContext(
 
 		_, err = modGen.With(daggerCall("get-file", "--filename", "frontend/bar.txt")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "file does not exist")
 	})
 
 	t.Run("gitignore doesn't apply to manual args", func(ctx context.Context, t *testctx.T) {

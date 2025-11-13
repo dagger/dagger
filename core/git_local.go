@@ -77,7 +77,7 @@ func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*Fil
 		return nil, err
 	}
 
-	return repo.Directory.Self().File(ctx, filepath.Join(gitDir, filename))
+	return repo.Directory.Self().FileLLB(ctx, filepath.Join(gitDir, filename))
 }
 
 func (repo *LocalGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], rerr error) {
