@@ -7009,6 +7009,7 @@ export class FieldTypeDef extends BaseClient {
  */
 export class File extends BaseClient {
   private readonly _id?: FileID = undefined
+  private readonly _asJSON?: JSON = undefined
   private readonly _contents?: string = undefined
   private readonly _digest?: string = undefined
   private readonly _export?: string = undefined
@@ -7022,6 +7023,7 @@ export class File extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: FileID,
+    _asJSON?: JSON,
     _contents?: string,
     _digest?: string,
     _export?: string,
@@ -7032,6 +7034,7 @@ export class File extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._asJSON = _asJSON
     this._contents = _contents
     this._digest = _digest
     this._export = _export
@@ -7062,6 +7065,21 @@ export class File extends BaseClient {
   asEnvFile = (opts?: FileAsEnvFileOpts): EnvFile => {
     const ctx = this._ctx.select("asEnvFile", { ...opts })
     return new EnvFile(ctx)
+  }
+
+  /**
+   * Parse the file contents as JSON.
+   */
+  asJSON = async (): Promise<JSON> => {
+    if (this._asJSON) {
+      return this._asJSON
+    }
+
+    const ctx = this._ctx.select("asJSON")
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
   }
 
   /**

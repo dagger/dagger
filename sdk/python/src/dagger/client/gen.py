@@ -6664,6 +6664,25 @@ class File(Type):
         _ctx = self._select("asEnvFile", _args)
         return EnvFile(_ctx)
 
+    async def as_json(self) -> JSON:
+        """Parse the file contents as JSON.
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asJSON", _args)
+        return await _ctx.execute(JSON)
+
     def chown(self, owner: str) -> Self:
         """Change the owner of the file recursively.
 

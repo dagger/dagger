@@ -90,3 +90,11 @@ func (JSON) DecodeInput(val any) (res dagql.Input, err error) {
 		return nil, fmt.Errorf("cannot convert %T to JSON", val)
 	}
 }
+
+// Validate checks if the JSON is valid
+func (p JSON) Validate() error {
+	if !json.Valid([]byte(p)) {
+		return fmt.Errorf("invalid JSON")
+	}
+	return nil
+}
