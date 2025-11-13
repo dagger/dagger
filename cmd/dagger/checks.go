@@ -71,10 +71,14 @@ func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error)
 	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
 
-func loadCheckGroupInfo(ctx context.Context, checks []dagger.Check) (*CheckGroupInfo, error) {
+func loadCheckGroupInfo(ctx context.Context, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
 	ctx, span := Tracer().Start(ctx, "fetch check information")
 	defer span.End()
 
+	checks, err := checkgroup.List(ctx)
+	if err != nil {
+		return nil, err
+	}
 	info := &CheckGroupInfo{}
 	for _, check := range checks {
 		checkInfo := &CheckInfo{}
@@ -109,11 +113,7 @@ type CheckInfo struct {
 
 // 'dagger checks -l'
 func listChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
-	checks, err := checkgroup.List(ctx)
-	if err != nil {
-		return err
-	}
-	info, err := loadCheckGroupInfo(ctx, checks)
+	info, err := loadCheckGroupInfo(ctx, checkgroup)
 	if err != nil {
 		return err
 	}
