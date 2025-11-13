@@ -1,0 +1,13 @@
+{
+  "name": "dotnet-sdk-dev",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dagger-engine",
+      "source": "../engine-dev"
+    }
+  ]
+}
