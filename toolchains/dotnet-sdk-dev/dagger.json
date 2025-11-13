@@ -2,7 +2,7 @@
   "name": "dotnet-sdk-dev",
   "engineVersion": "v0.19.6",
   "sdk": {
-    "source": "go"
+    "source": "github.com/vito/dang/dagger-sdk@e91e64a947436ac9342257de9f845b7f5dfa7639"
   },
   "dependencies": [
     {
