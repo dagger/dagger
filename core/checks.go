@@ -142,11 +142,28 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 				selectPath = append(selectPath, dagql.Selector{Field: field})
 			}
 
-			// Call the check
-			var status dagql.AnyResult
-			if err := dag.Select(dagql.WithRepeatedTelemetry(ctx), dag.Root(), &status, selectPath...); err != nil {
+			var checkParent dagql.AnyObjectResult
+			if err := (func() (rerr error) {
+				ctx, span := Tracer(ctx).Start(ctx, "load check context",
+					// Prevent logs from bubbling up past this point.
+					telemetry.Encapsulate(),
+					// We're only using this span as a log encapsulation boundary; show
+					// its child spans inline.
+					telemetry.Passthrough(),
+				)
+
+				defer telemetry.End(span, func() error { return rerr })
+				return dag.Select(ctx, dag.Root(), &checkParent, selectPath[:len(selectPath)-1]...)
+			})(); err != nil {
 				return err
 			}
+
+			// Call the check
+			var status dagql.AnyResult
+			if err := dag.Select(dagql.WithRepeatedTelemetry(ctx), checkParent, &status, selectPath[len(selectPath)-1]); err != nil {
+				return err
+			}
+
 			if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
 				// If the check returns a syncable type, sync it
 				if syncField, has := obj.ObjectType().FieldSpec("sync", dag.View); has {
