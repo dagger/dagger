@@ -13,8 +13,11 @@ import (
 
 func New() parallelJobs {
 	return parallelJobs{
-		Reveal:   true,
 		Internal: false,
+		Reveal:   true,
+		// Don't use the contextual tracer by default: this breaks in Dagger *clients* (including modules),
+		// because a freshly connected client does not have
+		ContextualTracer: false,
 	}
 }
 
@@ -27,14 +30,22 @@ type parallelJobs struct {
 	Limit    *int
 	Internal bool
 	Reveal   bool
+	// Use the "contextual tracer".
+	// If enabled, spans are created using the same tracer that created the current span.
+	// If disabled, spans are created using the global tracer for this process
+	// Typically, you need to enable this in multi-tenant systems with many client contexts,
+	// each with their own tracer (eg. inside the dagger engine)
+	//
+	ContextualTracer bool
 }
 
 type Job struct {
-	Name       string
-	Func       JobFunc
-	attributes []attribute.KeyValue
-	Internal   bool
-	Reveal     bool
+	Name             string
+	Func             JobFunc
+	attributes       []attribute.KeyValue
+	Internal         bool
+	Reveal           bool
+	ContextualTracer bool
 }
 
 type JobFunc func(context.Context) error
@@ -51,9 +62,15 @@ func (p parallelJobs) WithReveal(reveal bool) parallelJobs {
 	return p
 }
 
+func (p parallelJobs) WithContextualTracer(contextualTracer bool) parallelJobs {
+	p = p.Clone()
+	p.ContextualTracer = contextualTracer
+	return p
+}
+
 func (p parallelJobs) WithJob(name string, fn JobFunc, attributes ...attribute.KeyValue) parallelJobs {
 	p = p.Clone()
-	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal})
+	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal, p.ContextualTracer})
 	return p
 }
 
@@ -61,6 +78,15 @@ func (p parallelJobs) Clone() parallelJobs {
 	cp := p
 	cp.Jobs = slices.Clone(cp.Jobs)
 	return cp
+}
+
+var tracerName = "dagger.io/util/parallel"
+
+func (job Job) tracer(ctx context.Context) trace.Tracer {
+	if job.ContextualTracer {
+		return trace.SpanFromContext(ctx).TracerProvider().Tracer(tracerName)
+	}
+	return otel.Tracer(tracerName)
 }
 
 func (job Job) startSpan(ctx context.Context) (context.Context, trace.Span) {
@@ -71,8 +97,7 @@ func (job Job) startSpan(ctx context.Context) (context.Context, trace.Span) {
 	if job.Internal {
 		attr = append(attr, attribute.Bool("dagger.io/ui.internal", true))
 	}
-	return otel.Tracer("dagger.io/util/parallel").
-		Start(ctx, job.Name, trace.WithAttributes(attr...))
+	return job.tracer(ctx).Start(ctx, job.Name, trace.WithAttributes(attr...))
 }
 
 func (job Job) Runner(ctx context.Context) func() error {

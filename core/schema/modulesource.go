@@ -741,7 +741,7 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 		return fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	jobs := parallel.New().WithReveal(false)
+	jobs := parallel.New().WithContextualTracer(true).WithReveal(false)
 	// Load blueprint
 	if src.ConfigBlueprint != nil {
 		jobs = jobs.WithJob("load blueprint: "+src.ConfigBlueprint.Source, func(ctx context.Context) error {
@@ -758,7 +758,7 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 	if len(src.ConfigToolchains) > 0 {
 		jobs = jobs.WithJob("load toolchains", func(ctx context.Context) error {
 			src.Toolchains = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigToolchains))
-			toolchainJobs := parallel.New().WithReveal(false)
+			toolchainJobs := parallel.New().WithReveal(false).WithContextualTracer(true)
 			for i, pcfg := range src.ConfigToolchains {
 				toolchainJobs = toolchainJobs.WithJob(pcfg.Name, func(ctx context.Context) error {
 					toolchain, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
