@@ -26,6 +26,7 @@ type Test struct {
 
 // Run all engine tests
 // +cache="session"
+// +check
 func (t *Test) All(
 	ctx context.Context,
 	// +optional
@@ -40,7 +41,6 @@ func (t *Test) All(
 	envFile *dagger.Secret,
 	// +optional
 	testVerbose bool,
-	// +check
 ) error {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
@@ -162,7 +162,6 @@ func (t *Test) Specific(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
-	// +check
 ) error {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
