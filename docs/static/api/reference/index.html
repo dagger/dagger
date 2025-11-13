@@ -130,7 +130,6 @@
               <li><a href="#definition-CheckGroup">CheckGroup</a></li>
               <li><a href="#definition-CheckGroupID">CheckGroupID</a></li>
               <li><a href="#definition-CheckID">CheckID</a></li>
-              <li><a href="#definition-CheckStatus">CheckStatus</a></li>
               <li><a href="#definition-Cloud">Cloud</a></li>
               <li><a href="#definition-CloudID">CloudID</a></li>
               <li><a href="#definition-Container">Container</a></li>
@@ -5221,54 +5220,6 @@
               </div>
             </div>
           </section>
-          <section id="definition-CheckStatus" class="definition definition-enum" data-traverse-target="definition-CheckStatus">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">CheckStatus</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The result of a check.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Values</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Enum Value</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <p><code>COMPLETED</code></p>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <p><code>SKIPPED</code></p>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <div class="example-section example-section-is-code">
-                  <h5>Example</h5>
-                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"COMPLETED"</span>
-</code></pre>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="definition-Cloud" class="definition definition-object" data-traverse-target="definition-Cloud">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -10157,6 +10108,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Function-withCheck" href="#Function-withCheck"><code>withCheck</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Returns the function with a flag indicating it's a check. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Function-withDeprecated" href="#Function-withDeprecated"><code>withDeprecated</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>

@@ -8515,6 +8515,15 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Returns the function with a flag indicating it's a check.
+    pub fn with_check(&self) -> Function {
+        let query = self.selection.select("withCheck");
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Returns the function with the provided deprecation reason.
     ///
     /// # Arguments
@@ -13282,13 +13291,6 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
-}
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub enum CheckStatus {
-    #[serde(rename = "COMPLETED")]
-    Completed,
-    #[serde(rename = "SKIPPED")]
-    Skipped,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {

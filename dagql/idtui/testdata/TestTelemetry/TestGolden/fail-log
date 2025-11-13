@@ -1,12 +1,12 @@
 Expected stderr:
 
-▼ connect X.Xs
+✔ connect X.Xs
 ├╴✔ starting engine X.Xs
-├╴▼ connecting to engine X.Xs
+├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest X.Xs
+✔ load module: ./viztest X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
@@ -15,17 +15,18 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-▼ .failLog: Void X.Xs ERROR
-  ▼ Container.withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs ERROR
+✘ .failLog: Void X.Xs ERROR
+├╴✔ container: Container! X.Xs
+├╴$ .from(address: "alpine"): Container! X.Xs CACHED
+├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
+╰╴✘ withExec sh -c 'echo im doing a lot of work; echo and then failing; exit 1' X.Xs ERROR
   ┃ im doing a lot of work
   ┃ and then failing
   ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
 
-Error logs:
-
-▼ Container.withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs ERROR
+Error: input: viztest.failLog process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
+Stdout:
 im doing a lot of work
 and then failing
-! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

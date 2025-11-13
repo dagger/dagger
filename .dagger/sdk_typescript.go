@@ -28,14 +28,16 @@ func (t TypescriptSDK) Name() string {
 }
 
 // CheckTypescriptFormat checks the formatting of the Typescript SDK code
-func (t TypescriptSDK) LintTypescript(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (t TypescriptSDK) LintTypescript(ctx context.Context) error {
 	base := t.nodeJsBase()
 	_, err := base.WithExec([]string{"yarn", "lint"}).Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
 // CheckDocsSnippetsFormat checks the formatting of Typescript snippets in the docs
-func (t TypescriptSDK) LintDocsSnippets(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (t TypescriptSDK) LintDocsSnippets(ctx context.Context) error {
 	base := t.nodeJsBase()
 	path := "docs/current_docs"
 	_, err := base.
@@ -55,10 +57,11 @@ func (t TypescriptSDK) LintDocsSnippets(ctx context.Context) (MyCheckStatus, err
 		).
 		WithExec([]string{"yarn", "docs:lint"}).
 		Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
-func (t TypescriptSDK) TestNode(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (t TypescriptSDK) TestNode(ctx context.Context) error {
 	jobs := parallel.New()
 	// Loop over the LTS and Maintenance versions and test them
 	for _, version := range []string{nodeCurrentLTS, nodePreviousLTS} {
@@ -75,9 +78,11 @@ func (t TypescriptSDK) TestNode(ctx context.Context) (MyCheckStatus, error) {
 			},
 		)
 	}
-	return CheckCompleted, jobs.Run(ctx)
+	return jobs.Run(ctx)
 }
-func (t TypescriptSDK) TestBun(ctx context.Context) (MyCheckStatus, error) {
+
+// +check
+func (t TypescriptSDK) TestBun(ctx context.Context) error {
 	jobs := parallel.New()
 	jobs = jobs.WithJob(
 		fmt.Sprintf("test with bun version %s", bunVersion),
@@ -89,7 +94,7 @@ func (t TypescriptSDK) TestBun(ctx context.Context) (MyCheckStatus, error) {
 			return err
 		},
 	)
-	return CheckCompleted, jobs.Run(ctx)
+	return jobs.Run(ctx)
 }
 
 // Regenerate the Typescript client bindings
@@ -113,8 +118,9 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Changeset, error) 
 }
 
 // Test the publishing process
-func (t TypescriptSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
-	return CheckCompleted, t.Publish(ctx, "HEAD", true, nil)
+// +check
+func (t TypescriptSDK) ReleaseDryRun(ctx context.Context) error {
+	return t.Publish(ctx, "HEAD", true, nil)
 }
 
 // Publish the Typescript SDK

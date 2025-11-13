@@ -28,23 +28,25 @@ type Helm struct {
 }
 
 // Lint the helm chart
-func (h *Helm) Lint(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (h *Helm) Lint(ctx context.Context) error {
 	_, err := h.chart().
 		WithExec([]string{"helm", "lint"}).
 		WithExec([]string{"helm", "lint", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
 		WithExec([]string{"helm", "template", ".", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
 		Sync(ctx)
 
-	return CheckCompleted, err
+	return err
 }
 
 // Test the helm chart on an ephemeral K3S service
-func (h *Helm) Test(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (h *Helm) Test(ctx context.Context) error {
 	k3s := dag.K3S("helm-test")
 	// NOTE: force starting here - without this, the config won't be generated
 	k3ssvc, err := k3s.Server().Start(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	kubectl, err := h.chart().
 		WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
@@ -55,7 +57,7 @@ func (h *Helm) Test(ctx context.Context) (MyCheckStatus, error) {
 		WithExec([]string{"kubectl", "get", "nodes", "--output=wide"}).
 		Sync(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 
 	engine, err := kubectl.
@@ -66,11 +68,11 @@ func (h *Helm) Test(ctx context.Context) (MyCheckStatus, error) {
 		}).
 		Sync(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	err = runTests(ctx, "dagger-dagger-helm-engine", "DaemonSet", 0, engine)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 
 	engineWithPort, err := kubectl.
@@ -82,11 +84,11 @@ func (h *Helm) Test(ctx context.Context) (MyCheckStatus, error) {
 		}).
 		Sync(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	err = runTests(ctx, "dagger2-dagger-helm-engine", "DaemonSet", 5678, engineWithPort)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 
 	engineStateful, err := kubectl.
@@ -98,11 +100,11 @@ func (h *Helm) Test(ctx context.Context) (MyCheckStatus, error) {
 		}).
 		Sync(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	err = runTests(ctx, "dagger3-dagger-helm-engine", "StatefulSet", 0, engineStateful)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 
 	engineStatefulWithPort, err := kubectl.
@@ -115,14 +117,14 @@ func (h *Helm) Test(ctx context.Context) (MyCheckStatus, error) {
 		}).
 		Sync(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	err = runTests(ctx, "dagger4-dagger-helm-engine", "StatefulSet", 0, engineStatefulWithPort)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 
-	return CheckCompleted, nil
+	return nil
 }
 
 func (h *Helm) chart() *dagger.Container {
@@ -237,8 +239,9 @@ func (h *Helm) SetVersion(
 	return updatedChartYaml, nil
 }
 
-func (h *Helm) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
-	return CheckCompleted, h.Publish(ctx,
+// +check
+func (h *Helm) ReleaseDryRun(ctx context.Context) error {
+	return h.Publish(ctx,
 		"main", // target
 		nil,    // githubToken
 		true,   // dryRun

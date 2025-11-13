@@ -1,12 +1,12 @@
 Expected stderr:
 
-▼ connect X.Xs
+✔ connect X.Xs
 ├╴✔ starting engine X.Xs
-├╴▼ connecting to engine X.Xs
+├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest X.Xs
+✔ load module: ./viztest X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
@@ -15,25 +15,21 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-▼ .failEncapsulated: Void X.Xs ERROR
+✘ .failEncapsulated: Void X.Xs ERROR
 ! i failed on the outside
-├╴▼ failing outer span X.Xs ERROR
+├╴✘ failing outer span X.Xs ERROR
 │ ! outer failure
-│ ╰╴▼ unset middle span X.Xs
-│   ╰╴▼ failing inner span X.Xs ERROR
+│ ╰╴✔ unset middle span X.Xs
+│   ╰╴✘ failing inner span X.Xs ERROR
 │     ┃ this should be hoisted - ancestor failed
 │     ! inner failure
 │    
-╰╴▼ succeeding outer span X.Xs
-  ╰╴▼ unset middle span X.Xs
-    ╰╴▼ failing inner span X.Xs ERROR
+╰╴✔ succeeding outer span X.Xs
+  ╰╴✔ unset middle span X.Xs
+    ╰╴✘ failing inner span X.Xs ERROR
       ┃ this should NOT be hoisted - ancestor succeeded
       ! inner failure
 
-Error logs:
-
-▼ failing inner span X.Xs ERROR
-this should be hoisted - ancestor failed
-! inner failure
+Error: i failed on the outside
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

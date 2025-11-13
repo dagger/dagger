@@ -26,6 +26,7 @@ type Test struct {
 
 // Run all engine tests
 // +cache="session"
+// +check
 func (t *Test) All(
 	ctx context.Context,
 	// +optional
@@ -40,10 +41,10 @@ func (t *Test) All(
 	envFile *dagger.Secret,
 	// +optional
 	testVerbose bool,
-) (MyCheckStatus, error) {
+) error {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	_, err = t.test(
 		cmd,
@@ -60,7 +61,7 @@ func (t *Test) All(
 			testVerbose:   testVerbose,
 		},
 	).Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
 // Run telemetry tests
@@ -89,7 +90,7 @@ func (t *Test) Telemetry(
 	envFile *dagger.Secret,
 	// +optional
 	testVerbose bool,
-) (*dagger.Directory, error) {
+) (*dagger.Changeset, error) {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return nil, err
@@ -113,10 +114,7 @@ func (t *Test) Telemetry(
 	if err != nil {
 		return nil, err
 	}
-	return dag.Directory().WithDirectory(
-		"./dagql/idtui/testdata/",
-		ran.Directory("./dagql/idtui/testdata/"),
-	), nil
+	return ran.Directory(".").Changes(t.Dagger.Source), nil
 }
 
 // List all tests
@@ -164,10 +162,10 @@ func (t *Test) Specific(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
-) (MyCheckStatus, error) {
+) error {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	_, err = t.test(
 		cmd,
@@ -184,7 +182,7 @@ func (t *Test) Specific(
 			testVerbose:   testVerbose,
 		},
 	).Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
 // Update specific tests

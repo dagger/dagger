@@ -81,13 +81,11 @@ func (dev *Dev) Test(
 	// +optional
 	filter string,
 ) error {
-	var err error
 	if suite == "" {
-		_, err = dag.DaggerDev().Test().All(ctx)
+		return dag.DaggerDev().Test().All(ctx)
 	} else {
-		_, err = dag.DaggerDev().Test().Specific(ctx, dagger.DaggerDevTestSpecificOpts{Run: suite + "/" + filter})
+		return dag.DaggerDev().Test().Specific(ctx, dagger.DaggerDevTestSpecificOpts{Run: suite + "/" + filter})
 	}
-	return err
 }
 
 // Run a git command and return its output.

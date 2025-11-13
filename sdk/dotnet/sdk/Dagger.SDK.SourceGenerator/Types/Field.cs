@@ -11,19 +11,19 @@ public class Field
     public required string Name { get; set; }
 
     [JsonPropertyName("description")]
-    public required string Description { get; set; }
+    public string Description { get; set; } = "";
 
     [JsonPropertyName("type")]
     public required TypeRef Type { get; set; }
 
     [JsonPropertyName("args")]
-    public required InputValue[] Args { get; set; }
+    public InputValue[] Args { get; set; } = [];
 
     [JsonPropertyName("isDeprecated")]
     public bool IsDeprecated { get; set; }
 
     [JsonPropertyName("deprecationReason")]
-    public required string DeprecationReason { get; set; }
+    public string DeprecationReason { get; set; } = "";
 
     /// <summary>
     /// Get optional arguments from Args.

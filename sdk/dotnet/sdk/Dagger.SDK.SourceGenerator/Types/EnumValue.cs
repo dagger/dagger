@@ -8,7 +8,7 @@ public class EnumValue
     public required string Name { get; set; }
 
     [JsonPropertyName("description")]
-    public required string Description { get; set; }
+    public string Description { get; set; } = "";
 
     [JsonPropertyName("isDeprecated")]
     public bool IsDeprecated { get; set; }

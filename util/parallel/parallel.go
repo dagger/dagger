@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	"dagger.io/dagger/telemetry"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -64,18 +64,15 @@ func (p parallelJobs) Clone() parallelJobs {
 }
 
 func (job Job) startSpan(ctx context.Context) (context.Context, trace.Span) {
-	var opts []trace.SpanStartOption
 	attr := job.attributes
 	if job.Reveal {
 		attr = append(attr, attribute.Bool("dagger.io/ui.reveal", true))
 	}
-	opts = append(opts, trace.WithAttributes(attr...))
 	if job.Internal {
-		opts = append(opts, telemetry.Internal())
+		attr = append(attr, attribute.Bool("dagger.io/ui.internal", true))
 	}
-	return trace.SpanFromContext(ctx).TracerProvider().
-		Tracer("dagger.io/util/parallel").
-		Start(ctx, job.Name, opts...)
+	return otel.Tracer("dagger.io/util/parallel").
+		Start(ctx, job.Name, trace.WithAttributes(attr...))
 }
 
 func (job Job) Runner(ctx context.Context) func() error {
