@@ -33,6 +33,10 @@ type Rave struct {
 	lastBeat time.Time
 	interval time.Duration
 	bpm      float64
+
+	// moving average for BPM calculation
+	recentIntervals []time.Duration
+	maxIntervals    int
 }
 
 var _ Spinner = &Rave{}
@@ -89,6 +93,8 @@ func NewRave() *Rave {
 
 func (rave *Rave) reset() {
 	rave.lastBeat = time.Now()
+	rave.maxIntervals = 5 // track last 5 intervals for moving average
+	rave.recentIntervals = make([]time.Duration, 0, rave.maxIntervals)
 	rave.setBPM(DefaultBPM)
 }
 
@@ -105,9 +111,10 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rave.colors = true
 			rave.Frames = FadeFrames
 			rave.lastBeat = time.Now()
-			rave.interval = rave.lastBeat.Sub(last)
 			if !last.IsZero() {
-				bpm := float64(time.Minute) / float64(rave.interval)
+				interval := rave.lastBeat.Sub(last)
+				rave.addInterval(interval)
+				bpm := rave.calculateMovingAverageBPM()
 				rave.setBPM(bpm)
 			}
 			return rave, nil
@@ -123,6 +130,53 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (rave *Rave) setBPM(bpm float64) {
 	rave.bpm = bpm
 	rave.interval = time.Duration(float64(time.Minute) / bpm)
+}
+
+func (rave *Rave) addInterval(interval time.Duration) {
+	// If interval is extremely long (>10 seconds), reset and start fresh
+	if interval > 10*time.Second {
+		rave.recentIntervals = make([]time.Duration, 0, rave.maxIntervals)
+		rave.recentIntervals = append(rave.recentIntervals, interval)
+		return
+	}
+
+	// If we have existing intervals, check if this one is an outlier (likely a pause)
+	if len(rave.recentIntervals) > 0 {
+		var total time.Duration
+		for _, existing := range rave.recentIntervals {
+			total += existing
+		}
+		avgInterval := total / time.Duration(len(rave.recentIntervals))
+
+		// If the new interval is more than 3x the average, it's likely a pause - ignore it
+		if interval > avgInterval*3 {
+			return
+		}
+	}
+
+	// Add new interval to the slice
+	rave.recentIntervals = append(rave.recentIntervals, interval)
+
+	// Keep only the most recent maxIntervals intervals
+	if len(rave.recentIntervals) > rave.maxIntervals {
+		rave.recentIntervals = rave.recentIntervals[1:]
+	}
+}
+
+func (rave *Rave) calculateMovingAverageBPM() float64 {
+	if len(rave.recentIntervals) == 0 {
+		return DefaultBPM
+	}
+
+	// Calculate average interval
+	var total time.Duration
+	for _, interval := range rave.recentIntervals {
+		total += interval
+	}
+	avgInterval := total / time.Duration(len(rave.recentIntervals))
+
+	// Convert to BPM
+	return float64(time.Minute) / float64(avgInterval)
 }
 
 func (rave *Rave) View() string {
@@ -164,7 +218,11 @@ func (rave *Rave) ViewFrame(now time.Time, frames SpinnerFrames) (string, int) {
 }
 
 func (rave *Rave) viewDetails() string {
-	return fmt.Sprintf("%.1fbpm", rave.bpm)
+	details := fmt.Sprintf("%.1fbpm", rave.bpm)
+	if len(rave.recentIntervals) > 0 {
+		details += fmt.Sprintf(" (avg of %d)", len(rave.recentIntervals))
+	}
+	return details
 }
 
 func (rave *Rave) Progress(now time.Time) (int, float64) {
