@@ -127,11 +127,28 @@ final class PhpSdkDev
     }
 
     #[DaggerFunction]
-    #[Doc('Return stdout from formatting source directory')]
+    #[Doc('Return stdout from formatting source directory.')]
     public function formatStdout(): string
     {
         return $this->container
             ->withExec(args: ['phpcbf'], expect: ReturnType::ANY)
             ->stdout();
+    }
+
+    #[DaggerFunction]
+    #[Doc('Generate API reference documentation.')]
+    public function generateDocs(): Directory
+    {
+        return dag()
+            ->container()
+            ->from('phpdoc/phpdoc:3')
+            ->withWorkdir('/data')
+            ->withDirectory('.', $this->source)
+            ->withExec(['phpdoc', 'run', '-t', '/docs'])
+            ->directory('/docs')
+            ->withoutDirectory('files')
+            ->withoutDirectory('reports')
+            ->withoutDirectory('indices')
+            ->withoutDirectory('graphs');
     }
 }

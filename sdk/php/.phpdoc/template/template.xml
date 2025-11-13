@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<template>
+    <name>phpdoc</name>
+    <version>1.0.0</version>
+    <extends>default</extends>
+    <transformations>
+      <transformation writer="twig"
+                      source="index.html.twig"
+                      artifact="index.html"/>
+    </transformations>
+</template>

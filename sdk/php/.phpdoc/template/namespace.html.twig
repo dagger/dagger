@@ -1,0 +1,68 @@
+{% extends 'base.html.twig' %}
+
+{% block content %}
+{% include 'components/breadcrumbs.html.twig' %}
+
+<article class="phpdocumentor-element -namespace">
+  {{ include('components/namespace-title.html.twig') }}
+  {{ include('components/table-of-contents.html.twig', {'namespaces': node.children}) }}
+  {{ include('components/constants.html.twig') }}
+  {{ include('components/functions.html.twig') }}
+  {{ include('components/source-modal.html.twig') }}
+</article>
+{% endblock %}
+
+{% block on_this_page %}
+{% set constants = constants(node) %}
+{% set functions = node.functions|default([]) %}
+
+<section class="phpdocumentor-on-this-page__content">
+  <strong class="phpdocumentor-on-this-page__title">On this page</strong>
+  <ul class="phpdocumentor-list -clean">
+    <li class="phpdocumentor-on-this-page-section__title">Table Of Contents</li>
+    {% if functions is not empty %}
+    <li class="phpdocumentor-on-this-page-section__title">Functions</li>
+    <li>
+      <ul class="phpdocumentor-list -clean">
+        {% for function in functions|sortByVisibility %}
+        <li class="{% if function.deprecated %}-deprecated{% endif %}"><a href="{{ link(function) }}">{{ function.name }}()</a></li>
+        {% endfor %}
+      </ul>
+    </li>
+    {% endif %}
+    <li>
+      <ul class="phpdocumentor-list -clean">
+        {% if node.functions is not empty %}
+        <li><a href="{{ link(node) }}#toc-functions">Functions</a></li>
+        {% endif %}
+        {% if node.classes is not empty %}
+        <li><a href="{{ link(node) }}#toc-classes">Classes</a></li>
+        {% endif %}
+        {% if node.traits is not empty %}
+        <li><a href="{{ link(node) }}#toc-traits">Traits</a></li>
+        {% endif %}
+        {% if node.enums is not empty %}
+        <li><a href="{{ link(node) }}#toc-enums">Enums</a></li>
+        {% endif %}
+        {% if node.constants is not empty %}
+        <li><a href="{{ link(node) }}#toc-constants">Constants</a></li>
+        {% endif %}
+
+      </ul>
+    </li>
+
+    {% if constants is not empty %}
+    <li class="phpdocumentor-on-this-page-section__title">Constants</li>
+    <li>
+      <ul class="phpdocumentor-list -clean">
+        {% for constant in constants|sortByVisibility %}
+        <li class="{% if constants.deprecated %}-deprecated{% endif %}"><a href="{{ link(constant) }}">{{ constant.name }}</a></li>
+        {% endfor %}
+      </ul>
+    </li>
+    {% endif %}
+
+
+  </ul>
+</section>
+{% endblock %}

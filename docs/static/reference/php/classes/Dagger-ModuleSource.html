@@ -1,0 +1,2528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+            <title>Dagger PHP SDK</title>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="../">
+    <link rel="icon" href="images/favicon.ico"/>
+    <link rel="stylesheet" href="css/normalize.css">
+    <link rel="stylesheet" href="css/base.css">
+            <link rel="preconnect" href="https://fonts.gstatic.com">
+        <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@100;200;300;400;600;700&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="css/template.css">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.0/css/all.min.css" integrity="sha256-ybRkN9dBjhcS2qrW1z+hfCxq+1aBdwyQM5wlQoQVt/0=" crossorigin="anonymous" />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/themes/prism-okaidia.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/line-numbers/prism-line-numbers.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/line-highlight/prism-line-highlight.css">
+                <script src="https://cdn.jsdelivr.net/npm/fuse.js@3.4.6"></script>
+        <script src="https://cdn.jsdelivr.net/npm/css-vars-ponyfill@2"></script>
+        <script src="js/template.js"></script>
+        <script src="js/search.js"></script>
+        <script defer src="js/searchIndex.js"></script>
+    </head>
+<body id="top">
+    <header class="phpdocumentor-header phpdocumentor-section">
+    <h1 class="phpdocumentor-title"><a href="" class="phpdocumentor-title__link">Dagger PHP SDK</a></h1>
+    <input class="phpdocumentor-header__menu-button" type="checkbox" id="menu-button" name="menu-button" />
+    <label class="phpdocumentor-header__menu-icon" for="menu-button">
+        <i class="fas fa-bars"></i>
+    </label>
+    <section data-search-form class="phpdocumentor-search">
+    <label>
+        <span class="visually-hidden">Search for</span>
+        <svg class="phpdocumentor-search__icon" width="21" height="20" viewBox="0 0 21 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="7.5" cy="7.5" r="6.5" stroke="currentColor" stroke-width="2"/>
+            <line x1="12.4892" y1="12.2727" x2="19.1559" y2="18.9393" stroke="currentColor" stroke-width="3"/>
+        </svg>
+        <input type="search" class="phpdocumentor-field phpdocumentor-search__field" placeholder="Loading .." disabled />
+    </label>
+</section>
+
+    <nav class="phpdocumentor-topnav">
+    <ul class="phpdocumentor-topnav__menu">
+        </ul>
+</nav>
+</header>
+
+    <main class="phpdocumentor">
+        <div class="phpdocumentor-section">
+            <input class="phpdocumentor-sidebar__menu-button" type="checkbox" id="sidebar-button" name="sidebar-button" />
+<label class="phpdocumentor-sidebar__menu-icon" for="sidebar-button">
+    Menu
+</label>
+<aside class="phpdocumentor-column -three phpdocumentor-sidebar">
+                                        <section class="phpdocumentor-sidebar__category -namespaces">
+                  <h2 class="phpdocumentor-sidebar__category-header">Namespaces</h2>
+                                    <h4 class="phpdocumentor-sidebar__root-namespace">
+    <a href="namespaces/dagger.html" class="">Dagger</a>
+</h4>
+    <ul class="phpdocumentor-list">
+                    <li>
+                <a href="namespaces/dagger-attribute.html" class="">Attribute</a>
+                
+            </li>
+            </ul>
+
+                                  </section>
+                        </aside>
+
+            <div class="phpdocumentor-column -nine phpdocumentor-content">
+                                <section>
+                                        <ul class="phpdocumentor-breadcrumbs">
+            <li class="phpdocumentor-breadcrumb"><a href="namespaces/dagger.html">Dagger</a></li>
+    </ul>
+
+    <article class="phpdocumentor-element -class">
+        <h2 class="phpdocumentor-content__title">
+    ModuleSource
+
+        <span class="phpdocumentor-element__extends">
+        extends <abbr title="\Dagger\Client\AbstractObject">AbstractObject</abbr>
+    </span>
+    
+    
+            <span class="phpdocumentor-element__implements">
+            implements
+                            <abbr title="\Dagger\Client\IdAble">IdAble</abbr>                    </span>
+    
+    </h2>
+
+<div class="phpdocumentor-label-line">
+
+
+</div>
+
+        
+            <p class="phpdocumentor-summary">The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.</p>
+
+
+
+
+
+
+
+
+
+<h3 id="toc">
+    Table of Contents
+    <a href="classes/Dagger-ModuleSource.html#toc" class="headerlink"><i class="fas fa-link"></i></a>
+
+</h3>
+
+
+
+
+
+
+
+
+
+<h4 id="toc-methods">
+    Methods
+    <a href="classes/Dagger-ModuleSource.html#toc-methods" class="headerlink"><i class="fas fa-link"></i></a>
+
+</h4>
+<dl class="phpdocumentor-table-of-contents">
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_asModule">asModule()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Module.html"><abbr title="\Dagger\Module">Module</abbr></a>    </span>
+</dt>
+<dd>Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_asString">asString()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>A human readable ref string representation of this module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_blueprint">blueprint()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>The blueprint referenced by the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_cloneRef">cloneRef()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The ref to clone the root of the git repo from. Only valid for git sources.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_commit">commit()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The resolved commit of the git repo this source points to.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_configClients">configClients()</a>
+    <span>
+                                &nbsp;: array&lt;string|int, mixed&gt;    </span>
+</dt>
+<dd>The clients generated for the module.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_configExists">configExists()</a>
+    <span>
+                                &nbsp;: bool    </span>
+</dt>
+<dd>Whether an existing dagger.json for the module was found.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_contextDirectory">contextDirectory()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a>    </span>
+</dt>
+<dd>The full directory loaded for the module source, including the source code as a subdirectory.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_dependencies">dependencies()</a>
+    <span>
+                                &nbsp;: array&lt;string|int, mixed&gt;    </span>
+</dt>
+<dd>The dependencies of the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_digest">digest()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_directory">directory()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a>    </span>
+</dt>
+<dd>The directory containing the module configuration and source code (source code may be in a subdir).</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_engineVersion">engineVersion()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The engine version of the module.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_generatedContextDirectory">generatedContextDirectory()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a>    </span>
+</dt>
+<dd>The generated files and directories made on top of the module source&#039;s context directory.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_htmlRepoURL">htmlRepoURL()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_htmlURL">htmlURL()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The URL to the source&#039;s git repo in a web browser. Only valid for git sources.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_id">id()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a>    </span>
+</dt>
+<dd>A unique identifier for this ModuleSource.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_introspectionSchemaJSON">introspectionSchemaJSON()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-File.html"><abbr title="\Dagger\File">File</abbr></a>    </span>
+</dt>
+<dd>The introspection schema JSON file for this module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_kind">kind()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSourceKind.html"><abbr title="\Dagger\ModuleSourceKind">ModuleSourceKind</abbr></a>    </span>
+</dt>
+<dd>The kind of module source (currently local, git or dir).</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_localContextDirectoryPath">localContextDirectoryPath()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The full absolute path to the context directory on the caller&#039;s host filesystem that this module source is loaded from. Only valid for local module sources.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_moduleName">moduleName()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The name of the module, including any setting via the withName API.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_moduleOriginalName">moduleOriginalName()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The original name of the module as read from the module&#039;s dagger.json (or set for the first time with the withName API).</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_originalSubpath">originalSubpath()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The original subpath used when instantiating this module source, relative to the context directory.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_pin">pin()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The pinned version of this module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_repoRootPath">repoRootPath()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The import path corresponding to the root of the git repo this source points to. Only valid for git sources.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_sdk">sdk()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-SDKConfig.html"><abbr title="\Dagger\SDKConfig">SDKConfig</abbr></a>    </span>
+</dt>
+<dd>The SDK configuration of the module.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_sourceRootSubpath">sourceRootSubpath()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The path, relative to the context directory, that contains the module&#039;s dagger.json.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_sourceSubpath">sourceSubpath()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The path to the directory containing the module&#039;s source code, relative to the context directory.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_sync">sync()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a>    </span>
+</dt>
+<dd>Forces evaluation of the module source, including any loading into the engine and associated validation.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_toolchains">toolchains()</a>
+    <span>
+                                &nbsp;: array&lt;string|int, mixed&gt;    </span>
+</dt>
+<dd>The toolchains referenced by the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_userDefaults">userDefaults()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-EnvFile.html"><abbr title="\Dagger\EnvFile">EnvFile</abbr></a>    </span>
+</dt>
+<dd>User-defined defaults read from local .env files</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_version">version()</a>
+    <span>
+                                &nbsp;: string    </span>
+</dt>
+<dd>The specified version of the git repo this source points to.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withBlueprint">withBlueprint()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Set a blueprint for the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withClient">withClient()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update the module source with a new client to generate.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withDependencies">withDependencies()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Append the provided dependencies to the module source&#039;s dependency list.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withEngineVersion">withEngineVersion()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Upgrade the engine version of the module to the given value.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withExperimentalFeatures">withExperimentalFeatures()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Enable the experimental features for the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withIncludes">withIncludes()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update the module source with additional include patterns for files+directories from its context that are required for building it</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withName">withName()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update the module source with a new name.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withoutBlueprint">withoutBlueprint()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Remove the current blueprint from the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withoutClient">withoutClient()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Remove a client from the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withoutDependencies">withoutDependencies()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Remove the provided dependencies from the module source&#039;s dependency list.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withoutExperimentalFeatures">withoutExperimentalFeatures()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Disable experimental features for the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withoutToolchains">withoutToolchains()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Remove the provided toolchains from the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withSDK">withSDK()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update the module source with a new SDK.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withSourceSubpath">withSourceSubpath()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update the module source with a new source subpath.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withToolchains">withToolchains()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Add toolchains to the module source.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withUpdateBlueprint">withUpdateBlueprint()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update the blueprint module to the latest version.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withUpdatedClients">withUpdatedClients()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update one or more clients.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withUpdateDependencies">withUpdateDependencies()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update one or more module dependencies.</dd>
+
+            <dt class="phpdocumentor-table-of-contents__entry -method -public">
+    <a class="" href="classes/Dagger-ModuleSource.html#method_withUpdateToolchains">withUpdateToolchains()</a>
+    <span>
+                                &nbsp;: <a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>    </span>
+</dt>
+<dd>Update one or more toolchains.</dd>
+
+    </dl>
+
+
+        
+
+        
+
+            <section class="phpdocumentor-methods">
+        <h3 class="phpdocumentor-elements__header" id="methods">
+            Methods
+            <a href="classes/Dagger-ModuleSource.html#methods" class="headerlink"><i class="fas fa-link"></i></a>
+
+        </h3>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asModule">
+        asModule()
+        <a href="classes/Dagger-ModuleSource.html#method_asModule" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asModule</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Module.html"><abbr title="\Dagger\Module">Module</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Module.html"><abbr title="\Dagger\Module">Module</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_asString">
+        asString()
+        <a href="classes/Dagger-ModuleSource.html#method_asString" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">A human readable ref string representation of this module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">asString</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_blueprint">
+        blueprint()
+        <a href="classes/Dagger-ModuleSource.html#method_blueprint" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The blueprint referenced by the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">blueprint</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_cloneRef">
+        cloneRef()
+        <a href="classes/Dagger-ModuleSource.html#method_cloneRef" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The ref to clone the root of the git repo from. Only valid for git sources.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">cloneRef</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_commit">
+        commit()
+        <a href="classes/Dagger-ModuleSource.html#method_commit" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The resolved commit of the git repo this source points to.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">commit</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_configClients">
+        configClients()
+        <a href="classes/Dagger-ModuleSource.html#method_configClients" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The clients generated for the module.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">configClients</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">array&lt;string|int, mixed&gt;</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">array&lt;string|int, mixed&gt;</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_configExists">
+        configExists()
+        <a href="classes/Dagger-ModuleSource.html#method_configExists" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Whether an existing dagger.json for the module was found.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">configExists</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">bool</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">bool</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_contextDirectory">
+        contextDirectory()
+        <a href="classes/Dagger-ModuleSource.html#method_contextDirectory" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The full directory loaded for the module source, including the source code as a subdirectory.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">contextDirectory</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_dependencies">
+        dependencies()
+        <a href="classes/Dagger-ModuleSource.html#method_dependencies" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The dependencies of the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">dependencies</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">array&lt;string|int, mixed&gt;</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">array&lt;string|int, mixed&gt;</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_digest">
+        digest()
+        <a href="classes/Dagger-ModuleSource.html#method_digest" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">digest</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_directory">
+        directory()
+        <a href="classes/Dagger-ModuleSource.html#method_directory" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The directory containing the module configuration and source code (source code may be in a subdir).</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">directory</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">string&nbsp;</span><span class="phpdocumentor-signature__argument__name">$path</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$path</span>
+                : <span class="phpdocumentor-signature__argument__return-type">string</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_engineVersion">
+        engineVersion()
+        <a href="classes/Dagger-ModuleSource.html#method_engineVersion" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The engine version of the module.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">engineVersion</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_generatedContextDirectory">
+        generatedContextDirectory()
+        <a href="classes/Dagger-ModuleSource.html#method_generatedContextDirectory" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The generated files and directories made on top of the module source&#039;s context directory.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">generatedContextDirectory</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_htmlRepoURL">
+        htmlRepoURL()
+        <a href="classes/Dagger-ModuleSource.html#method_htmlRepoURL" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">htmlRepoURL</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_htmlURL">
+        htmlURL()
+        <a href="classes/Dagger-ModuleSource.html#method_htmlURL" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The URL to the source&#039;s git repo in a web browser. Only valid for git sources.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">htmlURL</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_id">
+        id()
+        <a href="classes/Dagger-ModuleSource.html#method_id" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">A unique identifier for this ModuleSource.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">id</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_introspectionSchemaJSON">
+        introspectionSchemaJSON()
+        <a href="classes/Dagger-ModuleSource.html#method_introspectionSchemaJSON" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The introspection schema JSON file for this module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">introspectionSchemaJSON</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-File.html"><abbr title="\Dagger\File">File</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+        <section class="phpdocumentor-description"><p>This file represents the schema visible to the module's source code, including all core types and those from the dependencies.</p>
+<p>Note: this is in the context of a module, so some core types may be hidden.</p>
+</section>
+
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-File.html"><abbr title="\Dagger\File">File</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_kind">
+        kind()
+        <a href="classes/Dagger-ModuleSource.html#method_kind" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The kind of module source (currently local, git or dir).</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">kind</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSourceKind.html"><abbr title="\Dagger\ModuleSourceKind">ModuleSourceKind</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSourceKind.html"><abbr title="\Dagger\ModuleSourceKind">ModuleSourceKind</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_localContextDirectoryPath">
+        localContextDirectoryPath()
+        <a href="classes/Dagger-ModuleSource.html#method_localContextDirectoryPath" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The full absolute path to the context directory on the caller&#039;s host filesystem that this module source is loaded from. Only valid for local module sources.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">localContextDirectoryPath</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_moduleName">
+        moduleName()
+        <a href="classes/Dagger-ModuleSource.html#method_moduleName" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The name of the module, including any setting via the withName API.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">moduleName</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_moduleOriginalName">
+        moduleOriginalName()
+        <a href="classes/Dagger-ModuleSource.html#method_moduleOriginalName" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The original name of the module as read from the module&#039;s dagger.json (or set for the first time with the withName API).</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">moduleOriginalName</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_originalSubpath">
+        originalSubpath()
+        <a href="classes/Dagger-ModuleSource.html#method_originalSubpath" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The original subpath used when instantiating this module source, relative to the context directory.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">originalSubpath</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_pin">
+        pin()
+        <a href="classes/Dagger-ModuleSource.html#method_pin" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The pinned version of this module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">pin</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_repoRootPath">
+        repoRootPath()
+        <a href="classes/Dagger-ModuleSource.html#method_repoRootPath" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The import path corresponding to the root of the git repo this source points to. Only valid for git sources.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">repoRootPath</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_sdk">
+        sdk()
+        <a href="classes/Dagger-ModuleSource.html#method_sdk" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The SDK configuration of the module.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">sdk</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-SDKConfig.html"><abbr title="\Dagger\SDKConfig">SDKConfig</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-SDKConfig.html"><abbr title="\Dagger\SDKConfig">SDKConfig</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_sourceRootSubpath">
+        sourceRootSubpath()
+        <a href="classes/Dagger-ModuleSource.html#method_sourceRootSubpath" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The path, relative to the context directory, that contains the module&#039;s dagger.json.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">sourceRootSubpath</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_sourceSubpath">
+        sourceSubpath()
+        <a href="classes/Dagger-ModuleSource.html#method_sourceSubpath" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The path to the directory containing the module&#039;s source code, relative to the context directory.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">sourceSubpath</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_sync">
+        sync()
+        <a href="classes/Dagger-ModuleSource.html#method_sync" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Forces evaluation of the module source, including any loading into the engine and associated validation.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">sync</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_toolchains">
+        toolchains()
+        <a href="classes/Dagger-ModuleSource.html#method_toolchains" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The toolchains referenced by the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">toolchains</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">array&lt;string|int, mixed&gt;</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">array&lt;string|int, mixed&gt;</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_userDefaults">
+        userDefaults()
+        <a href="classes/Dagger-ModuleSource.html#method_userDefaults" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">User-defined defaults read from local .env files</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">userDefaults</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-EnvFile.html"><abbr title="\Dagger\EnvFile">EnvFile</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-EnvFile.html"><abbr title="\Dagger\EnvFile">EnvFile</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_version">
+        version()
+        <a href="classes/Dagger-ModuleSource.html#method_version" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">The specified version of the git repo this source points to.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">version</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type">string</span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type">string</span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withBlueprint">
+        withBlueprint()
+        <a href="classes/Dagger-ModuleSource.html#method_withBlueprint" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Set a blueprint for the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withBlueprint</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type"><a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a>|<a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a>&nbsp;</span><span class="phpdocumentor-signature__argument__name">$blueprint</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$blueprint</span>
+                : <span class="phpdocumentor-signature__argument__return-type"><a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a>|<a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withClient">
+        withClient()
+        <a href="classes/Dagger-ModuleSource.html#method_withClient" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update the module source with a new client to generate.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withClient</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">string&nbsp;</span><span class="phpdocumentor-signature__argument__name">$generator</span></span><span class="phpdocumentor-signature__argument"><span>, </span><span class="phpdocumentor-signature__argument__return-type">string&nbsp;</span><span class="phpdocumentor-signature__argument__name">$outputDir</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$generator</span>
+                : <span class="phpdocumentor-signature__argument__return-type">string</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$outputDir</span>
+                : <span class="phpdocumentor-signature__argument__return-type">string</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withDependencies">
+        withDependencies()
+        <a href="classes/Dagger-ModuleSource.html#method_withDependencies" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Append the provided dependencies to the module source&#039;s dependency list.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withDependencies</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$dependencies</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$dependencies</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withEngineVersion">
+        withEngineVersion()
+        <a href="classes/Dagger-ModuleSource.html#method_withEngineVersion" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Upgrade the engine version of the module to the given value.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withEngineVersion</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">string&nbsp;</span><span class="phpdocumentor-signature__argument__name">$version</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$version</span>
+                : <span class="phpdocumentor-signature__argument__return-type">string</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withExperimentalFeatures">
+        withExperimentalFeatures()
+        <a href="classes/Dagger-ModuleSource.html#method_withExperimentalFeatures" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Enable the experimental features for the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withExperimentalFeatures</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$features</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$features</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withIncludes">
+        withIncludes()
+        <a href="classes/Dagger-ModuleSource.html#method_withIncludes" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update the module source with additional include patterns for files+directories from its context that are required for building it</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withIncludes</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$patterns</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$patterns</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withName">
+        withName()
+        <a href="classes/Dagger-ModuleSource.html#method_withName" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update the module source with a new name.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withName</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">string&nbsp;</span><span class="phpdocumentor-signature__argument__name">$name</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$name</span>
+                : <span class="phpdocumentor-signature__argument__return-type">string</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withoutBlueprint">
+        withoutBlueprint()
+        <a href="classes/Dagger-ModuleSource.html#method_withoutBlueprint" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Remove the current blueprint from the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withoutBlueprint</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withoutClient">
+        withoutClient()
+        <a href="classes/Dagger-ModuleSource.html#method_withoutClient" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Remove a client from the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withoutClient</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">string&nbsp;</span><span class="phpdocumentor-signature__argument__name">$path</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$path</span>
+                : <span class="phpdocumentor-signature__argument__return-type">string</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withoutDependencies">
+        withoutDependencies()
+        <a href="classes/Dagger-ModuleSource.html#method_withoutDependencies" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Remove the provided dependencies from the module source&#039;s dependency list.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withoutDependencies</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$dependencies</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$dependencies</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withoutExperimentalFeatures">
+        withoutExperimentalFeatures()
+        <a href="classes/Dagger-ModuleSource.html#method_withoutExperimentalFeatures" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Disable experimental features for the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withoutExperimentalFeatures</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$features</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$features</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withoutToolchains">
+        withoutToolchains()
+        <a href="classes/Dagger-ModuleSource.html#method_withoutToolchains" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Remove the provided toolchains from the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withoutToolchains</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$toolchains</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$toolchains</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withSDK">
+        withSDK()
+        <a href="classes/Dagger-ModuleSource.html#method_withSDK" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update the module source with a new SDK.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withSDK</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">string&nbsp;</span><span class="phpdocumentor-signature__argument__name">$source</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$source</span>
+                : <span class="phpdocumentor-signature__argument__return-type">string</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withSourceSubpath">
+        withSourceSubpath()
+        <a href="classes/Dagger-ModuleSource.html#method_withSourceSubpath" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update the module source with a new source subpath.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withSourceSubpath</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">string&nbsp;</span><span class="phpdocumentor-signature__argument__name">$path</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$path</span>
+                : <span class="phpdocumentor-signature__argument__return-type">string</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withToolchains">
+        withToolchains()
+        <a href="classes/Dagger-ModuleSource.html#method_withToolchains" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Add toolchains to the module source.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withToolchains</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$toolchains</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$toolchains</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withUpdateBlueprint">
+        withUpdateBlueprint()
+        <a href="classes/Dagger-ModuleSource.html#method_withUpdateBlueprint" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update the blueprint module to the latest version.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withUpdateBlueprint</span><span>(</span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+    
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withUpdatedClients">
+        withUpdatedClients()
+        <a href="classes/Dagger-ModuleSource.html#method_withUpdatedClients" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update one or more clients.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withUpdatedClients</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$clients</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$clients</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withUpdateDependencies">
+        withUpdateDependencies()
+        <a href="classes/Dagger-ModuleSource.html#method_withUpdateDependencies" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update one or more module dependencies.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withUpdateDependencies</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$dependencies</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$dependencies</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+                    <article
+        class="phpdocumentor-element
+            -method
+            -public
+                                                        "
+>
+    <h4 class="phpdocumentor-element__name" id="method_withUpdateToolchains">
+        withUpdateToolchains()
+        <a href="classes/Dagger-ModuleSource.html#method_withUpdateToolchains" class="headerlink"><i class="fas fa-link"></i></a>
+
+    </h4>
+    
+        <p class="phpdocumentor-summary">Update one or more toolchains.</p>
+
+    <code class="phpdocumentor-code phpdocumentor-signature ">
+    <span class="phpdocumentor-signature__visibility">public</span>
+                    <span class="phpdocumentor-signature__name">withUpdateToolchains</span><span>(</span><span class="phpdocumentor-signature__argument"><span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;&nbsp;</span><span class="phpdocumentor-signature__argument__name">$toolchains</span></span><span>)</span><span> : </span><span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span></code>
+
+    <div class="phpdocumentor-label-line">
+        </div>
+    
+    
+        <h5 class="phpdocumentor-argument-list__heading">Parameters</h5>
+    <dl class="phpdocumentor-argument-list">
+                    <dt class="phpdocumentor-argument-list__entry">
+                <span class="phpdocumentor-signature__argument__name">$toolchains</span>
+                : <span class="phpdocumentor-signature__argument__return-type">array&lt;string|int, mixed&gt;</span>
+                            </dt>
+            <dd class="phpdocumentor-argument-list__definition">
+                
+            </dd>
+            </dl>
+
+    
+
+    
+
+            <section>
+        <h5 class="phpdocumentor-return-value__heading">Return values</h5>
+        <span class="phpdocumentor-signature__response_type"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></span>
+            </section>
+
+</article>
+            </section>
+
+        <div class="phpdocumentor-modal" id="source-view">
+    <div class="phpdocumentor-modal-bg" data-exit-button></div>
+    <div class="phpdocumentor-modal-container">
+        <div class="phpdocumentor-modal-content">
+            <pre style="max-height: 500px; overflow-y: scroll" data-src="files/generated/ModuleSource.php.txt" class="language-php line-numbers linkable-line-numbers"></pre>
+        </div>
+        <button data-exit-button class="phpdocumentor-modal__close">&times;</button>
+    </div>
+</div>
+
+    <script type="text/javascript">
+        (function () {
+            function loadExternalCodeSnippet(el, url, line) {
+                Array.prototype.slice.call(el.querySelectorAll('pre[data-src]')).forEach((pre) => {
+                    const src = url || pre.getAttribute('data-src').replace(/\\/g, '/');
+                    const language = 'php';
+
+                    const code = document.createElement('code');
+                    code.className = 'language-' + language;
+                    pre.textContent = '';
+                    pre.setAttribute('data-line', line)
+                    code.textContent = 'Loading…';
+                    pre.appendChild(code);
+
+                    var xhr = new XMLHttpRequest();
+
+                    xhr.open('GET', src, true);
+
+                    xhr.onreadystatechange = function () {
+                        if (xhr.readyState !== 4) {
+                            return;
+                        }
+
+                        if (xhr.status < 400 && xhr.responseText) {
+                            code.textContent = xhr.responseText;
+                            Prism.highlightElement(code);
+                            d=document.getElementsByClassName("line-numbers");
+                            d[0].scrollTop = d[0].children[1].offsetTop;
+                            return;
+                        }
+
+                        if (xhr.status === 404) {
+                            code.textContent = '✖ Error: File could not be found';
+                            return;
+                        }
+
+                        if (xhr.status >= 400) {
+                            code.textContent = '✖ Error ' + xhr.status + ' while fetching file: ' + xhr.statusText;
+                            return;
+                        }
+
+                        code.textContent = '✖ Error: An unknown error occurred';
+                    };
+
+                    xhr.send(null);
+                });
+            }
+
+            const modalButtons = document.querySelectorAll("[data-modal]");
+            const openedAsLocalFile = window.location.protocol === 'file:';
+            if (modalButtons.length > 0 && openedAsLocalFile) {
+                console.warn(
+                    'Viewing the source code is unavailable because you are opening this page from the file:// scheme; ' +
+                    'browsers block XHR requests when a page is opened this way'
+                );
+            }
+
+            modalButtons.forEach(function (trigger) {
+                if (openedAsLocalFile) {
+                    trigger.setAttribute("hidden", "hidden");
+                }
+
+                trigger.addEventListener("click", function (event) {
+                    event.preventDefault();
+                    const modal = document.getElementById(trigger.dataset.modal);
+                    if (!modal) {
+                        console.error(`Modal with id "${trigger.dataset.modal}" could not be found`);
+                        return;
+                    }
+                    modal.classList.add("phpdocumentor-modal__open");
+
+                    loadExternalCodeSnippet(modal, trigger.dataset.src || null, trigger.dataset.line)
+                    const exits = modal.querySelectorAll("[data-exit-button]");
+                    exits.forEach(function (exit) {
+                        exit.addEventListener("click", function (event) {
+                            event.preventDefault();
+                            modal.classList.remove("phpdocumentor-modal__open");
+                        });
+                    });
+                });
+            });
+        })();
+    </script>
+
+    </article>
+                                </section>
+                <section class="phpdocumentor-on-this-page__sidebar">
+                                
+    <section class="phpdocumentor-on-this-page__content">
+        <strong class="phpdocumentor-on-this-page__title">On this page</strong>
+
+        <ul class="phpdocumentor-list -clean">
+            <li class="phpdocumentor-on-this-page-section__title">Table Of Contents</li>
+            <li>
+                <ul class="phpdocumentor-list -clean">
+                                                                                <li><a href="classes/Dagger-ModuleSource.html#toc-methods">Methods</a></li>
+                                    </ul>
+            </li>
+            
+            
+                        <li class="phpdocumentor-on-this-page-section__title">Methods</li>
+            <li>
+                <ul class="phpdocumentor-list -clean">
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_asModule">asModule()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_asString">asString()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_blueprint">blueprint()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_cloneRef">cloneRef()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_commit">commit()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_configClients">configClients()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_configExists">configExists()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_contextDirectory">contextDirectory()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_dependencies">dependencies()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_digest">digest()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_directory">directory()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_engineVersion">engineVersion()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_generatedContextDirectory">generatedContextDirectory()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_htmlRepoURL">htmlRepoURL()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_htmlURL">htmlURL()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_id">id()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_introspectionSchemaJSON">introspectionSchemaJSON()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_kind">kind()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_localContextDirectoryPath">localContextDirectoryPath()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_moduleName">moduleName()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_moduleOriginalName">moduleOriginalName()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_originalSubpath">originalSubpath()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_pin">pin()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_repoRootPath">repoRootPath()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_sdk">sdk()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_sourceRootSubpath">sourceRootSubpath()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_sourceSubpath">sourceSubpath()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_sync">sync()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_toolchains">toolchains()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_userDefaults">userDefaults()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_version">version()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withBlueprint">withBlueprint()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withClient">withClient()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withDependencies">withDependencies()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withEngineVersion">withEngineVersion()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withExperimentalFeatures">withExperimentalFeatures()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withIncludes">withIncludes()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withName">withName()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withoutBlueprint">withoutBlueprint()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withoutClient">withoutClient()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withoutDependencies">withoutDependencies()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withoutExperimentalFeatures">withoutExperimentalFeatures()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withoutToolchains">withoutToolchains()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withSDK">withSDK()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withSourceSubpath">withSourceSubpath()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withToolchains">withToolchains()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withUpdateBlueprint">withUpdateBlueprint()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withUpdatedClients">withUpdatedClients()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withUpdateDependencies">withUpdateDependencies()</a></li>
+                                            <li class=""><a href="classes/Dagger-ModuleSource.html#method_withUpdateToolchains">withUpdateToolchains()</a></li>
+                                    </ul>
+            </li>
+                    </ul>
+    </section>
+
+                </section>
+                            </div>
+            <section data-search-results class="phpdocumentor-search-results phpdocumentor-search-results--hidden">
+    <section class="phpdocumentor-search-results__dialog">
+        <header class="phpdocumentor-search-results__header">
+            <h2 class="phpdocumentor-search-results__title">Search results</h2>
+            <button class="phpdocumentor-search-results__close"><i class="fas fa-times"></i></button>
+        </header>
+        <section class="phpdocumentor-search-results__body">
+            <ul class="phpdocumentor-search-results__entries"></ul>
+        </section>
+    </section>
+</section>
+        </div>
+        <a href="classes/Dagger-ModuleSource.html#top" class="phpdocumentor-back-to-top"><i class="fas fa-chevron-circle-up"></i></a>
+
+    </main>
+
+    <script>
+        cssVars({});
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.23.0/plugins/line-highlight/prism-line-highlight.min.js"></script>
+</body>
+</html>
