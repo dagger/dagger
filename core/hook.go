@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
@@ -34,47 +35,59 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	objName := opts.ParentModType.typeDef.Name
 	fieldName := fn.metadata.Name
 
-	log := slog.Default().With(
-		"object", objName,
-		"function", fieldName,
-	)
+	if ok, err := func() (ok bool, rerr error) {
+		ctx, span := Tracer(ctx).Start(ctx,
+			"check scale out",
+		)
+		defer telemetry.End(span, func() error { return rerr })
 
-	ok, err := checkValidMod(ctx, fn.mod)
-	if err != nil {
-		return nil, false, err
-	}
-	if !ok {
-		log.Debug("skipping call with cloud hook due to invalid module source")
-		return nil, false, nil
-	}
+		log := slog.SpanLogger(ctx, "scale-out").With(
+			"object", objName,
+			"function", fieldName,
+		)
 
-	for _, input := range opts.Inputs {
-		ok, err := checkValidInputValue(ctx, fn.args[input.Name].modType, input.Value)
+		ok, err := checkValidMod(ctx, fn.mod)
 		if err != nil {
-			return nil, false, err
+			return false, err
 		}
 		if !ok {
-			log.Debug("skipping call with cloud hook due to invalid input", "input", input.Name)
-			return nil, false, nil
+			log.Info("skipping call with cloud hook due to invalid module source")
+			return false, nil
 		}
-	}
 
-	if !checkValidReturn(fn.returnType.TypeDef()) {
-		log.Debug("skipping call with cloud hook due to invalid return type", "returnType", fn.returnType.TypeDef())
-		return nil, false, nil
-	}
+		for _, input := range opts.Inputs {
+			ok, err := checkValidInputValue(ctx, fn.args[input.Name].modType, input.Value, log)
+			if err != nil {
+				return false, err
+			}
+			if !ok {
+				log.Info("skipping call with cloud hook due to invalid input", "input", input.Name)
+				return false, nil
+			}
+		}
 
-	ok, err = checkValidInput(ctx, opts.ParentModType, opts.ParentTyped)
-	if err != nil {
+		if !checkValidReturn(fn.returnType.TypeDef()) {
+			log.Info("skipping call with cloud hook due to invalid return type", "returnType", fn.returnType.TypeDef())
+			return false, nil
+		}
+
+		ok, err = checkValidInput(ctx, opts.ParentModType, opts.ParentTyped, log)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			log.Info("skipping call with cloud hook due to invalid parent")
+			return false, nil
+		}
+
+		// all valid, handle the call
+		log.Info("handling call with cloud hook")
+		return true, nil
+	}(); err != nil {
 		return nil, false, err
-	}
-	if !ok {
-		log.Debug("skipping call with cloud hook due to invalid parent")
+	} else if !ok {
 		return nil, false, nil
 	}
-
-	// all valid, handle the call
-	log.Info("handling call with cloud hook")
 
 	q, err := CurrentQuery(ctx)
 	if err != nil {
@@ -204,7 +217,7 @@ func checkValidReturn(typeDef *TypeDef) bool {
 	return false
 }
 
-func checkValidInputValue(ctx context.Context, parent ModType, value dagql.Typed) (bool, error) {
+func checkValidInputValue(ctx context.Context, parent ModType, value dagql.Typed, log *slog.Logger) (bool, error) {
 	// HACK: find all core ids in the input by converting to/from json via sdk
 	// this is kinda gross, but it works, because while the IDs returned via
 	// ConvertFromSDKResult are *wrong* for our own module IDs, they're correct
@@ -229,10 +242,10 @@ func checkValidInputValue(ctx context.Context, parent ModType, value dagql.Typed
 		return false, err
 	}
 
-	return checkValidInput(ctx, parent, result)
+	return checkValidInput(ctx, parent, result, log)
 }
 
-func checkValidInput(ctx context.Context, parent ModType, value dagql.AnyResult) (bool, error) {
+func checkValidInput(ctx context.Context, parent ModType, value dagql.AnyResult, log *slog.Logger) (bool, error) {
 	returnedIDs := map[digest.Digest]*resource.ID{}
 	if err := parent.CollectCoreIDs(ctx, value, returnedIDs); err != nil {
 		return false, fmt.Errorf("collect IDs: %w", err)
@@ -240,7 +253,7 @@ func checkValidInput(ctx context.Context, parent ModType, value dagql.AnyResult)
 
 	for _, id := range returnedIDs {
 		if !id.Call().IsRemoteable {
-			slog.Debug("skipping call with cloud hook due to non-remoteable ID", "id", id.Display())
+			log.Info("skipping call with cloud hook due to non-remoteable ID", "id", id.Display())
 			return false, nil
 		}
 	}

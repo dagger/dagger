@@ -204,7 +204,7 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 	req.MinimumEngineVersion = engine.MinimumEngineVersion
 	engineSpec := &EngineSpec{
 		// Image:    "registry.dagger.io/engine:" + tag,
-		Image:         "eriksipsma/dagger-test:6",
+		Image:         "eriksipsma/dagger-test:8",
 		EngineRequest: req,
 	}
 	b, err := json.Marshal(engineSpec)
