@@ -4,13 +4,6 @@
   "sdk": {
     "source": "go"
   },
-  "toolchains": [
-    {
-      "name": "doug",
-      "source": "github.com/vito/dang/mod/doug@main",
-      "pin": "41c36bd40eb20fccf54324905524d19313a92091"
-    }
-  ],
   "include": [
     "engine/distconsts/**/*",
     "sdk/typescript/runtime/**/*",
