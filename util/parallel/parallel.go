@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -11,7 +12,10 @@ import (
 )
 
 func New() parallelJobs {
-	return parallelJobs{}
+	return parallelJobs{
+		Reveal:   true,
+		Internal: false,
+	}
 }
 
 func Run(ctx context.Context, name string, fn JobFunc) error {
@@ -19,21 +23,37 @@ func Run(ctx context.Context, name string, fn JobFunc) error {
 }
 
 type parallelJobs struct {
-	Jobs  []Job
-	Limit *int
+	Jobs     []Job
+	Limit    *int
+	Internal bool
+	Reveal   bool
 }
 
 type Job struct {
 	Name       string
 	Func       JobFunc
 	attributes []attribute.KeyValue
+	Internal   bool
+	Reveal     bool
 }
 
 type JobFunc func(context.Context) error
 
+func (p parallelJobs) WithInternal(internal bool) parallelJobs {
+	p = p.Clone()
+	p.Internal = internal
+	return p
+}
+
+func (p parallelJobs) WithReveal(reveal bool) parallelJobs {
+	p = p.Clone()
+	p.Reveal = reveal
+	return p
+}
+
 func (p parallelJobs) WithJob(name string, fn JobFunc, attributes ...attribute.KeyValue) parallelJobs {
 	p = p.Clone()
-	p.Jobs = append(p.Jobs, Job{name, fn, attributes})
+	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal})
 	return p
 }
 
@@ -44,11 +64,18 @@ func (p parallelJobs) Clone() parallelJobs {
 }
 
 func (job Job) startSpan(ctx context.Context) (context.Context, trace.Span) {
+	var opts []trace.SpanStartOption
 	attr := job.attributes
-	attr = append(attr, attribute.Bool("dagger.io/ui.reveal", true))
+	if job.Reveal {
+		attr = append(attr, attribute.Bool("dagger.io/ui.reveal", true))
+	}
+	opts = append(opts, trace.WithAttributes(attr...))
+	if job.Internal {
+		opts = append(opts, telemetry.Internal())
+	}
 	return trace.SpanFromContext(ctx).TracerProvider().
 		Tracer("dagger.io/util/parallel").
-		Start(ctx, job.Name, trace.WithAttributes(attr...))
+		Start(ctx, job.Name, opts...)
 }
 
 func (job Job) Runner(ctx context.Context) func() error {
