@@ -649,9 +649,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
 			span.ErrorOrigin = linked
-			if linked.HasParent(span) {
-				span.RevealedSpans.Add(linked)
-			}
 		}
 	}
 

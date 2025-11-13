@@ -363,9 +363,6 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		} else {
 			changed = parent.RunningSpans.Remove(span)
 		}
-		if span.Reveal || parent.ErrorOrigin == span {
-			changed = parent.RevealedSpans.Add(span) || changed
-		}
 		if causal && span.IsFailed() {
 			changed = parent.FailedLinks.Add(span) || changed
 		}
@@ -397,6 +394,19 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			// do propagate activity, since these are indirect parents
 			if propagate(parent, false, true) {
 				span.db.update(parent)
+			}
+		}
+	}
+
+	// Handle revealed spans propagation separately to stop at revealed parents
+	if span.Reveal {
+		for parent := range span.Parents {
+			if parent.RevealedSpans.Add(span) {
+				span.db.update(parent)
+			}
+
+			if parent.Reveal || parent.Encapsulate {
+				break
 			}
 		}
 	}
