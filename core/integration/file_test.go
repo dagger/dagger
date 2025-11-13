@@ -1063,3 +1063,27 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "Hello, World!", contents) // Content should be unchanged
 	})
 }
+
+func (FileSuite) TestFileAsJSON(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("it converts json file contents to JSON", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.json", `{ "somekey": "somevalue" }`).
+			File("test.json")
+
+		result, err := file.AsJSON(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dagger.JSON(`{ "somekey": "somevalue" }`), result)
+	})
+
+	t.Run("it returns error with non-json", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", `this is not json`).
+			File("test.txt")
+
+		_, err := file.AsJSON(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "invalid JSON")
+	})
+}
