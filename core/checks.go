@@ -120,8 +120,8 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 		ctx, span := Tracer(ctx).Start(ctx, check.Name(),
 			telemetry.Reveal(),
 			trace.WithAttributes(
-				attribute.Bool(telemetry.UIRollupLogsAttr, true),
-				attribute.Bool(telemetry.UIRollupSpansAttr, true),
+				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 				attribute.String(telemetry.CheckNameAttr, check.Name()),
 			),
 		)

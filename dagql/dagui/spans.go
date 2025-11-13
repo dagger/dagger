@@ -274,10 +274,10 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.UIMessageAttr:
 		snapshot.Message = val.(string)
 
-	case telemetry.UIRollupLogsAttr:
+	case telemetry.UIRollUpLogsAttr:
 		snapshot.RollUpLogs = val.(bool)
 
-	case telemetry.UIRollupSpansAttr:
+	case telemetry.UIRollUpSpansAttr:
 		snapshot.RollUpSpans = val.(bool)
 
 	case telemetry.CheckNameAttr:
