@@ -1120,7 +1120,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
 			trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
 		)
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.EndWithCause(span, &rerr)
 	}
 
 	// install a logger+meter provider that records to the client's DB

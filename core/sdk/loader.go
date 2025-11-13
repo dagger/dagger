@@ -43,7 +43,7 @@ func (l *Loader) SDKForModule(
 	}
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk.Source), telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	builtinSDK, err := l.namedSDK(ctx, query, sdk)
 	if err == nil {

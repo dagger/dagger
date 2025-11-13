@@ -146,7 +146,7 @@ func GetContentHashFromDef(
 			fmt.Sprintf("checksum def: %s", key),
 			telemetry.Internal(),
 		)
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.EndWithCause(span, &rerr)
 
 		dgst, err := bkcontenthash.Checksum(ctx, ref, subdir, bkcontenthash.ChecksumOpts{
 			FollowLinks: true,

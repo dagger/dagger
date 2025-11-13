@@ -126,7 +126,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			),
 		)
 		eg.Go(func() (rerr error) {
-			defer telemetry.End(span, func() error { return rerr })
+			defer telemetry.EndWithCause(span, &rerr)
 			// Reset output fields, in case we're re-running
 			check.Completed = false
 			check.Passed = false
@@ -152,7 +152,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 					telemetry.Passthrough(),
 				)
 
-				defer telemetry.End(span, func() error { return rerr })
+				defer telemetry.EndWithCause(span, &rerr)
 				return dag.Select(ctx, dag.Root(), &checkParent, selectPath[:len(selectPath)-1]...)
 			})(); err != nil {
 				return err

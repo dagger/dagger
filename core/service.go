@@ -503,7 +503,7 @@ func (svc *Service) startContainer(
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
-			telemetry.End(span, func() error { return rerr })
+			telemetry.EndWithCause(span, &rerr)
 		}
 	}()
 
@@ -585,13 +585,14 @@ func (svc *Service) startContainer(
 
 		// show the exit status; doing so won't fail anything, and is
 		// helpful for troubleshooting
-		defer telemetry.End(span, func() error {
-			if stopped.Load() {
-				// stopped; we don't care about the exit result (likely 137)
-				return nil
+		var telemetryErr error
+		defer telemetry.EndWithCause(span, &telemetryErr)
+		defer func() {
+			if !stopped.Load() {
+				// we only care about the exit result (likely 137) if we weren't stopped
+				telemetryErr = exitErr
 			}
-			return exitErr
-		})
+		}()
 
 		// run all cleanups, discarding container
 		cleanup.Run()
@@ -921,7 +922,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
-			telemetry.End(span, func() error { return rerr })
+			telemetry.EndWithCause(span, &rerr)
 		}
 	}()
 
@@ -960,7 +961,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			Host:  fullHost,
 			Ports: checkPorts,
 			Stop: func(context.Context, bool) (rerr error) {
-				defer telemetry.End(span, func() error { return rerr })
+				defer telemetry.EndWithCause(span, &rerr)
 				stop(errors.New("service stop called"))
 				waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
 				defer waitCancel()

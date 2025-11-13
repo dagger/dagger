@@ -415,7 +415,7 @@ type ExitError struct {
 	Code int
 
 	// An optional originating error, for any code paths that go looking for it,
-	// e.g. telemetry.End which looks for error origins.
+	// e.g. telemetry.EndWithCause which looks for and applies error origins.
 	Original error
 }
 

@@ -348,7 +348,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	// result. Each test is responsible for busting its own caches.
 	func() {
 		ctx, span := otel.Tracer("dagger.io/golden").Start(ctx, "warmup")
-		defer telemetry.End(span, func() error { return nil })
+		defer span.End()
 		warmup := exec.Command(daggerBin, daggerArgs...)
 		warmup.Env = append(
 			os.Environ(),

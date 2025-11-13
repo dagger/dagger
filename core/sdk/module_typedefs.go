@@ -28,7 +28,7 @@ func (sdk *moduleTypes) ModuleTypes(
 	currentModuleID *call.ID,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

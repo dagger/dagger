@@ -334,7 +334,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 	// give ourselves a blank slate by zooming into a passthrough span
 	ctx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
-	defer telemetry.End(shellSpan, func() error { return nil })
+	defer shellSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
@@ -398,13 +398,15 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		trace.WithAttributes(
 			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
 		))
-	defer telemetry.End(span, func() error {
+	var telemetryErr error
+	defer telemetry.EndWithCause(span, &telemetryErr)
+	defer func() {
 		if errors.Is(rerr, context.Canceled) {
 			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
-			return nil
+		} else {
+			telemetryErr = rerr
 		}
-		return rerr
-	})
+	}()
 
 	// redirect stdio to the current span
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
