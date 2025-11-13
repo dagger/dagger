@@ -102,7 +102,8 @@ type Issue struct {
 
 func (r *Report) Assert() error {
 	if len(r.Issues) > 0 {
-		return fmt.Errorf("linting failed with %d issues:\n%s", len(r.Issues), r.Report)
+		fmt.Println(r.Report)
+		return fmt.Errorf("linting failed with %d issues", len(r.Issues))
 	}
 	return nil
 }
