@@ -7,6 +7,11 @@ replace github.com/dagger/dagger => ../..
 require github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 
 require (
+	github.com/distribution/reference v0.6.0 // indirect
+	github.com/opencontainers/go-digest v1.0.0 // indirect
+)
+
+require (
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
