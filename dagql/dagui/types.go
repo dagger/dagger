@@ -359,3 +359,7 @@ func (row *TraceRow) Root() *TraceRow {
 	}
 	return row.Parent.Root()
 }
+
+func (row *TraceRow) ShouldShowCause() bool {
+	return row.Span.ErrorOrigin != nil && (!row.Expanded || !row.HasChildren)
+}

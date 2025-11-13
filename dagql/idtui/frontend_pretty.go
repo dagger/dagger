@@ -107,9 +107,10 @@ type frontendPretty struct {
 	sidebarWidth int
 	view         *strings.Builder // rendered async
 	viewOut      *termenv.Output
-	browserBuf   *strings.Builder // logs if browser fails
-	finalRender  bool             // whether we're doing the final render
-	stdin        io.Reader        // used by backgroundMsg for running terminal
+	browserBuf   *strings.Builder      // logs if browser fails
+	finalRender  bool                  // whether we're doing the final render
+	shownErrs    map[dagui.SpanID]bool // which errors we've rendered
+	stdin        io.Reader             // used by backgroundMsg for running terminal
 	writer       io.Writer
 
 	// content to show in the sidebar
@@ -168,6 +169,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		browserBuf: new(strings.Builder),
 		sidebarBuf: new(strings.Builder),
 		writer:     w,
+		shownErrs:  map[dagui.SpanID]bool{},
 	}
 }
 
@@ -495,6 +497,15 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 				handleTelemetryErrorOutput(w, out, fe.TelemetryError)
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
+		}
+	}
+
+	if fe.err != nil && fe.shell == nil {
+		if fe.hasShownRootError() {
+			// If we've already shown the root cause error for the command, we can
+			// skip displaying the primary output, since it's just a poorer
+			// representation of the same error (`Error: input: ...`)
+			return nil
 		}
 	}
 
@@ -1964,7 +1975,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			}
 		}
 	}
-	if row.Span.ErrorOrigin != nil && !row.Expanded {
+	if row.ShouldShowCause() {
 		fe.renderErrorCause(out, r, row, prefix)
 	} else {
 		fe.renderStepError(out, r, row, prefix)
@@ -2022,16 +2033,24 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 
 func spanIsVisible(span *dagui.Span, row *dagui.TraceRow) bool {
 	for row := row.PreviousVisual; row != nil; row = row.PreviousVisual {
-		if row.Span.ID == span.ID {
+		if rowIsOrRevealsSpan(span, row) {
 			return true
 		}
 	}
 	for row := row.NextVisual; row != nil; row = row.NextVisual {
-		if row.Span.ID == span.ID {
+		if rowIsOrRevealsSpan(span, row) {
 			return true
 		}
 	}
 	return false
+}
+
+func rowIsOrRevealsSpan(span *dagui.Span, row *dagui.TraceRow) bool {
+	// Simple case: we found the span
+	return row.Span.ID == span.ID ||
+		// Complex case: the span is an error; did we show it from another collapsed
+		// span that bubbled it up?
+		(row.ShouldShowCause() && row.Span.ErrorOrigin.ID == span.ID)
 }
 
 func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
@@ -2120,6 +2139,20 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 		fe.renderLogs(out, r, &row, logs, height, prefix+indent, false)
 	}
 	fe.renderStepError(out, r, rootCauseRow, prefix+indent)
+
+	fe.shownErrs[rootCause.ID] = true
+}
+
+func (fe *frontendPretty) hasShownRootError() bool {
+	span, found := fe.db.Spans.Map[fe.db.PrimarySpan]
+	if !found {
+		// ?
+		return false
+	}
+	if span.ErrorOrigin == nil {
+		return false
+	}
+	return fe.shownErrs[span.ErrorOrigin.ID]
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
