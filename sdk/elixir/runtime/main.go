@@ -75,6 +75,7 @@ func (m *ElixirSdk) ModuleRuntime(
 
 	return ctr.
 		WithEnvVariable("MIX_ENV", "prod").
+		WithEnvVariable("HEX_CACERTS_PATH", "/etc/ssl/certs/ca-certificates.crt").
 		WithExec([]string{"mix", "deps.get", "--only", "prod"}).
 		WithExec([]string{"mix", "deps.compile"}).
 		WithExec([]string{"mix", "compile"}).
