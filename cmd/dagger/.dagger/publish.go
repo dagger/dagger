@@ -196,6 +196,7 @@ func s3Path(bucket string, path string, args ...any) string {
 }
 
 // Verify that the CLI builds without actually publishing anything
+// +check
 func (cli *DaggerCli) ReleaseDryRun(ctx context.Context) error {
 	return parallel.New().
 		WithJob(
