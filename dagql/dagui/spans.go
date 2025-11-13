@@ -17,6 +17,19 @@ import (
 
 type SpanSet = *OrderedSet[SpanID, *Span]
 
+// spanStateCategory represents the primary state of a span for rollup counting
+type spanStateCategory uint8
+
+const (
+	stateUnknown spanStateCategory = iota
+	stateRunning
+	statePending
+	stateCached
+	stateCanceled
+	stateFailed
+	stateSuccess
+)
+
 // RollUpState caches the computed state for rendering RollUp progress bars
 type RollUpState struct {
 	PendingCount  int
@@ -34,6 +47,42 @@ func (st *RollUpState) Reset() {
 	st.SuccessCount = 0
 	st.FailedCount = 0
 	st.CanceledCount = 0
+}
+
+// incrementCategory adds 1 to the count for the given category
+func (st *RollUpState) incrementCategory(cat spanStateCategory) {
+	switch cat {
+	case stateRunning:
+		st.RunningCount++
+	case statePending:
+		st.PendingCount++
+	case stateCached:
+		st.CachedCount++
+	case stateCanceled:
+		st.CanceledCount++
+	case stateFailed:
+		st.FailedCount++
+	case stateSuccess:
+		st.SuccessCount++
+	}
+}
+
+// decrementCategory subtracts 1 from the count for the given category
+func (st *RollUpState) decrementCategory(cat spanStateCategory) {
+	switch cat {
+	case stateRunning:
+		st.RunningCount--
+	case statePending:
+		st.PendingCount--
+	case stateCached:
+		st.CachedCount--
+	case stateCanceled:
+		st.CanceledCount--
+	case stateFailed:
+		st.FailedCount--
+	case stateSuccess:
+		st.SuccessCount--
+	}
 }
 
 type Span struct {
@@ -61,8 +110,12 @@ type Span struct {
 	// just allocated due to a span parent or other relationship.
 	Received bool
 
-	// Pre-computed RollUp state for rendering progress bars (only for RollUp spans)
+	// Pre-computed RollUp state for rendering progress bars
+	// Maintained incrementally for all spans, not just those marked RollUp
 	rollUpState *RollUpState
+
+	// Cached state classification for incremental updates
+	lastRollUpCategory spanStateCategory
 
 	db *DB
 }
@@ -360,6 +413,9 @@ func sliceOf[T any](val any) []T {
 // NOTE: failed state only propagates to spans that installed the current
 // span's effect - it does _not_ propagate through the parent span.
 func (span *Span) PropagateStatusToParentsAndLinks() {
+	// Update the span's own activity to reflect its current state
+	span.Activity.Add(span)
+
 	propagate := func(parent *Span, causal, activity bool) bool {
 		var changed bool
 		if span.IsRunningOrEffectsRunning() {
@@ -415,12 +471,43 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 	}
 
-	// Update RollUp state for any RollUp ancestors
+	// Update RollUp state for ancestors incrementally
 	span.updateRollUpAncestors()
 }
 
-// updateRollUpAncestors recomputes RollUp state for all RollUp ancestors
+// currentStateCategory determines the span's current state category for rollup counting
+func (span *Span) currentStateCategory() spanStateCategory {
+	if span.IsRunningOrEffectsRunning() {
+		return stateRunning
+	} else if span.IsPending() {
+		return statePending
+	} else if span.IsCached() {
+		return stateCached
+	} else if span.IsCanceled() {
+		return stateCanceled
+	} else if span.IsFailedOrCausedFailure() {
+		return stateFailed
+	} else {
+		// Success (completed but not cached, canceled, or failed)
+		return stateSuccess
+	}
+}
+
+// updateRollUpAncestors incrementally updates RollUp state for all ancestors
+// This is O(depth) instead of O(descendants) per update
 func (span *Span) updateRollUpAncestors() {
+	// Determine the span's current state category
+	newCategory := span.currentStateCategory()
+	oldCategory := span.lastRollUpCategory
+
+	// If the category hasn't changed, no update needed
+	if newCategory == oldCategory {
+		return
+	}
+
+	// Update the cached category
+	span.lastRollUpCategory = newCategory
+
 	// Use a map to track which ancestors we've already updated to avoid redundant work
 	updated := make(map[SpanID]bool)
 
@@ -449,10 +536,16 @@ func (span *Span) updateRollUpAncestors() {
 		}
 		updated[current.ID] = true
 
-		// Update this ancestor if it's a RollUp span
-		if current.RollUpSpans {
-			current.computeRollUpState()
+		// Lazily initialize rollUpState for all spans
+		if current.rollUpState == nil {
+			current.rollUpState = &RollUpState{}
 		}
+
+		// Incrementally update this ancestor's counts
+		if oldCategory != stateUnknown {
+			current.rollUpState.decrementCategory(oldCategory)
+		}
+		current.rollUpState.incrementCategory(newCategory)
 
 		// Add this ancestor's parents to queue
 		if current.ParentSpan != nil {
@@ -467,36 +560,24 @@ func (span *Span) updateRollUpAncestors() {
 	}
 }
 
-// computeRollUpState pre-computes the state for rendering RollUp progress bars
-// This is called when children change, not on every render frame.
-func (span *Span) computeRollUpState() {
-	if !span.RollUpSpans {
-		return
-	}
-
-	// Lazily initialize
+// initializeRollUpState computes the initial RollUp state by traversing descendants once
+// This can be used to rebuild state from scratch if needed (e.g., for debugging or recovery).
+// Under normal operation, the incremental updates in updateRollUpAncestors are sufficient.
+//
+//nolint:unused
+func (span *Span) initializeRollUpState() {
 	if span.rollUpState == nil {
 		span.rollUpState = &RollUpState{}
+	} else {
+		span.rollUpState.Reset()
 	}
 
-	// Reset and recalculate counts
-	state := span.rollUpState
-	state.Reset()
+	// Recursively count all descendants
 	for child := range span.Descendants {
-		if child.IsRunningOrEffectsRunning() {
-			state.RunningCount++
-		} else if child.IsPending() {
-			state.PendingCount++
-		} else if child.IsCached() {
-			state.CachedCount++
-		} else if child.IsCanceled() {
-			state.CanceledCount++
-		} else if child.IsFailedOrCausedFailure() {
-			state.FailedCount++
-		} else {
-			// Success (completed but not cached, canceled, or failed)
-			state.SuccessCount++
-		}
+		category := child.currentStateCategory()
+		span.rollUpState.incrementCategory(category)
+		// Also initialize the child's cached category for future incremental updates
+		child.lastRollUpCategory = category
 	}
 }
 
