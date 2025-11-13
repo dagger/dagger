@@ -40,6 +40,10 @@ const (
 	// Reveal the span all the way up to the top-level parent.
 	UIRevealAttr = "dagger.io/ui.reveal"
 
+	// Prevent Reveal, RollUpLogs, and RollUpSpans from bubbling telemetry up past
+	// this span.
+	UIBoundaryAttr = "dagger.io/ui.boundary"
+
 	// An emoji representing the conceptual source of the span.
 	//
 	// Example: 🧑, 🤖

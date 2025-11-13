@@ -2656,8 +2656,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 		if span == nil {
 			break
 		}
-		if span.Encapsulate {
-			// Don't roll up past encapsulation points.
+		if span.Boundary || span.Encapsulate || span.Internal {
 			break
 		}
 		if span.RollUpLogs {

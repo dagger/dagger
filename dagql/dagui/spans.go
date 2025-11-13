@@ -187,9 +187,11 @@ type SpanSnapshot struct {
 	Encapsulated bool `json:",omitempty"`
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
-	Reveal       bool `json:",omitempty"`
-	RollUpLogs   bool `json:",omitempty"`
-	RollUpSpans  bool `json:",omitempty"`
+
+	Boundary    bool `json:",omitempty"`
+	Reveal      bool `json:",omitempty"`
+	RollUpLogs  bool `json:",omitempty"`
+	RollUpSpans bool `json:",omitempty"`
 
 	// Check name + status
 	CheckName   string `json:",omitempty"`
@@ -261,6 +263,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.UIRevealAttr:
 		snapshot.Reveal = val.(bool)
+
+	case telemetry.UIBoundaryAttr:
+		snapshot.Boundary = val.(bool)
 
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
@@ -405,7 +410,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 				span.db.update(parent)
 			}
 
-			if parent.Reveal || parent.Encapsulate {
+			if parent.Boundary || parent.Encapsulate || parent.Reveal {
 				break
 			}
 		}

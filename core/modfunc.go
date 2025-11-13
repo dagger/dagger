@@ -586,11 +586,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 
 func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], rerr error) {
 	// hide all this internal plumbing making up the call
-	ctx, hideSpan := Tracer(ctx).Start(ctx, "load sdk runtime",
-		telemetry.Internal(),
-		// Prevent logs from rolling up
-		telemetry.Encapsulate(),
-	)
+	ctx, hideSpan := Tracer(ctx).Start(ctx, "load sdk runtime", telemetry.Internal())
 	defer telemetry.End(hideSpan, func() error { return rerr })
 
 	mod := fn.mod

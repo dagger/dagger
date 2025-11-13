@@ -146,7 +146,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			if err := (func() (rerr error) {
 				ctx, span := Tracer(ctx).Start(ctx, "load check context",
 					// Prevent logs from bubbling up past this point.
-					telemetry.Encapsulate(),
+					telemetry.Boundary(),
 					// We're only using this span as a log encapsulation boundary; show
 					// its child spans inline.
 					telemetry.Passthrough(),
