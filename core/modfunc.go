@@ -584,7 +584,15 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	return cacheCfgResp, nil
 }
 
-func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], err error) {
+func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], rerr error) {
+	// hide all this internal plumbing making up the call
+	ctx, hideSpan := Tracer(ctx).Start(ctx, "load sdk runtime",
+		telemetry.Internal(),
+		// Prevent logs from rolling up
+		telemetry.Encapsulate(),
+	)
+	defer telemetry.End(hideSpan, func() error { return rerr })
+
 	mod := fn.mod
 	srv := dagql.CurrentDagqlServer(ctx)
 
@@ -704,13 +712,16 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	srv := dagql.CurrentDagqlServer(ctx)
 
-	runtime, err := fn.loadFunctionRuntime(ctx)
+	// hide all this internal plumbing making up the call
+	hideCtx := dagql.WithSkip(ctx)
+
+	runtime, err := fn.loadFunctionRuntime(hideCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
 
 	var metaDir dagql.ObjectResult[*Directory]
-	err = srv.Select(ctx, srv.Root(), &metaDir,
+	err = srv.Select(hideCtx, srv.Root(), &metaDir,
 		dagql.Selector{
 			Field: "directory",
 		},
@@ -720,7 +731,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	var ctr dagql.ObjectResult[*Container]
-	err = srv.Select(ctx, runtime, &ctr,
+	err = srv.Select(hideCtx, runtime, &ctr,
 		dagql.Selector{
 			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{
@@ -733,9 +744,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
 
-	execCtx := ctx
-	execCtx = dagql.WithSkip(execCtx) // this span shouldn't be shown (it's entirely useless)
-	err = srv.Select(execCtx, ctr, &ctr,
+	err = srv.Select(hideCtx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
