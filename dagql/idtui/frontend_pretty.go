@@ -2039,8 +2039,36 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 
 	rootCauseTree := fe.rowsView.BySpan[rootCause.ID]
 	if rootCauseTree == nil {
-		slog.Warn("error origin has no tree", "causeID", rootCause.ID)
-		return
+		// error origin has no tree, likely due to internal/hidden spans
+		// create a synthetic tree by walking span parents
+		var syntheticParents []*dagui.Span
+		for current := rootCause; current != nil && current.ParentID.IsValid(); {
+			parent := fe.db.Spans.Map[current.ParentID]
+			if parent == nil {
+				break
+			}
+			syntheticParents = append(syntheticParents, parent)
+			current = parent
+			// Stop if we reach the current row's span or a boundary
+			if parent.ID == row.Span.ID {
+				break
+			}
+		}
+
+		// Create synthetic tree structure
+		rootCauseTree = &dagui.TraceTree{
+			Span: rootCause,
+		}
+
+		// Build parent chain
+		current := rootCauseTree
+		for i := len(syntheticParents) - 1; i >= 0; i-- {
+			parent := &dagui.TraceTree{
+				Span: syntheticParents[i],
+			}
+			current.Parent = parent
+			current = parent
+		}
 	}
 
 	rootCauseRow := &dagui.TraceRow{
