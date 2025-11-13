@@ -73,6 +73,10 @@
       "source": "toolchains/python-sdk-dev"
     },
     {
+      "name": "java-sdk",
+      "source": "toolchains/java-sdk-dev"
+    },
+    {
       "name": "sdks",
       "source": "toolchains/all-sdks"
     },
