@@ -1,0 +1,62 @@
+Expected stderr:
+
+▼ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+ 
+▼ load module: ./viztest/invalid-dep X.Xs ERROR
+! failed to get configured module: failed to resolve dep to source: failed to load local dep: select: failed to load sdk for local module source: failed to load local dep: select: local path "/app/dagql/idtui/viztest/invalid-dep/invalid/unknown" does not exist: unknown builtin sdk
+  The "unknown" SDK does not exist. The available SDKs are:
+  - go
+  - python
+  - typescript
+  - php
+  - elixir
+  - java
+  - any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)
+╰╴▼ finding module configuration X.Xs ERROR
+  ! failed to resolve dep to source: failed to load local dep: select: failed to load sdk for local module source: failed to load local dep: select: local path "/app/dagql/idtui/viztest/invalid-dep/invalid/unknown" does not exist: unknown builtin sdk
+    The "unknown" SDK does not exist. The available SDKs are:
+    - go
+    - python
+    - typescript
+    - php
+    - elixir
+    - java
+    - any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)
+  ╰╴▼ moduleSource(refString: "./viztest/invalid-dep"): ModuleSource! X.Xs ERROR
+    ! failed to resolve dep to source: failed to load local dep: select: failed to load sdk for local module source: failed to load local dep: select: local path "/app/dagql/idtui/viztest/invalid-dep/invalid/unknown" does not exist: unknown builtin sdk
+      The "unknown" SDK does not exist. The available SDKs are:
+      - go
+      - python
+      - typescript
+      - php
+      - elixir
+      - java
+      - any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)
+    ╰╴▼ moduleSource(refString: "/app/dagql/idtui/viztest/invalid-dep/invalid", disableFindUp: true): ModuleSource! X.Xs ERROR
+      ! failed to load sdk for local module source: failed to load local dep: select: local path "/app/dagql/idtui/viztest/invalid-dep/invalid/unknown" does not exist: unknown builtin sdk
+        The "unknown" SDK does not exist. The available SDKs are:
+        - go
+        - python
+        - typescript
+        - php
+        - elixir
+        - java
+        - any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)
+      ╰╴▼ sdkForModule: unknown X.Xs ERROR
+        ! failed to load local dep: select: local path "/app/dagql/idtui/viztest/invalid-dep/invalid/unknown" does not exist: unknown builtin sdk
+          The "unknown" SDK does not exist. The available SDKs are:
+          - go
+          - python
+          - typescript
+          - php
+          - elixir
+          - java
+          - any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)
+        ╰╴✘ moduleSource(refString: "/app/dagql/idtui/viztest/invalid-dep/invalid/unknown", disableFindUp: true): ModuleSource! X.Xs ERROR
+          ! local path "/app/dagql/idtui/viztest/invalid-dep/invalid/unknown" does not exist
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
