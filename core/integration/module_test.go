@@ -57,7 +57,7 @@ func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, `The "foo-bar" SDK does not exist.`)
+		requireErrOut(t, err, `invalid SDK: "foo-bar"`)
 	})
 
 	t.Run("specifying version with either of go/python/typescript sdk returns error", func(ctx context.Context, t *testctx.T) {
