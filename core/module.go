@@ -169,6 +169,7 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 				checks = append(checks, &Check{
 					Path:        []string{gqlFieldName(fn.Name)},
 					Description: fn.Description,
+					Module:      mod,
 				})
 				return
 			}

@@ -630,6 +630,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
 
+			/* TODO: rm for now?
 			for _, hook := range callHooks {
 				result, ok, err := hook.Call(ctx, modFun, opts)
 				if err != nil {
@@ -639,6 +640,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 					return result, nil
 				}
 			}
+			*/
 
 			return modFun.Call(ctx, opts)
 		},

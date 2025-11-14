@@ -29,6 +29,8 @@ func (s checksSchema) Install(srv *dagql.Server) {
 			Doc("Return the fully qualified name of the check"),
 		dagql.Func("resultEmoji", s.resultEmoji).
 			Doc("An emoji representing the result of the check"),
+		dagql.Func("run", s.runSingleCheck).
+			Doc("Execute the check"),
 	}.Install(srv)
 }
 
@@ -50,4 +52,13 @@ func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args str
 
 func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args struct{}) (*core.File, error) {
 	return parent.Report(ctx)
+}
+
+func (s checksSchema) runSingleCheck(ctx context.Context, parent *core.Check, args struct {
+	// internal-only arg used by scale-out to get nice-looking telemetry
+	// TODO: make actually internal (tricky cause we need to construct "external client" queries with it set)
+	// SkipCheckSpan bool `internal:"true" default:""`
+	SkipCheckSpan bool `default:"false"`
+}) (*core.Check, error) {
+	return parent.Run(ctx, args.SkipCheckSpan)
 }

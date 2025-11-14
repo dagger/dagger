@@ -86,6 +86,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
 			),
 
+		dagql.Func("check", s.moduleCheck).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return the check defined by the module with the given name. Must match to exactly one check.`).
+			Args(
+				dagql.Arg("name").Doc("The name of the check to retrieve"),
+			),
+
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
 
@@ -911,6 +918,28 @@ func (s *moduleSchema) moduleChecks(
 		}
 	}
 	return mod.Checks(ctx, include)
+}
+
+func (s *moduleSchema) moduleCheck(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Name string
+	},
+) (*core.Check, error) {
+	checkGroup, err := mod.Checks(ctx, []string{args.Name})
+	if err != nil {
+		return nil, err
+	}
+
+	switch len(checkGroup.Checks) {
+	case 1:
+		return checkGroup.Checks[0].Clone(), nil
+	case 0:
+		return nil, fmt.Errorf("check %q not found in module %q", args.Name)
+	default:
+		return nil, fmt.Errorf("multiple checks found with name %q in module %q", args.Name, mod.Name)
+	}
 }
 
 func (s *moduleSchema) moduleDependencies(
