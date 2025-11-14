@@ -45,7 +45,7 @@ func AroundFunc(
 	id *call.ID,
 ) (
 	context.Context,
-	func(res dagql.AnyResult, cached bool, rerr error),
+	func(res dagql.AnyResult, cached bool, rerr *error),
 ) {
 	if dagql.IsSkipped(ctx) || isIntrospection(ctx, id) || isMeta(id) || isDagOp(id) {
 		// introspection+meta are very uninteresting spans
@@ -118,8 +118,8 @@ func AroundFunc(
 
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
-	return ctx, func(res dagql.AnyResult, cached bool, err error) {
-		defer telemetry.End(span, func() error { return err })
+	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
+		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, err, id)
 		logResult(ctx, res, self, id)
 		collectEffects(ctx, res, span, self)
@@ -223,7 +223,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 }
 
 // recordStatus records the status of a call on a span.
-func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, err error, id *call.ID) {
+func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, err *error, id *call.ID) {
 	if cached {
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
@@ -252,7 +252,7 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 		}
 	}
 
-	if err != nil {
+	if err != nil && *err != nil {
 		var receiver *string
 		if id.Receiver() != nil {
 			recv := id.Receiver().Type().ToAST().String()

@@ -199,9 +199,9 @@ func (fc *FuncCommand) Command() *cobra.Command {
 								c.PrintErrln("Stderr:")
 								c.PrintErrln(ex.Stderr)
 							}
-							return ExitError{Code: ex.ExitCode, Original: err}
+							return idtui.ExitError{Code: ex.ExitCode, Original: err}
 						}
-						return ExitError{Code: 1, Original: err}
+						return idtui.ExitError{Code: 1, Original: err}
 					}
 
 					return nil
@@ -321,7 +321,7 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	ctx := c.Context()
 
 	spanCtx, span := Tracer().Start(ctx, "parsing command line arguments", telemetry.Encapsulate())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 	fc.ctx = spanCtx
 
 	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
@@ -720,7 +720,7 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 	var noChanges bool
 	if err := (func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "analyzing changes")
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.EndWithCause(span, &rerr)
 
 		preview, err := idtui.PreviewPatch(ctx, changeset)
 		if err != nil {
@@ -761,7 +761,7 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 	}
 
 	ctx, span := Tracer().Start(ctx, "applying changes")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 	if _, err := changeset.Export(ctx, "."); err != nil {
 		return err
 	}

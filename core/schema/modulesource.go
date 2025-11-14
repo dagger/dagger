@@ -2757,7 +2757,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 		err = (func() (rerr error) {
 			ctx, span := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
-			defer telemetry.End(span, func() error { return rerr })
+			defer telemetry.EndWithCause(span, &rerr)
 			getModDefFn, err := core.NewModFunction(
 				ctx,
 				mod,
@@ -3462,7 +3462,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 // load the given module source's dependencies as modules
 func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.ModDeps, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {

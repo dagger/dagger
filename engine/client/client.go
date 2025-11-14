@@ -197,7 +197,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
 	connectCtx, span := Tracer(ctx).Start(ctx, "connect", connectSpanOpts...)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
@@ -302,20 +302,20 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		ClientID:         c.ID,
 	})
 	provisionCancel()
-	telemetry.End(provisionSpan, func() error { return err })
+	telemetry.EndWithCause(provisionSpan, &err)
 	if err != nil {
 		return err
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 	slog.Debug("connecting", "runner", c.RunnerHost)
 
 	bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
 	bkClient, bkInfo, err := newBuildkitClient(bkCtx, remote, c.connector)
-	telemetry.End(span, func() error { return err })
+	telemetry.EndWithCause(span, &err)
 	if err != nil {
 		return fmt.Errorf("new client: %w", err)
 	}
@@ -335,7 +335,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		if err != nil {
 			err = fmt.Errorf("failed to get image loader: %w", err)
 		}
-		telemetry.End(span, func() error { return err })
+		telemetry.EndWithCause(span, &err)
 		if err != nil {
 			return err
 		}
@@ -347,7 +347,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "subscribing to telemetry",
 		telemetry.Encapsulated())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	slog := slog.With("client", c.ID)
 
@@ -375,7 +375,7 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session", telemetry.Encapsulate())
-	defer telemetry.End(sessionSpan, func() error { return rerr })
+	defer telemetry.EndWithCause(sessionSpan, &rerr)
 
 	clientMetadata := c.clientMetadata()
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
@@ -641,7 +641,7 @@ type otlpConsumer struct {
 
 func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "consuming "+c.path)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	slog := slog.With("path", c.path, "traceID", c.traceID, "clientID", c.clientID)
 

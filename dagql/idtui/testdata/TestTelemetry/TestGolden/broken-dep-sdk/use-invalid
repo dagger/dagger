@@ -1,0 +1,35 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+ 
+✘ load module: ./viztest/broken-dep-sdk X.Xs ERROR
+╰╴✘ finding module configuration X.Xs ERROR
+  ╰╴✘ moduleSource(refString: "./viztest/broken-dep-sdk"): ModuleSource! X.Xs ERROR
+    ├╴✘ moduleSource(refString: "/app/dagql/idtui/viztest/broken-dep-sdk/invalid", disableFindUp: true): ModuleSource! X.Xs ERROR
+    │ ╰╴✘ load SDK: unknown X.Xs ERROR
+    │   ┃ Could not load SDK "unknown".
+    │   ┃
+    │   ┃ Errors:
+    │   ┃ - unknown built-in sdk
+    │   ┃ - local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist
+    │   ┃
+    │   ┃ The available SDKs are:
+    │   ┃ - go
+    │   ┃ - python
+    │   ┃ - typescript
+    │   ┃ - php
+    │   ┃ - elixir
+    │   ┃ - java
+    │   ┃ - any git module ref, e.g. github.com/dagger/dagger/sdk/elixir@main
+    │   ┃ - any local module path, e.g. ./my-sdk
+    │   ! invalid SDK: "unknown"
+    │   ╰╴✘ moduleSource(refString: "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown", disableFindUp: true): ModuleSource! X.Xs ERROR
+    │     ! local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist
+    │    
+    ╰╴✔ load SDK: go X.Xs
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

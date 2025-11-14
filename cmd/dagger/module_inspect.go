@@ -57,11 +57,11 @@ func initializeModule(
 	modSrc *dagger.ModuleSource,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
 	configExists, err := modSrc.ConfigExists(findCtx)
-	telemetry.End(findSpan, func() error { return err })
+	telemetry.EndWithCause(findSpan, &err)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
@@ -72,7 +72,7 @@ func initializeModule(
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
 	err = modSrc.AsModule().Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
-	telemetry.End(serveSpan, func() error { return err })
+	telemetry.EndWithCause(serveSpan, &err)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serve module: %w", err)
 	}
@@ -99,20 +99,21 @@ func initializeClientGeneratorModule(
 	srcOpts ...dagger.ModuleSourceOpts,
 ) (gdef *clientGeneratorModuleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module: "+srcRef)
-	defer telemetry.End(span, func() error {
+
+	var telemetryErr error
+	defer telemetry.EndWithCause(span, &telemetryErr)
+	defer func() {
 		// To not confuse the user, we don't want to show the error if the config
 		// doesn't exist here. It should be handled in an upper function.
 		if !errors.Is(rerr, ErrConfigNotFound) {
-			return rerr
+			telemetryErr = rerr
 		}
-
-		return nil
-	})
+	}()
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
 	modSrc := dag.ModuleSource(srcRef, srcOpts...)
 	configExists, err := modSrc.ConfigExists(findCtx)
-	telemetry.End(findSpan, func() error { return err })
+	telemetry.EndWithCause(findSpan, &err)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
@@ -179,7 +180,7 @@ var loadTypeDefsQuery string
 
 func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "inspecting module metadata", telemetry.Encapsulate())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	// NB: All we need most of the time is the name of the dependencies.
 	// We need the descriptions when listing the dependencies, and the source
@@ -279,7 +280,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
 func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr error) {
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
-	defer telemetry.End(loadSpan, func() error { return rerr })
+	defer telemetry.EndWithCause(loadSpan, &rerr)
 
 	var res struct {
 		TypeDefs []*modTypeDef

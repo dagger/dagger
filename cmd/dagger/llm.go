@@ -115,7 +115,7 @@ func NewLLMSession(
 	s.plumbingCtx, s.plumbingSpan = Tracer().Start(ctx, "LLM plumbing", telemetry.Internal())
 	go func() {
 		<-ctx.Done()
-		telemetry.End(s.plumbingSpan, func() error { return nil })
+		s.plumbingSpan.End()
 	}()
 
 	// TODO: cache this
@@ -388,7 +388,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 }
 
 // maybeAutoCompact checks if the context usage exceeds 80% and automatically compacts if so
-func (s *LLMSession) maybeAutoCompact(ctx context.Context) (*dagger.LLM, error) {
+func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 	if !s.ShouldAutocompact() {
 		return s.llm, nil
 	}
@@ -412,7 +412,7 @@ func (s *LLMSession) maybeAutoCompact(ctx context.Context) (*dagger.LLM, error) 
 	// If we're over 80% context usage, automatically compact
 	if contextUsage > 0.80 {
 		ctx, span := Tracer().Start(ctx, "auto-compacting LLM history", telemetry.Reveal())
-		defer telemetry.End(span, func() error { return nil })
+		defer telemetry.EndWithCause(span, &rerr)
 		return s.Compact(ctx)
 	}
 
@@ -654,7 +654,7 @@ var compactPrompt string
 
 func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	compactedPrompt, err := s.llm.
 		WithoutSystemPrompts().
@@ -707,7 +707,7 @@ func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
 
 	ctx, span := Tracer().Start(ctx, "syncing local changes",
 		telemetry.Reveal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 

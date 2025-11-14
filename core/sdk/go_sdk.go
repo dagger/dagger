@@ -182,7 +182,7 @@ func (sdk *goSDK) Codegen(
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
@@ -386,7 +386,7 @@ func (sdk *goSDK) Runtime(
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (inst dagql.ObjectResult[*core.Container], rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {

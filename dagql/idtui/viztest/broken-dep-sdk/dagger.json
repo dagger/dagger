@@ -1,0 +1,13 @@
+{
+  "name": "invalid-dep",
+  "engineVersion": "v0.18.3",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "invalid",
+      "source": "./invalid"
+    }
+  ]
+}

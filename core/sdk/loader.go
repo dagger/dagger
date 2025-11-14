@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	errMissingSDKRef     = errors.New("sdk ref is required")
-	errUnknownBuiltinSDK = errors.New("unknown builtin sdk")
+	errMissingSDKRef     = errors.New("no sdk ref provided")
+	errUnknownBuiltinSDK = errors.New("unknown built-in sdk")
 )
 
 type Loader struct{}
@@ -42,17 +42,36 @@ func (l *Loader) SDKForModule(
 		return nil, errMissingSDKRef
 	}
 
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk.Source), telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load SDK: %s", sdk.Source))
+	defer telemetry.EndWithCause(span, &rerr)
 
-	builtinSDK, err := l.namedSDK(ctx, query, sdk)
-	if err == nil {
+	builtinSDK, builtinErr := l.namedSDK(ctx, query, sdk)
+	if builtinErr == nil {
 		return builtinSDK, nil
-	} else if !errors.Is(err, errUnknownBuiltinSDK) {
-		return nil, err
+	} else if !errors.Is(builtinErr, errUnknownBuiltinSDK) {
+		return nil, builtinErr
 	}
 
-	return l.externalSDKForModule(ctx, query, sdk, parentSrc)
+	extSDK, extErr := l.externalSDKForModule(ctx, query, sdk, parentSrc)
+	if extErr == nil {
+		return extSDK, nil
+	}
+
+	stdio := telemetry.SpanStdio(ctx, "dagger.io/core/sdk")
+	fmt.Fprintf(stdio.Stderr, "Could not load SDK %q.\n", sdk.Source)
+	fmt.Fprintln(stdio.Stderr)
+	fmt.Fprintln(stdio.Stderr, "Errors:")
+	fmt.Fprintln(stdio.Stderr, "-", builtinErr)
+	fmt.Fprintln(stdio.Stderr, "-", extErr)
+	fmt.Fprintln(stdio.Stderr)
+	fmt.Fprintln(stdio.Stderr, "The available SDKs are:")
+	for _, sdk := range validInbuiltSDKs {
+		fmt.Fprintln(stdio.Stderr, "-", sdk)
+	}
+	fmt.Fprintln(stdio.Stderr, "- any git module ref, e.g. github.com/dagger/dagger/sdk/elixir@main")
+	fmt.Fprintln(stdio.Stderr, "- any local module path, e.g. ./my-sdk")
+
+	return nil, fmt.Errorf("invalid SDK: %q", sdk.Source)
 }
 
 // Load an SDK module from an external source (not builtin to the engine).
@@ -76,11 +95,11 @@ func (l *Loader) externalSDKForModule(
 
 	sdkModSrc, err := core.ResolveDepToSource(ctx, bk, dag, parentSrc, sdk.Source, "", "")
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", err.Error(), getInvalidBuiltinSDKError(sdk.Source))
+		return nil, err
 	}
 
 	if !sdkModSrc.Self().ConfigExists {
-		return nil, fmt.Errorf("sdk module source has no dagger.json: %w", getInvalidBuiltinSDKError(sdk.Source))
+		return nil, fmt.Errorf("sdk module source has no dagger.json")
 	}
 
 	var sdkMod dagql.ObjectResult[*core.Module]
@@ -121,7 +140,7 @@ func (l *Loader) namedSDK(
 		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	}
 
-	return nil, getInvalidBuiltinSDKError(sdk.Source)
+	return nil, errUnknownBuiltinSDK
 }
 
 // loads an SDK implemented as a module that is "builtin" to engine, which means its
@@ -201,7 +220,7 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	// this validation may seem redundant, but it helps keep the list of
 	// builtin sdk between invalidSDKError message and builtinSDK function in sync.
 	if !slices.Contains(validInbuiltSDKs, sdk(sdkNameParsed)) {
-		return "", "", getInvalidBuiltinSDKError(sdkName)
+		return "", "", errUnknownBuiltinSDK
 	}
 
 	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
@@ -220,18 +239,4 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	}
 
 	return sdk(sdkNameParsed), sdkSuffix, nil
-}
-
-func getInvalidBuiltinSDKError(inputSDKName string) error {
-	inbuiltSDKs := []string{}
-
-	for _, sdk := range validInbuiltSDKs {
-		inbuiltSDKs = append(inbuiltSDKs, fmt.Sprintf("- %s", sdk))
-	}
-
-	return fmt.Errorf(`%w
-The %q SDK does not exist. The available SDKs are:
-%s
-- any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)`,
-		errUnknownBuiltinSDK, inputSDKName, strings.Join(inbuiltSDKs, "\n"))
 }

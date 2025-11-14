@@ -116,6 +116,22 @@ func (a WithMountedDirectoryArgs) Render(out TermOutput) (string, []string, bool
 	return title, []string{"path", "source"}, true
 }
 
+// WithMountedFileArgs represents the arguments for withMountedFile calls
+type WithMountedFileArgs struct {
+	Path   string `json:"path"`
+	Source string `json:"source"`
+}
+
+func (a WithMountedFileArgs) Render(out TermOutput) (string, []string, bool) {
+	if a.Path == "" {
+		return "", nil, false
+	}
+
+	title := out.String("withMountedFile").Foreground(termenv.ANSIBlue).String() + " " + a.Path
+	title += " <- " + a.Source
+	return title, []string{"path", "source"}, true
+}
+
 // WithDirectoryArgs represents the arguments for withMountedDirectory calls
 type WithDirectoryArgs struct {
 	Path   string `json:"path"`
@@ -159,18 +175,7 @@ func (a WithNewFileArgs) Render(out TermOutput) (string, []string, bool) {
 	}
 
 	title := out.String("withNewFile").Foreground(termenv.ANSIBlue).String() + " " + a.Path
-	if len(a.Contents) == 0 {
-		title += " (empty)"
-	} else {
-		content := a.Contents
-		if len(content) > 100 {
-			content = content[:100] + "..."
-			content += fmt.Sprintf(" (len=%d)", len(a.Contents))
-		}
-		title += fmt.Sprintf(" <- %s", content)
-	}
-
-	return title, []string{"path", "contents"}, true
+	return title, []string{"path"}, true
 }
 
 // WithUserArgs represents the arguments for withUser calls
@@ -208,6 +213,7 @@ var FieldRendererRegistry = map[string]func() FieldRenderer{
 	"withWorkdir":          func() FieldRenderer { return &WithWorkdirArgs{} },
 	"withEnvVariable":      func() FieldRenderer { return &WithEnvVariableArgs{} },
 	"withMountedDirectory": func() FieldRenderer { return &WithMountedDirectoryArgs{} },
+	"withMountedFile":      func() FieldRenderer { return &WithMountedFileArgs{} },
 	"withDirectory":        func() FieldRenderer { return &WithDirectoryArgs{} },
 	"withFile":             func() FieldRenderer { return &WithFileArgs{} },
 	"withNewFile":          func() FieldRenderer { return &WithNewFileArgs{} },
@@ -222,7 +228,7 @@ func RegisterFieldRenderer(fieldName string, rendererFactory func() FieldRendere
 
 // callArgsToJSON converts call arguments to JSON for unmarshaling
 func (r *renderer) callArgsToJSON(call *callpbv1.Call, out TermOutput, prefix string, depth int) ([]byte, error) {
-	argsMap := make(map[string]interface{})
+	argsMap := make(map[string]any)
 
 	for _, arg := range call.Args {
 		value := arg.Value

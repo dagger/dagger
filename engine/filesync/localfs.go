@@ -419,7 +419,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 	}
 
 	ctx, copySpan := Tracer(ctx).Start(ctx, "copy")
-	defer telemetry.End(copySpan, func() error { return rerr })
+	defer telemetry.EndWithCause(copySpan, &rerr)
 
 	// If we didn't find any files/dir in the given relative path, we can early return an error.
 	if local.copyPath != "" && !relPathFound {

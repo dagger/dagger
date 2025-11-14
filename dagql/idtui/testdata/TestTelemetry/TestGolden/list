@@ -4,6 +4,7 @@ Expected stdout:
 chroma.go
 debug.go
 demos/
+exit.go
 frontend.go
 frontend_dots.go
 frontend_mock.go
@@ -49,6 +50,7 @@ Expected stderr:
 ┃ chroma.go
 ┃ debug.go
 ┃ demos/
+┃ exit.go
 ┃ frontend.go
 ┃ frontend_dots.go
 ┃ frontend_mock.go

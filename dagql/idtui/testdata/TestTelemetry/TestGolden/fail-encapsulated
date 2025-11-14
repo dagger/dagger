@@ -30,6 +30,4 @@ Expected stderr:
       ┃ this should NOT be hoisted - ancestor succeeded
       ! inner failure
 
-Error: i failed on the outside
-
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -205,7 +205,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	ctx, span := Tracer(ctx).Start(ctx, strings.Join(append([]string{"git"}, args...), " "), trace.WithAttributes(
 		attribute.Bool(telemetry.UIEncapsulatedAttr, true),
 	))
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
