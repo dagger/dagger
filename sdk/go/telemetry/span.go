@@ -147,6 +147,10 @@ type originTrackedError struct {
 	propagation AnyMapCarrier
 }
 
+func (e originTrackedError) Unwrap() error {
+	return e.original
+}
+
 var _ ExtendedError = originTrackedError{}
 
 func (e originTrackedError) Error() string {
