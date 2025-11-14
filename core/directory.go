@@ -219,7 +219,7 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 	return digest.String(), nil
 }
 
-func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
+func (dir *Directory) StatLLB(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
 	res, err := bk.Solve(ctx, bkgw.SolveRequest{
@@ -624,7 +624,7 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, bk, ".")
+	info, err := dir.StatLLB(ctx, bk, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -662,12 +662,12 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 		return nil, err
 	}
 
-	found, err := dir.Exists(ctx, srv, file, ExistsTypeRegular, false)
+	stat, err := dir.Stat(ctx, srv, file, false)
 	if err != nil {
 		return nil, err
 	}
-	if !found {
-		return nil, fmt.Errorf("%s: %w", filePath, os.ErrNotExist)
+	if stat.FileType == FileTypeDirectory {
+		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", file)}
 	}
 
 	dirRef, err := getRefOrEvaluate(ctx, dir)
@@ -701,7 +701,7 @@ func (dir *Directory) FileLLB(ctx context.Context, file string) (*File, error) {
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := dir.Stat(ctx, bk, file)
+	info, err := dir.StatLLB(ctx, bk, file)
 	if err != nil {
 		return nil, err
 	}
@@ -1424,27 +1424,73 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 }
 
 func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
+	stat, err := dir.Stat(ctx, srv, targetPath, doNotFollowSymlinks || targetType == ExistsTypeSymlink)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	switch targetType {
+	case ExistsTypeDirectory:
+		return stat.FileType == FileTypeDirectory, nil
+	case ExistsTypeRegular:
+		return stat.FileType == FileTypeRegular, nil
+	case ExistsTypeSymlink:
+		return stat.FileType == FileTypeSymlink, nil
+	case "":
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid path type %s", targetType)
+	}
+}
+
+type Stat struct {
+	Size        int      `field:"true" doc:"file size"`
+	Name        string   `field:"true" doc:"file name"`
+	FileType    FileType `field:"true" doc:"file type"`
+	Permissions int      `field:"true" doc:"permission bits"`
+}
+
+func (_ *Stat) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Stat",
+		NonNull:   false,
+	}
+}
+
+func (_ *Stat) TypeDescription() string {
+	return "A file or directory status object."
+}
+
+func (s Stat) Clone() *Stat {
+	cp := s
+	return &cp
+}
+
+func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath string, doNotFollowSymlinks bool) (*Stat, error) {
 	res, err := dir.Evaluate(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	ref, err := res.SingleRef()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if ref == nil {
-		return false, nil
+		return nil, nil
 	}
 
 	immutableRef, err := ref.CacheRef(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	osStatFunc := os.Stat
 	rootPathFunc := containerdfs.RootPath
-	if targetType == ExistsTypeSymlink || doNotFollowSymlinks {
+	if doNotFollowSymlinks {
 		// symlink testing requires the Lstat call, which does NOT follow symlinks
 		osStatFunc = os.Lstat
 		// similarly, containerdfs.RootPath can't be used, since it follows symlinks
@@ -1458,32 +1504,34 @@ func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath 
 			return err
 		}
 		fileInfo, err = osStatFunc(resolvedPath)
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
 		return err
 	})
 	if err != nil {
-		return false, err
-	}
-	if fileInfo == nil {
-		return false, nil // ErrNotExist occurred
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%s: No such file or directory", targetPath)
+		}
+		return nil, fmt.Errorf("%s: %w", targetPath, err)
 	}
 
 	m := fileInfo.Mode()
 
-	switch targetType {
-	case ExistsTypeDirectory:
-		return m.IsDir(), nil
-	case ExistsTypeRegular:
-		return m.IsRegular(), nil
-	case ExistsTypeSymlink:
-		return m&fs.ModeSymlink != 0, nil
-	case "":
-		return true, nil
-	default:
-		return false, fmt.Errorf("invalid path type %s", targetType)
+	stat := &Stat{
+		Size:        int(fileInfo.Size()),
+		Name:        fileInfo.Name(),
+		Permissions: int(fileInfo.Mode().Perm()),
 	}
+
+	if m.IsDir() {
+		stat.FileType = FileTypeDirectory
+	} else if m.IsRegular() {
+		stat.FileType = FileTypeRegular
+	} else if m&fs.ModeSymlink != 0 {
+		stat.FileType = FileTypeSymlink
+	} else {
+		stat.FileType = FileTypeUnknown
+	}
+
+	return stat, nil
 }
 
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
@@ -1621,6 +1669,7 @@ func SupportsDirSlash(ctx context.Context) bool {
 	return Supports(ctx, "v0.17.0")
 }
 
+// ExistsTypes should be deprecated in favor of FileType
 type ExistsType string
 
 var ExistsTypes = dagql.NewEnum[ExistsType]()
@@ -1672,5 +1721,61 @@ func (et *ExistsType) UnmarshalJSON(payload []byte) error {
 		return err
 	}
 	*et = ExistsType(str)
+	return nil
+}
+
+type FileType string
+
+var FileTypes = dagql.NewEnum[FileType]()
+
+var (
+
+	// NOTE calling FileTypes.Register("DIRECTORY", ...) will generate:
+	// const (
+	//     FileTypeDirectory FileType = "DIRECTORY"
+	//     Directory FileType = FileTypeDirectory
+	// )
+	// which will conflict with "type Directory struct { ... }",
+	// therefore everything will have a _TYPE suffix to avoid naming conflicts
+
+	FileTypeRegular = FileTypes.Register("REGULAR_TYPE",
+		"regular file type")
+	FileTypeDirectory = FileTypes.Register("DIRECTORY_TYPE",
+		"directory file type")
+	FileTypeSymlink = FileTypes.Register("SYMLINK_TYPE",
+		"symlink file type")
+	FileTypeUnknown = FileTypes.Register("UNKNOWN_TYPE",
+		"unknown file type")
+)
+
+func (ft FileType) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "FileType",
+		NonNull:   false,
+	}
+}
+
+func (ft FileType) TypeDescription() string {
+	return "File type."
+}
+
+func (ft FileType) Decoder() dagql.InputDecoder {
+	return FileTypes
+}
+
+func (ft FileType) ToLiteral() call.Literal {
+	return FileTypes.Literal(ft)
+}
+
+func (ft FileType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(ft))
+}
+
+func (ft *FileType) UnmarshalJSON(payload []byte) error {
+	var str string
+	if err := json.Unmarshal(payload, &str); err != nil {
+		return err
+	}
+	*ft = FileType(str)
 	return nil
 }

@@ -5174,6 +5174,23 @@ func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
 	require.Equal(t, true, exists)
 }
 
+func (ContainerSuite) TestStat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithWorkdir("/sub").
+		WithNewFile("subdir/data", "contents")
+	stat := ctr.Stat("subdir/data")
+
+	fileType, err := stat.FileType(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.FileTypeRegularType, fileType)
+
+	fileSize, err := stat.Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 8, fileSize)
+}
+
 func (ContainerSuite) TestWithoutFileOnMountedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	f1 := c.File("f", "1")
