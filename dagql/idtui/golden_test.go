@@ -153,7 +153,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		// test that a module with a broken dependency surfaces the error
 		{Module: "./viztest/broken-dep", Function: "use-broken", Fail: true},
 		// test that a module with an unloadable dependency surfaces the error
-		{Module: "./viztest/invalid-dep", Function: "use-invalid", Fail: true},
+		{Module: "./viztest/broken-dep-sdk", Function: "use-invalid", Fail: true},
 
 		// test that module function call errors are properly stamped with their origin
 		{Function: "call-failing-dep", Fail: true},
