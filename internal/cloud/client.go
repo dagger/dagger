@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/shurcooL/graphql"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 
 	"github.com/dagger/dagger/engine"
@@ -103,6 +104,7 @@ type EngineRequest struct {
 	ExecCmd              []string `json:"exec_cmd,omitempty"`
 	ClientID             string   `json:"client_id,omitempty"`
 	MinimumEngineVersion string   `json:"minimum_engine_version,omitempty"`
+	TraceID              string   `json:"trace_id,omitempty"`
 }
 
 type EngineSpec struct {
@@ -165,6 +167,7 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 	}
 
 	req.MinimumEngineVersion = engine.MinimumEngineVersion
+	req.TraceID = trace.SpanContextFromContext(ctx).TraceID().String()
 	engineSpec := &EngineSpec{
 		Image:         "registry.dagger.io/engine:" + tag,
 		EngineRequest: req,
