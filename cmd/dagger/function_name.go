@@ -10,6 +10,7 @@ func initModuleParams(a []string) client.Params {
 	params := client.Params{
 		ExecCmd:  a,
 		Function: functionName(a),
+		EagerModuleLoading: eagerModuleLoading,
 	}
 
 	if !moduleNoURL {
