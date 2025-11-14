@@ -42,10 +42,7 @@ func (l *Loader) SDKForModule(
 		return nil, errMissingSDKRef
 	}
 
-	ctx, span := core.Tracer(ctx).Start(ctx,
-		fmt.Sprintf("load SDK: %s", sdk.Source),
-		telemetry.Internal(),
-		telemetry.Encapsulate())
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load SDK: %s", sdk.Source))
 	defer telemetry.EndWithCause(span, &rerr)
 
 	builtinSDK, builtinErr := l.namedSDK(ctx, query, sdk)
