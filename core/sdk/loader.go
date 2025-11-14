@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	errMissingSDKRef     = errors.New("sdk ref is required")
+	errMissingSDKRef     = errors.New("no sdk ref provided")
 	errUnknownBuiltinSDK = errors.New("unknown built-in sdk")
 )
 
@@ -48,22 +48,24 @@ func (l *Loader) SDKForModule(
 		telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	builtinSDK, err := l.namedSDK(ctx, query, sdk)
-	if err == nil {
+	builtinSDK, builtinErr := l.namedSDK(ctx, query, sdk)
+	if builtinErr == nil {
 		return builtinSDK, nil
-	} else if !errors.Is(err, errUnknownBuiltinSDK) {
-		return nil, err
+	} else if !errors.Is(builtinErr, errUnknownBuiltinSDK) {
+		return nil, builtinErr
 	}
 
-	extSDK, err := l.externalSDKForModule(ctx, query, sdk, parentSrc)
-	if err == nil {
+	extSDK, extErr := l.externalSDKForModule(ctx, query, sdk, parentSrc)
+	if extErr == nil {
 		return extSDK, nil
 	}
 
 	stdio := telemetry.SpanStdio(ctx, "dagger.io/core/sdk")
-	fmt.Fprintln(stdio.Stderr, "Error:", err)
-	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintf(stdio.Stderr, "Could not load SDK %q.\n", sdk.Source)
+	fmt.Fprintln(stdio.Stderr)
+	fmt.Fprintln(stdio.Stderr, "Errors:")
+	fmt.Fprintln(stdio.Stderr, "-", builtinErr)
+	fmt.Fprintln(stdio.Stderr, "-", extErr)
 	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintln(stdio.Stderr, "The available SDKs are:")
 	for _, sdk := range validInbuiltSDKs {
@@ -96,7 +98,7 @@ func (l *Loader) externalSDKForModule(
 
 	sdkModSrc, err := core.ResolveDepToSource(ctx, bk, dag, parentSrc, sdk.Source, "", "")
 	if err != nil {
-		return nil, fmt.Errorf("resolve dep to source: %w", err)
+		return nil, err
 	}
 
 	if !sdkModSrc.Self().ConfigExists {
