@@ -23,6 +23,7 @@ var _ SchemaResolvers = &secretSchema{}
 func (s *secretSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("secret", s.secret, dagql.CachePerCall).
+			Persistable().
 			Doc(`Creates a new secret.`).
 			Args(
 				dagql.Arg("uri").Doc(`The URI of the secret store`),

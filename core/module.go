@@ -169,6 +169,7 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 				checks = append(checks, &Check{
 					Path:        []string{gqlFieldName(fn.Name)},
 					Description: fn.Description,
+					Module:      mod,
 				})
 				return
 			}
@@ -489,7 +490,7 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 		}
 		modType, ok = mod.modTypeForEnum(typeDef)
 	default:
-		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
+		return nil, false, fmt.Errorf("unexpected type def kind %q", typeDef.Kind)
 	}
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get mod type: %w", err)

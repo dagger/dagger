@@ -232,11 +232,13 @@ var targets = []struct {
 	GPUSupport bool
 }{
 	{
-		Name:      "alpine (default)",
-		Tag:       "%s",
-		Image:     DistroAlpine,
-		Platforms: []dagger.Platform{"linux/amd64", "linux/arm64"},
+		Name:  "alpine (default)",
+		Tag:   "%s",
+		Image: DistroAlpine,
+		// Platforms: []dagger.Platform{"linux/amd64", "linux/arm64"},
+		Platforms: []dagger.Platform{"linux/amd64"},
 	},
+	/* TODO:
 	{
 		Name:       "ubuntu with nvidia variant",
 		Tag:        "%s-gpu",
@@ -257,6 +259,7 @@ var targets = []struct {
 		Platforms:  []dagger.Platform{"linux/amd64"},
 		GPUSupport: true,
 	},
+	*/
 }
 
 type targetResult struct {

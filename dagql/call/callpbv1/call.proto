@@ -75,6 +75,10 @@ message Call {
   // Whether the digest was set to a custom value, as opposed to the default
   // "recipe-based" digest
   bool isCustomDigest = 11;
+
+  // XXX: marks whether this ID can be saved-and-restored over a rmeote
+  // execution hook
+  bool isRemoteable = 12;
 }
 
 // Module represents a self-contained logical module that can be dynamically

@@ -156,14 +156,16 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("noCache").Doc(`If true, the directory will always be reloaded from the host.`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
-			),
+			).
+			Persistable(),
 
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
 			Doc(`Accesses a file on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 				dagql.Arg("noCache").Doc(`If true, the file will always be reloaded from the host.`),
-			),
+			).
+			Persistable(),
 
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CacheAsRequested).
 			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null`).

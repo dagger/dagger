@@ -101,7 +101,11 @@ func TokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 		return nil, err
 	}
 
-	return authConfig.TokenSource(ctx, token), nil
+	return TokenToTokenSource(ctx, token), nil
+}
+
+func TokenToTokenSource(ctx context.Context, token *oauth2.Token) oauth2.TokenSource {
+	return authConfig.TokenSource(ctx, token)
 }
 
 func Token(ctx context.Context) (*oauth2.Token, error) {
@@ -119,7 +123,7 @@ func Token(ctx context.Context) (*oauth2.Token, error) {
 	}
 
 	// Refresh
-	token, err = authConfig.TokenSource(ctx, token).Token()
+	token, err = RefreshToken(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +131,10 @@ func Token(ctx context.Context) (*oauth2.Token, error) {
 		return nil, err
 	}
 	return token, nil
+}
+
+func RefreshToken(ctx context.Context, token *oauth2.Token) (*oauth2.Token, error) {
+	return authConfig.TokenSource(ctx, token).Token()
 }
 
 func saveToken(token *oauth2.Token) error {

@@ -78,6 +78,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.NodeFuncWithCacheKey("_contextDirectory", s.contextDirectory, dagql.CachePerCall).
+			Persistable().
 			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
 		dagql.NodeFuncWithCacheKey("_contextFile", s.contextFile, dagql.CachePerCall).
 			Doc(`Obtain a contextual file argument for the given path and module.`),
@@ -827,6 +828,10 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		SourceRootSubpath: sourceRootSubpath,
 		ContextDirectory:  contextDir,
 		Kind:              core.ModuleSourceKindDir,
+		DirSrc: &core.DirModuleSource{
+			OriginalContextDir:        contextDir,
+			OriginalSourceRootSubpath: args.SourceRootPath,
+		},
 	}
 	if dirSrc.SourceRootSubpath == "" {
 		dirSrc.SourceRootSubpath = "."

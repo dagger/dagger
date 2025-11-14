@@ -150,7 +150,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sshAuthSocket").
 					View(BeforeVersion("v0.12.0")).
 					Doc("This option should be passed to `git` instead.").Deprecated(),
-			),
+			).
+			Persistable(),
 		dagql.NodeFunc("commit", s.fetchCommit).
 			Doc(`The resolved commit id at this ref.`),
 		dagql.NodeFunc("ref", s.fetchRef).
