@@ -266,6 +266,10 @@ func (s *fileSchema) chown(
 	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
 }
 
-func (s *fileSchema) asJSON(ctx context.Context, parent *core.File, args struct{}) (core.JSON, error) {
-	return parent.AsJSON(ctx)
+func (s *fileSchema) asJSON(ctx context.Context, parent *core.File, args struct{}) (*core.JSONValue, error) {
+	json, err := parent.AsJSON(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &core.JSONValue{Data: []byte(json)}, nil
 }

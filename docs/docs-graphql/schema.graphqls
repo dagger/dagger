@@ -2835,7 +2835,7 @@ type File {
   ): EnvFile!
 
   """Parse the file contents as JSON."""
-  asJSON: JSON!
+  asJSON: JSONValue!
 
   """Change the owner of the file recursively."""
   chown(

@@ -34,12 +34,15 @@ defmodule Dagger.File do
   @doc """
   Parse the file contents as JSON.
   """
-  @spec as_json(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
+  @spec as_json(t()) :: Dagger.JSONValue.t()
   def as_json(%__MODULE__{} = file) do
     query_builder =
       file.query_builder |> QB.select("asJSON")
 
-    Client.execute(file.client, query_builder)
+    %Dagger.JSONValue{
+      query_builder: query_builder,
+      client: file.client
+    }
   end
 
   @doc """
