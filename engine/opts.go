@@ -87,6 +87,9 @@ type ClientMetadata struct {
 
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
+
+	// Disable lazy loading on module runtime.
+	EagerModuleLoading bool `json:"eager_module_loading"`
 }
 
 type clientMetadataCtxKey struct{}
