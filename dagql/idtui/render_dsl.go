@@ -162,12 +162,7 @@ func (a WithNewFileArgs) Render(out TermOutput) (string, []string, bool) {
 	if len(a.Contents) == 0 {
 		title += " (empty)"
 	} else {
-		content := a.Contents
-		if len(content) > 100 {
-			content = content[:100] + "..."
-			content += fmt.Sprintf(" (len=%d)", len(a.Contents))
-		}
-		title += fmt.Sprintf(" <- %s", content)
+		title += fmt.Sprintf(" <- %s", a.Contents)
 	}
 
 	return title, []string{"path", "contents"}, true
