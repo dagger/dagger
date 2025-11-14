@@ -6325,6 +6325,15 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 }
 
+// Parse the file contents as JSON.
+func (r *File) AsJSON() *JSONValue {
+	q := r.query.Select("asJSON")
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
 // Change the owner of the file recursively.
 func (r *File) Chown(owner string) *File {
 	q := r.query.Select("chown")

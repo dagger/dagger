@@ -2831,6 +2831,9 @@ type File {
     expand: Boolean
   ): EnvFile!
 
+  """Parse the file contents as JSON."""
+  asJSON: JSONValue!
+
   """Change the owner of the file recursively."""
   chown(
     """
