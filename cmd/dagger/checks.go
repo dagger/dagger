@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -156,7 +157,7 @@ func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Comm
 		}
 	}
 	if failed > 0 {
-		return ExitError{Code: 1, Original: fmt.Errorf("%d checks failed", failed)}
+		return idtui.ExitError{Code: 1, Original: fmt.Errorf("%d checks failed", failed)}
 	}
 	return nil
 }

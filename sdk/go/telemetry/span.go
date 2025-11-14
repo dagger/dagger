@@ -128,6 +128,20 @@ func EndWithCause(span trace.Span, errPtr *error) {
 	span.End()
 }
 
+// ErrorOrigin extracts the origin span context from an error, if any.
+func ErrorOrigin(err error) trace.SpanContext {
+	var extErr ExtendedError
+	if errors.As(err, &extErr) {
+		return trace.SpanContextFromContext(
+			Propagator.Extract(
+				context.Background(),
+				AnyMapCarrier(extErr.Extensions()),
+			),
+		)
+	}
+	return trace.SpanContext{}
+}
+
 type originTrackedError struct {
 	original    error
 	propagation AnyMapCarrier

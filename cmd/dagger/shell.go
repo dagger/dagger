@@ -55,7 +55,7 @@ var shellCmd = &cobra.Command{
 			// Don't bother printing the error message if the TUI is enabled.
 			var es interp.ExitStatus
 			if handler.tty && errors.As(err, &es) {
-				return ExitError{Code: int(es)}
+				return idtui.ExitError{Code: int(es)}
 			}
 
 			return err
