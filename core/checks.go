@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -281,7 +282,16 @@ func (c *Check) startRun(ctx context.Context, dag *dagql.Server, eg *errgroup.Gr
 
 // mutates Check, be sure to clone first if needed
 func (c *Check) tryScaleOut(ctx context.Context, eg *errgroup.Group) (bool, error) {
-	// TODO:(someday) ask cloud whether to scale out, if not return (false, nil) to continue locally
+	log := slog.SpanLogger(ctx, "scale-out")
+
+	if c.Module.Source.Value.Self().Kind == ModuleSourceKindDir {
+		// TODO: if the dir is transferable, can construct an ID in the remote engine and use it here, probably...
+		// In mean time just don't scale out
+		log.Info("skipping scale out for dir-based module")
+		return false, nil
+	}
+
+	// TODO: ask cloud whether to scale out, if not return (false, nil) to continue locally
 
 	ctx, span := Tracer(ctx).Start(ctx, c.Name(),
 		telemetry.Reveal(),
@@ -365,17 +375,21 @@ func (c *Check) tryScaleOut(ctx context.Context, eg *errgroup.Group) (bool, erro
 
 		query := engineClient.Dagger().QueryBuilder()
 
-		if c.Module.Source.Value.Self().Kind == ModuleSourceKindGit {
-			query = query.Select("moduleSource").
-				Arg("refString", c.Module.Source.Value.Self().Git.Symbolic). // XXX: ain't right
-				Arg("refPin", c.Module.Source.Value.Self().Git.Commit).
-				Arg("requireKind", c.Module.Source.Value.Self().Kind)
-		} else {
+		switch c.Module.Source.Value.Self().Kind {
+		case ModuleSourceKindLocal:
 			query = query.Select("moduleSource").
 				Arg("refString", filepath.Join(
 					c.Module.Source.Value.Self().Local.ContextDirectoryPath,
 					c.Module.Source.Value.Self().SourceRootSubpath,
 				))
+		case ModuleSourceKindGit:
+			query = query.Select("moduleSource").
+				Arg("refString", c.Module.Source.Value.Self().Git.Symbolic). // XXX: ain't right
+				Arg("refPin", c.Module.Source.Value.Self().Git.Commit).
+				Arg("requireKind", c.Module.Source.Value.Self().Kind)
+		case ModuleSourceKindDir:
+			// TODO: shouldn't happen yet based on check at beginning
+			return fmt.Errorf("cannot scale out checks for dir-based modules")
 		}
 		query = query.Select("asModule")
 
