@@ -33,6 +33,4 @@ RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X... (len
 ✘ .stdout: String! X.Xs ERROR
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
 
-Error: process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

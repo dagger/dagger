@@ -22,6 +22,4 @@ Expected stderr:
   ╰╴✘ .failingFunction: Void X.Xs ERROR
     ! im a failing nested function
 
-Error: im a failing nested function
-
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
