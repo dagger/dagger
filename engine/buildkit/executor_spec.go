@@ -70,8 +70,8 @@ const (
 
 	BuildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
 
-	cgroupSampleInterval     = 3 * time.Second
-	finalCgroupSampleTimeout = 3 * time.Second
+	cgroupSampleInterval     = 5 * time.Second
+	finalCgroupSampleTimeout = 5 * time.Second
 
 	defaultHostname = "dagger"
 )

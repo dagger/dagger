@@ -160,6 +160,20 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  Returns the function with a flag indicating it's a check.
+  """
+  @spec with_check(t()) :: Dagger.Function.t()
+  def with_check(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("withCheck")
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
   Returns the function with the provided deprecation reason.
   """
   @spec with_deprecated(t(), [{:reason, String.t() | nil}]) :: Dagger.Function.t()

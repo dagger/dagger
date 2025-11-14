@@ -464,7 +464,7 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		meterOpts := []sdkmetric.Option{
 			sdkmetric.WithResource(cfg.Resource),
 		}
-		const metricsExportInterval = 1 * time.Second
+		const metricsExportInterval = 5 * time.Second
 		for _, exp := range cfg.LiveMetricExporters {
 			MetricExporters = append(MetricExporters, exp)
 			reader := sdkmetric.NewPeriodicReader(exp,
@@ -493,6 +493,11 @@ func Close() {
 	if loggerProvider := LoggerProvider(ctx); loggerProvider != nil {
 		if err := loggerProvider.Shutdown(flushCtx); err != nil {
 			slog.Error("failed to shut down logger provider", "error", err)
+		}
+	}
+	if meterProvider := MeterProvider(ctx); meterProvider != nil {
+		if err := meterProvider.Shutdown(flushCtx); err != nil {
+			slog.Error("failed to shut down meter provider", "error", err)
 		}
 	}
 }

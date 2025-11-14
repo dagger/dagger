@@ -17,6 +17,25 @@ import (
 
 type SpanSet = *OrderedSet[SpanID, *Span]
 
+// RollUpState caches the computed state for rendering RollUp progress bars
+type RollUpState struct {
+	PendingCount  int
+	RunningCount  int
+	CachedCount   int
+	SuccessCount  int
+	FailedCount   int
+	CanceledCount int
+}
+
+func (st *RollUpState) Reset() {
+	st.PendingCount = 0
+	st.RunningCount = 0
+	st.CachedCount = 0
+	st.SuccessCount = 0
+	st.FailedCount = 0
+	st.CanceledCount = 0
+}
+
 type Span struct {
 	SpanSnapshot
 
@@ -42,6 +61,9 @@ type Span struct {
 	// Indicates that this span was actually exported to the database, and not
 	// just allocated due to a span parent or other relationship.
 	Received bool
+
+	// Pre-computed RollUp state for rendering progress bars (only for RollUp spans)
+	rollUpState *RollUpState
 
 	db *DB
 }
@@ -165,7 +187,15 @@ type SpanSnapshot struct {
 	Encapsulated bool `json:",omitempty"`
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
-	Reveal       bool `json:",omitempty"`
+
+	Boundary    bool `json:",omitempty"`
+	Reveal      bool `json:",omitempty"`
+	RollUpLogs  bool `json:",omitempty"`
+	RollUpSpans bool `json:",omitempty"`
+
+	// Check name + status
+	CheckName   string `json:",omitempty"`
+	CheckPassed bool   `json:",omitempty"`
 
 	ActorEmoji  string `json:",omitempty"`
 	Message     string `json:",omitempty"`
@@ -199,7 +229,7 @@ type SpanLink struct {
 	Purpose     string
 }
 
-func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
+func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint: gocyclo
 	defer func() {
 		// a bit of a shortcut, but there shouldn't be much going on
 		// here and all the conversion error handling code is
@@ -234,6 +264,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIRevealAttr:
 		snapshot.Reveal = val.(bool)
 
+	case telemetry.UIBoundaryAttr:
+		snapshot.Boundary = val.(bool)
+
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
 
@@ -245,6 +278,19 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.UIMessageAttr:
 		snapshot.Message = val.(string)
+
+	case telemetry.UIRollUpLogsAttr:
+		snapshot.RollUpLogs = val.(bool)
+
+	case telemetry.UIRollUpSpansAttr:
+		snapshot.RollUpSpans = val.(bool)
+
+	case telemetry.CheckNameAttr:
+		snapshot.CheckName = val.(string)
+
+	case telemetry.CheckPassedAttr:
+		// TODO: redundant with span status?
+		snapshot.CheckPassed = val.(bool)
 
 	case telemetry.LLMRoleAttr:
 		snapshot.LLMRole = val.(string)
@@ -322,9 +368,6 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		} else {
 			changed = parent.RunningSpans.Remove(span)
 		}
-		if span.Reveal || parent.ErrorOrigin == span {
-			changed = parent.RevealedSpans.Add(span) || changed
-		}
 		if causal && span.IsFailed() {
 			changed = parent.FailedLinks.Add(span) || changed
 		}
@@ -359,6 +402,128 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			}
 		}
 	}
+
+	// Handle revealed spans propagation separately to stop at revealed parents
+	if span.Reveal {
+		for parent := range span.Parents {
+			if parent.RevealedSpans.Add(span) {
+				span.db.update(parent)
+			}
+
+			if parent.Boundary || parent.Encapsulate || parent.Reveal {
+				break
+			}
+		}
+	}
+
+	// Update RollUp state for any RollUp ancestors
+	span.updateRollUpAncestors()
+}
+
+// updateRollUpAncestors recomputes RollUp state for all RollUp ancestors
+func (span *Span) updateRollUpAncestors() {
+	// Use a map to track which ancestors we've already updated to avoid redundant work
+	updated := make(map[SpanID]bool)
+
+	// Use a queue to iteratively process ancestors instead of recursion
+	var queue []*Span
+
+	// Add immediate parents to queue
+	if span.ParentSpan != nil {
+		queue = append(queue, span.ParentSpan)
+	}
+
+	// Add causal parents to queue
+	span.CausalSpans(func(causal *Span) bool {
+		queue = append(queue, causal)
+		return true
+	})
+
+	// Process ancestors iteratively
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		// Skip if already updated
+		if updated[current.ID] {
+			continue
+		}
+		updated[current.ID] = true
+
+		// Update this ancestor if it's a RollUp span
+		if current.RollUpSpans {
+			current.computeRollUpState()
+		}
+
+		// Add this ancestor's parents to queue
+		if current.ParentSpan != nil {
+			queue = append(queue, current.ParentSpan)
+		}
+
+		// Add this ancestor's causal parents to queue
+		current.CausalSpans(func(causal *Span) bool {
+			queue = append(queue, causal)
+			return true
+		})
+	}
+}
+
+// computeRollUpState pre-computes the state for rendering RollUp progress bars
+// This is called when children change, not on every render frame.
+func (span *Span) computeRollUpState() {
+	if !span.RollUpSpans {
+		return
+	}
+
+	// Lazily initialize
+	if span.rollUpState == nil {
+		span.rollUpState = &RollUpState{}
+	}
+
+	// Reset and recalculate counts
+	state := span.rollUpState
+	state.Reset()
+	for child := range span.Descendants {
+		if child.IsRunningOrEffectsRunning() {
+			state.RunningCount++
+		} else if child.IsPending() {
+			state.PendingCount++
+		} else if child.IsCached() {
+			state.CachedCount++
+		} else if child.IsCanceled() {
+			state.CanceledCount++
+		} else if child.IsFailedOrCausedFailure() {
+			state.FailedCount++
+		} else {
+			// Success (completed but not cached, canceled, or failed)
+			state.SuccessCount++
+		}
+	}
+}
+
+// Descendants recursively iterates through all descendant spans
+func (span *Span) Descendants(f func(*Span) bool) {
+	var collect func(*Span) bool
+	collect = func(s *Span) bool {
+		// Use ChildSpans directly since we don't have opts here
+		for _, child := range s.ChildSpans.Order {
+			if !f(child) {
+				return false
+			}
+			// Recursively collect grandchildren
+			if !collect(child) {
+				return false
+			}
+		}
+		return true
+	}
+
+	collect(span)
+}
+
+// RollUpState returns the pre-computed RollUp state for rendering progress bars
+func (span *Span) RollUpState() *RollUpState {
+	return span.rollUpState
 }
 
 func (span *Span) ChildOrRevealedSpans(opts FrontendOpts) (SpanSet, bool) {
@@ -450,8 +615,7 @@ func (span *Span) FailedReason() (bool, []string) {
 }
 
 func (span *Span) IsCanceled() bool {
-	canceled, _ := span.CanceledReason()
-	return canceled
+	return span.Canceled || len(span.CanceledLinks.Order) > 0
 }
 
 func (span *Span) CanceledReason() (bool, []string) {
@@ -563,8 +727,29 @@ func (span *Span) IsRunningOrEffectsRunning() bool {
 }
 
 func (span *Span) IsPending() bool {
-	pending, _ := span.PendingReason()
-	return pending
+	// NB: keep this in extremely close alignment with PendingReason, we don't
+	// re-use it so we can minimize allocations
+
+	if span.Final {
+		return span.Pending_
+	}
+	if span.IsRunningOrEffectsRunning() {
+		return false
+	}
+	if len(span.EffectIDs) > 0 {
+		for _, digest := range span.EffectIDs {
+			effectSpans := span.db.EffectSpans[digest]
+			if effectSpans != nil && len(effectSpans.Order) > 0 {
+				return false
+			}
+			if span.db.CompletedEffects[digest] {
+				return false
+			}
+		}
+		// there's an output but no linked spans yet, so we're pending
+		return true
+	}
+	return false
 }
 
 func (span *Span) PendingReason() (bool, []string) {
@@ -604,8 +789,45 @@ func (span *Span) PendingReason() (bool, []string) {
 }
 
 func (span *Span) IsCached() bool {
-	cached, _ := span.CachedReason()
-	return cached
+	// NB: keep this in extremely close alignment with CachedReason, we don't
+	// re-use it so we can minimize allocations
+
+	if span.Final {
+		return span.Cached_
+	}
+	if span.Cached {
+		return true
+	}
+	if span.ChildCount > 0 {
+		return false
+	}
+	if span.HasLogs {
+		return false
+	}
+	var anyCached bool
+	for _, effect := range span.EffectIDs {
+		// first check for spans we've seen for the effect
+		effectSpans := span.db.EffectSpans[effect]
+		if effectSpans != nil && len(effectSpans.Order) > 0 {
+			for _, span := range effectSpans.Order {
+				if span.IsCached() {
+					anyCached = true
+				} else {
+					// if any effects were not cache hits, we're definitely not cached
+					return false
+				}
+			}
+		} else if span.db.CompletedEffects[effect] {
+			// if the effect is completed but we never saw a span for it, that
+			// might mean it was a multiple-layers-deep cache hit. or, some
+			// buildkit bug caused us to never see the span. or, another parallel
+			// client completed it. in all of those cases, we'll at least consider
+			// it cached so it's not stuck 'pending' forever.
+			anyCached = true
+		}
+	}
+	// some effects were not cached
+	return anyCached
 }
 
 func (span *Span) CachedReason() (bool, []string) {

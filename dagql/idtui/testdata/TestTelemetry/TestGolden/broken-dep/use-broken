@@ -1,12 +1,12 @@
 Expected stderr:
 
-▼ connect X.Xs
+✔ connect X.Xs
 ├╴✔ starting engine X.Xs
-├╴▼ connecting to engine X.Xs
+├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest/broken-dep X.Xs
+✔ load module: ./viztest/broken-dep X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
@@ -15,17 +15,12 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ brokenDep: BrokenDep! X.Xs
-▼ .useBroken: Void X.Xs ERROR
-  ▼ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
-  ┃ # dagger/broken
-  ┃ ./main.go:6:6: undefined: ctx
+✘ .useBroken: Void X.Xs ERROR
+├╴✔ broken: Broken! X.Xs
+╰╴✘ .broken: Void X.Xs ERROR
+  ✘ go SDK: load runtime X.Xs ERROR
+  # dagger/broken
+  ./main.go:6:6: undefined: ctx
   ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-
-Error logs:
-
-▼ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
-# dagger/broken
-./main.go:6:6: undefined: ctx
-! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/opencontainers/go-digest"
 )
@@ -80,7 +81,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				The format of the digest is not guaranteed to be stable between releases of Dagger.
 				It is guaranteed to be stable between invocations of the same Dagger engine.`,
 			),
-		dagql.Func("file", s.file).
+		dagql.NodeFunc("file", s.file).
 			Doc(`Retrieve a file at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
@@ -580,10 +581,56 @@ func (s *directorySchema) digest(ctx context.Context, parent *core.Directory, ar
 
 type dirFileArgs struct {
 	Path string
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) file(ctx context.Context, parent *core.Directory, args dirFileArgs) (*core.File, error) {
-	return parent.File(ctx, args.Path)
+func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirFileArgs) (inst dagql.ObjectResult[*core.File], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	if args.InDagOp() {
+		f, err := parent.Self().File(ctx, args.Path)
+		if err != nil {
+			return inst, err
+		}
+		ctx = dagql.ContextWithID(ctx, dagql.CurrentID(ctx))
+		return dagql.NewObjectResultForCurrentID(ctx, srv, f)
+	}
+
+	filename := path.Join(parent.Self().Dir, args.Path)
+
+	file, err := DagOpFile(ctx, srv, parent.Self(), args, s.file, WithStaticPath[*core.Directory, dirFileArgs](filename))
+	if err != nil {
+		return inst, err
+	}
+
+	fileResult, err := dagql.NewObjectResultForCurrentID(ctx, srv, file)
+	if err != nil {
+		return inst, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	dgst, err := core.GetContentHashFromFile(ctx, bk, fileResult)
+	if err != nil {
+		return inst, err
+	}
+
+	dgst = hashutil.HashStrings(
+		filename,
+		string(dgst),
+	)
+
+	return fileResult.WithObjectDigest(dgst), nil
 }
 
 type WithNewFileArgs struct {
@@ -614,6 +661,42 @@ type WithFileArgs struct {
 	Owner       string `default:""`
 
 	FSDagOpInternalArgs
+}
+
+var _ core.Inputs = WithFileArgs{}
+
+func (args WithFileArgs) Digest() (digest.Digest, error) {
+	var inputs []string
+
+	inputs = append(inputs, args.Path)
+
+	return hashutil.HashStrings(inputs...), nil
+}
+
+func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
+	deps := []llb.State{}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	if args.Source.ID() == nil {
+		return nil, nil
+	}
+
+	sourceRes, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return nil, fmt.Errorf("load source: %w", err)
+	}
+	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
+	if err != nil {
+		return nil, fmt.Errorf("source op: %w", err)
+	}
+	if sourceOp.Output() != nil {
+		deps = append(deps, llb.NewState(sourceOp))
+	}
+
+	return deps, nil
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -992,7 +1075,7 @@ type dirDockerBuildArgs struct {
 }
 
 func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*core.Directory], filename string) ([]byte, error) {
-	file, err := parent.Self().File(ctx, filename)
+	file, err := parent.Self().FileLLB(ctx, filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil

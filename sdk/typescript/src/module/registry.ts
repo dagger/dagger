@@ -125,6 +125,21 @@ export class Registry {
     ) => {}
   }
 
+  /**
+   * The definition of @check decorator that marks a function as a check.
+   */
+  check = (): ((
+    target: object,
+    propertyKey: string | symbol,
+    descriptor?: PropertyDescriptor,
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor?: PropertyDescriptor,
+    ) => {}
+  }
+
   argument = (
     opts?: ArgumentOptions,
   ): ((

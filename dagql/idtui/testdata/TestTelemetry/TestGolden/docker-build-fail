@@ -1,12 +1,12 @@
 Expected stderr:
 
-▼ connect X.Xs
+✔ connect X.Xs
 ├╴✔ starting engine X.Xs
-├╴▼ connecting to engine X.Xs
+├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest X.Xs
+✔ load module: ./viztest X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
@@ -15,27 +15,24 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-▼ .dockerBuildFail: Container! X.Xs ERROR
+✘ .dockerBuildFail: Container! X.Xs ERROR
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-├╴✔ Directory.withNewFile(path: "Dockerfile", contents: "FROM busybox:1.34\nRUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo im failing && false\n"): Directory! X.Xs
-╰╴▼ .dockerBuild: Container! X.Xs ERROR ✘ [4/4] RUN echo im failing && false ✔ 2 $ 1
+├╴✔ withNewFile Dockerfile <- FROM busybox:1.34
+RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X... (len=156) X.Xs
+╰╴✘ .dockerBuild: Container! X.Xs ERROR ✘ [4/4] RUN echo im failing && false ✔ 2 $ 1
   ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
   ├╴$ [1/4] FROM docker.io/library/busybox:1.34@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs CACHED
-  ├╴▼ [2/4] RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
+  ├╴✔ [2/4] RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
   │ ┃ the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-  ├╴▼ [3/4] RUN echo hello, world! X.Xs
+  ├╴✔ [3/4] RUN echo hello, world! X.Xs
   │ ┃ hello, world!
-  ╰╴▼ [4/4] RUN echo im failing && false X.Xs ERROR
+  ╰╴✘ [4/4] RUN echo im failing && false X.Xs ERROR
     ┃ im failing
     ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-○ .withExec(args: ["echo", "hey"]): Container! X.Xs
+○ withExec echo hey X.Xs
 ✘ .stdout: String! X.Xs ERROR
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
 
-Error logs:
-
-▼ [4/4] RUN echo im failing && false X.Xs ERROR
-im failing
-! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
+Error: process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

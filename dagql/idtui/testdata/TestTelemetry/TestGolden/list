@@ -14,6 +14,8 @@ huh.go
 multiprefixw/
 output.go
 patch.go
+rave.go
+render_dsl.go
 symbols.go
 sys_unix.go
 sys_windows.go
@@ -25,13 +27,13 @@ vterm_lite_test.go
 
 Expected stderr:
 
-▼ connect X.Xs
+✔ connect X.Xs
 ├╴✔ starting engine X.Xs
-├╴▼ connecting to engine X.Xs
+├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest X.Xs
+✔ load module: ./viztest X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
@@ -40,9 +42,9 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-▼ .list(
-│ ┆ dir: Address.directory: Directory!
-│ ): String! X.Xs
+✔ .list(
+│ ┆ ┆ dir: Address.directory: Directory!
+│ ┆ ): String! X.Xs
 ┃ .git/
 ┃ chroma.go
 ┃ debug.go
@@ -57,6 +59,8 @@ Expected stderr:
 ┃ multiprefixw/
 ┃ output.go
 ┃ patch.go
+┃ rave.go
+┃ render_dsl.go
 ┃ symbols.go
 ┃ sys_unix.go
 ┃ sys_windows.go

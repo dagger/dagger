@@ -225,7 +225,7 @@ public class CodeRenderer : ICodeRenderer
         var tr = typeRef.GetType_();
         if (tr.IsList())
         {
-            return $"{GetNormalizedTypeName(tr.OfType, name)}[]";
+            return $"{GetNormalizedTypeName(tr.OfType!, name)}[]";
         }
 
         var type = tr.GetTypeName();
@@ -288,9 +288,9 @@ public class CodeRenderer : ICodeRenderer
             return $"await QueryExecutor.ExecuteAsync<{field.Type.GetTypeName()}>(GraphQLClient, queryBuilder, cancellationToken)";
         }
 
-        if (type.IsList() && type.GetType_().OfType.IsObject())
+        if (type.IsList() && type.GetType_().OfType!.IsObject())
         {
-            var typeName = type.GetType_().OfType.GetTypeName();
+            var typeName = type.GetType_().OfType!.GetTypeName();
             return $"""
                 (await QueryExecutor.ExecuteListAsync<{typeName}Id>(GraphQLClient, queryBuilder, cancellationToken))
                     .Select(id =>
@@ -303,9 +303,9 @@ public class CodeRenderer : ICodeRenderer
                 """;
         }
 
-        if (type.IsList() && type.GetType_().OfType.IsScalar())
+        if (type.IsList() && type.GetType_().OfType!.IsScalar())
         {
-            var typeName = type.GetType_().OfType.GetTypeName();
+            var typeName = type.GetType_().OfType!.GetTypeName();
             return $"await QueryExecutor.ExecuteListAsync<{typeName}>(GraphQLClient, queryBuilder, cancellationToken)";
         }
 
@@ -420,11 +420,11 @@ public class CodeRenderer : ICodeRenderer
 
         if (arg.Type.IsList())
         {
-            var tr = arg.Type.GetType_().OfType.GetType_();
+            var tr = arg.Type.GetType_().OfType!.GetType_();
 
             if (tr.IsScalar())
             {
-                var value = tr.GetType_().GetTypeName() switch
+                var value = tr.GetTypeName() switch
                 {
                     "string" => "new StringValue(v)",
                     "int" => "new IntValue(v)",
@@ -466,7 +466,7 @@ public class CodeRenderer : ICodeRenderer
         }
 
         builder.Append(')');
-        if (field.Type.IsList() && !field.Type.GetType_().OfType.IsLeaf())
+        if (field.Type.IsList() && !field.Type.GetType_().OfType!.IsLeaf())
         {
             builder.Append(".Select(\"id\")");
         }

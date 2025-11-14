@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/testctx"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -24,9 +25,13 @@ func SpanOpts[T testctx.Runner[T]](w *testctx.W[T]) []trace.SpanStartOption {
 	attrs := []attribute.KeyValue{
 		attribute.String(testctxNameAttr, w.Name()),
 		attribute.String(testctxTypeAttr, fmt.Sprintf("%T", t)),
+		// Prevent revealed/rolled-up stuff bubbling up through test spans.
+		attribute.Bool(telemetry.UIBoundaryAttr, true),
 	}
 	if strings.Count(w.Name(), "/") == 0 {
-		attrs = append(attrs, attribute.Bool("dagger.io/ui.reveal", true)) // TODO use telemetry const
+		// Only reveal top-level test suites; we don't need to automatically see
+		// every single one.
+		attrs = append(attrs, attribute.Bool(telemetry.UIRevealAttr, true))
 	}
 	if isPrewarm() {
 		attrs = append(attrs, attribute.Bool(testctxPrewarmAttr, true))

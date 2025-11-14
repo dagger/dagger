@@ -1,0 +1,7 @@
+{
+  "name": "hello-with-checks-py",
+  "engineVersion": "v0.19.5",
+  "sdk": {
+    "source": "python"
+  }
+}

@@ -1,12 +1,12 @@
 Expected stderr:
 
-▼ connect X.Xs
+✔ connect X.Xs
 ├╴✔ starting engine X.Xs
-├╴▼ connecting to engine X.Xs
+├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest X.Xs
+✔ load module: ./viztest X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
@@ -16,10 +16,10 @@ Expected stderr:
 
 ✔ viztest: Viztest! X.Xs
 ✔ .pathArgs(
-  ┆ file: Address.file: File!
-  ┆ dir: Address.directory: Directory!
-  ┆ contextFile: _contextFile(path: "main.go", module: "/app/dagql/idtui/viztest", digest: "xxh3:XXXXXXXXXXXXXXXX"): File!
-  ┆ contextDir: _contextDirectory(path: ".", exclude: [], module: "/app/dagql/idtui/viztest", digest: "xxh3:XXXXXXXXXXXXXXXX"): Directory!
-  ): Void X.Xs
+  ┆ ┆ file: Address.file: File!
+  ┆ ┆ dir: Address.directory: Directory!
+  ┆ ┆ contextFile: _contextFile(path: "main.go", module: "/app/dagql/idtui/viztest", digest: "xxh3:XXXXXXXXXXXXXXXX"): File!
+  ┆ ┆ contextDir: context /app/dagql/idtui/viztest (exclude: XXXXXXXXXXX)
+  ┆ ): Void X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

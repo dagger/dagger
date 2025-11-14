@@ -195,7 +195,7 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 const otlpBatchSize = 1000
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, dbQueries *clientdb.Queries, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -203,8 +203,7 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
-		q := clientdb.New(db)
-		spans, err := q.SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
+		spans, err := dbQueries.SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
@@ -236,7 +235,7 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 
 //nolint:dupl
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, dbQueries *clientdb.Queries, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -244,8 +243,7 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
-		q := clientdb.New(db)
-		logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
+		logs, err := dbQueries.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
@@ -273,7 +271,7 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 
 //nolint:dupl
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, dbQueries *clientdb.Queries, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -281,8 +279,7 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
-		q := clientdb.New(db)
-		metrics, err := q.SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
+		metrics, err := dbQueries.SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
@@ -332,14 +329,7 @@ func spanNames(spans []sdktrace.ReadOnlySpan) []string {
 func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	slog.ExtraDebug("pubsub exporting spans", "client", ps.client.clientID, "count", len(spans))
 
-	tx, err := ps.client.db.Begin()
-	if err != nil {
-		return fmt.Errorf("export spans %+v: begin tx: %w", spanNames(spans), err)
-	}
-	defer tx.Rollback()
-
-	queries := clientdb.New(tx)
-
+	var inserts []*clientdb.InsertSpanParams
 	for _, span := range spans {
 		traceID := span.SpanContext().TraceID().String()
 		spanID := span.SpanContext().SpanID().String()
@@ -388,7 +378,7 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			continue
 		}
 
-		_, err = queries.InsertSpan(ctx, clientdb.InsertSpanParams{
+		inserts = append(inserts, &clientdb.InsertSpanParams{
 			TraceID:    traceID,
 			SpanID:     spanID,
 			TraceState: traceState,
@@ -412,6 +402,18 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			InstrumentationScope:   instrumentationScope,
 			Resource:               resource,
 		})
+	}
+
+	tx, err := ps.client.db.Begin()
+	if err != nil {
+		return fmt.Errorf("export spans %+v: begin tx: %w", spanNames(spans), err)
+	}
+	defer tx.Rollback()
+
+	queries := ps.client.dbQueries.WithTx(tx)
+
+	for _, insert := range inserts {
+		_, err = queries.InsertSpan(ctx, *insert)
 		if err != nil {
 			return fmt.Errorf("insert span: %w", err)
 		}
@@ -440,7 +442,12 @@ type clientLogs struct {
 var _ sdklog.Processor = clientLogs{}
 
 func (ps clientLogs) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	return insertLogRecord(ctx, clientdb.New(ps.client.db), rec)
+	insert, err := insertLogRecordParam(rec)
+	if err != nil {
+		return fmt.Errorf("prepare log record %v: %w", rec, err)
+	}
+	_, err = ps.client.dbQueries.InsertLog(ctx, *insert)
+	return err
 }
 
 var _ sdklog.Exporter = clientLogs{}
@@ -448,16 +455,25 @@ var _ sdklog.Exporter = clientLogs{}
 func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	slog.ExtraDebug("pubsub exporting logs", "client", ps.client.clientID, "count", len(logs))
 
+	var inserts []*clientdb.InsertLogParams
+	for _, rec := range logs {
+		insert, err := insertLogRecordParam(&rec)
+		if err != nil {
+			return fmt.Errorf("prepare log record %v: %w", rec, err)
+		}
+		inserts = append(inserts, insert)
+	}
+
 	tx, err := ps.client.db.Begin()
 	if err != nil {
 		return fmt.Errorf("export logs (%d records): begin tx: %w", len(logs), err)
 	}
 	defer tx.Rollback()
 
-	queries := clientdb.New(tx)
+	queries := ps.client.dbQueries.WithTx(tx)
 
-	for _, rec := range logs {
-		if err := insertLogRecord(ctx, queries, &rec); err != nil {
+	for _, insert := range inserts {
+		if _, err := queries.InsertLog(ctx, *insert); err != nil {
 			slog.Warn("failed to insert log record", "error", err)
 			continue
 		}
@@ -473,7 +489,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientLogs) Shutdown(context.Context) error       { return nil }
 
-func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog.Record) error {
+func insertLogRecordParam(rec *sdklog.Record) (*clientdb.InsertLogParams, error) {
 	traceID := rec.TraceID().String()
 	spanID := rec.SpanID().String()
 	timestamp := rec.Timestamp().UnixNano()
@@ -484,7 +500,7 @@ func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog
 		var err error
 		body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
 		if err != nil {
-			return fmt.Errorf("marshal log record body: %w", err)
+			return nil, fmt.Errorf("marshal log record body: %w", err)
 		}
 	}
 
@@ -498,21 +514,21 @@ func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog
 	})
 	attributes, err := clientdb.MarshalProtoJSONs(attrs)
 	if err != nil {
-		return fmt.Errorf("marshal log record attributes: %w", err)
+		return nil, fmt.Errorf("marshal log record attributes: %w", err)
 	}
 
 	scope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(rec.InstrumentationScope()))
 	if err != nil {
-		return fmt.Errorf("marshal log record instrumentation scope: %w", err)
+		return nil, fmt.Errorf("marshal log record instrumentation scope: %w", err)
 	}
 
 	res := rec.Resource()
 	resource, err := protojson.Marshal(telemetry.ResourcePtrToPB(res))
 	if err != nil {
-		return fmt.Errorf("marshal log record resource: %w", err)
+		return nil, fmt.Errorf("marshal log record resource: %w", err)
 	}
 
-	_, err = queries.InsertLog(ctx, clientdb.InsertLogParams{
+	return &clientdb.InsertLogParams{
 		TraceID: sql.NullString{
 			String: traceID,
 			Valid:  rec.TraceID().IsValid(),
@@ -529,11 +545,7 @@ func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog
 		InstrumentationScope: scope,
 		Resource:             resource,
 		ResourceSchemaUrl:    res.SchemaURL(),
-	})
-	if err != nil {
-		return fmt.Errorf("insert log: %w", err)
-	}
-	return nil
+	}, nil
 }
 
 func (ps *PubSub) Metrics(client *daggerClient) sdkmetric.Exporter {
@@ -555,14 +567,6 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 
 	slog.ExtraDebug("pubsub exporting metrics", "client", ps.client.clientID, "count", len(metrics.ScopeMetrics))
 
-	tx, err := ps.client.db.Begin()
-	if err != nil {
-		return fmt.Errorf("export metrics %+v: begin tx: %w", metrics, err)
-	}
-	defer tx.Rollback()
-
-	queries := clientdb.New(tx)
-
 	pbMetrics, err := telemetry.ResourceMetricsToPB(metrics)
 	if err != nil {
 		return fmt.Errorf("convert metrics to pb: %w", err)
@@ -573,13 +577,11 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 		return fmt.Errorf("marshal metrics to pb: %w", err)
 	}
 
+	queries := ps.client.dbQueries
+
 	_, err = queries.InsertMetric(ctx, metricsPBBytes)
 	if err != nil {
 		return fmt.Errorf("insert metrics: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
 	}
 
 	return nil
@@ -596,7 +598,7 @@ func (ps clientMetrics) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregat
 func (ps clientMetrics) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientMetrics) Shutdown(context.Context) error       { return nil }
 
-type Fetcher func(ctx context.Context, db *sql.DB, since string) (*sse.Event, bool, error)
+type Fetcher func(ctx context.Context, dbQueries *clientdb.Queries, since string) (*sse.Event, bool, error)
 
 func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, fetcher Fetcher) error {
 	slog := slog.With("client", client.clientID, "path", r.URL.Path)
@@ -619,6 +621,11 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 		return fmt.Errorf("open client db: %w", err)
 	}
 	defer db.Close()
+	dbQueries, err := clientdb.Prepare(r.Context(), db)
+	if err != nil {
+		return fmt.Errorf("prepare client db queries: %w", err)
+	}
+	defer dbQueries.Close()
 
 	// Send an initial event just to indicate that the client has subscribed.
 	//
@@ -632,7 +639,7 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 
 	var terminating bool
 	for {
-		event, hasData, err := fetcher(r.Context(), db, since)
+		event, hasData, err := fetcher(r.Context(), dbQueries, since)
 		if err != nil {
 			slog.Warn("error fetching event", "err", err)
 			return fmt.Errorf("fetch: %w", err)

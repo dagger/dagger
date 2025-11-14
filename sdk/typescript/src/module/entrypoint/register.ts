@@ -164,6 +164,10 @@ export class Register {
       fnDef = fnDef.withDeprecated({ reason: fct.deprecated })
     }
 
+    if ((fct as Method).isCheck) {
+      fnDef = fnDef.withCheck()
+    }
+
     return fnDef
   }
 

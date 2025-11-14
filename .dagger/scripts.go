@@ -21,15 +21,17 @@ type Scripts struct {
 }
 
 // ShellCheck scripts files
-func (s Scripts) LintSh(ctx context.Context) (MyCheckStatus, error) {
-	return CheckCompleted, dag.Shellcheck().
+// +check
+func (s Scripts) LintSh(ctx context.Context) error {
+	return dag.Shellcheck().
 		Check(s.Dagger.Source.File("install.sh")).
 		Assert(ctx)
 }
 
 // LintPowershell scripts files
-func (s Scripts) LintPowershell(ctx context.Context) (MyCheckStatus, error) {
-	return CheckCompleted, dag.PsAnalyzer().
+// +check
+func (s Scripts) LintPowershell(ctx context.Context) error {
+	return dag.PsAnalyzer().
 		Check(s.Dagger.Source.File("install.ps1"), dagger.PsAnalyzerCheckOpts{
 			// Exclude the unused parameters for now due because PSScriptAnalyzer treat
 			// parameters in `Install-Dagger` as unused but the script won't run if we delete
@@ -40,7 +42,8 @@ func (s Scripts) LintPowershell(ctx context.Context) (MyCheckStatus, error) {
 }
 
 // Test install scripts
-func (s Scripts) Test(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (s Scripts) Test(ctx context.Context) error {
 	ctr := dag.Alpine(
 		dagger.AlpineOpts{
 			Packages: []string{"curl"},
@@ -50,7 +53,7 @@ func (s Scripts) Test(ctx context.Context) (MyCheckStatus, error) {
 		WithFile("/usr/local/bin/install.sh", s.Dagger.Source.File("install.sh"), dagger.ContainerWithFileOpts{
 			Permissions: 0755,
 		})
-	return CheckCompleted, parallel.New().
+	return parallel.New().
 		WithJob("default install", func(ctx context.Context) error {
 			ctr := ctr.
 				WithExec([]string{"install.sh"})

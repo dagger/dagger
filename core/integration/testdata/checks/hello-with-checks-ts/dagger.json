@@ -1,0 +1,7 @@
+{
+  "name": "hello-with-checks-ts",
+  "engineVersion": "v0.19.7-010101000000-dev-25c1a0b4cd20",
+  "sdk": {
+    "source": "typescript"
+  }
+}

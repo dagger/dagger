@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/parallel"
 	"github.com/go-git/go-git/v5"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -918,6 +919,47 @@ var toolchainUninstallCmd = &cobra.Command{
 	},
 }
 
+func loadToolchainInfo(ctx context.Context, modSrc *dagger.ModuleSource) ([]toolchainInfo, error) {
+	var info []toolchainInfo
+	err := parallel.Run(ctx, "fetch toolchain information", func(ctx context.Context) error {
+		alreadyExists, err := modSrc.ConfigExists(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check if module already exists: %w", err)
+		}
+		if !alreadyExists {
+			return fmt.Errorf("module must be fully initialized")
+		}
+		toolchains, err := modSrc.Toolchains(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get toolchains: %w", err)
+		}
+		if len(toolchains) == 0 {
+			return nil
+		}
+		info = make([]toolchainInfo, len(toolchains))
+		jobs := parallel.New().WithInternal(true).WithReveal(false)
+		for i, toolchain := range toolchains {
+			jobs = jobs.WithJob("", func(ctx context.Context) error {
+				name, err := toolchain.ModuleName(ctx)
+				if err != nil {
+					return fmt.Errorf("get toolchain name: %w", err)
+				}
+				info[i].name = name
+				return nil
+			})
+		}
+		return jobs.Run(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return info, nil
+}
+
+type toolchainInfo struct {
+	name string
+}
+
 var toolchainListCmd = &cobra.Command{
 	Use:     "list [options]",
 	Short:   "List all toolchains",
@@ -928,7 +970,6 @@ var toolchainListCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-
 			modRef, err := getModuleSourceRefWithDefault()
 			if err != nil {
 				return err
@@ -937,42 +978,13 @@ var toolchainListCmd = &cobra.Command{
 				// We can only list toolchains from a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
+			toolchains, err := loadToolchainInfo(ctx, modSrc)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return err
 			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
-
-			toolchains, err := modSrc.Toolchains(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get toolchains: %w", err)
-			}
-
-			if len(toolchains) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "No toolchains found\n")
-				return nil
-			}
-
-			// Print header
-			fmt.Fprintf(cmd.OutOrStdout(), "Name\tDescription\n")
-
-			// Print each toolchain
 			for _, toolchain := range toolchains {
-				mod := toolchain.AsModule()
-				name, err := mod.Name(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get toolchain name: %w", err)
-				}
-				description, err := mod.Description(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get toolchain description: %w", err)
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", name, description)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\n", toolchain.name)
 			}
-
 			return nil
 		})
 	},

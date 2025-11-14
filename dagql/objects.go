@@ -1130,6 +1130,15 @@ func (specs *InputSpecs) Add(target ...InputSpec) {
 	specs.raw = append(specs.raw, target...)
 }
 
+func (specs InputSpecs) HasRequired(view call.View) bool {
+	for _, input := range specs.Inputs(view) {
+		if input.Default == nil && input.Type.Type().NonNull {
+			return true
+		}
+	}
+	return false
+}
+
 func (specs InputSpecs) Input(name string, view call.View) (InputSpec, bool) {
 	for i := len(specs.raw) - 1; i >= 0; i-- {
 		// iterate backwards to allow last-defined spec to have precedence

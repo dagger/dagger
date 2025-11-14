@@ -37,6 +37,8 @@ from dagger.mod._utils import (
     normalize_name,
 )
 
+CHECK_DEF_KEY: str = "__dagger_check__"
+
 logger = logging.getLogger(__package__)
 
 T = TypeVar("T")
@@ -93,6 +95,12 @@ class Function(Generic[P, R]):
     def deprecated(self) -> str | None:
         """Return the deprecation message for the callable, if any."""
         return self.meta.deprecated
+
+    @property
+    def check(self) -> bool:
+        """Indicates whether the function is configured as a check."""
+        # Check both the metadata and the attribute to support either decorator order
+        return self.meta.check or getattr(self.wrapped, CHECK_DEF_KEY, False)
 
     @cached_property
     def cache_policy(self):

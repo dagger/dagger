@@ -6,43 +6,15 @@ import (
 	"io/fs"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
-
-type CheckStatus string
-
-var CheckStatuses = dagql.NewEnum[CheckStatus]()
-
-var (
-	CheckCompleted = CheckStatuses.Register("COMPLETED")
-	CheckSkipped   = CheckStatuses.Register("SKIPPED")
-)
-
-func (r CheckStatus) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "CheckStatus",
-		NonNull:   true,
-	}
-}
-
-func (r CheckStatus) TypeDescription() string {
-	return "The result of a check."
-}
-
-func (r CheckStatus) Decoder() dagql.InputDecoder {
-	return CheckStatuses
-}
-
-func (r CheckStatus) ToLiteral() call.Literal {
-	return CheckStatuses.Literal(r)
-}
 
 // Check represents a validation check with its result
 type Check struct {
@@ -134,47 +106,85 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			return nil, fmt.Errorf("run checks for module %q: serve core schema: %w", r.Module.Name(), err)
 		}
 	}
+	for _, tcMod := range r.Module.ToolchainModules {
+		if err := tcMod.Install(ctx, dag); err != nil {
+			return nil, fmt.Errorf("run checks for module %q: serve toolchain module %q: %w", r.Module.Name(), tcMod.Name(), err)
+		}
+	}
 	if err := r.Module.Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("run checks for module %q: serve module: %w", r.Module.Name(), err)
 	}
 
-	jobs := parallel.New()
+	eg := new(errgroup.Group)
 	for _, check := range r.Checks {
-		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
+		ctx, span := Tracer(ctx).Start(ctx, check.Name(),
+			telemetry.Reveal(),
+			trace.WithAttributes(
+				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+				attribute.String(telemetry.CheckNameAttr, check.Name()),
+			),
+		)
+		eg.Go(func() (rerr error) {
+			defer telemetry.End(span, func() error { return rerr })
 			// Reset output fields, in case we're re-running
 			check.Completed = false
 			check.Passed = false
+			defer func() {
+				check.Completed = true
+				check.Passed = rerr == nil
+				// Set the passed attribute on the span for telemetry
+				span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, check.Passed))
+			}()
+
+			selectPath := []dagql.Selector{{Field: gqlFieldName(r.Module.Name())}}
+			for _, field := range check.Path {
+				selectPath = append(selectPath, dagql.Selector{Field: field})
+			}
+
 			var checkParent dagql.AnyObjectResult
-			if err := parallel.New().
-				WithJob("load check context", func(ctx context.Context) error {
-					selectPath := []dagql.Selector{{Field: gqlFieldName(r.Module.Name())}}
-					// Select the whole path except the last part, *outside* the check span
-					// This keeps log noise at a minimum (eg. logs from loading the check don't show up in check logs)
-					for _, field := range check.Path[:len(check.Path)-1] {
-						selectPath = append(selectPath, dagql.Selector{Field: field})
-					}
-					return dag.Select(dagql.WithRepeatedTelemetry(ctx), dag.Root(), &checkParent, selectPath...)
-				}, attribute.Bool("dagger.io/check.hidelogs", true)).
-				Run(ctx); err != nil {
+			if err := (func() (rerr error) {
+				ctx, span := Tracer(ctx).Start(ctx, "load check context",
+					// Prevent logs from bubbling up past this point.
+					telemetry.Boundary(),
+					// We're only using this span as a log encapsulation boundary; show
+					// its child spans inline.
+					telemetry.Passthrough(),
+				)
+
+				defer telemetry.End(span, func() error { return rerr })
+				return dag.Select(ctx, dag.Root(), &checkParent, selectPath[:len(selectPath)-1]...)
+			})(); err != nil {
 				return err
 			}
-			var status any
-			checkErr := dag.Select(dagql.WithRepeatedTelemetry(ctx), checkParent, &status, dagql.Selector{Field: check.Path[len(check.Path)-1]})
-			check.Completed = true
-			check.Passed = checkErr == nil
-			// Set the passed attribute on the span for telemetry
-			if span := trace.SpanFromContext(ctx); span != nil {
-				span.SetAttributes(attribute.Bool("dagger.io/check.passed", check.Passed))
+
+			// Call the check
+			var status dagql.AnyResult
+			if err := dag.Select(dagql.WithRepeatedTelemetry(ctx), checkParent, &status, selectPath[len(selectPath)-1]); err != nil {
+				return err
 			}
-			if checkErr != nil {
-				return checkErr
+
+			if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
+				// If the check returns a syncable type, sync it
+				if syncField, has := obj.ObjectType().FieldSpec("sync", dag.View); has {
+					if !syncField.Args.HasRequired(dag.View) {
+						if err := dag.Select(
+							dagql.WithRepeatedTelemetry(ctx),
+							obj,
+							&status,
+							dagql.Selector{Field: "sync"},
+						); err != nil {
+							return err
+						}
+					}
+				}
 			}
 			return nil
-		}, attribute.String("dagger.io/check.name", check.Name()))
+		})
 	}
 	// We can't distinguish legitimate errors from failed checks, so we just discard.
 	// Bubbling them up to here makes telemetry more useful (no green when a check failed)
-	_ = jobs.Run(ctx)
+	_ = eg.Wait()
 	return r, nil
 }
 

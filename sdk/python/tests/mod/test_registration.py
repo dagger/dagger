@@ -69,6 +69,56 @@ def test_function_deprecated_metadata():
     assert fn.deprecated == "Use new method instead"
 
 
+def test_function_check_metadata():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.function
+        @mod.check
+        def lint(self):
+            """Check function."""
+
+    fn = mod.get_object("Foo").functions["lint"]
+    assert fn.check is True
+
+
+def test_function_check_default_false():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.function
+        def regular(self):
+            """Regular function."""
+
+    fn = mod.get_object("Foo").functions["regular"]
+    assert fn.check is False
+
+
+def test_check_decorator_order():
+    """Test that @check works whether applied before or after @function."""
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.check
+        @mod.function
+        def check_first(self):
+            """Check applied before function."""
+
+        @mod.function
+        @mod.check
+        def function_first(self):
+            """Check applied after function."""
+
+    check_first_fn = mod.get_object("Foo").functions["check_first"]
+    assert check_first_fn.check is True
+
+    function_first_fn = mod.get_object("Foo").functions["function_first"]
+    assert function_first_fn.check is True
+
+
 def test_function_argument_deprecated_metadata():
     mod = Module()
 

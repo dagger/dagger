@@ -60,6 +60,7 @@ var (
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
 	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
+	expandCompleted          = os.Getenv("DAGGER_EXPAND_COMPLETED") != ""
 	debugFlag                bool
 	progress                 string
 	interactive              bool
@@ -441,6 +442,7 @@ func main() {
 	opts.Silent = silent                           // show no progress
 	opts.Debug = debugFlag                         // show everything
 	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
+	opts.ExpandCompleted = expandCompleted         // leave things expanded as they complete
 	opts.OpenWeb = web
 	opts.NoExit = noExit
 	opts.DotOutputFilePath = dotOutputFilePath

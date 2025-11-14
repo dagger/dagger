@@ -77,7 +77,8 @@ func (d Docs) Server() *dagger.Container {
 }
 
 // Lint documentation files
-func (d Docs) Lint(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (d Docs) Lint(ctx context.Context) error {
 	_, err := dag.Container().
 		From("tmknom/markdownlint:"+markdownlintVersion).
 		WithMountedDirectory("/src", d.Source).
@@ -93,7 +94,7 @@ func (d Docs) Lint(ctx context.Context) (MyCheckStatus, error) {
 			"README.md",
 		}).
 		Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
 // Regenerate the API schema and CLI reference docs

@@ -1,12 +1,12 @@
 Expected stderr:
 
-▼ connect X.Xs
+✔ connect X.Xs
 ├╴✔ starting engine X.Xs
-├╴▼ connecting to engine X.Xs
+├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest/typescript X.Xs
+✔ load module: ./viztest/typescript X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
@@ -15,16 +15,11 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ typescript: Typescript! X.Xs
-▼ .failLogNative: Void X.Xs ERROR
+✘ .failLogNative: Void X.Xs ERROR
 ┃ im doing a lot of work
 ┃ and then failing
 ! i failed
 
-Error logs:
-
-▼ .failLogNative: Void X.Xs ERROR
-im doing a lot of work
-and then failing
-! i failed
+Error: i failed
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

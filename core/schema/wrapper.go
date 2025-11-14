@@ -3,11 +3,13 @@ package schema
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
@@ -52,7 +54,7 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 		return inst, err
 	}
 	return core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
-		ID:       curIDForRawDagOp,
+		ID:       curIDForRawDagOp, // FIXME: using this in the cache key means we effectively disable buildkit content caching
 		Filename: filename,
 	}, deps)
 }
@@ -93,29 +95,44 @@ func DagOpFile[T dagql.Typed, A any](
 	opts ...DagOpOptsFn[T, A],
 ) (*core.File, error) {
 	o := getOpts(opts...)
-	deps, err := extractLLBDependencies(ctx, self)
-	if err != nil {
-		return nil, err
-	}
 
 	filename := "file"
 	if o.pfn != nil {
 		// NOTE: if set, the path function must be *somewhat* stable -
 		// since it becomes part of the op, then any changes to this
 		// invalidate the cache
+		var err error
 		filename, err = o.pfn(ctx, self, args)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	selfDigest, deps, err := getSelfDigest(ctx, self)
+	if err != nil {
+		return nil, err
+	}
+	argDigest, err := core.DigestOf(args)
+	if err != nil {
+		return nil, err
+	}
+
 	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
 	if err != nil {
 		return nil, err
 	}
+
+	cacheKey := digest.FromString(
+		strings.Join([]string{
+			selfDigest.String(),
+			argDigest.String(),
+		}, "\x00"),
+	)
+
 	return core.NewFileDagOp(ctx, srv, &core.FSDagOp{
-		ID:   curIDForFSDagOp,
-		Path: filename,
+		ID:       curIDForFSDagOp,
+		Path:     filename,
+		CacheKey: cacheKey,
 	}, deps)
 }
 
@@ -204,9 +221,59 @@ func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
 	return &o
 }
 
-func getSelfDigest(a any) (digest.Digest, []llb.State, error) {
+func getSelfDigest(ctx context.Context, a any) (digest.Digest, []llb.State, error) {
 	switch x := a.(type) {
+	case *core.Container:
+		dgst, err := core.DigestOf(x.WithoutInputs())
+		if err != nil {
+			return "", nil, err
+		}
+
+		var deps []llb.State
+		var fsLLB *pb.Definition
+		if x.FS != nil && x.FS.Self() != nil {
+			fsLLB = x.FS.Self().LLB
+		}
+		if fsLLB == nil || fsLLB.Def == nil {
+			deps = append(deps, llb.Scratch())
+		} else {
+			op, err := llb.NewDefinitionOp(fsLLB)
+			if err != nil {
+				return "", nil, err
+			}
+			deps = append(deps, llb.NewState(op))
+		}
+
+		for _, m := range x.Mounts {
+			mLLB := m.GetLLB()
+			if mLLB != nil && mLLB.Def != nil {
+				op, err := llb.NewDefinitionOp(mLLB)
+				if err != nil {
+					return "", nil, err
+				}
+				deps = append(deps, llb.NewState(op))
+			}
+		}
+
+		return dgst, deps, err
 	case *core.Directory:
+		dgst, err := core.DigestOf(x.WithoutInputs())
+		if err != nil {
+			return "", nil, err
+		}
+
+		var deps []llb.State
+		if x.LLB == nil || x.LLB.Def == nil {
+			deps = append(deps, llb.Scratch())
+		} else {
+			op, err := llb.NewDefinitionOp(x.LLB)
+			if err != nil {
+				return "", nil, err
+			}
+			deps = append(deps, llb.NewState(op))
+		}
+		return dgst, deps, err
+	case *core.File:
 		dgst, err := core.DigestOf(x.WithoutInputs())
 		if err != nil {
 			return "", nil, err
@@ -225,12 +292,13 @@ func getSelfDigest(a any) (digest.Digest, []llb.State, error) {
 		return dgst, deps, err
 	case
 		// FIXME: these are weird
-		*core.GitRepository,
-		*core.GitRef,
 		*core.Changeset,
-		*core.Query,
-		*core.Host:
-		return "", nil, nil // fallback to using dagop ID
+		*core.GitRef,
+		*core.GitRepository,
+		*core.Host,
+		*core.Query:
+		// fallback to using dagop ID
+		return dagql.CurrentID(ctx).Digest(), nil, nil
 	default:
 		return "", nil, fmt.Errorf("unable to create digest: unknown type %T", a)
 	}
@@ -250,7 +318,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 ) (*core.Directory, error) {
 	o := getOpts(opts...)
 
-	selfDigest, deps, err := getSelfDigest(self)
+	selfDigest, deps, err := getSelfDigest(ctx, self)
 	if err != nil {
 		return nil, err
 	}
@@ -272,15 +340,22 @@ func DagOpDirectory[T dagql.Typed, A any](
 		}
 	}
 
+	cacheKey := digest.FromString(
+		strings.Join([]string{
+			selfDigest.String(),
+			argDigest.String(),
+		}, "\x00"),
+	)
+
 	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
 	if err != nil {
 		return nil, err
 	}
+
 	return core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
-		// FIXME: using this in the cache key means we effectively disable
-		// buildkit content caching
-		ID:   curIDForFSDagOp,
-		Path: filename,
+		ID:       curIDForFSDagOp,
+		Path:     filename,
+		CacheKey: cacheKey,
 	}, deps, selfDigest, argDigest)
 }
 

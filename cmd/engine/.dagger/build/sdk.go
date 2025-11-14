@@ -76,6 +76,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			WithWorkdir("/src").
 			WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
 			WithMountedDirectory("", rootfs.Directory("codegen")).
+			WithEnvVariable("UV_NATIVE_TLS", "true").
 			WithExec([]string{
 				"uv", "export",
 				"--no-hashes",

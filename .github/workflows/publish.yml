@@ -174,7 +174,7 @@ jobs:
 
       - uses: actions/setup-node@v2
         with:
-          node-version: 18
+          node-version: 20
       - uses: oven-sh/setup-bun@v1
         with:
           bun-version: 1.1.26
@@ -432,7 +432,7 @@ jobs:
         shell: bash
       - uses: actions/setup-node@v2
         with:
-          node-version: 18
+          node-version: 20
       - uses: oven-sh/setup-bun@v1
         with:
           bun-version: 1.1.26

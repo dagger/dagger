@@ -5212,3 +5212,79 @@ func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	require.Equal(t, "4", f2Contents)
 }
+
+func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
+	theTest := func(ctx context.Context, t *testctx.T, fileSelector func(*dagger.Client, string) *dagger.File) {
+		dir := t.TempDir()
+		fileData := identity.NewID()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(fileData), 0o600))
+
+		// This tests three back-to-back runs, using different clients, to test that caching works.
+		// The first and second run should be the same (i.e. the second should be cached), then the third test
+		// should be different (i.e. not cached)
+
+		fn := func() (string, string, error) {
+			c := connect(ctx, t)
+			defer c.Close()
+
+			// This is used to test selecting a file different way, e.g. c.Host().File() vs c.Host().Directory().File()
+			// has no effect on the expected caching behavior
+			f := fileSelector(c, dir)
+
+			out, err := c.Container().
+				From(alpineImage).
+				WithFile("the-file", f).
+				WithExec([]string{"sh", "-c", "cat the-file && echo -n : && head -c 99 /dev/random | base64 -w0"}).
+				Stdout(ctx)
+			if err != nil {
+				return "", "", err
+			}
+
+			fileData, randData, ok := strings.Cut(out, ":")
+			if !ok {
+				return "", "", fmt.Errorf("failed to cut %s", out)
+			}
+			require.Len(t, randData, 132) // test that 99 chars were randomly produced, this accounts for 4/3 times base64 bloat
+			return fileData, randData, nil
+		}
+
+		fileData1, randData1, err := fn()
+		require.NoError(t, err)
+		require.Equal(t, fileData, fileData1)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "this-is-not-used"), []byte(identity.NewID()), 0o600))
+
+		fileData2, randData2, err := fn()
+		require.NoError(t, err)
+		require.Equal(t, fileData, fileData2)
+		require.Equal(t, randData1, randData2, "command was re-executed when it should have been cached")
+
+		// change the used file, to ensure it busts the cache
+		newFileData := identity.NewID()
+		require.NotEqual(t, fileData, newFileData)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(newFileData), 0o600))
+
+		fileData3, randData3, err := fn()
+		require.NoError(t, err)
+		require.NotEqual(t, randData1, randData3, "execution was cached when it should have been re-run")
+		require.Equal(t, newFileData, fileData3)
+	}
+
+	t.Run("use file directly", func(ctx context.Context, t *testctx.T) {
+		theTest(ctx, t, func(c *dagger.Client, dir string) *dagger.File {
+			return c.Host().File(filepath.Join(dir, "rand1"))
+		})
+	})
+	t.Run("use file via directory", func(ctx context.Context, t *testctx.T) {
+		theTest(ctx, t, func(c *dagger.Client, dir string) *dagger.File {
+			return c.Host().Directory(dir).File("rand1")
+		})
+	})
+	t.Run("use file via filter", func(ctx context.Context, t *testctx.T) {
+		theTest(ctx, t, func(c *dagger.Client, dir string) *dagger.File {
+			return c.Host().Directory(dir).Filter(dagger.DirectoryFilterOpts{
+				Exclude: []string{"this-shouldnt-change-anything"},
+			}).File("rand1")
+		})
+	})
+}

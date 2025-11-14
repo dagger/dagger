@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -11,7 +12,13 @@ import (
 )
 
 func New() parallelJobs {
-	return parallelJobs{}
+	return parallelJobs{
+		Internal: false,
+		Reveal:   true,
+		// Don't use the contextual tracer by default: this breaks in Dagger *clients* (including modules),
+		// because a freshly connected client does not have
+		ContextualTracer: false,
+	}
 }
 
 func Run(ctx context.Context, name string, fn JobFunc) error {
@@ -19,21 +26,51 @@ func Run(ctx context.Context, name string, fn JobFunc) error {
 }
 
 type parallelJobs struct {
-	Jobs  []Job
-	Limit *int
+	Jobs     []Job
+	Limit    *int
+	Internal bool
+	Reveal   bool
+	// Use the "contextual tracer".
+	// If enabled, spans are created using the same tracer that created the current span.
+	// If disabled, spans are created using the global tracer for this process
+	// Typically, you need to enable this in multi-tenant systems with many client contexts,
+	// each with their own tracer (eg. inside the dagger engine)
+	//
+	ContextualTracer bool
 }
 
 type Job struct {
-	Name       string
-	Func       JobFunc
-	attributes []attribute.KeyValue
+	Name             string
+	Func             JobFunc
+	attributes       []attribute.KeyValue
+	Internal         bool
+	Reveal           bool
+	ContextualTracer bool
 }
 
 type JobFunc func(context.Context) error
 
+func (p parallelJobs) WithInternal(internal bool) parallelJobs {
+	p = p.Clone()
+	p.Internal = internal
+	return p
+}
+
+func (p parallelJobs) WithReveal(reveal bool) parallelJobs {
+	p = p.Clone()
+	p.Reveal = reveal
+	return p
+}
+
+func (p parallelJobs) WithContextualTracer(contextualTracer bool) parallelJobs {
+	p = p.Clone()
+	p.ContextualTracer = contextualTracer
+	return p
+}
+
 func (p parallelJobs) WithJob(name string, fn JobFunc, attributes ...attribute.KeyValue) parallelJobs {
 	p = p.Clone()
-	p.Jobs = append(p.Jobs, Job{name, fn, attributes})
+	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal, p.ContextualTracer})
 	return p
 }
 
@@ -43,12 +80,24 @@ func (p parallelJobs) Clone() parallelJobs {
 	return cp
 }
 
+var tracerName = "dagger.io/util/parallel"
+
+func (job Job) tracer(ctx context.Context) trace.Tracer {
+	if job.ContextualTracer {
+		return trace.SpanFromContext(ctx).TracerProvider().Tracer(tracerName)
+	}
+	return otel.Tracer(tracerName)
+}
+
 func (job Job) startSpan(ctx context.Context) (context.Context, trace.Span) {
 	attr := job.attributes
-	attr = append(attr, attribute.Bool("dagger.io/ui.reveal", true))
-	return trace.SpanFromContext(ctx).TracerProvider().
-		Tracer("dagger.io/util/parallel").
-		Start(ctx, job.Name, trace.WithAttributes(attr...))
+	if job.Reveal {
+		attr = append(attr, attribute.Bool("dagger.io/ui.reveal", true))
+	}
+	if job.Internal {
+		attr = append(attr, attribute.Bool("dagger.io/ui.internal", true))
+	}
+	return job.tracer(ctx).Start(ctx, job.Name, trace.WithAttributes(attr...))
 }
 
 func (job Job) Runner(ctx context.Context) func() error {
