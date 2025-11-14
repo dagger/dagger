@@ -61,7 +61,8 @@ func (l *Loader) SDKForModule(
 	}
 
 	stdio := telemetry.SpanStdio(ctx, "dagger.io/core/sdk")
-
+	fmt.Fprintln(stdio.Stderr, "Error:", err)
+	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintf(stdio.Stderr, "Could not load SDK %q.\n", sdk.Source)
 	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintln(stdio.Stderr, "The available SDKs are:")
