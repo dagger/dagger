@@ -18,7 +18,7 @@ Expected stderr:
 ✔ .useExecService: Void X.Xs
 ├╴✔ container: Container! X.Xs
 ├╴$ .from(address: "busybox"): Container! X.Xs CACHED
-├╴✔ withNewFile /srv/index.html <- <h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p> X.Xs
+├╴✔ withNewFile /srv/index.html (contents: "<h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>") X.Xs
 ├╴✔ .withExposedPort(port: 80): Container! X.Xs
 ├╴✔ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs ✔ 1
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200

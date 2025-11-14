@@ -25,7 +25,7 @@ Expected stderr:
 ├╴✔ withExec sleep 1 X.Xs
 ├╴✔ withExec echo 'im busted by that buster' X.Xs
 │ ┃ im busted by that buster
-├╴✔ withNewFile /srv/index.html <- <h1>hello, world!</h1> X.Xs
+├╴✔ withNewFile /srv/index.html (contents: "<h1>hello, world!</h1>") X.Xs
 ├╴✔ .withExposedPort(port: 80): Container! X.Xs
 ├╴✔ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs ✔ 1
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
