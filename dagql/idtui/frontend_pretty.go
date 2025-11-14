@@ -2291,31 +2291,31 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 		if !abridged {
 			fe.renderStatus(out, span)
 			r.renderMetrics(out, span)
-		}
 
-		summary := map[string]int{}
-		for effect := range span.EffectSpans {
-			if effect.Passthrough {
-				// Don't show spans which are aggressively hidden.
-				continue
+			summary := map[string]int{}
+			for effect := range span.EffectSpans {
+				if effect.Passthrough {
+					// Don't show spans which are aggressively hidden.
+					continue
+				}
+				icon, isInteresting := fe.statusIcon(effect)
+				if !isInteresting {
+					// summarize boring statuses, rather than showing them in full
+					summary[icon]++
+					continue
+				}
+				fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
+				r.renderSpan(out, effect, effect.Name)
 			}
-			icon, isInteresting := fe.statusIcon(effect)
-			if !isInteresting {
-				// summarize boring statuses, rather than showing them in full
-				summary[icon]++
-				continue
-			}
-			fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
-			r.renderSpan(out, effect, effect.Name)
-		}
 
-		for _, icon := range statusOrder {
-			count := summary[icon]
-			if count > 0 {
-				color := statusColors[icon]
-				fmt.Fprintf(out, " %s %s",
-					out.String(icon).Foreground(color).Faint(),
-					out.String(strconv.Itoa(count)).Faint())
+			for _, icon := range statusOrder {
+				count := summary[icon]
+				if count > 0 {
+					color := statusColors[icon]
+					fmt.Fprintf(out, " %s %s",
+						out.String(icon).Foreground(color).Faint(),
+						out.String(strconv.Itoa(count)).Faint())
+				}
 			}
 		}
 	}
