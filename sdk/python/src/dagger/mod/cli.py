@@ -11,6 +11,7 @@ import anyio
 
 import dagger
 from dagger import telemetry
+from dagger.mod._ast_loader import load_module_from_ast
 from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
 from dagger.mod._module import MAIN_OBJECT, Module
 
@@ -30,6 +31,11 @@ def app(mod: Module | None = None, register: bool = False) -> int | None:
         telemetry.shutdown()
 
 
+def register() -> int | None:
+    """Register the module types without executing code."""
+    return app(None, True)
+
+
 async def main(mod: Module | None = None, register: bool = False) -> int | None:
     """Async entrypoint for a Dagger module."""
     # Establishing connection early on to allow returning dag.error().
@@ -38,11 +44,23 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
     async with await dagger.connect():
         try:
             if mod is None:
-                mod = load_module()
+                # When registering, use AST-based loading to avoid
+                # executing user code
+                if register:
+                    try:
+                        logger.info("Using AST-based module loading for registration")
+                        mod = load_module_from_ast()
+                        logger.info("AST loader succeeded")
+                    except Exception:
+                        logger.exception("AST-based module loading failed")
+                        raise
+                else:
+                    mod = load_module()
             if register:
                 return await mod.register()
             return await mod.serve()
         except (ModuleError, dagger.QueryError) as e:
+            logger.exception("Module or query error")
             await record_exception(e)
             return 2
         except Exception as e:
