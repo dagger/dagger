@@ -2310,7 +2310,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				"id": id,
 			}})
 		require.Error(t, err)
-		requireErrOut(t, err, "bogus: file does not exist")
+		requireErrOut(t, err, "bogus: no such file or directory")
 	})
 
 	t.Run("get directory as file", func(ctx context.Context, t *testctx.T) {

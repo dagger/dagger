@@ -649,10 +649,8 @@ func (e notADirectoryError) Unwrap() error {
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
-	fmt.Printf("ACB in dir.File %s\n", file)
 	dir = dir.Clone()
 	filePath := path.Join(dir.Dir, file)
-	fmt.Printf("ACB filePath %s\n", filePath)
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -1472,7 +1470,6 @@ func (s Stat) Clone() *Stat {
 }
 
 func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath string, doNotFollowSymlinks bool) (*Stat, error) {
-	fmt.Printf("ACB dir.Stat %s\n", targetPath)
 	res, err := dir.Evaluate(ctx)
 	if err != nil {
 		return nil, err
@@ -1506,11 +1503,13 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		if err != nil {
 			return err
 		}
-		fmt.Printf("ACB dir.Stat inside %s\n", resolvedPath)
 		fileInfo, err = osStatFunc(resolvedPath)
 		return err
 	})
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%s: No such file or directory", targetPath)
+		}
 		return nil, fmt.Errorf("%s: %w", targetPath, err)
 	}
 
