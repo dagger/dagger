@@ -337,6 +337,7 @@ func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
 	return newID.apply(opts...)
 }
 
+// TODO: fix name
 func (id *ID) WithPersistable() *ID {
 	if id == nil {
 		return nil

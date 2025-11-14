@@ -285,10 +285,19 @@ func (c *Check) tryScaleOut(ctx context.Context, eg *errgroup.Group) (bool, erro
 	log := slog.SpanLogger(ctx, "scale-out")
 
 	if c.Module.Source.Value.Self().Kind == ModuleSourceKindDir {
-		// TODO: if the dir is transferable, can construct an ID in the remote engine and use it here, probably...
-		// In mean time just don't scale out
-		log.Info("skipping scale out for dir-based module")
-		return false, nil
+		// check if the dir is transferable
+		dirID := c.Module.Source.Value.Self().DirSrc.OriginalContextDir.ID()
+		walker, err := dagql.WalkID(dirID, false)
+		if err != nil {
+			return false, fmt.Errorf("dir source walker: %w", err)
+		}
+		allIDs := walker.AllIDs()
+		for _, id := range allIDs {
+			if !id.Call().IsRemoteable {
+				log.Info("skipping scale out for dir-based module due to non-remoteable directory", "dirID", dirID.DisplaySelf(), "nonRemoteableID", id.DisplaySelf())
+				return false, nil
+			}
+		}
 	}
 
 	// TODO: ask cloud whether to scale out, if not return (false, nil) to continue locally
@@ -388,8 +397,15 @@ func (c *Check) tryScaleOut(ctx context.Context, eg *errgroup.Group) (bool, erro
 				Arg("refPin", c.Module.Source.Value.Self().Git.Commit).
 				Arg("requireKind", c.Module.Source.Value.Self().Kind)
 		case ModuleSourceKindDir:
-			// TODO: shouldn't happen yet based on check at beginning
-			return fmt.Errorf("cannot scale out checks for dir-based modules")
+			dirID := c.Module.Source.Value.Self().DirSrc.OriginalContextDir.ID()
+			dirIDEnc, err := dirID.Encode()
+			if err != nil {
+				return fmt.Errorf("encode dir ID: %w", err)
+			}
+			query = query.Select("loadDirectoryFromID").
+				Arg("id", dirIDEnc)
+			query = query.Select("asModuleSource").
+				Arg("sourceRootPath", c.Module.Source.Value.Self().DirSrc.OriginalSourceRootSubpath)
 		}
 		query = query.Select("asModule")
 

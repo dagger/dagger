@@ -50,6 +50,7 @@ type gitSchema struct{}
 func (s *gitSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("git", s.git, dagql.CachePerClient).
+			Persistable().
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			Args(
@@ -75,6 +76,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.GitRepository]{
 		dagql.NodeFunc("head", s.head).
+			Persistable().
 			Doc(`Returns details for HEAD.`),
 		dagql.NodeFunc("ref", s.ref).
 			Doc(`Returns details of a ref.`).
@@ -137,6 +139,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.GitRef]{
 		dagql.NodeFunc("tree", s.tree).
+			Persistable().
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			Args(

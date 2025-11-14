@@ -34,6 +34,14 @@ func WalkedIDs[T Typed](idWalker *IDWalker) []ID[T] {
 	return typedIDs
 }
 
+func (idWalker *IDWalker) AllIDs() []*call.ID {
+	ids := make([]*call.ID, 0, len(idWalker.memo))
+	for _, idList := range idWalker.typeNameToIDs {
+		ids = append(ids, idList...)
+	}
+	return ids
+}
+
 func (idWalker *IDWalker) walkID(id *call.ID, skipCurrent bool) error {
 	dgst := id.Digest()
 	if _, ok := idWalker.memo[dgst]; ok {
