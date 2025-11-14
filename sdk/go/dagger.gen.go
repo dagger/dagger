@@ -6297,7 +6297,6 @@ func (r *FieldTypeDef) TypeDef() *TypeDef {
 type File struct {
 	query *querybuilder.Selection
 
-	asJSON   *JSON
 	contents *string
 	digest   *string
 	export   *string
@@ -6344,16 +6343,12 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 }
 
 // Parse the file contents as JSON.
-func (r *File) AsJSON(ctx context.Context) (JSON, error) {
-	if r.asJSON != nil {
-		return *r.asJSON, nil
-	}
+func (r *File) AsJSON() *JSONValue {
 	q := r.query.Select("asJSON")
 
-	var response JSON
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &JSONValue{
+		query: q,
+	}
 }
 
 // Change the owner of the file recursively.

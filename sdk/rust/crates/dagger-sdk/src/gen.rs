@@ -8070,9 +8070,13 @@ impl File {
         }
     }
     /// Parse the file contents as JSON.
-    pub async fn as_json(&self) -> Result<Json, DaggerError> {
+    pub fn as_json(&self) -> JsonValue {
         let query = self.selection.select("asJSON");
-        query.execute(self.graphql_client.clone()).await
+        JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Change the owner of the file recursively.
     ///
