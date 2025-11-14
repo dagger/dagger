@@ -1068,23 +1068,25 @@ func (FileSuite) TestFileAsJSON(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("it converts json file contents to JSON", func(ctx context.Context, t *testctx.T) {
-		jsonValue := c.Directory().
+		jsonValue, err := c.Directory().
 			WithNewFile("test.json", `{ "somekey": "somevalue" }`).
 			File("test.json").
-			AsJSON()
+			AsJSON().
+			Field([]string{"somekey"}).
+			AsString(ctx)
 
-		result, err := jsonValue.Contents(ctx)
 		require.NoError(t, err)
-		require.Equal(t, dagger.JSON(`{ "somekey": "somevalue" }`), result)
+		require.Equal(t, "somevalue", jsonValue)
 	})
 
 	t.Run("it returns error with non-json", func(ctx context.Context, t *testctx.T) {
-		jsonValue := c.Directory().
+		_, err := c.Directory().
 			WithNewFile("test.txt", `this is not json`).
 			File("test.txt").
-			AsJSON()
+			AsJSON().
+			Field([]string{"sdk", "source"}).
+			AsString(ctx)
 
-		_, err := jsonValue.Contents(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "invalid JSON")
 	})
