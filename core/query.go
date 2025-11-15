@@ -132,7 +132,7 @@ type Server interface {
 	SecretSalt() []byte
 
 	// Open a client's telemetry database.
-	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error)
+	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error)
 
 	// The name of the engine
 	EngineName() string
