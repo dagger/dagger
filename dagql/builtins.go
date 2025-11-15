@@ -163,6 +163,9 @@ func (d DynamicResultArrayOutput) Nth(i int) (Typed, error) {
 	if err != nil {
 		return nil, err
 	}
+	if val == nil {
+		return nil, nil
+	}
 	return val.Unwrap(), nil
 }
 

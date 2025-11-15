@@ -7264,16 +7264,39 @@ import (
 )
 
 type Test struct {
+	Dirs []*dagger.Directory
 }
 
 func (m *Test) Nothing() (*dagger.Directory, error) {
 	return nil, nil
 }
+
+func (m *Test) ListWithNothing() ([]*dagger.Directory, error) {
+	return []*dagger.Directory{nil}, nil
+}
+
+func (m *Test) ObjsWithNothing() ([]*Test, error) {
+	return []*Test{
+		nil,
+		{
+			Dirs: []*dagger.Directory{nil},
+		},
+	}, nil
+}
 `,
 		)
 
-	_, err := modGen.With(daggerQuery(`{test{nothing{id}}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{test{nothing{entries}}}`)).Stdout(ctx)
 	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"nothing":null}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{test{listWithNothing{entries}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"listWithNothing":[null]}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{test{objsWithNothing{dirs{entries}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"objsWithNothing":[null,{"dirs":[null]}]}}`, out)
 }
 
 func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
