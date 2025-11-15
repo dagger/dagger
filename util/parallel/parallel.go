@@ -37,6 +37,11 @@ type parallelJobs struct {
 	// each with their own tracer (eg. inside the dagger engine)
 	//
 	ContextualTracer bool
+
+	// Roll up child logs into this span.
+	RollupLogs bool
+	// Roll up child spans into this span for aggregated progress display.
+	RollupSpans bool
 }
 
 type Job struct {
@@ -46,6 +51,8 @@ type Job struct {
 	Internal         bool
 	Reveal           bool
 	ContextualTracer bool
+	RollupLogs       bool
+	RollupSpans      bool
 }
 
 type JobFunc func(context.Context) error
@@ -68,9 +75,21 @@ func (p parallelJobs) WithContextualTracer(contextualTracer bool) parallelJobs {
 	return p
 }
 
+func (p parallelJobs) WithRollupSpans(rollupSpans bool) parallelJobs {
+	p = p.Clone()
+	p.RollupSpans = rollupSpans
+	return p
+}
+
+func (p parallelJobs) WithRollupLogs(rollupLogs bool) parallelJobs {
+	p = p.Clone()
+	p.RollupLogs = rollupLogs
+	return p
+}
+
 func (p parallelJobs) WithJob(name string, fn JobFunc, attributes ...attribute.KeyValue) parallelJobs {
 	p = p.Clone()
-	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal, p.ContextualTracer})
+	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal, p.ContextualTracer, p.RollupLogs, p.RollupSpans})
 	return p
 }
 
@@ -96,6 +115,12 @@ func (job Job) startSpan(ctx context.Context) (context.Context, trace.Span) {
 	}
 	if job.Internal {
 		attr = append(attr, attribute.Bool("dagger.io/ui.internal", true))
+	}
+	if job.RollupLogs {
+		attr = append(attr, attribute.Bool("dagger.io/ui.rollup.logs", true))
+	}
+	if job.RollupSpans {
+		attr = append(attr, attribute.Bool("dagger.io/ui.rollup.spans", true))
 	}
 	return job.tracer(ctx).Start(ctx, job.Name, trace.WithAttributes(attr...))
 }
