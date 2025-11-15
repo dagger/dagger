@@ -319,23 +319,16 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 // loadCommand finds the leaf command to run.
 func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Command, rargs []string, rerr error) {
 	ctx := c.Context()
-
-	spanCtx, span := Tracer().Start(ctx, "parsing command line arguments", telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-	fc.ctx = spanCtx
-
+	fc.ctx = ctx
 	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
-
 	cmd, args, err := fc.traverse(c, a, builder)
 	if err != nil {
 		return cmd, args, err
 	}
-
 	// There should be no args left, if there are it's an unknown command.
 	if err := cobra.NoArgs(cmd, args); err != nil {
 		return cmd, args, err
 	}
-
 	return cmd, args, nil
 }
 
