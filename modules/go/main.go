@@ -594,9 +594,17 @@ func (p *Go) Lint(
 	if err != nil {
 		return err
 	}
-	// On a large repo this can run dozens of parallel golangci-lint jobs,
-	// which can lead to OOM or extreme CPU usage, so we limit parallelism
-	jobs := parallel.New().WithLimit(3)
+	jobs := parallel.New().
+		// On a large repo this can run dozens of parallel golangci-lint jobs,
+		// which can lead to OOM or extreme CPU usage, so we limit parallelism
+		WithLimit(3).
+		// For better display in 'dagger checks': logs from all functions below the job will
+		// be printed below the job.
+		// TODO: remove this when dagger has a sub-checks API
+		WithRollupLogs(true).
+		// For better display in 'dagger checks': we get a cool activity bar in our sub-checks
+		// TODO: remove this when dagger has a sub-checks API
+		WithRollupSpans(true)
 	for _, mod := range mods {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			return p.LintModule(ctx, mod)
