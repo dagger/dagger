@@ -1249,11 +1249,11 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 	if err != nil {
 		return nil, fmt.Errorf("get main client caller metadata: %w", err)
 	}
-	q, close, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
+	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
 	if err != nil {
 		return nil, err
 	}
-	defer close()
+	defer q.Close()
 
 	buf := new(strings.Builder)
 
