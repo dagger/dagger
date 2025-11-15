@@ -3483,82 +3483,75 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 // load the given module source's dependencies as modules
 func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.ModDeps, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
-	}
-
-	var eg errgroup.Group
-	depMods := make([]dagql.Result[*core.Module], len(src.Self().Dependencies))
-	for i, depSrc := range src.Self().Dependencies {
-		eg.Go(func() error {
-			return dag.Select(ctx, depSrc, &depMods[i],
-				dagql.Selector{Field: "asModule"},
-			)
-		})
-	}
-
-	// Load all toolchains as dependencies
-	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
-	if len(src.Self().Toolchains) > 0 {
-		for i, tcSrc := range src.Self().Toolchains {
-			eg.Go(func() error {
-				err := dag.Select(ctx, tcSrc, &tcMods[i],
+	var deps *core.ModDeps
+	err := parallel.New().WithContextualTracer(true).WithJob("load dependencies", func(ctx context.Context) error {
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		dag, err := query.Server.Server(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get dag server: %w", err)
+		}
+		jobs := parallel.New().WithContextualTracer(true)
+		depMods := make([]dagql.Result[*core.Module], len(src.Self().Dependencies))
+		for i, depSrc := range src.Self().Dependencies {
+			jobs = jobs.WithJob(depSrc.Self().ModuleName, func(ctx context.Context) error {
+				return dag.Select(ctx, depSrc, &depMods[i],
 					dagql.Selector{Field: "asModule"},
 				)
-				return err
 			})
 		}
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
-	}
-
-	defaultDeps, err := query.DefaultDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
-	}
-	deps := core.NewModDeps(query, defaultDeps.Mods)
-	for _, depMod := range depMods {
-		deps = deps.Append(depMod.Self())
-	}
-	for _, tcMod := range tcMods {
-		clone := tcMod.Self().Clone()
-		clone.IsToolchain = true
-		clone.ContextSource = dagql.NonNull(src)
-
-		// Apply argument configurations from the parent module's toolchain config
-		// Find matching config by toolchain name
-		for _, tcCfg := range src.Self().ConfigToolchains {
-			if tcCfg.Name == clone.OriginalName && len(tcCfg.Arguments) > 0 {
-				// Apply configurations to the toolchain module's functions, including chained functions
-				applyArgumentConfigsToModule(clone, tcCfg.Arguments)
-				break
+		// Load all toolchains as dependencies
+		tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
+		if len(src.Self().Toolchains) > 0 {
+			for i, tcSrc := range src.Self().Toolchains {
+				jobs = jobs.WithJob("toolchain: "+tcSrc.Self().ModuleName, func(ctx context.Context) error {
+					return dag.Select(ctx, tcSrc, &tcMods[i],
+						dagql.Selector{Field: "asModule"},
+					)
+				})
 			}
 		}
-
-		deps = deps.Append(clone)
-	}
-	for i, depMod := range deps.Mods {
-		if coreMod, ok := depMod.(*CoreMod); ok {
-			// this is needed so that a module's dependency on the core
-			// uses the correct schema version
-			dag := *coreMod.Dag
-
-			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion)))
-			deps.Mods[i] = &CoreMod{Dag: &dag}
+		if err := jobs.Run(ctx); err != nil {
+			return fmt.Errorf("load module dependencies: %w", err)
 		}
-	}
+		defaultDeps, err := query.DefaultDeps(ctx)
+		if err != nil {
+			return fmt.Errorf("get default dependencies: %w", err)
+		}
+		deps = core.NewModDeps(query, defaultDeps.Mods)
+		for _, depMod := range depMods {
+			deps = deps.Append(depMod.Self())
+		}
+		for _, tcMod := range tcMods {
+			clone := tcMod.Self().Clone()
+			clone.IsToolchain = true
+			clone.ContextSource = dagql.NonNull(src)
+			// Apply argument configurations from the parent module's toolchain config
+			// Find matching config by toolchain name
+			for _, tcCfg := range src.Self().ConfigToolchains {
+				if tcCfg.Name == clone.OriginalName && len(tcCfg.Arguments) > 0 {
+					// Apply configurations to the toolchain module's functions, including chained functions
+					applyArgumentConfigsToModule(clone, tcCfg.Arguments)
+					break
+				}
+			}
+			deps = deps.Append(clone)
+		}
+		for i, depMod := range deps.Mods {
+			if coreMod, ok := depMod.(*CoreMod); ok {
+				// this is needed so that a module's dependency on the core
+				// uses the correct schema version
+				dag := *coreMod.Dag
 
-	return deps, nil
+				dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion)))
+				deps.Mods[i] = &CoreMod{Dag: &dag}
+			}
+		}
+		return nil
+	}).Run(ctx)
+	return deps, err
 }
 
 func (s *moduleSourceSchema) moduleSourceWithClient(
