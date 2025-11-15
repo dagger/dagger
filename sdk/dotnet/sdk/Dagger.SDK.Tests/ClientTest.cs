@@ -23,7 +23,7 @@ public class ClientTest
     {
         var cts = new CancellationTokenSource();
         cts.CancelAfter(5000);
-        await Assert.ThrowsExceptionAsync<TaskCanceledException>(
+        await Assert.ThrowsAsync<TaskCanceledException>(
             () =>
                 _dag.Container()
                     .From("debian")
@@ -50,7 +50,7 @@ public class ClientTest
     {
         var cache = _dag.CacheVolume("hello");
         var id = await cache.IdAsync();
-        Assert.IsTrue(id.Value.Length > 0);
+        Assert.IsGreaterThan(0, id.Value.Length);
     }
 
     [TestMethod]
