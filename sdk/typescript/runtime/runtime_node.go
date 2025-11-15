@@ -35,6 +35,10 @@ func NewNodeRuntime(
 		WithMountedDirectory("/usr/local/lib/node_modules/tsx", sdkSourceDir.Directory("/tsx_module")).
 		WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"})
 
+	if cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
 	return &NodeRuntime{
 		sdkSourceDir:      sdkSourceDir,
 		introspectionJSON: introspectionJSON,
