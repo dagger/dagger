@@ -13,7 +13,11 @@ import (
 func New() parallelJobs {
 	return parallelJobs{
 		Internal: false,
-		Reveal:   true,
+
+		// Reveal means "skip over my parents that are not marked reveal, and show me as top-level"
+		// Note: above a certain verbosity level, reveal is ignored
+		Reveal: true,
+
 		// Don't use the contextual tracer by default: this breaks in Dagger *clients* (including modules),
 		// because a freshly connected client does not have
 		ContextualTracer: false,
