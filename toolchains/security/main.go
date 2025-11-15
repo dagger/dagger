@@ -8,12 +8,6 @@ import (
 // A toolchain for supply chain security of the Dagger project
 type Security struct{}
 
-// Common flags for the trivy CLI
-var trivyOpts = []string{
-	"--exit-code=1",
-	"--severity=CRITICAL,HIGH",
-}
-
 // +check
 // Scan the source repository for security vulnerabilities
 func (sec *Security) ScanSource(
