@@ -58,7 +58,8 @@ var (
 
 	force bool
 
-	autoApply bool
+	autoApply          bool
+	eagerModuleLoading bool
 )
 
 const (
@@ -117,6 +118,9 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
 	flags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+
+	// Add the eager module loading flag to disable lazy load on runtime.
+	flags.BoolVar(&eagerModuleLoading, "eager-mod-loading", false, "load module runtime eagerly")
 }
 
 func init() {
