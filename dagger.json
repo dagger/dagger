@@ -119,12 +119,28 @@
       "source": "modules/alpine"
     },
     {
+      "name": "changelog",
+      "source": "toolchains/changelog"
+    },
+    {
       "name": "codegen",
       "source": "cmd/codegen"
     },
     {
+      "name": "docs",
+      "source": "toolchains/docs-dev"
+    },
+    {
+      "name": "helm",
+      "source": "toolchains/helm-dev"
+    },
+    {
       "name": "ps-analyzer",
       "source": "modules/ps-analyzer"
+    },
+    {
+      "name": "sdks",
+      "source": "toolchains/all-sdks"
     },
     {
       "name": "shellcheck",
