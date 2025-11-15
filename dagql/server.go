@@ -1013,8 +1013,12 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 			if err != nil {
 				return nil, err
 			}
+			if val == nil {
+				results = append(results, nil)
+				continue
+			}
 			val, ok := val.DerefValue()
-			if !ok {
+			if !ok || val == nil {
 				results = append(results, nil)
 				continue
 			}
