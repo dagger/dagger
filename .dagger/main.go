@@ -13,9 +13,9 @@ import (
 type DaggerDev struct {
 	Source *dagger.Directory // +private
 
-	Version string
-	Tag     string
-	Git     *dagger.GitRepository
+	Version    string
+	SDKVersion string
+	Git        *dagger.GitRepository
 
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
@@ -52,17 +52,17 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	tag, err := v.ImageTag(ctx)
+	tagOrCommit, err := v.TagOrCommit(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	dev := &DaggerDev{
-		Source:    source,
-		Tag:       tag,
-		Git:       git,
-		Version:   version,
-		DockerCfg: dockerCfg,
+		Source:     source,
+		SDKVersion: tagOrCommit,
+		Git:        git,
+		Version:    version,
+		DockerCfg:  dockerCfg,
 	}
 	return dev, nil
 }

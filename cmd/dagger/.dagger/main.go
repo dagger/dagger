@@ -28,14 +28,14 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	imageTag, err := v.ImageTag(ctx)
+	tagOrCommit, err := v.TagOrCommit(ctx)
 	if err != nil {
 		return nil, err
 	}
 	values := []string{
 		// FIXME: how to avoid duplication with engine module?
 		"github.com/dagger/dagger/engine.Version=" + version,
-		"github.com/dagger/dagger/engine.Tag=" + imageTag,
+		"github.com/dagger/dagger/engine.SDKVersion=" + tagOrCommit,
 	}
 	if runnerHost != "" {
 		values = append(values, "main.RunnerHost="+runnerHost)

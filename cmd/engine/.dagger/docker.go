@@ -31,7 +31,7 @@ func (e *DaggerEngine) LoadToDocker(
 	// +optional
 	gpuSupport bool,
 ) (*LoadedEngine, error) {
-	ctr, err := e.Container(ctx, platform, image, gpuSupport, "", "")
+	ctr, err := e.Container(ctx, platform, image, gpuSupport, "")
 	if err != nil {
 		return nil, err
 	}
