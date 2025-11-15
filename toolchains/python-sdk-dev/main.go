@@ -269,11 +269,6 @@ func (t PythonSdkDev) Release(
 	return nil
 }
 
-func (t PythonSdkDev) VersionFromTag(tag string) string {
-	prefix := strings.TrimRight(t.SourcePath, "/") + "/"
-	return strings.TrimPrefix(t.SourcePath, prefix)
-}
-
 // Bump the Python SDK's Engine dependency
 func (t PythonSdkDev) Bump(_ context.Context, version string) (*dagger.Changeset, error) {
 	// trim leading v from version

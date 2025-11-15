@@ -76,16 +76,11 @@ func (dev *Dev) Test(
 	// Filter the test suite, e.g. TestDirectory, TestContainer, or
 	// 'TestDirectory|TestContainer' for both.
 	// +optional
-	suite,
-	// Filter a sub-test of the test suite, e.g. FindUp/current.
-	// +optional
 	filter string,
 ) error {
-	if suite == "" {
-		return dag.DaggerDev().Test().All(ctx)
-	} else {
-		return dag.DaggerDev().Test().Specific(ctx, dagger.DaggerDevTestSpecificOpts{Run: suite + "/" + filter})
-	}
+	return dag.EngineDev().Test(ctx, dagger.EngineDevTestOpts{
+		Run: filter,
+	})
 }
 
 // Run a git command and return its output.
