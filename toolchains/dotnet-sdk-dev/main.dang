@@ -1,0 +1,137 @@
+"""
+Develop the Dagger Dotnet SDK (experimental)
+"""
+type DotnetSdkDev {
+  #####################################
+  #### ### #### Constants #### ### ####
+
+  """
+  Base image to create a dev container for the Dotnet SDK
+  """
+  let dotnetSdkImage = "mcr.microsoft.com/dotnet/sdk:8.0-alpine3.20@sha256:d04ba63aae736552b2b03bf0e63efa46d0c765726c831b401044543319d63219"
+
+  ################################################
+  #### ### #### Implicit constructor #### ### ####
+
+  """
+  A directory with all the files needed to develop the SDK.
+  """
+  pub workspace: Directory!
+    @defaultPath(path: "/")
+    @ignorePatterns(patterns: [
+      "*",
+      "!sdk/dotnet/sdk/.config",
+      "!sdk/dotnet/sdk/Dagger.sln",
+      "!sdk/dotnet/sdk/Dagger.sln.DotSettings.user",
+      "!sdk/dotnet/sdk/global.json",
+      "!sdk/dotnet/sdk/**/*.cs",
+      "!sdk/dotnet/sdk/**/*.csproj"
+    ])
+
+  """
+  The path of the SDK in the workspace.
+  """
+  pub sourcePath: String! = "sdk/dotnet/sdk"
+
+  let originalWorkspace: Directory! = workspace
+
+  let baseContainer: Container! {
+    let ctr = container.
+      from(dotnetSdkImage).
+      withWorkdir("/src")
+
+    ctr = daggerEngine().installClient(ctr)
+  }
+
+  ######################################
+  #### ### #### Public API #### ### ####
+
+  """
+  Return the Dotnet SDK workspace mounted in a dev container,
+  and working directory set to the SDK source.
+  """
+  pub devContainer: Container! {
+    baseContainer.
+      withMountedDirectory(".", workspace).
+      withWorkdir(sourcePath)
+  }
+
+  """
+  Lint the Dotnet SDK with Csharpier (https://csharpier.com)
+  """
+  # Where do we annotate the check??
+  pub csharpier: Void! {
+    devContainer().
+      withExec(["dotnet", "tool", "restore"]).
+      withExec(["dotnet", "csharpier", "--check", "."]).
+      sync
+
+    null
+  }
+
+  """
+  Run tests on the Dotnet SDK
+  """
+  # Where do we annotate the check??
+  pub test: Void! {
+    devContainer().
+      withFile("Dagger.SDK/introspection.json", daggerEngine().introspectionJson()).
+      withExec(["dotnet", "restore"]).
+      withExec(["dotnet", "build", "--no-restore"]).
+      withExec(["dotnet", "test", "--no-build"], experimentalPrivilegedNesting: true).
+      sync
+
+    null
+  }
+
+  """
+  Install the SDK locally so it can be imported.
+
+  This function generate `introspection.json` which allows using
+  SDK from a local checkout.
+
+  Since the SDK at this moment cannot be published or installed, the
+  standard function does not need to exist.
+  """
+  pub install: Changeset! {
+    withInstall().changes()
+  }
+
+  pub withInstall: DotnetSdkDev! {
+    self.workspace = self.workspace.
+      withoutDirectory(sourcePath).
+      withDirectory(sourcePath, directory().withFile(
+        "Dagger.SDK/introspection.json",
+        daggerEngine().introspectionJson(),
+      ))
+
+    self
+  }
+
+  """
+  Run csharpier (https://csharpier.com) on the SDK source code
+  and save it back to the workspace.
+  """
+  pub withFormat: DotnetSdkDev! {
+    self.workspace=directory.
+      withDirectory("/", devContainer().
+        withExec(["dotnet", "tool", "restore"]).
+        withExec(["dotnet", "csharpier", "."]).
+        rootfs().
+        directory("/src"),
+      )
+
+    self
+  }
+
+  """
+  Return the changeset between the local workspace and the moduele's
+  current workspace.
+
+  For example: this can be called after `withFormat` to upload the formatted
+  code on the host.
+  """
+  pub changes: Changeset! {
+    workspace.changes(originalWorkspace)
+  }
+}
