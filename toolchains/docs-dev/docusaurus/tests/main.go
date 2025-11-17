@@ -7,7 +7,6 @@ import (
 	"context"
 	"dagger/tests/internal/dagger"
 	"fmt"
-	"log/slog"
 
 	"github.com/sourcegraph/conc/pool"
 )
@@ -34,8 +33,6 @@ func (m *Tests) Basic(ctx context.Context) error {
 		Build()
 
 	entries, err := site.Entries(ctx)
-
-	slog.Debug("%s", entries)
 
 	// handle case where directory was being copied instead of its contents
 	if len(entries) <= 1 {

@@ -111,14 +111,14 @@ func (cli CliDev) Reference(
 
 // Build dev CLI binaries
 // TODO: remove this
-func (dev *CliDev) DevBinaries(
+func (cli *CliDev) DevBinaries(
 	// +optional
-	runnerHost string,
+	// runnerHost string,
 	// +optional
 	platform dagger.Platform,
 ) *dagger.Directory {
 	p := platforms.MustParse(string(platform))
-	bin := dev.Binary(platform)
+	bin := cli.Binary(platform)
 	binName := "dagger"
 	if p.OS == "windows" {
 		binName += ".exe"
@@ -129,7 +129,7 @@ func (dev *CliDev) DevBinaries(
 		p2.OS = "linux"
 		p2.OSFeatures = nil
 		p2.OSVersion = ""
-		dir = dir.WithFile("dagger-linux", dev.Binary(dagger.Platform(platforms.Format(p2))))
+		dir = dir.WithFile("dagger-linux", cli.Binary(dagger.Platform(platforms.Format(p2))))
 	}
 	return dir
 }

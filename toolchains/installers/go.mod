@@ -7,7 +7,7 @@ replace github.com/dagger/dagger => ../..
 require (
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
-	github.com/containerd/containerd v1.7.29
+	github.com/containerd/platforms v1.0.0-rc.1
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/rogpeppe/go-internal v1.13.1
 	github.com/vektah/gqlparser/v2 v2.5.30
@@ -30,9 +30,7 @@ require (
 )
 
 require (
-	github.com/Microsoft/hcsshim v0.13.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/platforms v1.0.0-rc.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect

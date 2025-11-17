@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"dagger/docs/internal/dagger"
 	"encoding/json"
@@ -94,7 +93,6 @@ func (d DocsDev) LintMarkdown(
 
 // Regenerate the API schema and CLI reference docs
 func (d DocsDev) Generate(
-	ctx context.Context,
 	// Dagger version to generate API docs for
 	// +optional
 	version string,
@@ -103,10 +101,12 @@ func (d DocsDev) Generate(
 	// 1. Generate the GraphQL schema
 	withGqlSchema := src.WithFile(
 		"docs/docs-graphql/schema.graphqls",
-		dag.EngineDev().GraphqlSchema(),
+		dag.EngineDev().GraphqlSchema(dagger.EngineDevGraphqlSchemaOpts{
+			Version: version,
+		}),
 	)
 	// 2. Generate the API reference docs
-	withApiReference := dag.Container().
+	withAPIReference := dag.Container().
 		From("node:22").
 		WithMountedDirectory("/src", withGqlSchema).
 		WithMountedDirectory("/mnt/spectaql", spectaql()).
@@ -132,31 +132,11 @@ func (d DocsDev) Generate(
 
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).
-		WithChanges(withApiReference.Changes(src)).
+		WithChanges(withAPIReference.Changes(src)).
 		WithChanges(withCliReference.Changes(src)).
 		WithChanges(withConfigSchemas.Changes(src)).
 		Changes(src)
 	return changes, nil
-}
-
-func formatJSONFile(ctx context.Context, f *dagger.File) (*dagger.File, error) {
-	name, err := f.Name(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	contents, err := f.Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var out bytes.Buffer
-	err = json.Indent(&out, []byte(contents), "", "\t")
-	if err != nil {
-		return nil, err
-	}
-
-	return dag.File(name, out.String()), nil
 }
 
 // Bump the Go SDK's Engine dependency

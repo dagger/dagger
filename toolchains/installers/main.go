@@ -7,9 +7,9 @@ import (
 
 	"toolchains/installers/internal/dagger"
 
-	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/util/parallel"
-	"github.com/rogpeppe/go-internal/semver"
+	"golang.org/x/mod/semver"
 )
 
 // A toolchain to test Dagger installers

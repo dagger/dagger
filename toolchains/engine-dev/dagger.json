@@ -37,8 +37,8 @@
       "source": "../../modules/wolfi"
     },
     {
-         "name": "notify",
-         "source": "notify"
+      "name": "notify",
+      "source": "notify"
     }
   ]
 }

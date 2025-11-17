@@ -56,7 +56,7 @@ func (n *Notify) Slack(
 	// The content of the notification to send
 	message string,
 	// The channel where to post the message
-	channelId string,
+	channelID string,
 	// Set a title to the message
 	// +optional
 	title string,
@@ -68,10 +68,10 @@ func (n *Notify) Slack(
 	footerIcon string,
 	// Add an image in the message
 	// +optional
-	ImageUrl string,
+	imageURL string,
 	// The thread id if we want to reply to a message or in a thread
 	// +optional
-	threadId string,
+	threadID string,
 ) (string, error) {
 	clearToken, err := token.Plaintext(ctx)
 	if err != nil {
@@ -86,7 +86,7 @@ func (n *Notify) Slack(
 		Title:      title,
 		Footer:     footer,
 		FooterIcon: footerIcon,
-		ImageURL:   ImageUrl,
+		ImageURL:   imageURL,
 	}
 
 	options := []slack.MsgOption{
@@ -95,12 +95,12 @@ func (n *Notify) Slack(
 		slack.MsgOptionAsUser(true),
 	}
 
-	if threadId != "" {
-		options = append(options, slack.MsgOptionTS(threadId))
+	if threadID != "" {
+		options = append(options, slack.MsgOptionTS(threadID))
 	}
 
 	_, ts, err := api.PostMessage(
-		channelId,
+		channelID,
 		options...,
 	)
 
@@ -113,7 +113,7 @@ func (n *Notify) Slack(
 
 // helper to return a dagger cloud trace link from the OTEL data in ctx.
 // useful as input to "message" to link your slack or discord notification back up to dagger cloud.
-func (n *Notify) DaggerCloudTraceUrl(
+func (n *Notify) DaggerCloudTraceURL(
 	ctx context.Context,
 ) (string, error) {
 	spanContext := trace.SpanFromContext(ctx).SpanContext()
