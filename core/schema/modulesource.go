@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/parallel"
 
@@ -587,15 +588,29 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
 
+	var resolvedRefName dagql.String
+	if err := dag.Select(ctx, gitRef, &resolvedRefName, dagql.Selector{Field: "ref"}); err != nil {
+		return inst, fmt.Errorf("failed to resolve git ref name: %w", err)
+	}
+	var resolvedCommit dagql.String
+	if err := dag.Select(ctx, gitRef, &resolvedCommit, dagql.Selector{Field: "commit"}); err != nil {
+		return inst, fmt.Errorf("failed to resolve git commit: %w", err)
+	}
+
+	resolvedRef := &gitutil.Ref{
+		Name: string(resolvedRefName),
+		SHA:  string(resolvedCommit),
+	}
+
 	gitSrc := &core.ModuleSource{
 		ConfigExists: true, // we can't load uninitialized git modules, we'll error out later if it's not there
 		Kind:         core.ModuleSourceKindGit,
 		Git: &core.GitModuleSource{
 			HTMLRepoURL:  parsed.RepoRoot.Repo,
 			RepoRootPath: parsed.RepoRoot.Root,
-			Version:      cmp.Or(gitRef.Self().Ref.ShortName(), gitRef.Self().Ref.SHA),
-			Commit:       gitRef.Self().Ref.SHA,
-			Ref:          gitRef.Self().Ref.Name,
+			Version:      cmp.Or(resolvedRef.ShortName(), resolvedRef.SHA),
+			Commit:       resolvedRef.SHA,
+			Ref:          resolvedRef.Name,
 			CloneRef:     parsed.SourceCloneRef,
 		},
 	}
