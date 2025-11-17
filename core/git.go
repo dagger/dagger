@@ -18,12 +18,14 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+// GitRepository is a lazy handle to a git repository.
+// Starts unresolved — resolution happens via __resolve in core/schema/git.go.
 type GitRepository struct {
-	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
-	Backend GitRepositoryBackend
-	Remote  *gitutil.Remote
-
+	Backend       GitRepositoryBackend
+	Remote        *gitutil.Remote // ls-remote result, nil until resolved
 	DiscardGitDir bool
+	PinnedHead    *gitutil.Ref `internal:"true"` // set by git(ref:, commit:) args
+	Resolved      bool         `internal:"true"`
 }
 
 type GitRepositoryBackend interface {
@@ -41,10 +43,13 @@ type GitRepositoryBackend interface {
 	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
 }
 
+// GitRef is a lazy handle to a git ref (branch, tag, or commit).
+// Starts unresolved — resolution happens via __resolve in core/schema/git.go.
 type GitRef struct {
-	Repo    dagql.ObjectResult[*GitRepository]
-	Backend GitRefBackend
-	Ref     *gitutil.Ref
+	Repo     dagql.ObjectResult[*GitRepository]
+	Backend  GitRefBackend // nil until resolved
+	Ref      *gitutil.Ref  // Name is user input before resolution, canonical after
+	Resolved bool          `internal:"true"`
 }
 
 type GitRefBackend interface {
@@ -54,21 +59,9 @@ type GitRefBackend interface {
 }
 
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
-	repo := &GitRepository{
+	return &GitRepository{
 		Backend: backend,
-	}
-
-	remote, err := backend.Remote(ctx)
-	if err != nil {
-		return nil, err
-	}
-	repo.Remote = remote
-
-	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
-		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
-	}
-
-	return repo, nil
+	}, nil
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -82,6 +75,19 @@ func (*GitRepository) TypeDescription() string {
 	return "A git repository."
 }
 
+func (repo *GitRepository) Clone() *GitRepository {
+	cp := *repo
+	if repo.Remote != nil {
+		remoteCopy := *repo.Remote
+		cp.Remote = &remoteCopy
+	}
+	if repo.PinnedHead != nil {
+		pinnedHeadCopy := *repo.PinnedHead
+		cp.PinnedHead = &pinnedHeadCopy
+	}
+	return &cp
+}
+
 func (*GitRef) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "GitRef",
@@ -91,6 +97,15 @@ func (*GitRef) Type() *ast.Type {
 
 func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
+}
+
+func (ref *GitRef) Clone() *GitRef {
+	cp := *ref
+	if ref.Ref != nil {
+		refCopy := *ref.Ref
+		cp.Ref = &refCopy
+	}
+	return &cp
 }
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {
