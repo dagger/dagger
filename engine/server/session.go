@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -160,11 +159,14 @@ type daggerClient struct {
 	bkClient        *buildkit.Client
 
 	// SQLite database storing telemetry + anything else
-	db             *sql.DB
-	dbQueries      *clientdb.Queries // comes with prepared statements
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
 	meterProvider  *sdkmetric.MeterProvider
+	// NOTE: do not use this field directly as it may not be open
+	// after the client has shutdown; use TelemetryDB() instead
+	// This field exists to "keepalive" the db while the client
+	// is around to avoid perf overhead of closing/reopening a lot
+	keepAliveTelemetryDB *clientdb.DB
 }
 
 type daggerClientState string
@@ -178,18 +180,16 @@ func (client *daggerClient) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
 }
 
+// NOTE: be sure to defer closing the DB when done with it, otherwise it may leak
+func (client *daggerClient) TelemetryDB(ctx context.Context) (*clientdb.DB, error) {
+	return client.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, client.clientID)
+}
+
 func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
 	slog := slog.With("client", client.clientID)
 	var errs error
 	if client.tracerProvider != nil {
 		slog.ExtraDebug("force flushing client traces")
-		// FIXME: mitigation for goroutine leak fixed upstream in
-		// https://github.com/open-telemetry/opentelemetry-go/pull/6363
-		// Just give this context a real generous timeout for now so if we
-		// are canceled we don't leak
-		// Can undo this once we've picked up the upstream fix.
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
-		defer cancel()
 		errs = errors.Join(errs, client.tracerProvider.ForceFlush(ctx))
 	}
 	if client.loggerProvider != nil {
@@ -371,9 +371,8 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 			// Flush all telemetry.
 			errs = errors.Join(errs, client.ShutdownTelemetry(ctx))
 
-			// Close client DB for writing; subscribers will have their own connection
-			errs = errors.Join(errs, client.dbQueries.Close())
-			errs = errors.Join(errs, client.db.Close())
+			// Close client DB; subscribers may re-open as needed with client.TelemetryDB()
+			errs = errors.Join(errs, client.keepAliveTelemetryDB.Close())
 
 			return errs
 		})
@@ -813,13 +812,9 @@ func (srv *Server) getOrInitClient(
 
 		// initialize SQLite DB early so we can subscribe to it immediately
 		var err error
-		client.db, err = srv.clientDBs.Create(client.clientID)
+		client.keepAliveTelemetryDB, err = srv.clientDBs.Open(ctx, client.clientID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("open client DB: %w", err)
-		}
-		client.dbQueries, err = clientdb.Prepare(ctx, client.db)
-		if err != nil {
-			return nil, nil, fmt.Errorf("prepare client DB queries: %w", err)
 		}
 
 		parent, parentExists := sess.clients[opts.CallerClientID]
@@ -1513,19 +1508,15 @@ func (srv *Server) SecretSalt() []byte {
 }
 
 // Provides access to the client's telemetry database.
-func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error) {
+func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.DB, error) {
 	client, err := srv.clientFromIDs(sessID, clientID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := client.FlushTelemetry(ctx); err != nil {
-		return nil, nil, fmt.Errorf("flush telemetry: %w", err)
+		return nil, fmt.Errorf("flush telemetry: %w", err)
 	}
-	db, err := srv.clientDBs.Open(clientID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return clientdb.New(db), db.Close, nil
+	return client.TelemetryDB(ctx)
 }
 
 type httpError struct {

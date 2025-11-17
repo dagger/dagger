@@ -90,8 +90,8 @@ func (ms *mockServer) BuildkitSession() *bksession.Manager         { return nil 
 func (ms *mockServer) Locker() *locker.Locker                      { return nil }
 func (ms *mockServer) SecretSalt() []byte                          { return nil }
 func (ms *mockServer) FileSyncer() *filesync.FileSyncer            { return nil }
-func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error) {
-	return nil, nil, nil
+func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error) {
+	return nil, nil
 }
 func (ms *mockServer) EngineName() string { return "mockEngine" }
 func (ms *mockServer) Clients() []string  { return []string{} }
