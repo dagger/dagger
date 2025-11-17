@@ -473,15 +473,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		discardGitDir = !args.KeepGitDir.Value.Bool()
 	}
 
-	var head *gitutil.Ref
-	if args.Ref != "" || args.Commit != "" {
-		head = &gitutil.Ref{
-			Name: args.Ref,
-			SHA:  args.Commit,
-		}
-	}
-
-	repo, err := core.NewGitRepository(ctx, &core.RemoteGitRepository{
+	rb := &core.RemoteGitRepository{
 		URL:           remote,
 		SSHKnownHosts: args.SSHKnownHosts,
 		SSHAuthSocket: sshAuthSock,
@@ -490,11 +482,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		AuthHeader:    httpAuthHeader,
 		Services:      gitServices,
 		Platform:      parent.Self().Platform(),
-	})
+	}
+
+	repo, err := core.NewGitRepository(ctx, rb)
 	if err != nil {
 		return inst, err
 	}
-	repo.Remote.Head = head
 	repo.DiscardGitDir = discardGitDir
 
 	inst, err = dagql.NewResultForCurrentID(ctx, repo)
@@ -505,7 +498,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	dgstInputs := []string{
 		// all details of the remote repo
 		repo.URL.Value.String(),
-		string(repo.Remote.Digest()),
 		// legacy args
 		strconv.FormatBool(repo.DiscardGitDir),
 		// also include what auth methods are used, currently we can't
