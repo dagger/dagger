@@ -361,5 +361,5 @@ func (row *TraceRow) Root() *TraceRow {
 }
 
 func (row *TraceRow) ShouldShowCause() bool {
-	return row.Span.ErrorOrigin != nil && (!row.Expanded || !row.HasChildren)
+	return len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren)
 }

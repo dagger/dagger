@@ -15,7 +15,7 @@ Expected stderr:
     │   ┃
     │   ┃ Errors:
     │   ┃ - unknown built-in sdk
-    │   ┃ - local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist
+    │   ┃ - local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist [traceparent:00000000000000000000000000000000-0000000000000000]
     │   ┃
     │   ┃ The available SDKs are:
     │   ┃ - go

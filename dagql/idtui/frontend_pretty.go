@@ -717,7 +717,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
-			KeyEnabled(focused != nil && focused.ErrorOrigin != nil)),
+			KeyEnabled(focused != nil && len(focused.ErrorOrigins.Order) > 0)),
 		key.NewBinding(key.WithKeys("t"),
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
@@ -1874,10 +1874,10 @@ func (fe *frontendPretty) goErrorOrigin() {
 	if focused == nil {
 		return
 	}
-	if focused.ErrorOrigin == nil {
+	if len(focused.ErrorOrigins.Order) == 0 {
 		return
 	}
-	fe.FocusedSpan = focused.ErrorOrigin.ID
+	fe.FocusedSpan = focused.ErrorOrigins.Order[0].ID // TODO which?
 	focusedRow := fe.rowsView.BySpan[fe.FocusedSpan]
 	if focusedRow == nil {
 		return
@@ -1958,6 +1958,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 	fe.renderStep(out, r, row, prefix)
+
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
@@ -2144,12 +2145,13 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
-	originCtx := telemetry.ErrorOrigin(fe.err)
-	if !originCtx.IsValid() {
-		return false
-	}
-	if !fe.shownErrs[dagui.SpanID{SpanID: originCtx.SpanID()}] {
-		return false
+	for _, origin := range telemetry.ErrorOrigins(fe.err) {
+		if !origin.IsValid() {
+			return false
+		}
+		if !fe.shownErrs[dagui.SpanID{SpanID: origin.SpanID()}] {
+			return false
+		}
 	}
 	return true
 }

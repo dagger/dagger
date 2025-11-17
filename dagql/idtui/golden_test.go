@@ -605,6 +605,11 @@ var scrubs = []scrubber{
 		"File \"<@beartype(dagger.client.gen.Container.sync) at 0x7f80cbe716c0>\", line 12, in sync",
 		"0xXXXXXXXXXXXX",
 	},
+	{
+		telemetry.ErrorOriginRegex,
+		`local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist [traceparent:8a3363a90e36b75e39d5c26de0286cc9-fb8de840ef712c7b]`,
+		` [traceparent:00000000000000000000000000000000-0000000000000000]`,
+	},
 }
 
 func TestScrubbers(t *testing.T) {

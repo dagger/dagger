@@ -45,8 +45,7 @@ type Span struct {
 	FailedLinks   SpanSet `json:"-"`
 	CanceledLinks SpanSet `json:"-"`
 	RevealedSpans SpanSet `json:"-"`
-
-	ErrorOrigin *Span `json:"-"`
+	ErrorOrigins  SpanSet `json:"-"`
 
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call

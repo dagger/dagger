@@ -235,7 +235,7 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 	fnCall := dag.CurrentFunctionCall()
 	defer func() {
 		if rerr != nil {
-			if ` + voidRet + ` := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
+			if ` + voidRet + ` := fnCall.ReturnError(ctx, dag.Error(rerr.Error())); err != nil {
 				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
 			}
 		}
@@ -273,10 +273,6 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 
 	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
 	if err != nil {
-		var exec *dagger.ExecError
-		if errors.As(err, &exec) {
-			return exec.Unwrap()
-		}
 		return err
 	}
 	resultBytes, err := json.Marshal(result)
@@ -302,29 +298,6 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 	if err := dispatch(ctx); err != nil {
 		os.Exit(2)
 	}
-}
-
-func convertError(rerr error) *dagger.Error {
-	var gqlErr *gqlerror.Error
-	if errors.As(rerr, &gqlErr) {
-		dagErr := dag.Error(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, dagger.JSON(val))
-			}
-		}
-		return dagErr
-	}
-	return dag.Error(rerr.Error())
 }
 
 ` + dispatch
