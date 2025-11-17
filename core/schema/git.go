@@ -484,10 +484,19 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		Platform:      parent.Self().Platform(),
 	}
 
+	var head *gitutil.Ref
+	if args.Ref != "" || args.Commit != "" {
+		head = &gitutil.Ref{
+			Name: args.Ref,
+			SHA:  args.Commit,
+		}
+	}
+
 	repo, err := core.NewGitRepository(ctx, rb)
 	if err != nil {
 		return inst, err
 	}
+	repo.PinnedHead = head
 	repo.DiscardGitDir = discardGitDir
 
 	inst, err = dagql.NewResultForCurrentID(ctx, repo)
@@ -520,6 +529,15 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
 		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthHeader.ID()})
 	}
+
+	if head != nil {
+		dgstInputs = append(
+			dgstInputs,
+			"head-name:"+head.Name,
+			"head-sha:"+head.SHA,
+		)
+	}
+
 	inst = inst.WithDigest(hashutil.HashStrings(dgstInputs...))
 	if len(resourceIDs) > 0 {
 		postCall, err := core.ResourceTransferPostCall(ctx, parent.Self(), clientMetadata.ClientID, resourceIDs...)
@@ -607,6 +625,14 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 }
 
 func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
+	repo := parent.Self()
+	if repo.PinnedHead != nil {
+		name := repo.PinnedHead.Name
+		if name == "" {
+			name = "HEAD"
+		}
+		return s.ref(ctx, parent, refArgs{Name: name, Commit: repo.PinnedHead.SHA})
+	}
 	return s.ref(ctx, parent, refArgs{Name: "HEAD"})
 }
 
