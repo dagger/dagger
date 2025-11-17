@@ -211,7 +211,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 	if src.SDK != nil {
 		src.SDK = src.SDK.Clone()
-		src.IsInit = src.IsInit
 	}
 
 	origIncludePaths := src.IncludePaths
