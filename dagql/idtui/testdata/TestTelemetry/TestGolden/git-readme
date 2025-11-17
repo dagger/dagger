@@ -23,7 +23,7 @@ Expected stderr:
 ┃ ## What is Dagger?
 ├╴✔ git(url: "https://github.com/dagger/dagger"): GitRepository! X.Xs
 ├╴✔ .tag(name: "v0.18.6"): GitRef! X.Xs
-├╴$ .tree: Directory! X.Xs CACHED
+├╴✔ .tree: Directory! X.Xs
 ├╴✔ .file(path: "README.md"): File! X.Xs
 ╰╴✔ .contents: String! X.Xs
   ┃ ## What is Dagger?
