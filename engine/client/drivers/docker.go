@@ -28,7 +28,7 @@ func (d docker) Available(ctx context.Context) (bool, error) {
 	}
 
 	// check daemon is running
-	cmd := exec.CommandContext(ctx, d.cmd, "info")
+	cmd := exec.CommandContext(ctx, d.cmd, "version")
 	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
 		return false, err
 	}
