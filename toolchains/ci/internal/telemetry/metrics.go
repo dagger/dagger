@@ -68,6 +68,9 @@ const (
 	// OTel metric for number of output tokens used by an LLM
 	LLMOutputTokens = "dagger.io/metrics.llm.output.tokens"
 
+	// OTel metric for number of input tokens written to cache by an LLM
+	FilesyncWrittenBytes = "dagger.io/metrics.filesync.written_bytes"
+
 	// OTel metric units should be in UCUM format
 	// https://unitsofmeasure.org/ucum
 

@@ -106,6 +106,10 @@
     {
       "name": "typescript-sdk",
       "source": "toolchains/typescript-sdk-dev"
+    },
+    {
+      "name": "test-split",
+      "source": "toolchains/test-split"
     }
   ],
   "include": [
