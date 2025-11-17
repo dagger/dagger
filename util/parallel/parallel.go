@@ -4,10 +4,11 @@ import (
 	"context"
 	"slices"
 
+	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 )
 
 func New() parallelJobs {
@@ -105,13 +106,17 @@ func (job Job) Runner(ctx context.Context) func() error {
 	//  - Con: parallel jobs are run in random order
 	// If we start the span before the job runs, the pros and cons are switched.
 	// The clean solution is to reimplement errgroup.Group to get our cake and eat it too.
-	return func() (rerr error) {
+	return func() error {
 		ctx, span := job.startSpan(ctx)
-		defer endSpanWithCause(span, &rerr)
+		defer span.End()
 		if job.Func == nil {
 			return nil
 		}
-		return job.Func(ctx)
+		err := job.Func(ctx)
+		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
+		}
+		return err
 	}
 }
 
@@ -126,9 +131,9 @@ func (p parallelJobs) WithLimit(limit int) parallelJobs {
 }
 
 func (p parallelJobs) Run(ctx context.Context) error {
-	var eg errgroup.Group
+	eg := pool.New().WithErrors()
 	if p.Limit != nil {
-		eg.SetLimit(*p.Limit)
+		eg = eg.WithMaxGoroutines(*p.Limit)
 	}
 	for _, job := range p.Jobs {
 		eg.Go(job.Runner(ctx))
