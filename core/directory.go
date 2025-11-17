@@ -1426,7 +1426,7 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
 	stat, err := dir.Stat(ctx, srv, targetPath, doNotFollowSymlinks || targetType == ExistsTypeSymlink)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
 		}
 		return false, err
@@ -1507,9 +1507,6 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		return err
 	})
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%s: No such file or directory", targetPath)
-		}
 		return nil, fmt.Errorf("%s: %w", targetPath, err)
 	}
 
