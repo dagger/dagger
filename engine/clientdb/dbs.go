@@ -72,6 +72,11 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 		if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
 			return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(dbPath), err)
 		}
+
+		// check whether the file exists already
+		_, statErr := os.Lstat(dbPath)
+		alreadyExists := statErr == nil
+
 		connURL := &url.URL{
 			Scheme: "file",
 			Host:   "",
@@ -95,8 +100,11 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 		}
 
 		db.inner = sqlDB
-		if _, err := db.inner.Exec(Schema); err != nil {
-			return nil, fmt.Errorf("migrate: %w", err)
+
+		if !alreadyExists {
+			if _, err := db.inner.Exec(Schema); err != nil {
+				return nil, fmt.Errorf("migrate: %w", err)
+			}
 		}
 
 		db.Queries, err = Prepare(ctx, db.inner)
