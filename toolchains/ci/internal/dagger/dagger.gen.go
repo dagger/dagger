@@ -166,6 +166,12 @@ type CurrentModuleID string
 // The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 type DirectoryID string
 
+// The `EngineDevID` scalar type represents an identifier for an object of type EngineDev.
+type EngineDevID string
+
+// The `EngineDevLoadedEngineID` scalar type represents an identifier for an object of type EngineDevLoadedEngine.
+type EngineDevLoadedEngineID string
+
 // The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
 type EnumTypeDefID string
 
@@ -361,6 +367,8 @@ type AddressDirectoryOpts struct {
 
 	Include []string
 
+	Gitignore bool
+
 	NoCache bool
 }
 
@@ -375,6 +383,10 @@ func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
@@ -393,6 +405,8 @@ type AddressFileOpts struct {
 
 	Include []string
 
+	Gitignore bool
+
 	NoCache bool
 }
 
@@ -407,6 +421,10 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
@@ -593,6 +611,24 @@ func (r *Binding) AsDirectory() *Directory {
 	q := r.query.Select("asDirectory")
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type EngineDev
+func (r *Binding) AsEngineDev() *EngineDev {
+	q := r.query.Select("asEngineDev")
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type EngineDevLoadedEngine
+func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine {
+	q := r.query.Select("asEngineDevLoadedEngine")
+
+	return &EngineDevLoadedEngine{
 		query: q,
 	}
 }
@@ -930,9 +966,10 @@ func (r *CacheVolume) UnmarshalJSON(bs []byte) error {
 type Changeset struct {
 	query *querybuilder.Selection
 
-	export *string
-	id     *ChangesetID
-	sync   *ChangesetID
+	export  *string
+	id      *ChangesetID
+	isEmpty *bool
+	sync    *ChangesetID
 }
 
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
@@ -1039,6 +1076,19 @@ func (r *Changeset) UnmarshalJSON(bs []byte) error {
 	}
 	*r = *dag.LoadChangesetFromID(ChangesetID(id))
 	return nil
+}
+
+// Returns true if the changeset is empty (i.e. there are no changes).
+func (r *Changeset) IsEmpty(ctx context.Context) (bool, error) {
+	if r.isEmpty != nil {
+		return *r.isEmpty, nil
+	}
+	q := r.query.Select("isEmpty")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Return a snapshot containing only the created and modified files
@@ -2070,6 +2120,8 @@ type ContainerWithDirectoryOpts struct {
 	Exclude []string
 	// Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
 	Include []string
+	// Apply .gitignore rules when writing the directory.
+	Gitignore bool
 	// A user:group to set for the directory and its contents.
 	//
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -2092,6 +2144,10 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
@@ -2149,6 +2205,16 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Raise an error.
+func (r *Container) WithError(err string) *Container {
+	q := r.query.Select("withError")
+	q = q.Arg("err", err)
 
 	return &Container{
 		query: q,
@@ -3083,6 +3149,8 @@ type CurrentModuleWorkdirOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
+	// Apply .gitignore filter rules inside the directory
+	Gitignore bool
 }
 
 // Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
@@ -3096,6 +3164,10 @@ func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 	}
 	q = q.Arg("path", path)
@@ -3412,6 +3484,8 @@ type DirectoryFilterOpts struct {
 	Exclude []string
 	// If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
 	Include []string
+	// If set, apply .gitignore rules when filtering the directory.
+	Gitignore bool
 }
 
 // Return a snapshot with some paths included or excluded
@@ -3425,6 +3499,10 @@ func (r *Directory) Filter(opts ...DirectoryFilterOpts) *Directory {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 	}
 
@@ -3692,6 +3770,8 @@ type DirectoryWithDirectoryOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
+	// Apply .gitignore filter rules inside the directory
+	Gitignore bool
 	// A user:group to set for the copied directory and its contents.
 	//
 	// The user and group must be an ID (1000:1000), not a name (foo:bar).
@@ -3713,6 +3793,10 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
+		}
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
@@ -3720,6 +3804,16 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Raise an error.
+func (r *Directory) WithError(err string) *Directory {
+	q := r.query.Select("withError")
+	q = q.Arg("err", err)
 
 	return &Directory{
 		query: q,
@@ -3908,6 +4002,1115 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 	}
 }
 
+type EngineDev struct { // engine-dev (../../../../toolchains/engine-dev/main.go:59:6)
+	query *querybuilder.Selection
+
+	benchmark     *Void
+	id            *EngineDevID
+	networkCidr   *string
+	publish       *Void
+	releaseDryRun *Void
+	test          *Void
+	tests         *string
+}
+type WithEngineDevFunc func(r *EngineDev) *EngineDev
+
+// With calls the provided function with current EngineDev.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EngineDev) With(f WithEngineDevFunc) *EngineDev {
+	return f(r)
+}
+
+func (r *EngineDev) WithGraphQLQuery(q *querybuilder.Selection) *EngineDev {
+	return &EngineDev{
+		query: q,
+	}
+}
+
+// EngineDevBenchmarkOpts contains options for EngineDev.Benchmark
+type EngineDevBenchmarkOpts struct {
+	//
+	// Only run these benchmarks
+	//
+	Run string // engine-dev (../../../../toolchains/engine-dev/bench.go:17:2)
+	//
+	// Skip these benchmarks
+	//
+	Skip string // engine-dev (../../../../toolchains/engine-dev/bench.go:20:2)
+
+	// Default: "./..."
+	Pkg string // engine-dev (../../../../toolchains/engine-dev/bench.go:23:2)
+	//
+	// Abort bench run on first failure
+	//
+	Failfast bool // engine-dev (../../../../toolchains/engine-dev/bench.go:26:2)
+	//
+	// How long before timing out the benchmark run
+	//
+	Timeout string // engine-dev (../../../../toolchains/engine-dev/bench.go:29:2)
+
+	Race bool // engine-dev (../../../../toolchains/engine-dev/bench.go:31:2)
+
+	// Default: 1
+	Count int // engine-dev (../../../../toolchains/engine-dev/bench.go:34:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/bench.go:37:2)
+	//
+	// run benchmarks once with metrics tagged "prewarm" before running for real
+	//
+	Prewarm bool // engine-dev (../../../../toolchains/engine-dev/bench.go:40:2)
+	//
+	// notify this discord webhook on failure
+	//
+	DiscordWebhook *Secret // engine-dev (../../../../toolchains/engine-dev/bench.go:43:2)
+	//
+	// Git repository to extract git metadata for discord notification
+	//
+	Repo *GitRepository // engine-dev (../../../../toolchains/engine-dev/bench.go:46:2)
+}
+
+// Perform a benchmark of the given test run
+func (r *EngineDev) Benchmark(ctx context.Context, opts ...EngineDevBenchmarkOpts) error { // engine-dev (../../../../toolchains/engine-dev/bench.go:13:1)
+	if r.benchmark != nil {
+		return nil
+	}
+	q := r.query.Select("benchmark")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `prewarm` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Prewarm) {
+			q = q.Arg("prewarm", opts[i].Prewarm)
+		}
+		// `discordWebhook` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DiscordWebhook) {
+			q = q.Arg("discordWebhook", opts[i].DiscordWebhook)
+		}
+		// `repo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Repo) {
+			q = q.Arg("repo", opts[i].Repo)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+// EngineDevBenchmarkDumpOpts contains options for EngineDev.BenchmarkDump
+type EngineDevBenchmarkDumpOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../../../toolchains/engine-dev/bench.go:105:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../../../toolchains/engine-dev/bench.go:108:2)
+
+	// Default: "./..."
+	Pkg string // engine-dev (../../../../toolchains/engine-dev/bench.go:111:2)
+	//
+	// Abort test run on first failure
+	//
+	Failfast bool // engine-dev (../../../../toolchains/engine-dev/bench.go:114:2)
+	//
+	// How long before timing out the test run
+	//
+	Timeout string // engine-dev (../../../../toolchains/engine-dev/bench.go:117:2)
+
+	Race bool // engine-dev (../../../../toolchains/engine-dev/bench.go:119:2)
+
+	// Default: 1
+	Count int // engine-dev (../../../../toolchains/engine-dev/bench.go:122:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/bench.go:125:2)
+	//
+	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
+	//
+	//
+	// Default: "pprof/heap"
+	Route string // engine-dev (../../../../toolchains/engine-dev/bench.go:129:2)
+	//
+	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
+	//
+	NoFinal bool // engine-dev (../../../../toolchains/engine-dev/bench.go:133:2)
+	//
+	// wait this long before starting to take dumps. delay does not include engine startup.
+	//
+	//
+	// Default: "1s"
+	Delay string // engine-dev (../../../../toolchains/engine-dev/bench.go:137:2)
+	//
+	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
+	//
+	//
+	// Default: "-1s"
+	Interval string // engine-dev (../../../../toolchains/engine-dev/bench.go:141:2)
+}
+
+// Run specific benchmarks while curling (pprof) dumps from their associated dev engine:
+// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(datebut also works for profiles:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date
+func (r *EngineDev) BenchmarkDump(opts ...EngineDevBenchmarkDumpOpts) *Directory { // engine-dev (../../../../toolchains/engine-dev/bench.go:101:1)
+	q := r.query.Select("benchmarkDump")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `route` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Route) {
+			q = q.Arg("route", opts[i].Route)
+		}
+		// `noFinal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoFinal) {
+			q = q.Arg("noFinal", opts[i].NoFinal)
+		}
+		// `delay` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Delay) {
+			q = q.Arg("delay", opts[i].Delay)
+		}
+		// `interval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interval) {
+			q = q.Arg("interval", opts[i].Interval)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../toolchains/engine-dev/main.go:67:2)
+	q := r.query.Select("clientDockerConfig")
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Generate the json schema for a dagger config file
+// Currently supported: "dagger.json", "engine.json"
+func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:352:1)
+	q := r.query.Select("configSchema")
+	q = q.Arg("filename", filename)
+
+	return &File{
+		query: q,
+	}
+}
+
+// EngineDevContainerOpts contains options for EngineDev.Container
+type EngineDevContainerOpts struct {
+	Platform Platform // engine-dev (../../../../toolchains/engine-dev/main.go:133:2)
+
+	// Default: ALPINE
+	Image EngineDevDistro // engine-dev (../../../../toolchains/engine-dev/main.go:135:2)
+
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:137:2)
+
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:139:2)
+
+	Tag string // engine-dev (../../../../toolchains/engine-dev/main.go:141:2)
+}
+
+// Build the engine container
+func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:129:1)
+	q := r.query.Select("container")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+		// `image` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Image) {
+			q = q.Arg("image", opts[i].Image)
+		}
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+		// `tag` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Tag) {
+			q = q.Arg("tag", opts[i].Tag)
+		}
+	}
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Generate any engine-related files
+// Note: this is codegen of the 'go generate' variety, not 'dagger develop'
+func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchains/engine-dev/main.go:366:1)
+	q := r.query.Select("generate")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
+type EngineDevGraphqlSchemaOpts struct {
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:326:2)
+}
+
+// Introspect the engine API schema, and return it as a graphql schema
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:323:1)
+	q := r.query.Select("graphqlSchema")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
+}
+
+// A unique identifier for this EngineDev.
+func (r *EngineDev) ID(ctx context.Context) (EngineDevID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineDevID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineDev) XXX_GraphQLType() string {
+	return "EngineDev"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineDev) XXX_GraphQLIDType() string {
+	return "EngineDevID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineDev) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineDev) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EngineDev) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEngineDevFromID(EngineDevID(id))
+	return nil
+}
+
+func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:74:1)
+	q := r.query.Select("incrementSubnet")
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+// EngineDevInstallClientOpts contains options for EngineDev.InstallClient
+type EngineDevInstallClientOpts struct {
+	//
+	// The engine service to bind
+	//
+	Service *Service // engine-dev (../../../../toolchains/engine-dev/main.go:270:2)
+}
+
+// Configure the given client container so that it can connect to the given engine service
+func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:264:1)
+	assertNotNil("client", client)
+	q := r.query.Select("installClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `service` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Service) {
+			q = q.Arg("service", opts[i].Service)
+		}
+	}
+	q = q.Arg("client", client)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Introspect the engine API schema, and return it as a json-encoded file.
+// This file is used by SDKs to generate clients.
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:310:1)
+	q := r.query.Select("introspectionJson")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Build the `introspect` tool which introspects the engine API
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:344:1)
+	q := r.query.Select("introspectionTool")
+
+	return &File{
+		query: q,
+	}
+}
+
+// EngineDevLoadToDockerOpts contains options for EngineDev.LoadToDocker
+type EngineDevLoadToDockerOpts struct {
+
+	// Default: "localhost/dagger-engine.dev:latest"
+	Name string // engine-dev (../../../../toolchains/engine-dev/docker.go:23:2)
+
+	Platform Platform // engine-dev (../../../../toolchains/engine-dev/docker.go:26:2)
+	//
+	// Set target distro
+	//
+	//
+	// Default: ALPINE
+	Image EngineDevDistro // engine-dev (../../../../toolchains/engine-dev/docker.go:30:2)
+	//
+	// Enable experimental GPU support
+	//
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/docker.go:33:2)
+}
+
+// Load the engine container into a Docker engine
+func (r *EngineDev) LoadToDocker(docker *Socket, opts ...EngineDevLoadToDockerOpts) *EngineDevLoadedEngine { // engine-dev (../../../../toolchains/engine-dev/docker.go:16:1)
+	assertNotNil("docker", docker)
+	q := r.query.Select("loadToDocker")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+		// `image` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Image) {
+			q = q.Arg("image", opts[i].Image)
+		}
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+	}
+	q = q.Arg("docker", docker)
+
+	return &EngineDevLoadedEngine{
+		query: q,
+	}
+}
+
+func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/main.go:70:1)
+	if r.networkCidr != nil {
+		return *r.networkCidr, nil
+	}
+	q := r.query.Select("networkCidr")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// EngineDevPlaygroundOpts contains options for EngineDev.Playground
+type EngineDevPlaygroundOpts struct {
+	//
+	// Build from a custom base image
+	//
+	Base *Container // engine-dev (../../../../toolchains/engine-dev/main.go:99:2)
+	//
+	// Enable experimental GPU support
+	//
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:102:2)
+	//
+	// Share cache globally
+	//
+	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:105:2)
+
+	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:107:2)
+}
+
+// Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
+func (r *EngineDev) Playground(opts ...EngineDevPlaygroundOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:95:1)
+	q := r.query.Select("playground")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+		// `sharedCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SharedCache) {
+			q = q.Arg("sharedCache", opts[i].SharedCache)
+		}
+		// `metrics` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Metrics) {
+			q = q.Arg("metrics", opts[i].Metrics)
+		}
+	}
+
+	return &Container{
+		query: q,
+	}
+}
+
+// EngineDevPublishOpts contains options for EngineDev.Publish
+type EngineDevPublishOpts struct {
+	//
+	// Image target to push to
+	//
+	//
+	// Default: "ghcr.io/dagger/engine"
+	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:456:2)
+
+	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:461:2)
+
+	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:464:2)
+
+	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:466:2)
+}
+
+// Publish all engine images to a registry
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:451:1)
+	if r.publish != nil {
+		return nil
+	}
+	q := r.query.Select("publish")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `image` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Image) {
+			q = q.Arg("image", opts[i].Image)
+		}
+		// `dryRun` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DryRun) {
+			q = q.Arg("dryRun", opts[i].DryRun)
+		}
+		// `registryUsername` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RegistryUsername) {
+			q = q.Arg("registryUsername", opts[i].RegistryUsername)
+		}
+		// `registryPassword` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RegistryPassword) {
+			q = q.Arg("registryPassword", opts[i].RegistryPassword)
+		}
+	}
+	q = q.Arg("tag", tag)
+
+	return q.Execute(ctx)
+}
+
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:437:1)
+	if r.releaseDryRun != nil {
+		return nil
+	}
+	q := r.query.Select("releaseDryRun")
+
+	return q.Execute(ctx)
+}
+
+// EngineDevServiceOpts contains options for EngineDev.Service
+type EngineDevServiceOpts struct {
+
+	// Default: ALPINE
+	Image EngineDevDistro // engine-dev (../../../../toolchains/engine-dev/main.go:206:2)
+
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:208:2)
+
+	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:210:2)
+
+	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:212:2)
+}
+
+// Create a test engine service
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../toolchains/engine-dev/main.go:202:1)
+	q := r.query.Select("service")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `image` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Image) {
+			q = q.Arg("image", opts[i].Image)
+		}
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+		// `sharedCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SharedCache) {
+			q = q.Arg("sharedCache", opts[i].SharedCache)
+		}
+		// `metrics` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Metrics) {
+			q = q.Arg("metrics", opts[i].Metrics)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Service{
+		query: q,
+	}
+}
+
+func (r *EngineDev) Source() *Directory { // engine-dev (../../../../toolchains/engine-dev/main.go:60:2)
+	q := r.query.Select("source")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// EngineDevTestOpts contains options for EngineDev.Test
+type EngineDevTestOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:26:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:29:2)
+
+	// Default: "./..."
+	Pkg string // engine-dev (../../../../toolchains/engine-dev/test.go:32:2)
+	//
+	// Abort test run on first failure
+	//
+	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:35:2)
+	//
+	// How many tests to run in parallel - defaults to the number of CPUs
+	//
+	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:38:2)
+	//
+	// How long before timing out the test run
+	//
+	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:41:2)
+
+	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:43:2)
+
+	// Default: 1
+	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:46:2)
+
+	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:48:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:51:2)
+	//
+	// Update golden files
+	//
+	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:54:2)
+}
+
+// Run core engine tests
+func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../../../toolchains/engine-dev/test.go:22:1)
+	if r.test != nil {
+		return nil
+	}
+	q := r.query.Select("test")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `update` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Update) {
+			q = q.Arg("update", opts[i].Update)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+// EngineDevTestDumpOpts contains options for EngineDev.TestDump
+type EngineDevTestDumpOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../../../toolchains/engine-dev/pprof.go:24:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../../../toolchains/engine-dev/pprof.go:27:2)
+
+	// Default: "./..."
+	Pkg string // engine-dev (../../../../toolchains/engine-dev/pprof.go:30:2)
+	//
+	// Abort test run on first failure
+	//
+	Failfast bool // engine-dev (../../../../toolchains/engine-dev/pprof.go:33:2)
+	//
+	// How many tests to run in parallel - defaults to the number of CPUs
+	//
+	Parallel int // engine-dev (../../../../toolchains/engine-dev/pprof.go:36:2)
+	//
+	// How long before timing out the test run
+	//
+	Timeout string // engine-dev (../../../../toolchains/engine-dev/pprof.go:39:2)
+
+	Race bool // engine-dev (../../../../toolchains/engine-dev/pprof.go:41:2)
+
+	// Default: 1
+	Count int // engine-dev (../../../../toolchains/engine-dev/pprof.go:44:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/pprof.go:47:2)
+	//
+	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
+	//
+	//
+	// Default: "pprof/heap"
+	Route string // engine-dev (../../../../toolchains/engine-dev/pprof.go:51:2)
+	//
+	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
+	//
+	NoFinal bool // engine-dev (../../../../toolchains/engine-dev/pprof.go:55:2)
+	//
+	// wait this long before starting to take dumps. delay does not include engine startup.
+	//
+	//
+	// Default: "1s"
+	Delay string // engine-dev (../../../../toolchains/engine-dev/pprof.go:59:2)
+	//
+	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
+	//
+	//
+	// Default: "-1s"
+	Interval string // engine-dev (../../../../toolchains/engine-dev/pprof.go:63:2)
+}
+
+// Run specific tests while curling (pprof) dumps from their associated dev engine:
+// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(datebut also works for profiles:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date
+func (r *EngineDev) TestDump(opts ...EngineDevTestDumpOpts) *Directory { // engine-dev (../../../../toolchains/engine-dev/pprof.go:20:1)
+	q := r.query.Select("testDump")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `route` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Route) {
+			q = q.Arg("route", opts[i].Route)
+		}
+		// `noFinal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoFinal) {
+			q = q.Arg("noFinal", opts[i].NoFinal)
+		}
+		// `delay` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Delay) {
+			q = q.Arg("delay", opts[i].Delay)
+		}
+		// `interval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interval) {
+			q = q.Arg("interval", opts[i].Interval)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// EngineDevTestTelemetryOpts contains options for EngineDev.TestTelemetry
+type EngineDevTestTelemetryOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:85:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:88:2)
+
+	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:90:2)
+
+	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:92:2)
+
+	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:94:2)
+
+	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:96:2)
+
+	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:98:2)
+
+	// Default: 1
+	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:100:2)
+
+	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:102:2)
+
+	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:104:2)
+}
+
+// Run telemetry tests
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Directory { // engine-dev (../../../../toolchains/engine-dev/test.go:81:1)
+	q := r.query.Select("testTelemetry")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `update` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Update) {
+			q = q.Arg("update", opts[i].Update)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// List all core engine tests
+func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/test.go:16:1)
+	if r.tests != nil {
+		return *r.tests, nil
+	}
+	q := r.query.Select("tests")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *EngineDev) WithBuildkitConfig(key string, value string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:79:1)
+	q := r.query.Select("withBuildkitConfig")
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:89:1)
+	q := r.query.Select("withLogLevel")
+	q = q.Arg("level", level)
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+func (r *EngineDev) WithRace() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:84:1)
+	q := r.query.Select("withRace")
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+type EngineDevLoadedEngine struct { // engine-dev (../../../../toolchains/engine-dev/docker.go:80:6)
+	query *querybuilder.Selection
+
+	id    *EngineDevLoadedEngineID
+	image *string
+	start *Void
+}
+
+func (r *EngineDevLoadedEngine) WithGraphQLQuery(q *querybuilder.Selection) *EngineDevLoadedEngine {
+	return &EngineDevLoadedEngine{
+		query: q,
+	}
+}
+
+// A unique identifier for this EngineDevLoadedEngine.
+func (r *EngineDevLoadedEngine) ID(ctx context.Context) (EngineDevLoadedEngineID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineDevLoadedEngineID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineDevLoadedEngine) XXX_GraphQLType() string {
+	return "EngineDevLoadedEngine"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineDevLoadedEngine) XXX_GraphQLIDType() string {
+	return "EngineDevLoadedEngineID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineDevLoadedEngine) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineDevLoadedEngine) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EngineDevLoadedEngine) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEngineDevLoadedEngineFromID(EngineDevLoadedEngineID(id))
+	return nil
+}
+
+func (r *EngineDevLoadedEngine) Image(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/docker.go:82:2)
+	if r.image != nil {
+		return *r.image, nil
+	}
+	q := r.query.Select("image")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// EngineDevLoadedEngineStartOpts contains options for EngineDevLoadedEngine.Start
+type EngineDevLoadedEngineStartOpts struct {
+
+	// Default: "dagger-engine.dev"
+	Name string // engine-dev (../../../../toolchains/engine-dev/docker.go:94:2)
+
+	CloudToken *Secret // engine-dev (../../../../toolchains/engine-dev/docker.go:96:2)
+
+	CloudURL string // engine-dev (../../../../toolchains/engine-dev/docker.go:98:2)
+
+	Debug bool // engine-dev (../../../../toolchains/engine-dev/docker.go:101:2)
+
+	ExtraHosts []string // engine-dev (../../../../toolchains/engine-dev/docker.go:104:2)
+}
+
+// Start the loaded engine container
+func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoadedEngineStartOpts) error { // engine-dev (../../../../toolchains/engine-dev/docker.go:89:1)
+	if r.start != nil {
+		return nil
+	}
+	q := r.query.Select("start")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `cloudToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudToken) {
+			q = q.Arg("cloudToken", opts[i].CloudToken)
+		}
+		// `cloudUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudURL) {
+			q = q.Arg("cloudUrl", opts[i].CloudURL)
+		}
+		// `debug` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Debug) {
+			q = q.Arg("debug", opts[i].Debug)
+		}
+		// `extraHosts` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExtraHosts) {
+			q = q.Arg("extraHosts", opts[i].ExtraHosts)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
 // A definition of a custom enum defined in a Module.
 type EnumTypeDef struct {
 	query *querybuilder.Selection
@@ -4091,6 +5294,7 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 type EnumValueTypeDef struct {
 	query *querybuilder.Selection
 
+	deprecated  *string
 	description *string
 	id          *EnumValueTypeDefID
 	name        *string
@@ -4101,6 +5305,19 @@ func (r *EnumValueTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumValu
 	return &EnumValueTypeDef{
 		query: q,
 	}
+}
+
+// The reason this enum member is deprecated, if any.
+func (r *EnumValueTypeDef) Deprecated(ctx context.Context) (string, error) {
+	if r.deprecated != nil {
+		return *r.deprecated, nil
+	}
+	q := r.query.Select("deprecated")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A doc string for the enum member, if any.
@@ -4502,6 +5719,54 @@ func (r *Env) WithDirectoryInput(name string, value *Directory, description stri
 // Declare a desired Directory output to be assigned in the environment
 func (r *Env) WithDirectoryOutput(name string, description string) *Env {
 	q := r.query.Select("withDirectoryOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type EngineDev in the environment
+func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withEngineDevInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type EngineDevLoadedEngine in the environment
+func (r *Env) WithEngineDevLoadedEngineInput(name string, value *EngineDevLoadedEngine, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withEngineDevLoadedEngineInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired EngineDevLoadedEngine output to be assigned in the environment
+func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *Env {
+	q := r.query.Select("withEngineDevLoadedEngineOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired EngineDev output to be assigned in the environment
+func (r *Env) WithEngineDevOutput(name string, description string) *Env {
+	q := r.query.Select("withEngineDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -5103,6 +6368,16 @@ func (r *EnvFile) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+func (r *EnvFile) Namespace(prefix string) *EnvFile {
+	q := r.query.Select("namespace")
+	q = q.Arg("prefix", prefix)
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
 // EnvFileVariablesOpts contains options for EnvFile.Variables
 type EnvFileVariablesOpts struct {
 	// Return values exactly as written to the file. No quote removal or variable expansion
@@ -5481,6 +6756,7 @@ func (r *ErrorValue) Value(ctx context.Context) (JSON, error) {
 type FieldTypeDef struct {
 	query *querybuilder.Selection
 
+	deprecated  *string
 	description *string
 	id          *FieldTypeDefID
 	name        *string
@@ -5490,6 +6766,19 @@ func (r *FieldTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *FieldTypeDef
 	return &FieldTypeDef{
 		query: q,
 	}
+}
+
+// The reason this enum member is deprecated, if any.
+func (r *FieldTypeDef) Deprecated(ctx context.Context) (string, error) {
+	if r.deprecated != nil {
+		return *r.deprecated, nil
+	}
+	q := r.query.Select("deprecated")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A doc string for the field, if any.
@@ -5615,6 +6904,7 @@ func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 // FileAsEnvFileOpts contains options for File.AsEnvFile
 type FileAsEnvFileOpts struct {
 	// Replace "${VAR}" or "$VAR" with the value of other vars
+	// Deprecated: Variable expansion is now enabled by default
 	Expand bool
 }
 
@@ -5978,6 +7268,7 @@ func (r *File) WithTimestamps(timestamp int) *File {
 type Function struct {
 	query *querybuilder.Selection
 
+	deprecated  *string
 	description *string
 	id          *FunctionID
 	name        *string
@@ -6028,6 +7319,19 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	}
 
 	return convert(response), nil
+}
+
+// The reason this function is deprecated, if any.
+func (r *Function) Deprecated(ctx context.Context) (string, error) {
+	if r.deprecated != nil {
+		return *r.deprecated, nil
+	}
+	q := r.query.Select("deprecated")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A doc string for the function, if any.
@@ -6135,6 +7439,8 @@ type FunctionWithArgOpts struct {
 	Ignore []string
 	// The source map for the argument definition.
 	SourceMap *SourceMap
+	// If deprecated, the reason or migration path.
+	Deprecated string
 }
 
 // Returns the function with the provided argument
@@ -6162,9 +7468,56 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
 			q = q.Arg("sourceMap", opts[i].SourceMap)
 		}
+		// `deprecated` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
+			q = q.Arg("deprecated", opts[i].Deprecated)
+		}
 	}
 	q = q.Arg("name", name)
 	q = q.Arg("typeDef", typeDef)
+
+	return &Function{
+		query: q,
+	}
+}
+
+// FunctionWithCachePolicyOpts contains options for Function.WithCachePolicy
+type FunctionWithCachePolicyOpts struct {
+	// The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+	TimeToLive string
+}
+
+// Returns the function updated to use the provided cache policy.
+func (r *Function) WithCachePolicy(policy FunctionCachePolicy, opts ...FunctionWithCachePolicyOpts) *Function {
+	q := r.query.Select("withCachePolicy")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `timeToLive` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TimeToLive) {
+			q = q.Arg("timeToLive", opts[i].TimeToLive)
+		}
+	}
+	q = q.Arg("policy", policy)
+
+	return &Function{
+		query: q,
+	}
+}
+
+// FunctionWithDeprecatedOpts contains options for Function.WithDeprecated
+type FunctionWithDeprecatedOpts struct {
+	// Reason or migration path describing the deprecation.
+	Reason string
+}
+
+// Returns the function with the provided deprecation reason.
+func (r *Function) WithDeprecated(opts ...FunctionWithDeprecatedOpts) *Function {
+	q := r.query.Select("withDeprecated")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `reason` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Reason) {
+			q = q.Arg("reason", opts[i].Reason)
+		}
+	}
 
 	return &Function{
 		query: q,
@@ -6200,6 +7553,7 @@ type FunctionArg struct {
 
 	defaultPath  *string
 	defaultValue *JSON
+	deprecated   *string
 	description  *string
 	id           *FunctionArgID
 	name         *string
@@ -6232,6 +7586,19 @@ func (r *FunctionArg) DefaultValue(ctx context.Context) (JSON, error) {
 	q := r.query.Select("defaultValue")
 
 	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The reason this function is deprecated, if any.
+func (r *FunctionArg) Deprecated(ctx context.Context) (string, error) {
+	if r.deprecated != nil {
+		return *r.deprecated, nil
+	}
+	q := r.query.Select("deprecated")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6711,7 +8078,7 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	}
 }
 
-type Gha struct { // gha (../../../modules/gha/main.go:12:6)
+type Gha struct { // gha (../../../../modules/gha/main.go:12:6)
 	query *querybuilder.Selection
 
 	id *GhaID
@@ -6733,15 +8100,15 @@ func (r *Gha) WithGraphQLQuery(q *querybuilder.Selection) *Gha {
 
 // GhaGenerateOpts contains options for Gha.Generate
 type GhaGenerateOpts struct {
-	Directory *Directory // gha (../../../modules/gha/main.go:33:2)
+	Directory *Directory // gha (../../../../modules/gha/main.go:33:2)
 
-	AsJSON bool // gha (../../../modules/gha/main.go:35:2)
+	AsJSON bool // gha (../../../../modules/gha/main.go:35:2)
 
 	// Default: ".gen.yml"
-	FileExtension string // gha (../../../modules/gha/main.go:38:2)
+	FileExtension string // gha (../../../../modules/gha/main.go:38:2)
 }
 
-func (r *Gha) Generate(opts ...GhaGenerateOpts) *Directory { // gha (../../../modules/gha/main.go:31:1)
+func (r *Gha) Generate(opts ...GhaGenerateOpts) *Directory { // gha (../../../../modules/gha/main.go:31:1)
 	q := r.query.Select("generate")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `directory` optional argument
@@ -6817,68 +8184,64 @@ type GhaJobOpts struct {
 	//
 	// Only run the job if this condition expression succeeds.
 	//
-	Condition string // gha (../../../modules/gha/job.go:59:2)
+	Condition string // gha (../../../../modules/gha/job.go:57:2)
 	//
 	// Additional commands to run before the main one.
 	//
-	SetupCommands []string // gha (../../../modules/gha/job.go:63:2)
+	SetupCommands []string // gha (../../../../modules/gha/job.go:61:2)
 	//
 	// Additional commands to run after the main one.
 	//
-	TeardownCommands []string // gha (../../../modules/gha/job.go:66:2)
+	TeardownCommands []string // gha (../../../../modules/gha/job.go:64:2)
 	//
 	// Public Dagger Cloud token, for open-source projects. DO NOT PASS YOUR PRIVATE DAGGER CLOUD TOKEN!
 	// This is for a special "public" token which can safely be shared publicly.
 	// To get one, contact support@dagger.io
 	//
-	PublicToken string // gha (../../../modules/gha/job.go:72:2)
+	PublicToken string // gha (../../../../modules/gha/job.go:70:2)
 	//
 	// Explicitly stop the dagger engine after completing the workflow.
 	//
-	StopEngine bool // gha (../../../modules/gha/job.go:75:2)
+	StopEngine bool // gha (../../../../modules/gha/job.go:73:2)
 	//
 	// The maximum number of minutes to run the workflow before killing the process
 	//
-	TimeoutMinutes int // gha (../../../modules/gha/job.go:78:2)
+	TimeoutMinutes int // gha (../../../../modules/gha/job.go:76:2)
 	//
 	// Run the workflow in debug mode
 	//
-	Debug bool // gha (../../../modules/gha/job.go:81:2)
+	Debug bool // gha (../../../../modules/gha/job.go:79:2)
 	//
 	// Github secrets to inject into the workflow environment.
 	// For each secret, an env variable with the same name is created.
 	// Example: ["PROD_DEPLOY_TOKEN", "PRIVATE_SSH_KEY"]
 	//
-	Secrets []string // gha (../../../modules/gha/job.go:86:2)
+	Secrets []string // gha (../../../../modules/gha/job.go:84:2)
 	//
 	// Dagger secret URIs to load and assign as env variables.
 	// Example: ["OPENAI_API_KEY=op://CI/openai-api-key"]
 	//
-	Env []string // gha (../../../modules/gha/job.go:90:2)
+	Env []string // gha (../../../../modules/gha/job.go:88:2)
 	//
 	// Dispatch jobs to the given runner
 	// Example: ["ubuntu-latest"]
 	//
-	Runner []string // gha (../../../modules/gha/job.go:94:2)
+	Runner []string // gha (../../../../modules/gha/job.go:92:2)
 	//
 	// The Dagger module to load
 	//
-	Module string // gha (../../../modules/gha/job.go:97:2)
+	Module string // gha (../../../../modules/gha/job.go:95:2)
 	//
 	// Dagger version to run this workflow
 	//
-	DaggerVersion string // gha (../../../modules/gha/job.go:100:2)
-	//
-	// Dagger dev version to run this workflow.
-	//
-	DaggerDev string // gha (../../../modules/gha/job.go:103:2)
+	DaggerVersion string // gha (../../../../modules/gha/job.go:98:2)
 	//
 	// cloudEngine indicates whether to use Dagger Cloud Engine to run this workflow.
 	//
-	CloudEngine bool // gha (../../../modules/gha/job.go:106:2)
+	CloudEngine bool // gha (../../../../modules/gha/job.go:101:2)
 }
 
-func (r *Gha) Job(name string, command string, opts ...GhaJobOpts) *GhaJob { // gha (../../../modules/gha/job.go:53:1)
+func (r *Gha) Job(name string, command string, opts ...GhaJobOpts) *GhaJob { // gha (../../../../modules/gha/job.go:51:1)
 	q := r.query.Select("job")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `condition` optional argument
@@ -6929,10 +8292,6 @@ func (r *Gha) Job(name string, command string, opts ...GhaJobOpts) *GhaJob { // 
 		if !querybuilder.IsZeroValue(opts[i].DaggerVersion) {
 			q = q.Arg("daggerVersion", opts[i].DaggerVersion)
 		}
-		// `daggerDev` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DaggerDev) {
-			q = q.Arg("daggerDev", opts[i].DaggerDev)
-		}
 		// `cloudEngine` optional argument
 		if !querybuilder.IsZeroValue(opts[i].CloudEngine) {
 			q = q.Arg("cloudEngine", opts[i].CloudEngine)
@@ -6946,7 +8305,7 @@ func (r *Gha) Job(name string, command string, opts ...GhaJobOpts) *GhaJob { // 
 	}
 }
 
-func (r *Gha) WithWorkflow(workflow *GhaWorkflow) *Gha { // gha (../../../modules/gha/workflow.go:50:1)
+func (r *Gha) WithWorkflow(workflow *GhaWorkflow) *Gha { // gha (../../../../modules/gha/workflow.go:50:1)
 	assertNotNil("workflow", workflow)
 	q := r.query.Select("withWorkflow")
 	q = q.Arg("workflow", workflow)
@@ -6966,99 +8325,99 @@ type GhaWorkflowOpts struct {
 	//   - preempt: new instances run immediately, older ones are canceled
 	// Possible values: "allow", "preempt", "queue"
 	//
-	PullRequestConcurrency string // gha (../../../modules/gha/workflow.go:75:2)
+	PullRequestConcurrency string // gha (../../../../modules/gha/workflow.go:75:2)
 	//
 	// Disable manual "dispatch" of this workflow
 	//
-	NoDispatch bool // gha (../../../modules/gha/workflow.go:78:2)
+	NoDispatch bool // gha (../../../../modules/gha/workflow.go:78:2)
 	//
 	// Permissions to grant the workflow
 	//
-	Permissions []GhaPermission // gha (../../../modules/gha/workflow.go:81:2)
+	Permissions []GhaPermission // gha (../../../../modules/gha/workflow.go:81:2)
 	//
 	// Run the workflow on any issue comment activity
 	//
-	OnIssueComment bool // gha (../../../modules/gha/workflow.go:84:2)
+	OnIssueComment bool // gha (../../../../modules/gha/workflow.go:84:2)
 
-	OnIssueCommentCreated bool // gha (../../../modules/gha/workflow.go:86:2)
+	OnIssueCommentCreated bool // gha (../../../../modules/gha/workflow.go:86:2)
 
-	OnIssueCommentEdited bool // gha (../../../modules/gha/workflow.go:88:2)
+	OnIssueCommentEdited bool // gha (../../../../modules/gha/workflow.go:88:2)
 
-	OnIssueCommentDeleted bool // gha (../../../modules/gha/workflow.go:90:2)
+	OnIssueCommentDeleted bool // gha (../../../../modules/gha/workflow.go:90:2)
 	//
 	// Run the workflow on any pull request activity
 	//
-	OnPullRequest bool // gha (../../../modules/gha/workflow.go:93:2)
+	OnPullRequest bool // gha (../../../../modules/gha/workflow.go:93:2)
 
-	OnPullRequestBranches []string // gha (../../../modules/gha/workflow.go:95:2)
+	OnPullRequestBranches []string // gha (../../../../modules/gha/workflow.go:95:2)
 
-	OnPullRequestPaths []string // gha (../../../modules/gha/workflow.go:97:2)
+	OnPullRequestPaths []string // gha (../../../../modules/gha/workflow.go:97:2)
 
-	OnPullRequestAssigned bool // gha (../../../modules/gha/workflow.go:99:2)
+	OnPullRequestAssigned bool // gha (../../../../modules/gha/workflow.go:99:2)
 
-	OnPullRequestUnassigned bool // gha (../../../modules/gha/workflow.go:101:2)
+	OnPullRequestUnassigned bool // gha (../../../../modules/gha/workflow.go:101:2)
 
-	OnPullRequestLabeled bool // gha (../../../modules/gha/workflow.go:103:2)
+	OnPullRequestLabeled bool // gha (../../../../modules/gha/workflow.go:103:2)
 
-	OnPullRequestUnlabeled bool // gha (../../../modules/gha/workflow.go:105:2)
+	OnPullRequestUnlabeled bool // gha (../../../../modules/gha/workflow.go:105:2)
 
-	OnPullRequestOpened bool // gha (../../../modules/gha/workflow.go:107:2)
+	OnPullRequestOpened bool // gha (../../../../modules/gha/workflow.go:107:2)
 
-	OnPullRequestEdited bool // gha (../../../modules/gha/workflow.go:109:2)
+	OnPullRequestEdited bool // gha (../../../../modules/gha/workflow.go:109:2)
 
-	OnPullRequestClosed bool // gha (../../../modules/gha/workflow.go:111:2)
+	OnPullRequestClosed bool // gha (../../../../modules/gha/workflow.go:111:2)
 
-	OnPullRequestReopened bool // gha (../../../modules/gha/workflow.go:113:2)
+	OnPullRequestReopened bool // gha (../../../../modules/gha/workflow.go:113:2)
 
-	OnPullRequestSynchronize bool // gha (../../../modules/gha/workflow.go:115:2)
+	OnPullRequestSynchronize bool // gha (../../../../modules/gha/workflow.go:115:2)
 
-	OnPullRequestConvertedToDraft bool // gha (../../../modules/gha/workflow.go:117:2)
+	OnPullRequestConvertedToDraft bool // gha (../../../../modules/gha/workflow.go:117:2)
 
-	OnPullRequestLocked bool // gha (../../../modules/gha/workflow.go:119:2)
+	OnPullRequestLocked bool // gha (../../../../modules/gha/workflow.go:119:2)
 
-	OnPullRequestUnlocked bool // gha (../../../modules/gha/workflow.go:121:2)
+	OnPullRequestUnlocked bool // gha (../../../../modules/gha/workflow.go:121:2)
 
-	OnPullRequestEnqueued bool // gha (../../../modules/gha/workflow.go:123:2)
+	OnPullRequestEnqueued bool // gha (../../../../modules/gha/workflow.go:123:2)
 
-	OnPullRequestDequeued bool // gha (../../../modules/gha/workflow.go:125:2)
+	OnPullRequestDequeued bool // gha (../../../../modules/gha/workflow.go:125:2)
 
-	OnPullRequestMilestoned bool // gha (../../../modules/gha/workflow.go:127:2)
+	OnPullRequestMilestoned bool // gha (../../../../modules/gha/workflow.go:127:2)
 
-	OnPullRequestDemilestoned bool // gha (../../../modules/gha/workflow.go:129:2)
+	OnPullRequestDemilestoned bool // gha (../../../../modules/gha/workflow.go:129:2)
 
-	OnPullRequestReadyForReview bool // gha (../../../modules/gha/workflow.go:131:2)
+	OnPullRequestReadyForReview bool // gha (../../../../modules/gha/workflow.go:131:2)
 
-	OnPullRequestReviewRequested bool // gha (../../../modules/gha/workflow.go:133:2)
+	OnPullRequestReviewRequested bool // gha (../../../../modules/gha/workflow.go:133:2)
 
-	OnPullRequestReviewRequestRemoved bool // gha (../../../modules/gha/workflow.go:135:2)
+	OnPullRequestReviewRequestRemoved bool // gha (../../../../modules/gha/workflow.go:135:2)
 
-	OnPullRequestAutoMergeEnabled bool // gha (../../../modules/gha/workflow.go:137:2)
+	OnPullRequestAutoMergeEnabled bool // gha (../../../../modules/gha/workflow.go:137:2)
 
-	OnPullRequestAutoMergeDisabled bool // gha (../../../modules/gha/workflow.go:139:2)
+	OnPullRequestAutoMergeDisabled bool // gha (../../../../modules/gha/workflow.go:139:2)
 	//
 	// Run the workflow on any git push
 	//
-	OnPush bool // gha (../../../modules/gha/workflow.go:142:2)
+	OnPush bool // gha (../../../../modules/gha/workflow.go:142:2)
 	//
 	// Run the workflow on git push to the specified tags
 	//
-	OnPushTags []string // gha (../../../modules/gha/workflow.go:145:2)
+	OnPushTags []string // gha (../../../../modules/gha/workflow.go:145:2)
 	//
 	// Run the workflow on git push to the specified branches
 	//
-	OnPushBranches []string // gha (../../../modules/gha/workflow.go:148:2)
+	OnPushBranches []string // gha (../../../../modules/gha/workflow.go:148:2)
 	//
 	// Run the workflow only if the paths match
 	//
-	OnPushPaths []string // gha (../../../modules/gha/workflow.go:151:2)
+	OnPushPaths []string // gha (../../../../modules/gha/workflow.go:151:2)
 	//
 	// Run the workflow at a schedule time
 	//
-	OnSchedule []string // gha (../../../modules/gha/workflow.go:154:2)
+	OnSchedule []string // gha (../../../../modules/gha/workflow.go:154:2)
 }
 
 // Add a workflow
-func (r *Gha) Workflow(name string, opts ...GhaWorkflowOpts) *GhaWorkflow { // gha (../../../modules/gha/workflow.go:65:1)
+func (r *Gha) Workflow(name string, opts ...GhaWorkflowOpts) *GhaWorkflow { // gha (../../../../modules/gha/workflow.go:65:1)
 	q := r.query.Select("workflow")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `pullRequestConcurrency` optional argument
@@ -7213,7 +8572,7 @@ func (r *Gha) Workflow(name string, opts ...GhaWorkflowOpts) *GhaWorkflow { // g
 	}
 }
 
-func (r *Gha) Workflows(ctx context.Context) ([]GhaWorkflow, error) { // gha (../../../modules/gha/main.go:13:2)
+func (r *Gha) Workflows(ctx context.Context) ([]GhaWorkflow, error) { // gha (../../../../modules/gha/main.go:13:2)
 	q := r.query.Select("workflows")
 
 	q = q.Select("id")
@@ -7245,13 +8604,12 @@ func (r *Gha) Workflows(ctx context.Context) ([]GhaWorkflow, error) { // gha (..
 	return convert(response), nil
 }
 
-type GhaJob struct { // gha (../../../modules/gha/job.go:11:6)
+type GhaJob struct { // gha (../../../../modules/gha/job.go:11:6)
 	query *querybuilder.Selection
 
 	cloudEngine    *bool
 	command        *string
 	condition      *string
-	daggerDev      *string
 	daggerVersion  *string
 	debug          *bool
 	id             *GhaJobID
@@ -7269,7 +8627,7 @@ func (r *GhaJob) WithGraphQLQuery(q *querybuilder.Selection) *GhaJob {
 }
 
 // CloudEngine indicates whether to use Dagger Cloud Engine to run this workflow.
-func (r *GhaJob) CloudEngine(ctx context.Context) (bool, error) { // gha (../../../modules/gha/job.go:48:2)
+func (r *GhaJob) CloudEngine(ctx context.Context) (bool, error) { // gha (../../../../modules/gha/job.go:46:2)
 	if r.cloudEngine != nil {
 		return *r.cloudEngine, nil
 	}
@@ -7281,7 +8639,7 @@ func (r *GhaJob) CloudEngine(ctx context.Context) (bool, error) { // gha (../../
 	return response, q.Execute(ctx)
 }
 
-func (r *GhaJob) Command(ctx context.Context) (string, error) { // gha (../../../modules/gha/job.go:13:2)
+func (r *GhaJob) Command(ctx context.Context) (string, error) { // gha (../../../../modules/gha/job.go:13:2)
 	if r.command != nil {
 		return *r.command, nil
 	}
@@ -7294,7 +8652,7 @@ func (r *GhaJob) Command(ctx context.Context) (string, error) { // gha (../../..
 }
 
 // Make the job conditional on an expression
-func (r *GhaJob) Condition(ctx context.Context) (string, error) { // gha (../../../modules/gha/job.go:16:2)
+func (r *GhaJob) Condition(ctx context.Context) (string, error) { // gha (../../../../modules/gha/job.go:16:2)
 	if r.condition != nil {
 		return *r.condition, nil
 	}
@@ -7306,21 +8664,8 @@ func (r *GhaJob) Condition(ctx context.Context) (string, error) { // gha (../../
 	return response, q.Execute(ctx)
 }
 
-// Build the dagger engine from scratch.
-func (r *GhaJob) DaggerDev(ctx context.Context) (string, error) { // gha (../../../modules/gha/job.go:42:2)
-	if r.daggerDev != nil {
-		return *r.daggerDev, nil
-	}
-	q := r.query.Select("daggerDev")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // Dagger version to run this workflow
-func (r *GhaJob) DaggerVersion(ctx context.Context) (string, error) { // gha (../../../modules/gha/job.go:40:2)
+func (r *GhaJob) DaggerVersion(ctx context.Context) (string, error) { // gha (../../../../modules/gha/job.go:40:2)
 	if r.daggerVersion != nil {
 		return *r.daggerVersion, nil
 	}
@@ -7333,7 +8678,7 @@ func (r *GhaJob) DaggerVersion(ctx context.Context) (string, error) { // gha (..
 }
 
 // Run the workflow in debug mode
-func (r *GhaJob) Debug(ctx context.Context) (bool, error) { // gha (../../../modules/gha/job.go:26:2)
+func (r *GhaJob) Debug(ctx context.Context) (bool, error) { // gha (../../../../modules/gha/job.go:26:2)
 	if r.debug != nil {
 		return *r.debug, nil
 	}
@@ -7347,7 +8692,7 @@ func (r *GhaJob) Debug(ctx context.Context) (bool, error) { // gha (../../../mod
 
 // Lines to append to .env.
 // Example: ["OPENAI_API_KEY=op://CI/openai-api-key"]
-func (r *GhaJob) Env(ctx context.Context) ([]string, error) { // gha (../../../modules/gha/job.go:33:2)
+func (r *GhaJob) Env(ctx context.Context) ([]string, error) { // gha (../../../../modules/gha/job.go:33:2)
 	q := r.query.Select("env")
 
 	var response []string
@@ -7406,7 +8751,7 @@ func (r *GhaJob) UnmarshalJSON(bs []byte) error {
 }
 
 // The Dagger module to load
-func (r *GhaJob) Module(ctx context.Context) (string, error) { // gha (../../../modules/gha/job.go:38:2)
+func (r *GhaJob) Module(ctx context.Context) (string, error) { // gha (../../../../modules/gha/job.go:38:2)
 	if r.module != nil {
 		return *r.module, nil
 	}
@@ -7418,7 +8763,7 @@ func (r *GhaJob) Module(ctx context.Context) (string, error) { // gha (../../../
 	return response, q.Execute(ctx)
 }
 
-func (r *GhaJob) Name(ctx context.Context) (string, error) { // gha (../../../modules/gha/job.go:12:2)
+func (r *GhaJob) Name(ctx context.Context) (string, error) { // gha (../../../../modules/gha/job.go:12:2)
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -7433,7 +8778,7 @@ func (r *GhaJob) Name(ctx context.Context) (string, error) { // gha (../../../mo
 // Public Dagger Cloud token, for open-source projects. DO NOT PASS YOUR PRIVATE DAGGER CLOUD TOKEN!
 // This is for a special "public" token which can safely be shared publicly.
 // To get one, contact support@dagger.io
-func (r *GhaJob) PublicToken(ctx context.Context) (string, error) { // gha (../../../modules/gha/job.go:46:2)
+func (r *GhaJob) PublicToken(ctx context.Context) (string, error) { // gha (../../../../modules/gha/job.go:44:2)
 	if r.publicToken != nil {
 		return *r.publicToken, nil
 	}
@@ -7447,7 +8792,7 @@ func (r *GhaJob) PublicToken(ctx context.Context) (string, error) { // gha (../.
 
 // Dispatch jobs to the given runner
 // Example: ["ubuntu-latest"]
-func (r *GhaJob) Runner(ctx context.Context) ([]string, error) { // gha (../../../modules/gha/job.go:36:2)
+func (r *GhaJob) Runner(ctx context.Context) ([]string, error) { // gha (../../../../modules/gha/job.go:36:2)
 	q := r.query.Select("runner")
 
 	var response []string
@@ -7459,7 +8804,7 @@ func (r *GhaJob) Runner(ctx context.Context) ([]string, error) { // gha (../../.
 // Github secrets to inject into the workflow environment.
 // For each secret, an env variable with the same name is created.
 // Example: ["PROD_DEPLOY_TOKEN", "PRIVATE_SSH_KEY"]
-func (r *GhaJob) Secrets(ctx context.Context) ([]string, error) { // gha (../../../modules/gha/job.go:30:2)
+func (r *GhaJob) Secrets(ctx context.Context) ([]string, error) { // gha (../../../../modules/gha/job.go:30:2)
 	q := r.query.Select("secrets")
 
 	var response []string
@@ -7469,7 +8814,7 @@ func (r *GhaJob) Secrets(ctx context.Context) ([]string, error) { // gha (../../
 }
 
 // Additional commands to run before the main one
-func (r *GhaJob) SetupCommands(ctx context.Context) ([]string, error) { // gha (../../../modules/gha/job.go:19:2)
+func (r *GhaJob) SetupCommands(ctx context.Context) ([]string, error) { // gha (../../../../modules/gha/job.go:19:2)
 	q := r.query.Select("setupCommands")
 
 	var response []string
@@ -7479,7 +8824,7 @@ func (r *GhaJob) SetupCommands(ctx context.Context) ([]string, error) { // gha (
 }
 
 // Explicitly stop the dagger engine after completing the workflow.
-func (r *GhaJob) StopEngine(ctx context.Context) (bool, error) { // gha (../../../modules/gha/job.go:50:2)
+func (r *GhaJob) StopEngine(ctx context.Context) (bool, error) { // gha (../../../../modules/gha/job.go:48:2)
 	if r.stopEngine != nil {
 		return *r.stopEngine, nil
 	}
@@ -7492,7 +8837,7 @@ func (r *GhaJob) StopEngine(ctx context.Context) (bool, error) { // gha (../../.
 }
 
 // Additional commands to run after the main one
-func (r *GhaJob) TeardownCommands(ctx context.Context) ([]string, error) { // gha (../../../modules/gha/job.go:21:2)
+func (r *GhaJob) TeardownCommands(ctx context.Context) ([]string, error) { // gha (../../../../modules/gha/job.go:21:2)
 	q := r.query.Select("teardownCommands")
 
 	var response []string
@@ -7502,7 +8847,7 @@ func (r *GhaJob) TeardownCommands(ctx context.Context) ([]string, error) { // gh
 }
 
 // The maximum number of minutes to run the workflow before killing the process
-func (r *GhaJob) TimeoutMinutes(ctx context.Context) (int, error) { // gha (../../../modules/gha/job.go:24:2)
+func (r *GhaJob) TimeoutMinutes(ctx context.Context) (int, error) { // gha (../../../../modules/gha/job.go:24:2)
 	if r.timeoutMinutes != nil {
 		return *r.timeoutMinutes, nil
 	}
@@ -7514,7 +8859,7 @@ func (r *GhaJob) TimeoutMinutes(ctx context.Context) (int, error) { // gha (../.
 	return response, q.Execute(ctx)
 }
 
-type GhaWorkflow struct { // gha (../../../modules/gha/workflow.go:12:6)
+type GhaWorkflow struct { // gha (../../../../modules/gha/workflow.go:12:6)
 	query *querybuilder.Selection
 
 	check *Void
@@ -7538,11 +8883,11 @@ func (r *GhaWorkflow) WithGraphQLQuery(q *querybuilder.Selection) *GhaWorkflow {
 
 // GhaWorkflowCheckOpts contains options for GhaWorkflow.Check
 type GhaWorkflowCheckOpts struct {
-	Repo *Directory // gha (../../../modules/gha/workflow.go:37:2)
+	Repo *Directory // gha (../../../../modules/gha/workflow.go:37:2)
 }
 
 // Check that the workflow is valid, in a best effort way
-func (r *GhaWorkflow) Check(ctx context.Context, opts ...GhaWorkflowCheckOpts) error { // gha (../../../modules/gha/workflow.go:34:1)
+func (r *GhaWorkflow) Check(ctx context.Context, opts ...GhaWorkflowCheckOpts) error { // gha (../../../../modules/gha/workflow.go:34:1)
 	if r.check != nil {
 		return nil
 	}
@@ -7606,7 +8951,7 @@ func (r *GhaWorkflow) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *GhaWorkflow) Jobs(ctx context.Context) ([]GhaJob, error) { // gha (../../../modules/gha/workflow.go:14:2)
+func (r *GhaWorkflow) Jobs(ctx context.Context) ([]GhaJob, error) { // gha (../../../../modules/gha/workflow.go:14:2)
 	q := r.query.Select("jobs")
 
 	q = q.Select("id")
@@ -7638,7 +8983,7 @@ func (r *GhaWorkflow) Jobs(ctx context.Context) ([]GhaJob, error) { // gha (../.
 	return convert(response), nil
 }
 
-func (r *GhaWorkflow) Name(ctx context.Context) (string, error) { // gha (../../../modules/gha/workflow.go:13:2)
+func (r *GhaWorkflow) Name(ctx context.Context) (string, error) { // gha (../../../../modules/gha/workflow.go:13:2)
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -7650,7 +8995,7 @@ func (r *GhaWorkflow) Name(ctx context.Context) (string, error) { // gha (../../
 	return response, q.Execute(ctx)
 }
 
-func (r *GhaWorkflow) WithJob(job *GhaJob) *GhaWorkflow { // gha (../../../modules/gha/workflow.go:28:1)
+func (r *GhaWorkflow) WithJob(job *GhaJob) *GhaWorkflow { // gha (../../../../modules/gha/workflow.go:28:1)
 	assertNotNil("job", job)
 	q := r.query.Select("withJob")
 	q = q.Arg("job", job)
@@ -7961,6 +9306,15 @@ func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts)
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Returns the changeset of uncommitted changes in the git repository.
+func (r *GitRepository) Uncommitted() *Changeset {
+	q := r.query.Select("uncommitted")
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // The URL of the git repository.
@@ -8815,6 +10169,24 @@ func (r *LLM) WithoutDefaultSystemPrompt() *LLM {
 	}
 }
 
+// Clear the message history, leaving only the system prompts
+func (r *LLM) WithoutMessageHistory() *LLM {
+	q := r.query.Select("withoutMessageHistory")
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Clear the system prompts, leaving only the default system prompt
+func (r *LLM) WithoutSystemPrompts() *LLM {
+	q := r.query.Select("withoutSystemPrompts")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
 
@@ -9295,6 +10667,19 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	}
 
 	return convert(response), nil
+}
+
+// The introspection schema JSON file for this module.
+//
+// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+//
+// Note: this is in the context of a module, so some core types may be hidden.
+func (r *Module) IntrospectionSchemaJSON() *File {
+	q := r.query.Select("introspectionSchemaJSON")
+
+	return &File{
+		query: q,
+	}
 }
 
 // The name of the module
@@ -9854,6 +11239,19 @@ func (r *ModuleSource) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// The introspection schema JSON file for this module source.
+//
+// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+//
+// Note: this is in the context of a module, so some core types may be hidden.
+func (r *ModuleSource) IntrospectionSchemaJSON() *File {
+	q := r.query.Select("introspectionSchemaJSON")
+
+	return &File{
+		query: q,
+	}
+}
+
 // The kind of module source (currently local, git or dir).
 func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	if r.kind != nil {
@@ -9993,6 +11391,39 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}, nil
 }
 
+// The toolchains referenced by the module source.
+func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
+	q := r.query.Select("toolchains")
+
+	q = q.Select("id")
+
+	type toolchains struct {
+		Id ModuleSourceID
+	}
+
+	convert := func(fields []toolchains) []ModuleSource {
+		out := []ModuleSource{}
+
+		for i := range fields {
+			val := ModuleSource{id: &fields[i].Id}
+			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []toolchains
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // User-defined defaults read from local .env files
 func (r *ModuleSource) UserDefaults() *EnvFile {
 	q := r.query.Select("userDefaults")
@@ -10057,6 +11488,16 @@ func (r *ModuleSource) WithEngineVersion(version string) *ModuleSource {
 	}
 }
 
+// Enable the experimental features for the module source.
+func (r *ModuleSource) WithExperimentalFeatures(features []ModuleSourceExperimentalFeature) *ModuleSource {
+	q := r.query.Select("withExperimentalFeatures")
+	q = q.Arg("features", features)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the module source with additional include patterns for files+directories from its context that are required for building it
 func (r *ModuleSource) WithIncludes(patterns []string) *ModuleSource {
 	q := r.query.Select("withIncludes")
@@ -10097,6 +11538,16 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
+// Add toolchains to the module source.
+func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
+	q := r.query.Select("withToolchains")
+	q = q.Arg("toolchains", toolchains)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the blueprint module to the latest version.
 func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 	q := r.query.Select("withUpdateBlueprint")
@@ -10110,6 +11561,16 @@ func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withUpdateDependencies")
 	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Update one or more toolchains.
+func (r *ModuleSource) WithUpdateToolchains(toolchains []string) *ModuleSource {
+	q := r.query.Select("withUpdateToolchains")
+	q = q.Arg("toolchains", toolchains)
 
 	return &ModuleSource{
 		query: q,
@@ -10155,10 +11616,31 @@ func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource 
 	}
 }
 
+// Disable experimental features for the module source.
+func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperimentalFeature) *ModuleSource {
+	q := r.query.Select("withoutExperimentalFeatures")
+	q = q.Arg("features", features)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Remove the provided toolchains from the module source.
+func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
+	q := r.query.Select("withoutToolchains")
+	q = q.Arg("toolchains", toolchains)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
 	query *querybuilder.Selection
 
+	deprecated       *string
 	description      *string
 	id               *ObjectTypeDefID
 	name             *string
@@ -10178,6 +11660,19 @@ func (r *ObjectTypeDef) Constructor() *Function {
 	return &Function{
 		query: q,
 	}
+}
+
+// The reason this enum member is deprecated, if any.
+func (r *ObjectTypeDef) Deprecated(ctx context.Context) (string, error) {
+	if r.deprecated != nil {
+		return *r.deprecated, nil
+	}
+	q := r.query.Select("deprecated")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The doc string for the object, if any.
@@ -10607,6 +12102,60 @@ func (r *Client) Directory() *Directory {
 	}
 }
 
+// EngineDevOpts contains options for Client.EngineDev
+type EngineDevOpts struct {
+	//
+	// "*",
+	// "!**/go.*",
+	// "!version",
+	// "!core",
+	// "!engine",
+	// "!util",
+	// "!network",
+	// "!dagql",
+	// "!analytics",
+	// "!auth",
+	// "!cmd",
+	// "!internal"
+	// ]
+	//
+	Source *Directory // engine-dev (../../../../toolchains/engine-dev/main.go:42:2)
+	//
+	// A configurable part of the IP subnet managed by the engine
+	// Change this to allow nested dagger engines
+	//
+	//
+	// Default: 89
+	SubnetNumber int // engine-dev (../../../../toolchains/engine-dev/main.go:46:2)
+	//
+	// A docker config file with credentials to install on clients,
+	// to ensure they can access private registries
+	//
+	ClientDockerConfig *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:50:2)
+}
+
+func (r *Client) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:26:1)
+	q := r.query.Select("engineDev")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `subnetNumber` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SubnetNumber) {
+			q = q.Arg("subnetNumber", opts[i].SubnetNumber)
+		}
+		// `clientDockerConfig` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
+			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
+		}
+	}
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
 // EnvOpts contains options for Client.Env
 type EnvOpts struct {
 	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
@@ -10639,6 +12188,7 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 // EnvFileOpts contains options for Client.EnvFile
 type EnvFileOpts struct {
 	// Replace "${VAR}" or "$VAR" with the value of other vars
+	// Deprecated: Variable expansion is now enabled by default
 	Expand bool
 }
 
@@ -10717,12 +12267,12 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 
 // GhaOpts contains options for Client.Gha
 type GhaOpts struct {
-	JobDefaults *GhaJob // gha (../../../modules/gha/main.go:22:2)
+	JobDefaults *GhaJob // gha (../../../../modules/gha/main.go:22:2)
 
-	WorkflowDefaults *GhaWorkflow // gha (../../../modules/gha/main.go:23:2)
+	WorkflowDefaults *GhaWorkflow // gha (../../../../modules/gha/main.go:23:2)
 }
 
-func (r *Client) Gha(opts ...GhaOpts) *Gha { // gha (../../../modules/gha/main.go:21:1)
+func (r *Client) Gha(opts ...GhaOpts) *Gha { // gha (../../../../modules/gha/main.go:21:1)
 	q := r.query.Select("gha")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `jobDefaults` optional argument
@@ -10745,6 +12295,7 @@ type GitOpts struct {
 	// DEPRECATED: Set to true to keep .git directory.
 	//
 	// Default: true
+	// Deprecated: Set to true to keep .git directory.
 	KeepGitDir bool
 	// Set SSH known hosts
 	SSHKnownHosts string
@@ -10954,6 +12505,26 @@ func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 	q = q.Arg("id", id)
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Load a EngineDev from its ID.
+func (r *Client) LoadEngineDevFromID(id EngineDevID) *EngineDev {
+	q := r.query.Select("loadEngineDevFromID")
+	q = q.Arg("id", id)
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+// Load a EngineDevLoadedEngine from its ID.
+func (r *Client) LoadEngineDevLoadedEngineFromID(id EngineDevLoadedEngineID) *EngineDevLoadedEngine {
+	q := r.query.Select("loadEngineDevLoadedEngineFromID")
+	q = q.Arg("id", id)
+
+	return &EngineDevLoadedEngine{
 		query: q,
 	}
 }
@@ -11491,6 +13062,7 @@ func (r *Client) Version(ctx context.Context) (string, error) {
 type SDKConfig struct {
 	query *querybuilder.Selection
 
+	debug  *bool
 	id     *SDKConfigID
 	source *string
 }
@@ -11499,6 +13071,19 @@ func (r *SDKConfig) WithGraphQLQuery(q *querybuilder.Selection) *SDKConfig {
 	return &SDKConfig{
 		query: q,
 	}
+}
+
+// Whether to start the SDK runtime in debug mode with an interactive terminal.
+func (r *SDKConfig) Debug(ctx context.Context) (bool, error) {
+	if r.debug != nil {
+		return *r.debug, nil
+	}
+	q := r.query.Select("debug")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this SDKConfig.
@@ -12766,6 +14351,8 @@ type TypeDefWithEnumMemberOpts struct {
 	Description string
 	// The source map for the enum member definition.
 	SourceMap *SourceMap
+	// If deprecated, the reason or migration path.
+	Deprecated string
 }
 
 // Adds a static value for an Enum TypeDef, failing if the type is not an enum.
@@ -12784,6 +14371,10 @@ func (r *TypeDef) WithEnumMember(name string, opts ...TypeDefWithEnumMemberOpts)
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
 			q = q.Arg("sourceMap", opts[i].SourceMap)
 		}
+		// `deprecated` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
+			q = q.Arg("deprecated", opts[i].Deprecated)
+		}
 	}
 	q = q.Arg("name", name)
 
@@ -12798,6 +14389,8 @@ type TypeDefWithEnumValueOpts struct {
 	Description string
 	// The source map for the enum value definition.
 	SourceMap *SourceMap
+	// If deprecated, the reason or migration path.
+	Deprecated string
 }
 
 // Adds a static value for an Enum TypeDef, failing if the type is not an enum.
@@ -12814,6 +14407,10 @@ func (r *TypeDef) WithEnumValue(value string, opts ...TypeDefWithEnumValueOpts) 
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
 			q = q.Arg("sourceMap", opts[i].SourceMap)
 		}
+		// `deprecated` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
+			q = q.Arg("deprecated", opts[i].Deprecated)
+		}
 	}
 	q = q.Arg("value", value)
 
@@ -12828,6 +14425,8 @@ type TypeDefWithFieldOpts struct {
 	Description string
 	// The source map for the field definition.
 	SourceMap *SourceMap
+	// If deprecated, the reason or migration path.
+	Deprecated string
 }
 
 // Adds a static field for an Object TypeDef, failing if the type is not an object.
@@ -12842,6 +14441,10 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 		// `sourceMap` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
 			q = q.Arg("sourceMap", opts[i].SourceMap)
+		}
+		// `deprecated` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
+			q = q.Arg("deprecated", opts[i].Deprecated)
 		}
 	}
 	q = q.Arg("name", name)
@@ -12916,6 +14519,8 @@ type TypeDefWithObjectOpts struct {
 	Description string
 
 	SourceMap *SourceMap
+
+	Deprecated string
 }
 
 // Returns a TypeDef of kind Object with the provided name.
@@ -12931,6 +14536,10 @@ func (r *TypeDef) WithObject(name string, opts ...TypeDefWithObjectOpts) *TypeDe
 		// `sourceMap` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
 			q = q.Arg("sourceMap", opts[i].SourceMap)
+		}
+		// `deprecated` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
+			q = q.Arg("deprecated", opts[i].Deprecated)
 		}
 	}
 	q = q.Arg("name", name)
@@ -13035,6 +14644,67 @@ const (
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
 )
 
+type EngineDevDistro string // engine-dev (../../../../toolchains/engine-dev/main.go:18:6)
+
+func (EngineDevDistro) IsEnum() {}
+
+func (v EngineDevDistro) Name() string {
+	switch v {
+	case EngineDevDistroAlpine:
+		return "ALPINE"
+	case EngineDevDistroWolfi:
+		return "WOLFI"
+	case EngineDevDistroUbuntu:
+		return "UBUNTU"
+	default:
+		return ""
+	}
+}
+
+func (v EngineDevDistro) Value() string {
+	return string(v)
+}
+
+func (v *EngineDevDistro) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *EngineDevDistro) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ALPINE":
+		*v = EngineDevDistroAlpine
+	case "UBUNTU":
+		*v = EngineDevDistroUbuntu
+	case "WOLFI":
+		*v = EngineDevDistroWolfi
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	EngineDevDistroAlpine EngineDevDistro = "alpine" // engine-dev (../../../../toolchains/engine-dev/main.go:21:2)
+
+	EngineDevDistroWolfi EngineDevDistro = "wolfi" // engine-dev (../../../../toolchains/engine-dev/main.go:22:2)
+
+	EngineDevDistroUbuntu EngineDevDistro = "ubuntu" // engine-dev (../../../../toolchains/engine-dev/main.go:23:2)
+
+)
+
 // File type.
 type ExistsType string
 
@@ -13099,7 +14769,68 @@ const (
 	ExistsTypeSymlinkType ExistsType = "SYMLINK_TYPE"
 )
 
-type GhaPermission string // gha (../../../modules/gha/permissions.go:9:6)
+// The behavior configured for function result caching.
+type FunctionCachePolicy string
+
+func (FunctionCachePolicy) IsEnum() {}
+
+func (v FunctionCachePolicy) Name() string {
+	switch v {
+	case FunctionCachePolicyDefault:
+		return "Default"
+	case FunctionCachePolicyPerSession:
+		return "PerSession"
+	case FunctionCachePolicyNever:
+		return "Never"
+	default:
+		return ""
+	}
+}
+
+func (v FunctionCachePolicy) Value() string {
+	return string(v)
+}
+
+func (v *FunctionCachePolicy) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *FunctionCachePolicy) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "Default":
+		*v = FunctionCachePolicyDefault
+	case "Never":
+		*v = FunctionCachePolicyNever
+	case "PerSession":
+		*v = FunctionCachePolicyPerSession
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	FunctionCachePolicyDefault FunctionCachePolicy = "Default"
+
+	FunctionCachePolicyPerSession FunctionCachePolicy = "PerSession"
+
+	FunctionCachePolicyNever FunctionCachePolicy = "Never"
+)
+
+type GhaPermission string // gha (../../../../modules/gha/permissions.go:9:6)
 
 func (GhaPermission) IsEnum() {}
 
@@ -13244,57 +14975,57 @@ func (v *GhaPermission) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	GhaPermissionReadContents GhaPermission = "read_contents" // gha (../../../modules/gha/permissions.go:72:2)
+	GhaPermissionReadContents GhaPermission = "read_contents" // gha (../../../../modules/gha/permissions.go:72:2)
 
-	GhaPermissionReadIssues GhaPermission = "read_issues" // gha (../../../modules/gha/permissions.go:73:2)
+	GhaPermissionReadIssues GhaPermission = "read_issues" // gha (../../../../modules/gha/permissions.go:73:2)
 
-	GhaPermissionReadActions GhaPermission = "read_actions" // gha (../../../modules/gha/permissions.go:74:2)
+	GhaPermissionReadActions GhaPermission = "read_actions" // gha (../../../../modules/gha/permissions.go:74:2)
 
-	GhaPermissionReadPackages GhaPermission = "read_packages" // gha (../../../modules/gha/permissions.go:75:2)
+	GhaPermissionReadPackages GhaPermission = "read_packages" // gha (../../../../modules/gha/permissions.go:75:2)
 
-	GhaPermissionReadDeployments GhaPermission = "read_deployments" // gha (../../../modules/gha/permissions.go:76:2)
+	GhaPermissionReadDeployments GhaPermission = "read_deployments" // gha (../../../../modules/gha/permissions.go:76:2)
 
-	GhaPermissionReadPullRequests GhaPermission = "read_pull_requests" // gha (../../../modules/gha/permissions.go:77:2)
+	GhaPermissionReadPullRequests GhaPermission = "read_pull_requests" // gha (../../../../modules/gha/permissions.go:77:2)
 
-	GhaPermissionReadPages GhaPermission = "read_pages" // gha (../../../modules/gha/permissions.go:78:2)
+	GhaPermissionReadPages GhaPermission = "read_pages" // gha (../../../../modules/gha/permissions.go:78:2)
 
-	GhaPermissionReadIdToken GhaPermission = "read_id_token" // gha (../../../modules/gha/permissions.go:79:2)
+	GhaPermissionReadIdToken GhaPermission = "read_id_token" // gha (../../../../modules/gha/permissions.go:79:2)
 
-	GhaPermissionReadRepositoryProjects GhaPermission = "read_repository_projects" // gha (../../../modules/gha/permissions.go:80:2)
+	GhaPermissionReadRepositoryProjects GhaPermission = "read_repository_projects" // gha (../../../../modules/gha/permissions.go:80:2)
 
-	GhaPermissionReadStatuses GhaPermission = "read_statuses" // gha (../../../modules/gha/permissions.go:81:2)
+	GhaPermissionReadStatuses GhaPermission = "read_statuses" // gha (../../../../modules/gha/permissions.go:81:2)
 
-	GhaPermissionReadMetadata GhaPermission = "read_metadata" // gha (../../../modules/gha/permissions.go:82:2)
+	GhaPermissionReadMetadata GhaPermission = "read_metadata" // gha (../../../../modules/gha/permissions.go:82:2)
 
-	GhaPermissionReadChecks GhaPermission = "read_checks" // gha (../../../modules/gha/permissions.go:83:2)
+	GhaPermissionReadChecks GhaPermission = "read_checks" // gha (../../../../modules/gha/permissions.go:83:2)
 
-	GhaPermissionReadDiscussions GhaPermission = "read_discussions" // gha (../../../modules/gha/permissions.go:84:2)
+	GhaPermissionReadDiscussions GhaPermission = "read_discussions" // gha (../../../../modules/gha/permissions.go:84:2)
 
-	GhaPermissionWriteContents GhaPermission = "write_contents" // gha (../../../modules/gha/permissions.go:85:2)
+	GhaPermissionWriteContents GhaPermission = "write_contents" // gha (../../../../modules/gha/permissions.go:85:2)
 
-	GhaPermissionWriteIssues GhaPermission = "write_issues" // gha (../../../modules/gha/permissions.go:86:2)
+	GhaPermissionWriteIssues GhaPermission = "write_issues" // gha (../../../../modules/gha/permissions.go:86:2)
 
-	GhaPermissionWriteActions GhaPermission = "write_actions" // gha (../../../modules/gha/permissions.go:87:2)
+	GhaPermissionWriteActions GhaPermission = "write_actions" // gha (../../../../modules/gha/permissions.go:87:2)
 
-	GhaPermissionWritePackages GhaPermission = "write_packages" // gha (../../../modules/gha/permissions.go:88:2)
+	GhaPermissionWritePackages GhaPermission = "write_packages" // gha (../../../../modules/gha/permissions.go:88:2)
 
-	GhaPermissionWriteDeployments GhaPermission = "write_deployments" // gha (../../../modules/gha/permissions.go:89:2)
+	GhaPermissionWriteDeployments GhaPermission = "write_deployments" // gha (../../../../modules/gha/permissions.go:89:2)
 
-	GhaPermissionWritePullRequests GhaPermission = "write_pull_requests" // gha (../../../modules/gha/permissions.go:90:2)
+	GhaPermissionWritePullRequests GhaPermission = "write_pull_requests" // gha (../../../../modules/gha/permissions.go:90:2)
 
-	GhaPermissionWritePages GhaPermission = "write_pages" // gha (../../../modules/gha/permissions.go:91:2)
+	GhaPermissionWritePages GhaPermission = "write_pages" // gha (../../../../modules/gha/permissions.go:91:2)
 
-	GhaPermissionWriteIdToken GhaPermission = "write_id_token" // gha (../../../modules/gha/permissions.go:92:2)
+	GhaPermissionWriteIdToken GhaPermission = "write_id_token" // gha (../../../../modules/gha/permissions.go:92:2)
 
-	GhaPermissionWriteRepositoryProjects GhaPermission = "write_repository_projects" // gha (../../../modules/gha/permissions.go:93:2)
+	GhaPermissionWriteRepositoryProjects GhaPermission = "write_repository_projects" // gha (../../../../modules/gha/permissions.go:93:2)
 
-	GhaPermissionWriteStatuses GhaPermission = "write_statuses" // gha (../../../modules/gha/permissions.go:94:2)
+	GhaPermissionWriteStatuses GhaPermission = "write_statuses" // gha (../../../../modules/gha/permissions.go:94:2)
 
-	GhaPermissionWriteMetadata GhaPermission = "write_metadata" // gha (../../../modules/gha/permissions.go:95:2)
+	GhaPermissionWriteMetadata GhaPermission = "write_metadata" // gha (../../../../modules/gha/permissions.go:95:2)
 
-	GhaPermissionWriteChecks GhaPermission = "write_checks" // gha (../../../modules/gha/permissions.go:96:2)
+	GhaPermissionWriteChecks GhaPermission = "write_checks" // gha (../../../../modules/gha/permissions.go:96:2)
 
-	GhaPermissionWriteDiscussions GhaPermission = "write_discussions" // gha (../../../modules/gha/permissions.go:97:2)
+	GhaPermissionWriteDiscussions GhaPermission = "write_discussions" // gha (../../../../modules/gha/permissions.go:97:2)
 
 )
 
@@ -13427,6 +15158,56 @@ const (
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+)
+
+// Experimental features of a module
+type ModuleSourceExperimentalFeature string
+
+func (ModuleSourceExperimentalFeature) IsEnum() {}
+
+func (v ModuleSourceExperimentalFeature) Name() string {
+	switch v {
+	case ModuleSourceExperimentalFeatureSelfCalls:
+		return "SELF_CALLS"
+	default:
+		return ""
+	}
+}
+
+func (v ModuleSourceExperimentalFeature) Value() string {
+	return string(v)
+}
+
+func (v *ModuleSourceExperimentalFeature) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ModuleSourceExperimentalFeature) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "SELF_CALLS":
+		*v = ModuleSourceExperimentalFeatureSelfCalls
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Self calls
+	ModuleSourceExperimentalFeatureSelfCalls ModuleSourceExperimentalFeature = "SELF_CALLS"
 )
 
 // The kind of module source.

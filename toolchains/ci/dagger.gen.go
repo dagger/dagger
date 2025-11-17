@@ -59,40 +59,32 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 func (r CI) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Workflows          *dagger.Gha
-		GithubRunner       *dagger.Gha
-		DaggerRunner       *dagger.Gha
 		AltRunner          *dagger.Gha
+		AltSilverRunner    *dagger.Gha
 		AltRunnerWithCache *dagger.Gha
-		CloudRunner        *dagger.Gha
 	}
 	concrete.Workflows = r.Workflows
-	concrete.GithubRunner = r.GithubRunner
-	concrete.DaggerRunner = r.DaggerRunner
 	concrete.AltRunner = r.AltRunner
+	concrete.AltSilverRunner = r.AltSilverRunner
 	concrete.AltRunnerWithCache = r.AltRunnerWithCache
-	concrete.CloudRunner = r.CloudRunner
 	return json.Marshal(&concrete)
 }
 
 func (r *CI) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		Workflows          *dagger.Gha
-		GithubRunner       *dagger.Gha
-		DaggerRunner       *dagger.Gha
 		AltRunner          *dagger.Gha
+		AltSilverRunner    *dagger.Gha
 		AltRunnerWithCache *dagger.Gha
-		CloudRunner        *dagger.Gha
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
 	r.Workflows = concrete.Workflows
-	r.GithubRunner = concrete.GithubRunner
-	r.DaggerRunner = concrete.DaggerRunner
 	r.AltRunner = concrete.AltRunner
+	r.AltSilverRunner = concrete.AltSilverRunner
 	r.AltRunnerWithCache = concrete.AltRunnerWithCache
-	r.CloudRunner = concrete.CloudRunner
 	return nil
 }
 
@@ -232,20 +224,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
-	case "":
-		return dag.Module().
-			WithObject(
-				dag.TypeDef().WithObject("CI", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 28, 6)}).
-					WithFunction(
-						dag.Function("Generate",
-							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Generate Github Actions workflows to call our Dagger workflows").
-							WithSourceMap(dag.SourceMap("main.go", 195, 1)).
-							WithArg("repository", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 198, 2), DefaultPath: "/", Ignore: []string{"*", "!.github"}})).
-					WithConstructor(
-						dag.Function("New",
-							dag.TypeDef().WithObject("CI")).
-							WithSourceMap(dag.SourceMap("main.go", 41, 1)))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

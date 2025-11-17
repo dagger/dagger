@@ -57,14 +57,6 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			}
 			return maybeCheck(ctx, genChangelog)
 		}).
-		WithJob("Github Actions config", func(ctx context.Context) error {
-			var err error
-			genGHA, err = dag.Ci().Generate().Sync(ctx)
-			if err != nil {
-				return err
-			}
-			return maybeCheck(ctx, genGHA)
-		}).
 		WithJob("SDKs", func(ctx context.Context) error {
 			var err error
 			genSDKs, err = dag.Sdks().Generate().Sync(ctx)
@@ -90,33 +82,4 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 		return err
 	})
 	return result, err
-}
-
-// "CI in CI": check that Dagger can still run its own CI
-// Note: this doesn't actually call all CI checks: only a small subset,
-// selected for maximum coverage of Dagger features with limited compute expenditure.
-// The actual checks being performed is an implementation detail, and should NOT be relied on.
-// In other words, don't skip running <foo> just because it happens to be run here!
-//
-// +check
-func (dev *DaggerDev) CiInCi(
-	ctx context.Context,
-	// The Dagger repository to run CI against
-	// +defaultPath="/"
-	repo *dagger.GitRepository,
-) error {
-	source := repo.Head().Tree().WithChanges(repo.Uncommitted())
-	engine := dag.EngineDev()
-	cmd := []string{"dagger", "call"}
-	if engine.ClientDockerConfig() != nil {
-		cmd = append(cmd, "--docker-cfg=file:$HOME/.docker/config.json")
-	}
-	cmd = append(cmd, "test-sdks")
-	_, err := dag.EngineDev().
-		Playground().
-		WithMountedDirectory("./dagger", source).
-		WithWorkdir("./dagger").
-		WithExec(cmd, dagger.ContainerWithExecOpts{Expand: true}).
-		Sync(ctx)
-	return err
 }

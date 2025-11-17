@@ -17,7 +17,6 @@ func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
 	return dag.Go(dagger.GoOpts{Source: dev.Source}).Tests(ctx)
 }
 
-// +check
 // Run core engine tests
 // +cache="session"
 func (dev *EngineDev) Test(
@@ -76,7 +75,6 @@ func (dev *EngineDev) Test(
 	return err
 }
 
-// +check
 // Run telemetry tests
 // +cache="session"
 func (dev *EngineDev) TestTelemetry(
