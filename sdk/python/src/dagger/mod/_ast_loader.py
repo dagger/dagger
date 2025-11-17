@@ -40,6 +40,8 @@ class ClassInfo:
     enum_members: dict[str, tuple[Any, str | None, str | None]] = dataclasses.field(
         default_factory=dict
     )  # (value, description, deprecated)
+    init_params: set[str] | None = None  # Parameters in __init__ if present
+    init_method: "MethodInfo | None" = None  # Full __init__ method info if present
 
 
 @dataclasses.dataclass
@@ -54,6 +56,8 @@ class FieldInfo:
     deprecated: str | None
     field_name: str | None  # Alternative name from mod.field(name=...)
     init: bool = True  # Whether field should be in constructor (from mod.field(init=...))
+    init_explicit: bool = False  # Whether init was explicitly set in field()
+    default_explicit: bool = False  # Whether default was explicitly set in field()
 
 
 @dataclasses.dataclass
@@ -81,6 +85,7 @@ class ParamInfo:
     type_annotation: str | None
     has_default: bool
     default_value: Any  # Can be any Python value including None
+    is_keyword_only: bool = False  # Whether this is a keyword-only parameter (after *)
     # Annotated metadata
     doc: str | None = None  # From Doc()
     api_name: str | None = None  # From Name()
@@ -296,9 +301,28 @@ def parse_annotated_metadata(
                     metadata["deprecated"] = ast.literal_eval(meta_node.args[0])
                 else:
                     metadata["deprecated"] = ""  # Empty string means deprecated without reason
-        except (ValueError, TypeError):
-            # Skip if we can't evaluate the literal
-            continue
+        except (ValueError, TypeError) as e:
+            # If literal_eval fails, try using unparsed value for string-like metadata
+            try:
+                unparsed = ast.unparse(meta_node.args[0]) if meta_node.args else None
+                if meta_name == "Doc" and unparsed:
+                    metadata["doc"] = unparsed
+                    logger.warning("Doc value is not a literal, using unparsed: %s", unparsed)
+                elif meta_name == "Name" and unparsed:
+                    metadata["api_name"] = unparsed
+                    logger.warning("Name value is not a literal, using unparsed: %s", unparsed)
+                elif meta_name == "DefaultPath" and unparsed:
+                    metadata["default_path"] = unparsed
+                    logger.warning("DefaultPath value is not a literal, using unparsed: %s", unparsed)
+                elif meta_name == "Deprecated" and unparsed:
+                    metadata["deprecated"] = unparsed
+                    logger.warning("Deprecated value is not a literal, using unparsed: %s", unparsed)
+                # For Ignore, we need a list, so skip if not a literal
+                elif meta_name == "Ignore":
+                    logger.warning("Ignore value is not a literal list, skipping")
+            except Exception:  # noqa: BLE001
+                # If even unparsing fails, log and skip
+                logger.warning("Failed to extract %s metadata", meta_name)
 
     return metadata
 
@@ -401,7 +425,7 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
         elif dec_name == "check":
             check = True
 
-    # Parse parameters
+    # Parse parameters (regular positional/keyword arguments)
     parameters = []
     for arg in node.args.args:
         # Skip self or cls
@@ -424,10 +448,7 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
         )
         parameters.append(param_info)
 
-    # Skip varargs (*args) and kwargs (**kwargs) - they're not supported in Dagger
-    # and would cause type resolution errors
-
-    # Handle defaults
+    # Handle defaults for regular args
     num_defaults = len(node.args.defaults)
     if num_defaults > 0:
         # Defaults align with the last N parameters
@@ -445,6 +466,38 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
                     parameters[param_idx].default_value = ast.unparse(
                         node.args.defaults[i]
                     )
+
+    # Parse keyword-only parameters (after * in signature)
+    for i, arg in enumerate(node.args.kwonlyargs):
+        # Extract Annotated metadata if present
+        metadata = parse_annotated_metadata(arg.annotation)
+
+        # Check if this kwonly arg has a default (kw_defaults can contain None for no default)
+        has_default = False
+        default_value = None
+        if i < len(node.args.kw_defaults) and node.args.kw_defaults[i] is not None:
+            has_default = True
+            try:
+                default_value = ast.literal_eval(node.args.kw_defaults[i])
+            except Exception:  # noqa: BLE001
+                default_value = ast.unparse(node.args.kw_defaults[i])
+
+        param_info = ParamInfo(
+            name=arg.arg,
+            type_annotation=get_type_annotation(arg.annotation),
+            has_default=has_default,
+            default_value=default_value,
+            is_keyword_only=True,  # Mark as keyword-only
+            doc=metadata["doc"],
+            api_name=metadata["api_name"],
+            default_path=metadata["default_path"],
+            ignore=metadata["ignore"],
+            deprecated=metadata["deprecated"],
+        )
+        parameters.append(param_info)
+
+    # Skip varargs (*args) and kwargs (**kwargs) - they're not supported in Dagger
+    # and would cause type resolution errors
 
     return MethodInfo(
         name=node.name,
@@ -492,6 +545,8 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
     fields = {}
     methods = {}
     enum_members = {}
+    init_params: set[str] | None = None  # Track __init__ parameters if present
+    init_method: MethodInfo | None = None  # Track full __init__ method if present
 
     for i, item in enumerate(node.body):
         if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
@@ -504,6 +559,8 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
             field_deprecated = None
             field_alt_name = None
             field_init = True  # Default to True
+            field_init_explicit = False  # Track if init was explicitly set
+            field_default_explicit = False  # Track if default was explicitly set
             default_value = None
             field_default = None
 
@@ -526,18 +583,47 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                         # Extract field kwargs
                         for keyword in item.value.keywords:
                             if keyword.arg == "deprecated":
-                                with contextlib.suppress(Exception):
+                                try:
                                     field_deprecated = ast.literal_eval(keyword.value)
+                                except (ValueError, TypeError, SyntaxError):
+                                    # If not a literal, store unparsed expression
+                                    field_deprecated = ast.unparse(keyword.value)
+                                    logger.warning(
+                                        "Field %s deprecated value is not a literal: %s",
+                                        field_name,
+                                        field_deprecated,
+                                    )
                             elif keyword.arg == "name":
-                                with contextlib.suppress(Exception):
+                                try:
                                     field_alt_name = ast.literal_eval(keyword.value)
+                                except (ValueError, TypeError, SyntaxError):
+                                    field_alt_name = ast.unparse(keyword.value)
+                                    logger.warning(
+                                        "Field %s name value is not a literal: %s",
+                                        field_name,
+                                        field_alt_name,
+                                    )
                             elif keyword.arg == "init":
-                                with contextlib.suppress(Exception):
+                                field_init_explicit = True
+                                try:
                                     field_init = ast.literal_eval(keyword.value)
+                                except (ValueError, TypeError, SyntaxError):
+                                    logger.warning(
+                                        "Field %s init value is not a boolean literal",
+                                        field_name,
+                                    )
+                                    # Keep default value
                             elif keyword.arg == "default":
+                                field_default_explicit = True  # Mark that default was explicitly set
                                 # Extract default value from field()
-                                with contextlib.suppress(Exception):
+                                # Try literal_eval first for simple values
+                                try:
                                     field_default = ast.literal_eval(keyword.value)
+                                except (ValueError, TypeError):
+                                    # For non-literals (like `list`, `dict`, function names),
+                                    # store the unparsed expression to be evaluated later
+                                    # in the namespace with actual objects
+                                    field_default = ast.unparse(keyword.value)
                     else:
                         # Regular default value (not a field() call)
                         with contextlib.suppress(Exception):
@@ -548,10 +634,10 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                         default_value = ast.literal_eval(item.value)
 
             # Determine if there's a default value
-            # For dagger fields: only if field() has a default= kwarg
+            # For dagger fields: only if field() has a default= kwarg explicitly set
             # For regular fields: if there's any assignment
             if is_dagger_field:
-                has_default = field_default is not None
+                has_default = field_default_explicit
                 actual_default = field_default
             else:
                 has_default = item.value is not None
@@ -566,6 +652,8 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                 deprecated=field_deprecated,
                 field_name=field_alt_name,
                 init=field_init,
+                init_explicit=field_init_explicit,
+                default_explicit=field_default_explicit,
             )
 
         elif isinstance(item, ast.Assign) and is_enum:
@@ -584,7 +672,15 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                     enum_members[member_name] = (member_value, description, deprecated)
 
         elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if not item.name.startswith("_"):  # Skip private methods
+            # Parse __init__ to determine constructor parameters
+            if item.name == "__init__":
+                # Parse the full __init__ method
+                init_method = parse_method(item)
+                # Extract parameter names from __init__ (excluding self)
+                init_params = {
+                    arg.arg for arg in item.args.args if arg.arg != "self"
+                }
+            elif not item.name.startswith("_"):  # Skip other private methods
                 method_info = parse_method(item)
                 methods[item.name] = method_info
 
@@ -598,6 +694,8 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
         methods=methods,
         is_enum=is_enum,
         enum_members=enum_members,
+        init_params=init_params,
+        init_method=init_method,
     )
 
 
@@ -732,14 +830,39 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
             field_kwargs = {}
             if field_info.has_default:
                 # Use the actual default value extracted from AST
-                field_kwargs["default"] = field_info.default_value
-            if field_info.deprecated:
+                # If it's a string, it might be an unparsed expression (e.g., "list")
+                # that we need to evaluate in the namespace
+                default_val = field_info.default_value
+                if isinstance(default_val, str):
+                    # Try to evaluate it in the namespace to resolve callables like list, dict
+                    # For actual string literals from literal_eval, eval will fail and we keep the string
+                    try:
+                        evaluated = eval(default_val, namespace)  # noqa: S307
+                        # Only use evaluated result if it's callable or a type
+                        # This distinguishes "list" (unparsed) from "hello" (actual string)
+                        if callable(evaluated) or isinstance(evaluated, type):
+                            default_val = evaluated
+                    except Exception:  # noqa: BLE001
+                        # If evaluation fails, keep the string value
+                        # For string literals from literal_eval, this preserves the string
+                        pass
+                field_kwargs["default"] = default_val
+            if field_info.deprecated is not None:
                 field_kwargs["deprecated"] = field_info.deprecated
             if field_info.field_name:
                 field_kwargs["name"] = field_info.field_name
-            if not field_info.init:
-                # Only set init=False if explicitly set (default is True)
-                field_kwargs["init"] = False
+
+            # Determine if field should be in constructor
+            # Priority: explicit init= > __init__ parameters > default True
+            if field_info.init_explicit:
+                # User explicitly set init= in field(), respect it
+                if not field_info.init:
+                    field_kwargs["init"] = False
+            elif class_info.init_params is not None:
+                # There's an explicit __init__, only include fields that are parameters
+                if field_name not in class_info.init_params:
+                    field_kwargs["init"] = False
+            # else: default is init=True (field is in constructor)
 
             class_attrs[field_name] = mod.field(**field_kwargs)
         elif field_info.has_default:
@@ -761,7 +884,7 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
         if method_info.is_function:
             # Wrap with @function decorator
             func_kwargs = {}
-            if method_info.deprecated:
+            if method_info.deprecated is not None:
                 func_kwargs["deprecated"] = method_info.deprecated
             if method_info.function_name:
                 func_kwargs["name"] = method_info.function_name
@@ -776,14 +899,20 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
 
         class_attrs[method_name] = mock_func
 
-    # For non-interface classes without fields, add a minimal __init__
-    # to ensure they have a proper constructor
-    if class_info.decorator_type != "interface" and not class_info.fields:
+    # Handle __init__ method
+    if class_info.decorator_type != "interface":
+        if class_info.init_method:
+            # User provided explicit __init__, create a mock version with same signature
+            # This prevents dataclass from auto-generating __init__
+            mock_init = create_mock_method(class_info.init_method, namespace)
+            class_attrs["__init__"] = mock_init
+        elif not class_info.fields:
+            # No fields and no __init__, add minimal constructor
+            def __init__(self):  # noqa: N807
+                pass
 
-        def __init__(self):  # noqa: N807
-            pass
-
-        class_attrs["__init__"] = __init__
+            class_attrs["__init__"] = __init__
+        # else: let dataclass decorator generate __init__ from fields
 
     # Create the class using type()
     # For interfaces, inherit from typing.Protocol
@@ -796,7 +925,7 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
     # Apply the appropriate decorator
     if class_info.decorator_type == "object_type":
         decorator_kwargs = {}
-        if class_info.deprecated:
+        if class_info.deprecated is not None:
             decorator_kwargs["deprecated"] = class_info.deprecated
         mock_cls = mod.object_type(mock_cls, **decorator_kwargs)
     elif class_info.decorator_type == "interface":
@@ -879,9 +1008,16 @@ def create_mock_method(method_info: MethodInfo, namespace: dict[str, Any]) -> An
                 if Annotated:
                     annotation = Annotated[base_annotation, *metadata_items]
 
+        # Use correct parameter kind based on whether it's keyword-only
+        param_kind = (
+            inspect.Parameter.KEYWORD_ONLY
+            if param_info.is_keyword_only
+            else inspect.Parameter.POSITIONAL_OR_KEYWORD
+        )
+
         param = inspect.Parameter(
             param_info.name,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            param_kind,
             default=default,
             annotation=annotation,
         )
@@ -968,8 +1104,8 @@ def create_mock_enum(class_info: ClassInfo, mod: Module) -> type:
                     member.__doc__ = description  # type: ignore[misc]
                 except (AttributeError, TypeError):
                     pass
-            if deprecated:
-                # Set deprecation as attribute
+            if deprecated is not None:
+                # Set deprecation as attribute (use None check to handle empty strings)
                 try:
                     member.deprecated = deprecated  # type: ignore[attr-defined]
                 except (AttributeError, TypeError):

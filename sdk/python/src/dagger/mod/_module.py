@@ -221,8 +221,8 @@ class Module:
                             dagger.FunctionCachePolicy.Default,
                             time_to_live=func.cache_policy,
                         )
-                if deprecated := func.deprecated:
-                    func_def = func_def.with_deprecated(reason=deprecated)
+                if func.deprecated is not None:
+                    func_def = func_def.with_deprecated(reason=func.deprecated)
                 if func.check:
                     func_def = func_def.with_check()
 
@@ -284,8 +284,17 @@ class Module:
                     "value": str(member.value),
                     "description": description,
                 }
-                if meta and meta.deprecated is not None:
-                    enum_member_kwargs["deprecated"] = meta.deprecated
+
+                # Check for deprecated attribute on member first (set by AST loader)
+                # then fall back to meta from source parsing
+                deprecated_value = None
+                if hasattr(member, "deprecated"):
+                    deprecated_value = member.deprecated
+                elif meta and meta.deprecated is not None:
+                    deprecated_value = meta.deprecated
+
+                if deprecated_value is not None:
+                    enum_member_kwargs["deprecated"] = deprecated_value
 
                 enum_def = enum_def.with_enum_member(
                     member.name,
