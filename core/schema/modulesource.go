@@ -2837,7 +2837,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	if clientMetadata.EagerModuleLoading && !mod.Runtime.Valid {
+	if clientMetadata.EagerRuntime && !mod.Runtime.Valid {
 		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, err

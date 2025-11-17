@@ -108,7 +108,7 @@ type Params struct {
 	Function string
 	ExecCmd  []string
 
-	EagerModuleLoading bool
+	EagerRuntime bool
 }
 
 type Client struct {
@@ -1194,7 +1194,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 		AllowedLLMModules:         c.AllowedLLMModules,
-		EagerModuleLoading:        c.EagerModuleLoading,
+		EagerRuntime:              c.EagerRuntime,
 	}
 }
 

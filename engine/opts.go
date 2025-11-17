@@ -89,7 +89,7 @@ type ClientMetadata struct {
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
 
 	// Disable lazy loading on module runtime.
-	EagerModuleLoading bool `json:"eager_module_loading"`
+	EagerRuntime bool `json:"eager_runtime"`
 }
 
 type clientMetadataCtxKey struct{}
