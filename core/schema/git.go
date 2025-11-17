@@ -577,7 +577,13 @@ type refArgs struct {
 
 func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {
 	repo := parent.Self()
-	ref, err := repo.Remote.Lookup(args.Name)
+
+	remote, err := repo.Backend.Remote(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	ref, err := remote.Lookup(args.Name)
 	if err != nil {
 		return inst, err
 	}
@@ -637,7 +643,10 @@ func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 }
 
 func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
-	remote := parent.Self().Remote
+	remote, err := parent.Self().Backend.Remote(ctx)
+	if err != nil {
+		return inst, err
+	}
 	tags := remote.Tags().Filter([]string{"refs/tags/v*"}).ShortNames()
 	tags = slices.DeleteFunc(tags, func(tag string) bool {
 		return !semver.IsValid(tag)
@@ -694,7 +703,10 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	remote := parent.Remote
+	remote, err := parent.Backend.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return dagql.NewStringArray(remote.Filter(patterns).Tags().ShortNames()...), nil
 }
 
@@ -709,7 +721,10 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	remote := parent.Remote
+	remote, err := parent.Backend.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return dagql.NewStringArray(remote.Filter(patterns).Branches().ShortNames()...), nil
 }
 
