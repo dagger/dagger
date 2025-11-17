@@ -5,35 +5,19 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"dagger/releaser/internal/dagger"
 	_ "embed"
 	"fmt"
 	"strings"
 	"text/template"
 	"time"
+	"toolchains/release/internal/dagger"
 
 	sprig "github.com/go-task/slim-sprig/v3"
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 )
 
-type Releaser struct {
-	Dagger *dagger.DaggerDev // +private
-}
-
-func New(
-	// +optional
-	source *dagger.Directory,
-	// +optional
-	dockerCfg *dagger.Secret,
-) Releaser {
-	return Releaser{
-		Dagger: dag.DaggerDev(dagger.DaggerDevOpts{
-			Source:    source,
-			DockerCfg: dockerCfg,
-		}),
-	}
-}
+type Release struct{}
 
 type ReleaseReport struct {
 	Ref     string
@@ -114,12 +98,8 @@ func (report *ReleaseReport) hasErrors() bool {
 	return false
 }
 
-func (r *Releaser) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
-	return r.Dagger.Bump(version).Sync(ctx)
-}
-
 // +cache="session"
-func (r *Releaser) Publish(
+func (r *Release) Publish(
 	ctx context.Context,
 	tag string,
 	commit string,
@@ -174,7 +154,7 @@ func (r *Releaser) Publish(
 		// this is a public release
 		tags = append(tags, "latest")
 	}
-	err := dag.DaggerEngine().Publish(ctx, tags, dagger.DaggerEnginePublishOpts{
+	err := dag.EngineDev().Publish(ctx, tags, dagger.EngineDevPublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
@@ -190,8 +170,8 @@ func (r *Releaser) Publish(
 		Tag:  tag,
 	}
 	if !dryRun {
-		_, err := dag.DaggerCli().
-			Publish(tag, goreleaserKey, githubOrgName, dagger.DaggerCliPublishOpts{
+		_, err := dag.CliDev().
+			Publish(tag, goreleaserKey, githubOrgName, dagger.CliDevPublishOpts{
 				GithubToken:        githubToken,
 				AwsAccessKeyID:     awsAccessKeyID,
 				AwsSecretAccessKey: awsSecretAccessKey,
@@ -203,13 +183,12 @@ func (r *Releaser) Publish(
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
-		err = dag.DaggerCli().PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
+		err = dag.CliDev().PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	} else {
-		err := dag.DaggerCli().ReleaseDryRun(ctx)
-		if err != nil {
+		if err := dag.CliDev().ReleaseDryRun(ctx); err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	}
@@ -232,7 +211,7 @@ func (r *Releaser) Publish(
 			Link: "https://docs.dagger.io",
 		}
 		if !dryRun {
-			err = dag.Docs().Publish(ctx, netlifyToken)
+			err = dag.DocsDev().Publish(ctx, netlifyToken)
 			if err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 			}
@@ -246,7 +225,8 @@ func (r *Releaser) Publish(
 		tag     string
 		link    string
 		dev     bool
-		publish func() error
+		release func(context.Context) error
+		dryRun  func(context.Context) error
 	}{
 		{
 			name: "🐹 Go SDK",
@@ -254,11 +234,13 @@ func (r *Releaser) Publish(
 			tag:  "sdk/go/",
 			link: "https://pkg.go.dev/dagger.io/dagger@" + cmp.Or(version, "main"),
 			dev:  true,
-			publish: func() error {
-				return r.Dagger.SDK().Go().Publish(ctx, tag, dagger.DaggerDevGoSDKPublishOpts{
+			release: func(ctx context.Context) error {
+				return dag.GoSDKDev().Release(ctx, tag, dagger.GoSDKDevReleaseOpts{
 					GithubToken: githubToken,
-					DryRun:      dryRun,
 				})
+			},
+			dryRun: func(ctx context.Context) error {
+				return dag.GoSDKDev().ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -266,12 +248,14 @@ func (r *Releaser) Publish(
 			path: "sdk/python/",
 			tag:  "sdk/python/",
 			link: "https://pypi.org/project/dagger-io/" + strings.TrimPrefix(version, "v"),
-			publish: func() error {
-				return r.Dagger.SDK().Python().Publish(ctx, tag, dagger.DaggerDevPythonSDKPublishOpts{
-					PypiToken: pypiToken,
+			release: func(ctx context.Context) error {
+				return dag.PythonSDKDev().Release(ctx, tag, dagger.PythonSDKDevReleaseOpts{
 					PypiRepo:  pypiRepo,
-					DryRun:    dryRun,
+					PypiToken: pypiToken,
 				})
+			},
+			dryRun: func(ctx context.Context) error {
+				return dag.PythonSDKDev().ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -279,35 +263,31 @@ func (r *Releaser) Publish(
 			path: "sdk/typescript/",
 			tag:  "sdk/typescript/",
 			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
-			publish: func() error {
-				return r.Dagger.SDK().Typescript().Publish(ctx, tag, dagger.DaggerDevTypescriptSDKPublishOpts{
-					NpmToken: npmToken,
-					DryRun:   dryRun,
-				})
+			release: func(ctx context.Context) error {
+				return dag.TypescriptSDKDev().Release(ctx, tag, npmToken)
+			},
+			dryRun: func(ctx context.Context) error {
+				return dag.TypescriptSDKDev().ReleaseDryRun(ctx)
 			},
 		},
 		{
-			name: "🧪 Elixir SDK",
-			path: "sdk/elixir/",
-			tag:  "sdk/elixir/",
-			link: "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
-			publish: func() error {
-				return r.Dagger.SDK().Elixir().Publish(ctx, tag, dagger.DaggerDevElixirSDKPublishOpts{
-					HexApikey: hexAPIKey,
-					DryRun:    dryRun,
-				})
-			},
+			name:    "🧪 Elixir SDK",
+			path:    "sdk/elixir/",
+			tag:     "sdk/elixir/",
+			link:    "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
+			release: nil, // FIXME
+			dryRun:  nil, // FIXME
 		},
 		{
 			name: "⚙️ Rust SDK",
 			path: "sdk/rust/",
 			tag:  "sdk/rust/",
 			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
-			publish: func() error {
-				return r.Dagger.SDK().Rust().Publish(ctx, tag, dagger.DaggerDevRustSDKPublishOpts{
-					CargoRegistryToken: cargoRegistryToken,
-					DryRun:             dryRun,
-				})
+			release: func(ctx context.Context) error {
+				return dag.RustSDKDev().Release(ctx, tag, cargoRegistryToken)
+			},
+			dryRun: func(ctx context.Context) error {
+				return dag.RustSDKDev().ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -316,11 +296,13 @@ func (r *Releaser) Publish(
 			tag:  "sdk/php/",
 			link: "https://packagist.org/packages/dagger/dagger#" + cmp.Or(version, "dev-main"),
 			dev:  true,
-			publish: func() error {
-				return r.Dagger.SDK().Php().Publish(ctx, tag, dagger.DaggerDevPhpsdkPublishOpts{
+			release: func(ctx context.Context) error {
+				return dag.PhpSDKDev().Release(ctx, tag, dagger.PhpSDKDevReleaseOpts{
 					GithubToken: githubToken,
-					DryRun:      dryRun,
 				})
+			},
+			dryRun: func(ctx context.Context) error {
+				return dag.PhpSDKDev().ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -328,11 +310,13 @@ func (r *Releaser) Publish(
 			path: "helm/dagger/",
 			tag:  "helm/chart/",
 			link: "https://github.com/dagger/dagger/pkgs/container/dagger-helm",
-			publish: func() error {
-				return dag.Helm().Publish(ctx, tag, dagger.HelmPublishOpts{
+			release: func(ctx context.Context) error {
+				return dag.HelmDev().Publish(ctx, tag, dagger.HelmDevPublishOpts{
 					GithubToken: githubToken,
-					DryRun:      dryRun,
 				})
+			},
+			dryRun: func(ctx context.Context) error {
+				return dag.HelmDev().ReleaseDryRun(ctx)
 			},
 		},
 	}
@@ -340,6 +324,7 @@ func (r *Releaser) Publish(
 	var eg errgroup.Group
 	for i, component := range components {
 		if component.dev || semver.IsValid(version) {
+			// FIXME: use parallel
 			eg.Go(func() error {
 				target := ""
 				if semver.IsValid(version) {
@@ -354,11 +339,29 @@ func (r *Releaser) Publish(
 				}
 				artifacts[i] = artifact
 
-				if err := component.publish(); err != nil {
-					artifact.Notify = false
-					artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+				// FIXME: cleanup & simplify
+				err = func() (rerr error) {
+					defer func() {
+						if rerr != nil {
+							artifact.Notify = false
+							artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+						}
+					}()
+					if dryRun {
+						if component.dryRun != nil {
+							if err := component.dryRun(ctx); err != nil {
+								return err
+							}
+						}
+					} else {
+						if component.release != nil {
+							if err := component.release(ctx); err != nil {
+								return err
+							}
+						}
+					}
 					return nil
-				}
+				}()
 
 				if semver.IsValid(version) {
 					notes := dag.Changelog().LookupEntry(component.path, version)
@@ -417,7 +420,7 @@ func (r *Releaser) Publish(
 }
 
 // +cache="session"
-func (r Releaser) Notify(
+func (r Release) Notify(
 	ctx context.Context,
 	// GitHub repository URL
 	repository string,

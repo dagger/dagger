@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"dagger/releaser/internal/dagger"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
 	"strings"
+
+	"toolchains/release/internal/dagger"
 )
 
 type Team struct {
@@ -20,7 +21,7 @@ type User struct {
 }
 
 // +cache="session"
-func (r *Releaser) GetMaintainers(
+func (r *Release) GetMaintainers(
 	ctx context.Context,
 
 	githubOrgName string,

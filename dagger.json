@@ -65,6 +65,10 @@
       "source": "toolchains/installers"
     },
     {
+      "name": "java-sdk",
+      "source": "toolchains/java-sdk-dev"
+    },
+    {
       "name": "php-sdk",
       "source": "toolchains/php-sdk-dev"
     },
@@ -73,8 +77,8 @@
       "source": "toolchains/python-sdk-dev"
     },
     {
-      "name": "java-sdk",
-      "source": "toolchains/java-sdk-dev"
+      "name": "release",
+      "source": "toolchains/release"
     },
     {
       "name": "sdks",
