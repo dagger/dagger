@@ -25,8 +25,9 @@ jobs:
       - name: "Publish"
         uses: ./.github/actions/call
         with:
-          module: github.com/${{ github.repository }}/releaser@${{ github.sha }}
+          module: github.com/${{ github.repository }}@${{ github.sha }}
           function: |-
+            release \
             publish \
             --tag="${{ github.ref_name }}" --commit="${{ github.sha }}" \
             --registry-image="$DAGGER_ENGINE_IMAGE" \

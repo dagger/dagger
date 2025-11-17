@@ -1,0 +1,19 @@
+{
+  "name": "gh",
+  "engineVersion": "v0.18.19",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "!../.direnv",
+    "!../.devenv",
+    "!../go.work",
+    "!../go.work.sum"
+  ],
+  "dependencies": [
+    {
+      "name": "apko",
+      "source": "../apko"
+    }
+  ]
+}

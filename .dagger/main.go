@@ -13,17 +13,6 @@ import (
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct{}
 
-// Perform a dry run of the release process
-// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
-func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) error {
-	return parallel.New().
-		WithJob("Helm chart", dag.Helm().ReleaseDryRun).
-		WithJob("CLI", dag.Cli().ReleaseDryRun).
-		WithJob("Engine", dag.EngineDev().ReleaseDryRun).
-		WithJob("SDKs", dag.Sdks().ReleaseDryRun).
-		Run(ctx)
-}
-
 // Verify that generated code is up to date
 // +check
 func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
@@ -101,39 +90,6 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 		return err
 	})
 	return result, err
-}
-
-func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
-	var (
-		bumpDocs, bumpHelm, bumpSDKs *dagger.Changeset
-	)
-	err := parallel.New().
-		WithJob("bump docs version", func(ctx context.Context) error {
-			var err error
-			bumpDocs, err = dag.Docs().Bump(version).Sync(ctx)
-			return err
-		}).
-		WithJob("bump helm chart version", func(ctx context.Context) error {
-			chartYaml, err := dag.Helm().SetVersion(version).Sync(ctx)
-			if err != nil {
-				return err
-			}
-			bumpHelm, err = dag.Directory().
-				WithFile("helm/dagger/Chart.yaml", chartYaml).
-				Changes(dag.Directory()).
-				Sync(ctx)
-			return err
-		}).
-		WithJob("bump SDK versions", func(ctx context.Context) error {
-			var err error
-			bumpSDKs, err = dag.Sdks().Bump(version).Sync(ctx)
-			return err
-		}).
-		Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return changesetMerge(bumpSDKs, bumpDocs, bumpHelm), nil
 }
 
 // "CI in CI": check that Dagger can still run its own CI

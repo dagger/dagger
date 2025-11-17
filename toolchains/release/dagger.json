@@ -1,0 +1,70 @@
+{
+  "name": "release",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../go.mod",
+    "../../go.sum",
+    "../../util/parallel"
+  ],
+  "dependencies": [
+    {
+      "name": "changelog",
+      "source": "../changelog"
+    },
+    {
+      "name": "cli-dev",
+      "source": "../cli-dev"
+    },
+    {
+      "name": "docs-dev",
+      "source": "../docs-dev"
+    },
+    {
+      "name": "dotnet-sdk-dev",
+      "source": "../dotnet-sdk-dev"
+    },
+    {
+      "name": "engine-dev",
+      "source": "../engine-dev"
+    },
+    {
+      "name": "gh",
+      "source": "gh"
+    },
+    {
+      "name": "go-sdk-dev",
+      "source": "../go-sdk-dev"
+    },
+    {
+      "name": "helm-dev",
+      "source": "../helm-dev"
+    },
+    {
+      "name": "notify",
+      "source": "../engine-dev/notify"
+    },
+    {
+      "name": "php-sdk-dev",
+      "source": "../php-sdk-dev"
+    },
+    {
+      "name": "python-sdk-dev",
+      "source": "../python-sdk-dev"
+    },
+    {
+      "name": "rust-sdk-dev",
+      "source": "../rust-sdk-dev"
+    },
+    {
+      "name": "sdks",
+      "source": "../all-sdks"
+    },
+    {
+      "name": "typescript-sdk-dev",
+      "source": "../typescript-sdk-dev"
+    }
+  ]
+}

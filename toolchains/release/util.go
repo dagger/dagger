@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
-	"dagger/releaser/internal/dagger"
 	"fmt"
 	"net/url"
 	"strings"
+	"toolchains/release/internal/dagger"
 )
 
 // Publish a Github release
-func (r Releaser) githubRelease(
+func (r Release) githubRelease(
 	ctx context.Context,
 	// GitHub repository URL
 	repository string,
@@ -66,7 +66,7 @@ func (r Releaser) githubRelease(
 		dagger.GhReleaseCreateOpts{
 			Target:    src,
 			NotesFile: notes,
-			Latest:    dagger.GhLatestLatestFalse,
+			Latest:    dagger.GhLatestFalse,
 		},
 	)
 }
