@@ -91,6 +91,33 @@ This interface MUST be implemented to support language oriented SDKs
 (`dagger develop`).
 */
 type CodeGenerator interface {
+	/**
+	  Init generates code for a initialized module with the given source directory
+	  and subpath.
+
+		This function is only called once, for any subsequent generation, the engine
+		will call `Codegen`.
+
+		This function prototype is different from the one exposed by the SDK.
+		SDK must implement the `moduleInit` function with the following signature:
+
+		```gql
+		  moduleInit(
+				modSource: ModuleSource!
+				introspectionJSON: File!
+			): GeneratedCode!
+		```
+	*/
+	Init(
+		context.Context,
+
+		// Current module dependencies
+		*ModDeps,
+
+		// Current instance of the module source
+		dagql.ObjectResult[*ModuleSource],
+	) (*GeneratedCode, error)
+
 	/*
 		Codegen generates code for the module at the given source directory and
 		subpath.

@@ -29,6 +29,7 @@ var validInbuiltSDKs = []sdk{
 // The list of functions that may be implemented by a SDK module.
 var sdkFunctions = []string{
 	"withConfig",
+	"moduleInit",
 	"codegen",
 	"moduleRuntime",
 	"moduleTypes",

@@ -188,6 +188,9 @@ type ModuleSource struct {
 	Kind  ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
 	Local *LocalModuleSource
 	Git   *GitModuleSource
+
+	// Set to true when a new SDK is set
+	IsInit bool
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -208,6 +211,7 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 	if src.SDK != nil {
 		src.SDK = src.SDK.Clone()
+		src.IsInit = src.IsInit
 	}
 
 	origIncludePaths := src.IncludePaths
