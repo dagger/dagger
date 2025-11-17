@@ -25,6 +25,9 @@ type GitRepository struct {
 	Remote  *gitutil.Remote
 
 	DiscardGitDir bool
+
+	// Internal per-repo pinned HEAD (ref/commit)
+	PinnedHead *gitutil.Ref `internal:"true"`
 }
 
 type GitRepositoryBackend interface {
