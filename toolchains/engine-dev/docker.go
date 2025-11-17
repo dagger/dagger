@@ -13,7 +13,7 @@ import (
 
 // Load the engine container into a Docker engine
 // +cache="session"
-func (e *EngineDev) LoadToDocker(
+func (dev *EngineDev) LoadToDocker(
 	ctx context.Context,
 
 	docker *dagger.Socket,
@@ -32,7 +32,7 @@ func (e *EngineDev) LoadToDocker(
 	// +optional
 	gpuSupport bool,
 ) (*LoadedEngine, error) {
-	ctr, err := e.Container(ctx, platform, image, gpuSupport, "", "")
+	ctr, err := dev.Container(ctx, platform, image, gpuSupport, "", "")
 	if err != nil {
 		return nil, err
 	}

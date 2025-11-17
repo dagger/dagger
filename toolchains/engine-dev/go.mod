@@ -14,6 +14,7 @@ replace (
 )
 
 require (
+	dagger.io/dagger v0.19.6
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.1
@@ -47,12 +48,14 @@ require (
 )
 
 require (
+	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect

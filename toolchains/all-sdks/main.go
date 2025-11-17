@@ -90,3 +90,19 @@ func all[T any]() []namedSDK[T] {
 	}
 	return result
 }
+
+// Merge Changesets together
+// FIXME: move this to core dagger: https://github.com/dagger/dagger/issues/11189
+// FIXME: this duplicates the same function in .dagger/util.go
+// (cross-module function sharing is a PITA)
+func changesetMerge(changesets ...*dagger.Changeset) *dagger.Changeset {
+	before := dag.Directory()
+	for _, changeset := range changesets {
+		before = before.WithDirectory("", changeset.Before())
+	}
+	after := before
+	for _, changeset := range changesets {
+		after = after.WithChanges(changeset)
+	}
+	return after.Changes(before)
+}

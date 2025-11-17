@@ -85,9 +85,7 @@
       "source": "toolchains/security",
       "arguments": [
         {
-          "function": [
-            "scanSource"
-          ],
+          "function": ["scanSource"],
           "name": "source",
           "ignore": [
             "bin",
@@ -141,6 +139,18 @@
     {
       "name": "sdks",
       "source": "toolchains/all-sdks"
+    },
+    {
+      "name": "engine-dev",
+      "source": "toolchains/engine-dev"
+    },
+    {
+      "name": "ci",
+      "source": "toolchains/ci"
+    },
+    {
+      "name": "cli",
+      "source": "toolchains/cli-dev"
     },
     {
       "name": "shellcheck",

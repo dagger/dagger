@@ -67,32 +67,32 @@ type EngineDev struct {
 	ClientDockerConfig *dagger.Secret
 }
 
-func (e *EngineDev) NetworkCidr() string {
-	return fmt.Sprintf("10.%d.0.0/16", e.SubnetNumber)
+func (dev *EngineDev) NetworkCidr() string {
+	return fmt.Sprintf("10.%d.0.0/16", dev.SubnetNumber)
 }
 
-func (e *EngineDev) IncrementSubnet() *EngineDev {
-	e.SubnetNumber++
-	return e
+func (dev *EngineDev) IncrementSubnet() *EngineDev {
+	dev.SubnetNumber++
+	return dev
 }
 
-func (e *EngineDev) WithBuildkitConfig(key, value string) *EngineDev {
-	e.BuildkitConfig = append(e.BuildkitConfig, key+"="+value)
-	return e
+func (dev *EngineDev) WithBuildkitConfig(key, value string) *EngineDev {
+	dev.BuildkitConfig = append(dev.BuildkitConfig, key+"="+value)
+	return dev
 }
 
-func (e *EngineDev) WithRace() *EngineDev {
-	e.Race = true
-	return e
+func (dev *EngineDev) WithRace() *EngineDev {
+	dev.Race = true
+	return dev
 }
 
-func (e *EngineDev) WithLogLevel(level string) *EngineDev {
-	e.LogLevel = level
-	return e
+func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
+	dev.LogLevel = level
+	return dev
 }
 
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
-func (e *EngineDev) Playground(
+func (dev *EngineDev) Playground(
 	ctx context.Context,
 	// Build from a custom base image
 	// +optional
@@ -111,7 +111,7 @@ func (e *EngineDev) Playground(
 		ctr = dag.Alpine().Container().WithEnvVariable("HOME", "/root")
 	}
 	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
-	svc, err := e.Service(
+	svc, err := dev.Service(
 		ctx,
 		"",       // name
 		"alpine", // distro
@@ -122,11 +122,11 @@ func (e *EngineDev) Playground(
 	if err != nil {
 		return nil, err
 	}
-	return e.InstallClient(ctx, ctr, svc)
+	return dev.InstallClient(ctx, ctr, svc)
 }
 
 // Build the engine container
-func (e *EngineDev) Container(
+func (dev *EngineDev) Container(
 	ctx context.Context,
 
 	// +optional
@@ -140,11 +140,11 @@ func (e *EngineDev) Container(
 	// +optional
 	tag string,
 ) (*dagger.Container, error) {
-	cfg, err := generateConfig(e.LogLevel)
+	cfg, err := generateConfig(dev.LogLevel)
 	if err != nil {
 		return nil, err
 	}
-	bkcfg, err := generateBKConfig(e.BuildkitConfig)
+	bkcfg, err := generateBKConfig(dev.BuildkitConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -153,11 +153,11 @@ func (e *EngineDev) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, e.Source, version, tag)
+	builder, err := build.NewBuilder(ctx, dev.Source, version, tag)
 	if err != nil {
 		return nil, err
 	}
-	builder = builder.WithRace(e.Race)
+	builder = builder.WithRace(dev.Race)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
@@ -199,7 +199,7 @@ func (e *EngineDev) Container(
 }
 
 // Create a test engine service
-func (e *EngineDev) Service(
+func (dev *EngineDev) Service(
 	ctx context.Context,
 	name string,
 	// +default="alpine"
@@ -212,7 +212,7 @@ func (e *EngineDev) Service(
 	metrics bool,
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
-	e = e.IncrementSubnet()
+	dev = dev.IncrementSubnet()
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
 		version, err := dag.Version().Version(ctx)
@@ -229,7 +229,7 @@ func (e *EngineDev) Service(
 		}
 	}
 
-	devEngine, err := e.Container(ctx, "", image, gpuSupport, "", "")
+	devEngine, err := dev.Container(ctx, "", image, gpuSupport, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func (e *EngineDev) Service(
 		Args: []string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", "dagger-dev",
-			"--network-cidr", e.NetworkCidr(),
+			"--network-cidr", dev.NetworkCidr(),
 		},
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
@@ -261,7 +261,7 @@ func (e *EngineDev) Service(
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (e *EngineDev) InstallClient(
+func (dev *EngineDev) InstallClient(
 	ctx context.Context,
 	// The client container to configure
 	client *dagger.Container,
@@ -271,7 +271,7 @@ func (e *EngineDev) InstallClient(
 ) (*dagger.Container, error) {
 	if service == nil {
 		var err error
-		service, err = e.Service(
+		service, err = dev.Service(
 			ctx,
 			"",           // name
 			DistroAlpine, // distro
@@ -295,7 +295,7 @@ func (e *EngineDev) InstallClient(
 		WithMountedFile(cliPath, dag.DaggerCli().Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithExec([]string{"ln", "-s", cliPath, "/usr/local/bin/dagger"})
-	if cfg := e.ClientDockerConfig; cfg != nil {
+	if cfg := dev.ClientDockerConfig; cfg != nil {
 		client = client.WithMountedSecret(
 			"${HOME}/.docker/config.json",
 			cfg,
@@ -307,8 +307,8 @@ func (e *EngineDev) InstallClient(
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (e *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	playground, err := e.Playground(ctx, nil, false, false, false)
+func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
+	playground, err := dev.Playground(ctx, nil, false, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -320,18 +320,18 @@ func (e *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (e *EngineDev) GraphqlSchema(
+func (dev *EngineDev) GraphqlSchema(
 	ctx context.Context,
 	// +optional
 	version string,
 ) (*dagger.File, error) {
-	playground, err := e.Playground(ctx, nil, false, false, false)
+	playground, err := dev.Playground(ctx, nil, false, false, false)
 	if err != nil {
 		return nil, err
 	}
 	schemaPath := "schema.graphqls"
 	schema := playground.
-		WithFile("/usr/local/bin/introspect", e.IntrospectionTool()).
+		WithFile("/usr/local/bin/introspect", dev.IntrospectionTool()).
 		WithExec(
 			[]string{"introspect", "--version=" + version, "schema"},
 			dagger.ContainerWithExecOpts{RedirectStdout: schemaPath},
@@ -341,18 +341,18 @@ func (e *EngineDev) GraphqlSchema(
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (e *EngineDev) IntrospectionTool() *dagger.File {
+func (dev *EngineDev) IntrospectionTool() *dagger.File {
 	return dag.
-		Go(dagger.GoOpts{Source: e.Source}).
+		Go(dagger.GoOpts{Source: dev.Source}).
 		Binary("./cmd/introspect")
 }
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "engine.json"
-func (e *EngineDev) ConfigSchema(filename string) *dagger.File {
+func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 	schemaFilename := strings.TrimSuffix(filename, ".json") + ".schema.json"
 	// This tool has runtime dependencies on the engine source code itself
-	return dag.Go(dagger.GoOpts{Source: e.Source}).
+	return dag.Go(dagger.GoOpts{Source: dev.Source}).
 		Env().
 		WithExec(
 			[]string{"go", "run", "./cmd/json-schema", filename},
@@ -363,8 +363,8 @@ func (e *EngineDev) ConfigSchema(filename string) *dagger.File {
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (e *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
-	withGoGenerate := dag.Go(dagger.GoOpts{Source: e.Source}).Env().
+func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
+	withGoGenerate := dag.Go(dagger.GoOpts{Source: dev.Source}).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
@@ -374,7 +374,7 @@ func (e *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		Directory(".")
-	changes := changes(e.Source, withGoGenerate, []string{"github.com"})
+	changes := changes(dev.Source, withGoGenerate, []string{"github.com"})
 	return changes, nil
 }
 
@@ -433,8 +433,8 @@ type targetResult struct {
 }
 
 // +check
-func (e *EngineDev) ReleaseDryRun(ctx context.Context) error {
-	return e.Publish(
+func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
+	return dev.Publish(
 		ctx,
 		"dagger-engine.dev", // image
 		// FIXME: why not from HEAD like the SDKs?
@@ -447,7 +447,7 @@ func (e *EngineDev) ReleaseDryRun(ctx context.Context) error {
 
 // Publish all engine images to a registry
 // +cache="session"
-func (e *EngineDev) Publish(
+func (dev *EngineDev) Publish(
 	ctx context.Context,
 
 	// Image target to push to
@@ -464,17 +464,17 @@ func (e *EngineDev) Publish(
 	// +optional
 	registryPassword *dagger.Secret,
 ) error {
-	targetResults, err := e.buildTargets(ctx, tag)
+	targetResults, err := dev.buildTargets(ctx, tag)
 	if err != nil {
 		return err
 	}
 	if dryRun {
 		return nil
 	}
-	return e.pushTargets(ctx, targetResults, image, registryUsername, registryPassword)
+	return dev.pushTargets(ctx, targetResults, image, registryUsername, registryPassword)
 }
 
-func (e *EngineDev) buildTargets(ctx context.Context, tags []string) ([]targetResult, error) {
+func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]targetResult, error) {
 	targetResults := make([]targetResult, len(targets))
 	jobs := parallel.New()
 	for i, target := range targets {
@@ -487,7 +487,7 @@ func (e *EngineDev) buildTargets(ctx context.Context, tags []string) ([]targetRe
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := e.Container(ctx, platform, target.Image, target.GPUSupport, "", "")
+					ctr, err := dev.Container(ctx, platform, target.Image, target.GPUSupport, "", "")
 					if err != nil {
 						return err
 					}
@@ -507,7 +507,7 @@ func (e *EngineDev) buildTargets(ctx context.Context, tags []string) ([]targetRe
 	return targetResults, nil
 }
 
-func (e *EngineDev) pushTargets(
+func (dev *EngineDev) pushTargets(
 	ctx context.Context,
 	targetResults []targetResult,
 	image string,

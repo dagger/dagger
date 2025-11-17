@@ -221,9 +221,10 @@ func (t PhpSdkDev) ReleaseDryRun(
 	)
 }
 
+// Get v1.2.3 from sdk/php/v1.2.3
 func (t PhpSdkDev) VersionFromTag(tag string) string {
 	prefix := strings.TrimRight(t.SourcePath, "/") + "/"
-	return strings.TrimPrefix(t.SourcePath, prefix)
+	return strings.TrimPrefix(tag, prefix)
 }
 
 // Publish the PHP SDK
