@@ -70,6 +70,8 @@ class Module:
         self._objects: dict[str, ObjectType] = {}
         self._enums: dict[str, type[enum.Enum]] = {}
         self._main: ObjectType | None = None
+        # Module description (used by AST loader when parent module is not importable)
+        self._module_description: str | None = None
         # Escape hatch if there's too much noise from showing stack traces
         # from exceptions raised in functions by default. Not documented
         # intentionally for now.
@@ -147,7 +149,10 @@ class Module:
                     obj_type.get_constructor(self._converter)
 
                 # Module description from main object's parent module
-                if desc := get_parent_module_doc(obj_type.cls):
+                # For AST-loaded modules, use the stored description
+                if self._module_description is not None:
+                    mod = mod.with_description(self._module_description)
+                elif desc := get_parent_module_doc(obj_type.cls):
                     mod = mod.with_description(desc)
 
             # Object/interface type

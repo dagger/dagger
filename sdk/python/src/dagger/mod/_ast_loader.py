@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from dagger.mod._exceptions import ModuleLoadError
-from dagger.mod._module import Module
+from dagger.mod._module import CHECK_DEF_KEY, Module
 
 logger = logging.getLogger(__package__)
 
@@ -37,9 +37,9 @@ class ClassInfo:
     fields: dict[str, "FieldInfo"]
     methods: dict[str, "MethodInfo"]
     is_enum: bool = False
-    enum_members: dict[str, tuple[Any, str | None]] = dataclasses.field(
+    enum_members: dict[str, tuple[Any, str | None, str | None]] = dataclasses.field(
         default_factory=dict
-    )
+    )  # (value, description, deprecated)
 
 
 @dataclasses.dataclass
@@ -53,6 +53,7 @@ class FieldInfo:
     is_dagger_field: bool
     deprecated: str | None
     field_name: str | None  # Alternative name from mod.field(name=...)
+    init: bool = True  # Whether field should be in constructor (from mod.field(init=...))
 
 
 @dataclasses.dataclass
@@ -69,6 +70,7 @@ class MethodInfo:
     deprecated: str | None
     function_name: str | None  # Alternative name from mod.function(name=...)
     cache: str | None
+    check: bool = False  # Whether it has @check decorator
 
 
 @dataclasses.dataclass
@@ -79,6 +81,12 @@ class ParamInfo:
     type_annotation: str | None
     has_default: bool
     default_value: Any  # Can be any Python value including None
+    # Annotated metadata
+    doc: str | None = None  # From Doc()
+    api_name: str | None = None  # From Name()
+    default_path: str | None = None  # From DefaultPath()
+    ignore: list[str] | None = None  # From Ignore()
+    deprecated: str | None = None  # From Deprecated()
 
 
 def get_entry_point() -> importlib.metadata.EntryPoint:
@@ -207,6 +215,94 @@ def get_type_annotation(node: ast.expr | None) -> str | None:
         return None
 
 
+def parse_annotated_metadata(
+    annotation_node: ast.expr | None,
+) -> dict[str, Any]:
+    """Extract metadata from Annotated type hints.
+
+    Parses Doc(), Name(), DefaultPath(), Ignore(), and Deprecated() from Annotated.
+
+    Returns
+    -------
+        Dict with keys: doc, api_name, default_path, ignore, deprecated
+    """
+    metadata = {
+        "doc": None,
+        "api_name": None,
+        "default_path": None,
+        "ignore": None,
+        "deprecated": None,
+    }
+
+    if annotation_node is None:
+        return metadata
+
+    # Check if this is an Annotated type: Annotated[Type, metadata...]
+    if not isinstance(annotation_node, ast.Subscript):
+        return metadata
+
+    # Check if it's Annotated (could be typing.Annotated or just Annotated)
+    is_annotated = False
+    if isinstance(annotation_node.value, ast.Name):
+        is_annotated = annotation_node.value.id == "Annotated"
+    elif isinstance(annotation_node.value, ast.Attribute):
+        is_annotated = annotation_node.value.attr == "Annotated"
+
+    if not is_annotated:
+        return metadata
+
+    # Extract the slice which contains [Type, metadata...]
+    # In Python 3.9+, slice can be a Tuple or single element
+    if isinstance(annotation_node.slice, ast.Tuple):
+        # Annotated[Type, metadata1, metadata2, ...]
+        # Skip first element (the actual type), parse the rest
+        metadata_nodes = annotation_node.slice.elts[1:]
+    else:
+        # Single argument after type (shouldn't happen with Annotated, but handle it)
+        return metadata
+
+    # Parse each metadata node
+    for meta_node in metadata_nodes:
+        if not isinstance(meta_node, ast.Call):
+            continue
+
+        # Get the name of the metadata function
+        meta_name = None
+        if isinstance(meta_node.func, ast.Name):
+            meta_name = meta_node.func.id
+        elif isinstance(meta_node.func, ast.Attribute):
+            meta_name = meta_node.func.attr
+
+        if meta_name is None:
+            continue
+
+        # Extract the value based on metadata type
+        try:
+            if meta_name == "Doc" and meta_node.args:
+                # Doc("description")
+                metadata["doc"] = ast.literal_eval(meta_node.args[0])
+            elif meta_name == "Name" and meta_node.args:
+                # Name("api_name")
+                metadata["api_name"] = ast.literal_eval(meta_node.args[0])
+            elif meta_name == "DefaultPath" and meta_node.args:
+                # DefaultPath("path")
+                metadata["default_path"] = ast.literal_eval(meta_node.args[0])
+            elif meta_name == "Ignore" and meta_node.args:
+                # Ignore(["pattern1", "pattern2"])
+                metadata["ignore"] = ast.literal_eval(meta_node.args[0])
+            elif meta_name == "Deprecated":
+                # Deprecated() or Deprecated("reason")
+                if meta_node.args:
+                    metadata["deprecated"] = ast.literal_eval(meta_node.args[0])
+                else:
+                    metadata["deprecated"] = ""  # Empty string means deprecated without reason
+        except (ValueError, TypeError):
+            # Skip if we can't evaluate the literal
+            continue
+
+    return metadata
+
+
 def extract_docstring(node: ast.FunctionDef | ast.ClassDef | ast.Module) -> str | None:
     """Extract docstring from a node."""
     if (
@@ -219,6 +315,62 @@ def extract_docstring(node: ast.FunctionDef | ast.ClassDef | ast.Module) -> str 
     return None
 
 
+def extract_enum_member_docstring(
+    class_body: list[ast.stmt], index: int
+) -> tuple[str | None, str | None]:
+    """Extract docstring and deprecation from enum member.
+
+    Returns
+    -------
+        Tuple of (description, deprecated)
+    """
+    next_idx = index + 1
+    if next_idx >= len(class_body):
+        return None, None
+
+    next_stmt = class_body[next_idx]
+    if not (
+        isinstance(next_stmt, ast.Expr)
+        and isinstance(next_stmt.value, ast.Constant)
+        and isinstance(next_stmt.value.value, str)
+    ):
+        return None, None
+
+    doc_text = next_stmt.value.value.strip()
+
+    # Parse for description and deprecated directive
+    description_lines: list[str] = []
+    deprecated_lines: list[str] = []
+    lines = doc_text.splitlines()
+    it = iter(enumerate(lines))
+
+    for _, raw_line in it:
+        stripped = raw_line.strip()
+        if stripped.startswith(".. deprecated::"):
+            # Capture first line after the directive
+            remainder = stripped[len(".. deprecated::") :].strip()
+            if remainder:
+                deprecated_lines.append(remainder)
+            # Grab any indented continuation lines
+            for _, cont in it:
+                cont_stripped = cont.strip()
+                if not cont_stripped:
+                    continue
+                if cont.startswith(("   ", "\t")):
+                    deprecated_lines.append(cont_stripped)
+                    continue
+                # Hit a non-indented line: feed it back into description
+                description_lines.append(cont_stripped)
+                break
+        else:
+            description_lines.append(stripped)
+
+    description = "\n".join(line for line in description_lines if line).strip()
+    deprecated = "\n".join(line for line in deprecated_lines if line).strip()
+
+    return description or None, deprecated or None
+
+
 def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
     """Parse a method definition from AST."""
     is_function = False
@@ -227,13 +379,18 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
     deprecated = None
     function_name = None
     cache = None
+    check = False
 
-    # Check for @function and @classmethod decorators
+    # Check for @function, @classmethod, and @check decorators
     for decorator in node.decorator_list:
-        # Check if it's a simple Name node for @classmethod
-        if isinstance(decorator, ast.Name) and decorator.id == "classmethod":
-            is_classmethod = True
-            continue
+        # Check if it's a simple Name node for @classmethod or @check
+        if isinstance(decorator, ast.Name):
+            if decorator.id == "classmethod":
+                is_classmethod = True
+                continue
+            if decorator.id == "check":
+                check = True
+                continue
 
         dec_name, dec_kwargs = parse_decorator_call(decorator)
         if dec_name == "function":
@@ -241,7 +398,8 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
             deprecated = dec_kwargs.get("deprecated")
             function_name = dec_kwargs.get("name")
             cache = dec_kwargs.get("cache")
-            break
+        elif dec_name == "check":
+            check = True
 
     # Parse parameters
     parameters = []
@@ -250,11 +408,19 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
         if arg.arg in ("self", "cls"):
             continue
 
+        # Extract Annotated metadata if present
+        metadata = parse_annotated_metadata(arg.annotation)
+
         param_info = ParamInfo(
             name=arg.arg,
             type_annotation=get_type_annotation(arg.annotation),
             has_default=False,
             default_value=None,
+            doc=metadata["doc"],
+            api_name=metadata["api_name"],
+            default_path=metadata["default_path"],
+            ignore=metadata["ignore"],
+            deprecated=metadata["deprecated"],
         )
         parameters.append(param_info)
 
@@ -291,6 +457,7 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
         deprecated=deprecated,
         function_name=function_name,
         cache=cache,
+        check=check,
     )
 
 
@@ -326,7 +493,7 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
     methods = {}
     enum_members = {}
 
-    for item in node.body:
+    for i, item in enumerate(node.body):
         if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
             # Field with type annotation
             field_name = item.target.id
@@ -336,6 +503,7 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
             is_dagger_field = False
             field_deprecated = None
             field_alt_name = None
+            field_init = True  # Default to True
             default_value = None
             field_default = None
 
@@ -363,6 +531,9 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                             elif keyword.arg == "name":
                                 with contextlib.suppress(Exception):
                                     field_alt_name = ast.literal_eval(keyword.value)
+                            elif keyword.arg == "init":
+                                with contextlib.suppress(Exception):
+                                    field_init = ast.literal_eval(keyword.value)
                             elif keyword.arg == "default":
                                 # Extract default value from field()
                                 with contextlib.suppress(Exception):
@@ -394,6 +565,7 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                 is_dagger_field=is_dagger_field,
                 deprecated=field_deprecated,
                 field_name=field_alt_name,
+                init=field_init,
             )
 
         elif isinstance(item, ast.Assign) and is_enum:
@@ -402,16 +574,14 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                 if isinstance(target, ast.Name):
                     member_name = target.id
                     member_value = None
-                    member_doc = None
 
                     with contextlib.suppress(Exception):
                         member_value = ast.literal_eval(item.value)
 
-                    # Look for docstring after the assignment
-                    # (This is a simplified approach; proper enum
-                    # docstrings are more complex)
+                    # Extract docstring and deprecation from next statement
+                    description, deprecated = extract_enum_member_docstring(node.body, i)
 
-                    enum_members[member_name] = (member_value, member_doc)
+                    enum_members[member_name] = (member_value, description, deprecated)
 
         elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if not item.name.startswith("_"):  # Skip private methods
@@ -431,14 +601,22 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
     )
 
 
-def analyze_source_file(file_path: Path) -> dict[str, ClassInfo]:
-    """Analyze a Python source file and extract class information."""
+def analyze_source_file(file_path: Path) -> tuple[dict[str, ClassInfo], str | None]:
+    """Analyze a Python source file and extract class information.
+
+    Returns
+    -------
+        Tuple of (classes_dict, module_docstring)
+    """
     try:
         source = file_path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(file_path))
     except Exception as e:  # noqa: BLE001
         logger.warning("Failed to parse %s: %s", file_path, e)
-        return {}
+        return {}, None
+
+    # Extract module docstring
+    module_docstring = extract_docstring(tree)
 
     classes = {}
     for node in ast.walk(tree):
@@ -450,7 +628,7 @@ def analyze_source_file(file_path: Path) -> dict[str, ClassInfo]:
             ):
                 classes[class_info.name] = class_info
 
-    return classes
+    return classes, module_docstring
 
 
 def create_safe_namespace() -> dict[str, Any]:
@@ -559,6 +737,9 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
                 field_kwargs["deprecated"] = field_info.deprecated
             if field_info.field_name:
                 field_kwargs["name"] = field_info.field_name
+            if not field_info.init:
+                # Only set init=False if explicitly set (default is True)
+                field_kwargs["init"] = False
 
             class_attrs[field_name] = mod.field(**field_kwargs)
         elif field_info.has_default:
@@ -572,6 +753,10 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
         # Create a mock function
         # We need to create a function with the right signature
         mock_func = create_mock_method(method_info, namespace)
+
+        # Set @check attribute before applying @function decorator
+        if method_info.check:
+            setattr(mock_func, CHECK_DEF_KEY, True)
 
         if method_info.is_function:
             # Wrap with @function decorator
@@ -647,11 +832,52 @@ def create_mock_method(method_info: MethodInfo, namespace: dict[str, Any]) -> An
         else:
             default = inspect.Parameter.empty
 
-        annotation = (
+        # Evaluate base annotation
+        base_annotation = (
             evaluate_annotation(param_info.type_annotation, namespace)
             if param_info.type_annotation
             else inspect.Parameter.empty
         )
+
+        # Wrap with Annotated if we have metadata
+        annotation = base_annotation
+        if base_annotation is not inspect.Parameter.empty:
+            metadata_items = []
+
+            # Add metadata in the correct order
+            if param_info.doc is not None:
+                Doc = namespace.get("Doc")  # noqa: N806
+                if Doc:
+                    metadata_items.append(Doc(param_info.doc))
+
+            if param_info.api_name is not None:
+                Name = namespace.get("Name")  # noqa: N806
+                if Name:
+                    metadata_items.append(Name(param_info.api_name))
+
+            if param_info.default_path is not None:
+                DefaultPath = namespace.get("DefaultPath")  # noqa: N806
+                if DefaultPath:
+                    metadata_items.append(DefaultPath(param_info.default_path))
+
+            if param_info.ignore is not None:
+                Ignore = namespace.get("Ignore")  # noqa: N806
+                if Ignore:
+                    metadata_items.append(Ignore(param_info.ignore))
+
+            if param_info.deprecated is not None:
+                Deprecated = namespace.get("Deprecated")  # noqa: N806
+                if Deprecated:
+                    if param_info.deprecated:
+                        metadata_items.append(Deprecated(param_info.deprecated))
+                    else:
+                        metadata_items.append(Deprecated())
+
+            # If we have metadata, wrap in Annotated
+            if metadata_items:
+                Annotated = namespace.get("Annotated")  # noqa: N806
+                if Annotated:
+                    annotation = Annotated[base_annotation, *metadata_items]
 
         param = inspect.Parameter(
             param_info.name,
@@ -713,10 +939,13 @@ def create_mock_enum(class_info: ClassInfo, mod: Module) -> type:
     """Create a mock enum class."""
     # Build enum members
     enum_dict = {}
-    for member_name, (member_value, _member_doc) in class_info.enum_members.items():
+    member_metadata: dict[str, tuple[str | None, str | None]] = {}
+
+    for member_name, (member_value, description, deprecated) in class_info.enum_members.items():
         if member_value is None:
             member_value = member_name  # Default value  # noqa: PLW2901
         enum_dict[member_name] = member_value
+        member_metadata[member_name] = (description, deprecated)
 
     if not enum_dict:
         # If no members found, create a dummy one
@@ -725,9 +954,26 @@ def create_mock_enum(class_info: ClassInfo, mod: Module) -> type:
     # Create enum class
     mock_enum = enum.Enum(class_info.name, enum_dict)  # type: ignore[misc]
 
-    # Set docstring
+    # Set class docstring
     if class_info.docstring:
         mock_enum.__doc__ = class_info.docstring
+
+    # Set member descriptions and deprecation
+    for member_name, (description, deprecated) in member_metadata.items():
+        if member_name in mock_enum.__members__:
+            member = mock_enum[member_name]
+            if description:
+                # Set member docstring (not all enum implementations support this)
+                try:
+                    member.__doc__ = description  # type: ignore[misc]
+                except (AttributeError, TypeError):
+                    pass
+            if deprecated:
+                # Set deprecation as attribute
+                try:
+                    member.deprecated = deprecated  # type: ignore[attr-defined]
+                except (AttributeError, TypeError):
+                    pass
 
     # Apply decorator
     return mod.enum_type(mock_enum)
@@ -765,11 +1011,14 @@ def load_module_from_ast(  # noqa: C901, PLR0912, PLR0915
 
     # Parse all files to extract class information
     all_classes: dict[str, ClassInfo] = {}
+    module_docstrings: dict[Path, str] = {}
     try:
         for file_path in module_files:
             logger.debug("AST loader: parsing %s", file_path)
-            classes = analyze_source_file(file_path)
+            classes, module_docstring = analyze_source_file(file_path)
             all_classes.update(classes)
+            if module_docstring:
+                module_docstrings[file_path] = module_docstring
             logger.debug("AST loader: found %d classes in %s", len(classes), file_path)
     except Exception as e:
         logger.exception("Failed to parse source files")
@@ -782,6 +1031,24 @@ def load_module_from_ast(  # noqa: C901, PLR0912, PLR0915
     try:
         mod = Module(main_name=main_name)
         logger.debug("AST loader: created Module instance with main_name=%s", main_name)
+
+        # Set module description from collected docstrings
+        # Prefer __init__.py docstring, otherwise use the first non-empty one
+        if module_docstrings:
+            # Look for __init__.py first
+            init_docstring = None
+            for file_path, docstring in module_docstrings.items():
+                if file_path.name == "__init__.py":
+                    init_docstring = docstring
+                    break
+
+            if init_docstring:
+                mod._module_description = init_docstring  # noqa: SLF001
+                logger.debug("AST loader: using __init__.py docstring as module description")
+            else:
+                # Use the first non-empty docstring
+                mod._module_description = next(iter(module_docstrings.values()))  # noqa: SLF001
+                logger.debug("AST loader: using first docstring as module description")
     except Exception as e:
         logger.exception("Failed to create Module instance")
         msg = f"Failed to create Module instance: {e}"
