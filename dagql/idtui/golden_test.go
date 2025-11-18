@@ -156,6 +156,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		// test that module function call errors are properly stamped with their origin
 		{Function: "call-failing-dep", Fail: true},
 		{Function: "call-bubbling-dep", Fail: true},
+		{Function: "fail-multi", Fail: true},
 
 		// FIXME: these constantly fail in CI/Dagger, but not against a local
 		// engine. spent a day investigating, don't have a good explanation. it

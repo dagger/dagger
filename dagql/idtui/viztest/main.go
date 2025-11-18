@@ -12,6 +12,7 @@ import (
 	"dagger/viztest/internal/dagger"
 	"dagger/viztest/internal/telemetry"
 
+	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -91,6 +92,36 @@ func (*Viztest) FailEffect() *dagger.Container {
 	return dag.Container().
 		From("alpine").
 		WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"})
+}
+
+// FailMulti bubbles up two error origins.
+// +cache="session"
+func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
+	p := pool.New().WithErrors()
+	ctx, span := Tracer().Start(ctx, "roll-up pseudo-check span",
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+		))
+	defer telemetry.End(span, func() error { return rerr })
+	p.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "sub-thing 1")
+		defer telemetry.End(span, func() error { return rerr })
+		_, err := dag.Container().
+			From("alpine").
+			WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
+			Sync(ctx)
+		return err
+	})
+	p.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "sub-thing 2")
+		defer telemetry.End(span, func() error { return rerr })
+		_, err := dag.Container().
+			From("alpine").
+			WithExec([]string{"sh", "-c", "echo this is another failing effect; exit 1"}).
+			Sync(ctx)
+		return err
+	})
+	return p.Wait()
 }
 
 // +cache="session"
