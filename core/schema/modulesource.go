@@ -2003,6 +2003,7 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 
 	// Load the config for all toolchains to populate ConfigToolchains
 	// We need to convert each toolchain into a config entry by loading it as a dependency
+	// Also preserve any existing Arguments configuration
 	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
 	for i, toolchain := range finalToolchains {
 		// Load as a dependency to get the proper config format
@@ -2021,6 +2022,14 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 		}
 		if len(tmpConfig.Dependencies) > 0 {
 			configToolchains[i] = tmpConfig.Dependencies[0]
+
+			// Preserve Arguments from the original ConfigToolchains if they exist
+			for _, origToolchain := range parentSrc.ConfigToolchains {
+				if origToolchain.Name == configToolchains[i].Name {
+					configToolchains[i].Arguments = origToolchain.Arguments
+					break
+				}
+			}
 		}
 	}
 	parentSrc.ConfigToolchains = configToolchains
@@ -2993,62 +3002,6 @@ func extractToolchainModules(mod *core.Module) []*core.Module {
 	return toolchainMods
 }
 
-// validateDefaultValueType validates that a default value matches the expected argument type
-func validateDefaultValueType(value any, typeDef *core.TypeDef) error {
-	// Handle optional types - unwrap to get the actual type
-	actualType := typeDef
-	if actualType.Optional {
-		// Optional types can be null
-		if value == nil {
-			return nil
-		}
-		// Create non-optional version for validation
-		actualType = typeDef.Clone()
-		actualType.Optional = false
-	}
-
-	switch actualType.Kind {
-	case core.TypeDefKindString:
-		if _, ok := value.(string); !ok {
-			return fmt.Errorf("expected string, got %T", value)
-		}
-	case core.TypeDefKindInteger:
-		// JSON unmarshals numbers as float64
-		if _, ok := value.(float64); !ok {
-			return fmt.Errorf("expected integer, got %T", value)
-		}
-	case core.TypeDefKindFloat:
-		if _, ok := value.(float64); !ok {
-			return fmt.Errorf("expected float, got %T", value)
-		}
-	case core.TypeDefKindBoolean:
-		if _, ok := value.(bool); !ok {
-			return fmt.Errorf("expected boolean, got %T", value)
-		}
-	case core.TypeDefKindList:
-		if actualType.AsList.Valid {
-			// Check if value is an array/slice
-			if _, ok := value.([]any); !ok {
-				return fmt.Errorf("expected array, got %T", value)
-			}
-			// Could validate element types here, but that's more complex
-			// For now, just check it's an array
-		}
-	case core.TypeDefKindObject, core.TypeDefKindInput:
-		// For objects/inputs, we expect a map
-		if _, ok := value.(map[string]any); !ok {
-			return fmt.Errorf("expected object, got %T", value)
-		}
-	case core.TypeDefKindEnum:
-		// Enums should be strings
-		if _, ok := value.(string); !ok {
-			return fmt.Errorf("expected enum value (string), got %T", value)
-		}
-	}
-
-	return nil
-}
-
 // applyArgumentConfigToFunction applies argument configuration overrides to a function
 func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.ModuleConfigArgument, functionChain []string) *core.Function {
 	fn = fn.Clone()
@@ -3092,7 +3045,8 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 					}
 
 					// Validate the type matches the argument type
-					if err := validateDefaultValueType(defaultValue, arg.TypeDef); err != nil {
+					_, err := arg.TypeDef.ToInput().Decoder().DecodeInput(defaultValue)
+					if err != nil {
 						// Log warning but don't fail - allow for flexibility
 						slog.Warn("default value type mismatch",
 							"function", fn.Name,
