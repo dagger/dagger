@@ -173,7 +173,7 @@ func (ContainerSuite) TestExecSync(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`, nil)
-	requireErrOut(t, err, `process "false" did not complete successfully`)
+	requireErrOut(t, err, "exit code: 1")
 }
 
 func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
