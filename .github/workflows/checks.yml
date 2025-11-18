@@ -13,8 +13,6 @@ name: Checks
   workflow_dispatch: {}
 permissions:
   contents: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
 jobs:
   checks:
     strategy:
