@@ -133,6 +133,12 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 			}
 		}
 	}
+
+	// set individual check Module field now so it's a consistent value between this
+	// mod and any toolchain mods
+	for _, check := range group.Checks {
+		check.Module = mod
+	}
 	return group, nil
 }
 
@@ -169,7 +175,6 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 				checks = append(checks, &Check{
 					Path:        []string{gqlFieldName(fn.Name)},
 					Description: fn.Description,
-					Module:      mod,
 				})
 				return
 			}

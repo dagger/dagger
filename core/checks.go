@@ -176,6 +176,7 @@ func (r *CheckGroup) Clone() *CheckGroup {
 	for i := range cp.Checks {
 		cp.Checks[i] = cp.Checks[i].Clone()
 	}
+	cp.Module = r.Module.Clone()
 	return &cp
 }
 
@@ -185,6 +186,7 @@ func (c *Check) Name() string {
 
 func (c *Check) Clone() *Check {
 	cp := *c
+	cp.Module = c.Module.Clone()
 	return &cp
 }
 
