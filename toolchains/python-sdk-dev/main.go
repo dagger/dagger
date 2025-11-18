@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 )
 
+// A toolchain to develop the Dagger Python SDK
 type PythonSdkDev struct {
 	// Python container to develop Python SDK
 	// +private
@@ -24,6 +25,7 @@ type PythonSdkDev struct {
 
 func New(
 	ctx context.Context,
+	// A workspace containing the SDK source code and other relevant files
 	// +defaultPath="/"
 	// +ignore=[
 	//   "*",
@@ -139,6 +141,7 @@ func (t PythonSdkDev) Typecheck(ctx context.Context) error {
 }
 
 // Mount a directory on the base container
+// +private
 func (t PythonSdkDev) WithDirectory(
 	// The directory to add
 	source *dagger.Directory,
@@ -179,7 +182,7 @@ func (t PythonSdkDev) TestSuite(
 	}
 }
 
-// Regenerate the Python SDK API
+// Regenerate the core Python client library
 func (t PythonSdkDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 	devContainer := t.Container
 
