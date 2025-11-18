@@ -1,0 +1,21 @@
+{
+  "name": "elixir-sdk-dev",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "github.com/vito/dang/dagger-sdk@e91e64a947436ac9342257de9f845b7f5dfa7639"
+  },
+  "dependencies": [
+    {
+      "name": "codegen",
+      "source": "../../cmd/codegen"
+    },
+    {
+      "name": "dagger-engine",
+      "source": "../../toolchains/engine-dev"
+    },
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    }
+  ]
+}
