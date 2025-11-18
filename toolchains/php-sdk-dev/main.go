@@ -32,7 +32,7 @@ type PhpSdkDev struct {
 func New(
 	// A directory with all the files needed to develop the SDK
 	// +defaultPath="/"
-	// +ignore=["*", "!sdk/php", "!docs/doctum-config.php"]
+	// +ignore=["*", "!sdk/php", "!docs/doctum-config.php", "!docs/static/reference/php", "sdk/php/.changes"]
 	workspace *dagger.Directory,
 	// The path of the SDK source in the workspace
 	// +default="sdk/php"
@@ -135,6 +135,8 @@ func (t PhpSdkDev) Test(ctx context.Context) error {
 
 // Regenerate the PHP SDK API + docs
 func (t *PhpSdkDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
+	// TODO: currently broken, the changeset returns modified path even if nothing
+	// changed...
 	t, err := t.
 		WithGeneratedClient().
 		WithGeneratedDocs(ctx)
@@ -150,8 +152,6 @@ func (t *PhpSdkDev) Changes() *dagger.Changeset {
 
 func (t *PhpSdkDev) WithGeneratedClient() *PhpSdkDev {
 	relLayer := t.DevContainer(true).
-		WithoutDirectory("generated").
-		WithDirectory("generated", dag.Directory()).
 		// FIXME: why not inject the right dagger binary, instead of leaking this env var?
 		WithExec([]string{"sh", "-c", "$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php"}).
 		Directory(".").
@@ -160,9 +160,13 @@ func (t *PhpSdkDev) WithGeneratedClient() *PhpSdkDev {
 				"vendor",
 			},
 		})
+	
+	// TODO: There's a problem with the changeset, the `generated` directory is considered
+	// modified even if its the same.
 	t.Workspace = t.Workspace.
-		WithoutDirectory("sdk/php").
+		// Merge rel layer inside the current workspace
 		WithDirectory("sdk/php", relLayer)
+
 	return t
 }
 
@@ -191,8 +195,9 @@ func (t *PhpSdkDev) WithGeneratedDocs(ctx context.Context) (*PhpSdkDev, error) {
 		// remove the renderer.index file, which seems to not be required to render the docs
 		WithoutFile("renderer.index")
 	t.Workspace = t.Workspace.
-		WithoutDirectory("docs/static/reference/php/").
-		WithDirectory("docs/static/reference/php/", relLayer)
+		// Merge relative layer with the current workspace
+		WithDirectory("docs/static/reference/php", relLayer)
+
 	return t, nil
 }
 
