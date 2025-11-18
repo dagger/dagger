@@ -57,7 +57,7 @@ type TypescriptSdkDev {
 
 	"""Test the SDK with the given version of NodeJS"""
 	pub testNodejs(nodeVersion: String!): Void! {
-    nodejsDevContainer(nodeVersion).
+    daggerEngine().installClient(nodejsDevContainer(nodeVersion)).
     withExec(["yarn", "--cwd", sourcePath, "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"]).
     sync
     null
