@@ -2757,7 +2757,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 		err = (func() (rerr error) {
 			ctx, span := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
-			defer telemetry.End(span, func() error { return rerr })
+			defer telemetry.EndWithCause(span, &rerr)
 			getModDefFn, err := core.NewModFunction(
 				ctx,
 				mod,
@@ -2829,6 +2829,28 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if typeDefsEnabled && isSelfCallsEnabled(srcInstContentHashed) {
 		// append module types to the module itself so self calls are possible
 		mod.Deps = mod.Deps.Append(mod)
+	}
+
+	// Verify if lazy loading is disabled ; if so, load the runtime eagerly.
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+
+	if clientMetadata.EagerRuntime && !mod.Runtime.Valid {
+		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+		if err != nil {
+			return nil, err
+		}
+		mod.Runtime = dagql.NonNull(runtime)
+
+		// Force load the runtime to fill the cache
+		var runtimeRes dagql.ID[*core.Container]
+		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
+			Field: "sync",
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	return mod, nil
@@ -3462,7 +3484,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 // load the given module source's dependencies as modules
 func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.ModDeps, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {

@@ -70,14 +70,16 @@ func getCustomError(err error) error {
 
 	ext := gqlErr.Extensions
 
+	lessNoisyErr := gqlExtendedError{gqlErr}
+
 	typ, ok := ext["_type"].(string)
 	if !ok {
-		return gqlExtendedError{gqlErr}
+		return lessNoisyErr
 	}
 
 	if typ == "EXEC_ERROR" {
 		e := &ExecError{
-			original: gqlErr,
+			original: lessNoisyErr,
 		}
 		if code, ok := ext["exitCode"].(float64); ok {
 			e.ExitCode = int(code)
@@ -98,12 +100,12 @@ func getCustomError(err error) error {
 		return e
 	}
 
-	return gqlExtendedError{gqlErr}
+	return lessNoisyErr
 }
 
 // ExecError is an API error from an exec operation.
 type ExecError struct {
-	original *gqlerror.Error
+	original extendedError
 	Cmd      []string
 	ExitCode int
 	Stdout   string
@@ -117,7 +119,7 @@ func (e *ExecError) Error() string {
 }
 
 func (e *ExecError) Extensions() map[string]any {
-	return e.original.Extensions
+	return e.original.Extensions()
 }
 
 func (e *ExecError) Message() string {

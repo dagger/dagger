@@ -19,7 +19,7 @@ type PackageInfo struct {
 
 func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.Package, _ *token.FileSet, rerr error) {
 	ctx, span := trace.Tracer().Start(ctx, "loadPackage")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	fset := token.NewFileSet()
 	pkgs, err := packages.Load(&packages.Config{

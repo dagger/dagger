@@ -58,7 +58,8 @@ var (
 
 	force bool
 
-	autoApply bool
+	autoApply    bool
+	eagerRuntime bool
 )
 
 const (
@@ -117,6 +118,9 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
 	flags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+
+	// Add the eager module loading flag to disable lazy load on runtime.
+	flags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
 }
 
 func init() {
@@ -639,7 +643,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			if developRecursive {
 				ctx, span := Tracer().Start(ctx, "load module: "+modRef, telemetry.Encapsulate())
 				err := collectLocalModulesRecursive(ctx, modSrc, modSrcs)
-				telemetry.End(span, func() error { return err })
+				telemetry.EndWithCause(span, &err)
 				if err != nil {
 					return err
 				}
@@ -648,7 +652,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			}
 
 			ctx, span := Tracer().Start(ctx, "develop")
-			defer telemetry.End(span, func() error { return err })
+			defer telemetry.EndWithCause(span, &err)
 
 			eg, ctx := errgroup.WithContext(ctx)
 			for srcRootPath, modSrc := range modSrcs {
@@ -659,7 +663,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				}
 				ctx, span := Tracer().Start(ctx, "develop "+name, telemetry.Encapsulate())
 				eg.Go(func() (err error) {
-					defer telemetry.End(span, func() error { return err })
+					defer telemetry.EndWithCause(span, &err)
 
 					if engineVersion := getCompatVersion(); engineVersion != "" {
 						modSrc = modSrc.WithEngineVersion(engineVersion)

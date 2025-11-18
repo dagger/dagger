@@ -32,7 +32,7 @@ func (loader Docker) Loader(ctx context.Context) (*Loader, error) {
 
 func (loader Docker) loadTarball(ctx context.Context, name string, tarball io.Reader) (rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "load "+name)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	cmd := exec.CommandContext(ctx, loader.Cmd, "load")
 	cmd.Stdin = tarball
@@ -57,7 +57,7 @@ func (loader Docker) loadTarball(ctx context.Context, name string, tarball io.Re
 
 func (loader Docker) saveTarball(ctx context.Context, name string, tarball io.Writer) (rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "save "+name)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	cmd := exec.CommandContext(ctx, "docker", "save", name)
 	cmd.Stdout = tarball

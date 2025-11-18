@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -134,9 +135,9 @@ func listChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.C
 
 // 'dagger checks' (runs by default)
 func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Command) error {
-	ctx, shellSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
-	defer telemetry.End(shellSpan, func() error { return nil })
-	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
+	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
+	defer zoomSpan.End()
+	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
@@ -156,7 +157,7 @@ func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Comm
 		}
 	}
 	if failed > 0 {
-		return ExitError{Code: 1, Original: fmt.Errorf("%d checks failed", failed)}
+		return idtui.ExitError{Code: 1, Original: fmt.Errorf("%d checks failed", failed)}
 	}
 	return nil
 }

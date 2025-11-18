@@ -22,8 +22,4 @@ Expected stderr:
   ┃ this is a failing effect
   ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
 
-Error: input: container.from.withExec.id process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
-Stdout:
-this is a failing effect
-
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

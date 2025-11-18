@@ -24,9 +24,4 @@ Expected stderr:
   ┃ and then failing
   ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
 
-Error: input: viztest.failLog process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
-Stdout:
-im doing a lot of work
-and then failing
-
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

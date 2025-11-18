@@ -143,6 +143,9 @@ func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, id
 		if err != nil {
 			return err
 		}
+		if item == nil {
+			continue
+		}
 
 		ctx := dagql.ContextWithID(ctx, item.ID())
 

@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/shurcooL/graphql"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 
 	"github.com/dagger/dagger/engine"
@@ -42,23 +43,21 @@ func NewClient(ctx context.Context) (*Client, error) {
 
 	httpClient := &http.Client{}
 
-	// Always prefer oauth if available. If not and a DAGGER_CLOUD_TOKEN
-	// is set then use Basic auth
-	tokenSource, err := auth.TokenSource(ctx)
-	if err != nil {
-		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
-			httpClient.Transport, err = auth.DaggerCloudTransport(ctx, cloudToken)
-			if err != nil {
-				return nil, err
-			}
-
-			return &Client{
-				u:           u,
-				h:           httpClient,
-				engineToken: cloudToken,
-			}, nil
+	if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
+		httpClient.Transport, err = auth.DaggerCloudTransport(ctx, cloudToken)
+		if err != nil {
+			return nil, err
 		}
 
+		return &Client{
+			u:           u,
+			h:           httpClient,
+			engineToken: cloudToken,
+		}, nil
+	}
+
+	tokenSource, err := auth.TokenSource(ctx)
+	if err != nil {
 		return nil, err
 	}
 	httpClient = oauth2.NewClient(ctx, tokenSource)
@@ -103,6 +102,7 @@ type EngineRequest struct {
 	ExecCmd              []string `json:"exec_cmd,omitempty"`
 	ClientID             string   `json:"client_id,omitempty"`
 	MinimumEngineVersion string   `json:"minimum_engine_version,omitempty"`
+	TraceID              string   `json:"trace_id,omitempty"`
 }
 
 type EngineSpec struct {
@@ -165,6 +165,7 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 	}
 
 	req.MinimumEngineVersion = engine.MinimumEngineVersion
+	req.TraceID = trace.SpanContextFromContext(ctx).TraceID().String()
 	engineSpec := &EngineSpec{
 		Image:         "registry.dagger.io/engine:" + tag,
 		EngineRequest: req,

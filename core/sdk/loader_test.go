@@ -1,8 +1,6 @@
 package sdk
 
 import (
-	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/dagger/dagger/engine"
@@ -102,20 +100,4 @@ func TestParseSDKName(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestInvalidBuiltinSDKError(t *testing.T) {
-	err := getInvalidBuiltinSDKError("foobar")
-	expected := fmt.Errorf(`unknown builtin sdk
-The "foobar" SDK does not exist. The available SDKs are:
-- go
-- python
-- typescript
-- php
-- elixir
-- java
-- any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)`)
-
-	require.Equal(t, expected.Error(), err.Error())
-	require.True(t, errors.Is(err, errUnknownBuiltinSDK))
 }

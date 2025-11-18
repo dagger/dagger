@@ -8,8 +8,9 @@ import (
 
 func initModuleParams(a []string) client.Params {
 	params := client.Params{
-		ExecCmd:  a,
-		Function: functionName(a),
+		ExecCmd:      a,
+		Function:     functionName(a),
+		EagerRuntime: eagerRuntime,
 	}
 
 	if !moduleNoURL {

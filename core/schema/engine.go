@@ -21,6 +21,7 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Engine]{
 		dagql.Func("clients", s.clients).
+			DoNotCache("Clients can connect and disconnect at any time").
 			Doc("The list of connected client IDs"),
 	}.Install(srv)
 

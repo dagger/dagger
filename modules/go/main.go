@@ -12,6 +12,7 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/modules/go/internal/dagger"
+	"github.com/dagger/dagger/modules/go/internal/telemetry"
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -545,11 +546,13 @@ func (p *Go) CheckTidy(
 			if err != nil {
 				return err
 			}
-			noChange, err := diffTidy.IsEmpty(ctx)
+			changes, err := diffTidy.AsPatch().Contents(ctx)
 			if err != nil {
 				return err
 			}
-			if !noChange {
+			if len(changes) > 0 {
+				stdio := telemetry.SpanStdio(ctx, "")
+				fmt.Fprint(stdio.Stderr, changes)
 				return fmt.Errorf("%s: 'go mod tidy' must be run", mod)
 			}
 			return nil

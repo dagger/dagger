@@ -23,6 +23,4 @@ Expected stderr:
 │ ! process "false" did not complete successfully: exit code: 1
 ╰╴○ withExec sleep 1 X.Xs
 
-Error: input: typescript.pending process "false" did not complete successfully: exit code: 1
-
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

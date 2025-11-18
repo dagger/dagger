@@ -20,7 +20,7 @@ func (sdk *runtimeModule) Runtime(
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (inst dagql.ObjectResult[*core.Container], rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {

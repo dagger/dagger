@@ -72,8 +72,23 @@ type ExtendedError interface {
 // named error return value, conventionally `rerr`.
 //
 //	defer telemetry.End(span, func() error { return rerr })
+//
+// Deprecated: use EndWithCause instead.
 func End(span trace.Span, fn func() error) {
-	if err := fn(); err != nil {
+	err := fn()
+	EndWithCause(span, &err)
+}
+
+// EndWithCause is a helper for ending a span and tracking the span as the error
+// origin if errPtr points to an error that does not already have an origin.
+//
+// It is optimized for use as a defer one-liner with a function that has a
+// named error return value, conventionally `rerr`.
+//
+//	defer telemetry.EndWithCause(span, &rerr)
+func EndWithCause(span trace.Span, errPtr *error) {
+	if errPtr != nil && *errPtr != nil {
+		err := *errPtr
 		var extErr ExtendedError
 		if errors.As(err, &extErr) {
 			// Look for an error origin embedded in error extensions, and link to it.
@@ -91,6 +106,19 @@ func End(span trace.Span, fn func() error) {
 					},
 				})
 			}
+		} else {
+			tracked := originTrackedError{
+				original:    err,
+				propagation: AnyMapCarrier{},
+			}
+			Propagator.Inject(
+				trace.ContextWithSpanContext(
+					context.Background(),
+					span.SpanContext(),
+				),
+				tracked.propagation,
+			)
+			*errPtr = tracked
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -98,4 +126,37 @@ func End(span trace.Span, fn func() error) {
 		span.SetStatus(codes.Ok, "")
 	}
 	span.End()
+}
+
+// ErrorOrigin extracts the origin span context from an error, if any.
+func ErrorOrigin(err error) trace.SpanContext {
+	var extErr ExtendedError
+	if errors.As(err, &extErr) {
+		return trace.SpanContextFromContext(
+			Propagator.Extract(
+				context.Background(),
+				AnyMapCarrier(extErr.Extensions()),
+			),
+		)
+	}
+	return trace.SpanContext{}
+}
+
+type originTrackedError struct {
+	original    error
+	propagation AnyMapCarrier
+}
+
+func (e originTrackedError) Unwrap() error {
+	return e.original
+}
+
+var _ ExtendedError = originTrackedError{}
+
+func (e originTrackedError) Error() string {
+	return e.original.Error()
+}
+
+func (e originTrackedError) Extensions() map[string]any {
+	return e.propagation
 }

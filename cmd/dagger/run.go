@@ -91,11 +91,11 @@ func Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(stderr, "run canceled")
-			return ExitError{Code: 2}
+			return idtui.ExitError{Code: 2}
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return ExitError{Code: exitErr.ExitCode()}
+			return idtui.ExitError{Code: exitErr.ExitCode()}
 		}
 		return err
 	}

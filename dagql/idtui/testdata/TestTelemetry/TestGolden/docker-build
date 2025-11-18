@@ -21,8 +21,7 @@ Expected stderr:
 
 ✔ viztest: Viztest! X.Xs
 ✔ .dockerBuild: Container! X.Xs
-├╴✔ withNewFile Dockerfile <- FROM busybox:1.35
-RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X... (len=174) X.Xs
+├╴✔ withNewFile Dockerfile (contents: "FROM busybox:1.35\nRUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo what is up?\nRUN echo im another layer\n") X.Xs
 ╰╴✔ .dockerBuild: Container! X.Xs ✔ 4 $ 1
   ├╴$ [1/5] FROM docker.io/library/busybox:1.35@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs CACHED
   ├╴✔ [2/5] RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs

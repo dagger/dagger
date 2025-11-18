@@ -459,7 +459,7 @@ func (r ObjectResult[T]) WithObjectDigest(customDigest digest.Digest) ObjectResu
 	}
 }
 
-func NoopDone(res AnyResult, cached bool, rerr error) {}
+func NoopDone(res AnyResult, cached bool, rerr *error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
@@ -697,7 +697,7 @@ func (r ObjectResult[T]) call(
 	ctx = srvToContext(ctx, s)
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, error)) {
+		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
 			return s.telemetry(ctx, r, newID)
 		}))
 	}

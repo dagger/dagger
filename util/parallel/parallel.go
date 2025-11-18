@@ -6,7 +6,6 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
@@ -106,17 +105,13 @@ func (job Job) Runner(ctx context.Context) func() error {
 	//  - Con: parallel jobs are run in random order
 	// If we start the span before the job runs, the pros and cons are switched.
 	// The clean solution is to reimplement errgroup.Group to get our cake and eat it too.
-	return func() error {
+	return func() (rerr error) {
 		ctx, span := job.startSpan(ctx)
-		defer span.End()
+		defer endSpanWithCause(span, &rerr)
 		if job.Func == nil {
 			return nil
 		}
-		err := job.Func(ctx)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-		}
-		return err
+		return job.Func(ctx)
 	}
 }
 

@@ -114,7 +114,7 @@ type MCPServerConfig struct {
 
 func (srv *MCPServerConfig) Dial(ctx context.Context) (_ *mcp.ClientSession, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+srv.Name, telemetry.Reveal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 	return mcp.NewClient(&mcp.Implementation{
 		Title:   "Dagger",
 		Version: engine.Version,
@@ -1058,12 +1058,14 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		telemetry.Reveal(),
 		trace.WithAttributes(attrs...),
 	)
-	defer telemetry.End(span, func() error {
+
+	var telemetryErr error
+	defer telemetry.EndWithCause(span, &telemetryErr)
+	defer func() {
 		if failed {
-			return fmt.Errorf("tool call %q failed", tool.Name)
+			telemetryErr = fmt.Errorf("tool call %q failed", tool.Name)
 		}
-		return nil
-	})
+	}()
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.Bool(telemetry.LogsVerboseAttr, true))
@@ -1247,11 +1249,11 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 	if err != nil {
 		return nil, fmt.Errorf("get main client caller metadata: %w", err)
 	}
-	q, close, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
+	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
 	if err != nil {
 		return nil, err
 	}
-	defer close()
+	defer q.Close()
 
 	buf := new(strings.Builder)
 

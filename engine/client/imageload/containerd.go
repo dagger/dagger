@@ -19,7 +19,7 @@ func init() {
 
 func (loader Containerd) Loader(ctx context.Context) (_ *Loader, rerr error) {
 	_, span := otel.Tracer("").Start(ctx, "dial containerd")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	addr := defaults.DefaultAddress
 	if v, ok := os.LookupEnv("CONTAINERD_ADDRESS"); ok {

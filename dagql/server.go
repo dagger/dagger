@@ -95,7 +95,7 @@ type AroundFunc func(
 	context.Context,
 	AnyObjectResult,
 	*call.ID,
-) (context.Context, func(res AnyResult, cached bool, err error))
+) (context.Context, func(res AnyResult, cached bool, err *error))
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.
@@ -1013,8 +1013,12 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 			if err != nil {
 				return nil, err
 			}
+			if val == nil {
+				results = append(results, nil)
+				continue
+			}
 			val, ok := val.DerefValue()
-			if !ok {
+			if !ok || val == nil {
 				results = append(results, nil)
 				continue
 			}

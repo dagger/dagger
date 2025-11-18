@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
@@ -81,7 +82,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 			// still doesn't have an org set
 			auth.Logout()
 			fmt.Fprintf(errW, "Error setting up new organization: %v", err)
-			return Fail
+			return idtui.Fail
 		}
 	case 1:
 		selectedOrg = &user.Orgs[0]
@@ -91,7 +92,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(errW, "- %s\n", org.Name)
 			}
 			fmt.Fprintf(errW, "\n\nYou are a member of multiple organizations. Please select one with `dagger login <org>`.\n")
-			return Fail
+			return idtui.Fail
 		}
 		for _, org := range user.Orgs {
 			if org.Name == orgName {
@@ -101,7 +102,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		}
 		if selectedOrg == nil {
 			fmt.Fprintln(errW, "Organization", orgName, "not found.")
-			return Fail
+			return idtui.Fail
 		}
 	}
 

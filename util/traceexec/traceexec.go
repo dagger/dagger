@@ -20,7 +20,7 @@ func Exec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption) err
 
 func ExecOutput(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption) (stdout string, stderr string, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")), opts...)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 	stdio := telemetry.SpanStdio(ctx, "")
 	defer stdio.Close()
 	outBuf := new(bytes.Buffer)

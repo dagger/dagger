@@ -20,7 +20,7 @@ func (sdk *codeGeneratorModule) Codegen(
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	dag, err := sdk.mod.dag(ctx)
 	if err != nil {

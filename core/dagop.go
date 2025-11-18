@@ -571,6 +571,12 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	if err != nil {
 		return nil, err
 	}
+	if obj == nil {
+		return nil, fmt.Errorf("invalid unset container load: %s", op.ID.Display())
+	}
+	if obj.Unwrap() == nil {
+		return nil, fmt.Errorf("invalid unset wrapped container load: %s", op.ID.Display())
+	}
 
 	bk, err := query.Buildkit(ctx)
 	if err != nil {

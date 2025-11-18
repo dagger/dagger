@@ -68,7 +68,7 @@ func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defin
 
 func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Remote, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git remote metadata", telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 

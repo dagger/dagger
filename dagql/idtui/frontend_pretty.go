@@ -503,9 +503,9 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	if fe.err != nil && fe.shell == nil {
 		if fe.hasShownRootError() {
 			// If we've already shown the root cause error for the command, we can
-			// skip displaying the primary output, since it's just a poorer
+			// skip displaying the primary output and error, since it's just a poorer
 			// representation of the same error (`Error: input: ...`)
-			return nil
+			return ExitError{Code: 1, Original: fe.err}
 		}
 	}
 
@@ -2144,15 +2144,14 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
-	span, found := fe.db.Spans.Map[fe.db.PrimarySpan]
-	if !found {
-		// ?
+	originCtx := telemetry.ErrorOrigin(fe.err)
+	if !originCtx.IsValid() {
 		return false
 	}
-	if span.ErrorOrigin == nil {
+	if !fe.shownErrs[dagui.SpanID{SpanID: originCtx.SpanID()}] {
 		return false
 	}
-	return fe.shownErrs[span.ErrorOrigin.ID]
+	return true
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
@@ -2162,6 +2161,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		// links to its origin instead
 		return
 	}
+	fe.shownErrs[row.Span.ID] = true
 	errorCounts := map[string]int{}
 	for _, span := range row.Span.Errors().Order {
 		errText := span.Status.Description
@@ -2291,31 +2291,31 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 		if !abridged {
 			fe.renderStatus(out, span)
 			r.renderMetrics(out, span)
-		}
 
-		summary := map[string]int{}
-		for effect := range span.EffectSpans {
-			if effect.Passthrough {
-				// Don't show spans which are aggressively hidden.
-				continue
+			summary := map[string]int{}
+			for effect := range span.EffectSpans {
+				if effect.Passthrough {
+					// Don't show spans which are aggressively hidden.
+					continue
+				}
+				icon, isInteresting := fe.statusIcon(effect)
+				if !isInteresting {
+					// summarize boring statuses, rather than showing them in full
+					summary[icon]++
+					continue
+				}
+				fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
+				r.renderSpan(out, effect, effect.Name)
 			}
-			icon, isInteresting := fe.statusIcon(effect)
-			if !isInteresting {
-				// summarize boring statuses, rather than showing them in full
-				summary[icon]++
-				continue
-			}
-			fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
-			r.renderSpan(out, effect, effect.Name)
-		}
 
-		for _, icon := range statusOrder {
-			count := summary[icon]
-			if count > 0 {
-				color := statusColors[icon]
-				fmt.Fprintf(out, " %s %s",
-					out.String(icon).Foreground(color).Faint(),
-					out.String(strconv.Itoa(count)).Faint())
+			for _, icon := range statusOrder {
+				count := summary[icon]
+				if count > 0 {
+					color := statusColors[icon]
+					fmt.Fprintf(out, " %s %s",
+						out.String(icon).Foreground(color).Faint(),
+						out.String(strconv.Itoa(count)).Faint())
+				}
 			}
 		}
 	}

@@ -27,7 +27,7 @@ func (loader Apple) Loader(ctx context.Context) (*Loader, error) {
 
 func (loader Apple) loadTarball(ctx context.Context, name string, tarball io.Reader) (rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "load "+name)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	cmd := exec.CommandContext(ctx, "container", "image", "load")
 	cmd.Stdin = tarball
@@ -52,7 +52,7 @@ func (loader Apple) loadTarball(ctx context.Context, name string, tarball io.Rea
 
 func (loader Apple) saveTarball(ctx context.Context, name string, tarball io.Writer) (rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "save "+name)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	cmd := exec.CommandContext(ctx, "container", "image", "save", name)
 	cmd.Stdout = tarball

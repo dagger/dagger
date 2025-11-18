@@ -330,7 +330,7 @@ func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcf
 		}()
 	}
 	ctx, span := Tracer().Start(ctx, "detect module: "+ref)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	src := h.dag.ModuleSource(ref)
 
@@ -436,7 +436,7 @@ func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpa
 		if !h.noModule {
 			// ask API where the context dir is (.git)
 			ctx, span := Tracer().Start(ctx, "looking for context directory", telemetry.Internal())
-			defer telemetry.End(span, func() error { return rerr })
+			defer telemetry.EndWithCause(span, &rerr)
 
 			src := h.dag.ModuleSource(root, dagger.ModuleSourceOpts{
 				DisableFindUp:  true,
@@ -480,7 +480,7 @@ func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpa
 
 func newModuleContext(ctx context.Context, def *moduleDef) (rctx moduleContext, rerr error) {
 	ctx, span := Tracer().Start(ctx, "getting more information from module source", telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	if def.SourceKind == dagger.ModuleSourceKindLocalSource {
 		root, err := def.Source.LocalContextDirectoryPath(ctx)

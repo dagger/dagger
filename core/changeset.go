@@ -369,7 +369,7 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	return bk.LocalDirExport(ctx, defPB, destPath, true, ch.RemovedPaths)
 }

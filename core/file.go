@@ -594,7 +594,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	}
 
 	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", filepath.Base(file.File), dest))
-	defer telemetry.End(vtx, func() error { return rerr })
+	defer telemetry.EndWithCause(vtx, &rerr)
 
 	return bk.LocalFileExport(ctx, def.ToPB(), dest, file.File, allowParentDirPath)
 }

@@ -20,6 +20,4 @@ Expected stderr:
 ┃ and then failing
 ! i failed
 
-Error: i failed
-
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

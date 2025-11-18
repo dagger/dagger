@@ -1138,7 +1138,7 @@ func ResolveDepToSource(
 				if errors.Is(err, cache.ErrCacheRecursiveCall) {
 					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
 				}
-				return inst, fmt.Errorf("failed to load local dep: %w", err)
+				return inst, err
 			}
 			return inst, nil
 
@@ -1168,7 +1168,7 @@ func ResolveDepToSource(
 			}
 			err := dag.Select(ctx, dag.Root(), &inst, selectors...)
 			if err != nil {
-				return inst, fmt.Errorf("failed to load local dep: %w", err)
+				return inst, err
 			}
 			return inst, nil
 
@@ -1192,7 +1192,7 @@ func ResolveDepToSource(
 			}
 			err := dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
 			if err != nil {
-				return inst, fmt.Errorf("failed to load local dep: %w", err)
+				return inst, err
 			}
 			return inst, nil
 

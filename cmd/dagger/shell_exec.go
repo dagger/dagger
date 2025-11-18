@@ -188,7 +188,9 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			opts = append(opts, telemetry.Passthrough())
 		}
 		ctx, span := Tracer().Start(ctx, args[0], opts...)
-		defer telemetry.End(span, func() error {
+		defer telemetry.EndWithCause(span, &rerr)
+
+		defer func() {
 			if cascadingErr {
 				// Early exit if an error is passed through stdin.
 				span.SetAttributes(
@@ -208,8 +210,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 				}
 				span.SetAttributes(attrs...)
 			}
-			return rerr
-		})
+		}()
 
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 

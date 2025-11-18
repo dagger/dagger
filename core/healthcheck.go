@@ -45,7 +45,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 
 	// always show health checks
 	ctx, span := Tracer(ctx).Start(ctx, strings.Join(portStrs, " "))
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary).With("host", d.host)
 

@@ -56,7 +56,6 @@ func (dev *DaggerDev) Go(
 var knownBrokenModules = []string{
 	"docs/**",
 	"core/integration/**",
-	"dagql/idtui/viztest/broken/**",
 	"modules/evals/**",
 	"**/broken*/**",
 }
