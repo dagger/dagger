@@ -21,7 +21,7 @@ Expected stderr:
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
 ├╴✔ withExec sleep 1 X.Xs
 ├╴✘ withExec false X.Xs ERROR
-│ ! process "false" did not complete successfully: exit code: 1
+│ ! exit code: 1
 ╰╴○ withExec sleep 1 X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

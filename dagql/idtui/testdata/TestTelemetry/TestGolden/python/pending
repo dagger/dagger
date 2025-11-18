@@ -5,13 +5,13 @@ Expected stderr:
 ├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
- 
+
 ✔ load module: ./viztest/python X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
 ╰╴✔ loading type definitions X.Xs
- 
+
 ✔ parsing command line arguments X.Xs
 
 ✔ python: Python! X.Xs
@@ -30,12 +30,12 @@ Expected stderr:
 ┃           ^^^^^^^^^^^^^^^^^^^^^^^^^
 ┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line XXX, in execute
 ┃     raise error from e
-┃ dagger.ExecError: process "false" did not complete successfully: exit code: 1
+┃ dagger.ExecError: exit code: 1
 ├╴$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX X.Xs
 ├╴✔ withExec sleep 1 X.Xs
 ├╴✘ withExec false X.Xs ERROR
-│ ! process "false" did not complete successfully: exit code: 1
+│ ! exit code: 1
 ╰╴○ withExec sleep 1 X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
