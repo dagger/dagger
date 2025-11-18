@@ -15,10 +15,9 @@ import (
 // A toolchain to develop the Dagger Python SDK
 type PythonSdkDev struct {
 	// Python container to develop Python SDK
-	// +private
-	Container  *dagger.Container
-	Workspace  *dagger.Directory
-	SourcePath string
+	DevContainer *dagger.Container
+	Workspace    *dagger.Directory
+	SourcePath   string
 	// Supported Python versions
 	SupportedVersions []string
 }
@@ -64,7 +63,7 @@ func New(
 	}
 
 	return &PythonSdkDev{
-		Container: dag.DaggerEngine().InstallClient(
+		DevContainer: dag.DaggerEngine().InstallClient(
 			dag.Wolfi().
 				Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
 				WithEnvVariable("PYTHONUNBUFFERED", "1").
@@ -109,7 +108,7 @@ func (t PythonSdkDev) Lint(
 	// +default=[]
 	paths []string,
 ) error {
-	_, err := t.Container.
+	_, err := t.DevContainer.
 		WithExec(append(uvRun("ruff", "check"), paths...)).
 		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...)).
 		Sync(ctx)
@@ -123,8 +122,8 @@ func (t PythonSdkDev) Format(
 	// +default=[]
 	paths []string,
 ) *dagger.Changeset {
-	before := t.Container.Directory("/src")
-	return t.Container.
+	before := t.DevContainer.Directory("/src")
+	return t.DevContainer.
 		WithExec(append(uvRun("ruff", "check", "--fix-only"), paths...)).
 		WithExec(append(uvRun("ruff", "format"), paths...)).
 		Directory("/src").
@@ -134,7 +133,7 @@ func (t PythonSdkDev) Format(
 // Run the type checker (mypy)
 // +check
 func (t PythonSdkDev) Typecheck(ctx context.Context) error {
-	_, err := t.Container.
+	_, err := t.DevContainer.
 		WithExec(uvRun("mypy", ".")).
 		Sync(ctx)
 	return err
@@ -146,7 +145,7 @@ func (t PythonSdkDev) WithDirectory(
 	// The directory to add
 	source *dagger.Directory,
 ) PythonSdkDev {
-	t.Container = t.Container.WithDirectory("/src", source)
+	t.DevContainer = t.DevContainer.WithDirectory("/src", source)
 	return t
 }
 
@@ -176,7 +175,7 @@ func (t PythonSdkDev) TestSuite(
 	disableNestedExec bool,
 ) *TestSuite {
 	return &TestSuite{
-		Container:         t.Container,
+		Container:         t.DevContainer,
 		Version:           version,
 		DisableNestedExec: disableNestedExec,
 	}
@@ -184,7 +183,7 @@ func (t PythonSdkDev) TestSuite(
 
 // Regenerate the core Python client library
 func (t PythonSdkDev) Generate(_ context.Context) (*dagger.Changeset, error) {
-	devContainer := t.Container
+	devContainer := t.DevContainer
 
 	// We don't control the input source, it's defined in wrapped native module
 	srcMountPath := "/src"
@@ -293,7 +292,7 @@ func (t PythonSdkDev) Build(
 	// +default="0.0.0"
 	version string,
 ) *dagger.Container {
-	return t.Container.
+	return t.DevContainer.
 		WithoutDirectory("dist").
 		WithExec(uv("version", version)).
 		WithExec(uv("build"))
@@ -331,6 +330,6 @@ func (t PythonSdkDev) TestPublish(
 // Preview the reference documentation
 func (t PythonSdkDev) Docs() *Docs {
 	return &Docs{
-		Container: t.Container,
+		Container: t.DevContainer,
 	}
 }
