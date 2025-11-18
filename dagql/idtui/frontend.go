@@ -172,7 +172,7 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 	if d.Newline != "" {
 		r.newline = d.Newline
 	}
-	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, nil)
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, nil, false)
 	fmt.Fprint(out, r.newline)
 	return err
 }
@@ -296,6 +296,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 	depth int,
 	internal bool,
 	row *dagui.TraceRow,
+	abridged bool,
 ) error {
 	if r.rendering[call.Digest] {
 		fmt.Fprintf(out, "<cycle detected: %s>", call.Digest)
@@ -375,7 +376,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row); err != nil {
+					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row, abridged); err != nil {
 						return err
 					}
 				} else {
@@ -410,7 +411,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 		fmt.Fprint(out, out.String(")"))
 	}
 
-	if call.Type != nil && !specialTitle {
+	if call.Type != nil && !specialTitle && !abridged {
 		typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
 		fmt.Fprint(out, typeStr)
 	}
