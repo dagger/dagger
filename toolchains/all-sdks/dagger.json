@@ -11,8 +11,16 @@
   ],
   "dependencies": [
     {
+      "name": "dotnet-sdk-dev",
+      "source": "../dotnet-sdk-dev"
+    },
+    {
       "name": "go-sdk-dev",
       "source": "../go-sdk-dev"
+    },
+    {
+      "name": "java-sdk-dev",
+      "source": "../java-sdk-dev"
     },
     {
       "name": "php-sdk-dev",
@@ -23,8 +31,16 @@
       "source": "../python-sdk-dev"
     },
     {
+      "name": "rust-sdk-dev",
+      "source": "../rust-sdk-dev"
+    },
+    {
       "name": "typescript-sdk-dev",
       "source": "../typescript-sdk-dev"
+    },
+    {
+      "name": "elixir-sdk-dev",
+      "source": "../elixir-sdk-dev"
     }
   ]
 }
