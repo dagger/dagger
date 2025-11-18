@@ -15,7 +15,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -188,36 +187,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	remote, err := gitutil.ParseURL(args.URL)
-	if errors.Is(err, gitutil.ErrUnknownProtocol) {
-		id := dagql.CurrentID(ctx)
-		try := []*call.ID{
-			id.WithArgument(call.NewArgument("url", call.NewLiteralString("https://"+args.URL), false)),
-			id.WithArgument(call.NewArgument("url", call.NewLiteralString("ssh://"+args.URL), false)),
-			// NOTE: no http! it's valid, but sending credentials unencrypted
-			// is very bad, so if users *really* want that, we need them to be explicit
-		}
-
-		for _, id := range try {
-			res, err := srv.Load(ctx, id)
-			if err != nil {
-				if errors.Is(err, gitutil.ErrGitAuthFailed) {
-					continue
-				}
-				return inst, err
-			}
-			repo, ok := res.(dagql.ObjectResult[*core.GitRepository])
-			if !ok {
-				return inst, fmt.Errorf("expected ObjectResult, got %T", res)
-			}
-			return repo.Result, nil
-		}
-
-		return inst, fmt.Errorf("failed to determine Git URL protocol")
-	}
-	if err != nil {
-		return inst, fmt.Errorf("failed to parse Git URL: %w", err)
-	}
+	// recurse on ambiguous URL
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -576,7 +546,55 @@ type refArgs struct {
 }
 
 func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
 	repo := parent.Self()
+	if !repo.URL.Valid {
+		return inst, fmt.Errorf("repository URL is not valid")
+	}
+	repoURL := repo.URL.Value.String()
+
+	if _, parseErr := gitutil.ParseURL(repoURL); errors.Is(parseErr, gitutil.ErrUnknownProtocol) {
+		remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository)
+		if !ok {
+			return inst, fmt.Errorf("failed to determine Git URL protocol")
+		}
+
+		refSelector := dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString(args.Name),
+				},
+			},
+			View: dagql.CurrentID(ctx).View(),
+		}
+		if args.Commit != "" {
+			refSelector.Args = append(refSelector.Args, dagql.NamedInput{
+				Name:  "commit",
+				Value: dagql.NewString(args.Commit),
+			})
+		}
+
+		fallbacks := []string{"https://" + repoURL, "ssh://" + repoURL}
+		for _, url := range fallbacks {
+			var res dagql.Result[*core.GitRef]
+			gitArgs := gitSelectArgs(repo, remoteRepo, url)
+			if err := selectWithGit(ctx, srv, gitArgs, &res, refSelector); err == nil {
+				return res, nil
+			} else if errors.Is(err, gitutil.ErrGitAuthFailed) {
+				continue
+			} else {
+				return inst, err
+			}
+		}
+
+		return inst, fmt.Errorf("failed to determine Git URL protocol")
+	}
 
 	remote, err := repo.Backend.Remote(ctx)
 	if err != nil {
@@ -954,4 +972,102 @@ func (s *gitSchema) commonAncestor(
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, result)
+}
+
+func selectWithGit[T any](
+	ctx context.Context,
+	srv *dagql.Server,
+	args []dagql.NamedInput,
+	dest *T,
+	sels ...dagql.Selector,
+) error {
+	route := append([]dagql.Selector{{
+		Field: "git",
+		Args:  args,
+		View:  dagql.CurrentID(ctx).View(),
+	}}, sels...)
+	return srv.Select(ctx, srv.Root(), dest, route...)
+}
+
+func gitSelectArgs(repo *core.GitRepository, remote *core.RemoteGitRepository, urlOverride string) []dagql.NamedInput {
+	var args []dagql.NamedInput
+
+	url := urlOverride
+	if url == "" {
+		switch {
+		case remote != nil && remote.URL != nil:
+			url = remote.URL.String()
+		case repo.URL.Valid:
+			url = repo.URL.Value.String()
+		}
+	}
+	if url != "" {
+		args = append(args, dagql.NamedInput{
+			Name:  "url",
+			Value: dagql.NewString(url),
+		})
+	}
+
+	if remote != nil {
+		if remote.SSHKnownHosts != "" {
+			args = append(args, dagql.NamedInput{
+				Name:  "sshKnownHosts",
+				Value: dagql.NewString(remote.SSHKnownHosts),
+			})
+		}
+		if remote.SSHAuthSocket.Self() != nil {
+			args = append(args, dagql.NamedInput{
+				Name:  "sshAuthSocket",
+				Value: dagql.Opt(dagql.NewID[*core.Socket](remote.SSHAuthSocket.ID())),
+			})
+		}
+		if remote.AuthToken.Self() != nil {
+			args = append(args, dagql.NamedInput{
+				Name:  "httpAuthToken",
+				Value: dagql.Opt(dagql.NewID[*core.Secret](remote.AuthToken.ID())),
+			})
+		}
+		if remote.AuthHeader.Self() != nil {
+			args = append(args, dagql.NamedInput{
+				Name:  "httpAuthHeader",
+				Value: dagql.Opt(dagql.NewID[*core.Secret](remote.AuthHeader.ID())),
+			})
+		}
+		if remote.AuthUsername != "" {
+			args = append(args, dagql.NamedInput{
+				Name:  "httpAuthUsername",
+				Value: dagql.NewString(remote.AuthUsername),
+			})
+		}
+		if len(remote.Services) > 0 && remote.Services[0].Service.Self() != nil {
+			args = append(args, dagql.NamedInput{
+				Name:  "experimentalServiceHost",
+				Value: dagql.Opt(dagql.NewID[*core.Service](remote.Services[0].Service.ID())),
+			})
+		}
+	}
+
+	if repo.PinnedHead != nil {
+		if repo.PinnedHead.Name != "" {
+			args = append(args, dagql.NamedInput{
+				Name:  "ref",
+				Value: dagql.NewString(repo.PinnedHead.Name),
+			})
+		}
+		if repo.PinnedHead.SHA != "" {
+			args = append(args, dagql.NamedInput{
+				Name:  "commit",
+				Value: dagql.NewString(repo.PinnedHead.SHA),
+			})
+		}
+	}
+
+	if repo.DiscardGitDir {
+		args = append(args, dagql.NamedInput{
+			Name:  "keepGitDir",
+			Value: dagql.Opt(dagql.Boolean(false)),
+		})
+	}
+
+	return args
 }
