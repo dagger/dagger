@@ -22,26 +22,26 @@ type TypescriptSdkDev {
 		null
 	}
 
-	# FIXME
-	#pub lindDocsSnippets(
-	#  docsWorkspace: Directory! @defaultPath("/") @ignorePatterns(
-	#		  "*"
-	#			"!**/*.mts"
-	#			"!**/*.mjs"
-	#			"!**/*.ts"
-	#			"!**/*.js"
-	#			"!*prettier*"
-	#			"!*eslint*"
-	#	  )
-	#): Void! {
-	# let path = "docs/current_docs"
-  # devContainerNodejs().
-  # # Add docs snippets on top of the already-mounted SDK source
-  # withDirectory(".", docsWorkspace).
-  # withExec(["yarn", "docs:lint"]).
-  # sync
-  # null
-  #}
+
+	pub lindDocsSnippets(
+	  docsWorkspace: Directory! @defaultPath(path:"/") @ignorePatterns(patterns:[
+			  "*"
+				"!**/*.mts"
+				"!**/*.mjs"
+				"!**/*.ts"
+				"!**/*.js"
+				"!*prettier*"
+				"!*eslint*"
+		  ])
+	): Void! @check {
+	 let path = "docs/current_docs"
+   nodejsDevContainer().
+   # Add docs snippets on top of the already-mounted SDK source
+   withDirectory(".", docsWorkspace).
+   withExec(["yarn", "docs:lint"]).
+   sync
+   null
+  }
 
 	"""Test the SDK with LTS version of Node"""
 	pub testNodejsLts: Void! @check {
