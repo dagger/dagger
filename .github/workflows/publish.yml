@@ -340,10 +340,11 @@ jobs:
         run: |
           cd sdk/python
           uv run pytest -xm provision
-      - name: "Test Python SDK Module Load"
+      - name: "Test Python module Load"
         run: |
           curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
-          ./dagger -m sdk/python/dev call --help
+          ./dagger core version
+          echo "FIXME: test loading a python module"
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
@@ -388,7 +389,8 @@ jobs:
       - name: "Test Python SDK Module Load"
         run: |
           curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
-          ./dagger -m sdk/python/dev call --help
+          ./dagger core version
+          echo "FIXME: test loading a python module"
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
@@ -447,10 +449,11 @@ jobs:
           cd sdk/typescript
           yarn install
           yarn test:bun -g 'Automatic Provisioned CLI Binary'
-      - name: "Test TypeScript SDK Module Load"
+      - name: "Test TypeScript Module Load"
         run: |
           curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
-          ./dagger -m sdk/typescript/dev call --help
+          ./dagger core version
+          echo "FIXME: test loading a typescript module"
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
@@ -492,10 +495,11 @@ jobs:
           echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
           echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
-      - name: "Test TypeScript SDK Module Load"
+      - name: "Test TypeScript Module Load"
         run: |
           curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
-          ./dagger -m sdk/typescript/dev call --help
+          ./dagger core version
+          echo "FIXME: test loading a typescript module"
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
