@@ -169,7 +169,7 @@ pub nodejsDevContainer(nodeVersion: String! =nodeVersionPrevLts): Container! {
 		withFile(sourcePath + "/yarn.lock", workspace.file(sourcePath + "/yarn.lock")).
 		withFile(sourcePath + "/eslint.config.js", workspace.file(sourcePath + "/eslint.config.js")).
 		withExec(["yarn", "--cwd", sourcePath, "install"]).
-		withDirectory(sourcePath, workspace.directory(sourcePath))
+		withDirectory(".", workspace)
 }
 
 # Build a nodejs base image, without any source code mounted
@@ -181,18 +181,17 @@ pub nodejsBase(nodeVersion: String! = nodeVersionPrevLts): Container! {
 }
 
 let bunjsDevContainer: Container! {
- 	let mountPath = "/" + sourcePath
   container.
     from("oven/bun:"+bunVersion+"-alpine").
-		withWorkdir(mountPath).
-		withMountedCache("/root/.bun/install/cache", cacheVolume("bun_cache")).
-		withFile(mountPath + "/package.json", workspace.file(sourcePath + "/package.json")).
-		withExec(["bun", "install"]).
-		withDirectory(mountPath, workspace.directory(sourcePath))
+    withMountedCache("/root/.bun/install/cache", cacheVolume("bun_cache")).
+    withWorkdir("/app").
+    withFile(sourcePath + "/package.json", workspace.file(sourcePath + "/package.json")).
+    withWorkdir(sourcePath).
+    withExec(["bun", "install"]).
+    withWorkdir("/app").
+    withDirectory(".", workspace)
 }
 
-
- #####
 
   pub source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
     "*"
