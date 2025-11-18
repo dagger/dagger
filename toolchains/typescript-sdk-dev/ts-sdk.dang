@@ -180,7 +180,7 @@ pub nodejsBase(nodeVersion: String! = nodeVersionPrevLts): Container! {
   withWorkdir("/app")
 }
 
-let bunjsDevContainer: Container! {
+pub bunjsDevContainer: Container! {
   container.
     from("oven/bun:"+bunVersion+"-alpine").
     withMountedCache("/root/.bun/install/cache", cacheVolume("bun_cache")).
