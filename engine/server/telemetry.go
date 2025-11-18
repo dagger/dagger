@@ -318,14 +318,6 @@ func (ps *PubSub) Spans(client *daggerClient) sdktrace.SpanExporter {
 	}
 }
 
-func spanNames(spans []sdktrace.ReadOnlySpan) []string {
-	names := make([]string, len(spans))
-	for i, span := range spans {
-		names[i] = span.Name()
-	}
-	return names
-}
-
 func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	slog.ExtraDebug("pubsub exporting spans", "client", ps.client.clientID, "count", len(spans))
 
@@ -409,23 +401,12 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
 	defer db.Close()
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("export spans %+v: begin tx: %w", spanNames(spans), err)
-	}
-	defer tx.Rollback()
-
-	queries := db.WithTx(tx)
 
 	for _, insert := range inserts {
-		_, err = queries.InsertSpan(ctx, *insert)
+		_, err = db.InsertSpan(ctx, *insert)
 		if err != nil {
 			return fmt.Errorf("insert span: %w", err)
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
 	}
 
 	return nil
@@ -480,23 +461,12 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
 	defer db.Close()
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("export logs (%d records): begin tx: %w", len(logs), err)
-	}
-	defer tx.Rollback()
-
-	queries := db.WithTx(tx)
 
 	for _, insert := range inserts {
-		if _, err := queries.InsertLog(ctx, *insert); err != nil {
+		if _, err := db.InsertLog(ctx, *insert); err != nil {
 			slog.Warn("failed to insert log record", "error", err)
 			continue
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
 	}
 
 	return nil
