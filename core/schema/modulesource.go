@@ -1346,6 +1346,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		src.SDK = &core.SDKConfig{}
 	}
 	src.SDK.Source = args.Source
+	src.IsInit = true
 
 	// reload the sdk implementation too
 	query, err := core.CurrentQuery(ctx)
@@ -2371,7 +2372,9 @@ func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
 	return src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
 }
 
-func (s *moduleSourceSchema) runCodegen(
+// Call `Codegen` or `ModuleInit` on the given SDK to generate code on the
+// caller's host for the given module source.
+func (s *moduleSourceSchema) runCodeGeneration(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
@@ -2423,12 +2426,24 @@ func (s *moduleSourceSchema) runCodegen(
 		}
 	}
 
-	// run codegen to get the generated context directory
-	generatedCode, err := generatedCodeImpl.Codegen(ctx, deps, srcInstContentHashed)
-	if err != nil {
-		return res, fmt.Errorf("failed to generate code: %w", err)
+	var genDirInst dagql.ObjectResult[*core.Directory]
+	var generatedCode *core.GeneratedCode
+	if srcInst.Self().IsInit {
+		// run init to get the generated context directory
+		generatedCode, err = generatedCodeImpl.Init(ctx, deps, srcInstContentHashed)
+		if err != nil {
+			return res, fmt.Errorf("failed to generate code for initialization: %w", err)
+		}
+
+		genDirInst = generatedCode.Code
+	} else {
+		// run codegen to get the generated context directory
+		generatedCode, err = generatedCodeImpl.Codegen(ctx, deps, srcInstContentHashed)
+		if err != nil {
+			return res, fmt.Errorf("failed to generate code: %w", err)
+		}
+		genDirInst = generatedCode.Code
 	}
-	genDirInst := generatedCode.Code
 
 	// update .gitattributes in the generated context directory
 	// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
@@ -2646,7 +2661,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	// run codegen too if we have a name and SDK
 	genDirInst := srcInst.Self().ContextDirectory
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
-		updatedGenDirInst, err := s.runCodegen(ctx, srcInst)
+		updatedGenDirInst, err := s.runCodeGeneration(ctx, srcInst)
 		var missingImplErr ErrSDKCodegenNotImplemented
 		if err != nil && !errors.As(err, &missingImplErr) {
 			return res, fmt.Errorf("failed to run codegen: %w", err)

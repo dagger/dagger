@@ -176,6 +176,15 @@ func (sdk *goSDK) GenerateClient(
 	return modifiedSrcDir, nil
 }
 
+// TODO: update cmd/codegen to initialize a dagger go module
+func (sdk *goSDK) Init(
+	ctx context.Context,
+	deps *core.ModDeps,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (_ *core.GeneratedCode, rerr error) {
+	return sdk.Codegen(ctx, deps, source)
+}
+
 func (sdk *goSDK) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,

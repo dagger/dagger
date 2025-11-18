@@ -89,6 +89,69 @@ func (t *TypescriptSdk) ModuleTypes(
 		), nil
 }
 
+// ModuleInit implements the `Init` method from the SDK module interface.
+//
+// IT returns the generated API client based on user's module as well as
+// ignore directive regarding the generated content.
+func (t *TypescriptSdk) ModuleInit(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*dagger.GeneratedCode, error) {
+	cfg, err := analyzeModuleConfig(ctx, modSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze module config: %w", err)
+	}
+
+	var codegen *dagger.Directory
+	switch cfg.runtime {
+	case Bun:
+		codegen, err = NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
+	case Deno:
+		codegen, err = NewDenoRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
+	case Node:
+		codegen, err = NewNodeRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
+	default:
+		return nil, fmt.Errorf("unknown runtime %s", cfg.runtime)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate runtime dir: %w", err)
+	}
+
+	// Add default template if no source files exist
+	srcDirExist, err := cfg.source.Exists(ctx, SrcDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if src dir exists: %w", err)
+	}
+
+	sourceFiles := []string{}
+	if srcDirExist {
+		sourceFiles, err = cfg.source.Glob(ctx, "src/**/*.ts")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list source files: %w", err)
+		}
+	}
+
+	if len(sourceFiles) == 0 {
+		codegen = codegen.WithNewFile(
+			"src/index.ts",
+			tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name)))
+	}
+
+	return dag.GeneratedCode(
+		dag.Directory().WithDirectory(cfg.subPath, codegen),
+	).
+		WithVCSGeneratedPaths([]string{
+			GenDir + "/**",
+		}).
+		WithVCSIgnoredPaths([]string{
+			GenDir,
+			"**/node_modules/**",
+			"**/.pnpm-store/**",
+		}), nil
+}
+
 // Codegen implements the `Codegen` method from the SDK module interface.
 //
 // It returns the generated API client based on user's module as well as
@@ -117,27 +180,6 @@ func (t *TypescriptSdk) Codegen(
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate runtime dir: %w", err)
-	}
-
-	// TODO: handle that in an init method.
-	// Add default template if no source files exist
-	srcDirExist, err := cfg.source.Exists(ctx, SrcDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check if src dir exists: %w", err)
-	}
-
-	sourceFiles := []string{}
-	if srcDirExist {
-		sourceFiles, err = cfg.source.Glob(ctx, "src/**/*.ts")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list source files: %w", err)
-		}
-	}
-
-	if len(sourceFiles) == 0 {
-		codegen = codegen.WithNewFile(
-			"src/index.ts",
-			tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name)))
 	}
 
 	return dag.GeneratedCode(

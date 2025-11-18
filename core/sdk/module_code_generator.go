@@ -14,6 +14,50 @@ type codeGeneratorModule struct {
 	mod *module
 }
 
+func (sdk *codeGeneratorModule) Init(
+	ctx context.Context,
+	deps *core.ModDeps,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (_ *core.GeneratedCode, rerr error) {
+	// Call `codegen` if `moduleInit` isn't implemented by the SDK.
+	// This handle backward compatibility.
+	if _, ok := sdk.mod.funcs["moduleInit"]; !ok {
+		return sdk.Codegen(ctx, deps, source)
+	}
+
+	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run moduleInit")
+	defer telemetry.EndWithCause(span, &rerr)
+
+	dag, err := sdk.mod.dag(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk init: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
+	var inst dagql.Result[*core.GeneratedCode]
+	err = dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
+		Field: "moduleInit",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "modSource",
+				Value: dagql.NewID[*core.ModuleSource](source.ID()),
+			},
+			{
+				Name:  "introspectionJson",
+				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to call sdk module codegen: %w", err)
+	}
+	return inst.Self(), nil
+}
+
 func (sdk *codeGeneratorModule) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,
