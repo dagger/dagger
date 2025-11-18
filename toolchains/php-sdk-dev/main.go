@@ -49,7 +49,7 @@ func New(
 	// - We build the base container eagerly, to avoid keeping a reference to DaggerDev
 	// - But we build the full dev container *lazily*, because we may have mutated our workspace with generated files
 	baseContainer := dag.Container().
-		From(phpSDKImage).
+		From(phpSDKImage+"@"+phpSDKDigest).
 		WithMountedFile("/usr/bin/composer", composerBinary).
 		WithMountedCache(
 			"/root/.composer",
@@ -84,7 +84,8 @@ func (t PhpSdkDev) DevContainer(
 		WithWorkdir(t.SourcePath)
 
 	if runInstall {
-		ctr = ctr.WithExec([]string{"composer", "install"}).
+		ctr = ctr.
+			WithExec([]string{"composer", "install"}).
 			WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{
 				Expand: true,
 			})
@@ -135,14 +136,13 @@ func (t PhpSdkDev) Test(ctx context.Context) error {
 
 // Regenerate the PHP SDK API + docs
 func (t *PhpSdkDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
-	// TODO: currently broken, the changeset returns modified path even if nothing
-	// changed...
 	t, err := t.
 		WithGeneratedClient().
 		WithGeneratedDocs(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	return t.Changes(), nil
 }
 
@@ -152,20 +152,17 @@ func (t *PhpSdkDev) Changes() *dagger.Changeset {
 
 func (t *PhpSdkDev) WithGeneratedClient() *PhpSdkDev {
 	relLayer := t.DevContainer(true).
-		// FIXME: why not inject the right dagger binary, instead of leaking this env var?
-		WithExec([]string{"sh", "-c", "$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php"}).
+		WithExec([]string{"dagger", "run", "./scripts/codegen.php"}).
 		Directory(".").
 		Filter(dagger.DirectoryFilterOpts{
 			Exclude: []string{
 				"vendor",
 			},
 		})
-	
-	// TODO: There's a problem with the changeset, the `generated` directory is considered
-	// modified even if its the same.
+
 	t.Workspace = t.Workspace.
 		// Merge rel layer inside the current workspace
-		WithDirectory("sdk/php", relLayer)
+		WithDirectory(t.SourcePath, relLayer)
 
 	return t
 }
