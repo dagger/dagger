@@ -329,7 +329,7 @@ func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklo
 	}
 
 	// Set prefix
-	r := newRenderer(e.db, 0, e.opts)
+	r := newRenderer(e.db, 0, e.opts, true)
 	prefix := dotLogsPrefix(r, e.profile, dbSpan)
 
 	// Write all logs for this span, filtering out verbose logs

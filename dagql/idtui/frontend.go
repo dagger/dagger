@@ -168,7 +168,7 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 
 	db := dagui.NewDB()
 	maps.Copy(db.Calls, dag.CallsByDigest)
-	r := newRenderer(db, -1, dagui.FrontendOpts{})
+	r := newRenderer(db, -1, dagui.FrontendOpts{}, true)
 	if d.Newline != "" {
 		r.newline = d.Newline
 	}
@@ -185,9 +185,10 @@ type renderer struct {
 	db            *dagui.DB
 	maxLiteralLen int
 	rendering     map[string]bool
+	final         bool
 }
 
-func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts) *renderer {
+func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts, final bool) *renderer {
 	return &renderer{
 		FrontendOpts:  fe,
 		now:           time.Now(),
@@ -195,6 +196,7 @@ func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts) *render
 		maxLiteralLen: maxLiteralLen,
 		rendering:     map[string]bool{},
 		newline:       "\n",
+		final:         final,
 	}
 }
 
@@ -361,6 +363,10 @@ func (r *renderer) renderCall( //nolint: gocyclo
 					indentLevel -= row.Depth
 					indentLevel -= 1
 				}
+				if !r.final {
+					// extra space to account for togglers only visible while interactive
+					fmt.Fprint(out, "  ")
+				}
 				r.indent(out, indentLevel)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
 				val := arg.GetValue()
@@ -391,6 +397,10 @@ func (r *renderer) renderCall( //nolint: gocyclo
 				r.fancyIndent(out, row, true, false)
 				indentLevel -= row.Depth
 				indentLevel -= 1
+			}
+			if !r.final {
+				// extra space to account for togglers only visible while interactive
+				fmt.Fprint(out, "  ")
 			}
 			r.indent(out, indentLevel)
 			depth-- //nolint:ineffassign

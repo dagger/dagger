@@ -530,7 +530,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 		spanDt.idx = fe.idx
 	}
 
-	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
+	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts, true)
 
 	prefix := fe.stepPrefix(span, spanDt)
 	fmt.Fprint(fe.output, prefix)
@@ -582,7 +582,7 @@ func (fe *frontendPlain) renderLogs(row *dagui.TraceTree, depth int) {
 	span := row.Span
 	spanDt := fe.data[span.ID]
 
-	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
+	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts, true)
 
 	prefix := fe.stepPrefix(span, spanDt)
 

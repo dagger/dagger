@@ -484,7 +484,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Unfocus for the final render.
 	fe.FocusedSpan = dagui.SpanID{}
 
-	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, true)
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
@@ -734,7 +734,7 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 func (fe *frontendPretty) Render(out TermOutput) error {
 	progHeight := fe.window.Height
 
-	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, false)
 
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
@@ -1660,7 +1660,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		visibleHeight -= lipgloss.Height(fe.editlineView())
 	}
 
-	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, true)
 
 	var anyFlushed bool
 	for _, row := range fe.rows.Order {
@@ -2252,7 +2252,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 			empty = true
 		}
 	} else if call := span.Call(); call != nil {
-		if err := r.renderCall(out, span, call, prefix, chained, depth+1, span.Internal, row, abridged); err != nil {
+		if err := r.renderCall(out, span, call, prefix, chained, depth, span.Internal, row, abridged); err != nil {
 			return err
 		}
 	} else if span != nil {
