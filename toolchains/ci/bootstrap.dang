@@ -1,3 +1,4 @@
+pub description = "\"CI in CI\": check that Dagger can still run its own CI"
 
 type CI {
   """

@@ -1,8 +1,10 @@
+// A module to generate changelog
 package main
 
 import (
 	"fmt"
 	"strings"
+
 	"toolchains/changelog/internal/dagger"
 )
 

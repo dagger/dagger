@@ -1,7 +1,9 @@
+// A toolchain for supply chain security of the Dagger project
 package main
 
 import (
 	"context"
+
 	"toolchains/security/internal/dagger"
 )
 

@@ -1,3 +1,4 @@
+// A module to develop, build, test Go softwares
 package main
 
 import (
