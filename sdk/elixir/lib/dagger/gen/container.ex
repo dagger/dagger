@@ -707,6 +707,22 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Export environment variables from an env-file to the container.
+  """
+  @spec with_env_file_variables(t(), Dagger.EnvFile.t()) :: Dagger.Container.t()
+  def with_env_file_variables(%__MODULE__{} = container, source) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withEnvFileVariables")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Set a new environment variable in the container.
   """
   @spec with_env_variable(t(), String.t(), String.t(), [{:expand, boolean() | nil}]) ::
