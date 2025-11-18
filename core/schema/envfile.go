@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -28,7 +29,7 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("raw").Doc("Return values exactly as written to the file. No quote removal or variable expansion"),
 			),
-		dagql.Func("withVariable", s.withVariable).
+		dagql.NodeFuncWithCacheKey("withVariable", s.withVariable, dagql.CachePerClient).
 			Doc("Add a variable").
 			Args(
 				dagql.Arg("name").Doc("Variable name"),
@@ -72,7 +73,7 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.File]{
-		dagql.Func("asEnvFile", s.asEnvFile).
+		dagql.NodeFuncWithCacheKey("asEnvFile", s.asEnvFile, dagql.CachePerClient).
 			Args(
 				dagql.Arg("expand").
 					Doc(`Replace "${VAR}" or "$VAR" with the value of other vars`).
@@ -102,11 +103,49 @@ func (s envfileSchema) variables(ctx context.Context, parent *core.EnvFile, args
 	return parent.Variables(ctx, args.Raw.GetOr(dagql.Boolean(false)).Bool())
 }
 
-func (s envfileSchema) withVariable(ctx context.Context, parent *core.EnvFile, args struct {
+type withVariableArgs struct {
 	Name  dagql.String
 	Value dagql.String
-}) (*core.EnvFile, error) {
-	return parent.WithVariable(args.Name.String(), args.Value.String()), nil
+
+	RawDagOpInternalArgs
+}
+
+func (s envfileSchema) withVariableDagOp(ctx context.Context, parent dagql.ObjectResult[*core.EnvFile], args withVariableArgs) (*core.EnvFile, error) {
+	return parent.Self().WithVariable(args.Name.String(), args.Value.String()), nil
+}
+
+//nolint:dupl
+func (s envfileSchema) withVariable(ctx context.Context, parent dagql.ObjectResult[*core.EnvFile], args withVariableArgs) (inst dagql.ObjectResult[*core.EnvFile], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	if args.InDagOp() {
+		// FIXME DagOp is being passed s.withVariableDagOp; however, it isn't actually calling it, and instead calls asEnvFile
+		// however due to templating we must pass a func that returns a core.EnvFile (rather than a ObjectResult[*core.EnvFile])
+		ef, err := s.withVariableDagOp(ctx, parent, args)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewObjectResultForCurrentID(ctx, srv, ef)
+	}
+
+	ef, err := DagOp(ctx, srv, parent, args, s.withVariableDagOp)
+	if err != nil {
+		return inst, err
+	}
+
+	dop, err := dagql.NewObjectResultForCurrentID(ctx, srv, ef)
+	if err != nil {
+		return inst, err
+	}
+
+	dgst, err := ef.Digest(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dop.WithObjectDigest(dgst), nil
 }
 
 func (s envfileSchema) withoutVariable(ctx context.Context, parent *core.EnvFile, args struct {
@@ -146,12 +185,47 @@ func (s envfileSchema) namespace(ctx context.Context, parent *core.EnvFile, args
 	return parent.Namespace(ctx, args.Prefix)
 }
 
-func (s envfileSchema) asEnvFile(ctx context.Context, parent *core.File, args struct {
+type asEnvFileArgs struct {
 	Expand dagql.Optional[dagql.Boolean]
-}) (*core.EnvFile, error) {
-	var expand bool
-	if args.Expand.Valid {
-		expand = args.Expand.Value.Bool()
+
+	RawDagOpInternalArgs
+}
+
+func (s envfileSchema) asEnvFileInDagOp(ctx context.Context, parent dagql.ObjectResult[*core.File], args asEnvFileArgs) (*core.EnvFile, error) {
+	expand := args.Expand.Valid && args.Expand.Value.Bool()
+	return parent.Self().AsEnvFile(ctx, expand)
+}
+
+//nolint:dupl
+func (s envfileSchema) asEnvFile(ctx context.Context, parent dagql.ObjectResult[*core.File], args asEnvFileArgs) (inst dagql.ObjectResult[*core.EnvFile], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
-	return parent.AsEnvFile(ctx, expand)
+
+	if args.InDagOp() {
+		// FIXME DagOp is being passed s.asEnvFileInDagOp; however, it isn't actually calling it, and instead calls asEnvFile
+		// however due to templating we must pass a func that returns a core.EnvFile (rather than a ObjectResult[*core.EnvFile])
+		ef, err := s.asEnvFileInDagOp(ctx, parent, args)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewObjectResultForCurrentID(ctx, srv, ef)
+	}
+
+	ef, err := DagOp(ctx, srv, parent, args, s.asEnvFileInDagOp)
+	if err != nil {
+		return inst, err
+	}
+
+	dop, err := dagql.NewObjectResultForCurrentID(ctx, srv, ef)
+	if err != nil {
+		return inst, err
+	}
+
+	dgst, err := ef.Digest(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dop.WithObjectDigest(dgst), nil
 }

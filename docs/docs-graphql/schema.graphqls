@@ -844,6 +844,12 @@ type Container {
     keepDefaultArgs: Boolean = false
   ): Container!
 
+  """Export environment variables from an env-file to the container."""
+  withEnvFileVariables(
+    """Identifier of the envfile"""
+    source: EnvFileID!
+  ): Container!
+
   """Set a new environment variable in the container."""
   withEnvVariable(
     """Name of the environment variable (e.g., "HOST")."""
