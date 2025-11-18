@@ -2219,7 +2219,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 	depth := row.Depth
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
 
-	if !abridged {
+	if !abridged && row.Span.LLMRole == "" {
 		fe.renderStatusIcon(out, row)
 		fmt.Fprint(out, " ")
 	}
@@ -2470,45 +2470,36 @@ func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 }
 
 func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
-	// First, render chevron or placeholder for alignment
-	var chevron termenv.Style
-	if row.HasChildren || row.Span.HasLogs {
+	var icon termenv.Style
+	if row.Span.Message != "" {
+		switch row.Span.LLMRole {
+		case telemetry.LLMRoleUser:
+			icon = out.String(Block).Foreground(termenv.ANSIMagenta)
+		case telemetry.LLMRoleAssistant:
+			icon = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
+		}
+	} else if row.HasChildren || row.Span.HasLogs {
 		if row.Expanded {
-			chevron = out.String(CaretDownFilled)
+			icon = out.String(CaretDownFilled).Foreground(termenv.ANSIBrightBlack)
 		} else {
-			chevron = out.String(CaretRightFilled)
+			icon = out.String(CaretRightFilled).Foreground(termenv.ANSIBrightBlack)
 		}
 	} else {
 		// Use a placeholder symbol for items without children
-		chevron = out.String(DotFilled)
+		icon = out.String(DotFilled).Foreground(termenv.ANSIBrightBlack)
 	}
-
-	// Match the color of the span
-	chevron = chevron.Foreground(termenv.ANSIBrightBlack)
 
 	// Apply focus highlighting to chevron only
 	if isFocused {
-		chevron = hl(chevron.Foreground(statusColor(row.Span)))
+		icon = hl(icon.Foreground(statusColor(row.Span)))
 	}
-	fmt.Fprint(out, chevron.String())
+	fmt.Fprint(out, icon.String())
 }
 
 func (fe *frontendPretty) renderStatusIcon(out TermOutput, row *dagui.TraceRow) {
 	// Then render the status icon (without focus highlighting)
-	var statusIcon termenv.Style
 	icon, _ := fe.statusIcon(row.Span)
-	statusIcon = out.String(icon)
-	statusIcon = statusIcon.Foreground(statusColor(row.Span))
-
-	if row.Span.Message != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			statusIcon = out.String(Block).Foreground(termenv.ANSIMagenta)
-		case telemetry.LLMRoleAssistant:
-			statusIcon = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
-		}
-	}
-
+	statusIcon := out.String(icon).Foreground(statusColor(row.Span))
 	fmt.Fprint(out, statusIcon.String())
 }
 
