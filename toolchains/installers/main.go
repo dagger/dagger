@@ -1,3 +1,4 @@
+// A toolchain to test Dagger installers
 package main
 
 import (

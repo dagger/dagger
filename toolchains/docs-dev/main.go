@@ -1,13 +1,15 @@
+// Dagger docs toolchain
 package main
 
 import (
 	"context"
-	"dagger/docs/internal/dagger"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"dagger/docs/internal/dagger"
 
 	"github.com/netlify/open-api/v2/go/models"
 )

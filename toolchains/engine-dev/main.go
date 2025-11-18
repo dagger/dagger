@@ -1,3 +1,4 @@
+// Creates a complete end-to-end build environment with CLI and engine for interactive testing
 package main
 
 import (

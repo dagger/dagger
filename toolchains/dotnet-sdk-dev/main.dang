@@ -1,6 +1,5 @@
-"""
-Develop the Dagger Dotnet SDK (experimental)
-"""
+pub description = "Develop the Dagger Dotnet SDK (experimental)"
+
 type DotnetSdkDev {
   #####################################
   #### ### #### Constants #### ### ####

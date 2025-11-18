@@ -1,4 +1,5 @@
-"""Toolchain to develop the Dagger Java SDK (experimental)"""
+pub description = "Toolchain to develop the Dagger Java SDK (experimental)"
+
 type JavaSdkDev {
   """
   Base image to create a dev container for the Java SDK
