@@ -318,6 +318,7 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 		return true, fmt.Errorf("engine-to-engine connect: %w", err)
 	}
 	if !useCloudEngine {
+		// just run locally
 		return false, nil
 	}
 	defer func() {
@@ -326,6 +327,11 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 
 	query := cloudEngineClient.Dagger().QueryBuilder()
 
+	//
+	// construct a query to run this check on the cloud engine
+	//
+
+	// load the module, depending on its kind
 	switch c.Module.Source.Value.Self().Kind {
 	case ModuleSourceKindLocal:
 		query = query.Select("moduleSource").
@@ -353,12 +359,16 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 	}
 	query = query.Select("asModule")
 
+	// run the check
+
 	query = query.Select("check").
 		Arg("name", c.Name())
 
 	query = query.Select("run")
 
 	query = query.SelectMultiple("completed", "passed")
+
+	// execute the query against the remote engine
 
 	var res struct {
 		Completed bool
@@ -372,6 +382,7 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 	return true, nil
 }
 
+// Prepare a dagql.Server for running checks on the given module
 func dagForCheck(ctx context.Context, mod *Module) (*dagql.Server, error) {
 	q, err := CurrentQuery(ctx)
 	if err != nil {

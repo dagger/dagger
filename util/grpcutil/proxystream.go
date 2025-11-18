@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// ProxyStream proxies messages between a gRPC client stream and server stream.
 func ProxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, serverStream grpc.ServerStream) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errors.New("proxy stream done"))

@@ -278,11 +278,19 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 
 type EngineToEngineParams struct {
 	Params
+
+	// The caller's session grpc conn, which will be proxied back to
 	CallerSessionConn *grpc.ClientConn
-	Labels            enginetel.Labels
-	StableClientID    string
+
+	// important we forward the original client's stable id so that filesync
+	// caching can work as expected
+	StableClientID string
+
+	Labels enginetel.Labels
 }
 
+// ConnectEngineToEngine connects a Dagger client to another Dagger engine using an existing session connection.
+// Session attachables are proxied back to the original client.
 func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ *Client, rerr error) {
 	c := &Client{
 		Params:                params.Params,
@@ -562,6 +570,7 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 	clientMetadata := c.clientMetadata()
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
+	// session attachables that proxy back to the original caller's session
 	attachables := []bksession.Attachable{
 		FilesyncSourceProxy{
 			Client: filesync.NewFileSyncClient(callerSessionConn),

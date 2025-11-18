@@ -1531,6 +1531,7 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 	return client.TelemetryDB(ctx)
 }
 
+// Return a client connected to a cloud engine. If bool return is false, the local engine should be used. Session attachables for the returned client will be proxied back to the calling client.
 func (srv *Server) CloudEngineClient(
 	ctx context.Context,
 	module string,

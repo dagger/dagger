@@ -141,7 +141,7 @@ type Server interface {
 	// The list of connected client IDs
 	Clients() []string
 
-	// Return a client connected to a cloud engine. If bool return is false, the local engine should be used.
+	// Return a client connected to a cloud engine. If bool return is false, the local engine should be used. Session attachables for the returned client will be proxied back to the calling client.
 	CloudEngineClient(
 		ctx context.Context,
 		module string,
