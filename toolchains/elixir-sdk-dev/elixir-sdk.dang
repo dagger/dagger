@@ -95,16 +95,12 @@ type ElixirSdkDev {
     # Update version in mix.exs if this is a valid semver
     if (isSemver(version)) {
       let mixFile = "/sdk/elixir/mix.exs"
-      let mixExs = workspace.file(sourcePath + "/mix.exs").contents
-      # FIXME
-      # let newMixExs = mixExs.replace(
-      #   "@version \"0.0.0\"",
-      #   "@version \"" + version.trimPrefix("v") + "\""
-      # )
-      # ctr.withNewFile(mixFile, newMixExs)
-      ctr = ctr
-    } else {
-      ctr = ctr
+      let mixExs = workspace.file(sourcePath + "/mix.exs")
+      let newMixExs = mixExs.withReplaced(
+        "@version \"0.0.0\"",
+        "@version \"" + version.trimPrefix("v") + "\""
+      )
+      ctr = ctr.withFile(mixFile, newMixExs)
     }
 
     # Publish or dry-run
@@ -124,18 +120,6 @@ type ElixirSdkDev {
 
   """Bump the Elixir SDK's Engine dependency"""
   pub bump(version: String!): Changeset! {
-    # let versionFilePath = sourcePath + "/lib/dagger/core/version.ex"
-    # let contents = workspace.file(versionFilePath).contents
-    # let newVersion = "@dagger_cli_version \"" + version.trimPrefix("v") + "\""
-    # # Replace the version line - simplified approach since Dang doesn't have regex
-    # # The original used regex: ~r/@dagger_cli_version "([0-9\.-a-zA-Z]+)"/
-    # # We'll use string replacement assuming the format is consistent
-    # let newContents = contents.replace(
-    #   "@dagger_cli_version",
-    #   newVersion
-    # )
-    # let layer = directory.withNewFile(versionFilePath, newContents)
-    # layer.changes(directory)
     # FIXME
     directory.changes(directory)
   }
@@ -144,16 +128,13 @@ type ElixirSdkDev {
   pub syncImage: File! {
     let path = "runtime/main.go"
     let runtimeMainGo = withBase(source).
-      file(path).
-      contents
+      file(path)
 
     # Replace the elixirImage line with the new base image
-    # FIXME
-    # let newRuntimeMainGo = runtimeMainGo.replace(
-    #   "elixirImage = ",
-    #   "elixirImage = \"" + baseImage + "\"\n"
-    # )
-    let newRuntimeMainGo = runtimeMainGo
+    let newRuntimeMainGo = runtimeMainGo.withReplaced(
+      "elixirImage = ",
+      "elixirImage = \"" + baseImage + "\"\n"
+    ).contents
 
     container.
       from("golang:1.23-alpine").
