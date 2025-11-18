@@ -25,9 +25,9 @@ Expected stderr:
 │
 ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ├╴✔ .withServiceBinding(
-│   ┆ ┆ alias: "exec-service"
-│   ┆ ┆ service: Container.asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service!
-│   ┆ ): Container! X.Xs
+│   ┆ alias: "exec-service"
+│   ┆ service: Container.asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service!
+│   ): Container! X.Xs
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
 ╰╴✔ withExec wget -q -O- http://exec-service X.Xs
   ┃ <h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>

@@ -23,7 +23,7 @@ Expected stderr:
   this is a failing effect
   ! exit code: 1
 
-    sub-thing 2 ›
+    sub-thing 1 ›
   ✘ withExec sh -c 'echo this is another failing effect; exit 1' X.Xs ERROR
   this is another failing effect
   ! exit code: 1
