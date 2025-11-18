@@ -17,28 +17,30 @@ type TypescriptSdkDev {
 	  workspace.directory(sourcePath)
 	}
 
+	"""Check the formatting of the SDK"""
 	pub lintTypescript: Void! @check {
-	  nodejsDevContainer().withExec(["yarn", "lint"]).sync
+	  nodejsDevContainer().
+			withExec(["yarn", "--cwd", sourcePath, "lint"]).sync
 		null
 	}
 
-
-	pub lindDocsSnippets(
+	"""Check the formatting of Typescript docs snippets"""
+	pub lintDocsSnippets(
 	  docsWorkspace: Directory! @defaultPath(path:"/") @ignorePatterns(patterns:[
 			  "*"
 				"!**/*.mts"
 				"!**/*.mjs"
 				"!**/*.ts"
 				"!**/*.js"
-				"!*prettier*"
-				"!*eslint*"
+				"!**/*prettier*"
+				"!**/*eslint*"
 		  ])
 	): Void! @check {
 	 let path = "docs/current_docs"
    nodejsDevContainer().
    # Add docs snippets on top of the already-mounted SDK source
    withDirectory(".", docsWorkspace).
-   withExec(["yarn", "docs:lint"]).
+   withExec(["yarn", "--cwd", sourcePath, "docs:lint"]).
    sync
    null
   }
@@ -56,7 +58,7 @@ type TypescriptSdkDev {
 	"""Test the SDK with the given version of NodeJS"""
 	pub testNodejs(nodeVersion: String!): Void! {
     nodejsDevContainer(nodeVersion).
-    withExec(["yarn", "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"]).
+    withExec(["yarn", "--cwd", sourcePath, "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"]).
     sync
     null
 	}
@@ -64,6 +66,7 @@ type TypescriptSdkDev {
 	"""Test the SDK with BunJS"""
 	pub testBunjs: Void! @check {
     daggerEngine().installClient(bunjsDevContainer()).
+    withWorkdir(sourcePath).
     withExec(["bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"]).
     sync
    null
@@ -110,6 +113,7 @@ type TypescriptSdkDev {
       "prepatch"
    }
    let build = nodejsDevContainer.
+    withWorkdir(sourcePath).
     withExec(["npm", "run", "build"]).
     withExec(["npm", "version", versionFlag])
    # Check that dist/ exists in the build
@@ -131,8 +135,8 @@ type TypescriptSdkDev {
    null
  }
 
- let isSemver(version: String!): Boolean! {
-     let binary=go(source:currentModule.source.directory("is-semver")).binary(".")
+ pub isSemver(version: String!): Boolean! {
+     let binary=go(source:currentModule.source.directory("is-semver")).binary("is-semver")
      let exitCode=container.
       from("alpine").
       withFile("/bin/is-semver", binary).
@@ -156,17 +160,16 @@ type TypescriptSdkDev {
 # Build a nodejs dev environment, with the SDK source code mounted and its dependencies installed
 # FIXME: use baseNodejs() to avoid duplication
 pub nodejsDevContainer(nodeVersion: String! =nodeVersionPrevLts): Container! {
-	let mountPath = "/" + sourcePath
 	container.
 		# ⚠️  Keep this in sync with the engine version defined in package.json
 		from("node:" + nodeVersion + "-alpine").
-		withWorkdir(mountPath).
 		withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion)).
-		#withFile(mountPath + "/package.json", source.file("package.json")).
-		#withFile(mountPath + "/yarn.lock", source.file("yarn.lock")).
-		#withFile(mountPath + "/eslint.config.js", source.file("eslint.config.js")).
-		withExec(["yarn", "install"]).
-		withDirectory(mountPath, source)
+		withWorkdir("/app").
+		withFile(sourcePath + "/package.json", workspace.file(sourcePath + "/package.json")).
+		withFile(sourcePath + "/yarn.lock", workspace.file(sourcePath + "/yarn.lock")).
+		withFile(sourcePath + "/eslint.config.js", workspace.file(sourcePath + "/eslint.config.js")).
+		withExec(["yarn", "--cwd", sourcePath, "install"]).
+		withDirectory(sourcePath, workspace.directory(sourcePath))
 }
 
 # Build a nodejs base image, without any source code mounted
@@ -183,9 +186,9 @@ let bunjsDevContainer: Container! {
     from("oven/bun:"+bunVersion+"-alpine").
 		withWorkdir(mountPath).
 		withMountedCache("/root/.bun/install/cache", cacheVolume("bun_cache")).
-		withFile(mountPath + "/package.json", source.file("package.json")).
+		withFile(mountPath + "/package.json", workspace.file(sourcePath + "/package.json")).
 		withExec(["bun", "install"]).
-		withDirectory(mountPath, source)
+		withDirectory(mountPath, workspace.directory(sourcePath))
 }
 
 
