@@ -3,8 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
-	"regexp"
 
+	"github.com/dagger/dagger/util/scrub"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -31,7 +31,7 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, to
 	}
 	for i, message := range history {
 		// TODO: (cwlbraa) is this a complete comparison? also doesn't this end up being O(n^2)?
-		if stabilizeContent(message.Content) != stabilizeContent(c.messages[i].Content) || message.Role != c.messages[i].Role {
+		if scrub.Stabilize(message.Content) != scrub.Stabilize(c.messages[i].Content) || message.Role != c.messages[i].Role {
 			return nil, fmt.Errorf(
 				"message history diverges at index %d:\n%s",
 				i,
@@ -46,13 +46,4 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, to
 		ToolCalls:  msg.ToolCalls,
 		TokenUsage: msg.TokenUsage,
 	}, nil
-}
-
-var xxh3Regexp = regexp.MustCompile(`@xxh3:[a-f0-9]{16}`)
-var traceIDRegexp = regexp.MustCompile(`[a-f0-9]{2}-[a-f0-9]{32}-[a-f0-9]{16}-[a-f0-9]{2}`)
-
-func stabilizeContent(content string) string {
-	content = xxh3Regexp.ReplaceAllString(content, "@xxh3:0000000000000000")
-	content = traceIDRegexp.ReplaceAllString(content, "00-00000000000000000000000000000000-0000000000000000-00")
-	return content
 }
