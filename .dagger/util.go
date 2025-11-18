@@ -25,11 +25,13 @@ func changesetMerge(changesets ...*dagger.Changeset) *dagger.Changeset {
 }
 
 func assertNoChanges(ctx context.Context, cs *dagger.Changeset, log io.Writer) error {
+	// If there are changes, return an error
 	empty, err := cs.IsEmpty(ctx)
 	if err != nil {
 		return err
 	}
 	if !empty {
+		// Prepare a report with details on the diff
 		summary, err := changesetSummary(ctx, cs)
 		if err != nil {
 			return err
