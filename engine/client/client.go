@@ -175,6 +175,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		c.SecretToken = uuid.New().String()
 	}
 
+	// allow enabling scale-out of checks via an env var too for now to support cloud
+	c.EnableCloudScaleOut = c.EnableCloudScaleOut || os.Getenv("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT") != ""
+
 	// NB: decouple from the originator's cancel ctx
 	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
 	c.closeCtx, c.closeRequests = context.WithCancelCause(context.WithoutCancel(ctx))
