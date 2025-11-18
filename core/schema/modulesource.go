@@ -2993,6 +2993,62 @@ func extractToolchainModules(mod *core.Module) []*core.Module {
 	return toolchainMods
 }
 
+// validateDefaultValueType validates that a default value matches the expected argument type
+func validateDefaultValueType(value any, typeDef *core.TypeDef) error {
+	// Handle optional types - unwrap to get the actual type
+	actualType := typeDef
+	if actualType.Optional {
+		// Optional types can be null
+		if value == nil {
+			return nil
+		}
+		// Create non-optional version for validation
+		actualType = typeDef.Clone()
+		actualType.Optional = false
+	}
+
+	switch actualType.Kind {
+	case core.TypeDefKindString:
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("expected string, got %T", value)
+		}
+	case core.TypeDefKindInteger:
+		// JSON unmarshals numbers as float64
+		if _, ok := value.(float64); !ok {
+			return fmt.Errorf("expected integer, got %T", value)
+		}
+	case core.TypeDefKindFloat:
+		if _, ok := value.(float64); !ok {
+			return fmt.Errorf("expected float, got %T", value)
+		}
+	case core.TypeDefKindBoolean:
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf("expected boolean, got %T", value)
+		}
+	case core.TypeDefKindList:
+		if actualType.AsList.Valid {
+			// Check if value is an array/slice
+			if _, ok := value.([]any); !ok {
+				return fmt.Errorf("expected array, got %T", value)
+			}
+			// Could validate element types here, but that's more complex
+			// For now, just check it's an array
+		}
+	case core.TypeDefKindObject, core.TypeDefKindInput:
+		// For objects/inputs, we expect a map
+		if _, ok := value.(map[string]any); !ok {
+			return fmt.Errorf("expected object, got %T", value)
+		}
+	case core.TypeDefKindEnum:
+		// Enums should be strings
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("expected enum value (string), got %T", value)
+		}
+	}
+
+	return nil
+}
+
 // applyArgumentConfigToFunction applies argument configuration overrides to a function
 func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.ModuleConfigArgument, functionChain []string) *core.Function {
 	fn = fn.Clone()
@@ -3028,7 +3084,32 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 			if strings.EqualFold(arg.Name, argCfg.Name) || strings.EqualFold(arg.OriginalName, argCfg.Name) {
 				// Apply default value if specified
 				if argCfg.Default != "" {
-					arg.DefaultValue = core.JSON([]byte(fmt.Sprintf("%q", argCfg.Default)))
+					// Parse the default value as JSON to determine its type
+					var defaultValue any
+					if err := json.Unmarshal([]byte(argCfg.Default), &defaultValue); err != nil {
+						// If it's not valid JSON, treat it as a string literal
+						defaultValue = argCfg.Default
+					}
+
+					// Validate the type matches the argument type
+					if err := validateDefaultValueType(defaultValue, arg.TypeDef); err != nil {
+						// Log warning but don't fail - allow for flexibility
+						slog.Warn("default value type mismatch",
+							"function", fn.Name,
+							"argument", arg.Name,
+							"error", err)
+					}
+
+					// Marshal back to JSON for storage
+					marshaledValue, err := json.Marshal(defaultValue)
+					if err != nil {
+						slog.Warn("failed to marshal default value",
+							"function", fn.Name,
+							"argument", arg.Name,
+							"error", err)
+					} else {
+						arg.DefaultValue = core.JSON(marshaledValue)
+					}
 				}
 
 				// Apply defaultPath if specified
