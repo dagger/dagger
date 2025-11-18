@@ -319,8 +319,7 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 	autoExpand := row.Depth() < 1 &&
 		(row.RevealedChildren || row.IsRunningOrChildRunning)
 
-	alwaysExpand := row.Span.IsFailedOrCausedFailure() ||
-		row.Span.IsCanceled() ||
+	alwaysExpand := row.Span.IsCanceled() ||
 		opts.Verbosity >= ExpandCompletedVerbosity ||
 		opts.ExpandCompleted
 
