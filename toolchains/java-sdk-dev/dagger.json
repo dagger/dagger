@@ -2,7 +2,7 @@
   "name": "java-sdk-dev",
   "engineVersion": "v0.19.6",
   "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk@e91e64a947436ac9342257de9f845b7f5dfa7639"
+    "source": "github.com/vito/dang/dagger-sdk@b94a4340f16f4fc60e78019068e5025468b1de9d"
   },
   "dependencies": [
     {
