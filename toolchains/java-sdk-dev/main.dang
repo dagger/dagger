@@ -55,7 +55,7 @@ type JavaSdkDev {
   """
   Test the Java SDK
   """
-  pub test(): Void {
+  pub test(): Void @check {
     devContainer.
       withExec(["mvn", "clean", "verify", "-Ddaggerengine.version=local"]).
       sync
@@ -66,7 +66,7 @@ type JavaSdkDev {
   """
   Lint the Java SDK
   """
-  pub lint(): Void {
+  pub lint(): Void @check {
     devContainer.
       withExec(["mvn", "fmt:check"]).
       sync
@@ -80,7 +80,7 @@ type JavaSdkDev {
   pub releaseDryRun(
     """Git tag to fake-release"""
     sourceTag: String! = "HEAD",
-  ): Void {
+  ): Void @check {
     let version = sourceTag.trimPrefix(sourcePath+"/v")
     devContainer.
       withExec(["apk", "add", "--no-cache", "gpg"]).

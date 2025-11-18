@@ -99,6 +99,7 @@ func (t PythonSdkDev) LintDocsSnippets(
 	return t.WithDirectory(workspace).Lint(ctx, []string{"../.."})
 }
 
+// +check
 // Check for linting errors
 func (t PythonSdkDev) Lint(
 	ctx context.Context,
@@ -113,6 +114,7 @@ func (t PythonSdkDev) Lint(
 	return err
 }
 
+// +check
 // Format source files
 func (t PythonSdkDev) Format(
 	// List of files or directories to check
@@ -145,6 +147,7 @@ func (t PythonSdkDev) WithDirectory(
 	return t
 }
 
+// +check
 // Test the Python SDK
 func (t PythonSdkDev) Test(ctx context.Context) error {
 	// FIXME: apply Erik's nested fix fix 2025-nov-7
