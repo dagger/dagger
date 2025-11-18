@@ -1,6 +1,9 @@
 {
   "name": "typescript-sdk-dev",
   "engineVersion": "v0.19.6",
+  "include": [
+    "is-semver"
+  ],
   "sdk": {
     "source": "github.com/vito/dang/dagger-sdk@b94a4340f16f4fc60e78019068e5025468b1de9d"
   },
