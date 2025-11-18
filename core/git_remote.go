@@ -41,17 +41,18 @@ import (
 )
 
 type RemoteGitRepository struct {
+	// when URL is nil, it indicates an ambiguous git URL that needs to be resolved
 	URL *gitutil.GitURL
 
 	SSHKnownHosts string
-	SSHAuthSocket dagql.ObjectResult[*Socket]
+	SSHAuthSocket dagql.Optional[SocketID]
 
 	Services ServiceBindings
 	Platform Platform
 
 	AuthUsername string
-	AuthToken    dagql.ObjectResult[*Secret]
-	AuthHeader   dagql.ObjectResult[*Secret]
+	AuthToken    dagql.Optional[SecretID]
+	AuthHeader   dagql.Optional[SecretID]
 }
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
