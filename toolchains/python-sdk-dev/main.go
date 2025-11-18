@@ -131,7 +131,7 @@ func (t PythonSdkDev) Format(
 }
 
 // Run the type checker (mypy)
-// +check
+// FIXME: this is not included as an automated check. Should it?
 func (t PythonSdkDev) Typecheck(ctx context.Context) error {
 	_, err := t.DevContainer.
 		WithExec(uvRun("mypy", ".")).
