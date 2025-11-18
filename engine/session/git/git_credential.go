@@ -78,12 +78,11 @@ func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCred
 	input += "\n"
 	cmd.Stdin = strings.NewReader(input)
 
+	// Never prompt the user for credentials
 	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ASKPASS=",          // Do not use external programs to ask for credentials
+		"GIT_TERMINAL_PROMPT=0", // Disable Git's builtin prompting
 	)
-	if req.Protocol != "http" && req.Protocol != "https" {
-		cmd.Env = append(cmd.Env, "SSH_ASKPASS=echo")
-	}
 
 	// Run the command
 	if err := cmd.Run(); err != nil {
