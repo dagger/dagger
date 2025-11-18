@@ -149,7 +149,7 @@ func (t *PhpSdkDev) Changes() *dagger.Changeset {
 }
 
 func (t *PhpSdkDev) WithGeneratedClient() *PhpSdkDev {
-	relLayer := t.DevContainer(false).
+	relLayer := t.DevContainer(true).
 		WithoutDirectory("generated").
 		WithDirectory("generated", dag.Directory()).
 		// FIXME: why not inject the right dagger binary, instead of leaking this env var?
