@@ -11,7 +11,7 @@
     },
     {
       "name": "dagger-engine",
-      "source": "../../toolchains/engine-dev"
+      "source": "../engine-dev"
     },
     {
       "name": "go",
