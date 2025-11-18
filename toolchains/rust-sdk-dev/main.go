@@ -156,10 +156,13 @@ func (t *RustSdkDev) WithGeneratedClient() *RustSdkDev {
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", rustGeneratedClientFilePath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).
-		Directory(".")
+		Directory(".").
+		Filter(dagger.DirectoryFilterOpts{
+			Exclude: []string{"target"},
+		})
 
 	t.Workspace = t.Workspace.
-		WithoutDirectory(t.SourcePath).
+		// Merge rel layer inside the current workspace (excluding target)
 		WithDirectory(t.SourcePath, relLayer)
 
 	return t
