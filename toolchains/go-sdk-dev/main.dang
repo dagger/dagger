@@ -28,10 +28,6 @@ type GoSdkDev {
     engineDev().installClient(ctr, engineDev().service("sdk"))
   }
 
-  pub name: String! {
-    "go"
-  }
-
   pub source: Directory! {
     workspace.directory(sourcePath)
   }
