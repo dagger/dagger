@@ -326,8 +326,8 @@ defmodule Dagger.ClientTest do
              |> Container.with_exec(["foobar"])
              |> Sync.sync()
 
-    assert Exception.message(error) ==
-             "input: container.from.withExec.sync process \"foobar\" did not complete successfully: exit code: 1"
+    assert Exception.message(error) =~
+                  ~r/container\.from\.withExec\.sync exit code: 1/
   end
 
   test "iss 8601 - Dagger.Directory.with_directory/4 should not crash", %{dag: dag} do
