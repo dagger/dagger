@@ -59,8 +59,7 @@ type DotnetSdkDev {
   """
   Lint the Dotnet SDK with Csharpier (https://csharpier.com)
   """
-  # Where do we annotate the check??
-  pub csharpier: Void! {
+  pub csharpier: Void! @check {
     devContainer().
       withExec(["dotnet", "tool", "restore"]).
       withExec(["dotnet", "csharpier", "--check", "."]).
@@ -72,8 +71,7 @@ type DotnetSdkDev {
   """
   Run tests on the Dotnet SDK
   """
-  # Where do we annotate the check??
-  pub test: Void! {
+  pub test: Void! @check {
     devContainer().
       withFile("Dagger.SDK/introspection.json", daggerEngine().introspectionJson()).
       withExec(["dotnet", "restore"]).

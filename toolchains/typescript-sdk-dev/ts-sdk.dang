@@ -17,7 +17,7 @@ type TypescriptSdkDev {
 	  workspace.directory(sourcePath)
 	}
 
-	pub lintTypescript: Void! {
+	pub lintTypescript: Void! @check {
 	  nodejsDevContainer().withExec(["yarn", "lint"]).sync
 		null
 	}
@@ -44,12 +44,12 @@ type TypescriptSdkDev {
   #}
 
 	"""Test the SDK with LTS version of Node"""
-	pub testNodejsLts: Void! {
+	pub testNodejsLts: Void! @check {
    testNodejs(nodeVersionLts)
 	}
 
 	"""Test the SDK with previous LTS version of Node"""
-	pub testNodejsPrevLts: Void! {
+	pub testNodejsPrevLts: Void! @check {
 	  testNodejs(nodeVersionPrevLts)
 	}
 
@@ -62,7 +62,7 @@ type TypescriptSdkDev {
 	}
 
 	"""Test the SDK with BunJS"""
-	pub testBunjs: Void! {
+	pub testBunjs: Void! @check {
     daggerEngine().installClient(bunjsDevContainer()).
     withExec(["bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"]).
     sync
@@ -86,7 +86,7 @@ type TypescriptSdkDev {
 		changes(workspace)
 	}
 
-	pub releaseDryRun: Void! {
+	pub releaseDryRun: Void! @check {
 	  release(
 			dryRun:true,
 			sourceTag:"HEAD",
@@ -140,7 +140,6 @@ type TypescriptSdkDev {
       exitCode
      exitCode == 0
  }
-
 
 
  let versionFromTag(tag: String!): String! {
