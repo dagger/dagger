@@ -71,6 +71,8 @@ func (c *Check) Match(include []string) (bool, error) {
 	for _, name := range []string{c.CliName(), c.GqlName()} {
 		for _, pattern := range include {
 			// FIXME: match against both gqlFieldCase and cliCase
+			pattern = strings.ReplaceAll(pattern, ":", "/")
+			name = strings.ReplaceAll(name, ":", "/")
 			matched, err := doublestar.PathMatch(pattern, name)
 			if err != nil {
 				return false, err
@@ -181,7 +183,7 @@ func (r *CheckGroup) Clone() *CheckGroup {
 }
 
 func (c *Check) Name() string {
-	return strings.Join(c.Path, "/")
+	return strings.Join(c.Path, ":")
 }
 
 func (c *Check) Clone() *Check {
