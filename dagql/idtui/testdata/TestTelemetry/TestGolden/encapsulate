@@ -6,14 +6,21 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-✔ load module: ./viztest X.Xs
-├╴✔ finding module configuration X.Xs
-├╴✔ initializing module X.Xs
-├╴✔ inspecting module metadata X.Xs
-╰╴✔ loading type definitions X.Xs
- 
-✔ parsing command line arguments X.Xs
-
+✔ load("./viztest") X.Xs
+  ✔ transfer files X.Xs
+  ╰╴✔ moduleSource(refString: "./viztest"): ModuleSource! X.Xs
+    ╰╴✔ load SDK: go X.Xs
+     
+  ✔ validate X.Xs
+  ╰╴✔ .configExists: Boolean! X.Xs
+    ┃ true
+   
+  ✔ initialize X.Xs
+    ✔ load dependencies X.Xs
+      ✔ dep X.Xs
+      ✔ versioned X.Xs
+      ✔ versioned_git X.Xs
+     
 ✔ viztest: Viztest! X.Xs
 ✔ .encapsulate: Void X.Xs
 ├╴✔ container: Container! X.Xs
