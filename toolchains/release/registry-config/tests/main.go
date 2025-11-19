@@ -16,10 +16,10 @@ func (m *Tests) All(ctx context.Context) error {
 	p := pool.New().WithErrors().WithContext(ctx)
 
 	p.Go(m.WithRegistryAuth)
-	p.Go(m.WithRegistryAuth_MultipleCredentials)
+	p.Go(m.WithRegistryAuthMultipleCredentials)
 	p.Go(m.WithoutRegistryAuth)
 	p.Go(m.SecretMount)
-	p.Go(m.SecretMount_SkipOnEmpty)
+	p.Go(m.SecretMountSkipOnEmpty)
 
 	return p.Wait()
 }
