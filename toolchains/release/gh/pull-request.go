@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
-	"dagger/gh/internal/dagger"
 	"errors"
 	"strings"
+
+	"dagger/gh/internal/dagger"
 )
 
 // Work with GitHub pull requests.
@@ -121,7 +122,7 @@ func (m *PullRequest) Create(
 		}
 	}
 
-	if !(fill || fillFirst || fillVerbose) && title == "" {
+	if title == "" && !fill && !fillFirst && !fillVerbose {
 		return errors.New("\"title\" is required when none of the fill options are configured")
 	}
 

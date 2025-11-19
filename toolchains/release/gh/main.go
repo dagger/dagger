@@ -2,10 +2,11 @@
 package main
 
 import (
-	"dagger/gh/internal/dagger"
 	"errors"
 	"strings"
 	"time"
+
+	"dagger/gh/internal/dagger"
 )
 
 type Gh struct {
@@ -38,11 +39,12 @@ func New(
 	//
 	// +optional
 	source *dagger.Directory,
-) (*Gh, error) {
+) *Gh {
 	return &Gh{
 		Token:      token,
 		Repository: repo,
-	}, nil
+		Source:     source,
+	}
 }
 
 // Set a GitHub token.
