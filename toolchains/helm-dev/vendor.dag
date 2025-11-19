@@ -1,0 +1,10 @@
+#!/usr/bin/env dagger -M
+
+## The k3s module is vendored from github.com/marcosnils/daggerverse
+## All credits to Marcos Nils
+## Run this script to update the vendored directory
+
+address https://github.com/marcosnils/daggerverse#main |
+directory |
+filter --include=k3s |
+export .
