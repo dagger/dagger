@@ -24,24 +24,23 @@ var (
 )
 
 func init() {
-	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List checks without running them")
+	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
 
 	checksCmd.Flags().BoolVar(&enableChecksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	checksCmd.Flags().MarkHidden("scale-out")
 }
 
 var checksCmd = &cobra.Command{
-	Hidden: true,
-	Use:    "checks [options] [pattern...]",
-	Short:  "Load and execute checks",
-	Long: `Load and execute checks.
-
-Checks are a convenience layer over regular Dagger Functions
+	Hidden:  true,
+	Aliases: []string{"checks"},
+	Use:     "check [options] [pattern...]",
+	Short:   "Check the state of your project by running tests, linters, etc.",
+	Long: `Check the state of your project by running tests, linters, etc.
 
 Examples:
-  dagger checks                    # Run all checks
-  dagger checks -l                 # List all checks without running
-  dagger checks pattern1 pattern2  # Run checks matching patterns
+  dagger check                    # Run all checks
+  dagger check -l                 # List all available checks
+  dagger check go:lint            # Run the go:lint check and any subchecks
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
