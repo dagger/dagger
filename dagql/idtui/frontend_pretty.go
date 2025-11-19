@@ -2318,7 +2318,15 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
 
-	if !fe.finalRender {
+	if row.Span.LLMRole != "" {
+		switch row.Span.LLMRole {
+		case telemetry.LLMRoleUser:
+			fmt.Fprint(out, out.String(Block).Foreground(termenv.ANSIMagenta))
+		case telemetry.LLMRoleAssistant:
+			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIMagenta))
+		}
+		fmt.Fprint(out, " ")
+	} else if !fe.finalRender {
 		fe.renderToggler(out, row, isFocused)
 		fmt.Fprint(out, " ")
 	}
@@ -2471,14 +2479,7 @@ func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 
 func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
 	var icon termenv.Style
-	if row.Span.Message != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			icon = out.String(Block).Foreground(termenv.ANSIMagenta)
-		case telemetry.LLMRoleAssistant:
-			icon = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
-		}
-	} else if row.HasChildren || row.Span.HasLogs {
+	if row.HasChildren || row.Span.HasLogs {
 		if row.Expanded {
 			icon = out.String(CaretDownFilled).Foreground(termenv.ANSIBrightBlack)
 		} else {
