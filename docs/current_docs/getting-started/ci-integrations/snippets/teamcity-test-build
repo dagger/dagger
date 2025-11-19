@@ -6,8 +6,7 @@ version = "2025.07"
 object Conf {
     const val DAGGER_VERSION = "0.19.2"
     const val DAGGER_TEAMCITY_RECIPE = "tc:recipe:jetbrains/dagger@1.0.0"
-    const val TEST_REPO = "github.com/kpenfound/dagger-modules"
-    const val TEST_DAGGER_MODULE = "$TEST_REPO/golang@v0.2.0"
+    const val DAGGER_MODULE = "github.com/kpenfound/dagger-modules/golang@v0.2.0"
     val address
         get() = "ttl.sh/my-app-%env.BUILD_NUMBER%"
 }
@@ -30,7 +29,7 @@ object Build : BuildType({
             id = "run tests"
             type = Conf.DAGGER_TEAMCITY_RECIPE
             param("env.input_version", Conf.DAGGER_VERSION)
-            param("env.input_command", """dagger -m ${Conf.TEST_DAGGER_MODULE} call test --source=./golang""")
+            param("env.input_command", """dagger -m ${Conf.DAGGER_MODULE} call test --source=.""")
         }
         step {
             id = "build and publish"
@@ -38,15 +37,15 @@ object Build : BuildType({
             param("env.input_version", Conf.DAGGER_VERSION)
             param(
                 "env.input_command",
-                """dagger -m ${Conf.TEST_DAGGER_MODULE} call build-container --source=. --args=. publish --address=${Conf.address}"""
+                """dagger -m ${Conf.DAGGER_MODULE} call build-container --source=. --args=. publish --address=${Conf.address}"""
             )
         }
     }
 })
 
 object TestVscRoot : GitVcsRoot({
-    name = "dagger-modules"
-    url = "https://${Conf.TEST_REPO}.git"
+    name = "greetings-api"
+    url = "https://github.com/kpenfound/greetings-api.git"
     branchSpec = "+:refs/heads/*"
     branch = "refs/heads/main"
 })
