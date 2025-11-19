@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/moby/locker"
 	_ "modernc.org/sqlite"
 )
 
@@ -21,7 +22,9 @@ type DBs struct {
 	Root string
 
 	open map[string]*DB
-	mu   sync.RWMutex
+	mu   sync.RWMutex // mutex just for reading writing map
+
+	perDBLock *locker.Locker // mutex for each DB
 }
 
 // CollectGarbageAfter is the time after which a database is considered
@@ -30,8 +33,9 @@ const CollectGarbageAfter = time.Hour
 
 func NewDBs(root string) *DBs {
 	return &DBs{
-		Root: root,
-		open: make(map[string]*DB),
+		Root:      root,
+		open:      make(map[string]*DB),
+		perDBLock: locker.New(),
 	}
 }
 
@@ -42,6 +46,9 @@ var Schema string
 // runs the schema migration if needed.
 func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 	lg := slog.Default().With("clientID", clientID)
+
+	dbs.perDBLock.Lock(clientID)
+	defer dbs.perDBLock.Unlock(clientID)
 
 	dbs.mu.Lock()
 	db, ok := dbs.open[clientID]
@@ -54,19 +61,16 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 	}
 	dbs.mu.Unlock()
 
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	db.refCount++ // increment now to handle case of context cancelled before we return
+	lg = lg.With("aquiredRefCount", db.refCount)
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, dbs.close(db, lg))
 		}
 	}()
-	db.refCount++
-
-	lg = lg.With("aquiredRefCount", db.refCount)
 
 	if db.inner == nil {
-		lg.ExtraDebug("opening client DB", "clientID", clientID)
+		lg.Debug("opening client DB", "clientID", clientID)
 
 		dbPath := db.dbs.path(db.clientID)
 		if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
@@ -106,32 +110,31 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 				return nil, fmt.Errorf("migrate: %w", err)
 			}
 		}
+	} else {
+		lg.ExtraDebug("reusing open client DB", "clientID", clientID)
+	}
 
+	if db.Queries == nil {
+		var err error
 		db.Queries, err = Prepare(ctx, db.inner)
 		if err != nil {
 			return nil, fmt.Errorf("prepare queries: %w", err)
 		}
-	} else {
-		lg.ExtraDebug("reusing open client DB", "clientID", clientID)
 	}
 
 	return db, nil
 }
 
-// assumes db.mu is held and dbs.mu is not held
+// assumes dbs.perDBLock is held for clientID and dbs.mu is *not* held
 func (dbs *DBs) close(db *DB, lg *slog.Logger) (rerr error) {
 	db.refCount--
-
 	lg = lg.With("releasedRefCount", db.refCount)
 
 	if db.refCount > 0 {
-		lg.ExtraDebug("not closing client DB; still in use")
+		lg.ExtraDebug("not closing client DB; still has references")
 		return nil
 	}
-
-	lg.ExtraDebug("closing client DB; no more references")
-
-	db.refCount = 0
+	lg.Debug("closing client DB; no more references")
 
 	if db.Queries != nil {
 		if cerr := db.Queries.Close(); cerr != nil {
@@ -213,7 +216,6 @@ type DB struct {
 	*Queries
 
 	refCount int
-	mu       sync.Mutex
 }
 
 func (db *DB) Begin() (*sql.Tx, error) {
@@ -222,7 +224,7 @@ func (db *DB) Begin() (*sql.Tx, error) {
 
 func (db *DB) Close() (rerr error) {
 	lg := slog.Default().With("clientID", db.clientID)
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	db.dbs.perDBLock.Lock(db.clientID)
+	defer db.dbs.perDBLock.Unlock(db.clientID)
 	return db.dbs.close(db, lg)
 }
