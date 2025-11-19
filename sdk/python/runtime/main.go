@@ -80,6 +80,9 @@ var tplInit string
 //go:embed template/main.py
 var tplMain string
 
+//go:embed template/runtime.py
+var tplRuntime string
+
 // Functions for building the runtime module for the Python SDK.
 //
 // The server interacts directly with the ModuleRuntime and Codegen functions.
@@ -146,7 +149,7 @@ func (m *PythonSdk) Codegen(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.GeneratedCode, error) {
-	m, err := m.Common(ctx, modSource, introspectionJSON)
+	m, err := m.Common(ctx, modSource, introspectionJSON, true)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +179,7 @@ func (m *PythonSdk) ModuleRuntime(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	m, err := m.Common(ctx, modSource, introspectionJSON)
+	m, err := m.Common(ctx, modSource, introspectionJSON, true)
 	if err != nil {
 		return nil, err
 	}
@@ -184,20 +187,31 @@ func (m *PythonSdk) ModuleRuntime(
 }
 
 // Container for executing the Python module runtime
-func (m *PythonSdk) ModuleTypesExp(
+func (m *PythonSdk) ModuleTypes(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 	outputFilePath string,
 ) (*dagger.Container, error) {
-	ctr, err := m.ModuleRuntime(ctx, modSource, introspectionJSON)
+	_ = introspectionJSON
+
+	m, err := m.Common(ctx, modSource, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.
+
+	if m.Discovery.SdkHasFile("dist/register") {
+		return m.Container.
 			WithEnvVariable("DAGGER_MODULE_FILE", outputFilePath).
-			WithEntrypoint([]string{RuntimeExecutablePath, "--register"}),
-		nil
+			WithMountedFile("/usr/local/bin/register", m.SdkSourceDir.File("dist/register")).
+			WithExec([]string{"register"},
+				dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}), nil
+	} else {
+		return m.WithInstall().Container.
+			WithEnvVariable("DAGGER_MODULE_FILE", outputFilePath).
+			WithExec([]string{"uv", "run", "--frozen", "python", RuntimeExecutablePath, "--register"},
+				dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}), nil
+	}
 }
 
 // Common steps for the ModuleRuntime and Codegen functions
@@ -206,6 +220,7 @@ func (m *PythonSdk) Common(
 	modSource *dagger.ModuleSource,
 	// +optional
 	introspectionJSON *dagger.File,
+	withUpdate bool,
 ) (*PythonSdk, error) {
 	// The following functions were built to be composable in a granular way,
 	// to allow a custom SDK to depend on this one and hook into before or
@@ -227,7 +242,7 @@ func (m *PythonSdk) Common(
 		WithSDK(introspectionJSON).
 		WithTemplate().
 		WithSource().
-		WithUpdates(), nil
+		WithUpdates(withUpdate), nil
 }
 
 // Get all the needed information from the module's metadata and source files
@@ -308,14 +323,6 @@ func (m *PythonSdk) uv() dagger.WithContainerFunc {
 // - <source>/src/<package_name>/__init__.py
 // - <source>/src/<package_name>/main.py
 func (m *PythonSdk) WithTemplate() *PythonSdk {
-	m.Container = m.Container.
-		WithFile(
-			RuntimeExecutablePath,
-			dag.CurrentModule().Source().File("template/runtime.py"),
-			dagger.ContainerWithFileOpts{Permissions: 0o755},
-		).
-		WithEntrypoint([]string{RuntimeExecutablePath})
-
 	d := m.Discovery
 
 	// NB: We can't detect if it's a new module with `dagger develop --sdk`
@@ -428,7 +435,10 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 }
 
 // Make any updates to current source
-func (m *PythonSdk) WithUpdates() *PythonSdk {
+func (m *PythonSdk) WithUpdates(perform bool) *PythonSdk {
+	if !perform {
+		return m
+	}
 	if !m.UseUv() {
 		return m
 	}
@@ -466,6 +476,14 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 
 // Install the module's package and dependencies
 func (m *PythonSdk) WithInstall() *PythonSdk {
+	m.Container = m.Container.
+		WithNewFile(
+			RuntimeExecutablePath,
+			tplRuntime,
+			dagger.ContainerWithNewFileOpts{Permissions: 0o755},
+		).
+		WithEntrypoint([]string{RuntimeExecutablePath})
+
 	// NB: Only enable bytecode compilation in `dagger call`
 	// (not `dagger init/develop`), to avoid having to remove the .pyc files
 	// before exporting the module back to the host.

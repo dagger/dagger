@@ -274,7 +274,16 @@ def get_alt_constructor(cls: type[T]) -> Callable[..., T] | None:
 
 def get_parent_module_doc(obj: type) -> str | None:
     """Get the docstring of the parent module."""
-    spec = importlib.util.find_spec(obj.__module__)
+    # Skip mock modules created by AST loader
+    if obj.__module__ == "__dagger_mock__":
+        return None
+
+    try:
+        spec = importlib.util.find_spec(obj.__module__)
+    except (ValueError, AttributeError):
+        # Module doesn't have proper __spec__ or can't be found
+        return None
+
     if not spec or not spec.parent:
         return None
     mod = importlib.import_module(spec.parent)

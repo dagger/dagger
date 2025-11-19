@@ -6489,6 +6489,9 @@ class Fooer(typing.Protocol):
 				if err := os.MkdirAll(pyDir, 0o755); err != nil {
 					return err
 				}
+				if err := os.Remove(filepath.Join(pyDir, "main.py")); err != nil {
+					return err
+				}
 				return os.WriteFile(filepath.Join(pyDir, "__init__.py"), []byte(pySrc), 0o644)
 			},
 		},
@@ -7896,7 +7899,7 @@ func sdkSourceFile(sdk string) string {
 	case "go":
 		return "main.go"
 	case "python":
-		return "src/test/__init__.py"
+		return "src/test/main.py"
 	case "typescript":
 		return "src/index.ts"
 	case "java", "./sdk/java":

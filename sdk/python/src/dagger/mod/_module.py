@@ -70,6 +70,8 @@ class Module:
         self._objects: dict[str, ObjectType] = {}
         self._enums: dict[str, type[enum.Enum]] = {}
         self._main: ObjectType | None = None
+        # Module description (used by AST loader when parent module is not importable)
+        self._module_description: str | None = None
         # Escape hatch if there's too much noise from showing stack traces
         # from exceptions raised in functions by default. Not documented
         # intentionally for now.
@@ -142,10 +144,15 @@ class Module:
             if self.is_main(obj_type):
                 # Only the main object's constructor is needed.
                 # It's the entrypoint to the module.
-                obj_type.get_constructor(self._converter)
+                # Interfaces don't have constructors.
+                if not obj_type.interface:
+                    obj_type.get_constructor(self._converter)
 
                 # Module description from main object's parent module
-                if desc := get_parent_module_doc(obj_type.cls):
+                # For AST-loaded modules, use the stored description
+                if self._module_description is not None:
+                    mod = mod.with_description(self._module_description)
+                elif desc := get_parent_module_doc(obj_type.cls):
                     mod = mod.with_description(desc)
 
             # Object/interface type
@@ -156,11 +163,14 @@ class Module:
                     description=get_doc(obj_type.cls),
                 )
             else:
-                type_def = type_def.with_object(
-                    obj_name,
-                    description=get_doc(obj_type.cls),
-                    deprecated=obj_type.deprecated,
-                )
+                # Build kwargs for with_object
+                object_kwargs = {
+                    "description": get_doc(obj_type.cls),
+                }
+                if obj_type.deprecated is not None:
+                    object_kwargs["deprecated"] = obj_type.deprecated
+
+                type_def = type_def.with_object(obj_name, **object_kwargs)
 
             # Object fields
             if obj_type.fields:
@@ -168,11 +178,18 @@ class Module:
 
                 for field_name, field in obj_type.fields.items():
                     ctx = f"type for field '{field.original_name}' in {obj_type}"
+
+                    # Build kwargs for with_field
+                    field_kwargs = {
+                        "description": get_doc(field.return_type),
+                    }
+                    if field.meta.deprecated is not None:
+                        field_kwargs["deprecated"] = field.meta.deprecated
+
                     type_def = type_def.with_field(
                         field_name,
                         to_typedef(types[field.original_name], ctx),
-                        description=get_doc(field.return_type),
-                        deprecated=field.meta.deprecated,
+                        **field_kwargs,
                     )
 
             # Object/interface functions
@@ -204,8 +221,8 @@ class Module:
                             dagger.FunctionCachePolicy.Default,
                             time_to_live=func.cache_policy,
                         )
-                if deprecated := func.deprecated:
-                    func_def = func_def.with_deprecated(reason=deprecated)
+                if func.deprecated is not None:
+                    func_def = func_def.with_deprecated(reason=func.deprecated)
                 if func.check:
                     func_def = func_def.with_check()
 
@@ -218,21 +235,30 @@ class Module:
                     if param.is_nullable:
                         arg_def = arg_def.with_optional(True)
 
+                    # Build kwargs for with_arg
+                    arg_kwargs = {
+                        "description": param.doc,
+                        "default_value": param.default_value,
+                        "default_path": param.default_path,
+                        "ignore": param.ignore,
+                    }
+                    if param.deprecated is not None:
+                        arg_kwargs["deprecated"] = param.deprecated
+
                     func_def = func_def.with_arg(
                         param.name,
                         arg_def,
-                        description=param.doc,
-                        default_value=param.default_value,
-                        default_path=param.default_path,
-                        ignore=param.ignore,
-                        deprecated=param.deprecated,
+                        **arg_kwargs,
                     )
 
-                type_def = (
-                    type_def.with_constructor(func_def)
-                    if func_name == ""
-                    else type_def.with_function(func_def)
-                )
+                # Interfaces don't have constructors
+                if func_name == "" and obj_type.interface:
+                    # Skip constructor for interfaces
+                    pass
+                elif func_name == "":
+                    type_def = type_def.with_constructor(func_def)
+                else:
+                    type_def = type_def.with_function(func_def)
 
             # Add object/interface to module
             mod = (
@@ -253,11 +279,26 @@ class Module:
                 if description is None and meta and meta.description is not None:
                     description = meta.description
 
+                # Build kwargs for with_enum_member
+                enum_member_kwargs = {
+                    "value": str(member.value),
+                    "description": description,
+                }
+
+                # Check for deprecated attribute on member first (set by AST loader)
+                # then fall back to meta from source parsing
+                deprecated_value = None
+                if hasattr(member, "deprecated"):
+                    deprecated_value = member.deprecated
+                elif meta and meta.deprecated is not None:
+                    deprecated_value = meta.deprecated
+
+                if deprecated_value is not None:
+                    enum_member_kwargs["deprecated"] = deprecated_value
+
                 enum_def = enum_def.with_enum_member(
                     member.name,
-                    value=str(member.value),
-                    description=description,
-                    deprecated=meta.deprecated if meta else None,
+                    **enum_member_kwargs,
                 )
             mod = mod.with_enum(enum_def)
 
