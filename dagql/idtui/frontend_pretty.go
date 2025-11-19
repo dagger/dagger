@@ -2105,32 +2105,49 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 		indent += "  "
 	}
 
-	slices.Reverse(parents)
-	context := new(strings.Builder)
-	noColorOut := termenv.NewOutput(context, termenv.WithProfile(termenv.Ascii))
+	indentBuf := new(strings.Builder)
+	fmt.Fprint(indentBuf, prefix)
+	indentOut := NewOutput(indentBuf, termenv.WithProfile(fe.profile))
+	r.fancyIndent(indentOut, row, false, false)
+	if !fe.finalRender {
+		fmt.Fprint(indentOut, "  ")
+	}
+
 	if len(parents) > 0 {
-		indent := indent + "  "
-		fmt.Fprint(out, prefix, indent)
+		// fmt.Fprint(out, prefix, indent)
+		r.fancyIndent(out, row, false, false)
+		fmt.Fprint(out, "  ")
+		if !fe.finalRender {
+			fmt.Fprint(out, "  ")
+		}
+		slices.Reverse(parents)
+		context := new(strings.Builder)
+		noColorOut := termenv.NewOutput(context, termenv.WithProfile(termenv.Ascii))
 		for _, p := range parents {
 			fe.renderStepTitle(noColorOut, r, p, prefix+indent, true)
 			fmt.Fprintf(noColorOut, " › ")
 		}
-		fmt.Fprintln(noColorOut)
+		fmt.Fprint(out, out.String(context.String()).Foreground(termenv.ANSIBrightBlack).Faint())
+		fmt.Fprintln(out)
 	}
-	fmt.Fprint(out, out.String(context.String()).Foreground(termenv.ANSIBrightBlack).Faint())
-	fmt.Fprint(out, prefix, indent)
+	// fmt.Fprint(out, prefix, indent)
+	r.fancyIndent(out, row, false, false)
+	if !fe.finalRender {
+		fmt.Fprint(out, "  ")
+	}
 	fe.renderStepTitle(out, r, rootCauseRow, prefix+indent, false)
 	fmt.Fprintln(out)
 	if logs := fe.logs.Logs[rootCauseRow.Span.ID]; logs != nil {
-		row := *rootCauseRow
-		height := fe.window.Height / 3
-		if fe.finalRender {
-			height = 0
-			row.Depth = -1
+		if fe.finalRender && row.Depth == 0 {
+			logs.SetPrefix("")
+			logs.SetHeight(logs.UsedHeight())
+		} else {
+			logs.SetPrefix(indentBuf.String())
+			logs.SetHeight(fe.window.Height / 3)
 		}
-		fe.renderLogs(out, r, &row, logs, height, prefix+indent, false)
+		fmt.Fprint(out, logs.View())
 	}
-	fe.renderStepError(out, r, rootCauseRow, prefix+indent)
+	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
 
 	fe.shownErrs[rootCause.ID] = true
 }
@@ -2532,11 +2549,11 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	span := row.Span
 	depth := row.Depth
 
-	Pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
-	Dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+	dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
 	if focused {
-		Pipe = hl(Pipe)
-		Dashed = hl(Dashed)
+		pipe = hl(pipe)
+		dashed = hl(dashed)
 	}
 
 	if depth == -1 {
@@ -2547,7 +2564,7 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 		fmt.Fprint(pipeBuf, prefix)
 		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
-		fmt.Fprint(indentOut, Pipe)
+		fmt.Fprint(indentOut, pipe)
 		fmt.Fprint(indentOut, out.String(" "))
 		logs.SetPrefix(pipeBuf.String())
 	}
@@ -2558,7 +2575,7 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	if trimmed > 0 {
 		fmt.Fprint(out, prefix)
 		r.fancyIndent(out, row, false, false)
-		fmt.Fprint(out, Dashed)
+		fmt.Fprint(out, dashed)
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("...").Foreground(termenv.ANSIBrightBlack))
 		fmt.Fprintf(out, out.String("%d").Foreground(termenv.ANSIBrightBlack).Bold().String(), trimmed)
