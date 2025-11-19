@@ -31,7 +31,6 @@ func (m *Examples) K3S(ctx context.Context) (string, error) {
 		WithFile("/.kube/config", k3s.Config()).
 		WithExec([]string{"helm", "upgrade", "--install", "--force", "--wait", "--debug", "nginx", "oci://registry-1.docker.io/bitnamicharts/nginx"}).
 		WithExec([]string{"sh", "-c", "while true; do curl -sS " + ep + " && exit 0 || sleep 1; done"}).Stdout(ctx)
-
 }
 
 // starts a k3s server with a local registry and a pre-loaded alpine image
@@ -65,6 +64,6 @@ EOF`}).
 
 // returns a kubectl container with the configured kube config context ready to run
 // administrative commands
-func (m *Examples) K3SKubectl(ctx context.Context, args string) *dagger.Container {
+func (m *Examples) K3SKubectl(args string) *dagger.Container {
 	return dag.K3S("test").Kubectl(args)
 }

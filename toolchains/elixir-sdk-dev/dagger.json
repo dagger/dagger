@@ -2,7 +2,7 @@
   "name": "elixir-sdk-dev",
   "engineVersion": "v0.19.6",
   "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk@e91e64a947436ac9342257de9f845b7f5dfa7639"
+    "source": "github.com/vito/dang/dagger-sdk@266e75bc46ac1ad596517645f4b7e1355a69b731"
   },
   "dependencies": [
     {

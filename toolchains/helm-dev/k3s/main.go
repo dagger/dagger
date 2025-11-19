@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -82,16 +81,15 @@ func New(
 		With(func(c *dagger.Container) *dagger.Container {
 			if !keepState {
 				c = c.WithExec([]string{"rm", "-rf", "/var/lib/rancher/k3s/"})
-
 			}
 			return c
 		}).
 		WithMountedTemp("/var/log").
 		WithExposedPort(6443)
 	return &K3S{
-		Name:        name,
-		ConfigCache: ccache,
-		Container:   ctr,
+		Name:          name,
+		ConfigCache:   ccache,
+		Container:     ctr,
 		EnableTraefik: enableTraefik,
 	}
 }
@@ -120,7 +118,7 @@ func (m *K3S) WithContainer(c *dagger.Container) *K3S {
 }
 
 // returns the config file for the k3s cluster
-func (m *K3S) Config(ctx context.Context,
+func (m *K3S) Config(
 	// +optional
 	// +default=false
 	local bool,
@@ -144,25 +142,25 @@ func (m *K3S) Config(ctx context.Context,
 }
 
 // runs kubectl on the target k3s cluster
-func (m *K3S) Kubectl(ctx context.Context, args string) *dagger.Container {
+func (m *K3S) Kubectl(args string) *dagger.Container {
 	return dag.Container().
 		From("bitnami/kubectl").
 		WithoutEntrypoint().
 		WithMountedCache("/cache/k3s", m.ConfigCache).
 		WithEnvVariable("CACHE", time.Now().String()).
-		WithFile("/.kube/config", m.Config(ctx, false), dagger.ContainerWithFileOpts{Permissions: 1001}).
+		WithFile("/.kube/config", m.Config(false), dagger.ContainerWithFileOpts{Permissions: 1001}).
 		WithUser("1001").
 		WithExec([]string{"sh", "-c", "kubectl " + args})
 }
 
 // runs k9s on the target k3s cluster
-func (m *K3S) Kns(ctx context.Context) *dagger.Container {
+func (m *K3S) Kns() *dagger.Container {
 	return dag.Container().
 		From("derailed/k9s").
 		WithoutEntrypoint().
 		WithMountedCache("/cache/k3s", m.ConfigCache).
 		WithEnvVariable("CACHE", time.Now().String()).
 		WithEnvVariable("KUBECONFIG", "/.kube/config").
-		WithFile("/.kube/config", m.Config(ctx, false), dagger.ContainerWithFileOpts{Permissions: 1001}).
+		WithFile("/.kube/config", m.Config(false), dagger.ContainerWithFileOpts{Permissions: 1001}).
 		WithDefaultTerminalCmd([]string{"k9s"})
 }
