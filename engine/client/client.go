@@ -1353,6 +1353,11 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		basicToken = os.Getenv("DAGGER_CLOUD_TOKEN")
 	}
 
+	var remoteEngineID string
+	if c.connector != nil {
+		remoteEngineID = c.connector.EngineID()
+	}
+
 	return engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
@@ -1372,7 +1377,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EagerRuntime:              c.EagerRuntime,
 		CloudBasicAuthToken:       basicToken,
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
-		IsCloudScaleOutClient:     c.isCloudScaleOutClient,
+		CloudScaleOutEngineID:     remoteEngineID,
 	}
 }
 

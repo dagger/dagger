@@ -97,9 +97,11 @@ type ClientMetadata struct {
 	// If true, this client enables scaling checks out to cloud engines
 	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`
 
-	// If true, this client is another engine scaling out to the current one.
-	// Currently used to coordinate de-duplication of telemetry
-	IsCloudScaleOutClient bool `json:"is_cloud_scale_out_client,omitempty"`
+	// if set, this client is another engine scaling out to the current one, and the current
+	// one has this ID. Should be included in OTEL span sttrs so we can correlate spans to engine.
+	// TODO: This is a bit convoluted; it would be nicer if an engine could figure out its own ID
+	// rather than being told what it is by the client connecting to it.
+	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}

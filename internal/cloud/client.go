@@ -120,6 +120,7 @@ type EngineSpec struct {
 	UserID         string                   `json:"user_id,omitempty"`
 	URL            string                   `json:"url,omitempty"`
 	CertSerialized *SerializableCertificate `json:"cert,omitempty"`
+	InstanceID     string                   `json:"instance_id,omitempty"`
 }
 
 func (es *EngineSpec) TLSCertificate() (*tls.Certificate, error) {

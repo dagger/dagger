@@ -1123,9 +1123,15 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
 		clientTracer := client.tracerProvider.Tracer(InstrumentationLibrary)
 		var span trace.Span
+		attrs := []attribute.KeyValue{
+			attribute.Bool(telemetry.UIPassthroughAttr, true),
+		}
+		if engineID := client.clientMetadata.CloudScaleOutEngineID; engineID != "" {
+			attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))
+		}
 		ctx, span = clientTracer.Start(ctx,
 			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-			trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
+			trace.WithAttributes(attrs...),
 		)
 		defer telemetry.EndWithCause(span, &rerr)
 	}

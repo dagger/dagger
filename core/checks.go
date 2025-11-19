@@ -212,7 +212,7 @@ func (c *Check) Run(ctx context.Context) (*Check, error) {
 	}
 
 	var span trace.Span
-	if !clientMD.IsCloudScaleOutClient { // don't dupe telemetry if the client is an engine scaling out to us
+	if clientMD.CloudScaleOutEngineID != "" { // don't dupe telemetry if the client is an engine scaling out to us
 		ctx, span = Tracer(ctx).Start(ctx, c.Name(),
 			telemetry.Reveal(),
 			trace.WithAttributes(

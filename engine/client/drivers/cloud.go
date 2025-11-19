@@ -71,6 +71,10 @@ func (dc *DaggerCloudConnector) Connect(ctx context.Context) (net.Conn, error) {
 	return tlsConn, nil
 }
 
+func (dc *DaggerCloudConnector) EngineID() string {
+	return dc.EngineSpec.InstanceID
+}
+
 func (d *daggerCloudDriver) Available(ctx context.Context) (bool, error) {
 	return true, nil // assume always available
 }

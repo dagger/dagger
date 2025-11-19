@@ -55,6 +55,11 @@ func (d dialConnector) Connect(ctx context.Context) (_ net.Conn, rerr error) {
 	return helper.ContextDialer(ctx, d.target.String())
 }
 
+func (d dialConnector) EngineID() string {
+	// not supported yet
+	return ""
+}
+
 func defaultDialer(ctx context.Context, address string) (net.Conn, error) {
 	addrParts := strings.SplitN(address, "://", 2)
 	if len(addrParts) != 2 {

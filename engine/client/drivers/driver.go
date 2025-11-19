@@ -29,6 +29,9 @@ type Connector interface {
 	// connection - but a connector can choose to block this call until
 	// previously returned connections have been closed.
 	Connect(ctx context.Context) (net.Conn, error)
+
+	// If available, a unique identifier for the engine, otherwise empty string.
+	EngineID() string
 }
 
 type DriverOpts struct {
