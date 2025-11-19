@@ -310,7 +310,7 @@ func (c *Check) run(
 
 	// Call the check
 	var status dagql.AnyResult
-	if err := dag.Select(dagql.WithRepeatedTelemetry(ctx), checkParent, &status, selectPath[len(selectPath)-1]); err != nil {
+	if err := dag.Select(dagql.WithNonInternalTelemetry(ctx), checkParent, &status, selectPath[len(selectPath)-1]); err != nil {
 		return err
 	}
 
@@ -319,7 +319,7 @@ func (c *Check) run(
 		if syncField, has := obj.ObjectType().FieldSpec("sync", dag.View); has {
 			if !syncField.Args.HasRequired(dag.View) {
 				if err := dag.Select(
-					dagql.WithRepeatedTelemetry(ctx),
+					dagql.WithNonInternalTelemetry(ctx),
 					obj,
 					&status,
 					dagql.Selector{Field: "sync"},
