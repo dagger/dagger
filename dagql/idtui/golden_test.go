@@ -157,6 +157,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "call-failing-dep", Fail: true},
 		{Function: "call-bubbling-dep", Fail: true},
 		{Function: "fail-multi", Fail: true},
+		{Name: "fail-multi-noexpand", Function: "fail-multi", Fail: true, NoExpand: true},
 
 		// FIXME: these constantly fail in CI/Dagger, but not against a local
 		// engine. spent a day investigating, don't have a good explanation. it
@@ -256,9 +257,12 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			},
 		},
 	} {
-		testName := ex.Function
-		if ex.Module != "" {
-			testName = path.Join(path.Base(ex.Module), testName)
+		testName := ex.Name
+		if testName == "" {
+			testName = ex.Function
+			if ex.Module != "" {
+				testName = path.Join(path.Base(ex.Module), testName)
+			}
 		}
 		t.Run(testName, func(ctx context.Context, t *testctx.T) {
 			out, db := ex.Run(ctx, t, s)
@@ -294,6 +298,7 @@ func unmarshalAs[T any](t testing.TB, data json.RawMessage) T {
 }
 
 type Example struct {
+	Name     string // a custom name for the example
 	Module   string
 	Function string
 	Args     []string
@@ -302,6 +307,8 @@ type Example struct {
 	Fail      bool
 	// used for tests that need to see through errors (e.g. 'pending')
 	RevealNoisySpans bool
+	// by default, tests show the full expanded tree, unless this is set
+	NoExpand bool
 	// if a reason is given for Flaky, ignore failures, but log the failure and the provided explanation.
 	// ineffectual if FuzzyTest is in use.
 	Flaky  string
@@ -332,7 +339,9 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	// For most of these tests we need to see what actually happened at least
 	// within the example.
-	ex.Env = append(ex.Env, "DAGGER_EXPAND_COMPLETED=1")
+	if !ex.NoExpand {
+		ex.Env = append(ex.Env, "DAGGER_EXPAND_COMPLETED=1")
+	}
 
 	if ex.RevealNoisySpans {
 		ex.Env = append(ex.Env, "DAGGER_REVEAL=1")

@@ -747,7 +747,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	}
 
 	below := new(strings.Builder)
-	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
+	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 && !fe.hasShownRootError() {
 		logs.SetHeight(fe.window.Height / 3)
 		logs.SetPrefix(progPrefix)
 		fmt.Fprint(below, logs.View())
@@ -1976,10 +1976,11 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			}
 		}
 	}
-	if row.ShouldShowCause() {
+	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		multi := len(row.Span.ErrorOrigins.Order) > 1
 		for _, cause := range row.Span.ErrorOrigins.Order {
 			if multi {
+				r.fancyIndent(out, row, false, false)
 				fmt.Fprintln(out, prefix)
 			}
 			fe.renderErrorCause(out, r, row, prefix, cause)
@@ -2114,15 +2115,14 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 	}
 
 	if len(parents) > 0 {
-		// fmt.Fprint(out, prefix, indent)
 		r.fancyIndent(out, row, false, false)
-		fmt.Fprint(out, "  ")
 		if !fe.finalRender {
 			fmt.Fprint(out, "  ")
 		}
 		slices.Reverse(parents)
 		context := new(strings.Builder)
 		noColorOut := termenv.NewOutput(context, termenv.WithProfile(termenv.Ascii))
+		fmt.Fprint(noColorOut, VertBoldDash3+" ")
 		for _, p := range parents {
 			fe.renderStepTitle(noColorOut, r, p, prefix+indent, true)
 			fmt.Fprintf(noColorOut, " › ")
@@ -2130,7 +2130,6 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 		fmt.Fprint(out, out.String(context.String()).Foreground(termenv.ANSIBrightBlack).Faint())
 		fmt.Fprintln(out)
 	}
-	// fmt.Fprint(out, prefix, indent)
 	r.fancyIndent(out, row, false, false)
 	if !fe.finalRender {
 		fmt.Fprint(out, "  ")
@@ -2138,11 +2137,15 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 	fe.renderStepTitle(out, r, rootCauseRow, prefix+indent, false)
 	fmt.Fprintln(out)
 	if logs := fe.logs.Logs[rootCauseRow.Span.ID]; logs != nil {
-		if fe.finalRender && row.Depth == 0 {
+		if row.Depth == 0 && fe.finalRender {
 			logs.SetPrefix("")
+		} else {
+			pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(rootCauseRow.Span)).String()
+			logs.SetPrefix(indentBuf.String() + pipe + " ")
+		}
+		if fe.finalRender {
 			logs.SetHeight(logs.UsedHeight())
 		} else {
-			logs.SetPrefix(indentBuf.String())
 			logs.SetHeight(fe.window.Height / 3)
 		}
 		fmt.Fprint(out, logs.View())
@@ -2153,6 +2156,9 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
+	if fe.err == nil {
+		return false
+	}
 	for _, origin := range telemetry.ParseErrorOrigins(fe.err.Error()) {
 		if !origin.IsValid() {
 			return false
@@ -2205,7 +2211,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		}
 
 		if count > 1 {
-			errText += "\n" + out.String(fmt.Sprintf("x%d", count)).Bold().String()
+			errText = fmt.Sprintf("%dx ", count) + errText
 		}
 
 		// Print each wrapped line with proper indentation

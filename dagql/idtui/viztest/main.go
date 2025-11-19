@@ -114,7 +114,7 @@ func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
 			return err
 		}(),
 		(func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, "sub-thing 1")
+			ctx, span := Tracer().Start(ctx, "sub-thing 2")
 			defer telemetry.End(span, func() error { return rerr })
 			_, err := dag.Container().
 				From("alpine").

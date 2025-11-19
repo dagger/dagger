@@ -316,8 +316,7 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 		return expanded
 	}
 
-	autoExpand := row.Depth() < 1 &&
-		(row.RevealedChildren || row.IsRunningOrChildRunning)
+	autoExpand := row.Depth() < 1 && row.IsRunningOrChildRunning
 
 	alwaysExpand := row.Span.IsCanceled() ||
 		opts.Verbosity >= ExpandCompletedVerbosity ||
@@ -357,8 +356,4 @@ func (row *TraceRow) Root() *TraceRow {
 		return row
 	}
 	return row.Parent.Root()
-}
-
-func (row *TraceRow) ShouldShowCause() bool {
-	return len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren)
 }
