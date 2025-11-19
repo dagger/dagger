@@ -79,6 +79,7 @@ This will:
 - Run available core tests: `dagger call test list`
 - Run a specific core test (eg.  `TestNamespacing` in the `TestModule` suite): `dagger call test specific --pkg="./core/integration" --run="^TestModule/TestNamespacing$"`
 - Run SDK tests: `dagger call test-sdks`
+- Some tests follow the "golden pattern". Occasionally this requires updating the "golden file". For example, to update the golden file of the telemetry tests: `dagger call test telemetry --update`
 
 #### Linting
 
