@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
-	"dagger/registry-config/tests/internal/dagger"
 	"fmt"
+
+	"dagger/registry-config/tests/internal/dagger"
 
 	"github.com/sourcegraph/conc/pool"
 )
@@ -43,7 +44,7 @@ func (m *Tests) WithRegistryAuth(ctx context.Context) error {
 	return nil
 }
 
-func (m *Tests) WithRegistryAuth_MultipleCredentials(ctx context.Context) error {
+func (m *Tests) WithRegistryAuthMultipleCredentials(ctx context.Context) error {
 	secret := dag.RegistryConfig().
 		WithRegistryAuth("ghcr.io", "sagikazarmark", dag.SetSecret("WithRegistryAuth_MultipleCredentials-passwordold", "passwordold")).
 		WithRegistryAuth("docker.io", "sagikazarmark", dag.SetSecret("WithRegistryAuth_MultipleCredentials-password2", "password2")).
@@ -103,7 +104,7 @@ func (m *Tests) SecretMount(ctx context.Context) error {
 	return err
 }
 
-func (m *Tests) SecretMount_SkipOnEmpty(ctx context.Context) error {
+func (m *Tests) SecretMountSkipOnEmpty(ctx context.Context) error {
 	registryConfig := dag.RegistryConfig()
 
 	_, err := dag.Container().

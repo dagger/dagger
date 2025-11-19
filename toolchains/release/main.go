@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
 	"toolchains/release/internal/dagger"
 
 	sprig "github.com/go-task/slim-sprig/v3"
@@ -99,7 +100,7 @@ func (report *ReleaseReport) hasErrors() bool {
 }
 
 // +cache="session"
-func (r *Release) Publish(
+func (r *Release) Publish( //nolint:gocyclo
 	ctx context.Context,
 	tag string,
 	commit string,
@@ -131,6 +132,7 @@ func (r *Release) Publish(
 
 	discordWebhook *dagger.Secret, // +optional
 ) (*ReleaseReport, error) {
+	_ = hexAPIKey
 	version := ""
 	if semver.IsValid(tag) {
 		version = tag

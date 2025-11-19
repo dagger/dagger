@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"crypto/sha1"
-	"dagger/registry-config/internal/dagger"
+	"crypto/sha1" //nolint:gosec
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+
+	"dagger/registry-config/internal/dagger"
 )
 
 type Config struct {
@@ -43,7 +44,7 @@ func (c *Config) toSecret(name string) (*dagger.Secret, error) {
 	}
 
 	if name == "" {
-		h := sha1.New()
+		h := sha1.New() //nolint:gosec
 
 		_, err := h.Write(out)
 		if err != nil {

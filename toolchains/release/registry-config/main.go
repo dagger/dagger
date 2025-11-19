@@ -14,8 +14,9 @@ package main
 
 import (
 	"context"
-	"dagger/registry-config/internal/dagger"
 	"slices"
+
+	"dagger/registry-config/internal/dagger"
 )
 
 type RegistryConfig struct {
@@ -68,8 +69,6 @@ func (m *RegistryConfig) Secret(
 
 // Create a SecretMount that can be used to mount the registry configuration into a container.
 func (m *RegistryConfig) SecretMount(
-	ctx context.Context,
-
 	// Path to mount the secret into (a common path is ~/.docker/config.json).
 	path string,
 
