@@ -258,7 +258,7 @@ func TestExecError(t *testing.T) {
 		var exErr *ExecError
 
 		require.ErrorAs(t, err, &exErr)
-		require.ErrorContains(t, exErr, "did not complete successfully: exit code: 1")
+		require.ErrorContains(t, exErr, "exit code: 1")
 		require.Equal(t, "", exErr.Stdout)
 		require.Equal(t, "", exErr.Stderr)
 	})

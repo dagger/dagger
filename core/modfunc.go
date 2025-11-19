@@ -21,8 +21,6 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -777,31 +775,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			if err != nil {
 				return nil, fmt.Errorf("load error instance: %w", err)
 			}
-			dagErr := errInst.Self().Clone()
-			originCtx := trace.SpanContextFromContext(
-				telemetry.Propagator.Extract(
-					context.Background(),
-					telemetry.AnyMapCarrier(dagErr.Extensions()),
-				),
-			)
-			if !originCtx.IsValid() {
-				// If the Error doesn't already have an origin, inject the current trace
-				// context as its origin.
-				tm := propagation.MapCarrier{}
-				telemetry.Propagator.Inject(ctx, tm)
-				for _, key := range tm.Keys() {
-					val := tm.Get(key)
-					valJSON, err := json.Marshal(val)
-					if err != nil {
-						return nil, fmt.Errorf("marshal value: %w", err)
-					}
-					dagErr.Values = append(dagErr.Values, &ErrorValue{
-						Name:  key,
-						Value: JSON(valJSON),
-					})
-				}
-			}
-			return nil, dagErr
+			return nil, errInst.Self()
 		}
 		if fn.metadata.OriginalName == "" {
 			return nil, fmt.Errorf("call constructor: %w", err)

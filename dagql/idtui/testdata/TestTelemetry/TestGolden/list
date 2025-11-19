@@ -44,8 +44,8 @@ Expected stderr:
 
 ✔ viztest: Viztest! X.Xs
 ✔ .list(
-│ ┆ ┆ dir: Address.directory: Directory!
-│ ┆ ): String! X.Xs
+│ ┆ dir: Address.directory: Directory!
+│ ): String! X.Xs
 ┃ .git/
 ┃ chroma.go
 ┃ debug.go

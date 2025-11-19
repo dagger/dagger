@@ -16,10 +16,10 @@ Expected stderr:
 
 ✔ viztest: Viztest! X.Xs
 ✔ .pathArgs(
-  ┆ ┆ file: Address.file: File!
-  ┆ ┆ dir: Address.directory: Directory!
-  ┆ ┆ contextFile: _contextFile(path: "main.go", module: "/app/dagql/idtui/viztest", digest: "xxh3:XXXXXXXXXXXXXXXX"): File!
-  ┆ ┆ contextDir: context /app/dagql/idtui/viztest (exclude: XXXXXXXXXXX)
-  ┆ ): Void X.Xs
+  ┆ file: Address.file: File!
+  ┆ dir: Address.directory: Directory!
+  ┆ contextFile: _contextFile(path: "main.go", module: "/app/dagql/idtui/viztest", digest: "xxh3:XXXXXXXXXXXXXXXX"): File!
+  ┆ contextDir: context /app/dagql/idtui/viztest (exclude: XXXXXXXXXXX)
+  ): Void X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

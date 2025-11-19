@@ -93,6 +93,38 @@ func (*Viztest) FailEffect() *dagger.Container {
 		WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"})
 }
 
+// FailMulti bubbles up two error origins.
+// +cache="session"
+func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
+	ctx, span := Tracer().Start(ctx, "roll-up pseudo-check span",
+		trace.WithAttributes(
+			attribute.Bool("dagger.io/ui.rollup.spans", true),
+		))
+	defer telemetry.End(span, func() error { return rerr })
+	// NB: theoretically this would be from a concurrency pool or something but
+	// we'll simulate it instead to reduce randomness
+	return errors.Join(
+		func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, "sub-thing 1")
+			defer telemetry.End(span, func() error { return rerr })
+			_, err := dag.Container().
+				From("alpine").
+				WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
+				Sync(ctx)
+			return err
+		}(),
+		(func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, "sub-thing 2")
+			defer telemetry.End(span, func() error { return rerr })
+			_, err := dag.Container().
+				From("alpine").
+				WithExec([]string{"sh", "-c", "echo this is another failing effect; exit 1"}).
+				Sync(ctx)
+			return err
+		})(),
+	)
+}
+
 // +cache="session"
 func (*Viztest) LogStdout() {
 	fmt.Println("Hello, world!")

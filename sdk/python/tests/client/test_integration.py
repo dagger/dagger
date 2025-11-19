@@ -187,7 +187,7 @@ async def test_container_sync(alpine_image: str):
     base = dag.container().from_(alpine_image)
 
     # short cirtcut
-    with pytest.raises(dagger.QueryError, match="foobar"):
+    with pytest.raises(dagger.QueryError, match="exit code: 1"):
         await base.with_exec(["foobar"]).sync()
 
     # chaining
@@ -199,7 +199,7 @@ async def test_container_awaitable(alpine_image: str):
     base = dag.container().from_(alpine_image)
 
     # short cirtcut
-    with pytest.raises(dagger.QueryError, match="foobar"):
+    with pytest.raises(dagger.QueryError, match="exit code: 1"):
         await base.with_exec(["foobar"])
 
     # chaining

@@ -296,7 +296,7 @@ func dotLogsPrefix(r *renderer, profile termenv.Profile, span *dagui.Span) strin
 	out := NewOutput(&spanName, termenv.WithProfile(profile))
 	fmt.Fprintf(out, "%s ", CaretDownFilled)
 	if span.Call() != nil {
-		r.renderCall(out, span, span.Call(), "", false, 0, false, nil)
+		r.renderCall(out, span, span.Call(), "", false, 0, false, nil, true /* no type */)
 	} else {
 		fmt.Fprintf(&spanName, "%s", out.String(span.Name).Bold())
 	}
@@ -329,7 +329,7 @@ func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklo
 	}
 
 	// Set prefix
-	r := newRenderer(e.db, 0, e.opts)
+	r := newRenderer(e.db, 0, e.opts, true)
 	prefix := dotLogsPrefix(r, e.profile, dbSpan)
 
 	// Write all logs for this span, filtering out verbose logs

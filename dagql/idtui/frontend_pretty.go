@@ -484,7 +484,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Unfocus for the final render.
 	fe.FocusedSpan = dagui.SpanID{}
 
-	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, true)
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
@@ -717,7 +717,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
-			KeyEnabled(focused != nil && focused.ErrorOrigin != nil)),
+			KeyEnabled(focused != nil && len(focused.ErrorOrigins.Order) > 0)),
 		key.NewBinding(key.WithKeys("t"),
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
@@ -734,7 +734,7 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 func (fe *frontendPretty) Render(out TermOutput) error {
 	progHeight := fe.window.Height
 
-	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, false)
 
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
@@ -747,7 +747,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	}
 
 	below := new(strings.Builder)
-	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
+	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 && !fe.hasShownRootError() {
 		logs.SetHeight(fe.window.Height / 3)
 		logs.SetPrefix(progPrefix)
 		fmt.Fprint(below, logs.View())
@@ -1660,7 +1660,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		visibleHeight -= lipgloss.Height(fe.editlineView())
 	}
 
-	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, true)
 
 	var anyFlushed bool
 	for _, row := range fe.rows.Order {
@@ -1874,10 +1874,10 @@ func (fe *frontendPretty) goErrorOrigin() {
 	if focused == nil {
 		return
 	}
-	if focused.ErrorOrigin == nil {
+	if len(focused.ErrorOrigins.Order) == 0 {
 		return
 	}
-	fe.FocusedSpan = focused.ErrorOrigin.ID
+	fe.FocusedSpan = focused.ErrorOrigins.Order[0].ID // TODO which?
 	focusedRow := fe.rowsView.BySpan[fe.FocusedSpan]
 	if focusedRow == nil {
 		return
@@ -1958,6 +1958,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 	fe.renderStep(out, r, row, prefix)
+
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
@@ -1975,8 +1976,15 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			}
 		}
 	}
-	if row.ShouldShowCause() {
-		fe.renderErrorCause(out, r, row, prefix)
+	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
+		multi := len(row.Span.ErrorOrigins.Order) > 1
+		for _, cause := range row.Span.ErrorOrigins.Order {
+			if multi {
+				r.fancyIndent(out, row, false, false)
+				fmt.Fprintln(out, prefix)
+			}
+			fe.renderErrorCause(out, r, row, prefix, cause)
+		}
 	} else {
 		fe.renderStepError(out, r, row, prefix)
 	}
@@ -2013,6 +2021,12 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 			vt.WriteMarkdown([]byte("- " + revealed.Name + "\n"))
 		}
 	}
+	if len(span.ErrorOrigins.Order) > 0 {
+		vt.WriteMarkdown([]byte("\n\n## Error origins\n\n"))
+		for _, span := range span.ErrorOrigins.Order {
+			vt.WriteMarkdown([]byte("- " + span.Name + "\n"))
+		}
+	}
 	fmt.Fprint(out, prefix+vt.View())
 }
 
@@ -2031,31 +2045,7 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	return false
 }
 
-func spanIsVisible(span *dagui.Span, row *dagui.TraceRow) bool {
-	for row := row.PreviousVisual; row != nil; row = row.PreviousVisual {
-		if rowIsOrRevealsSpan(span, row) {
-			return true
-		}
-	}
-	for row := row.NextVisual; row != nil; row = row.NextVisual {
-		if rowIsOrRevealsSpan(span, row) {
-			return true
-		}
-	}
-	return false
-}
-
-func rowIsOrRevealsSpan(span *dagui.Span, row *dagui.TraceRow) bool {
-	// Simple case: we found the span
-	return row.Span.ID == span.ID ||
-		// Complex case: the span is an error; did we show it from another collapsed
-		// span that bubbled it up?
-		(row.ShouldShowCause() && row.Span.ErrorOrigin.ID == span.ID)
-}
-
-func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
-	rootCause := row.Span.ErrorOrigin
-
+func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span) {
 	rootCauseTree := fe.rowsView.BySpan[rootCause.ID]
 	if rootCauseTree == nil {
 		// error origin has no tree, likely due to internal/hidden spans
@@ -2116,47 +2106,72 @@ func (fe *frontendPretty) renderErrorCause(out TermOutput, r *renderer, row *dag
 		indent += "  "
 	}
 
-	renderStepWithoutToggle := func(out TermOutput, row *dagui.TraceRow, skipStatus bool) {
-		fmt.Fprint(out, prefix, indent)
-		fe.renderStepTitle(out, r, row, prefix+indent, skipStatus)
+	indentBuf := new(strings.Builder)
+	fmt.Fprint(indentBuf, prefix)
+	indentOut := NewOutput(indentBuf, termenv.WithProfile(fe.profile))
+	r.fancyIndent(indentOut, row, false, false)
+	if !fe.finalRender {
+		fmt.Fprint(indentOut, "  ")
+	}
+
+	if len(parents) > 0 {
+		r.fancyIndent(out, row, false, false)
+		if !fe.finalRender {
+			fmt.Fprint(out, "  ")
+		}
+		slices.Reverse(parents)
+		context := new(strings.Builder)
+		noColorOut := termenv.NewOutput(context, termenv.WithProfile(termenv.Ascii))
+		fmt.Fprint(noColorOut, VertBoldDash3+" ")
+		for _, p := range parents {
+			fe.renderStepTitle(noColorOut, r, p, prefix+indent, true)
+			fmt.Fprintf(noColorOut, " › ")
+		}
+		fmt.Fprint(out, out.String(context.String()).Foreground(termenv.ANSIBrightBlack).Faint())
 		fmt.Fprintln(out)
 	}
-	slices.Reverse(parents)
-	context := new(strings.Builder)
-	noColorOut := termenv.NewOutput(context, termenv.WithProfile(termenv.Ascii))
-	for _, p := range parents {
-		renderStepWithoutToggle(noColorOut, p, true)
+	r.fancyIndent(out, row, false, false)
+	if !fe.finalRender {
+		fmt.Fprint(out, "  ")
 	}
-	fmt.Fprint(out, out.String(context.String()).Foreground(termenv.ANSIBrightBlack).Faint())
-	renderStepWithoutToggle(out, rootCauseRow, false)
+	fe.renderStepTitle(out, r, rootCauseRow, prefix+indent, false)
+	fmt.Fprintln(out)
 	if logs := fe.logs.Logs[rootCauseRow.Span.ID]; logs != nil {
-		row := *rootCauseRow
-		height := fe.window.Height / 3
-		if fe.finalRender {
-			height = 0
-			row.Depth = -1
+		if row.Depth == 0 && fe.finalRender {
+			logs.SetPrefix("")
+		} else {
+			pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(rootCauseRow.Span)).String()
+			logs.SetPrefix(indentBuf.String() + pipe + " ")
 		}
-		fe.renderLogs(out, r, &row, logs, height, prefix+indent, false)
+		if fe.finalRender {
+			logs.SetHeight(logs.UsedHeight())
+		} else {
+			logs.SetHeight(fe.window.Height / 3)
+		}
+		fmt.Fprint(out, logs.View())
 	}
-	fe.renderStepError(out, r, rootCauseRow, prefix+indent)
+	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
 
 	fe.shownErrs[rootCause.ID] = true
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
-	originCtx := telemetry.ErrorOrigin(fe.err)
-	if !originCtx.IsValid() {
+	if fe.err == nil {
 		return false
 	}
-	if !fe.shownErrs[dagui.SpanID{SpanID: originCtx.SpanID()}] {
-		return false
+	for _, origin := range telemetry.ParseErrorOrigins(fe.err.Error()) {
+		if !origin.IsValid() {
+			return false
+		}
+		if !fe.shownErrs[dagui.SpanID{SpanID: origin.SpanID()}] {
+			return false
+		}
 	}
 	return true
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
-	if row.Span.ErrorOrigin != nil &&
-		spanIsVisible(row.Span.ErrorOrigin, row) {
+	if len(row.Span.ErrorOrigins.Order) > 0 {
 		// span's error originated elsewhere; don't repeat the message, the ERROR status
 		// links to its origin instead
 		return
@@ -2196,7 +2211,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		}
 
 		if count > 1 {
-			errText += "\n" + out.String(fmt.Sprintf("x%d", count)).Bold().String()
+			errText = fmt.Sprintf("%dx ", count) + errText
 		}
 
 		// Print each wrapped line with proper indentation
@@ -2227,11 +2242,9 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 	depth := row.Depth
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
 
-	if !abridged {
+	if !abridged && row.Span.LLMRole == "" {
 		fe.renderStatusIcon(out, row)
 		fmt.Fprint(out, " ")
-	} else {
-		fmt.Fprint(out, "  ")
 	}
 
 	if r.Debug {
@@ -2262,7 +2275,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 			empty = true
 		}
 	} else if call := span.Call(); call != nil {
-		if err := r.renderCall(out, span, call, prefix, chained, depth+1, span.Internal, row); err != nil {
+		if err := r.renderCall(out, span, call, prefix, chained, depth, span.Internal, row, abridged); err != nil {
 			return err
 		}
 	} else if span != nil {
@@ -2274,7 +2287,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 		}
 	}
 
-	if span != nil {
+	if span != nil && !abridged {
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span, !empty)
@@ -2288,34 +2301,32 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 			}
 		}
 
-		if !abridged {
-			fe.renderStatus(out, span)
-			r.renderMetrics(out, span)
+		fe.renderStatus(out, span)
+		r.renderMetrics(out, span)
 
-			summary := map[string]int{}
-			for effect := range span.EffectSpans {
-				if effect.Passthrough {
-					// Don't show spans which are aggressively hidden.
-					continue
-				}
-				icon, isInteresting := fe.statusIcon(effect)
-				if !isInteresting {
-					// summarize boring statuses, rather than showing them in full
-					summary[icon]++
-					continue
-				}
-				fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
-				r.renderSpan(out, effect, effect.Name)
+		summary := map[string]int{}
+		for effect := range span.EffectSpans {
+			if effect.Passthrough {
+				// Don't show spans which are aggressively hidden.
+				continue
 			}
+			icon, isInteresting := fe.statusIcon(effect)
+			if !isInteresting {
+				// summarize boring statuses, rather than showing them in full
+				summary[icon]++
+				continue
+			}
+			fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
+			r.renderSpan(out, effect, effect.Name)
+		}
 
-			for _, icon := range statusOrder {
-				count := summary[icon]
-				if count > 0 {
-					color := statusColors[icon]
-					fmt.Fprintf(out, " %s %s",
-						out.String(icon).Foreground(color).Faint(),
-						out.String(strconv.Itoa(count)).Faint())
-				}
+		for _, icon := range statusOrder {
+			count := summary[icon]
+			if count > 0 {
+				color := statusColors[icon]
+				fmt.Fprintf(out, " %s %s",
+					out.String(icon).Foreground(color).Faint(),
+					out.String(strconv.Itoa(count)).Faint())
 			}
 		}
 	}
@@ -2330,7 +2341,15 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
 
-	if !fe.finalRender {
+	if row.Span.LLMRole != "" {
+		switch row.Span.LLMRole {
+		case telemetry.LLMRoleUser:
+			fmt.Fprint(out, out.String(Block).Foreground(termenv.ANSIMagenta))
+		case telemetry.LLMRoleAssistant:
+			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIMagenta))
+		}
+		fmt.Fprint(out, " ")
+	} else if !fe.finalRender {
 		fe.renderToggler(out, row, isFocused)
 		fmt.Fprint(out, " ")
 	}
@@ -2482,45 +2501,29 @@ func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 }
 
 func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
-	// First, render chevron or placeholder for alignment
-	var chevron termenv.Style
+	var icon termenv.Style
 	if row.HasChildren || row.Span.HasLogs {
 		if row.Expanded {
-			chevron = out.String(CaretDownFilled)
+			icon = out.String(CaretDownFilled).Foreground(termenv.ANSIBrightBlack)
 		} else {
-			chevron = out.String(CaretRightFilled)
+			icon = out.String(CaretRightFilled).Foreground(termenv.ANSIBrightBlack)
 		}
 	} else {
 		// Use a placeholder symbol for items without children
-		chevron = out.String(DotFilled)
+		icon = out.String(DotFilled).Foreground(termenv.ANSIBrightBlack)
 	}
-
-	// Match the color of the span
-	chevron = chevron.Foreground(termenv.ANSIBrightBlack)
 
 	// Apply focus highlighting to chevron only
 	if isFocused {
-		chevron = hl(chevron.Foreground(statusColor(row.Span)))
+		icon = hl(icon.Foreground(statusColor(row.Span)))
 	}
-	fmt.Fprint(out, chevron.String())
+	fmt.Fprint(out, icon.String())
 }
 
 func (fe *frontendPretty) renderStatusIcon(out TermOutput, row *dagui.TraceRow) {
 	// Then render the status icon (without focus highlighting)
-	var statusIcon termenv.Style
 	icon, _ := fe.statusIcon(row.Span)
-	statusIcon = out.String(icon)
-	statusIcon = statusIcon.Foreground(statusColor(row.Span))
-
-	if row.Span.Message != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			statusIcon = out.String(Block).Foreground(termenv.ANSIMagenta)
-		case telemetry.LLMRoleAssistant:
-			statusIcon = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
-		}
-	}
-
+	statusIcon := out.String(icon).Foreground(statusColor(row.Span))
 	fmt.Fprint(out, statusIcon.String())
 }
 
@@ -2531,9 +2534,10 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 	} else if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
-		if span.ErrorOrigin != nil && !fe.reportOnly && !fe.finalRender {
+		if len(span.ErrorOrigins.Order) > 0 && !fe.reportOnly && !fe.finalRender {
 			color := termenv.ANSIBrightBlack
-			if time.Since(fe.pressedKeyAt) < keypressDuration && fe.FocusedSpan == span.ErrorOrigin.ID {
+			_, focusedAnyOrigin := span.ErrorOrigins.Map[fe.FocusedSpan]
+			if time.Since(fe.pressedKeyAt) < keypressDuration && focusedAnyOrigin {
 				color = termenv.ANSIWhite
 			}
 			fmt.Fprintf(out, " %s %s",
@@ -2551,11 +2555,11 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	span := row.Span
 	depth := row.Depth
 
-	Pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
-	Dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+	dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
 	if focused {
-		Pipe = hl(Pipe)
-		Dashed = hl(Dashed)
+		pipe = hl(pipe)
+		dashed = hl(dashed)
 	}
 
 	if depth == -1 {
@@ -2566,7 +2570,7 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 		fmt.Fprint(pipeBuf, prefix)
 		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
-		fmt.Fprint(indentOut, Pipe)
+		fmt.Fprint(indentOut, pipe)
 		fmt.Fprint(indentOut, out.String(" "))
 		logs.SetPrefix(pipeBuf.String())
 	}
@@ -2577,7 +2581,7 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	if trimmed > 0 {
 		fmt.Fprint(out, prefix)
 		r.fancyIndent(out, row, false, false)
-		fmt.Fprint(out, Dashed)
+		fmt.Fprint(out, dashed)
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("...").Foreground(termenv.ANSIBrightBlack))
 		fmt.Fprintf(out, out.String("%d").Foreground(termenv.ANSIBrightBlack).Bold().String(), trimmed)

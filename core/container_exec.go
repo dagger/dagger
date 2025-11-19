@@ -33,6 +33,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 )
 
@@ -557,7 +558,10 @@ func (container *Container) WithExec(
 	}
 
 	if execErr != nil {
-		return nil, fmt.Errorf("process %q did not complete successfully: %w", strings.Join(metaSpec.Args, " "), execErr)
+		slog.Warn("process did not complete successfully",
+			"process", strings.Join(metaSpec.Args, " "),
+			"error", execErr)
+		return nil, execErr
 	}
 
 	return container, nil

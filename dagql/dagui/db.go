@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -369,6 +370,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		RevealedSpans:   NewSpanSet(),
 		FailedLinks:     NewSpanSet(),
 		CanceledLinks:   NewSpanSet(),
+		ErrorOrigins:    NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
 		db:              db,
@@ -647,7 +649,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
-			span.ErrorOrigin = linked
+			span.ErrorOrigins.Add(linked)
+		}
+	}
+
+	// Extract error origins from span error descriptions
+	if span.Status.Code == codes.Error {
+		for _, origin := range telemetry.ParseErrorOrigins(span.Status.Description) {
+			linked := db.initSpan(SpanID{SpanID: origin.SpanID()})
+			span.ErrorOrigins.Add(linked)
 		}
 	}
 

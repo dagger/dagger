@@ -15,13 +15,17 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-✘ .pending: Void X.Xs ERROR
-├╴✔ container: Container! X.Xs
-├╴$ .from(address: "alpine"): Container! X.Xs CACHED
-├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
-├╴✔ withExec sleep 1 X.Xs
-├╴✘ withExec false X.Xs ERROR
-│ ! exit code: 1
-╰╴○ withExec sleep 1 X.Xs
+✘ .failMulti: Void X.Xs ERROR
+╰╴✘ roll-up pseudo-check span X.Xs ⣷⡇⣿ ERROR
+ 
+  ┇ sub-thing 1 ›
+  ✘ withExec sh -c 'echo this is a failing effect; exit 1' X.Xs ERROR
+  ┃ this is a failing effect
+  ! exit code: 1
+ 
+  ┇ sub-thing 2 ›
+  ✘ withExec sh -c 'echo this is another failing effect; exit 1' X.Xs ERROR
+  ┃ this is another failing effect
+  ! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
