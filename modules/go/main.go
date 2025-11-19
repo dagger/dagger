@@ -459,8 +459,8 @@ func (p *Go) findParentDirs(ctx context.Context, dir *dagger.Directory, filename
 // Scan the source for go modules, and return their paths
 func (p *Go) Modules(
 	ctx context.Context,
-	include []string,
-	exclude []string,
+	include []string, // +optional
+	exclude []string, // +optional
 ) ([]string, error) {
 	mods, _, err := p.findParentDirs(ctx, p.Source, "go.mod", include, exclude)
 	if err != nil {
