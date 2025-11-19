@@ -1,3 +1,3 @@
 package types
 
-//go:generate protoc --gogoslick_out=. stat.proto wire.proto
+//go:generate protoc -I=. -I=../../../ --gogoslick_out=. stat.proto

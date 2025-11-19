@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
+	"github.com/dagger/dagger/internal/fsutil"
 )
 
 type GitignoreMatcher struct {

@@ -23,7 +23,7 @@ import (
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
-	fstypes "github.com/tonistiigi/fsutil/types"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 

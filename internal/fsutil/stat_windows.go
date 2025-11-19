@@ -5,7 +5,7 @@ package fsutil
 import (
 	"os"
 
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil/types"
 )
 
 func loadXattr(_ string, _ *types.Stat) error {

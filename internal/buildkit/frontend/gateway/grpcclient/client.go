@@ -29,7 +29,7 @@ import (
 	"github.com/moby/sys/signal"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	fstypes "github.com/tonistiigi/fsutil/types"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"

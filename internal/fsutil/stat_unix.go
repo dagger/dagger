@@ -9,7 +9,7 @@ import (
 
 	"github.com/containerd/continuity/sysx"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil/types"
 )
 
 func loadXattr(origpath string, stat *types.Stat) error {

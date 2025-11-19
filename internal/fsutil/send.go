@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
 

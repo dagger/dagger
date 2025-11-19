@@ -26,7 +26,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
-	fstypes "github.com/tonistiigi/fsutil/types"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 

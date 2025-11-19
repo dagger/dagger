@@ -21,8 +21,8 @@ import (
 	"github.com/moby/patternmatcher"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
-	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 )
 
 var errNotFound = errors.Errorf("not found")

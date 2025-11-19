@@ -31,7 +31,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
-	fsutiltypes "github.com/tonistiigi/fsutil/types"
+	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

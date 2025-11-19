@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil/types"
 )
 
 // Hardlinks validates that all targets for links were part of the changes

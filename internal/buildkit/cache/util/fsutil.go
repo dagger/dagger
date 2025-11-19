@@ -9,8 +9,8 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
-	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 )
 
 type ReadRequest struct {

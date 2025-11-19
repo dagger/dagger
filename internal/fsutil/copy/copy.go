@@ -13,7 +13,7 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
+	"github.com/dagger/dagger/internal/fsutil"
 )
 
 var bufferPool = &sync.Pool{

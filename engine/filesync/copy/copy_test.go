@@ -15,7 +15,7 @@ import (
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"github.com/tonistiigi/fsutil"
+	"github.com/dagger/dagger/internal/fsutil"
 )
 
 // requiresRoot skips tests that require root

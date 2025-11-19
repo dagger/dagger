@@ -16,7 +16,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/system"
 	"github.com/pkg/errors"
-	copy "github.com/tonistiigi/fsutil/copy"
+	copy "github.com/dagger/dagger/internal/fsutil/copy"
 )
 
 func timestampToTime(ts int64) *time.Time {

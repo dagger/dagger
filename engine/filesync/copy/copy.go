@@ -14,7 +14,7 @@ import (
 	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
+	"github.com/dagger/dagger/internal/fsutil"
 )
 
 var bufferPool = &sync.Pool{

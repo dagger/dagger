@@ -4,7 +4,7 @@
 package fsutil
 
 import (
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"golang.org/x/sys/unix"
 )
 

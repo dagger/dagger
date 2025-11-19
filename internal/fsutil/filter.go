@@ -11,7 +11,7 @@ import (
 
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil/types"
 )
 
 type FilterOpt struct {

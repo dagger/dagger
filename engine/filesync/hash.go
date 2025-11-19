@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	fstypes "github.com/tonistiigi/fsutil/types"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/zeebo/xxh3"
 )
 

@@ -19,7 +19,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
-	copy "github.com/tonistiigi/fsutil/copy"
+	copy "github.com/dagger/dagger/internal/fsutil/copy"
 )
 
 var qemuArchMap = map[string]string{

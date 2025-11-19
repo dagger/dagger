@@ -12,6 +12,7 @@ import (
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
+	strconv "strconv"
 	strings "strings"
 )
 
@@ -25,6 +26,36 @@ var _ = math.Inf
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
+
+type Packet_PacketType int32
+
+const (
+	PACKET_STAT Packet_PacketType = 0
+	PACKET_REQ  Packet_PacketType = 1
+	PACKET_DATA Packet_PacketType = 2
+	PACKET_FIN  Packet_PacketType = 3
+	PACKET_ERR  Packet_PacketType = 4
+)
+
+var Packet_PacketType_name = map[int32]string{
+	0: "PACKET_STAT",
+	1: "PACKET_REQ",
+	2: "PACKET_DATA",
+	3: "PACKET_FIN",
+	4: "PACKET_ERR",
+}
+
+var Packet_PacketType_value = map[string]int32{
+	"PACKET_STAT": 0,
+	"PACKET_REQ":  1,
+	"PACKET_DATA": 2,
+	"PACKET_FIN":  3,
+	"PACKET_ERR":  4,
+}
+
+func (Packet_PacketType) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_01fabdc1b78bd68b, []int{1, 0}
+}
 
 type Stat struct {
 	Path    string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -142,37 +173,121 @@ func (m *Stat) GetXattrs() map[string][]byte {
 	return nil
 }
 
+type Packet struct {
+	Type Packet_PacketType `protobuf:"varint,1,opt,name=type,proto3,enum=fsutil.types.Packet_PacketType" json:"type,omitempty"`
+	Stat *Stat             `protobuf:"bytes,2,opt,name=stat,proto3" json:"stat,omitempty"`
+	ID   uint32            `protobuf:"varint,3,opt,name=ID,proto3" json:"ID,omitempty"`
+	Data []byte            `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
+}
+
+func (m *Packet) Reset()      { *m = Packet{} }
+func (*Packet) ProtoMessage() {}
+func (*Packet) Descriptor() ([]byte, []int) {
+	return fileDescriptor_01fabdc1b78bd68b, []int{1}
+}
+func (m *Packet) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Packet) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Packet.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Packet) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Packet.Merge(m, src)
+}
+func (m *Packet) XXX_Size() int {
+	return m.Size()
+}
+func (m *Packet) XXX_DiscardUnknown() {
+	xxx_messageInfo_Packet.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Packet proto.InternalMessageInfo
+
+func (m *Packet) GetType() Packet_PacketType {
+	if m != nil {
+		return m.Type
+	}
+	return PACKET_STAT
+}
+
+func (m *Packet) GetStat() *Stat {
+	if m != nil {
+		return m.Stat
+	}
+	return nil
+}
+
+func (m *Packet) GetID() uint32 {
+	if m != nil {
+		return m.ID
+	}
+	return 0
+}
+
+func (m *Packet) GetData() []byte {
+	if m != nil {
+		return m.Data
+	}
+	return nil
+}
+
 func init() {
+	proto.RegisterEnum("fsutil.types.Packet_PacketType", Packet_PacketType_name, Packet_PacketType_value)
 	proto.RegisterType((*Stat)(nil), "fsutil.types.Stat")
 	proto.RegisterMapType((map[string][]byte)(nil), "fsutil.types.Stat.XattrsEntry")
+	proto.RegisterType((*Packet)(nil), "fsutil.types.Packet")
 }
 
 func init() { proto.RegisterFile("stat.proto", fileDescriptor_01fabdc1b78bd68b) }
 
 var fileDescriptor_01fabdc1b78bd68b = []byte{
-	// 317 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x4c, 0x91, 0xbd, 0x4e, 0xc3, 0x30,
-	0x14, 0x85, 0x73, 0x9b, 0xfe, 0xba, 0x45, 0x42, 0x16, 0x83, 0xd5, 0xe1, 0x2a, 0x62, 0xca, 0x94,
-	0x01, 0x24, 0xc4, 0xcf, 0x86, 0xc4, 0x0b, 0x04, 0x06, 0xc4, 0x66, 0x64, 0x53, 0x4c, 0x9b, 0xb8,
-	0x4a, 0xdc, 0x8a, 0x32, 0xf1, 0x08, 0x3c, 0x06, 0x6f, 0x02, 0x63, 0xc7, 0x8e, 0xd4, 0x5d, 0x18,
-	0xfb, 0x08, 0xc8, 0x4e, 0x5b, 0xba, 0x9d, 0xf3, 0x9d, 0x7b, 0x95, 0x9c, 0x6b, 0x42, 0x4a, 0xc3,
-	0x4d, 0x32, 0x2e, 0xb4, 0xd1, 0xb4, 0xf7, 0x54, 0x4e, 0x8c, 0x1a, 0x25, 0x66, 0x36, 0x96, 0xe5,
-	0xf1, 0x57, 0x8d, 0xd4, 0x6f, 0x0d, 0x37, 0x94, 0x92, 0xfa, 0x98, 0x9b, 0x67, 0x06, 0x11, 0xc4,
-	0x9d, 0xd4, 0x6b, 0xc7, 0x32, 0x2d, 0x24, 0xab, 0x45, 0x10, 0x1f, 0xa4, 0x5e, 0xd3, 0x43, 0x12,
-	0x4e, 0x94, 0x60, 0xa1, 0x47, 0x4e, 0x3a, 0x32, 0x50, 0x82, 0xd5, 0x2b, 0x32, 0x50, 0xc2, 0xed,
-	0x95, 0xea, 0x4d, 0xb2, 0x46, 0x04, 0x71, 0x98, 0x7a, 0x4d, 0x19, 0x69, 0x65, 0x5a, 0xdc, 0xa9,
-	0x4c, 0xb2, 0xa6, 0xc7, 0x5b, 0x4b, 0xfb, 0xa4, 0x3d, 0x52, 0xf9, 0x30, 0xe7, 0x99, 0x64, 0x2d,
-	0xff, 0xf5, 0x9d, 0x77, 0x99, 0x90, 0xd3, 0x8c, 0xbf, 0xe8, 0x82, 0xb5, 0xfd, 0xda, 0xce, 0x6f,
-	0x33, 0x95, 0xeb, 0x82, 0x75, 0xfe, 0x33, 0xe7, 0xe9, 0x19, 0x69, 0xbe, 0x72, 0x63, 0x8a, 0x92,
-	0x91, 0x28, 0x8c, 0xbb, 0x27, 0x98, 0xec, 0xb7, 0x4e, 0x5c, 0xe3, 0xe4, 0xde, 0x0f, 0xdc, 0xe4,
-	0xa6, 0x98, 0xa5, 0x9b, 0xe9, 0xfe, 0x05, 0xe9, 0xee, 0x61, 0x57, 0x6d, 0x28, 0x67, 0x9b, 0x9b,
-	0x38, 0x49, 0x8f, 0x48, 0x63, 0xca, 0x47, 0x93, 0xea, 0x26, 0xbd, 0xb4, 0x32, 0x97, 0xb5, 0x73,
-	0xb8, 0xbe, 0x9a, 0x2f, 0x31, 0x58, 0x2c, 0x31, 0x58, 0x2f, 0x11, 0xde, 0x2d, 0xc2, 0xa7, 0x45,
-	0xf8, 0xb6, 0x08, 0x73, 0x8b, 0xf0, 0x63, 0x11, 0x7e, 0x2d, 0x06, 0x6b, 0x8b, 0xf0, 0xb1, 0xc2,
-	0x60, 0xbe, 0xc2, 0x60, 0xb1, 0xc2, 0xe0, 0xa1, 0xe1, 0x7f, 0xe8, 0xb1, 0xe9, 0xdf, 0xe6, 0xf4,
-	0x2f, 0x00, 0x00, 0xff, 0xff, 0x06, 0x97, 0xf3, 0xd7, 0xa9, 0x01, 0x00, 0x00,
+	// 441 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x64, 0x52, 0x3d, 0x8f, 0xd3, 0x40,
+	0x10, 0xf5, 0xda, 0x4e, 0xee, 0x6e, 0x12, 0x82, 0xb5, 0xa2, 0x58, 0x5d, 0xb1, 0x44, 0x29, 0x50,
+	0x2a, 0x17, 0x39, 0x09, 0xf1, 0x51, 0x05, 0x12, 0xa4, 0x08, 0x09, 0x1d, 0x7b, 0x2e, 0x10, 0x05,
+	0x68, 0xc1, 0xcb, 0xb1, 0x24, 0x8e, 0x23, 0x7b, 0x73, 0xc2, 0x54, 0xfc, 0x04, 0x7e, 0x06, 0xff,
+	0x04, 0xca, 0x94, 0x57, 0x12, 0xa7, 0x81, 0xee, 0x7e, 0x02, 0xda, 0xb1, 0xef, 0x62, 0x44, 0xe5,
+	0xf7, 0xde, 0xbc, 0x99, 0xf1, 0x3c, 0x1b, 0x20, 0x37, 0xd2, 0x84, 0xab, 0x2c, 0x35, 0x29, 0xed,
+	0x7e, 0xc8, 0xd7, 0x46, 0x2f, 0x42, 0x53, 0xac, 0x54, 0x3e, 0xf8, 0xe1, 0x82, 0x7f, 0x66, 0xa4,
+	0xa1, 0x14, 0xfc, 0x95, 0x34, 0x1f, 0x19, 0xe9, 0x93, 0xe1, 0x91, 0x40, 0x6c, 0xb5, 0x24, 0x8d,
+	0x15, 0x73, 0xfb, 0x64, 0x78, 0x4b, 0x20, 0xa6, 0x01, 0x78, 0x6b, 0x1d, 0x33, 0x0f, 0x25, 0x0b,
+	0xad, 0x72, 0xae, 0x63, 0xe6, 0x57, 0xca, 0xb9, 0x8e, 0x6d, 0x5f, 0xae, 0xbf, 0x28, 0xd6, 0xea,
+	0x93, 0xa1, 0x27, 0x10, 0x53, 0x06, 0x07, 0x49, 0x1a, 0x47, 0x3a, 0x51, 0xac, 0x8d, 0xf2, 0x35,
+	0xa5, 0xc7, 0x70, 0xb8, 0xd0, 0xcb, 0xf9, 0x52, 0x26, 0x8a, 0x1d, 0xe0, 0xf6, 0x1b, 0x6e, 0x6b,
+	0xb1, 0xba, 0x48, 0xe4, 0xa7, 0x34, 0x63, 0x87, 0xd8, 0x76, 0xc3, 0xaf, 0x6b, 0x7a, 0x99, 0x66,
+	0xec, 0x68, 0x5f, 0xb3, 0x9c, 0xde, 0x87, 0xf6, 0x67, 0x69, 0x4c, 0x96, 0x33, 0xe8, 0x7b, 0xc3,
+	0xce, 0x88, 0x87, 0xcd, 0xab, 0x43, 0x7b, 0x71, 0xf8, 0x0a, 0x0d, 0xd3, 0xa5, 0xc9, 0x0a, 0x51,
+	0xbb, 0x8f, 0x1f, 0x42, 0xa7, 0x21, 0xdb, 0xd3, 0xe6, 0xaa, 0xa8, 0x33, 0xb1, 0x90, 0xde, 0x81,
+	0xd6, 0x85, 0x5c, 0xac, 0xab, 0x4c, 0xba, 0xa2, 0x22, 0x8f, 0xdc, 0x07, 0x64, 0xf0, 0x87, 0x40,
+	0xfb, 0x54, 0xbe, 0x9f, 0x2b, 0x43, 0x4f, 0xc0, 0xb7, 0x7b, 0xb0, 0xaf, 0x37, 0xba, 0xfb, 0xef,
+	0xee, 0xca, 0x53, 0x3f, 0xa2, 0x62, 0xa5, 0x04, 0x9a, 0xe9, 0x3d, 0xf0, 0xed, 0x57, 0xc2, 0xc1,
+	0x9d, 0x11, 0xfd, 0xff, 0x85, 0x05, 0xd6, 0x69, 0x0f, 0xdc, 0xd9, 0xa4, 0xce, 0xdf, 0x9d, 0x4d,
+	0x6c, 0xd8, 0xb1, 0x34, 0x12, 0xf3, 0xef, 0x0a, 0xc4, 0x83, 0x37, 0x00, 0xfb, 0xf9, 0xf4, 0x36,
+	0x74, 0x4e, 0xc7, 0x4f, 0x9f, 0x4f, 0xa3, 0xb7, 0x67, 0xd1, 0x38, 0x0a, 0x1c, 0xda, 0x03, 0xa8,
+	0x05, 0x31, 0x7d, 0x19, 0x90, 0x86, 0x61, 0x32, 0x8e, 0xc6, 0x81, 0xdb, 0x30, 0x3c, 0x9b, 0xbd,
+	0x08, 0xbc, 0x06, 0x9f, 0x0a, 0x11, 0xf8, 0x4f, 0x1e, 0x6f, 0xb6, 0xdc, 0xb9, 0xdc, 0x72, 0xe7,
+	0x6a, 0xcb, 0xc9, 0xd7, 0x92, 0x93, 0xef, 0x25, 0x27, 0x3f, 0x4b, 0x4e, 0x36, 0x25, 0x27, 0xbf,
+	0x4a, 0x4e, 0x7e, 0x97, 0xdc, 0xb9, 0x2a, 0x39, 0xf9, 0xb6, 0xe3, 0xce, 0x66, 0xc7, 0x9d, 0xcb,
+	0x1d, 0x77, 0x5e, 0xb7, 0xf0, 0x96, 0x77, 0x6d, 0xfc, 0x0f, 0x4f, 0xfe, 0x06, 0x00, 0x00, 0xff,
+	0xff, 0x35, 0x10, 0x4d, 0xd8, 0x95, 0x02, 0x00, 0x00,
 }
 
+func (x Packet_PacketType) String() string {
+	s, ok := Packet_PacketType_name[int32(x)]
+	if ok {
+		return s
+	}
+	return strconv.Itoa(int(x))
+}
 func (this *Stat) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -229,6 +344,39 @@ func (this *Stat) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *Packet) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Packet)
+	if !ok {
+		that2, ok := that.(Packet)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Type != that1.Type {
+		return false
+	}
+	if !this.Stat.Equal(that1.Stat) {
+		return false
+	}
+	if this.ID != that1.ID {
+		return false
+	}
+	if !bytes.Equal(this.Data, that1.Data) {
+		return false
+	}
+	return true
+}
 func (this *Stat) GoString() string {
 	if this == nil {
 		return "nil"
@@ -257,6 +405,21 @@ func (this *Stat) GoString() string {
 	if this.Xattrs != nil {
 		s = append(s, "Xattrs: "+mapStringForXattrs+",\n")
 	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *Packet) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&types.Packet{")
+	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
+	if this.Stat != nil {
+		s = append(s, "Stat: "+fmt.Sprintf("%#v", this.Stat)+",\n")
+	}
+	s = append(s, "ID: "+fmt.Sprintf("%#v", this.ID)+",\n")
+	s = append(s, "Data: "+fmt.Sprintf("%#v", this.Data)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -361,6 +524,58 @@ func (m *Stat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *Packet) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Packet) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Packet) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Data) > 0 {
+		i -= len(m.Data)
+		copy(dAtA[i:], m.Data)
+		i = encodeVarintStat(dAtA, i, uint64(len(m.Data)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.ID != 0 {
+		i = encodeVarintStat(dAtA, i, uint64(m.ID))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Stat != nil {
+		{
+			size, err := m.Stat.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintStat(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Type != 0 {
+		i = encodeVarintStat(dAtA, i, uint64(m.Type))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintStat(dAtA []byte, offset int, v uint64) int {
 	offset -= sovStat(v)
 	base := offset
@@ -422,6 +637,29 @@ func (m *Stat) Size() (n int) {
 	return n
 }
 
+func (m *Packet) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Type != 0 {
+		n += 1 + sovStat(uint64(m.Type))
+	}
+	if m.Stat != nil {
+		l = m.Stat.Size()
+		n += 1 + l + sovStat(uint64(l))
+	}
+	if m.ID != 0 {
+		n += 1 + sovStat(uint64(m.ID))
+	}
+	l = len(m.Data)
+	if l > 0 {
+		n += 1 + l + sovStat(uint64(l))
+	}
+	return n
+}
+
 func sovStat(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -453,6 +691,19 @@ func (this *Stat) String() string {
 		`Devmajor:` + fmt.Sprintf("%v", this.Devmajor) + `,`,
 		`Devminor:` + fmt.Sprintf("%v", this.Devminor) + `,`,
 		`Xattrs:` + mapStringForXattrs + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Packet) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&Packet{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Stat:` + strings.Replace(this.Stat.String(), "Stat", "Stat", 1) + `,`,
+		`ID:` + fmt.Sprintf("%v", this.ID) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -808,7 +1059,7 @@ func (m *Stat) Unmarshal(dAtA []byte) error {
 					if err != nil {
 						return err
 					}
-					if skippy < 0 {
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
 						return ErrInvalidLengthStat
 					}
 					if (iNdEx + skippy) > postIndex {
@@ -825,10 +1076,165 @@ func (m *Stat) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthStat
 			}
-			if (iNdEx + skippy) < 0 {
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Packet) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowStat
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Packet: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Packet: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
+			}
+			m.Type = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Type |= Packet_PacketType(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Stat", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthStat
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthStat
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Stat == nil {
+				m.Stat = &Stat{}
+			}
+			if err := m.Stat.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ID", wireType)
+			}
+			m.ID = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ID |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Data", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthStat
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthStat
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Data = append(m.Data[:0], dAtA[iNdEx:postIndex]...)
+			if m.Data == nil {
+				m.Data = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipStat(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthStat
 			}
 			if (iNdEx + skippy) > l {

@@ -6,7 +6,7 @@ package file
 import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/pkg/errors"
-	copy "github.com/tonistiigi/fsutil/copy"
+	copy "github.com/dagger/dagger/internal/fsutil/copy"
 )
 
 func mapUserToChowner(user *copy.User, idmap *idtools.IdentityMapping) (copy.Chowner, error) {

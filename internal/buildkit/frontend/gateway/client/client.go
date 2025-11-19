@@ -13,7 +13,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	fstypes "github.com/tonistiigi/fsutil/types"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 )
 
 type Result = result.Result[Reference]

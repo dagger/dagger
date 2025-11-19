@@ -6,7 +6,7 @@ import (
 	"runtime"
 
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil/types"
 )
 
 // constructs a Stat object. path is where the path can be found right

@@ -9,7 +9,7 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/idtools"
-	copy "github.com/tonistiigi/fsutil/copy"
+	copy "github.com/dagger/dagger/internal/fsutil/copy"
 )
 
 func unpack(srcRoot string, src string, destRoot string, dest string, ch copy.Chowner, tm *time.Time, idmap *idtools.IdentityMapping) (bool, error) {
