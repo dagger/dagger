@@ -1,8 +1,18 @@
 {
   "name": "test",
-  "sdk": "go",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
-    "sub1",
-    "sub2"
-  ]
+    {
+      "name": "sub1",
+      "source": "sub1"
+    },
+    {
+      "name": "sub2",
+      "source": "sub2"
+    }
+  ],
+  "disableDefaultFunctionCaching": true
 }
