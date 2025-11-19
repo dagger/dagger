@@ -16,6 +16,7 @@ permissions:
 jobs:
   checks:
     strategy:
+      fail-fast: false
       matrix:
         filter:
           - "go/**"
