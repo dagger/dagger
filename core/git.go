@@ -66,7 +66,7 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 		Backend: backend,
 	}
 
-	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
+	if remoteBackend, ok := backend.(*RemoteGitRepository); ok && remoteBackend.URL != nil {
 		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
 	}
 
