@@ -44,7 +44,6 @@
             "sdk/rust/target",
             "sdk/php/vendor",
             "docs/**",
-            "core/integration/**",
             "dagql/idtui/viztest/broken/**",
             "modules/evals/**",
             "**/broken*/**"
