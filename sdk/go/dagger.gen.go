@@ -1074,6 +1074,14 @@ type Check struct {
 	passed      *bool
 	resultEmoji *string
 }
+type WithCheckFunc func(r *Check) *Check
+
+// With calls the provided function with current Check.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Check) With(f WithCheckFunc) *Check {
+	return f(r)
+}
 
 func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	return &Check{
@@ -1194,6 +1202,15 @@ func (r *Check) ResultEmoji(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Execute the check
+func (r *Check) Run() *Check {
+	q := r.query.Select("run")
+
+	return &Check{
+		query: q,
+	}
 }
 
 type CheckGroup struct {
@@ -9066,6 +9083,18 @@ func (r *Module) With(f WithModuleFunc) *Module {
 
 func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	return &Module{
+		query: q,
+	}
+}
+
+// Return the check defined by the module with the given name. Must match to exactly one check.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Module) Check(name string) *Check {
+	q := r.query.Select("check")
+	q = q.Arg("name", name)
+
+	return &Check{
 		query: q,
 	}
 }

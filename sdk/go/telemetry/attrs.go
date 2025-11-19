@@ -191,4 +191,7 @@ const (
 
 	// The function name of the current module in the format of "type.functionName"
 	ModuleCallerFunctionCallNameAttr = "dagger.io/module.caller.function.name"
+
+	// When scaling out calls to engines, the ID of the engine handling for the span
+	EngineIDAttr = "dagger.io/engine.id"
 )

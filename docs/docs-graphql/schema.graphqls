@@ -260,6 +260,9 @@ type Check {
 
   """An emoji representing the result of the check"""
   resultEmoji: String!
+
+  """Execute the check"""
+  run: Check!
 }
 
 type CheckGroup {
@@ -3737,6 +3740,14 @@ scalar ListTypeDefID
 
 """A Dagger module."""
 type Module {
+  """
+  Return the check defined by the module with the given name. Must match to exactly one check.
+  """
+  check(
+    """The name of the check to retrieve"""
+    name: String!
+  ): Check! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """Return all checks defined by the module"""
   checks(
     """Only include checks matching the specified patterns"""

@@ -1267,6 +1267,19 @@ class Check(Type):
         _ctx = self._select("resultEmoji", _args)
         return await _ctx.execute(str)
 
+    def run(self) -> Self:
+        """Execute the check"""
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return Check(_ctx)
+
+    def with_(self, cb: Callable[["Check"], "Check"]) -> "Check":
+        """Call the provided callable with current Check.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
 
 @typecheck
 class CheckGroup(Type):
@@ -9256,6 +9269,25 @@ class ListTypeDef(Type):
 @typecheck
 class Module(Type):
     """A Dagger module."""
+
+    def check(self, name: str) -> Check:
+        """Return the check defined by the module with the given name. Must match
+        to exactly one check.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        name:
+            The name of the check to retrieve
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("check", _args)
+        return Check(_ctx)
 
     def checks(
         self,

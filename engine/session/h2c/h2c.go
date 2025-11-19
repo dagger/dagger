@@ -3,14 +3,17 @@ package h2c
 import (
 	context "context"
 	"errors"
+	fmt "fmt"
 	"io"
 	"net"
 	"sync"
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
+	"github.com/dagger/dagger/util/grpcutil"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type TunnelListenerAttachable struct {
@@ -178,4 +181,30 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 			}
 		}
 	}
+}
+
+type TunnelListenerProxy struct {
+	client TunnelListenerClient
+}
+
+func NewTunnelListenerProxy(client TunnelListenerClient) *TunnelListenerProxy {
+	return &TunnelListenerProxy{
+		client: client,
+	}
+}
+
+func (p *TunnelListenerProxy) Register(server *grpc.Server) {
+	RegisterTunnelListenerServer(server, p)
+}
+
+func (p *TunnelListenerProxy) Listen(stream TunnelListener_ListenServer) error {
+	ctx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(errors.New("proxy stream closed"))
+
+	clientStream, err := p.client.Listen(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("create client stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }

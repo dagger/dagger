@@ -2434,6 +2434,15 @@ impl Check {
         let query = self.selection.select("resultEmoji");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Execute the check
+    pub fn run(&self) -> Check {
+        let query = self.selection.select("run");
+        Check {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 pub struct CheckGroup {
@@ -9934,6 +9943,20 @@ pub struct ModuleServeOpts {
     pub include_dependencies: Option<bool>,
 }
 impl Module {
+    /// Return the check defined by the module with the given name. Must match to exactly one check.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the check to retrieve
+    pub fn check(&self, name: impl Into<String>) -> Check {
+        let mut query = self.selection.select("check");
+        query = query.arg("name", name.into());
+        Check {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return all checks defined by the module
     ///
     /// # Arguments

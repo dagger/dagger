@@ -9,6 +9,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/util/grpcutil"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -172,4 +173,26 @@ func (a *PromptResponses) persist() error {
 	}
 
 	return os.WriteFile(promptConfirmationsFile, data, 0644)
+}
+
+type PromptProxy struct {
+	client PromptClient
+}
+
+func NewPromptProxy(client PromptClient) PromptProxy {
+	return PromptProxy{
+		client: client,
+	}
+}
+
+func (p PromptProxy) Register(srv *grpc.Server) {
+	RegisterPromptServer(srv, p)
+}
+
+func (p PromptProxy) PromptBool(ctx context.Context, req *BoolRequest) (*BoolResponse, error) {
+	return p.client.PromptBool(grpcutil.IncomingToOutgoingContext(ctx), req)
+}
+
+func (p PromptProxy) PromptString(ctx context.Context, req *StringRequest) (*StringResponse, error) {
+	return p.client.PromptString(grpcutil.IncomingToOutgoingContext(ctx), req)
 }

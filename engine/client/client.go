@@ -24,7 +24,11 @@ import (
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/session/auth/authprovider"
+	"github.com/dagger/dagger/internal/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
+	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
@@ -109,6 +113,9 @@ type Params struct {
 	ExecCmd  []string
 
 	EagerRuntime bool
+
+	CloudBasicAuthToken string
+	EnableCloudScaleOut bool
 }
 
 type Client struct {
@@ -147,9 +154,11 @@ type Client struct {
 	nestedSessionPort int
 
 	labels enginetel.Labels
+
+	isCloudScaleOutClient bool
 }
 
-func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
+func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	c := &Client{Params: params}
 
 	if c.ID == "" {
@@ -159,6 +168,144 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.ID = identity.NewID()
 	}
 	configuredSessionID := c.SessionID
+	if c.SessionID == "" {
+		c.SessionID = identity.NewID()
+	}
+	if c.SecretToken == "" {
+		c.SecretToken = uuid.New().String()
+	}
+
+	// allow enabling scale-out of checks via an env var too for now to support cloud
+	c.EnableCloudScaleOut = c.EnableCloudScaleOut || os.Getenv("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT") != ""
+
+	// NB: decouple from the originator's cancel ctx
+	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
+	c.closeCtx, c.closeRequests = context.WithCancelCause(context.WithoutCancel(ctx))
+
+	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
+
+	defer func() {
+		if rerr != nil {
+			c.internalCancel(errors.New("Connect failed"))
+		}
+	}()
+
+	workdir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get workdir: %w", err)
+	}
+
+	c.labels = enginetel.LoadDefaultLabels(workdir, engine.Version)
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("get hostname: %w", err)
+	}
+	c.hostname = hostname
+
+	connectSpanOpts := []trace.SpanStartOption{}
+	if configuredSessionID != "" {
+		// infer that this is not a main client caller, server ID is never set for those currently
+		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
+	}
+
+	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
+	connectCtx, span := Tracer(ctx).Start(ctx, "connect", connectSpanOpts...)
+	defer telemetry.EndWithCause(span, &rerr)
+	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
+
+	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
+	if isNestedSession {
+		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
+		if err != nil {
+			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
+		}
+		c.nestedSessionPort = nestedSessionPort
+		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
+		c.httpClient = c.newHTTPClient()
+		if err := c.init(connectCtx); err != nil {
+			return nil, fmt.Errorf("initialize nested client: %w", err)
+		}
+		if err := c.subscribeTelemetry(connectCtx); err != nil {
+			return nil, fmt.Errorf("subscribe to telemetry: %w", err)
+		}
+		if err := c.daggerConnect(connectCtx); err != nil {
+			return nil, fmt.Errorf("failed to connect to dagger: %w", err)
+		}
+		return c, nil
+	}
+
+	// Check if any of the upstream cache importers/exporters are enabled.
+	// Note that this is not the cache service support in engine/cache/, that
+	// is a different feature which is configured in the engine daemon.
+	c.upstreamCacheImportOptions, c.upstreamCacheExportOptions, err = allCacheConfigsFromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("cache config from env: %w", err)
+	}
+
+	c.stableClientID = GetHostStableID(slog)
+
+	if err := c.startEngine(connectCtx, params); err != nil {
+		return nil, fmt.Errorf("start engine: %w", err)
+	}
+	if !engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion) {
+		return nil, fmt.Errorf("incompatible engine version %s", engine.NormalizeVersion(c.bkVersion))
+	}
+
+	defer func() {
+		if rerr != nil {
+			c.bkClient.Close()
+		}
+	}()
+
+	if err := c.startSession(connectCtx); err != nil {
+		return nil, fmt.Errorf("start session: %w", err)
+	}
+
+	defer func() {
+		if rerr != nil {
+			c.sessionSrv.Stop()
+		}
+	}()
+
+	if err := c.subscribeTelemetry(connectCtx); err != nil {
+		return nil, fmt.Errorf("subscribe to telemetry: %w", err)
+	}
+
+	if err := c.daggerConnect(ctx); err != nil {
+		return nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+
+	return c, nil
+}
+
+type EngineToEngineParams struct {
+	Params
+
+	// The caller's session grpc conn, which will be proxied back to
+	CallerSessionConn *grpc.ClientConn
+
+	// important we forward the original client's stable id so that filesync
+	// caching can work as expected
+	StableClientID string
+
+	Labels enginetel.Labels
+}
+
+// ConnectEngineToEngine connects a Dagger client to another Dagger engine using an existing session connection.
+// Session attachables are proxied back to the original client.
+func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ *Client, rerr error) {
+	c := &Client{
+		Params:                params.Params,
+		isCloudScaleOutClient: true,
+	}
+
+	if c.ID == "" {
+		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
+	}
+	if c.ID == "" {
+		c.ID = identity.NewID()
+	}
 	if c.SessionID == "" {
 		c.SessionID = identity.NewID()
 	}
@@ -178,66 +325,25 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		}
 	}()
 
-	workdir, err := os.Getwd()
-	if err != nil {
-		return nil, nil, fmt.Errorf("get workdir: %w", err)
-	}
-
-	c.labels = enginetel.LoadDefaultLabels(workdir, engine.Version)
+	c.labels = params.Labels
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, nil, fmt.Errorf("get hostname: %w", err)
+		return nil, fmt.Errorf("get hostname: %w", err)
 	}
 	c.hostname = hostname
 
-	connectSpanOpts := []trace.SpanStartOption{}
-	if configuredSessionID != "" {
-		// infer that this is not a main client caller, server ID is never set for those currently
-		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
-	}
+	c.stableClientID = params.StableClientID
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	connectCtx, span := Tracer(ctx).Start(ctx, "connect", connectSpanOpts...)
+	connectCtx, span := Tracer(ctx).Start(ctx, "connect to cloud engine")
 	defer telemetry.EndWithCause(span, &rerr)
-	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 
-	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
-	if isNestedSession {
-		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
-		if err != nil {
-			return nil, nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
-		}
-		c.nestedSessionPort = nestedSessionPort
-		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
-		c.httpClient = c.newHTTPClient()
-		if err := c.init(connectCtx); err != nil {
-			return nil, nil, fmt.Errorf("initialize nested client: %w", err)
-		}
-		if err := c.subscribeTelemetry(connectCtx); err != nil {
-			return nil, nil, fmt.Errorf("subscribe to telemetry: %w", err)
-		}
-		if err := c.daggerConnect(connectCtx); err != nil {
-			return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
-		}
-		return c, ctx, nil
-	}
-
-	// Check if any of the upstream cache importers/exporters are enabled.
-	// Note that this is not the cache service support in engine/cache/, that
-	// is a different feature which is configured in the engine daemon.
-	c.upstreamCacheImportOptions, c.upstreamCacheExportOptions, err = allCacheConfigsFromEnv()
-	if err != nil {
-		return nil, nil, fmt.Errorf("cache config from env: %w", err)
-	}
-
-	c.stableClientID = GetHostStableID(slog)
-
-	if err := c.startEngine(connectCtx, params); err != nil {
-		return nil, nil, fmt.Errorf("start engine: %w", err)
+	if err := c.startEngine(connectCtx, params.Params); err != nil {
+		return nil, fmt.Errorf("start engine: %w", err)
 	}
 	if !engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion) {
-		return nil, nil, fmt.Errorf("incompatible engine version %s", engine.NormalizeVersion(c.bkVersion))
+		return nil, fmt.Errorf("incompatible engine version %s", engine.NormalizeVersion(c.bkVersion))
 	}
 
 	defer func() {
@@ -246,8 +352,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		}
 	}()
 
-	if err := c.startSession(connectCtx); err != nil {
-		return nil, nil, fmt.Errorf("start session: %w", err)
+	if err := c.startE2ESession(connectCtx, params.CallerSessionConn); err != nil {
+		return nil, fmt.Errorf("start session: %w", err)
 	}
 
 	defer func() {
@@ -257,14 +363,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}()
 
 	if err := c.subscribeTelemetry(connectCtx); err != nil {
-		return nil, nil, fmt.Errorf("subscribe to telemetry: %w", err)
+		return nil, fmt.Errorf("subscribe to telemetry: %w", err)
 	}
 
 	if err := c.daggerConnect(ctx); err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+		return nil, fmt.Errorf("failed to connect to dagger: %w", err)
 	}
 
-	return c, ctx, nil
+	return c, nil
 }
 
 func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
@@ -296,12 +402,13 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
-		DaggerCloudToken: cloudToken,
-		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
-		Module:           params.Module,
-		Function:         params.Function,
-		ExecCmd:          params.ExecCmd,
-		ClientID:         c.ID,
+		DaggerCloudToken:    cloudToken,
+		GPUSupport:          os.Getenv(drivers.EnvGPUSupport),
+		Module:              params.Module,
+		Function:            params.Function,
+		ExecCmd:             params.ExecCmd,
+		ClientID:            c.ID,
+		CloudBasicAuthToken: params.CloudBasicAuthToken,
 	})
 	provisionCancel()
 	telemetry.EndWithCause(provisionSpan, &err)
@@ -420,6 +527,69 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			return err
 		}
 		attachables = append(attachables, attachable)
+	}
+
+	sessionConn, err := c.DialContext(ctx, "", "")
+	if err != nil {
+		return fmt.Errorf("dial for session attachables: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			sessionConn.Close()
+		}
+	}()
+
+	c.sessionSrv, err = ConnectBuildkitSession(ctx,
+		sessionConn,
+		c.AppendHTTPRequestHeaders(http.Header{}),
+		attachables...,
+	)
+	if err != nil {
+		return fmt.Errorf("connect buildkit session: %w", err)
+	}
+
+	c.eg.Go(func() error {
+		ctx, cancel, err := c.withClientCloseCancel(ctx)
+		if err != nil {
+			return err
+		}
+		go func() {
+			<-ctx.Done()
+			cancel(errors.New("startSession context done"))
+		}()
+		c.sessionSrv.Run(ctx)
+		return nil
+	})
+
+	c.httpClient = c.newHTTPClient()
+	return nil
+}
+
+func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.ClientConn) (rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "starting scale-out session",
+		telemetry.Encapsulated())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	clientMetadata := c.clientMetadata()
+	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
+
+	// session attachables that proxy back to the original caller's session
+	attachables := []bksession.Attachable{
+		FilesyncSourceProxy{
+			Client: filesync.NewFileSyncClient(callerSessionConn),
+		},
+		FilesyncTargetProxy{
+			Client: filesync.NewFileSendClient(callerSessionConn),
+		},
+		secretprovider.NewSecretProviderProxy(secrets.NewSecretsClient(callerSessionConn)),
+		NewSocketSessionProxy(sshforward.NewSSHClient(callerSessionConn)),
+		NewAuthProxy(bkauth.NewAuthClient(callerSessionConn)),
+		h2c.NewTunnelListenerProxy(h2c.NewTunnelListenerClient(callerSessionConn)),
+		terminal.NewTerminalProxy(terminal.NewTerminalClient(callerSessionConn)),
+		git.NewGitAttachableProxy(git.NewGitClient(callerSessionConn)),
+		pipe.NewPipeProxy(pipe.NewPipeClient(callerSessionConn)),
+		prompt.NewPromptProxy(prompt.NewPromptClient(callerSessionConn)),
+		store.NewStoreProxy(callerSessionConn),
 	}
 
 	sessionConn, err := c.DialContext(ctx, "", "")
@@ -1178,6 +1348,16 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		cloudOrg = o
 	}
 
+	basicToken := c.CloudBasicAuthToken
+	if basicToken == "" {
+		basicToken = os.Getenv("DAGGER_CLOUD_TOKEN")
+	}
+
+	var remoteEngineID string
+	if c.connector != nil {
+		remoteEngineID = c.connector.EngineID()
+	}
+
 	return engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
@@ -1195,6 +1375,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		SSHAuthSocketPath:         sshAuthSock,
 		AllowedLLMModules:         c.AllowedLLMModules,
 		EagerRuntime:              c.EagerRuntime,
+		CloudBasicAuthToken:       basicToken,
+		EnableCloudScaleOut:       c.EnableCloudScaleOut,
+		CloudScaleOutEngineID:     remoteEngineID,
 	}
 }
 

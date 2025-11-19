@@ -3098,6 +3098,23 @@ export class Check extends BaseClient {
 
     return response
   }
+
+  /**
+   * Execute the check
+   */
+  run = (): Check => {
+    const ctx = this._ctx.select("run")
+    return new Check(ctx)
+  }
+
+  /**
+   * Call the provided function with current Check.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Check) => Check) => {
+    return arg(this)
+  }
 }
 
 export class CheckGroup extends BaseClient {
@@ -9196,6 +9213,16 @@ export class Module_ extends BaseClient {
     const response: Awaited<ModuleID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Return the check defined by the module with the given name. Must match to exactly one check.
+   * @param name The name of the check to retrieve
+   * @experimental
+   */
+  check = (name: string): Check => {
+    const ctx = this._ctx.select("check", { name })
+    return new Check(ctx)
   }
 
   /**

@@ -827,6 +827,10 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		SourceRootSubpath: sourceRootSubpath,
 		ContextDirectory:  contextDir,
 		Kind:              core.ModuleSourceKindDir,
+		DirSrc: &core.DirModuleSource{
+			OriginalContextDir:        contextDir,
+			OriginalSourceRootSubpath: args.SourceRootPath,
+		},
 	}
 	if dirSrc.SourceRootSubpath == "" {
 		dirSrc.SourceRootSubpath = "."

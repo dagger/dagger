@@ -197,6 +197,10 @@ func (s *Selection) Execute(ctx context.Context) error {
 	return s.unpack(response)
 }
 
+func (s *Selection) Unpack(data any) error {
+	return s.unpack(data)
+}
+
 type argument struct {
 	value any
 
