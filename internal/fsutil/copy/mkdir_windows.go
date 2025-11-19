@@ -1,7 +1,7 @@
 //go:build windows
 // +build windows
 
-package fs
+package copy
 
 import (
 	"fmt"

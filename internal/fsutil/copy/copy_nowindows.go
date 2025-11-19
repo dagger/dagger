@@ -1,7 +1,7 @@
 //go:build !windows
 // +build !windows
 
-package fs
+package copy
 
 import (
 	"os"
@@ -41,6 +41,6 @@ func copyDevice(dst string, fi os.FileInfo) error {
 		rDev = int(st.Rdev)
 	}
 	mode := st.Mode
-	mode &^= syscall.S_IFSOCK // socket copied as stub
-	return mknod(dst, uint32(mode), rDev)
+	mode &^= syscall.S_IFSOCK             // socket copied as stub
+	return mknod(dst, uint32(mode), rDev) //nolint:unconvert
 }

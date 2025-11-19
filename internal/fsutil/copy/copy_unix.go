@@ -1,7 +1,7 @@
 //go:build solaris || darwin || freebsd
 // +build solaris darwin freebsd
 
-package fs
+package copy
 
 import (
 	"os"

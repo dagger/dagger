@@ -1,7 +1,7 @@
 //go:build darwin
 // +build darwin
 
-package fs
+package copy
 
 import (
 	"io"

@@ -17,16 +17,16 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
-	fscopy "github.com/dagger/dagger/engine/filesync/copy"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
-	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 

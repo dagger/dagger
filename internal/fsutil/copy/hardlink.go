@@ -1,4 +1,4 @@
-package fs
+package copy
 
 import "os"
 
@@ -13,15 +13,15 @@ func GetLinkInfo(fi os.FileInfo) (uint64, bool) {
 // map. If the given file name is not in the map and
 // has other links, it is added to the inode map
 // to be a source for other link locations.
-func getLinkSource(name string, fi os.FileInfo, inodes map[uint64]string) (string, error) {
+func getLinkSource(name string, fi os.FileInfo, inodes map[uint64]string) string {
 	inode, isHardlink := getLinkInfo(fi)
 	if !isHardlink {
-		return "", nil
+		return ""
 	}
 
 	path, ok := inodes[inode]
 	if !ok {
 		inodes[inode] = name
 	}
-	return path, nil
+	return path
 }

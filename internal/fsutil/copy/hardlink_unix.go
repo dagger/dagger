@@ -1,7 +1,7 @@
 //go:build !windows
 // +build !windows
 
-package fs
+package copy
 
 import (
 	"os"
@@ -14,5 +14,5 @@ func getLinkInfo(fi os.FileInfo) (uint64, bool) {
 		return 0, false
 	}
 
-	return uint64(s.Ino), !fi.IsDir() && s.Nlink > 1
+	return s.Ino, !fi.IsDir() && s.Nlink > 1
 }

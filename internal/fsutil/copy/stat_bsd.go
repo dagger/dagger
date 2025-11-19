@@ -1,6 +1,7 @@
+//go:build darwin || freebsd || netbsd || openbsd
 // +build darwin freebsd netbsd openbsd
 
-package fs
+package copy
 
 import (
 	"syscall"

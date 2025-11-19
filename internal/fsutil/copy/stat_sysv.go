@@ -1,7 +1,7 @@
 //go:build dragonfly || linux || solaris
 // +build dragonfly linux solaris
 
-package fs
+package copy
 
 import (
 	"syscall"

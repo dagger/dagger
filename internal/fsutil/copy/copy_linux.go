@@ -1,4 +1,4 @@
-package fs
+package copy
 
 import (
 	"io"
@@ -123,5 +123,5 @@ func copyFileContent(dst, src *os.File) error {
 }
 
 func mknod(dst string, mode uint32, rDev int) error {
-	return unix.Mknod(dst, uint32(mode), rDev)
+	return unix.Mknod(dst, mode, rDev)
 }

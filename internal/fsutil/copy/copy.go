@@ -1,4 +1,4 @@
-package fs
+package copy
 
 import (
 	"context"
@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil"
 )
 
 var bufferPool = &sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		buffer := make([]byte, 32*1024)
 		return &buffer
 	},
@@ -88,7 +89,7 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		return err
 	}
 
-	c, err := newCopier(dstRoot, ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler, ci.IncludePatterns, ci.ExcludePatterns, ci.AlwaysReplaceExistingDestPaths, ci.ChangeFunc)
+	c, err := newCopier(dstRoot, ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler, ci.Only, ci.IncludePatterns, ci.ExcludePatterns, ci.UseGitignore, ci.AlwaysReplaceExistingDestPaths, ci.ChangeFunc)
 	if err != nil {
 		return err
 	}
@@ -114,7 +115,8 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		if err != nil {
 			return err
 		}
-		if err := c.copy(ctx, srcFollowed, "", dst, false, patternmatcher.MatchInfo{}, patternmatcher.MatchInfo{}); err != nil {
+
+		if err := c.copy(ctx, srcFollowed, ci.BaseCopyPath, dst, false, patternmatcher.MatchInfo{}, patternmatcher.MatchInfo{}); err != nil {
 			return err
 		}
 	}
@@ -168,15 +170,25 @@ type CopyInfo struct {
 	XAttrErrorHandler XAttrErrorHandler
 	CopyDirContents   bool
 	FollowLinks       bool
+	// Only allows *only* these files/dirs to be copied
+	Only map[string]struct{}
 	// Include only files/dirs matching at least one of these patterns
 	IncludePatterns []string
 	// Exclude files/dir matching any of these patterns (even if they match an include pattern)
 	ExcludePatterns []string
+	// UseGitignore indicates that .gitignore files should be respected
+	UseGitignore bool
 	// If true, any source path that overwrite existing destination paths will always replace
 	// the existing destination path, even if they are of different types (e.g. a directory will
 	// replace any existing symlink or file)
 	AlwaysReplaceExistingDestPaths bool
 	ChangeFunc                     fsutil.ChangeFunc
+
+	// BaseCopyPath represents the starting directory for the copy operation.
+	// This is necessary when the rootPath differs from the source path on the host.
+	// This situation occurs when `UseGitignore` is enabled, as patterns may be
+	// sourced from directories higher up than the requested directory.
+	BaseCopyPath string
 }
 
 type Opt func(*CopyInfo)
@@ -224,6 +236,12 @@ func WithExcludePattern(excludePattern string) Opt {
 	}
 }
 
+func WithGitignore() Opt {
+	return func(ci *CopyInfo) {
+		ci.UseGitignore = true
+	}
+}
+
 func WithChangeNotifier(fn fsutil.ChangeFunc) Opt {
 	return func(ci *CopyInfo) {
 		ci.ChangeFunc = fn
@@ -236,11 +254,13 @@ type copier struct {
 	mode                           *int
 	inodes                         map[uint64]string
 	xattrErrorHandler              XAttrErrorHandler
+	onlySet                        map[string]struct{}
 	includePatternMatcher          *patternmatcher.PatternMatcher
 	excludePatternMatcher          *patternmatcher.PatternMatcher
+	gitignoreMatcher               *fsxutil.GitignoreMatcher
 	parentDirs                     []parentDir
 	changefn                       fsutil.ChangeFunc
-	root                           string
+	destRoot                       string
 	alwaysReplaceExistingDestPaths bool
 }
 
@@ -250,7 +270,7 @@ type parentDir struct {
 	copied  bool
 }
 
-func newCopier(root string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, includePatterns, excludePatterns []string, alwaysReplaceExistingDestPaths bool, changeFunc fsutil.ChangeFunc) (*copier, error) {
+func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, only map[string]struct{}, includePatterns, excludePatterns []string, useGitignore bool, alwaysReplaceExistingDestPaths bool, changeFunc fsutil.ChangeFunc) (*copier, error) {
 	if xeh == nil {
 		xeh = func(dst, src, key string, err error) error {
 			return err
@@ -275,21 +295,34 @@ func newCopier(root string, chown Chowner, tm *time.Time, mode *int, xeh XAttrEr
 		}
 	}
 
+	var gitignoreMatcher *fsxutil.GitignoreMatcher
+	if useGitignore {
+		fs, err := fsutil.NewFS("/")
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create fs for gitignore matcher")
+		}
+		gitignoreMatcher = fsxutil.NewGitIgnoreMatcher(fs)
+	}
+
 	return &copier{
-		root:                           root,
+		destRoot:                       destRoot,
 		inodes:                         map[uint64]string{},
 		chown:                          chown,
 		utime:                          tm,
 		xattrErrorHandler:              xeh,
 		mode:                           mode,
+		onlySet:                        only,
 		includePatternMatcher:          includePatternMatcher,
 		excludePatternMatcher:          excludePatternMatcher,
+		gitignoreMatcher:               gitignoreMatcher,
 		changefn:                       changeFunc,
 		alwaysReplaceExistingDestPaths: alwaysReplaceExistingDestPaths,
 	}, nil
 }
 
 // dest is always clean
+//
+//nolint:gocyclo
 func (c *copier) copy(ctx context.Context, src, srcComponents, target string, overwriteTargetMetadata bool, parentIncludeMatchInfo, parentExcludeMatchInfo patternmatcher.MatchInfo) error {
 	select {
 	case <-ctx.Done():
@@ -297,16 +330,22 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	default:
 	}
 
-	fi, err := os.Lstat(src)
-	if err != nil {
-		return errors.Wrapf(err, "failed to stat %s", src)
+	fi, statErr := os.Lstat(src)
+	if statErr != nil {
+		if !os.IsNotExist(statErr) {
+			return errors.Wrapf(statErr, "failed to stat source path %s", src)
+		}
+		fi = nil
 	}
-	targetFi, err := os.Lstat(target)
-	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrapf(err, "failed to stat %s", src)
+
+	if c.onlySet != nil && srcComponents != "" {
+		if _, ok := c.onlySet[filepath.Clean(srcComponents)]; !ok {
+			return nil
+		}
 	}
 
 	include := true
+	var err error
 	var (
 		includeMatchInfo patternmatcher.MatchInfo
 		excludeMatchInfo patternmatcher.MatchInfo
@@ -314,27 +353,58 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	if srcComponents != "" {
 		matchesIncludePattern := false
 		matchesExcludePattern := false
-		matchesIncludePattern, includeMatchInfo, err = c.include(srcComponents, fi, parentIncludeMatchInfo)
+		matchesIncludePattern, includeMatchInfo, err = c.include(srcComponents, parentIncludeMatchInfo)
 		if err != nil {
 			return err
 		}
 		include = matchesIncludePattern
 
-		matchesExcludePattern, excludeMatchInfo, err = c.exclude(srcComponents, fi, parentExcludeMatchInfo)
+		matchesExcludePattern, excludeMatchInfo, err = c.exclude(srcComponents, parentExcludeMatchInfo)
 		if err != nil {
 			return err
 		}
 		if matchesExcludePattern {
 			include = false
 		}
+
+		if c.gitignoreMatcher != nil {
+			isDir := fi == nil || fi.IsDir()
+			matchesGitignore, err := c.gitignoreMatcher.Matches(src, isDir)
+			if err != nil {
+				return err
+			}
+			if matchesGitignore {
+				include = false
+			}
+		}
+	}
+
+	if fi == nil {
+		if !include {
+			// If the source does not exist and we are not including it, then nothing to do here.
+			//
+			// Tricky case: if this is a directory which isn't included but there are sub files/dirs
+			// that do end up being included, it will be skipped here. We rely on the caller performing
+			// synchronization to ensure that directories which will end up being included are not
+			// modified during this call.
+			// Handling this case only saves the caller from trying to lock modifications to *files* that
+			// are not included in the copy, which they shouldn't be responsible for anyways.
+			return nil
+		}
+		return errors.Wrapf(statErr, "failed to stat source path %s", src)
+	}
+
+	targetFi, err := os.Lstat(target)
+	if err != nil && !os.IsNotExist(err) {
+		return errors.Wrapf(err, "failed to stat target path %s", target)
 	}
 
 	if include {
-		if err := c.removeTargetIfNeeded(src, target, fi, targetFi); err != nil {
+		if err := c.removeTargetIfNeeded(target, fi, targetFi); err != nil {
 			return err
 		}
 
-		if err := c.createParentDirs(src, srcComponents, target, overwriteTargetMetadata); err != nil {
+		if err := c.createParentDirs(overwriteTargetMetadata); err != nil {
 			return err
 		}
 	}
@@ -369,10 +439,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 		}
 		notify = false
 	case (fi.Mode() & os.ModeType) == 0:
-		link, err := getLinkSource(target, fi, c.inodes)
-		if err != nil {
-			return errors.Wrap(err, "failed to get hardlink")
-		}
+		link := getLinkSource(target, fi, c.inodes)
 		if link != "" {
 			if err := os.Link(link, target); err != nil {
 				return errors.Wrap(err, "failed to create hard link")
@@ -419,14 +486,14 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 
 func (c *copier) notifyChange(target string, fi os.FileInfo) error {
 	if c.changefn != nil {
-		if err := c.changefn(fsutil.ChangeKindAdd, path.Clean(strings.TrimPrefix(target, c.root)), fi, nil); err != nil {
+		if err := c.changefn(fsutil.ChangeKindAdd, path.Clean(strings.TrimPrefix(target, c.destRoot)), fi, nil); err != nil {
 			return errors.Wrap(err, "failed to notify file change")
 		}
 	}
 	return nil
 }
 
-func (c *copier) include(path string, fi os.FileInfo, parentIncludeMatchInfo patternmatcher.MatchInfo) (bool, patternmatcher.MatchInfo, error) {
+func (c *copier) include(path string, parentIncludeMatchInfo patternmatcher.MatchInfo) (bool, patternmatcher.MatchInfo, error) {
 	if c.includePatternMatcher == nil {
 		return true, patternmatcher.MatchInfo{}, nil
 	}
@@ -438,7 +505,7 @@ func (c *copier) include(path string, fi os.FileInfo, parentIncludeMatchInfo pat
 	return m, matchInfo, nil
 }
 
-func (c *copier) exclude(path string, fi os.FileInfo, parentExcludeMatchInfo patternmatcher.MatchInfo) (bool, patternmatcher.MatchInfo, error) {
+func (c *copier) exclude(path string, parentExcludeMatchInfo patternmatcher.MatchInfo) (bool, patternmatcher.MatchInfo, error) {
 	if c.excludePatternMatcher == nil {
 		return false, patternmatcher.MatchInfo{}, nil
 	}
@@ -450,7 +517,7 @@ func (c *copier) exclude(path string, fi os.FileInfo, parentExcludeMatchInfo pat
 	return m, matchInfo, nil
 }
 
-func (c *copier) removeTargetIfNeeded(src, target string, srcFi, targetFi os.FileInfo) error {
+func (c *copier) removeTargetIfNeeded(target string, srcFi, targetFi os.FileInfo) error {
 	if !c.alwaysReplaceExistingDestPaths {
 		return nil
 	}
@@ -467,7 +534,7 @@ func (c *copier) removeTargetIfNeeded(src, target string, srcFi, targetFi os.Fil
 
 // Delayed creation of parent directories when a file or dir matches an include
 // pattern.
-func (c *copier) createParentDirs(src, srcComponents, target string, overwriteTargetMetadata bool) error {
+func (c *copier) createParentDirs(overwriteTargetMetadata bool) error {
 	for i, parentDir := range c.parentDirs {
 		if parentDir.copied {
 			continue
@@ -475,13 +542,13 @@ func (c *copier) createParentDirs(src, srcComponents, target string, overwriteTa
 
 		fi, err := os.Stat(parentDir.srcPath)
 		if err != nil {
-			return errors.Wrapf(err, "failed to stat %s", src)
+			return errors.Wrapf(err, "failed to stat parent dir %s", parentDir.srcPath)
 		}
 		if !fi.IsDir() {
 			return errors.Errorf("%s is not a directory", parentDir.srcPath)
 		}
 
-		created, err := copyDirectoryOnly(parentDir.srcPath, parentDir.dstPath, fi, overwriteTargetMetadata)
+		created, err := copyDirectoryOnly(parentDir.dstPath, fi, overwriteTargetMetadata)
 		if err != nil {
 			return err
 		}
@@ -528,7 +595,7 @@ func (c *copier) copyDirectory(
 	// encounter a/b/c.
 	if include {
 		var err error
-		created, err = copyDirectoryOnly(src, dst, stat, overwriteTargetMetadata)
+		created, err = copyDirectoryOnly(dst, stat, overwriteTargetMetadata)
 		if err != nil {
 			return created, err
 		}
@@ -565,7 +632,7 @@ func (c *copier) copyDirectory(
 	return created, nil
 }
 
-func copyDirectoryOnly(src, dst string, stat os.FileInfo, overwriteTargetMetadata bool) (bool, error) {
+func copyDirectoryOnly(dst string, stat os.FileInfo, overwriteTargetMetadata bool) (bool, error) {
 	if st, err := os.Lstat(dst); err != nil {
 		if !os.IsNotExist(err) {
 			return false, err
@@ -612,7 +679,7 @@ func containsWildcards(name string) bool {
 }
 
 func splitWildcards(p string) (d1, d2 string) {
-	parts := strings.Split(filepath.Join(p), string(filepath.Separator))
+	parts := strings.Split(p, string(filepath.Separator))
 	var p1, p2 []string
 	var found bool
 	for _, p := range parts {

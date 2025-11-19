@@ -1,7 +1,7 @@
 //go:build freebsd
 // +build freebsd
 
-package fs
+package copy
 
 import (
 	"io"
