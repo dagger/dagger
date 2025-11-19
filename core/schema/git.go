@@ -321,9 +321,10 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		return out, nil
 	}
 
+	repoURL := parent.ID().Arg("url").Value().ToInput().(string)
+
 	// reminder: remoteGitRepo.URL is nil when URL is ambiguous
 	if isRemote && remoteGitRepo.URL == nil {
-		repoURL := repo.URL.Value.String()
 		for _, u := range []string{"https://" + repoURL, "ssh://" + repoURL} {
 			res, err := reenter(u)
 			if err == nil {
