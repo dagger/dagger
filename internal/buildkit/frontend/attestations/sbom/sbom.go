@@ -7,11 +7,11 @@ import (
 	"path"
 	"strings"
 
-	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	gatewaypb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/solver/result"
+	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )

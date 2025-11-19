@@ -9,8 +9,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 func WriteTar(ctx context.Context, fs FS, w io.Writer) error {

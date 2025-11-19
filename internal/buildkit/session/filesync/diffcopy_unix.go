@@ -4,8 +4,8 @@
 package filesync
 
 import (
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil"
+	"github.com/pkg/errors"
 )
 
 func sendDiffCopy(stream Stream, fs fsutil.FS, progress progressCb) error {

@@ -5,9 +5,9 @@ import (
 	"errors"
 
 	"github.com/containerd/typeurl/v2"
-	"github.com/golang/protobuf/jsonpb" //nolint:staticcheck
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
+	"github.com/golang/protobuf/jsonpb" //nolint:staticcheck
 )
 
 func init() {

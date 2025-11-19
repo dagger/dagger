@@ -8,8 +8,8 @@ import (
 	"syscall"
 
 	"github.com/containerd/continuity/sysx"
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 func rewriteMetadata(p string, stat *types.Stat) error {
@@ -37,7 +37,7 @@ func rewriteMetadata(p string, stat *types.Stat) error {
 // handleTarTypeBlockCharFifo is an OS-specific helper function used by
 // createTarFile to handle the following types of header: Block; Char; Fifo
 func handleTarTypeBlockCharFifo(path string, stat *types.Stat) error {
-	mode := uint32(stat.Mode & 07777)
+	mode := stat.Mode & 07777
 	if os.FileMode(stat.Mode)&os.ModeCharDevice != 0 {
 		mode |= syscall.S_IFCHR
 	} else if os.FileMode(stat.Mode)&os.ModeNamedPipe != 0 {

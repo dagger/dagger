@@ -15,9 +15,9 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 type Opt struct {

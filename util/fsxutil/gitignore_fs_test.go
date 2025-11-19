@@ -6,10 +6,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/dagger/dagger/internal/fsutil"
 )
 
 func TestGitIgnoreBasic(t *testing.T) {

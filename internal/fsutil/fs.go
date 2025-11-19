@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 type FS interface {

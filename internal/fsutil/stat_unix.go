@@ -8,8 +8,8 @@ import (
 	"syscall"
 
 	"github.com/containerd/continuity/sysx"
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 func loadXattr(origpath string, stat *types.Stat) error {
@@ -42,8 +42,8 @@ func setUnixOpt(fi os.FileInfo, stat *types.Stat, path string, seenFiles map[uin
 	if !fi.IsDir() {
 		if s.Mode&syscall.S_IFBLK != 0 ||
 			s.Mode&syscall.S_IFCHR != 0 {
-			stat.Devmajor = int64(major(uint64(s.Rdev)))
-			stat.Devminor = int64(minor(uint64(s.Rdev)))
+			stat.Devmajor = int64(major(s.Rdev))
+			stat.Devminor = int64(minor(s.Rdev))
 		}
 
 		ino := s.Ino

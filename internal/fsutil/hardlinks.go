@@ -7,8 +7,8 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 // Hardlinks validates that all targets for links were part of the changes
@@ -88,11 +88,9 @@ func (r *hardlinkFilter) Walk(ctx context.Context, target string, fn gofs.WalkDi
 				seenFiles[stat.Linkname] = stat.Path
 				stat.Linkname = ""
 				entry = &dirEntryWithStat{DirEntry: entry, stat: stat}
-			} else {
-				if v != stat.Path {
-					stat.Linkname = v
-					entry = &dirEntryWithStat{DirEntry: entry, stat: stat}
-				}
+			} else if v != stat.Path {
+				stat.Linkname = v
+				entry = &dirEntryWithStat{DirEntry: entry, stat: stat}
 			}
 		}
 

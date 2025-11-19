@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/pkg/idtools"
-	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/exporter"
 	"github.com/dagger/dagger/internal/buildkit/exporter/attestation"
@@ -22,10 +20,12 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/util/staticfs"
-	digest "github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/docker/docker/pkg/idtools"
+	intoto "github.com/in-toto/in-toto-golang/in_toto"
+	digest "github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 )
 
 const (

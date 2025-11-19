@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil"
+	"github.com/pkg/errors"
 )
 
 // gitignoreFS wraps an FS and filters files based on .gitignore rules

@@ -198,9 +198,9 @@ func sameFile(f1, f2 *currentPath, differ DiffType) (same bool, retErr error) {
 		}
 	}
 
-	same, err := compareStat(f1.stat, f2.stat)
-	if err != nil || !same || differ == DiffMetadata {
-		return same, err
+	same = compareStat(f1.stat, f2.stat)
+	if !same || differ == DiffMetadata {
+		return same, nil
 	}
 	return compareFileContent(f1.path, f2.path)
 }
@@ -238,10 +238,9 @@ func compareFileContent(p1, p2 string) (bool, error) {
 }
 
 // compareStat returns whether the stats are equivalent,
-// whether the files are considered the same file, and
-// an error
-func compareStat(ls1, ls2 *types.Stat) (bool, error) {
-	return ls1.Mode == ls2.Mode && ls1.Uid == ls2.Uid && ls1.Gid == ls2.Gid && ls1.Devmajor == ls2.Devmajor && ls1.Devminor == ls2.Devminor && ls1.Linkname == ls2.Linkname, nil
+// whether the files are considered the same file
+func compareStat(ls1, ls2 *types.Stat) bool {
+	return ls1.Mode == ls2.Mode && ls1.Uid == ls2.Uid && ls1.Gid == ls2.Gid && ls1.Devmajor == ls2.Devmajor && ls1.Devminor == ls2.Devminor && ls1.Linkname == ls2.Linkname
 }
 
 func nextPath(ctx context.Context, pathC <-chan *currentPath) (*currentPath, error) {

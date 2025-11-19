@@ -5,8 +5,8 @@ import (
 	"hash"
 	"os"
 
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 type walkerFn func(ctx context.Context, pathC chan<- *currentPath) error

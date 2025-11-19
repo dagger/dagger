@@ -10,8 +10,8 @@ import (
 	"syscall"
 
 	"github.com/Microsoft/go-winio"
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 func rewriteMetadata(p string, stat *types.Stat) error {

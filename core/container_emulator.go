@@ -16,10 +16,10 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	copy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/docker/docker/pkg/idtools"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
-	copy "github.com/dagger/dagger/internal/fsutil/copy"
 )
 
 var qemuArchMap = map[string]string{

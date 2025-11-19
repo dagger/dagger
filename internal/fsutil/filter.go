@@ -9,9 +9,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
-	"github.com/dagger/dagger/internal/fsutil/types"
 )
 
 type FilterOpt struct {
@@ -120,7 +120,6 @@ func NewFilterFS(fs FS, opt *FilterOpt) (FS, error) {
 				break
 			}
 		}
-
 	}
 
 	if len(opt.ExcludePatterns) > 0 {
@@ -169,6 +168,7 @@ func (fs *filterFS) Open(p string) (io.ReadCloser, error) {
 	return fs.fs.Open(p)
 }
 
+//nolint:gocyclo
 func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc) error {
 	type visitedDir struct {
 		entry            gofs.DirEntry
@@ -327,9 +327,10 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 		default:
 			if fs.mapFn != nil {
 				result := fs.mapFn(stat.Path, stat)
-				if result == MapResultSkipDir {
+				switch result {
+				case MapResultSkipDir:
 					return filepath.SkipDir
-				} else if result == MapResultExclude {
+				case MapResultExclude:
 					return nil
 				}
 			}

@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	"github.com/dagger/dagger/internal/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -83,6 +83,7 @@ func (dw *DiskWriter) Wait(ctx context.Context) error {
 	})
 }
 
+//nolint:gocyclo
 func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
 	if err != nil {
 		return err
@@ -257,10 +258,8 @@ func (dw *DiskWriter) processChange(ctx context.Context, kind ChangeKind, p stri
 		if err := fn(ctx, p, w); err != nil {
 			return err
 		}
-	} else {
-		if hw != nil {
-			hw.Close()
-		}
+	} else if hw != nil {
+		hw.Close()
 	}
 	if hw != nil {
 		return dw.opt.NotifyCb(kind, p, hw, nil)

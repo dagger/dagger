@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strconv"
 
-	slsa02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	"github.com/dagger/dagger/internal/buildkit/executor/resources"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
 	gatewaypb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
@@ -13,6 +12,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver"
 	"github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	slsa02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	"github.com/pkg/errors"
 )
 

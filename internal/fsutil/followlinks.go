@@ -10,8 +10,8 @@ import (
 	strings "strings"
 	"syscall"
 
-	"github.com/pkg/errors"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/pkg/errors"
 )
 
 func FollowLinks(fs FS, paths []string) ([]string, error) {

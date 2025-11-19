@@ -11,9 +11,9 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/result"
 	spb "github.com/dagger/dagger/internal/buildkit/sourcepolicy/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 )
 
 type Result = result.Result[Reference]
