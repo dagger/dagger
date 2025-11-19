@@ -1,0 +1,180 @@
+name: ci
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DESTDIR: ./bin
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 */6 * *' # every 6 days
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - lint
+          - validate-gomod
+          - validate-shfmt
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Run
+        uses: docker/bake-action@v4
+        with:
+          targets: ${{ matrix.target }}
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - build
+          - cross
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Run
+        uses: docker/bake-action@v4
+        with:
+          targets: ${{ matrix.target }}
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go:
+          - "1.21"
+          - "1.20"
+        mode:
+          - "root"
+          - "noroot"
+    env:
+      GO_VERSION: ${{ matrix.go }}
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Test
+        uses: docker/bake-action@v4
+        with:
+          targets: test-${{ matrix.mode }}
+      -
+        name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ${{ env.DESTDIR }}/coverage
+          flags: unit,${{ matrix.mode }},go-${{ matrix.go }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  test-os:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+        go:
+          - "1.21"
+          - "1.20"
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      -
+        name: Test
+        run: |
+          go test -coverprofile="coverage.txt" -covermode="atomic" ./...
+          go tool cover -func="coverage.txt"
+      -
+        name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          env_vars: RUNNER_OS
+          flags: unit,go-${{ matrix.go }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  test-freebsd-amd64:
+    runs-on: macos-13
+    env:
+      VAGRANT_VAGRANTFILE: hack/Vagrantfile.freebsd13
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Cache Vagrant boxes
+        uses: actions/cache@v4
+        with:
+          path: ~/.vagrant.d/boxes
+          key: ${{ runner.os }}-vagrant-${{ hashFiles('hack/Vagrantfile.freebsd13') }}
+          restore-keys: |
+            ${{ runner.os }}-vagrant-
+      -
+        name: Install Vagrant and VirtualBox
+        run: |
+          set -x
+          brew tap hashicorp/tap
+          brew install hashicorp/tap/hashicorp-vagrant
+          brew install --cask virtualbox
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      -
+        name: Check versions
+        run: |
+          set -x
+          vagrant --version
+          VBoxManage -v
+      -
+        name: Set up vagrant
+        run: |
+          vagrant up --no-tty
+      -
+        name: Test
+        uses: nick-fields/retry@7152eba30c6575329ac0576536151aca5a72780e  # v3.0.0
+        with:
+          timeout_minutes: 20
+          max_attempts: 5
+          command: |
+            vagrant ssh -- "cd /vagrant; go test -buildvcs=false -coverprofile=coverage.txt -covermode=atomic ./..."
+            vagrant ssh -c "sudo cat /vagrant/coverage.txt" > coverage.txt
+      -
+        name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          flags: unit,freebsd
+          token: ${{ secrets.CODECOV_TOKEN }}

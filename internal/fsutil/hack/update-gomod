@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail -x
+
+: ${CONTINUOUS_INTEGRATION=}
+
+progressFlag=""
+if [ "$CONTINUOUS_INTEGRATION" == "true" ]; then progressFlag="--progress=plain"; fi
+
+export DOCKER_BUILDKIT=1
+docker build $progressFlag -f ./hack/dockerfiles/gomod.Dockerfile --target update -o . .
