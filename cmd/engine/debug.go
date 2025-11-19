@@ -35,10 +35,16 @@ func setupDebugHandlers(addr string) error {
 	m.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 	m.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 	m.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	m.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+	m.Handle("/debug/pprof/block", pprof.Handler("block"))
 	m.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
 	m.Handle("/debug/requests", http.HandlerFunc(trace.Traces))
 	m.Handle("/debug/events", http.HandlerFunc(trace.Events))
 	// m.Handle("/debug/fgtrace", fgtrace.Config{})
+
+	// uncomment these to get data from /mutex and /block
+	// runtime.SetMutexProfileFraction(1)
+	// runtime.SetBlockProfileRate(1)
 
 	m.Handle("/debug/gc", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		runtime.GC()
