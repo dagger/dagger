@@ -40,7 +40,6 @@ func (m *Hello) Greet() *Greetings {
 type Greetings struct{}
 
 func (p *Greetings) Planet(
-	ctx context.Context,
 	// +default="Earth"
 	planet string,
 ) string {

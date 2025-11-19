@@ -1,6 +1,5 @@
 /dagger.gen.go
-/internal/querybuilder/
-/querybuilder/
 /internal/dagger
+/internal/querybuilder
 /internal/telemetry
 /.env
