@@ -16,7 +16,7 @@ Expected stderr:
 
 ✔ viztest: Viztest! X.Xs
 ✘ .failMulti: Void X.Xs ERROR
-╰╴✘ roll-up pseudo-check span X.Xs ⣷⡇⣿ ERROR
+╰╴✘ roll-up pseudo-check span X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ ERROR
  
   ┇ sub-thing 1 ›
   ✘ withExec sh -c 'echo this is a failing effect; exit 1' X.Xs ERROR
