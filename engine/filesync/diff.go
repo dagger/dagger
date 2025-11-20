@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tonistiigi/fsutil"
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil"
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -35,7 +35,7 @@ type ChangeFunc func(kind ChangeKind, path string, lowerStat, upperStat *types.S
 
 // This is based on a combination of containerd's diff implementation and buildkit's (which is itself
 // based on containerd's). Main change is to accept WalkFS interfaces.
-// https://github.com/tonistiigi/fsutil/blob/0789dc562bd7099bec7be479164e261ac5334f5f/diff_containerd.go#L15
+// https://github.com/dagger/dagger/internal/fsutil/blob/0789dc562bd7099bec7be479164e261ac5334f5f/diff_containerd.go#L15
 // https://github.com/containerd/continuity/blob/44e2adf7e9cd87330f3ad656e7a006ef91ed8c1e/fs/diff.go#L273
 //
 // The gist of the idea is that the lower+upper filesystems are walked in the same order with the same

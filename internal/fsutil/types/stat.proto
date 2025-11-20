@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package fsutil.types;
+
+option go_package = "types";
+
+message Stat {
+  string path = 1;
+  uint32 mode = 2;
+  uint32 uid = 3;
+  uint32 gid = 4;
+  int64 size = 5;
+  int64 modTime = 6;
+  // int32 typeflag = 7;
+  string linkname = 7;
+  int64 devmajor = 8;
+  int64 devminor = 9;
+  map<string, bytes> xattrs = 10;
+}
+
+message Packet {
+  enum PacketType {
+      PACKET_STAT = 0;
+      PACKET_REQ = 1;
+      PACKET_DATA = 2;
+      PACKET_FIN = 3;
+      PACKET_ERR = 4;
+    }
+  PacketType type = 1;
+  Stat stat = 2;
+  uint32 ID = 3;
+  bytes data = 4;
+}

@@ -278,6 +278,9 @@ type fakeStartable struct {
 
 	starts       int32 // total start attempts
 	startResults chan startResult
+
+	exitErr    error
+	waitResult chan struct{}
 }
 
 type startResult struct {
@@ -314,14 +317,21 @@ func (f *fakeStartable) Starts() int {
 }
 
 func (f *fakeStartable) Succeed() *core.RunningService {
+	waitRes := make(chan struct{})
+
 	running := &core.RunningService{
 		Key: core.ServiceKey{
 			Digest:    f.digest,
 			SessionID: "doesnt-matter",
 		},
 		Host: f.name + "-host",
+		Wait: func(ctx context.Context) error {
+			<-waitRes
+			return f.exitErr
+		},
 	}
 
+	f.waitResult = waitRes
 	f.startResults <- startResult{
 		Started: running,
 	}
@@ -335,4 +345,78 @@ func (f *fakeStartable) Fail() error {
 		Failed: err,
 	}
 	return err
+}
+
+func (f *fakeStartable) Exit(err error) {
+	f.exitErr = err
+	close(f.waitResult)
+}
+
+// TestServicesDetachRace tests the race condition where:
+//   - Client A starts service (bindings=1)
+//   - Client A detaches (bindings=0, spawns stop goroutine)
+//   - Client B tries to start BEFORE the stop goroutine removes the service
+//   - Without the fix, Client B would increment bindings to 1, but the stop
+//     goroutine would still delete the service and bindings map, causing the
+//     service to stop even though Client B still has a reference to it
+func TestServicesDetachRace(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		SessionID: "test-session",
+		ClientID:  "test-client-a",
+	})
+
+	services := core.NewServices()
+	stub := newStartable("race-test")
+
+	// Client A starts the service
+	expected := stub.Succeed()
+	running, err := services.Start(ctx, stub.ID(), stub, false)
+	require.NoError(t, err)
+	require.Equal(t, expected, running)
+	require.Equal(t, 1, stub.Starts())
+
+	// Add a stop function that waits a bit to simulate actual service shutdown
+	stopCalled := make(chan struct{})
+	running.Stop = func(ctx context.Context, force bool) error {
+		close(stopCalled)
+		time.Sleep(50 * time.Millisecond) // simulate shutdown time
+		return nil
+	}
+
+	// Client A detaches - this will spawn a goroutine that waits DetachGracePeriod
+	// then calls Detach, which should immediately remove the service from the running map
+	services.Detach(ctx, running)
+	stub.Exit(nil)
+
+	// Client B tries to start the same service during the race window
+	// This should happen after Detach has removed the service from the running map
+	ctxB := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		SessionID: "test-session",
+		ClientID:  "test-client-b",
+	})
+
+	// Client B should see the service is not running and start a new one
+	stub.Succeed() // prepare for Client B's start
+	runningB, err := services.Start(ctxB, stub.ID(), stub, false)
+	require.NoError(t, err)
+	require.NotNil(t, runningB)
+
+	// We should have started twice - once for Client A, once for Client B
+	require.Equal(t, 2, stub.Starts())
+
+	// The stop should have been called for Client A's service
+	select {
+	case <-stopCalled:
+		// good, Client A's service was stopped
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Client A's service was not stopped")
+	}
+
+	// Client B's service should still be running
+	retrieved, err := services.Get(ctxB, stub.ID(), false)
+	require.NoError(t, err)
+	require.Equal(t, runningB, retrieved)
 }

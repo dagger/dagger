@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/go-units"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
+	"github.com/docker/go-units"
 	"github.com/pkg/errors"
 )
 

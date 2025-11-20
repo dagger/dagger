@@ -14,6 +14,16 @@ namespace Dagger;
 class Module extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Return the check defined by the module with the given name. Must match to exactly one check.
+     */
+    public function check(string $name): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('check');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return all checks defined by the module
      */
     public function checks(?array $include = null): CheckGroup

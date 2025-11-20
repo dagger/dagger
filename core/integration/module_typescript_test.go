@@ -1505,7 +1505,7 @@ func (TypescriptSuite) TestReferencedDefaultValue(ctx context.Context, t *testct
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=test", "--sdk=typescript")).
 		With(sdkSource("typescript", `
-import { func, object } from "@dagger.io/dagger"
+import { func, object, NetworkProtocol } from "@dagger.io/dagger"
 
 export const stringDefaultValue = "world"
 export const integerDefaultValue = 4
@@ -1527,6 +1527,11 @@ export class Test {
   bool(b: boolean = booleanDefaultValue): boolean {
     return b
   }
+
+  @func()
+  proto(p: NetworkProtocol = NetworkProtocol.Udp): NetworkProtocol {
+    return p
+  }
 }
   `))
 
@@ -1536,6 +1541,7 @@ export class Test {
 		require.Equal(t, "\"world\"", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=str).args.#(name=s).defaultValue").String())
 		require.Equal(t, "4", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=integer).args.#(name=n).defaultValue").String())
 		require.Equal(t, "true", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=bool).args.#(name=b).defaultValue").String())
+		require.Equal(t, "\"UDP\"", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=proto).args.#(name=p).defaultValue").String())
 	})
 
 	t.Run("string variable default value", func(ctx context.Context, t *testctx.T) {
@@ -1554,6 +1560,43 @@ export class Test {
 		out, err := modGen.With(daggerCall("bool")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, `true`, out)
+	})
+
+	t.Run("enum property access default value", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("proto")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `UDP`, out)
+	})
+}
+
+func (TypescriptSuite) TestTelemetryImport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+import { getTracer } from "@dagger.io/dagger/telemetry"
+
+@object()
+export class Telemetry {
+  @func()
+  traced(): string {
+    // Exercise @dagger.io/dagger/telemetry resolution during introspection.
+    getTracer("ts-introspection")
+    return "ok"
+  }
+}
+  `))
+
+	t.Run("introspects telemetry import", func(ctx context.Context, t *testctx.T) {
+		schema := inspectModule(ctx, t, modGen)
+
+		telemetryObj := schema.Get(`objects.#.asObject|#(functions.#(name="traced")).name`).String()
+		require.NotEmpty(t, telemetryObj)
+		require.Equal(t, "traced", schema.Get("objects.#.asObject|#(name="+telemetryObj+").functions.#(name=traced).name").String())
 	})
 }
 

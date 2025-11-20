@@ -91,6 +91,20 @@ defmodule Dagger.Check do
 
     Client.execute(check.client, query_builder)
   end
+
+  @doc """
+  Execute the check
+  """
+  @spec run(t()) :: Dagger.Check.t()
+  def run(%__MODULE__{} = check) do
+    query_builder =
+      check.query_builder |> QB.select("run")
+
+    %Dagger.Check{
+      query_builder: query_builder,
+      client: check.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Check do

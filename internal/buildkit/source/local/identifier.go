@@ -5,7 +5,7 @@ import (
 	provenancetypes "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/provenance/types"
 	"github.com/dagger/dagger/internal/buildkit/source"
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
-	"github.com/tonistiigi/fsutil"
+	"github.com/dagger/dagger/internal/fsutil"
 )
 
 type LocalIdentifier struct {

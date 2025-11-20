@@ -6,13 +6,13 @@ import (
 	"errors"
 
 	"github.com/containerd/typeurl/v2"
+	"github.com/dagger/dagger/internal/buildkit/errdefs"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/stack"
 	rpc "github.com/gogo/googleapis/google/rpc"
 	gogotypes "github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/proto" //nolint:staticcheck
 	"github.com/golang/protobuf/ptypes/any"
-	"github.com/dagger/dagger/internal/buildkit/errdefs"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/dagger/dagger/internal/buildkit/util/stack"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

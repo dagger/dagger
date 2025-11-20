@@ -7,7 +7,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/tonistiigi/fsutil"
+	"github.com/dagger/dagger/internal/fsutil"
 )
 
 func writeTar(ctx context.Context, fs fsutil.FS, w io.WriteCloser) error {

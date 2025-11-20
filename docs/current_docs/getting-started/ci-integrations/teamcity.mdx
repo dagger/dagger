@@ -1,0 +1,49 @@
+---
+title: "TeamCity"
+slug: /getting-started/ci-integrations/teamcity
+description: "Learn how to use Dagger with TeamCity."
+---
+
+# TeamCity
+
+TeamCity provides a Dagger Recipe that can be used in any build configuration to call one or more Dagger Functions.
+The recipe is taken from the [JetBrains Marketplace](https://plugins.jetbrains.com/teamcity_recipe).
+
+## How it works
+
+When running a CI pipeline with Dagger using TeamCity, the general workflow looks like this:
+
+1. A new build is triggered.
+1. The build is sent to an available TeamCity agent.
+1. The Dagger Recipe installs the required version of Dagger CLI on the agent.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one.
+1. The Dagger CLI executes the specified command and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. The build completes successfully or fails. Logs appear in TeamCity as usual.
+
+## Prerequisites
+
+Running the examples shown below requires:
+
+1. A running TeamCity server.
+1. At least one TeamCity agent with Docker installed.
+1. A repository for storing build configurations as code.
+
+## Example
+
+The following code sample demonstrates how to integrate Dagger with TeamCity. The code is written using the [TeamCity Kotlin DSL](https://www.jetbrains.com/help/teamcity/kotlin-dsl.html).
+
+```kotlin title="settings.kts" file=./snippets/teamcity-hello
+```
+
+The following is a more complex example demonstrating how to create a TeamCity build that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already forked it in the repository connected to the TeamCity project.
+
+```kotlin title="settings.kts" file=./snippets/teamcity-test-build
+```
+
+## Resources
+
+- [Working with Recipes](https://www.jetbrains.com/help/teamcity/working-with-meta-runner.html): This guide provides useful information about TeamCity recipes.
+
+## About TeamCity
+
+[TeamCity](https://www.jetbrains.com/teamcity/) is a popular CI/CD tool developed by JetBrains.

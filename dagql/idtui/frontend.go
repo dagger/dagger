@@ -168,11 +168,11 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 
 	db := dagui.NewDB()
 	maps.Copy(db.Calls, dag.CallsByDigest)
-	r := newRenderer(db, -1, dagui.FrontendOpts{})
+	r := newRenderer(db, -1, dagui.FrontendOpts{}, true)
 	if d.Newline != "" {
 		r.newline = d.Newline
 	}
-	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, nil)
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, nil, false)
 	fmt.Fprint(out, r.newline)
 	return err
 }
@@ -185,9 +185,10 @@ type renderer struct {
 	db            *dagui.DB
 	maxLiteralLen int
 	rendering     map[string]bool
+	final         bool
 }
 
-func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts) *renderer {
+func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts, final bool) *renderer {
 	return &renderer{
 		FrontendOpts:  fe,
 		now:           time.Now(),
@@ -195,6 +196,7 @@ func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts) *render
 		maxLiteralLen: maxLiteralLen,
 		rendering:     map[string]bool{},
 		newline:       "\n",
+		final:         final,
 	}
 }
 
@@ -296,6 +298,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 	depth int,
 	internal bool,
 	row *dagui.TraceRow,
+	abridged bool,
 ) error {
 	if r.rendering[call.Digest] {
 		fmt.Fprintf(out, "<cycle detected: %s>", call.Digest)
@@ -360,6 +363,10 @@ func (r *renderer) renderCall( //nolint: gocyclo
 					indentLevel -= row.Depth
 					indentLevel -= 1
 				}
+				if !r.final {
+					// extra space to account for togglers only visible while interactive
+					fmt.Fprint(out, "  ")
+				}
 				r.indent(out, indentLevel)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
 				val := arg.GetValue()
@@ -375,7 +382,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row); err != nil {
+					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row, abridged); err != nil {
 						return err
 					}
 				} else {
@@ -390,6 +397,10 @@ func (r *renderer) renderCall( //nolint: gocyclo
 				r.fancyIndent(out, row, true, false)
 				indentLevel -= row.Depth
 				indentLevel -= 1
+			}
+			if !r.final {
+				// extra space to account for togglers only visible while interactive
+				fmt.Fprint(out, "  ")
 			}
 			r.indent(out, indentLevel)
 			depth-- //nolint:ineffassign
@@ -410,7 +421,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 		fmt.Fprint(out, out.String(")"))
 	}
 
-	if call.Type != nil && !specialTitle {
+	if call.Type != nil && !specialTitle && !abridged {
 		typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
 		fmt.Fprint(out, typeStr)
 	}

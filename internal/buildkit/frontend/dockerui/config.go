@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
-	"github.com/distribution/reference"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend/attestations"
@@ -18,6 +17,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
+	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/patternmatcher/ignorefile"
 	digest "github.com/opencontainers/go-digest"

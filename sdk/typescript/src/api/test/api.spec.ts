@@ -243,7 +243,7 @@ describe("TypeScript SDK api", function () {
         await ctr.sync()
       } catch (e) {
         if (e instanceof ExecError) {
-          assert(e.message.includes("did not complete successfully"))
+          assert(e.message.includes("exit code: 127"))
           assert.strictEqual(e.exitCode, 127)
           assert.strictEqual(e.stdout, stdout)
           assert.strictEqual(e.stderr, stderr)

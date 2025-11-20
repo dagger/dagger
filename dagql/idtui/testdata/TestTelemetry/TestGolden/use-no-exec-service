@@ -35,9 +35,9 @@ Expected stderr:
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Ready to accept connections tcp
 │
 ├╴✔ Container.withServiceBinding(
-│   ┆ ┆ alias: "redis"
-│   ┆ ┆ service: Container.asService: Service!
-│   ┆ ): Container! X.Xs
+│   ┆ alias: "redis"
+│   ┆ service: Container.asService: Service!
+│   ): Container! X.Xs
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
 ├╴✔ withExec redis-cli -h redis ping X.Xs
 │ ┃ PONG

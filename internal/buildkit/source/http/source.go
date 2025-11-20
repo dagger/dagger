@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
@@ -26,6 +25,7 @@ import (
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	"github.com/docker/docker/pkg/idtools"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

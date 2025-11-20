@@ -1,9 +1,9 @@
 package types
 
 import (
-	slsa02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	slsa02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )

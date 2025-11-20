@@ -16,10 +16,10 @@ Expected stderr:
 
 ✔ typescript: Typescript! X.Xs
 ✘ .failEffect: Container! X.Xs ERROR
-! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+! exit code: 1
 ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ╰╴✘ withExec sh -c 'echo this is a failing effect; exit 1' X.Xs ERROR
   ┃ this is a failing effect
-  ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+  ! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

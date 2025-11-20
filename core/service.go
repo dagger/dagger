@@ -690,8 +690,7 @@ func (svc *Service) startContainer(
 			if errors.As(exitErr, &gwErr) {
 				// Create ExecError with available service information
 				return nil, &buildkit.ExecError{
-					Err:      gwErr,
-					Origin:   svc.Creator,
+					Err:      telemetry.TrackOrigin(gwErr, svc.Creator),
 					Cmd:      meta.Args,
 					ExitCode: int(gwErr.ExitCode),
 					Stdout:   stdoutBuf.String(),

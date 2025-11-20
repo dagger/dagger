@@ -22,9 +22,9 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
 	"github.com/dagger/dagger/internal/buildkit/worker"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
 

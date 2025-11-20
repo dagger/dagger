@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -9,10 +10,12 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
+	"github.com/dagger/dagger/util/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type SocketProvider struct {
@@ -110,4 +113,36 @@ func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) err
 		return fmt.Errorf("copy failed: %w", err)
 	}
 	return nil
+}
+
+// SocketSessionProxy is a proxy of a the grpc session attachable (as opposed to the above
+// socketProxy which proxies to arbitrary net.Conns). It's used for engine scale-out.
+type SocketSessionProxy struct {
+	client sshforward.SSHClient
+}
+
+func NewSocketSessionProxy(client sshforward.SSHClient) *SocketSessionProxy {
+	return &SocketSessionProxy{
+		client: client,
+	}
+}
+
+func (p *SocketSessionProxy) Register(server *grpc.Server) {
+	sshforward.RegisterSSHServer(server, p)
+}
+
+func (p *SocketSessionProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {
+	return p.client.CheckAgent(grpcutil.IncomingToOutgoingContext(ctx), req)
+}
+
+func (p *SocketSessionProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
+	ctx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(errors.New("proxy stream closed"))
+
+	clientStream, err := p.client.ForwardAgent(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("create client stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }

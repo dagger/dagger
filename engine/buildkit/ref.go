@@ -24,10 +24,10 @@ import (
 	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/dagger/dagger/internal/fsutil"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/tonistiigi/fsutil"
-	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
 const (

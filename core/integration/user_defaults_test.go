@@ -136,6 +136,76 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 	}
 }
 
+func (UserDefaultsSuite) TestLocalToolchain(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := nestedDaggerContainer(t, c, "go", "defaults").
+		WithNewFile("./app/dagger.json", `{"name":"app", "toolchains": [{"name":"defaults", "source":"../defaults"}]}`)
+	for _, tc := range []struct {
+		description    string
+		dotEnvPath     string
+		dotEnvContents string
+		workdir        string
+		command        []string
+		expect         dagger.ReturnType
+		stdout         string
+	}{
+		{
+			"inner envfile",
+			"./app/.env",
+			`
+		DEFAULTS_GREETING=salut-inner
+		DEFAULTS_MESSAGE_NAME=monde-inner
+		`,
+			"./app",
+			[]string{"dagger", "call", "defaults", "message"},
+			dagger.ReturnTypeSuccess,
+			"salut-inner, monde-inner!",
+		},
+		{
+			"outer envfile inner workdir",
+			".env",
+			`
+		DEFAULTS_GREETING=bonjour-outer
+		DEFAULTS_MESSAGE_NAME=monde-outer
+		`,
+			"./app",
+			[]string{"dagger", "call", "defaults", "message"},
+			dagger.ReturnTypeSuccess,
+			"bonjour-outer, monde-outer!",
+		},
+		{
+			"outer envfile outer workdir",
+			".env",
+			`
+DEFAULTS_GREETING=salutations-outer
+DEFAULTS_MESSAGE_NAME=planete-outer
+`,
+			"",
+			[]string{"dagger", "-m", "./app", "call", "defaults", "message"},
+			dagger.ReturnTypeSuccess,
+			"salutations-outer, planete-outer!",
+		},
+	} {
+		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
+			stdout, err := ctr.
+				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
+				With(func(c *dagger.Container) *dagger.Container {
+					if tc.workdir != "" {
+						return c.WithWorkdir(tc.workdir)
+					}
+					return c
+				}).
+				WithExec(tc.command, dagger.ContainerWithExecOpts{
+					Expect:                        tc.expect,
+					ExperimentalPrivilegedNesting: true,
+				}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.stdout, stdout)
+		})
+	}
+}
+
 func (UserDefaultsSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) {
 	tmp := tempDirWithEnvFile(t,
 		`DEFAULTS_GREETING=salutations`,

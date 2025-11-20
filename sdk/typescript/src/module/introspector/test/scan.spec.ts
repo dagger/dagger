@@ -87,6 +87,10 @@ describe("scan by reference TypeScript", function () {
       directory: "coreEnums",
     },
     {
+      name: "Should correctly scan core enum defaults",
+      directory: "coreEnumDefault",
+    },
+    {
       name: "Should correctly scan constructor",
       directory: "constructor",
     },

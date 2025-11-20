@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/distribution/reference"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
 	"github.com/dagger/dagger/internal/buildkit/util/gitutil"
 	"github.com/dagger/dagger/internal/buildkit/util/sshutil"
+	"github.com/distribution/reference"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

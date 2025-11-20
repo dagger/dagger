@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fix "failed to add secret" errors when concurrently using a private git repo
+  from multiple clients that each have a different auth token value.
+time: 2025-11-20T12:24:52.320500703-08:00
+custom:
+  Author: sipsma
+  PR: "11456"

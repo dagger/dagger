@@ -12,9 +12,9 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/fsutil"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
-	fstypes "github.com/tonistiigi/fsutil/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

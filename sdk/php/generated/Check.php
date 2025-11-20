@@ -72,4 +72,13 @@ class Check extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('resultEmoji');
         return (string)$this->queryLeaf($leafQueryBuilder, 'resultEmoji');
     }
+
+    /**
+     * Execute the check
+     */
+    public function run(): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

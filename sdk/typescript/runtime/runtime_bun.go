@@ -86,15 +86,23 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 	entrypointPath := filepath.Join(b.cfg.modulePath(), SrcDir, EntrypointExecutableFile)
 
 	// Merge all the generated files together and setup an entrypoint command.
-	return runtimeWithDep.ctr.
+	ctr := runtimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
+		// Make @dagger.io/dagger resolvable for ts-introspector (it doesn't read tsconfig paths).
+		WithMountedDirectory("node_modules/@dagger.io/dagger", sdkLibrary).
 		WithMountedFile("tsconfig.json", tsConfig).
 		// Merge source code directory with current directory
 		WithDirectory(".", b.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"bun", "run", entrypointPath,
-		}), nil
+		})
+
+	if b.cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
+	return ctr, nil
 }
 
 func (b *BunRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error) {

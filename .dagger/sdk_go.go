@@ -27,6 +27,7 @@ func (t GoSDK) Source() *dagger.Directory {
 			"**/go.sum",
 			"cmd/codegen",
 			"engine/slog",
+			"internal/fsutil",
 		},
 	})
 }

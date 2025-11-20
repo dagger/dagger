@@ -19,11 +19,15 @@ import (
 )
 
 var (
-	checksListMode bool
+	checksListMode       bool
+	enableChecksScaleOut bool
 )
 
 func init() {
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List checks without running them")
+
+	checksCmd.Flags().BoolVar(&enableChecksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
+	checksCmd.Flags().MarkHidden("scale-out")
 }
 
 var checksCmd = &cobra.Command{
@@ -41,24 +45,30 @@ Examples:
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			dag := engineClient.Dagger()
-			mod, err := loadModule(ctx, dag)
-			if err != nil {
-				return err
-			}
-			var checks *dagger.CheckGroup
-			if len(args) > 0 {
-				checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
-			} else {
-				checks = mod.Checks()
-			}
-			if checksListMode {
-				return listChecks(ctx, checks, cmd)
-			} else {
-				return runChecks(ctx, checks, cmd)
-			}
-		})
+		return withEngine(
+			cmd.Context(),
+			client.Params{
+				EnableCloudScaleOut: enableChecksScaleOut,
+			},
+			func(ctx context.Context, engineClient *client.Client) error {
+				dag := engineClient.Dagger()
+				mod, err := loadModule(ctx, dag)
+				if err != nil {
+					return err
+				}
+				var checks *dagger.CheckGroup
+				if len(args) > 0 {
+					checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
+				} else {
+					checks = mod.Checks()
+				}
+				if checksListMode {
+					return listChecks(ctx, checks, cmd)
+				} else {
+					return runChecks(ctx, checks, cmd)
+				}
+			},
+		)
 	},
 }
 

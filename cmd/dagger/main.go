@@ -388,7 +388,7 @@ func Resource(ctx context.Context) *resource.Resource {
 		semconv.ServiceName("dagger-cli"),
 		semconv.ServiceVersion(engine.Version),
 	}
-	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version) {
+	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version).AsMap() {
 		attrs = append(attrs, attribute.String(k, v))
 	}
 	res, err := resource.New(ctx,
@@ -423,7 +423,7 @@ func main() {
 	opts.DotOutputFilePath = dotOutputFilePath
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
-	opts.UsingCloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, "dagger-cloud://")
+	opts.UsingCloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, engine.CloudRunnerHostPrefix)
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env

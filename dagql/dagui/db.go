@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -369,6 +370,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		RevealedSpans:   NewSpanSet(),
 		FailedLinks:     NewSpanSet(),
 		CanceledLinks:   NewSpanSet(),
+		ErrorOrigins:    NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
 		db:              db,
@@ -647,7 +649,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
-			span.ErrorOrigin = linked
+			span.ErrorOrigins.Add(linked)
+		}
+	}
+
+	// Extract error origins from span error descriptions
+	if span.Status.Code == codes.Error {
+		for _, origin := range telemetry.ParseErrorOrigins(span.Status.Description) {
+			linked := db.initSpan(SpanID{SpanID: origin.SpanID()})
+			span.ErrorOrigins.Add(linked)
 		}
 	}
 
@@ -665,7 +675,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 
 	if !span.ParentID.IsValid() && span.Received {
 		// keep track of the trace's root span
-		db.RootSpan = span
+		if db.RootSpan == nil {
+			db.RootSpan = span
+		}
 
 		if !db.PrimarySpan.IsValid() {
 			// default primary to root span, though we might never see a "root
@@ -673,10 +685,13 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.PrimarySpan = span.ID
 		}
 
-		if !span.IsRunning() {
+		if span == db.RootSpan && !span.IsRunning() {
+			// If the root span is completed, we should mark any still-running spans
+			// as canceled.
 			for _, span := range db.Spans.Order {
 				if span.IsRunning() {
 					span.Canceled = true
+					span.LeftRunning = true
 					span.EndTime = db.RootSpan.EndTime
 					span.PropagateStatusToParentsAndLinks()
 					db.update(span)
@@ -684,7 +699,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			}
 		}
 	} else if db.RootSpan != nil && !db.RootSpan.IsRunning() && span.IsRunning() {
+		// Same as above (cancel running spans when root ends), but handled for
+		// incoming span updates too.
 		span.Canceled = true
+		span.LeftRunning = true
 		span.EndTime = db.RootSpan.EndTime
 		span.PropagateStatusToParentsAndLinks()
 	}

@@ -1190,12 +1190,18 @@ type vcsTestCase struct {
 
 	// encodedToken is a based64 encoded read-only PAT
 	encodedToken string
+	// encodedToken2 is an optional second token to test cases of using different tokens for the same repo
+	encodedToken2 string
 	// sshKey determines whether to propagate the host's ssh-key
 	sshKey bool
 }
 
 func (tc vcsTestCase) token() string {
-	decodedToken, err := base64.StdEncoding.DecodeString(tc.encodedToken)
+	return decodedGitToken(tc.encodedToken)
+}
+
+func decodedGitToken(encodedToken string) string {
+	decodedToken, err := base64.StdEncoding.DecodeString(encodedToken)
 	if err != nil {
 		return ""
 	}
@@ -1273,7 +1279,10 @@ var vcsTestCases = []vcsTestCase{
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
-		encodedToken:             "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx",
+		// NOTE: this is not a security vulnerability, these tokens are read-only and scoped to a test repository
+		// with no actual private code
+		encodedToken:  "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx",
+		encodedToken2: "Z2xwYXQtcFVIWDVmZmVCUmdjZ2FYTHdndjNPVzg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxa2oyMHJi",
 	},
 	// BitBucket private repository using SCP-like SSH reference format
 	{

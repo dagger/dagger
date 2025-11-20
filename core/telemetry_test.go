@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/engine/server/resource"
@@ -95,6 +96,10 @@ func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID stri
 }
 func (ms *mockServer) EngineName() string { return "mockEngine" }
 func (ms *mockServer) Clients() []string  { return []string{} }
+
+func (ms *mockServer) CloudEngineClient(context.Context, string, string, []string) (*engineclient.Client, bool, error) {
+	return nil, false, nil
+}
 
 func TestParseCallerCalleeRefs(t *testing.T) {
 	mID := call.New().Append(&ast.Type{}, "callee1")

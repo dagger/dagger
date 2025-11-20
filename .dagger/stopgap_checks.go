@@ -54,14 +54,6 @@ func (dev *DaggerDev) TestSDKs(ctx context.Context) error {
 	for _, sdk := range allSDKs[tester](dev) {
 		jobs = jobs.WithJob(sdk.Name(), sdk.Test)
 	}
-	// Some (but not all) sdk test functions are also aggregators which will be replaced by PR 11211. Call them here too.
-	type deprecatedTester interface {
-		Name() string
-		Test(context.Context) error
-	}
-	for _, sdk := range allSDKs[deprecatedTester](dev) {
-		jobs = jobs.WithJob(sdk.Name(), sdk.Test)
-	}
 	return jobs.Run(ctx)
 }
 
@@ -75,14 +67,6 @@ func (dev *DaggerDev) LintSDKs(ctx context.Context) error {
 		Lint(context.Context) error
 	}
 	for _, sdk := range allSDKs[linter](dev) {
-		jobs = jobs.WithJob(sdk.Name(), sdk.Lint)
-	}
-	// Some (but not all) sdk lint functions are also aggregators which will be replaced by PR 11211. Call them here too.
-	type deprecatedLinter interface {
-		Name() string
-		Lint(context.Context) error
-	}
-	for _, sdk := range allSDKs[deprecatedLinter](dev) {
 		jobs = jobs.WithJob(sdk.Name(), sdk.Lint)
 	}
 	return jobs.Run(ctx)

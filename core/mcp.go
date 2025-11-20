@@ -588,6 +588,8 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 			toolName = typeDef.Name + "_" + field.Name
 		}
 
+		contextual := autoConstruct != nil
+
 		allTools.Add(LLMTool{
 			Name:        toolName,
 			Field:       field,
@@ -600,7 +602,7 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 
 			// Only set Passthrough if this is a plain object method call, as opposed
 			// to a contextual module tool.
-			HideSelf: autoConstruct == nil,
+			HideSelf: !contextual,
 
 			// Tools that return Changeset or Env modify the environment.
 			ReadOnly: field.Type.NamedType != "Env" && field.Type.NamedType != "Changeset",
@@ -609,6 +611,11 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 				argsMap, ok := args.(map[string]any)
 				if !ok {
 					return nil, fmt.Errorf("invalid arguments type: %T", args)
+				}
+				if !contextual {
+					// reveal cache hits for raw (non-contextual) calls, even if we've
+					// already seen them within the session
+					ctx = dagql.WithRepeatedTelemetry(ctx)
 				}
 				return m.call(ctx, srv, schema, typeDef.Name, field, argsMap, autoConstruct)
 			},
@@ -712,13 +719,7 @@ func (m *MCP) call(ctx context.Context,
 			return nil, fmt.Errorf("failed to convert call inputs: %w", err)
 		}
 		var val dagql.AnyResult
-		if err := srv.Select(
-			// reveal cache hits, even if we've already seen them within the session
-			dagql.WithRepeatedTelemetry(ctx),
-			target,
-			&val,
-			sels...,
-		); err != nil {
+		if err := srv.Select(ctx, target, &val, sels...); err != nil {
 			return nil, err
 		}
 		if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {

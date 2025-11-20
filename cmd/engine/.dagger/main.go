@@ -203,7 +203,6 @@ func (e *DaggerEngine) Generate(_ context.Context) (*dagger.Changeset, error) {
 		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"}).
 		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
-		WithMountedDirectory("./github.com/tonistiigi/fsutil", dag.Git("https://github.com/tonistiigi/fsutil.git").Commit("069baf6a66f5c63a82fb679ff2319ed2ee970fbd").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		Directory(".")
 	changes := changes(e.Source, withGoGenerate, []string{"github.com"})

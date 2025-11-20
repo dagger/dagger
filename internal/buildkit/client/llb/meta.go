@@ -9,8 +9,8 @@ import (
 	"sync"
 
 	"github.com/containerd/platforms"
-	"github.com/google/shlex"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/google/shlex"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )

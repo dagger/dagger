@@ -19,6 +19,6 @@ Expected stderr:
 ✘ go SDK: load runtime X.Xs ERROR
 # dagger/broken
 ./main.go:6:6: undefined: ctx
-! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

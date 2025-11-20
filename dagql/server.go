@@ -642,7 +642,7 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
 	res, err := s.LoadType(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("load: %w", err)
+		return nil, err
 	}
 	return s.toSelectable(res)
 }
@@ -655,7 +655,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 		if nth == 0 {
 			base, err = s.LoadType(ctx, id.Receiver())
 			if err != nil {
-				return nil, fmt.Errorf("load base: %w", err)
+				return nil, err
 			}
 		} else {
 			// we are selecting the nth element of an enumerable, load the list

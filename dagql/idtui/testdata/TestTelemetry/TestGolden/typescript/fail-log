@@ -21,6 +21,6 @@ Expected stderr:
 ╰╴✘ withExec sh -c 'echo im doing a lot of work; echo and then failing; exit 1' X.Xs ERROR
   ┃ im doing a lot of work
   ┃ and then failing
-  ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
+  ! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

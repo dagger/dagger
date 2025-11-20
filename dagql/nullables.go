@@ -233,6 +233,10 @@ func (o DynamicOptional) Deref() (Typed, bool) {
 	return o.Value, o.Valid
 }
 
+func (o DynamicOptional) Unwrap() Typed {
+	return o.Value
+}
+
 func (o DynamicOptional) MarshalJSON() ([]byte, error) {
 	if !o.Valid {
 		return json.Marshal(nil)

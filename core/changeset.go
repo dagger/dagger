@@ -57,13 +57,13 @@ func (ch *Changeset) computeChanges(ctx context.Context) error {
 		Field: "glob",
 		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
 	}); err != nil {
-		return fmt.Errorf("failed to get paths from before directory: %w", err)
+		return err
 	}
 	if err := srv.Select(ctx, ch.After, &afterPaths, dagql.Selector{
 		Field: "glob",
 		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
 	}); err != nil {
-		return fmt.Errorf("failed to get paths from after directory: %w", err)
+		return err
 	}
 	// Get diff paths (changed + added files)
 	if err := srv.Select(ctx, ch.Before, &diffPaths, dagql.Selector{
@@ -75,7 +75,7 @@ func (ch *Changeset) computeChanges(ctx context.Context) error {
 		Field: "glob",
 		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
 	}); err != nil {
-		return fmt.Errorf("failed to get paths from diff directory: %w", err)
+		return err
 	}
 
 	// Create sets for efficient lookups

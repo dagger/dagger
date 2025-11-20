@@ -251,7 +251,7 @@ func (r *renderer) callArgsToJSON(call *callpbv1.Call, out TermOutput, prefix st
 			argCall := r.db.Simplify(r.db.MustCall(argDig), true)
 			buf := new(strings.Builder)
 			argOut := termenv.NewOutput(buf, termenv.WithProfile(out.ColorProfile()))
-			if err := r.renderCall(argOut, argSpan, argCall, prefix, false, depth, false, nil); err != nil {
+			if err := r.renderCall(argOut, argSpan, argCall, prefix, false, depth, false, nil, true); err != nil {
 				return nil, err
 			}
 			argsMap[arg.Name] = argOut.String()

@@ -23,7 +23,6 @@ import (
 // It supports being serialized/deserialized through graphql.
 type ExecError struct {
 	Err      error
-	Origin   trace.SpanContext
 	Cmd      []string
 	ExitCode int
 	Stdout   string
@@ -39,16 +38,13 @@ func (e *ExecError) Unwrap() error {
 }
 
 func (e *ExecError) Extensions() map[string]any {
-	ext := map[string]any{
+	return map[string]any{
 		"_type":    "EXEC_ERROR",
 		"cmd":      e.Cmd,
 		"exitCode": e.ExitCode,
 		"stdout":   e.Stdout,
 		"stderr":   e.Stderr,
 	}
-	ctx := trace.ContextWithSpanContext(context.Background(), e.Origin)
-	telemetry.Propagator.Inject(ctx, telemetry.AnyMapCarrier(ext))
-	return ext
 }
 
 // RichError is an error that can occur while processing a container. It
@@ -105,8 +101,7 @@ func (e RichError) AsExecErr(ctx context.Context, client *Client) (*ExecError, b
 	}
 
 	execErr := &ExecError{
-		Err:      e,
-		Origin:   spanCtx,
+		Err:      telemetry.TrackOrigin(e, spanCtx),
 		Cmd:      e.Meta.Args,
 		ExitCode: exitCode,
 		Stdout:   strings.TrimSpace(string(stdout)),

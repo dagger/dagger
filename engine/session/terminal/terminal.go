@@ -8,10 +8,12 @@ import (
 	"os"
 
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
+	"github.com/dagger/dagger/util/grpcutil"
 	"github.com/mattn/go-isatty"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type WithTerminalFunc func(func(stdin io.Reader, stdout, stderr io.Writer) error) error
@@ -173,4 +175,29 @@ func (s TerminalAttachable) forwardStdin(ctx context.Context, srv Terminal_Sessi
 			return
 		}
 	}
+}
+
+type TerminalProxy struct {
+	client TerminalClient
+}
+
+func NewTerminalProxy(client TerminalClient) TerminalProxy {
+	return TerminalProxy{
+		client: client,
+	}
+}
+
+func (p TerminalProxy) Register(srv *grpc.Server) {
+	RegisterTerminalServer(srv, p)
+}
+
+func (p TerminalProxy) Session(stream Terminal_SessionServer) error {
+	ctx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(errors.New("proxy stream closed"))
+
+	clientStream, err := p.client.Session(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("starting client terminal session: %w", err)
+	}
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }

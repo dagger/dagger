@@ -33,6 +33,18 @@ func (t JavaSDK) Lint(ctx context.Context) error {
 	return err
 }
 
+// Format the Java SDK
+func (t JavaSDK) Fmt(ctx context.Context) *dagger.Changeset {
+	ctr := t.Maven(ctx)
+	original := dag.Directory().WithDirectory("/"+javaSDKPath, ctr.Directory("."))
+	return dag.Directory().
+		WithDirectory("/"+javaSDKPath,
+			ctr.
+				WithExec([]string{"mvn", "com.spotify.fmt:fmt-maven-plugin:format"}).
+				Directory("/"+javaSDKPath)).
+		Changes(original)
+}
+
 // Test the Java SDK
 // +check
 func (t JavaSDK) Test(ctx context.Context) error {

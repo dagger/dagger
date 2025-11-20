@@ -273,10 +273,6 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 
 	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
 	if err != nil {
-		var exec *dagger.ExecError
-		if errors.As(err, &exec) {
-			return exec.Unwrap()
-		}
 		return err
 	}
 	resultBytes, err := json.Marshal(result)
@@ -305,8 +301,7 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 }
 
 func convertError(rerr error) *dagger.Error {
-	var gqlErr *gqlerror.Error
-	if errors.As(rerr, &gqlErr) {
+	if gqlErr := findSingleGQLError(rerr); gqlErr != nil {
 		dagErr := dag.Error(gqlErr.Message)
 		if gqlErr.Extensions != nil {
 			keys := make([]string, 0, len(gqlErr.Extensions))
@@ -327,6 +322,18 @@ func convertError(rerr error) *dagger.Error {
 	return dag.Error(rerr.Error())
 }
 
+func findSingleGQLError(rerr error) *gqlerror.Error {
+	switch x := rerr.(type) {
+	case *gqlerror.Error:
+		return x
+	case interface{ Unwrap() []error }:
+		return nil
+	case interface{ Unwrap() error }:
+		return findSingleGQLError(x.Unwrap())
+	default:
+		return nil
+	}
+}
 ` + dispatch
 }
 

@@ -1,11 +1,14 @@
 package io.dagger.codegen;
 
 import com.ongres.process.FluentProcess;
+import com.ongres.process.FluentProcessBuilder;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,9 +29,23 @@ public class DaggerCLIUtils {
 
   public static InputStream query(InputStream query, String binPath) {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    // HACK: for some reason writing to stderr just causes it to hang since
-    // we're not reading from stderr, so we redirect it to /dev/null.
-    FluentProcess.start("sh", "-c", "$0 query 2>/dev/null", binPath)
+
+    // The introspection query response is >20k lines, save our
+    // telemetry from the burden of sending/storing it by unsetting
+    // these env vars
+    Map<String, String> envVars = new HashMap<>(System.getenv());
+    envVars.remove("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT");
+    envVars.remove("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT");
+    envVars.remove("OTEL_EXPORTER_OTLP_ENDPOINT");
+    envVars.remove("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT");
+
+    FluentProcessBuilder builder = new FluentProcessBuilder(binPath);
+    builder
+        .args("query", "-s", "-M")
+        .noStderr()
+        .clearEnvironment()
+        .environment(envVars)
+        .start()
         .withTimeout(Duration.of(60, ChronoUnit.SECONDS))
         .inputStream(query)
         .writeToOutputStream(out);

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
-	"github.com/mitchellh/hashstructure/v2"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
@@ -29,6 +28,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	"github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/mitchellh/hashstructure/v2"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/fs"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/ops/fileoptypes"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/system"
+	copy "github.com/dagger/dagger/internal/fsutil/copy"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/pkg/errors"
-	copy "github.com/tonistiigi/fsutil/copy"
 )
 
 func timestampToTime(ts int64) *time.Time {

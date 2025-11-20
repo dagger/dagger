@@ -17,8 +17,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/moby/locker"
-	fstypes "github.com/tonistiigi/fsutil/types"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"

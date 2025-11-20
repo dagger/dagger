@@ -91,7 +91,7 @@ func withEngine(
 		}
 
 		if useCloudEngine {
-			params.RunnerHost = "dagger-cloud://default-engine-config.dagger.cloud"
+			params.RunnerHost = engine.DefaultCloudRunnerHost
 		} else if params.RunnerHost == "" {
 			params.RunnerHost = RunnerHost
 		}
@@ -127,7 +127,7 @@ func withEngine(
 		}
 
 		// Connect to and run with the engine
-		sess, ctx, err := client.Connect(ctx, params)
+		sess, err := client.Connect(ctx, params)
 		if err != nil {
 			return cleanup.Run, err
 		}

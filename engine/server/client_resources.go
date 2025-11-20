@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
@@ -77,12 +78,11 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 			if secret.Self() == nil {
 				continue
 			}
-			if id.Optional && !srcClient.secretStore.HasSecret(secret.ID().Digest()) {
-				// don't attempt to add the secret if it doesn't exist and was optional
-				continue
-			}
+			// try to add the secret, if it's not found continue on as worst case an error will just
+			// be hit later if/when the secret is attempted to be used
 			if err := destClient.secretStore.AddSecretFromOtherStore(srcClient.secretStore, secret); err != nil {
-				return fmt.Errorf("failed to add secret from source client %s: %w", srcClient.clientID, err)
+				slog.Error("failed to add secret from other store", "err", err, "srcClientID", srcClient.clientID)
+				continue
 			}
 		}
 	}
@@ -96,12 +96,11 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 			if socket == nil {
 				continue
 			}
-			if id.Optional && !srcClient.socketStore.HasSocket(socket.IDDigest) {
-				// don't attempt to add the socket if it doesn't exist and was optional
-				continue
-			}
+			// try to add the socket, if it's not found continue on as worst case an error will just
+			// be hit later if/when the socket is attempted to be used
 			if err := destClient.socketStore.AddSocketFromOtherStore(socket, srcClient.socketStore); err != nil {
-				return fmt.Errorf("failed to add socket from source client %s: %w", srcClient.clientID, err)
+				slog.Error("failed to add socket from other store", "err", err, "srcClientID", srcClient.clientID)
+				continue
 			}
 		}
 	}

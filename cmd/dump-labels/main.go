@@ -18,8 +18,8 @@ func main() {
 	}
 
 	labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
-	for _, k := range slices.Sorted(maps.Keys(labels)) {
-		fmt.Println(k + "=" + labels[k])
+	for _, k := range slices.Sorted(maps.Keys(labels.AsMap())) {
+		fmt.Println(k + "=" + labels.AsMap()[k])
 	}
 }
 

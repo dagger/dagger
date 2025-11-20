@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/distribution/reference"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
+	"github.com/distribution/reference"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

@@ -13,7 +13,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
-	"github.com/tonistiigi/fsutil/types"
+	"github.com/dagger/dagger/internal/fsutil/types"
 )
 
 type remoteFS struct {
