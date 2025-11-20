@@ -1569,6 +1569,37 @@ export class Test {
 	})
 }
 
+func (TypescriptSuite) TestTelemetryImport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+import { getTracer } from "@dagger.io/dagger/telemetry"
+
+@object()
+export class Telemetry {
+  @func()
+  traced(): string {
+    // Exercise @dagger.io/dagger/telemetry resolution during introspection.
+    getTracer("ts-introspection")
+    return "ok"
+  }
+}
+  `))
+
+	t.Run("introspects telemetry import", func(ctx context.Context, t *testctx.T) {
+		schema := inspectModule(ctx, t, modGen)
+
+		telemetryObj := schema.Get(`objects.#.asObject|#(functions.#(name="traced")).name`).String()
+		require.NotEmpty(t, telemetryObj)
+		require.Equal(t, "traced", schema.Get("objects.#.asObject|#(name="+telemetryObj+").functions.#(name=traced).name").String())
+	})
+}
+
 func (TypescriptSuite) TestTypeKeyword(ctx context.Context, t *testctx.T) {
 	t.Run("wrap primitive type", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

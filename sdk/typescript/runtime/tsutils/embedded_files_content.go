@@ -18,6 +18,11 @@ var DefaultTSConfigJSON string
 //go:embed module/index.ts
 var StaticBundleIndexTS string
 
+// StaticBundleCoreDTS is a minimal core.d.ts allowing TS to resolve ./core.js imports.
+//
+//go:embed module/core.d.ts
+var StaticBundleCoreDTS string
+
 // StaticBundleTelemetryTS is the content of the sdk/telemetry.ts file.
 //
 //go:embed module/telemetry.ts
