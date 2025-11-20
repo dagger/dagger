@@ -68,6 +68,15 @@ type DotnetSdkDev {
   }
 
   """
+  Bump dagger engine version for the Dotnet SDK
+  NOTE: this is currently a no-op
+  """
+  pub bump: Changeset! {
+    print("bump() is currently a no-op in dotnet SDK")
+    directory().changes(directory())
+  }
+
+  """
   Run tests on the Dotnet SDK
   """
   pub test: Void! @check {
