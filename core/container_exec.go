@@ -76,11 +76,6 @@ type ContainerExecOpts struct {
 }
 
 func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts, parent *buildkit.ExecutionMetadata) (*buildkit.ExecutionMetadata, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get current query: %w", err)
-	}
-
 	execMD := buildkit.ExecutionMetadata{}
 	if parent != nil {
 		execMD = *parent
@@ -99,22 +94,6 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	}
 	if execMD.ExecID == "" {
 		execMD.ExecID = identity.NewID()
-	}
-	if execMD.EncodedModuleID == "" {
-		mod, err := query.CurrentModule(ctx)
-		if err != nil {
-			if !errors.Is(err, ErrNoCurrentModule) {
-				return nil, err
-			}
-		} else {
-			if mod.ResultID == nil {
-				return nil, fmt.Errorf("current module has no instance ID")
-			}
-			execMD.EncodedModuleID, err = mod.ResultID.Encode()
-			if err != nil {
-				return nil, err
-			}
-		}
 	}
 
 	if execMD.HostAliases == nil {
