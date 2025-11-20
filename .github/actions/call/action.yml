@@ -115,15 +115,10 @@ runs:
 
         set -x
         if [[ "${{ inputs.module }}" == "." ]]; then
-          # set some sane defaults for the current module
-          if [[ -f $HOME/.docker/config.json ]]; then
-            redirect_logs dagger -m "${{ inputs.module }}" call --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
-          else
-            redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
-          fi
-        else
-          redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
+          # Apply GHA-specific .env
+          [ -e .env.gha ] && mv .env.gha .env
         fi
+        redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
       env:
         DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 

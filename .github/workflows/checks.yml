@@ -52,6 +52,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup .env
+        run: mv .env.gha .env
       - name: exec
         id: exec
         uses: dagger/checks@main
