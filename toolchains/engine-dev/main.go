@@ -26,7 +26,7 @@ const (
 
 func New(
 	// +defaultPath="/"
-	// +ignore[
+	// +ignore=[
 	// "*",
 	// "!**/go.*",
 	// "!version",
