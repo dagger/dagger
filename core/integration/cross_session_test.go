@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -1604,4 +1605,84 @@ func (Test) Fn(ctx context.Context) error {
 
 	err := eg.Wait()
 	require.NoError(t, err)
+}
+
+func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.T) {
+	// Call a function with a directory arg sourced from a private git repo that uses
+	// an auth token. Do this from two different clients with different tokens for the
+	// same repo. Ensure that even though the git repo is cached between the two, we
+	// don't hit errors about missing auth tokens.
+
+	modDir := t.TempDir()
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]string, error) {
+	return dir.Entries(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	tc := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+
+	gitConfigDir1 := t.TempDir()
+	gitConfigFile1 := filepath.Join(gitConfigDir1, "config")
+	err = os.WriteFile(
+		gitConfigFile1,
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken))),
+		0644,
+	)
+	require.NoError(t, err)
+	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile1))
+
+	err = c1.ModuleSource(modDir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	gitRepoID1, err := c1.Address(tc.gitTestRepoRef).Directory().ID(ctx)
+	require.NoError(t, err)
+
+	rand1 := rand.Text()
+	res1, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn []string
+		}
+	}](c1, t, `{test{fn(dir: "`+string(gitRepoID1)+`", rand: "`+rand1+`")}}`, nil)
+	require.NoError(t, err)
+
+	gitConfigDir2 := t.TempDir()
+	gitConfigFile2 := filepath.Join(gitConfigDir2, "config")
+	err = os.WriteFile(
+		gitConfigFile2,
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken2))),
+		0644,
+	)
+	require.NoError(t, err)
+	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile2))
+
+	err = c2.ModuleSource(modDir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	gitRepoID2, err := c2.Address(tc.gitTestRepoRef).Directory().ID(ctx)
+	require.NoError(t, err)
+
+	rand2 := rand.Text()
+	res2, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn []string
+		}
+	}](c2, t, `{test{fn(dir: "`+string(gitRepoID2)+`", rand: "`+rand2+`")}}`, nil)
+	require.NoError(t, err)
+
+	require.Equal(t, res1.Test.Fn, res2.Test.Fn)
 }
