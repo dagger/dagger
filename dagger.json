@@ -84,6 +84,10 @@
       "source": "toolchains/release"
     },
     {
+      "name": "rust-sdk",
+      "source": "toolchains/rust-sdk-dev"
+    },
+    {
       "name": "sdks",
       "source": "toolchains/all-sdks"
     },
