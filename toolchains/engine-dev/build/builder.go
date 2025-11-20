@@ -145,7 +145,11 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: consts.RuncPath, file: build.runcBin()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
 	}
-	for _, bin := range build.qemuBins(ctx) {
+	qemuBins, err := build.qemuBins(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch qemu binaries: %w", err)
+	}
+	for _, bin := range qemuBins {
 		name, err := bin.Name(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get name of binary: %w", err)
@@ -245,7 +249,7 @@ func (build *Builder) runcBin() *dagger.File {
 		File("runc")
 }
 
-func (build *Builder) qemuBins(ctx context.Context) []*dagger.File {
+func (build *Builder) qemuBins(ctx context.Context) ([]*dagger.File, error) {
 	dir := dag.
 		Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.QemuBinImage).
@@ -253,14 +257,14 @@ func (build *Builder) qemuBins(ctx context.Context) []*dagger.File {
 
 	binNames, err := dir.Entries(ctx)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("list qemu binaries: %w", err)
 	}
 
 	var bins []*dagger.File
 	for _, binName := range binNames {
 		bins = append(bins, dir.File(binName))
 	}
-	return bins
+	return bins, nil
 }
 
 func (build *Builder) cniPlugins() (bins []*dagger.File) {
