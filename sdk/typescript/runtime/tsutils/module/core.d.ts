@@ -1,16 +1,28 @@
-export type ConnectOpts = Record<string, unknown>
-export type CallbackFct = (...args: any[]) => any
+export type ConnectOpts = {
+  Workdir?: string
+  LogOutput?: unknown
+}
 
-export function connection(cb: CallbackFct, opts?: ConnectOpts): any
-export function connect(opts?: ConnectOpts): any
+export type CallbackFct = (client: unknown) => Promise<void>
+
+export function connection(
+  cb: () => Promise<void>,
+  opts?: ConnectOpts,
+): Promise<void>
+export function connect(cb: CallbackFct, opts?: ConnectOpts): Promise<void>
 export class Context {}
 
-export function func(): MethodDecorator
-export function check(): MethodDecorator
-export function argument(): ParameterDecorator
-export function object(): ClassDecorator
-export function field(): PropertyDecorator
-export function enumType(): ClassDecorator
-export function entrypoint(): MethodDecorator
+export type ArgumentOptions = {
+  defaultPath?: string
+  ignore?: string[]
+}
 
-export function getTracer(name?: string): any
+export function func(alias?: string): MethodDecorator
+export function check(): MethodDecorator
+export function argument(opts?: ArgumentOptions): ParameterDecorator
+export function object(): ClassDecorator
+export function field(alias?: string): PropertyDecorator
+export function enumType(): ClassDecorator
+export function entrypoint(files: string[]): Promise<void>
+
+export function getTracer(name?: string): unknown
