@@ -569,6 +569,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Export environment variables from an env-file to the container.
+     */
+    public function withEnvFileVariables(EnvFileId|EnvFile $source): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvFileVariables');
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Set a new environment variable in the container.
      */
     public function withEnvVariable(string $name, string $value, ?bool $expand = false): Container

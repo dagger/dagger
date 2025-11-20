@@ -15,6 +15,7 @@ type GraphEvaluator struct {
 	expanded     map[string]string       // Memoized expanded values
 	expanding    map[string]bool         // Currently expanding (for cycle detection)
 	systemLookup func(string) string
+	NoUnset      bool
 }
 
 // parsedEntry stores the parsed but unexpanded shell words
@@ -25,12 +26,13 @@ type parsedEntry struct {
 }
 
 // NewGraphEvaluator creates a new graph-based evaluator
-func NewGraphEvaluator(environ []string, systemLookup func(string) string) (*GraphEvaluator, error) {
+func NewGraphEvaluator(environ []string, systemLookup func(string) string, noUnset bool) (*GraphEvaluator, error) {
 	g := &GraphEvaluator{
 		raw:          make(map[string]*parsedEntry),
 		expanded:     make(map[string]string),
 		expanding:    make(map[string]bool),
 		systemLookup: systemLookup,
+		NoUnset:      noUnset,
 	}
 
 	// Parse all entries first (without expansion)
@@ -195,7 +197,7 @@ func (g *GraphEvaluator) expandWord(w *syntax.Word) (string, error) {
 
 			return ""
 		}),
-		NoUnset: true,
+		NoUnset: g.NoUnset,
 	}
 
 	// Perform shell-like expansion
@@ -226,8 +228,8 @@ func (g *GraphEvaluator) All() (map[string]string, error) {
 
 // Evaluate an array of key=value strings in the dotenv syntax,
 // and return a map of evaluated variables
-func All(environ []string, systemLookup func(string) string) (map[string]string, error) {
-	g, err := NewGraphEvaluator(environ, systemLookup)
+func All(environ []string, systemLookup func(string) string, noUnset bool) (map[string]string, error) {
+	g, err := NewGraphEvaluator(environ, systemLookup, noUnset)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +254,7 @@ func AllRaw(environ []string) map[string]string {
 // Evaluate an array of key=value strings in the dotenv syntax,
 // and return the value of the specified variable
 func Lookup(environ []string, name string, systemLookup func(string) string) (string, bool, error) {
-	g, err := NewGraphEvaluator(environ, systemLookup)
+	g, err := NewGraphEvaluator(environ, systemLookup, true)
 	if err != nil {
 		return "", false, err
 	}
