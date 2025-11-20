@@ -101,11 +101,15 @@ type seenKeysCtxKey struct{}
 // Additionally, it explicitly sets the internal flag to false, to prevent
 // Server.Select from marking its spans internal.
 func WithRepeatedTelemetry(ctx context.Context) context.Context {
-	return context.WithValue(
+	return WithNonInternalTelemetry(
 		context.WithValue(ctx, seenKeysCtxKey{}, &sync.Map{}),
-		internalKey{},
-		false,
 	)
+}
+
+// WithNonInternalTelemetry marks telemetry within the context as non-internal,
+// so that Server.Select does not mark its spans internal.
+func WithNonInternalTelemetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, internalKey{}, false)
 }
 
 func telemetryKeys(ctx context.Context) *sync.Map {
