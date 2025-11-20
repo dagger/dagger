@@ -3,6 +3,7 @@ package main
 import (
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
+	"typescript-sdk/tsutils"
 )
 
 const (
@@ -37,9 +38,19 @@ func (i *Introspector) AsEntrypoint(
 
 	clientBindings *dagger.File,
 ) *dagger.Container {
+	// Synthesize a minimal @dagger.io/dagger package so TS can resolve the bare import.
+	sdkPkg := dag.Directory().
+		WithFile("client.gen.ts", clientBindings).
+		WithNewFile("index.ts", tsutils.StaticBundleIndexTS).
+		WithNewFile("core.d.ts", tsutils.StaticBundleCoreDTS).
+		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS)
+
 	return i.Ctr.
 		WithMountedDirectory("src", sourceCode).
-		WithMountedFile("sdk/client.gen.ts", clientBindings).
+		// Make it resolvable by Node/TS: @dagger.io/dagger -> node_modules package
+		WithMountedDirectory("node_modules/@dagger.io/dagger", sdkPkg).
+		// Keep the old location too so the CLI arg still points to a file
+		WithMountedDirectory("sdk", sdkPkg).
 		WithEnvVariable("TYPEDEF_OUTPUT_FILE", outputFilePath).
 		WithEntrypoint([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
 }

@@ -1,0 +1,36 @@
+{
+  "name": "CoreEnumDefault",
+  "objects": {
+    "CoreEnumDefault": {
+      "name": "CoreEnumDefault",
+      "description": "",
+      "methods": {
+        "defaultProto": {
+          "name": "defaultProto",
+          "description": "",
+          "arguments": {
+            "proto": {
+              "name": "proto",
+              "description": "",
+              "type": {
+                "kind": "ENUM_KIND",
+                "name": "NetworkProtocol"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "UDP"
+            }
+          },
+          "returnType": {
+            "kind": "ENUM_KIND",
+            "name": "NetworkProtocol"
+          }
+        }
+      },
+      "properties": {}
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}

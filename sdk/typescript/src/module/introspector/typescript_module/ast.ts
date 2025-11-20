@@ -441,6 +441,76 @@ export class AST {
     }
   }
 
+  // Try to extract literal values (enum members, string/number/boolean/bigint
+  // literals) directly from the type checker. Returns undefined if the
+  // expression is not a literal.
+  private getLiteralValueFromExpression(
+    expression: ts.Expression,
+  ): string | number | boolean | bigint | undefined {
+    const type = this.checker.getTypeAtLocation(expression)
+    if (!type) {
+      return undefined
+    }
+
+    const resolveLiteral = (
+      t: ts.Type,
+    ): string | number | boolean | bigint | undefined => {
+      if (t.flags & ts.TypeFlags.BooleanLiteral) {
+        const intrinsic = t as unknown as { intrinsicName?: string }
+        // Handle boolean value
+        switch (intrinsic.intrinsicName) {
+          case "true":
+            return true
+          case "false":
+            return false
+        }
+      }
+
+      if (
+        t.flags &
+        (ts.TypeFlags.EnumLiteral |
+          ts.TypeFlags.StringLiteral |
+          ts.TypeFlags.NumberLiteral |
+          ts.TypeFlags.BigIntLiteral)
+      ) {
+        const literal = t as ts.LiteralType
+        if (literal.value !== undefined) {
+          return literal.value as string | number | bigint
+        }
+
+        // Some literals only expose `intrinsicName`. Example:
+        // const yes = true; function use(flag: boolean = yes) {}
+        // The checker reports `intrinsicName: "true"` without a `value`, so we fallback.
+        const intrinsic = literal as unknown as { intrinsicName?: string }
+        if (intrinsic.intrinsicName !== undefined) {
+          return intrinsic.intrinsicName as string
+        }
+      }
+
+      return undefined
+    }
+
+    if (type.isUnion()) {
+      // Walk union members to surface the literal. Example:
+      // ```ts
+      // const defaults = { proto: NetworkProtocol.Udp }
+      // function use(proto: NetworkProtocol = defaults.proto) {}
+      // ```
+      // The checker reports `defaults.proto` as `NetworkProtocol.Tcp | NetworkProtocol.Udp`,
+      // so we inspect each subtype to recover the actual default value.
+      for (const subtype of type.types) {
+        const literal = resolveLiteral(subtype)
+        if (literal !== undefined) {
+          return literal
+        }
+      }
+
+      return undefined
+    }
+
+    return resolveLiteral(type)
+  }
+
   private warnUnresolvedDefaultValue(expression: ts.Expression): void {
     console.warn(
       `default value '${expression.getText()}' at ${AST.getNodePosition(expression)} cannot be resolved, dagger does not support object or function as default value. 
@@ -529,25 +599,43 @@ export class AST {
         return undefined
       }
       case ts.SyntaxKind.PropertyAccessExpression: {
-        const symbol = this.checker.getSymbolAtLocation(expression)
-        if (!symbol) return undefined
+        const propertyAccess = expression as ts.PropertyAccessExpression
 
-        const decl = symbol.valueDeclaration
-        if (!decl) {
-          this.warnUnresolvedDefaultValue(expression)
-
-          return undefined
+        // Quick path: TypeScript already computed the literal value.
+        const directConstant = this.checker.getConstantValue(propertyAccess)
+        if (directConstant !== undefined) {
+          return directConstant
         }
 
-        if (ts.isEnumMember(decl)) {
-          const val = this.checker.getConstantValue(decl)
-          if (val !== undefined) return val
+        // Otherwise inspect the enum member backing the property accessor.
+        const nameSymbol = this.checker.getSymbolAtLocation(propertyAccess.name)
+        if (nameSymbol) {
+          const declarations = nameSymbol.declarations ?? []
+          const decls = nameSymbol.valueDeclaration
+            ? [nameSymbol.valueDeclaration, ...declarations]
+            : declarations
 
-          if (decl.initializer)
-            return this.resolveParameterDefaultValue(decl.initializer)
+          for (const decl of decls) {
+            if (ts.isEnumMember(decl)) {
+              const val = this.checker.getConstantValue(decl)
+              if (val !== undefined) {
+                return val
+              }
+
+              if (decl.initializer) {
+                return this.resolveParameterDefaultValue(decl.initializer)
+              }
+            }
+          }
         }
 
-        // Warn the user if the default value cannot be resolved
+        // Fall back to literal type information if available.
+        const literal = this.getLiteralValueFromExpression(propertyAccess)
+        if (literal !== undefined) {
+          return literal
+        }
+
+        // Warn the user if the default value cannot be resolved.
         this.warnUnresolvedDefaultValue(expression)
 
         return undefined
