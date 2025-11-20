@@ -76,6 +76,16 @@ type JavaSdkDev {
   }
 
   """
+  Format the Java SDK
+  """
+  pub fmt(): Changeset {
+    devContainer.
+        withExec(["mvn", "com.spotify.fmt:fmt-maven-plugin:format"]).
+        directory(workspacePath).
+        changes(devContainer.directory(workspacePath))
+  }
+
+  """
   Check that releasing works, without actually releasing
   """
   pub releaseDryRun(
