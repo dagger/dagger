@@ -1,0 +1,51 @@
+pub description = "A toolchain for supply chain security of the Dagger project"
+
+type Security {
+  let trivyBase = container.
+    from("aquasec/trivy:0.67.2@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08").
+    withMountedCache(
+      path: "/root/.cache",
+      cache: cacheVolume("trivy-cache"),
+      sharing: CacheSharingMode.LOCKED).
+    withWorkdir("/home/trivy")
+
+  """
+  Scan the source repository for security vulnerabilities
+  """
+  pub scanSource(source: Directory! @defaultPath(path: "/")): Void @check {
+    trivyBase.
+      withMountedDirectory(".", source).
+      withExec([
+        "trivy", "fs",
+        "--scanners=vuln",
+        "--pkg-types=library",
+        "--exit-code=1",
+        "--severity=CRITICAL,HIGH",
+        ".",
+      ]).
+      sync
+    null
+  }
+
+  """
+  Build the engine container, and scan it for vulnerabilities
+  """
+  pub scanEngineContainer(target: Container): Void @check {
+    let t = target
+    if (t == null) {
+      t = engineDev().container()
+    }
+    let tarballPath = "target.tar"
+    trivyBase.
+      withMountedFile(tarballPath, t.asTarball()).
+      withExec([
+        "trivy", "image",
+        "--pkg-types=os,library",
+        "--exit-code=1",
+        "--severity=CRITICAL,HIGH",
+        "--input=" + tarballPath,
+      ]).
+      sync
+    null
+  }
+}
