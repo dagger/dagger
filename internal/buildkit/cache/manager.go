@@ -1435,11 +1435,13 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 			v := m[id]
 			if v.refs == 0 {
 				for _, p := range v.parents {
-					m[p].refs--
-					if v.doubleRef {
-						m[p].refs--
+					if pInfo, ok := m[p]; ok && pInfo != nil {
+						pInfo.refs--
+						if v.doubleRef {
+							pInfo.refs--
+						}
+						rescan[p] = struct{}{}
 					}
-					rescan[p] = struct{}{}
 				}
 			}
 			delete(rescan, id)
