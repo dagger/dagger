@@ -233,6 +233,10 @@ type SpanSnapshot struct {
 	Canceled bool `json:",omitempty"`
 	Cached   bool `json:",omitempty"`
 
+	// An extra flag to indicate that a span was canceled because the root span
+	// completed while the span was still running.
+	LeftRunning bool `json:",omitempty"`
+
 	// UI preferences reported by the span, or applied to it (sync=>passthrough)
 	Internal     bool `json:",omitempty"`
 	Encapsulate  bool `json:",omitempty"`
@@ -703,7 +707,9 @@ func (span *Span) CanceledReason() (bool, []string) {
 		return span.Canceled_, span.CanceledReason_
 	}
 	var reasons []string
-	if span.Canceled {
+	if span.LeftRunning {
+		reasons = append(reasons, "span was left running after the root span completed")
+	} else if span.Canceled {
 		reasons = append(reasons, "span says it is canceled")
 	}
 	for _, canceled := range span.CanceledLinks.Order {
