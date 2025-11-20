@@ -270,7 +270,7 @@ func (srv *Server) initializeDaggerSession(
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
-		Labels: enginetel.NewLabels(clientMetadata.Labels).
+		Labels: enginetel.NewLabels(clientMetadata.Labels, nil, nil).
 			WithEngineLabel(srv.engineName).
 			WithServerLabels(
 				engine.Version,
@@ -1576,7 +1576,7 @@ func (srv *Server) CloudEngineClient(
 			EnableCloudScaleOut: false,
 		},
 		CallerSessionConn: parentSession.Conn(),
-		Labels:            parentClient.clientMetadata.Labels,
+		Labels:            enginetel.NewLabels(parentClient.clientMetadata.Labels, nil, nil),
 		StableClientID:    parentClient.clientMetadata.ClientStableID,
 	})
 	if err != nil {

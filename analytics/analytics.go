@@ -62,8 +62,7 @@ func Ctx(ctx context.Context) Tracker {
 	return &noopTracker{}
 }
 
-type noopTracker struct {
-}
+type noopTracker struct{}
 
 func (t *noopTracker) Capture(ctx context.Context, event string, properties map[string]string) {
 }
@@ -134,19 +133,19 @@ func (t *CloudTracker) Capture(ctx context.Context, event string, properties map
 		Type:       event,
 		Properties: properties,
 
-		DeviceID: t.cfg.Labels["dagger.io/client.machine_id"],
+		DeviceID: t.cfg.Labels.AsMap()["dagger.io/client.machine_id"],
 
-		ClientVersion: t.cfg.Labels["dagger.io/client.version"],
-		ClientOS:      t.cfg.Labels["dagger.io/client.os"],
-		ClientArch:    t.cfg.Labels["dagger.io/client.arch"],
+		ClientVersion: t.cfg.Labels.AsMap()["dagger.io/client.version"],
+		ClientOS:      t.cfg.Labels.AsMap()["dagger.io/client.os"],
+		ClientArch:    t.cfg.Labels.AsMap()["dagger.io/client.arch"],
 
-		CI:       t.cfg.Labels["dagger.io/ci"] == "true",
-		CIVendor: t.cfg.Labels["dagger.io/ci.vendor"],
+		CI:       t.cfg.Labels.AsMap()["dagger.io/ci"] == "true",
+		CIVendor: t.cfg.Labels.AsMap()["dagger.io/ci.vendor"],
 	}
-	if remote := t.cfg.Labels["dagger.io/git.remote"]; remote != "" {
+	if remote := t.cfg.Labels.AsMap()["dagger.io/git.remote"]; remote != "" {
 		ev.GitRemoteEncoded = fmt.Sprintf("%x", base64.StdEncoding.EncodeToString([]byte(remote)))
 	}
-	if author := t.cfg.Labels["dagger.io/git.author.email"]; author != "" {
+	if author := t.cfg.Labels.AsMap()["dagger.io/git.author.email"]; author != "" {
 		ev.GitAuthorHashed = fmt.Sprintf("%x", sha256.Sum256([]byte(author)))
 	}
 	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
