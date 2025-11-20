@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -70,7 +71,18 @@ func (c *Check) Match(include []string) (bool, error) {
 	}
 	for _, name := range []string{c.CliName(), c.GqlName()} {
 		for _, pattern := range include {
-			// FIXME: match against both gqlFieldCase and cliCase
+			if match, err := fnPathContains(pattern, name); err != nil {
+				return false, err
+			} else if match {
+				return true, nil
+			}
+			if match, err := fnPathGlob(pattern, name); err != nil {
+				return false, err
+			} else if match {
+				return true, nil
+			}
+			pattern = strings.ReplaceAll(pattern, ":", "/")
+			name = strings.ReplaceAll(name, ":", "/")
 			matched, err := doublestar.PathMatch(pattern, name)
 			if err != nil {
 				return false, err
@@ -81,6 +93,26 @@ func (c *Check) Match(include []string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// Match a function-path against a glob pattern
+func fnPathGlob(pattern, target string) (bool, error) {
+	// FIXME: match against both gqlFieldCase and cliCase
+	slashPattern := strings.ReplaceAll(pattern, ":", "/")
+	slashTarget := strings.ReplaceAll(target, ":", "/")
+	return doublestar.PathMatch(slashPattern, slashTarget)
+}
+
+// Check if a function-path contains another
+func fnPathContains(base, target string) (bool, error) {
+	// FIXME: match against both gqlFieldCase and cliCase
+	slashTarget := path.Clean("/" + strings.ReplaceAll(target, ":", "/"))
+	slashBase := path.Clean("/" + strings.ReplaceAll(base, ":", "/"))
+	rel, err := filepath.Rel(slashBase, slashTarget)
+	if err != nil {
+		return false, err
+	}
+	return !strings.HasPrefix(rel, ".."), nil
 }
 
 func (r *CheckGroup) List(ctx context.Context) ([]*Check, error) {
@@ -181,7 +213,7 @@ func (r *CheckGroup) Clone() *CheckGroup {
 }
 
 func (c *Check) Name() string {
-	return strings.Join(c.Path, "/")
+	return strings.Join(c.Path, ":")
 }
 
 func (c *Check) Clone() *Check {
