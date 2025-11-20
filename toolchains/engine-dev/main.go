@@ -28,6 +28,7 @@ func New(
 	// +defaultPath="/"
 	// +ignore=[
 	// "*",
+	// "!.git",
 	// "!**/go.*",
 	// "!version",
 	// "!core",
@@ -38,7 +39,10 @@ func New(
 	// "!analytics",
 	// "!auth",
 	// "!cmd",
-	// "!internal"
+	// "!internal",
+	// "!sdk",
+	// "sdk/**/examples",
+	// "!cmd"
 	// ]
 	source *dagger.Directory,
 	// A configurable part of the IP subnet managed by the engine
