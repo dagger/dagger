@@ -2003,6 +2003,7 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 
 	// Load the config for all toolchains to populate ConfigToolchains
 	// We need to convert each toolchain into a config entry by loading it as a dependency
+	// Also preserve any existing Arguments configuration
 	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
 	for i, toolchain := range finalToolchains {
 		// Load as a dependency to get the proper config format
@@ -2021,6 +2022,14 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 		}
 		if len(tmpConfig.Dependencies) > 0 {
 			configToolchains[i] = tmpConfig.Dependencies[0]
+
+			// Preserve Arguments from the original ConfigToolchains if they exist
+			for _, origToolchain := range parentSrc.ConfigToolchains {
+				if origToolchain.Name == configToolchains[i].Name {
+					configToolchains[i].Arguments = origToolchain.Arguments
+					break
+				}
+			}
 		}
 	}
 	parentSrc.ConfigToolchains = configToolchains
@@ -3028,7 +3037,33 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 			if strings.EqualFold(arg.Name, argCfg.Name) || strings.EqualFold(arg.OriginalName, argCfg.Name) {
 				// Apply default value if specified
 				if argCfg.Default != "" {
-					arg.DefaultValue = core.JSON([]byte(fmt.Sprintf("%q", argCfg.Default)))
+					// Parse the default value as JSON to determine its type
+					var defaultValue any
+					if err := json.Unmarshal([]byte(argCfg.Default), &defaultValue); err != nil {
+						// If it's not valid JSON, treat it as a string literal
+						defaultValue = argCfg.Default
+					}
+
+					// Validate the type matches the argument type
+					_, err := arg.TypeDef.ToInput().Decoder().DecodeInput(defaultValue)
+					if err != nil {
+						// Log warning but don't fail - allow for flexibility
+						slog.Warn("default value type mismatch",
+							"function", fn.Name,
+							"argument", arg.Name,
+							"error", err)
+					}
+
+					// Marshal back to JSON for storage
+					marshaledValue, err := json.Marshal(defaultValue)
+					if err != nil {
+						slog.Warn("failed to marshal default value",
+							"function", fn.Name,
+							"argument", arg.Name,
+							"error", err)
+					} else {
+						arg.DefaultValue = core.JSON(marshaledValue)
+					}
 				}
 
 				// Apply defaultPath if specified

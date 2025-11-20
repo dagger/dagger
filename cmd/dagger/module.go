@@ -8,11 +8,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/go-git/go-git/v5"
+	"github.com/juju/ansiterm/tabwriter"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
@@ -923,7 +926,7 @@ var toolchainUninstallCmd = &cobra.Command{
 	},
 }
 
-func loadToolchainInfo(ctx context.Context, modSrc *dagger.ModuleSource) ([]toolchainInfo, error) {
+func loadToolchainInfo(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) ([]toolchainInfo, error) {
 	var info []toolchainInfo
 	err := parallel.Run(ctx, "fetch toolchain information", func(ctx context.Context) error {
 		alreadyExists, err := modSrc.ConfigExists(ctx)
@@ -944,11 +947,12 @@ func loadToolchainInfo(ctx context.Context, modSrc *dagger.ModuleSource) ([]tool
 		jobs := parallel.New().WithInternal(true).WithReveal(false)
 		for i, toolchain := range toolchains {
 			jobs = jobs.WithJob("", func(ctx context.Context) error {
-				name, err := toolchain.ModuleName(ctx)
+				toolchainDef, err := inspectModule(ctx, dag, &toolchain)
 				if err != nil {
-					return fmt.Errorf("get toolchain name: %w", err)
+					return fmt.Errorf("inspect toolchain: %w", err)
 				}
-				info[i].name = name
+				info[i].name = toolchainDef.Name
+				info[i].description = toolchainDef.Description
 				return nil
 			})
 		}
@@ -961,7 +965,8 @@ func loadToolchainInfo(ctx context.Context, modSrc *dagger.ModuleSource) ([]tool
 }
 
 type toolchainInfo struct {
-	name string
+	name        string
+	description string
 }
 
 var toolchainListCmd = &cobra.Command{
@@ -982,14 +987,24 @@ var toolchainListCmd = &cobra.Command{
 				// We can only list toolchains from a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
-			toolchains, err := loadToolchainInfo(ctx, modSrc)
+			toolchains, err := loadToolchainInfo(ctx, dag, modSrc)
 			if err != nil {
 				return err
 			}
+			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+			fmt.Fprintf(tw, "%s\t%s\n",
+				termenv.String("Name").Bold(),
+				termenv.String("Description").Bold(),
+			)
+			sort.Slice(toolchains, func(i, j int) bool {
+				return toolchains[i].name < toolchains[j].name
+			})
 			for _, toolchain := range toolchains {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\n", toolchain.name)
+				fmt.Fprintf(tw, "%s\t%s\n",
+					toolchain.name,
+					shortDescription(toolchain.description))
 			}
-			return nil
+			return tw.Flush()
 		})
 	},
 }

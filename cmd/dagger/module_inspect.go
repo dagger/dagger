@@ -892,6 +892,14 @@ func (f *modField) AsFunction() *modFunction {
 	}
 }
 
+func shortDescription(desc string) string {
+	s := strings.SplitN(desc, "\n", 2)[0]
+	if s == "" {
+		s = "-"
+	}
+	return s
+}
+
 // modFunction is a representation of dagger.Function.
 type modFunction struct {
 	Name        string
@@ -910,11 +918,7 @@ func (f *modFunction) CmdName() string {
 }
 
 func (f *modFunction) Short() string {
-	s := strings.SplitN(f.Description, "\n", 2)[0]
-	if s == "" {
-		s = "-"
-	}
-	return s
+	return shortDescription(f.Description)
 }
 
 // GetArg returns the argument definition corresponding to the given name.
