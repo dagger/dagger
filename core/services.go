@@ -168,7 +168,11 @@ dance:
 		ss.l.Lock()
 		starting, isStarting := ss.starting[key]
 		running, isRunning := ss.running[key]
+		isStopping := ss.bindings[key] == 0
 		switch {
+		case isRunning && isStopping:
+			ss.l.Unlock()
+			running.Wait(ctx)
 		case isRunning:
 			// already running; increment binding count and return
 			ss.bindings[key]++
@@ -332,7 +336,7 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	ss.l.Lock()
 
-	slog := slog.With("service", svc.Host, "bindings", ss.bindings[svc.Key])
+	slog := slog.With("service", svc.Host)
 
 	running, found := ss.running[svc.Key]
 	if !found {
@@ -344,6 +348,9 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	ss.bindings[svc.Key]--
 
+	// Log with the decremented value
+	slog = slog.With("bindings", ss.bindings[svc.Key])
+
 	if ss.bindings[svc.Key] > 0 {
 		ss.l.Unlock()
 		slog.Debug("detach: service still has binders")
@@ -353,7 +360,7 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	ss.l.Unlock()
 
-	slog.Trace("detach: stopping")
+	slog.Debug("detach: stopping")
 
 	// we should avoid blocking, and return immediately
 	go ss.stopGraceful(context.WithoutCancel(ctx), running, TerminateGracePeriod)
