@@ -18,7 +18,7 @@ type CI {
 						playground().
 						withMountedDirectory("./dagger", source).
 						withWorkdir("./dagger").
-						withExec(["dagger", "checks", "*-sdk/test"]).
+						withExec(["dagger", "checks", "**:*lint*"]).
 						sync()
 				null
 		}
