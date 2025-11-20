@@ -9,7 +9,6 @@ import (
 
 	"dagger/python-sdk-dev/internal/dagger"
 
-	"github.com/dagger/dagger/util/dockerfileextractor"
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -24,7 +23,6 @@ type PythonSdkDev struct {
 }
 
 func New(
-	ctx context.Context,
 	// A workspace containing the SDK source code and other relevant files
 	// +defaultPath="/"
 	// +ignore=[
@@ -49,20 +47,7 @@ func New(
 
 	// +default="sdk/python"
 	sourcePath string,
-) (*PythonSdkDev, error) {
-	dockerfile, err := workspace.File("sdk/python/runtime/Dockerfile").Contents(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not read Python SDK Dockerfile: %w", err)
-	}
-	images, err := dockerfileextractor.ExtractImages(dockerfile)
-	if err != nil {
-		return nil, fmt.Errorf("could not extract Python SDK images from Dockerfile: %w", err)
-	}
-	uvImage, ok := images["uv"]
-	if !ok {
-		return nil, fmt.Errorf("could not find uv image in Python SDK Dockerfile")
-	}
-
+) *PythonSdkDev {
 	return &PythonSdkDev{
 		DevContainer: dag.DaggerEngine().InstallClient(
 			dag.Wolfi().
@@ -73,14 +58,14 @@ func New(
 					"/root/.local/bin:/usr/local/bin:$PATH",
 					dagger.ContainerWithEnvVariableOpts{Expand: true}).
 				With(toolsCache("uv", "ruff", "mypy")).
-				With(uvTool(uvImage.String())).
+				With(uvTool()).
 				WithDirectory("/src/sdk/python", workspace.Directory(sourcePath)).
 				WithWorkdir("/src/sdk/python").
 				WithExec(uv("sync"))),
 		Workspace:         workspace,
 		SourcePath:        sourcePath,
 		SupportedVersions: supportedVersions,
-	}, nil
+	}
 }
 
 var supportedVersions = []string{"3.13", "3.12", "3.11", "3.10"}

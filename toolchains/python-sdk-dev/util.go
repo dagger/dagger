@@ -46,12 +46,12 @@ func mountedWorkdir(src *dagger.Directory) dagger.WithContainerFunc {
 }
 
 // Add the uv tool to the container.
-func uvTool(image string) dagger.WithContainerFunc {
+func uvTool() dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithDirectory(
 				"/usr/local/bin",
-				dag.Container().From(image).Rootfs(),
+				dag.Container().From("ghcr.io/astral-sh/uv:latest").Rootfs(),
 				dagger.ContainerWithDirectoryOpts{Include: []string{"uv*"}}).
 			WithEnvVariable("UV_LINK_MODE", "copy").
 			WithEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv")
