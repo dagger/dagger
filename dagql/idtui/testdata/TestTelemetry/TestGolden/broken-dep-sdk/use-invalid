@@ -6,8 +6,8 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-✘ load module: ./viztest/broken-dep-sdk X.Xs ERROR
-╰╴✘ finding module configuration X.Xs ERROR
+✘ load("./viztest/broken-dep-sdk") X.Xs ERROR
+  ✘ transfer files X.Xs ERROR
   ╰╴✘ moduleSource(refString: "./viztest/broken-dep-sdk"): ModuleSource! X.Xs ERROR
     ├╴✘ moduleSource(refString: "/app/dagql/idtui/viztest/broken-dep-sdk/invalid", disableFindUp: true): ModuleSource! X.Xs ERROR
     │ ╰╴✘ load SDK: unknown X.Xs ERROR

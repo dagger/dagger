@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
@@ -56,40 +57,46 @@ func initializeModule(
 	modRef string,
 	modSrc *dagger.ModuleSource,
 ) (rdef *moduleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
-	defer telemetry.EndWithCause(span, &rerr)
-
-	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	configExists, err := modSrc.ConfigExists(findCtx)
-	telemetry.EndWithCause(findSpan, &err)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get configured module: %w", err)
-	}
-	if !configExists {
-		return nil, errModuleNotFound
-	}
-
-	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	err = modSrc.AsModule().Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
-	telemetry.EndWithCause(serveSpan, &err)
-	if err != nil {
-		return nil, fmt.Errorf("failed to serve module: %w", err)
-	}
-
-	def, err := inspectModule(ctx, dag, modSrc)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
-		return nil, err
-	}
-
-	return def, nil
+	var def *moduleDef
+	err := parallel.Run(ctx, fmt.Sprintf("load(%q)", modRef), func(ctx context.Context) error {
+		if err := parallel.Run(ctx, "transfer files", func(ctx context.Context) error {
+			_, err := modSrc.Sync(ctx)
+			return err
+		}); err != nil {
+			return err
+		}
+		if err := parallel.Run(ctx, "validate", func(ctx context.Context) error {
+			configExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return err
+			}
+			if !configExists {
+				return ErrConfigNotFound
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		if err := parallel.Run(ctx, "initialize", func(ctx context.Context) error {
+			return modSrc.AsModule().Serve(ctx, dagger.ModuleServeOpts{IncludeDependencies: true})
+		}); err != nil {
+			return err
+		}
+		var err error
+		def, err = inspectModule(ctx, dag, modSrc)
+		if err != nil {
+			return err
+		}
+		if err := def.loadTypeDefs(ctx, dag); err != nil {
+			return err
+		}
+		return nil
+	})
+	return def, err
 }
 
-var ErrConfigNotFound = errors.New("dagger.json not found")
+// Note: this string is checked for in integration tests
+var ErrConfigNotFound = errors.New("module not found")
 
 //nolint:unparam
 func initializeClientGeneratorModule(
@@ -98,40 +105,46 @@ func initializeClientGeneratorModule(
 	srcRef string,
 	srcOpts ...dagger.ModuleSourceOpts,
 ) (gdef *clientGeneratorModuleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "load module: "+srcRef)
-
-	var telemetryErr error
-	defer telemetry.EndWithCause(span, &telemetryErr)
-	defer func() {
-		// To not confuse the user, we don't want to show the error if the config
-		// doesn't exist here. It should be handled in an upper function.
-		if !errors.Is(rerr, ErrConfigNotFound) {
-			telemetryErr = rerr
+	var def clientGeneratorModuleDef
+	var actualErr error
+	_ = parallel.Run(ctx, fmt.Sprintf("load(%q)", srcRef), func(ctx context.Context) (telemetryErr error) {
+		defer func() {
+			// To not confuse the user, we don't want to show the error in telemetry
+			// if the config doesn't exist here. It should be handled in an upper function.
+			actualErr = telemetryErr
+			if errors.Is(telemetryErr, ErrConfigNotFound) {
+				telemetryErr = nil
+			}
+		}()
+		modSrc := dag.ModuleSource(srcRef, srcOpts...)
+		// This part duplicates initializeModule()
+		if err := parallel.Run(ctx, "transfer files", func(ctx context.Context) error {
+			_, err := modSrc.Sync(ctx)
+			return err
+		}); err != nil {
+			return err
 		}
-	}()
-
-	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	modSrc := dag.ModuleSource(srcRef, srcOpts...)
-	configExists, err := modSrc.ConfigExists(findCtx)
-	telemetry.EndWithCause(findSpan, &err)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get configured module: %w", err)
-	}
-
-	if !configExists {
-		return nil, ErrConfigNotFound
-	}
-
-	dependencies, err := modSrc.Dependencies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
-	}
-
-	return &clientGeneratorModuleDef{
-		Source:       modSrc,
-		Dependencies: dependencies,
-	}, nil
+		if err := parallel.Run(ctx, "validate", func(ctx context.Context) error {
+			configExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return err
+			}
+			if !configExists {
+				return ErrConfigNotFound
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		dependencies, err := modSrc.Dependencies(ctx)
+		if err != nil {
+			return fmt.Errorf("get module dependencies: %w", err)
+		}
+		def.Source = modSrc
+		def.Dependencies = dependencies
+		return nil
+	})
+	return &def, actualErr
 }
 
 // moduleDef is a representation of a dagger module.

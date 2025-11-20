@@ -6,14 +6,24 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-✔ load module: ./viztest/typescript X.Xs
-├╴✔ finding module configuration X.Xs
-├╴✔ initializing module X.Xs
-├╴✔ inspecting module metadata X.Xs
-╰╴✔ loading type definitions X.Xs
+✔ load("./viztest/typescript") X.Xs
+  ✔ transfer files X.Xs
+    ✔ moduleSource(refString: "./viztest/typescript"): ModuleSource! X.Xs
+      ✔ load SDK: typescript X.Xs
+     
+  ✔ validate X.Xs
+  ╰╴✔ .configExists: Boolean! X.Xs
+    ┃ true
+   
+  ✔ initialize X.Xs
+    ✔ ModuleSource.asModule: Module! X.Xs
+      ✔ load dependencies X.Xs
+      ✔ module SDK: load typedefs object X.Xs
+    ✔ .serve(includeDependencies: true): Void X.Xs
+   
+  ✔ inspecting module metadata X.Xs
+  ✔ loading type definitions X.Xs
  
-✔ parsing command line arguments X.Xs
-
 ✔ typescript: Typescript! X.Xs
 ✘ .pending: Void X.Xs ERROR
 ├╴$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
