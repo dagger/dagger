@@ -22,6 +22,10 @@
       "source": "toolchains/docs-dev"
     },
     {
+      "name": "elixir-sdk",
+      "source": "toolchains/elixir-sdk-dev"
+    },
+    {
       "name": "engine-dev",
       "source": "toolchains/engine-dev"
     },

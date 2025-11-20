@@ -17,7 +17,7 @@ type ElixirSdkDev {
     workspace.directory(sourcePath)
   }
 
-  pub container: Container! {
+  pub devContainer: Container! {
     withBase(source)
   }
 
@@ -31,7 +31,7 @@ type ElixirSdkDev {
 
   """Lint the SDK"""
   pub lint: Void! {
-    container.
+    devContainer.
       withExec(["mix", "credo"]).
       sync
     null
@@ -43,7 +43,7 @@ type ElixirSdkDev {
     let before = directory.
       withDirectory(sourcePath, source)
 
-    let gen = withCodegen(container).
+    let gen = withCodegen(devContainer).
       withMountedFile("/schema.json", introspectionJson).
       withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"]).
       withExec(["mix", "format", "gen/*.ex"]).
@@ -59,7 +59,7 @@ type ElixirSdkDev {
 
   """Run the SDK tests"""
   pub sdkTest: Void! {
-    container.
+    devContainer.
       withExec(["mix", "test"]).
       sync
     null
@@ -67,7 +67,7 @@ type ElixirSdkDev {
 
   """Run dagger_codegen tests"""
   pub codegenTest: Void! {
-    withCodegen(container).
+    withCodegen(devContainer).
       withExec(["mix", "test"]).
       sync
     null
@@ -92,7 +92,7 @@ type ElixirSdkDev {
     dryRun: Boolean
   ): Void! {
     let version = versionFromTag(tag)
-    let ctr = container
+    let ctr = devContainer
 
     # Update version in mix.exs if this is a valid semver
     if (isSemver(version)) {
@@ -122,8 +122,14 @@ type ElixirSdkDev {
 
   """Bump the Elixir SDK's Engine dependency"""
   pub bump(version: String!): Changeset! {
-    # FIXME
-    directory.changes(directory)
+    let versionFilePath = "lib/dagger/core/version.ex"
+    container.
+    from(baseImage).
+    withWorkdir("/app").
+    withDirectory(".", source).
+    withExec(["sed", "-E", "-i", "-e", "s/@dagger_cli_version \"([^\"]+)\"/@dagger_cli_version \"" + version + "\"/g", versionFilePath]).
+    directory(".").
+    changes(source)
   }
 
   """Sync Elixir image to keep both dev and runtime modules consistent"""
@@ -138,7 +144,7 @@ type ElixirSdkDev {
       "elixirImage = \"" + baseImage + "\"\n"
     ).contents
 
-    container.
+    devContainer.
       from("golang:1.23-alpine").
       withNewFile(path, newRuntimeMainGo).
       withExec(["go", "fmt", path]).
@@ -163,8 +169,8 @@ type ElixirSdkDev {
 
   let isSemver(version: String!): Boolean! {
     let binary = go(source: currentModule.source.directory("is-semver")).binary(".")
-    let exitCode = container.
-      from("alpine").
+    let exitCode = devContainer.
+      from("alpine:3").
       withFile("/bin/is-semver", binary).
       withExec(["is-semver", version], expect: ReturnType.ANY).
       exitCode
