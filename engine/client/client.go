@@ -1367,7 +1367,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		ClientStableID:            c.stableClientID,
 		UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 		UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
-		Labels:                    c.labels,
+		Labels:                    c.labels.AsMap(),
 		CloudOrg:                  cloudOrg,
 		DoNotTrack:                analytics.DoNotTrack(),
 		Interactive:               c.Interactive,

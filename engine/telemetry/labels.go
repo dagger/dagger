@@ -23,21 +23,40 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type Labels map[string]string
-
-func NewLabels(labels map[string]string) Labels {
-	if labels == nil {
-		return Labels{}
-	}
-	return Labels(labels)
+type Labels struct {
+	src  map[string]string
+	eg   EnvGetter
+	ghep []byte
 }
 
-var defaultLabels Labels
-var labelsOnce sync.Once
+type EnvGetter interface {
+	Getenv(key string) string
+}
+
+type OSEnvGetter struct{}
+
+func (e OSEnvGetter) Getenv(key string) string {
+	return os.Getenv(key)
+}
+
+func NewLabels(labels map[string]string, eg EnvGetter, ghEventPayload []byte) Labels {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	if eg == nil {
+		eg = OSEnvGetter{}
+	}
+	return Labels{src: labels, eg: eg, ghep: ghEventPayload}
+}
+
+var (
+	defaultLabels Labels
+	labelsOnce    sync.Once
+)
 
 func LoadDefaultLabels(workdir, clientEngineVersion string) Labels {
 	labelsOnce.Do(func() {
-		defaultLabels = Labels{}.
+		defaultLabels = NewLabels(nil, nil, nil).
 			WithCILabels().
 			WithClientLabels(clientEngineVersion).
 			WithVCSLabels(workdir)
@@ -54,10 +73,10 @@ func (labels *Labels) UnmarshalJSON(dt []byte) error {
 
 	current := map[string]string{}
 	if err = json.Unmarshal(dt, &current); err == nil {
-		if *labels == nil {
-			*labels = current
+		if labels.src == nil {
+			labels.src = current
 		} else {
-			maps.Copy(*labels, current)
+			maps.Copy(labels.src, current)
 		}
 		return nil
 	}
@@ -67,11 +86,11 @@ func (labels *Labels) UnmarshalJSON(dt []byte) error {
 		Value string `json:"value"`
 	}{}
 	if err = json.Unmarshal(dt, &legacy); err == nil {
-		if *labels == nil {
-			*labels = Labels{}
+		if labels.src == nil {
+			labels.src = map[string]string{}
 		}
 		for _, label := range legacy {
-			(*labels)[label.Name] = label.Value
+			labels.src[label.Name] = label.Value
 		}
 		return nil
 	}
@@ -79,35 +98,46 @@ func (labels *Labels) UnmarshalJSON(dt []byte) error {
 	return err
 }
 
+func (labels Labels) Get(key string) (string, bool) {
+	v, ok := labels.src[key]
+	return v, ok
+}
+
+// AsMap returns a reference to the internal labels map.
+// It's not intended to be moodified by the caller.
+func (labels Labels) AsMap() map[string]string {
+	return labels.src
+}
+
 func (labels Labels) UserAgent() string {
 	out := []string{}
-	for k, v := range labels {
+	for k, v := range labels.src {
 		out = append(out, fmt.Sprintf("%s:%s", k, v))
 	}
 	return strings.Join(out, ",")
 }
 
 func (labels Labels) WithEngineLabel(engineName string) Labels {
-	labels["dagger.io/engine"] = engineName
+	labels.src["dagger.io/engine"] = engineName
 	return labels
 }
 
 func (labels Labels) WithServerLabels(engineVersion, os, arch string, cacheEnabled bool) Labels {
-	labels["dagger.io/server.os"] = os
-	labels["dagger.io/server.arch"] = arch
-	labels["dagger.io/server.version"] = engineVersion
-	labels["dagger.io/server.cache.enabled"] = strconv.FormatBool(cacheEnabled)
+	labels.src["dagger.io/server.os"] = os
+	labels.src["dagger.io/server.arch"] = arch
+	labels.src["dagger.io/server.version"] = engineVersion
+	labels.src["dagger.io/server.cache.enabled"] = strconv.FormatBool(cacheEnabled)
 	return labels
 }
 
 func (labels Labels) WithClientLabels(engineVersion string) Labels {
-	labels["dagger.io/client.os"] = runtime.GOOS
-	labels["dagger.io/client.arch"] = runtime.GOARCH
-	labels["dagger.io/client.version"] = engineVersion
+	labels.src["dagger.io/client.os"] = runtime.GOOS
+	labels.src["dagger.io/client.arch"] = runtime.GOARCH
+	labels.src["dagger.io/client.version"] = engineVersion
 
 	machineID, err := machineid.ProtectedID("dagger")
 	if err == nil {
-		labels["dagger.io/client.machine_id"] = machineID
+		labels.src["dagger.io/client.machine_id"] = machineID
 	}
 
 	return labels
@@ -148,7 +178,7 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 			return labels
 		}
 
-		labels["dagger.io/git.remote"] = endpoint
+		labels.src["dagger.io/git.remote"] = endpoint
 	}
 
 	head, err := repo.Head()
@@ -180,12 +210,12 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 
 	title, _, _ := strings.Cut(commit.Message, "\n")
 
-	labels["dagger.io/git.ref"] = commit.Hash.String()
-	labels["dagger.io/git.author.name"] = commit.Author.Name
-	labels["dagger.io/git.author.email"] = commit.Author.Email
-	labels["dagger.io/git.committer.name"] = commit.Committer.Name
-	labels["dagger.io/git.committer.email"] = commit.Committer.Email
-	labels["dagger.io/git.title"] = title // first line from commit message
+	labels.src["dagger.io/git.ref"] = commit.Hash.String()
+	labels.src["dagger.io/git.author.name"] = commit.Author.Name
+	labels.src["dagger.io/git.author.email"] = commit.Author.Email
+	labels.src["dagger.io/git.committer.name"] = commit.Committer.Name
+	labels.src["dagger.io/git.committer.email"] = commit.Committer.Email
+	labels.src["dagger.io/git.title"] = title // first line from commit message
 
 	// check if ref is a tag or branch
 	refs, err := repo.References()
@@ -197,10 +227,10 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 	err = refs.ForEach(func(ref *plumbing.Reference) error {
 		if ref.Hash() == commit.Hash {
 			if ref.Name().IsTag() {
-				labels["dagger.io/git.tag"] = ref.Name().Short()
+				labels.src["dagger.io/git.tag"] = ref.Name().Short()
 			}
 			if ref.Name().IsBranch() {
-				labels["dagger.io/git.branch"] = ref.Name().Short()
+				labels.src["dagger.io/git.branch"] = ref.Name().Short()
 			}
 		}
 		return nil
@@ -214,52 +244,55 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 }
 
 func (labels Labels) WithGitHubLabels() Labels {
-	if os.Getenv("GITHUB_ACTIONS") != "true" { //nolint:goconst
+	if labels.eg.Getenv("GITHUB_ACTIONS") != "true" { //nolint:goconst
 		return labels
 	}
 
-	eventType := os.Getenv("GITHUB_EVENT_NAME")
+	eventType := labels.eg.Getenv("GITHUB_EVENT_NAME")
 
-	gitLabels := Labels{}
+	gitLabels := Labels{src: map[string]string{}}
 
-	labels["dagger.io/vcs.event.type"] = eventType
-	labels["dagger.io/vcs.job.name"] = os.Getenv("GITHUB_JOB")
-	labels["dagger.io/vcs.triggerer.login"] = os.Getenv("GITHUB_ACTOR")
-	labels["dagger.io/vcs.workflow.name"] = os.Getenv("GITHUB_WORKFLOW")
+	labels.src["dagger.io/vcs.event.type"] = eventType
+	labels.src["dagger.io/vcs.job.name"] = labels.eg.Getenv("GITHUB_JOB")
+	labels.src["dagger.io/vcs.triggerer.login"] = labels.eg.Getenv("GITHUB_ACTOR")
+	labels.src["dagger.io/vcs.workflow.name"] = labels.eg.Getenv("GITHUB_WORKFLOW")
 
-	eventPath := os.Getenv("GITHUB_EVENT_PATH")
-	if eventPath == "" {
-		return labels
-	}
-
-	payload, err := os.ReadFile(eventPath)
-	if err != nil {
-		slog.Warn("failed to read $GITHUB_EVENT_PATH", "err", err)
-		return labels
+	payload := labels.ghep
+	if payload == nil {
+		eventPath := labels.eg.Getenv("GITHUB_EVENT_PATH")
+		if eventPath == "" {
+			return labels
+		}
+		var err error
+		payload, err = os.ReadFile(eventPath)
+		if err != nil {
+			slog.Warn("failed to read $GITHUB_EVENT_PATH", "err", err)
+			return labels
+		}
 	}
 
 	event, err := github.ParseWebHook(eventType, payload)
 	if err != nil {
-		slog.Warn("failed to parse $GITHUB_EVENT_PATH", "err", err)
+		slog.Warn("failed to parse github payload", "err", err)
 		return labels
 	}
 
 	if event, ok := event.(interface {
 		GetAction() string
 	}); ok && event.GetAction() != "" {
-		labels["github.com/event.action"] = event.GetAction()
+		labels.src["github.com/event.action"] = event.GetAction()
 	}
 
 	if repo, ok := getRepoIsh(event); ok {
-		labels["dagger.io/vcs.repo.full_name"] = repo.GetFullName()
-		labels["dagger.io/vcs.repo.url"] = repo.GetHTMLURL()
+		labels.src["dagger.io/vcs.repo.full_name"] = repo.GetFullName()
+		labels.src["dagger.io/vcs.repo.url"] = repo.GetHTMLURL()
 
 		endpoint, err := parseGitURL(repo.GetCloneURL())
 		if err != nil {
 			slog.Warn("failed to parse git remote URL", "err", err)
 			return labels
 		}
-		gitLabels["dagger.io/git.remote"] = endpoint
+		gitLabels.src["dagger.io/git.remote"] = endpoint
 	}
 
 	// pr-like events
@@ -268,15 +301,15 @@ func (labels Labels) WithGitHubLabels() Labels {
 	}); ok && event.GetPullRequest() != nil {
 		pr := event.GetPullRequest()
 
-		labels["dagger.io/vcs.change.number"] = fmt.Sprintf("%d", pr.GetNumber())
-		labels["dagger.io/vcs.change.title"] = pr.GetTitle()
-		labels["dagger.io/vcs.change.url"] = pr.GetHTMLURL()
-		labels["dagger.io/vcs.change.branch"] = pr.GetHead().GetRef()
-		labels["dagger.io/vcs.change.head_sha"] = pr.GetHead().GetSHA()
-		labels["dagger.io/vcs.change.label"] = pr.GetHead().GetLabel()
+		labels.src["dagger.io/vcs.change.number"] = fmt.Sprintf("%d", pr.GetNumber())
+		labels.src["dagger.io/vcs.change.title"] = pr.GetTitle()
+		labels.src["dagger.io/vcs.change.url"] = pr.GetHTMLURL()
+		labels.src["dagger.io/vcs.change.branch"] = pr.GetHead().GetRef()
+		labels.src["dagger.io/vcs.change.head_sha"] = pr.GetHead().GetSHA()
+		labels.src["dagger.io/vcs.change.label"] = pr.GetHead().GetLabel()
 
-		gitLabels["dagger.io/git.ref"] = pr.GetHead().GetSHA()
-		gitLabels["dagger.io/git.branch"] = pr.GetHead().GetRef() // all prs are branches
+		gitLabels.src["dagger.io/git.ref"] = pr.GetHead().GetSHA()
+		gitLabels.src["dagger.io/git.branch"] = pr.GetHead().GetRef() // all prs are branches
 	}
 
 	// push-like events
@@ -285,84 +318,84 @@ func (labels Labels) WithGitHubLabels() Labels {
 		GetHeadCommit() *github.HeadCommit
 	}); ok {
 		headCommit := event.GetHeadCommit()
-		gitLabels["dagger.io/git.ref"] = headCommit.GetID()
-		gitLabels["dagger.io/git.author.name"] = headCommit.GetAuthor().GetName()
-		gitLabels["dagger.io/git.author.email"] = headCommit.GetAuthor().GetEmail()
-		gitLabels["dagger.io/git.committer.name"] = headCommit.GetCommitter().GetName()
-		gitLabels["dagger.io/git.committer.email"] = headCommit.GetCommitter().GetEmail()
+		gitLabels.src["dagger.io/git.ref"] = headCommit.GetID()
+		gitLabels.src["dagger.io/git.author.name"] = headCommit.GetAuthor().GetName()
+		gitLabels.src["dagger.io/git.author.email"] = headCommit.GetAuthor().GetEmail()
+		gitLabels.src["dagger.io/git.committer.name"] = headCommit.GetCommitter().GetName()
+		gitLabels.src["dagger.io/git.committer.email"] = headCommit.GetCommitter().GetEmail()
 
 		title, _, _ := strings.Cut(headCommit.GetMessage(), "\n")
-		gitLabels["dagger.io/git.title"] = title
+		gitLabels.src["dagger.io/git.title"] = title
 
 		ref := event.GetRef()
 		if branch, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
-			gitLabels["dagger.io/git.branch"] = branch
+			gitLabels.src["dagger.io/git.branch"] = branch
 		} else if tag, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
-			gitLabels["dagger.io/git.tag"] = tag
+			gitLabels.src["dagger.io/git.tag"] = tag
 		}
 	}
 
 	// git labels from GitHub take precedence over local git ones
-	maps.Copy(labels, gitLabels)
+	maps.Copy(labels.src, gitLabels.src)
 
 	return labels
 }
 
 func (labels Labels) WithGitLabLabels() Labels {
-	if os.Getenv("GITLAB_CI") != "true" { //nolint:goconst
+	if labels.eg.Getenv("GITLAB_CI") != "true" { //nolint:goconst
 		return labels
 	}
 
-	branchName := os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME")
+	branchName := labels.eg.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME")
 	if branchName == "" {
 		// for a branch job, CI_MERGE_REQUEST_SOURCE_BRANCH_NAME is empty
-		branchName = os.Getenv("CI_COMMIT_BRANCH")
+		branchName = labels.eg.Getenv("CI_COMMIT_BRANCH")
 	}
 
-	changeTitle := os.Getenv("CI_MERGE_REQUEST_TITLE")
+	changeTitle := labels.eg.Getenv("CI_MERGE_REQUEST_TITLE")
 	if changeTitle == "" {
-		changeTitle = os.Getenv("CI_COMMIT_TITLE")
+		changeTitle = labels.eg.Getenv("CI_COMMIT_TITLE")
 	}
 
-	labels["dagger.io/vcs.repo.url"] = os.Getenv("CI_PROJECT_URL")
-	labels["dagger.io/vcs.repo.full_name"] = os.Getenv("CI_PROJECT_PATH")
-	labels["dagger.io/vcs.change.branch"] = branchName
-	labels["dagger.io/vcs.change.title"] = changeTitle
-	labels["dagger.io/vcs.change.head_sha"] = os.Getenv("CI_COMMIT_SHA")
-	labels["dagger.io/vcs.triggerer.login"] = os.Getenv("GITLAB_USER_LOGIN")
-	labels["dagger.io/vcs.event.type"] = os.Getenv("CI_PIPELINE_SOURCE")
-	labels["dagger.io/vcs.job.name"] = os.Getenv("CI_JOB_NAME")
-	labels["dagger.io/vcs.workflow.name"] = os.Getenv("CI_PIPELINE_NAME")
-	labels["dagger.io/vcs.change.label"] = os.Getenv("CI_MERGE_REQUEST_LABELS")
-	labels["gitlab.com/job.id"] = os.Getenv("CI_JOB_ID")
-	labels["gitlab.com/triggerer.id"] = os.Getenv("GITLAB_USER_ID")
-	labels["gitlab.com/triggerer.email"] = os.Getenv("GITLAB_USER_EMAIL")
-	labels["gitlab.com/triggerer.name"] = os.Getenv("GITLAB_USER_NAME")
+	labels.src["dagger.io/vcs.repo.url"] = labels.eg.Getenv("CI_PROJECT_URL")
+	labels.src["dagger.io/vcs.repo.full_name"] = labels.eg.Getenv("CI_PROJECT_PATH")
+	labels.src["dagger.io/vcs.change.branch"] = branchName
+	labels.src["dagger.io/vcs.change.title"] = changeTitle
+	labels.src["dagger.io/vcs.change.head_sha"] = labels.eg.Getenv("CI_COMMIT_SHA")
+	labels.src["dagger.io/vcs.triggerer.login"] = labels.eg.Getenv("GITLAB_USER_LOGIN")
+	labels.src["dagger.io/vcs.event.type"] = labels.eg.Getenv("CI_PIPELINE_SOURCE")
+	labels.src["dagger.io/vcs.job.name"] = labels.eg.Getenv("CI_JOB_NAME")
+	labels.src["dagger.io/vcs.workflow.name"] = labels.eg.Getenv("CI_PIPELINE_NAME")
+	labels.src["dagger.io/vcs.change.label"] = labels.eg.Getenv("CI_MERGE_REQUEST_LABELS")
+	labels.src["gitlab.com/job.id"] = labels.eg.Getenv("CI_JOB_ID")
+	labels.src["gitlab.com/triggerer.id"] = labels.eg.Getenv("GITLAB_USER_ID")
+	labels.src["gitlab.com/triggerer.email"] = labels.eg.Getenv("GITLAB_USER_EMAIL")
+	labels.src["gitlab.com/triggerer.name"] = labels.eg.Getenv("GITLAB_USER_NAME")
 
-	projectURL := os.Getenv("CI_MERGE_REQUEST_PROJECT_URL")
-	mrIID := os.Getenv("CI_MERGE_REQUEST_IID")
+	projectURL := labels.eg.Getenv("CI_MERGE_REQUEST_PROJECT_URL")
+	mrIID := labels.eg.Getenv("CI_MERGE_REQUEST_IID")
 	if projectURL != "" && mrIID != "" {
-		labels["dagger.io/vcs.change.url"] = fmt.Sprintf("%s/-/merge_requests/%s", projectURL, mrIID)
-		labels["dagger.io/vcs.change.number"] = mrIID
+		labels.src["dagger.io/vcs.change.url"] = fmt.Sprintf("%s/-/merge_requests/%s", projectURL, mrIID)
+		labels.src["dagger.io/vcs.change.number"] = mrIID
 	}
 
 	return labels
 }
 
 func (labels Labels) WithCircleCILabels() Labels {
-	if os.Getenv("CIRCLECI") != "true" { //nolint:goconst
+	if labels.eg.Getenv("CIRCLECI") != "true" { //nolint:goconst
 		return labels
 	}
 
-	labels["dagger.io/vcs.change.branch"] = os.Getenv("CIRCLE_BRANCH")
-	labels["dagger.io/vcs.change.head_sha"] = os.Getenv("CIRCLE_SHA1")
-	labels["dagger.io/vcs.job.name"] = os.Getenv("CIRCLE_JOB")
+	labels.src["dagger.io/vcs.change.branch"] = labels.eg.Getenv("CIRCLE_BRANCH")
+	labels.src["dagger.io/vcs.change.head_sha"] = labels.eg.Getenv("CIRCLE_SHA1")
+	labels.src["dagger.io/vcs.job.name"] = labels.eg.Getenv("CIRCLE_JOB")
 
 	firstEnvLabel := func(label string, envVar []string) {
 		for _, envVar := range envVar {
-			triggererLogin := os.Getenv(envVar)
+			triggererLogin := labels.eg.Getenv(envVar)
 			if triggererLogin != "" {
-				labels[label] = triggererLogin
+				labels.src[label] = triggererLogin
 				return
 			}
 		}
@@ -392,56 +425,56 @@ func (labels Labels) WithCircleCILabels() Labels {
 	}
 	firstEnvLabel("dagger.io/vcs.change.url", vcsChangeURL)
 
-	pipelineRepoURL := os.Getenv("CIRCLE_PIPELINE_REPO_URL")
-	repositoryURL := os.Getenv("CIRCLE_REPOSITORY_URL")
+	pipelineRepoURL := labels.eg.Getenv("CIRCLE_PIPELINE_REPO_URL")
+	repositoryURL := labels.eg.Getenv("CIRCLE_REPOSITORY_URL")
 	if pipelineRepoURL != "" { // gitlab
-		labels["dagger.io/vcs.repo.url"] = pipelineRepoURL
+		labels.src["dagger.io/vcs.repo.url"] = pipelineRepoURL
 	} else if repositoryURL != "" { // github / bitbucket (returns the remote)
 		transformedURL := repositoryURL
 		if strings.Contains(repositoryURL, "@") { // from ssh to https
 			re := regexp.MustCompile(`git@(.*?):(.*?)/(.*)\.git`)
 			transformedURL = re.ReplaceAllString(repositoryURL, "https://$1/$2/$3")
 		}
-		labels["dagger.io/vcs.repo.url"] = transformedURL
+		labels.src["dagger.io/vcs.repo.url"] = transformedURL
 	}
 
 	return labels
 }
 
 func (labels Labels) WithJenkinsLabels() Labels {
-	if len(os.Getenv("JENKINS_HOME")) == 0 {
+	if len(labels.eg.Getenv("JENKINS_HOME")) == 0 {
 		return labels
 	}
 	// in Jenkins, vcs labels take precedence over provider env variables
-	_, ok := labels["dagger.io/git.branch"]
+	_, ok := labels.src["dagger.io/git.branch"]
 
 	if !ok {
-		remoteBranch := os.Getenv("GIT_BRANCH")
+		remoteBranch := labels.eg.Getenv("GIT_BRANCH")
 		if remoteBranch != "" {
 			if _, branch, ok := strings.Cut(remoteBranch, "/"); ok {
-				labels["dagger.io/git.branch"] = branch
+				labels.src["dagger.io/git.branch"] = branch
 			}
 		}
-		labels["dagger.io/git.ref"] = os.Getenv("GIT_COMMIT")
+		labels.src["dagger.io/git.ref"] = labels.eg.Getenv("GIT_COMMIT")
 	}
 	return labels
 }
 
 func (labels Labels) WithHarnessLabels() Labels {
-	if len(os.Getenv("HARNESS_ACCOUNT_ID")) == 0 {
+	if len(labels.eg.Getenv("HARNESS_ACCOUNT_ID")) == 0 {
 		return labels
 	}
 	// in Harness, vcs labels take precedence over provider env variables
-	_, ok := labels["dagger.io/git.branch"]
+	_, ok := labels.src["dagger.io/git.branch"]
 
 	if !ok {
-		remoteBranch := os.Getenv("GIT_BRANCH")
+		remoteBranch := labels.eg.Getenv("GIT_BRANCH")
 		if remoteBranch != "" {
 			if _, branch, ok := strings.Cut(remoteBranch, "/"); ok {
-				labels["dagger.io/git.branch"] = branch
+				labels.src["dagger.io/git.branch"] = branch
 			}
 		}
-		labels["dagger.io/git.ref"] = os.Getenv("GIT_COMMIT")
+		labels.src["dagger.io/git.ref"] = labels.eg.Getenv("GIT_COMMIT")
 	}
 	return labels
 }
@@ -467,53 +500,53 @@ func getRepoIsh(event any) (repoIsh, bool) {
 
 func (labels Labels) WithCILabels() Labels {
 	isCIValue := "false"
-	if isCI() {
+	if labels.isCI() {
 		isCIValue = "true"
 	}
-	labels["dagger.io/ci"] = isCIValue
+	labels.src["dagger.io/ci"] = isCIValue
 
 	vendor := ""
 	switch {
-	case os.Getenv("GITHUB_ACTIONS") == "true": //nolint:goconst
+	case labels.eg.Getenv("GITHUB_ACTIONS") == "true": //nolint:goconst
 		vendor = "GitHub"
-	case os.Getenv("CIRCLECI") == "true": //nolint:goconst
+	case labels.eg.Getenv("CIRCLECI") == "true": //nolint:goconst
 		vendor = "CircleCI"
-	case os.Getenv("GITLAB_CI") == "true": //nolint:goconst
+	case labels.eg.Getenv("GITLAB_CI") == "true": //nolint:goconst
 		vendor = "GitLab"
-	case os.Getenv("JENKINS_HOME") != "":
+	case labels.eg.Getenv("JENKINS_HOME") != "":
 		vendor = "Jenkins"
-	case os.Getenv("HARNESS_ACCOUNT_ID") != "":
+	case labels.eg.Getenv("HARNESS_ACCOUNT_ID") != "":
 		vendor = "Harness"
-	case os.Getenv("BUILDKITE") == "true":
+	case labels.eg.Getenv("BUILDKITE") == "true":
 		vendor = "Buildkite"
-	case os.Getenv("TEAMCITY_VERSION") != "":
+	case labels.eg.Getenv("TEAMCITY_VERSION") != "":
 		vendor = "TeamCity"
-	case os.Getenv("TF_BUILD") != "":
+	case labels.eg.Getenv("TF_BUILD") != "":
 		vendor = "Azure"
 	}
 	if vendor != "" {
-		labels["dagger.io/ci.vendor"] = vendor
+		labels.src["dagger.io/ci.vendor"] = vendor
 	}
 
 	provider := ""
 	switch {
-	case os.Getenv("DEPOT_PROJECT_ID") != "":
+	case labels.eg.Getenv("DEPOT_PROJECT_ID") != "":
 		provider = "Depot"
-	case os.Getenv("NAMESPACE_GITHUB_RUNTIME") != "":
+	case labels.eg.Getenv("NAMESPACE_GITHUB_RUNTIME") != "":
 		provider = "Namespace"
 	}
 	if provider != "" {
-		labels["dagger.io/ci.provider"] = provider
+		labels.src["dagger.io/ci.provider"] = provider
 	}
 
 	return labels
 }
 
-func isCI() bool {
-	return os.Getenv("CI") != "" || // GitHub Actions, Travis CI, CircleCI, Cirrus CI, GitLab CI, AppVeyor, CodeShip, dsari
-		os.Getenv("BUILD_NUMBER") != "" || // Jenkins, TeamCity
-		os.Getenv("RUN_ID") != "" || // TaskCluster, dsari
-		os.Getenv("TF_BUILD") != "" // Azure Pipelines
+func (labels Labels) isCI() bool {
+	return labels.eg.Getenv("CI") != "" || // GitHub Actions, Travis CI, CircleCI, Cirrus CI, GitLab CI, AppVeyor, CodeShip, dsari
+		labels.eg.Getenv("BUILD_NUMBER") != "" || // Jenkins, TeamCity
+		labels.eg.Getenv("RUN_ID") != "" || // TaskCluster, dsari
+		labels.eg.Getenv("TF_BUILD") != "" // Azure Pipelines
 }
 
 func fetchRef(repo *git.Repository, workdir string, remote string, target string) (*object.Commit, error) {
@@ -558,7 +591,7 @@ type LabelFlag struct {
 }
 
 func NewLabelFlag() LabelFlag {
-	return LabelFlag{Labels: Labels{}}
+	return LabelFlag{Labels: Labels{src: map[string]string{}}}
 }
 
 func (flag LabelFlag) Set(s string) error {
@@ -566,10 +599,10 @@ func (flag LabelFlag) Set(s string) error {
 	if !ok {
 		return errors.New("invalid label format (must be name:value)")
 	}
-	if flag.Labels == nil {
-		flag.Labels = Labels{}
+	if flag.Labels.src == nil {
+		flag.Labels.src = map[string]string{}
 	}
-	flag.Labels[name] = val
+	flag.Labels.src[name] = val
 	return nil
 }
 

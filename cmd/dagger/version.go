@@ -26,9 +26,7 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-var (
-	forceVersionCheck bool
-)
+var forceVersionCheck bool
 
 func versionCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -96,7 +94,7 @@ func latestVersion(ctx context.Context) (v string, rerr error) {
 		// The default auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-		remote.WithUserAgent(enginetel.Labels{}.WithCILabels().UserAgent()),
+		remote.WithUserAgent(enginetel.NewLabels(nil, nil, nil).WithCILabels().UserAgent()),
 	)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to resolve image")

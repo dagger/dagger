@@ -388,7 +388,7 @@ func Resource(ctx context.Context) *resource.Resource {
 		semconv.ServiceName("dagger-cli"),
 		semconv.ServiceVersion(engine.Version),
 	}
-	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version) {
+	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version).AsMap() {
 		attrs = append(attrs, attribute.String(k, v))
 	}
 	res, err := resource.New(ctx,
