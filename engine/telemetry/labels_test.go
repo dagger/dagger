@@ -154,7 +154,7 @@ func (m mapEnv) Getenv(key string) string {
 }
 
 func TestLoadGithubPayloadLabels(t *testing.T) {
-	m := mapEnv(map[string]string{"GITHUB_EVENT_NAME": "push", "GITHUB_ACTIONS": "true"})
+	m := mapEnv{"GITHUB_EVENT_NAME": "push", "GITHUB_ACTIONS": "true"}
 
 	l := telemetry.NewLabels(nil, m, []byte(`{"repository": {"full_name": "dagger/dagger"}}`))
 	l = l.WithGitHubLabels()

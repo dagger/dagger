@@ -103,6 +103,8 @@ func (labels Labels) Get(key string) (string, bool) {
 	return v, ok
 }
 
+// AsMap returns a reference to the internal labels map.
+// It's not intended to be moodified by the caller.
 func (labels Labels) AsMap() map[string]string {
 	return labels.src
 }
