@@ -11,7 +11,6 @@ import (
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/cache/contenthash"
 	"github.com/dagger/dagger/internal/buildkit/client"
@@ -21,10 +20,11 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/source"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
+	"github.com/dagger/dagger/internal/fsutil"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/docker/docker/pkg/idtools"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
-	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/time/rate"
 )
 

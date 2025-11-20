@@ -9,11 +9,11 @@ import (
 	"time"
 
 	cni "github.com/containerd/go-cni"
-	"github.com/gofrs/flock"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
+	"github.com/gofrs/flock"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/trace"

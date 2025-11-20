@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"regexp"
 
-	"github.com/docker/cli/cli/connhelper/commandconn"
 	"github.com/dagger/dagger/internal/buildkit/client/connhelper"
+	"github.com/docker/cli/cli/connhelper/commandconn"
 	"github.com/pkg/errors"
 )
 

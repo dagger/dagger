@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/tonistiigi/fsutil"
+	"github.com/dagger/dagger/internal/fsutil"
 	"golang.org/x/sync/errgroup"
 )
 

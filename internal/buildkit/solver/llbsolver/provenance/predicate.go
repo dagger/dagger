@@ -4,11 +4,11 @@ import (
 	"strings"
 
 	"github.com/containerd/platforms"
-	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
-	slsa02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	provenancetypes "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/provenance/types"
 	"github.com/dagger/dagger/internal/buildkit/util/purl"
 	"github.com/dagger/dagger/internal/buildkit/util/urlutil"
+	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
+	slsa02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	"github.com/package-url/packageurl-go"
 )
 

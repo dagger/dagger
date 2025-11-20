@@ -4,7 +4,7 @@ package moby.filesync.v1;
 
 option go_package = "filesync";
 
-import "github.com/tonistiigi/fsutil/types/wire.proto";
+import "internal/fsutil/types/stat.proto";
 
 // FileSync exposes local files from the client to the server.
 service FileSync{

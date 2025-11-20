@@ -3,11 +3,11 @@ package provenance
 import (
 	"sort"
 
-	distreference "github.com/distribution/reference"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	provenancetypes "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/provenance/types"
 	"github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/util/urlutil"
+	distreference "github.com/distribution/reference"
 	digest "github.com/opencontainers/go-digest"
 )
 

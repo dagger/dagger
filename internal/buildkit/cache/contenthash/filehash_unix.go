@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/containerd/continuity/sysx"
-	fstypes "github.com/tonistiigi/fsutil/types"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 
 	"golang.org/x/sys/unix"
 )

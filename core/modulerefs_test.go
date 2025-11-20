@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/engine/vcs"
+	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/stretchr/testify/require"
-	fsutiltypes "github.com/tonistiigi/fsutil/types"
 )
 
 func TestMatchVersion(t *testing.T) {

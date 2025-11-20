@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/opencontainers/go-digest"
-	"github.com/tonistiigi/fsutil/types"
 )
 
 type StatInfo struct {

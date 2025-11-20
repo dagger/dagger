@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
-	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

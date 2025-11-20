@@ -17,7 +17,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	fsutiltypes "github.com/tonistiigi/fsutil/types"
+	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 
 	"github.com/dagger/dagger/engine"
 )

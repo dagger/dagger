@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dagger/dagger/internal/fsutil"
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
-	"github.com/tonistiigi/fsutil/types"
 )
 
 // bufWalkDir is a helper function that matches the style in filter_test.go

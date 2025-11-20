@@ -7,8 +7,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/worker"
+	copy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/pkg/errors"
-	copy "github.com/tonistiigi/fsutil/copy"
 )
 
 func getReadUserFn(_ worker.Worker) func(chopt *pb.ChownOpt, mu, mg snapshot.Mountable) (*copy.User, error) {

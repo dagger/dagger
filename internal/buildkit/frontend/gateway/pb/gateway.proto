@@ -8,7 +8,7 @@ import "internal/buildkit/api/types/worker.proto";
 import "internal/buildkit/solver/pb/ops.proto";
 import "internal/buildkit/sourcepolicy/pb/policy.proto";
 import "internal/buildkit/util/apicaps/pb/caps.proto";
-import "github.com/tonistiigi/fsutil/types/stat.proto";
+import "internal/fsutil/types/stat.proto";
 
 option (gogoproto.sizer_all) = true;
 option (gogoproto.marshaler_all) = true;
