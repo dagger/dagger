@@ -87,6 +87,7 @@ type moduleConfig struct {
 	subPath string
 	modPath string
 	sdk     string
+	debug   bool
 
 	// Location of the SDK library
 	sdkLibOrigin SDKLibOrigin
@@ -128,6 +129,11 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 	cfg.sdk, err = modSource.SDK().Source(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config sdk: %w", err)
+	}
+
+	cfg.debug, err = modSource.SDK().Debug(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config sdk debug: %w", err)
 	}
 
 	// If a first init, there will be no directory, so we ignore the error here.

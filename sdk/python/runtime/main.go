@@ -92,6 +92,9 @@ type PythonSdk struct {
 	// Resulting container after each composing step
 	Container *dagger.Container
 
+	// Whether the module runtime should run in debug mode.
+	Debug bool
+
 	// The original module's name
 	ModName string
 
@@ -176,11 +179,16 @@ func (m *PythonSdk) ModuleRuntime(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	m, err := m.Common(ctx, modSource, introspectionJSON)
+	runtime, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
-	return m.WithInstall().Container, nil
+	runtime = runtime.WithInstall()
+	ctr := runtime.Container
+	if runtime.Debug {
+		ctr = ctr.Terminal()
+	}
+	return ctr, nil
 }
 
 // Container for executing the Python module runtime
@@ -190,10 +198,12 @@ func (m *PythonSdk) ModuleTypesExp(
 	introspectionJSON *dagger.File,
 	outputFilePath string,
 ) (*dagger.Container, error) {
-	ctr, err := m.ModuleRuntime(ctx, modSource, introspectionJSON)
+	runtime, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
+	runtime = runtime.WithInstall()
+	ctr := runtime.Container
 	return ctr.
 			WithEnvVariable("DAGGER_MODULE_FILE", outputFilePath).
 			WithEntrypoint([]string{RuntimeExecutablePath, "--register"}),
@@ -234,6 +244,11 @@ func (m *PythonSdk) Common(
 func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*PythonSdk, error) {
 	m.ModSource = modSource
 	m.ContextDir = modSource.ContextDirectory()
+	debug, err := modSource.SDK().Debug(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("runtime module load: %w", err)
+	}
+	m.Debug = debug
 
 	if err := m.Discovery.Load(ctx, m); err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)
