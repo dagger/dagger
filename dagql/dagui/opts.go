@@ -98,8 +98,7 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		// _still_ not interesting
 		return false
 	}
-	state := span.lastRollUpCategory
-	if state == stateFailed && verbosity > HideErrorsVerbosity {
+	if span.IsFailedOrCausedFailure() && verbosity > HideErrorsVerbosity {
 		// prioritize showing failed things, even if they're internal
 		return true
 	}
@@ -126,11 +125,11 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	if span.Hidden(opts) {
 		return false
 	}
-	if state == statePending {
+	if span.IsPending() {
 		// reveal pending spans so the user can see what's queued to run
 		return true
 	}
-	if state == stateRunning {
+	if span.IsRunningOrEffectsRunning() {
 		return true
 	}
 	// TODO: avoid breaking chains
@@ -149,40 +148,39 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	return true
 }
 
-var shouldSkipAPIs = map[string][]string{
-	"Query": {
-		// for SDKs only
-		"_builtinContainer",
-		"generatedCode",
-		"currentFunctionCall",
-		"currentModule",
-		"typeDef",
-		"sourceMap",
-		"function",
-		// not useful until the CLI accepts ID inputs
-		"cacheVolume",
-		"setSecret",
-		// for tests only
-		"secret",
-		// deprecated
-		"pipeline",
-	},
-	// for SDKs only
-	"TypeDef":  nil,
-	"Function": nil,
-	"Module": {
-		"withDescription",
-		"withObject",
-		"withInterface",
-		"withEnum",
-	},
-}
-
 func ShouldSkipFunction(obj, field string) bool {
 	// TODO: make this configurable in the API but may not be easy to
 	// generalize because an "internal" field may still need to exist in
 	// codegen, for example. Could expose if internal via the TypeDefs though.
-	if fields, ok := shouldSkipAPIs[obj]; ok {
+	skip := map[string][]string{
+		"Query": {
+			// for SDKs only
+			"_builtinContainer",
+			"generatedCode",
+			"currentFunctionCall",
+			"currentModule",
+			"typeDef",
+			"sourceMap",
+			"function",
+			// not useful until the CLI accepts ID inputs
+			"cacheVolume",
+			"setSecret",
+			// for tests only
+			"secret",
+			// deprecated
+			"pipeline",
+		},
+		// for SDKs only
+		"TypeDef":  nil,
+		"Function": nil,
+		"Module": {
+			"withDescription",
+			"withObject",
+			"withInterface",
+			"withEnum",
+		},
+	}
+	if fields, ok := skip[obj]; ok {
 		if fields == nil {
 			// if no sub-fields specified, skip all fields
 			return true
