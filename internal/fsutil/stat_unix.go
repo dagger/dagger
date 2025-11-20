@@ -42,8 +42,8 @@ func setUnixOpt(fi os.FileInfo, stat *types.Stat, path string, seenFiles map[uin
 	if !fi.IsDir() {
 		if s.Mode&syscall.S_IFBLK != 0 ||
 			s.Mode&syscall.S_IFCHR != 0 {
-			stat.Devmajor = int64(major(s.Rdev))
-			stat.Devminor = int64(minor(s.Rdev))
+			stat.Devmajor = int64(major(uint64(s.Rdev))) //nolint:unconvert
+			stat.Devminor = int64(minor(uint64(s.Rdev))) //nolint:unconvert
 		}
 
 		ino := s.Ino
