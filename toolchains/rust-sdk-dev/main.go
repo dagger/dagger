@@ -17,9 +17,9 @@ const (
 	rustSdkImage       = "rust:1.77-bookworm"
 	rustSdkImageDigest = "sha256:83101f6985c93e1e6501b3375de188ee3d2cbb89968bcc91611591f9f447bd42"
 
-	rustVersionFilePath         = "crates/dagger-sdk/src/core/version.rs"
-	rustCargoTomlFilePath       = "Cargo.toml"
-	rustCargoLockFilePath       = "Cargo.lock"
+	rustVersionFilePath         = "sdk/rust/crates/dagger-sdk/src/core/version.rs"
+	rustCargoTomlFilePath       = "sdk/rust/Cargo.toml"
+	rustCargoLockFilePath       = "sdk/rust/Cargo.lock"
 	rustGeneratedClientFilePath = "crates/dagger-sdk/src/gen.rs"
 
 	rustSdkCrate     = "dagger-sdk"
@@ -49,6 +49,7 @@ func New(
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
 		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
 		WithWorkdir("/src").
+		// FIXME: not all functions need a full engine build (eg. bump). Do this lazily as needed
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine().InstallClient(c)
 		})
@@ -298,7 +299,8 @@ func (t *RustSdkDev) Bump(ctx context.Context, version string) (*dagger.Changese
 			"cargo", "set-version", "-p", rustSdkCrate, version,
 		})
 
-	layer := t.Workspace.WithNewFile(rustVersionFilePath, versionBumpedContents).
+	layer := t.Workspace.
+		WithNewFile(rustVersionFilePath, versionBumpedContents).
 		WithFile(rustCargoTomlFilePath, base.File("Cargo.toml")).
 		WithFile(rustCargoLockFilePath, base.File("Cargo.lock"))
 
