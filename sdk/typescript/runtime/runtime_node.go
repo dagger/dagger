@@ -35,10 +35,6 @@ func NewNodeRuntime(
 		WithMountedDirectory("/usr/local/lib/node_modules/tsx", sdkSourceDir.Directory("/tsx_module")).
 		WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"})
 
-	if cfg.debug {
-		ctr = ctr.Terminal()
-	}
-
 	return &NodeRuntime{
 		sdkSourceDir:      sdkSourceDir,
 		introspectionJSON: introspectionJSON,
@@ -98,7 +94,7 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	entrypointPath := filepath.Join(n.cfg.modulePath(), SrcDir, EntrypointExecutableFile)
 
 	// Merge all the generated files together and setup an entrypoint command.
-	return runtimeWithDep.ctr.
+	ctr := runtimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
 		// Make @dagger.io/dagger resolvable for ts-introspector (it doesn't read tsconfig paths).
 		WithMountedDirectory("node_modules/@dagger.io/dagger", sdkLibrary).
@@ -108,7 +104,13 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"tsx", "--no-deprecation", "--tsconfig", n.cfg.tsConfigPath(), entrypointPath,
-		}), nil
+		})
+
+	if n.cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
+	return ctr, nil
 }
 
 func (n *NodeRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error) {

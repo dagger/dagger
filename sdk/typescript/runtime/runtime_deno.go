@@ -32,10 +32,6 @@ func NewDenoRuntime(
 		}).
 		WithWorkdir(cfg.modulePath())
 
-	if cfg.debug {
-		ctr = ctr.Terminal()
-	}
-
 	return &DenoRuntime{
 		sdkSourceDir:      sdkSourceDir,
 		introspectionJSON: introspectionJSON,
@@ -79,7 +75,7 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 
 	entrypointPath := filepath.Join(d.cfg.modulePath(), SrcDir, EntrypointExecutableFile)
 
-	return denoRuntimeWithDep.ctr.
+	ctr := denoRuntimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
 		// Make @dagger.io/dagger resolvable for ts-introspector (it doesn't read tsconfig paths).
 		WithMountedDirectory("node_modules/@dagger.io/dagger", sdkLibrary).
@@ -88,7 +84,13 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"deno", "run", "-q", "-A", entrypointPath,
-		}), nil
+		})
+
+	if d.cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
+	return ctr, nil
 }
 
 // We do not generate a `deno.lock` file because it requires to specify

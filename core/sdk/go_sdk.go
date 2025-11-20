@@ -456,6 +456,12 @@ func (sdk *goSDK) Runtime(
 		return inst, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
 
+	if cfg := source.Self().SDK; cfg != nil && cfg.Debug {
+		if err := dag.Select(ctx, ctr, &ctr, dagql.Selector{Field: "terminal"}); err != nil {
+			return inst, fmt.Errorf("failed to enable go sdk runtime terminal: %w", err)
+		}
+	}
+
 	return ctr, nil
 }
 
@@ -619,12 +625,6 @@ func (sdk *goSDK) baseWithCodegen(
 
 	if err := dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
-	}
-
-	if cfg := src.Self().SDK; cfg != nil && cfg.Debug {
-		if err := dag.Select(ctx, ctr, &ctr, dagql.Selector{Field: "terminal"}); err != nil {
-			return ctr, fmt.Errorf("failed to enable go sdk runtime terminal: %w", err)
-		}
 	}
 
 	return ctr, nil
