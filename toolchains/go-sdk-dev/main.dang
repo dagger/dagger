@@ -11,6 +11,8 @@ type GoSdkDev {
     "!go.sum"
     "!cmd/codegen"
     "!engine/slog"
+    "!engine/distconsts"
+    "!internal/fsutil"
   ])
 
   """
