@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed rare panic during disk usage calculation.
-time: 2025-11-19T19:31:14.797050656-08:00
-custom:
-  Author: sipsma
-  PR: "11450"

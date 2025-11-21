@@ -1,6 +1,6 @@
 {
   "name": "python-sdk-dev",
-  "engineVersion": "v0.19.6",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "python"
   },

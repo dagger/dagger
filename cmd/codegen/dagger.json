@@ -1,6 +1,6 @@
 {
   "name": "codegen",
-  "engineVersion": "v0.19.6",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "github.com/vito/dang/dagger-sdk@0fc10d961e421944c1f3dbff4961dd5b0a59998c"
   },

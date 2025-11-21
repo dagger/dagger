@@ -73,12 +73,12 @@ func (m *DotnetSdkDev) Check(ctx context.Context, introspectionJSON *dagger.File
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "test")
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.EndWithCause(span, &rerr)
 		return m.Test(ctx, introspectionJSON)
 	})
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "lint")
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.EndWithCause(span, &rerr)
 		return m.Lint(ctx)
 	})
 	return eg.Wait()
