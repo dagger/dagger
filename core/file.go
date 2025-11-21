@@ -609,6 +609,21 @@ func (file *File) Mount(ctx context.Context, f func(string) error) error {
 	})
 }
 
+// AsJSON returns the file contents as JSON when possible, otherwise returns an error
+func (file *File) AsJSON(ctx context.Context) (JSON, error) {
+	contents, err := file.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	json := JSON(contents)
+	if err := json.Validate(); err != nil {
+		return nil, err
+	}
+
+	return json, nil
+}
+
 // AsEnvFile converts a File to an EnvFile by parsing its contents
 func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) {
 	contents, err := file.Contents(ctx, nil, nil)

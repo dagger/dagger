@@ -3715,6 +3715,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::asJSON",
+			"p": "Dagger/File.html#method_asJSON",
+			"d": "<p>Parse the file contents as JSON.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::chown",
 			"p": "Dagger/File.html#method_chown",
 			"d": "<p>Change the owner of the file recursively.</p>"

@@ -26,6 +26,15 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Parse the file contents as JSON.
+     */
+    public function asJSON(): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asJSON');
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Change the owner of the file recursively.
      */
     public function chown(string $owner): File

@@ -101,6 +101,8 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
+		dagql.Func("asJSON", s.asJSON).
+			Doc(`Parse the file contents as JSON.`),
 	}.Install(srv)
 }
 
@@ -262,4 +264,12 @@ func (s *fileSchema) chown(
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
+}
+
+func (s *fileSchema) asJSON(ctx context.Context, parent *core.File, args struct{}) (*core.JSONValue, error) {
+	json, err := parent.AsJSON(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &core.JSONValue{Data: []byte(json)}, nil
 }
