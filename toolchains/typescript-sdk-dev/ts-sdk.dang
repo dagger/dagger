@@ -173,9 +173,9 @@ pub nodejsDevContainer(nodeVersion: String! =nodeVersionPrevLts): Container! {
 		from("node:" + nodeVersion + "-alpine").
 		withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion)).
 		withWorkdir("/app").
-		withFile(sourcePath + "/package.json", workspace.file(sourcePath + "/package.json")).
-		withFile(sourcePath + "/yarn.lock", workspace.file(sourcePath + "/yarn.lock")).
-		withFile(sourcePath + "/eslint.config.js", workspace.file(sourcePath + "/eslint.config.js")).
+		withFile(sourcePath + "/package.json", source.file("package.json")).
+		withFile(sourcePath + "/yarn.lock", source.file("yarn.lock")).
+		withFile(sourcePath + "/eslint.config.js", source.file("eslint.config.js")).
 		withExec(["yarn", "--cwd", sourcePath, "install"]).
 		withDirectory(".", workspace)
 }
@@ -193,7 +193,7 @@ pub bunjsDevContainer: Container! {
     from("oven/bun:"+bunVersion+"-alpine").
     withMountedCache("/root/.bun/install/cache", cacheVolume("bun_cache")).
     withWorkdir("/app").
-    withFile(sourcePath + "/package.json", workspace.file(sourcePath + "/package.json")).
+    withFile("package.json", source.file("package.json")).
     withWorkdir(sourcePath).
     withExec(["bun", "install"]).
     withWorkdir("/app").
@@ -201,15 +201,7 @@ pub bunjsDevContainer: Container! {
 }
 
 
-  pub source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
-    "*"
-    "!cmd/codegen"
-    "!go.mod"
-    "!go.sum"
-    "!**/*.go"
-    "!sdk/go"
-    "!**/*.graphql"
-  ])
+
 
   pub binary: File! {
     go(source).binary("./cmd/codegen", noSymbols:true, noDwarf:true)
