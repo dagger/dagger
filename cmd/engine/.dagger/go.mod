@@ -3,7 +3,7 @@ module github.com/dagger/dagger/cmd/engine/.dagger
 go 1.24.4
 
 require (
-	github.com/dagger/dagger/engine/distconsts v0.19.6
+	github.com/dagger/dagger/engine/distconsts v0.19.7
 	github.com/dagger/dagger/sdk/typescript/runtime v0.15.3
 )
 
@@ -37,6 +37,11 @@ require (
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 	golang.org/x/sync v0.17.0
 	google.golang.org/grpc v1.76.0
+)
+
+require (
+	github.com/sourcegraph/conc v0.3.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 )
 
 require (

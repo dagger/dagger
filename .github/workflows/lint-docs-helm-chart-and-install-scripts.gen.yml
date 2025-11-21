@@ -32,5 +32,5 @@ jobs:
                 call: --docker-cfg=file:$HOME/.docker/config.json lint-misc
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.6
+                version: v0.19.7
         timeout-minutes: 20
