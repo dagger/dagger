@@ -30,6 +30,7 @@ import (
 	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
+	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
@@ -404,7 +405,12 @@ func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.C
 		return nil, err
 	}
 	if caller == nil {
-		return nil, fmt.Errorf("session for %q not found", clientMetadata.ClientID)
+		// This error can happen due to per-LLB-vertex deduplication in the buildkit solver,
+		// where for instance the first client cancels and closes its session while others
+		// are waiting on the result. In this case its safe to retry the operation again with
+		// the still connected client metadata.
+		err := flightcontrol.RetryableError{Err: fmt.Errorf("session for %q not found", clientMetadata.ClientID)}
+		return nil, err
 	}
 	return caller, nil
 }
