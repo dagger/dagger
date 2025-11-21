@@ -87,10 +87,10 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 			Path:   dbPath,
 			RawQuery: url.Values{
 				"_pragma": []string{
-					"foreign_keys=ON",    // we don't use em yet, but makes sense anyway
-					"journal_mode=WAL",   // readers don't block writers and vice versa
-					"synchronous=OFF",    // we don't care about durability and don't want to be surprised by syncs
-					"busy_timeout=10000", // wait up to 10s when there are concurrent writers
+					"synchronous=OFF",       // we don't care about durability and don't want to be surprised by syncs
+					"busy_timeout=10000000", // wait up to 10s when there are concurrent writers
+					"journal_mode=WAL",      // readers don't block writers and vice versa
+					"foreign_keys=ON",       // we don't use em yet, but makes sense anyway
 				},
 				"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
 			}.Encode(),

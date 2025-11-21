@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -403,6 +404,12 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 	defer db.Close()
 
 	for _, insert := range inserts {
+		if rand.Intn(2) == 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, 1*time.Millisecond)
+			defer cancel()
+		}
+
 		_, err = db.InsertSpan(ctx, *insert)
 		if err != nil {
 			return fmt.Errorf("insert span: %w", err)
@@ -441,6 +448,12 @@ func (ps clientLogs) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
 	defer db.Close()
+	if rand.Intn(2) == 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 1*time.Millisecond)
+		defer cancel()
+	}
+
 	_, err = db.InsertLog(ctx, *insert)
 	return err
 }
@@ -466,6 +479,12 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	defer db.Close()
 
 	for _, insert := range inserts {
+		if rand.Intn(2) == 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, 1*time.Millisecond)
+			defer cancel()
+		}
+
 		if _, err := db.InsertLog(ctx, *insert); err != nil {
 			slog.Warn("failed to insert log record", "error", err)
 			continue
@@ -571,6 +590,12 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
 	defer db.Close()
+
+	if rand.Intn(2) == 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 1*time.Millisecond)
+		defer cancel()
+	}
 
 	_, err = db.InsertMetric(ctx, metricsPBBytes)
 	if err != nil {
