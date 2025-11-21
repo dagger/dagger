@@ -357,6 +357,15 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	if !ud.IsObject() {
 		return ud.UserDefaultPrimitive.Value()
 	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	mainClient, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("access main client: %w", err)
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, mainClient)
 	// Resolve object from user-supplied "address"
 	srv := dagql.CurrentDagqlServer(ctx)
 	// "Secret" -> "secret", "GitRef" -> "gitRef", etc
