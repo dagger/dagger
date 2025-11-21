@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/dagger/engine/distconsts v0.19.6
+	github.com/dagger/dagger/engine/distconsts v0.19.7
 )
 
 replace (
@@ -32,6 +32,11 @@ require (
 	golang.org/x/mod v0.29.0
 	golang.org/x/sync v0.17.0
 	google.golang.org/grpc v1.76.0
+)
+
+require (
+	github.com/sourcegraph/conc v0.3.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 )
 
 require (
