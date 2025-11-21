@@ -25,6 +25,11 @@ require (
 	google.golang.org/grpc v1.76.0
 )
 
+require (
+	github.com/sourcegraph/conc v0.3.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+)
+
 replace github.com/dagger/dagger => ../..
 
 require (
