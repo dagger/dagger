@@ -495,7 +495,7 @@ func (t *Test) test(
 	// Add ldflags
 	ldflags := []string{
 		"-X", "github.com/dagger/dagger/engine.Version=" + t.Dagger.Version,
-		"-X", "github.com/dagger/dagger/engine.Tag=" + t.Dagger.Tag,
+		"-X", "github.com/dagger/dagger/engine.SDKVersion=" + t.Dagger.SDKVersion,
 	}
 	args = append(args, "-ldflags", strings.Join(ldflags, " "))
 
@@ -618,7 +618,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 	utilDirPath := "/dagger-dev"
 	// FIXME: fold test functions *into* the Go toolchain,
 	// instead of calling *out to* it.
-	goToolchain, err := t.Dagger.Go(ctx, t.Dagger.Source)
+	goToolchain, err := t.Dagger.Go(t.Dagger.Source)
 	if err != nil {
 		return nil, "", err
 	}

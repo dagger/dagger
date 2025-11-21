@@ -20,14 +20,13 @@ var (
 	//   pre-release of the form vX.Y.Z-<timestamp>-dev-<dirhash>
 	Version string
 
-	// Tag holds the tag that the respective engine version is tagged with.
+	// SDKVersion holds the tag or commit sha corresponding to the current engine.
 	//
 	// Note: this is filled at link-time.
 	//
-	// - For official tagged releases, this is simple semver like vX.Y.Z
-	// - For untagged builds, this is a commit sha for the last known commit from main
-	// - For dev builds, this is the last known commit from main (or maybe empty)
-	Tag string
+	// This allows to load non bundled SDKs (like PHP, elixir, Java) with the tag
+	// of the engine or the latest commit from main if this is a dev/untagged engine.
+	SDKVersion string
 
 	// MinimumEngineVersion is used by the client to determine the minimum
 	// allowed engine version that can be used by that client.

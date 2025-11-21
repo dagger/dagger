@@ -49,16 +49,16 @@ func init() {
 }
 
 func defaultRunnerHost() string {
-	tag := engine.Tag
-	if tag == "" {
+	version := engine.Version
+	if version == "" {
 		// can happen during naive dev builds (so just fallback to something
 		// semi-reasonable)
 		return "container://" + distconsts.EngineContainerName
 	}
 	if os.Getenv(GPUSupportEnv) != "" {
-		tag += "-gpu"
+		version += "-gpu"
 	}
-	return fmt.Sprintf("image://%s:%s", engine.EngineImageRepo, tag)
+	return fmt.Sprintf("image://%s:%s", engine.EngineImageRepo, version)
 }
 
 type runClientCallback func(context.Context, *client.Client) error

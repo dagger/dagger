@@ -129,8 +129,8 @@ func pseudoversionTimestamp(t time.Time) string {
 	return t.Format("060102150405")
 }
 
-// Return the tag to use when auto-downloading the engine image from the CLI
-func (v Version) ImageTag(ctx context.Context) (string, error) {
+// Return the tag of the current commit or the commit sha
+func (v Version) TagOrCommit(ctx context.Context) (string, error) {
 	head, err := v.Git.Head(ctx)
 	if err != nil {
 		return "", err

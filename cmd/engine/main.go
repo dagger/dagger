@@ -240,7 +240,7 @@ func addFlags(app *cli.App) {
 }
 
 func main() { //nolint:gocyclo
-	engineVersion := fmt.Sprintf("%s %s %s", engine.Version, engine.Tag, platforms.DefaultString())
+	engineVersion := fmt.Sprintf("%s %s", engine.Version, platforms.DefaultString())
 	cli.VersionPrinter = func(c *cli.Context) {
 		fmt.Println(engineVersion)
 	}
