@@ -2,6 +2,10 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -347,4 +351,80 @@ func (EnvFileSuite) TestSystemVariables(ctx context.Context, t *testctx.T) {
 	// see https://github.com/dagger/dagger/pull/11034#discussion_r2401382370
 	require.Error(t, err)
 	require.NotEqual(t, "live long and prosper", output2, "output should NOT include the system env variable (feature temporarily disabled)")
+}
+
+func (EnvFileSuite) TestSecretFile(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m *Test) Foo(ctx context.Context) (string, error) {
+	return dag.Dep().Bar(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	depDir := filepath.Join(modDir, "dep")
+	require.NoError(t, os.Mkdir(depDir, 0755))
+
+	initDepCmd := hostDaggerCommand(ctx, t, depDir, "init", "--source=.", "--name=dep", "--sdk=go")
+	initDepOutput, err := initDepCmd.CombinedOutput()
+	require.NoError(t, err, string(initDepOutput))
+
+	err = os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
+import (
+	"context"
+	"encoding/base64"
+
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (m *Dep) Bar(
+	ctx context.Context, 
+	// +optional
+	s *dagger.Secret,
+) (string, error) {
+	pt, err := s.Plaintext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString([]byte(pt)), nil
+}
+`), 0644)
+	require.NoError(t, err)
+
+	installCmd := hostDaggerCommand(ctx, t, modDir, "install", depDir)
+	installOutput, err := installCmd.CombinedOutput()
+	require.NoError(t, err, string(installOutput))
+
+	secretFile := filepath.Join(depDir, "topsecret.txt")
+	err = os.WriteFile(secretFile, []byte(`doodoo`), 0644)
+	require.NoError(t, err)
+
+	envFile := filepath.Join(depDir, ".env")
+	err = os.WriteFile(envFile, []byte(`bar_s=file://`+secretFile), 0644)
+	require.NoError(t, err)
+
+	callCmd := hostDaggerCommand(ctx, t, modDir, "call", "-s", "foo")
+	callOutput, err := callCmd.CombinedOutput()
+	require.NoError(t, err, string(callOutput))
+	// the CLI spams "user default: ..." messages despite -s, get the last line only
+	lastLine := callOutput
+	if idx := strings.LastIndex(string(callOutput), "\n"); idx != -1 {
+		lastLine = callOutput[idx+1:]
+	}
+	decodeOutput, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(lastLine)))
+	require.NoError(t, err, string(callOutput))
+	require.Equal(t, "doodoo", string(decodeOutput))
 }
