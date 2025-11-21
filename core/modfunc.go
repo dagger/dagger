@@ -365,14 +365,14 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("access main client: %w", err)
 	}
-	ctx = engine.ContextWithClientMetadata(ctx, mainClient)
+	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
 	// Resolve object from user-supplied "address"
-	srv := dagql.CurrentDagqlServer(ctx)
+	srv := dagql.CurrentDagqlServer(mainCtx)
 	// "Secret" -> "secret", "GitRef" -> "gitRef", etc
 	typename := ud.Arg.TypeDef.ToType().Name()
 	typename = strings.ToLower(typename[0:1]) + typename[1:]
-	var result dagql.AnyResult
-	if err := srv.Select(ctx, srv.Root(), &result,
+	var result dagql.AnyObjectResult
+	if err := srv.Select(mainCtx, srv.Root(), &result,
 		dagql.Selector{
 			Field: "address",
 			Args: []dagql.NamedInput{{
@@ -383,13 +383,28 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		dagql.Selector{
 			Field: strings.ToLower(typename),
 		},
-		dagql.Selector{
-			Field: "id",
-		},
 	); err != nil {
 		return nil, ud.errorf(err, "resolve object (%q)", typename)
 	}
-	return result.Unwrap(), nil
+
+	if secret, ok := dagql.UnwrapAs[dagql.ObjectResult[*Secret]](result); ok {
+		secretStore, err := query.Secrets(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get secret store: %w", err)
+		}
+		if err := secretStore.AddSecret(secret); err != nil {
+			return nil, fmt.Errorf("failed to add secret: %w", err)
+		}
+	}
+
+	id, err := result.Select(mainCtx, srv, dagql.Selector{
+		Field: "id",
+	})
+	if err != nil {
+		return nil, ud.errorf(err, "get object ID")
+	}
+
+	return id.Unwrap(), nil
 }
 
 func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.IDType, error) {
