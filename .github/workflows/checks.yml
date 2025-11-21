@@ -62,5 +62,5 @@ jobs:
           cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
           # Pinned from dagger/dagger#main, to enable checks.
           # Once checks are merged and stable, we can switch back to a stable release
-          commit: 29ac2fae3af7df9c3dd4cb8cf1891eb3e493afaf
+          commit: 0772a9cfc97916c3c8c971966163bfa22bb9585e
     timeout-minutes: 30
