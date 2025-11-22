@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/dagger/dagger/engine"
 	cachedb "github.com/dagger/dagger/engine/cache/db"
@@ -131,26 +131,14 @@ func NewCache[K KeyType, V any](ctx context.Context, dbPath string) (Cache[K, V]
 		Scheme: "file",
 		Path:   dbPath,
 		RawQuery: url.Values{
-			"_pragma": []string{ // ref: https://www.sqlite.org/pragma.html
-				// WAL mode for better concurrency behavior and performance
-				"journal_mode=WAL",
-
-				// wait up to 10s when there are concurrent writers
-				"busy_timeout=10000",
-
-				// for now, it's okay if we lose cache after a catastrophic crash
-				// (it's just a cache afterall), we'll take the better performance
-				"synchronous=OFF",
-
-				// other pragmas to possible worth consideration someday:
-				// cache_size
-				// threads
-				// optimize
-			},
-			"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
+			"_busy_timeout": []string{"10000"},     // 10s
+			"_journal_mode": []string{"WAL"},       // readers don't block writers and vice versa
+			"_synchronous":  []string{"OFF"},       // we don't care about durability
+			"_foreign_keys": []string{"ON"},        // we don't use em yet, but makes sense anyway
+			"_txlock":       []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
 		}.Encode(),
 	}
-	db, err := sql.Open("sqlite", connURL.String())
+	db, err := sql.Open("sqlite3", connURL.String())
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", connURL, err)
 	}

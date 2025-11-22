@@ -150,6 +150,11 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 					"ripgrep",
 					// for dbs
 					"sqlite",
+					// TODO:
+					// TODO:
+					// TODO:
+					"build-base",
+					"musl-utils",
 				},
 				Arch: build.platformSpec.Architecture,
 			}).
@@ -273,27 +278,28 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 }
 
 func (build *Builder) CodegenBinary() *dagger.File {
-	return build.binary("./cmd/codegen", false, false)
+	return build.binary("./cmd/codegen", false, false, false)
 }
 
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binary("./cmd/engine", true, race)
+	return build.binary("./cmd/engine", true, race, true)
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
-	return build.binary("./cmd/dnsname", false, false)
+	return build.binary("./cmd/dnsname", false, false, false)
 }
 
 func (build *Builder) dialstdioBinary() *dagger.File {
-	return build.binary("./cmd/dialstdio", false, false)
+	return build.binary("./cmd/dialstdio", false, false, false)
 }
 
-func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
+func (build *Builder) binary(pkg string, version bool, race bool, enableCgo bool) *dagger.File {
 	return build.Go(version, race).
 		Binary(pkg, dagger.GoBinaryOpts{
 			Platform:  build.platform,
 			NoSymbols: true,
 			NoDwarf:   true,
+			EnableCgo: enableCgo,
 		})
 }
 
@@ -374,7 +380,7 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 }
 
 func (build *Builder) daggerInit() *dagger.File {
-	return build.binary("./cmd/init", false, false)
+	return build.binary("./cmd/init", false, false, false)
 }
 
 func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {

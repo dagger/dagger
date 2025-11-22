@@ -82,20 +82,22 @@ func New(
 	}
 	if base == nil {
 		base = dag.
-			Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: []string{
-				"go~" + version,
-				// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
-				"build-base",
-				// adding the git CLI to inject vcs info into the go binaries
-				"git",
-				// Install protoc for protobug support by default
-				// The specific version is dictated by Dagger's own requirement
-				// FIXME: make this optional with overlay support
-				"protobuf~32", // ADD: brings /usr/bin/protoc and runtime libs
-				"protobuf-dev~32",
-				"ca-certificates",
-			}}).
+			Alpine(dagger.AlpineOpts{
+				Packages: []string{
+					"go~" + version,
+					// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
+					"build-base",
+					// adding the git CLI to inject vcs info into the go binaries
+					"git",
+					// Install protoc for protobug support by default
+					// The specific version is dictated by Dagger's own requirement
+					// FIXME: make this optional with overlay support
+					// "protobuf~32", // ADD: brings /usr/bin/protoc and runtime libs
+					// "protobuf-dev~32",
+					"ca-certificates",
+				},
+			}).
+			Container().
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
 			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
@@ -258,7 +260,12 @@ func (p *Go) Build(
 	// +optional
 	// +default="./bin/"
 	output string,
+	// whether CGo is enabled
+	// +optional
+	// +default=false
+	enableCgo bool,
 ) (*dagger.Directory, error) {
+	p.Cgo = enableCgo
 	if p.Race {
 		p.Cgo = true
 	}
@@ -309,7 +316,13 @@ func (p *Go) Binary(
 	// Target build platform
 	// +optional
 	platform dagger.Platform,
+	// whether CGo is enabled
+	// +optional
+	// +default=false
+	enableCgo bool,
 ) (*dagger.File, error) {
+	p.Cgo = enableCgo
+
 	dir, err := p.Build(
 		ctx,
 		[]string{pkg},
@@ -317,6 +330,7 @@ func (p *Go) Binary(
 		noDwarf,
 		platform,
 		"./bin/",
+		p.Cgo,
 	)
 	if err != nil {
 		return nil, err

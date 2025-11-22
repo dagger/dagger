@@ -100,6 +100,7 @@ require (
 	github.com/mackerelio/go-osstat v0.2.6
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/mattn/go-isatty v0.0.20
+	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/mitchellh/go-spdx v0.1.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.5.0
