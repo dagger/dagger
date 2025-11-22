@@ -23,7 +23,7 @@ type GitignoreMatcher struct {
 	gitignoreCacheMu       sync.RWMutex
 }
 
-// NewGitignoreMatcher creates a new GitignoreMatcher for the given FS
+// NewGitIgnoreMatcher creates a new GitignoreMatcher for the given FS
 func NewGitIgnoreMatcher(fs fsutil.FS) *GitignoreMatcher {
 	gfs := &GitignoreMatcher{
 		fs:                     fs,
