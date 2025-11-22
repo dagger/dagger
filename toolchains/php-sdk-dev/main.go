@@ -26,7 +26,6 @@ type PhpSdkDev struct {
 	Workspace         *dagger.Directory // +private
 	DoctumConfigPath  string            // +private
 	SourcePath        string            // +private
-	BaseContainer     *dagger.Container
 }
 
 // Develop the Dagger PHP SDK (experimental)
@@ -42,14 +41,22 @@ func New(
 	// +default="docs/doctum-config.php"
 	doctumConfigPath string,
 ) *PhpSdkDev {
-	composerBinary := dag.Container().
-		From(phpSDKComposerImage).
-		File("/usr/bin/composer")
+	return &PhpSdkDev{
+		Workspace:         workspace,
+		OriginalWorkspace: workspace,
+		SourcePath:        sourcePath,
+		DoctumConfigPath:  doctumConfigPath,
+	}
+}
 
+func (t PhpSdkDev) BaseContainer() *dagger.Container {
 	// Extract the PHP base container from the native SDK dev module
 	// - We build the base container eagerly, to avoid keeping a reference to DaggerDev
 	// - But we build the full dev container *lazily*, because we may have mutated our workspace with generated files
-	baseContainer := dag.Container().
+	composerBinary := dag.Container().
+		From(phpSDKComposerImage).
+		File("/usr/bin/composer")
+	return dag.Container().
 		From(phpSDKImage+"@"+phpSDKDigest).
 		WithMountedFile("/usr/bin/composer", composerBinary).
 		WithMountedCache(
@@ -63,14 +70,6 @@ func New(
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine().InstallClient(c)
 		})
-
-	return &PhpSdkDev{
-		Workspace:         workspace,
-		OriginalWorkspace: workspace,
-		SourcePath:        sourcePath,
-		DoctumConfigPath:  doctumConfigPath,
-		BaseContainer:     baseContainer,
-	}
 }
 
 // Returns the PHP SDK workspace mounted in a dev container,
@@ -80,7 +79,7 @@ func (t PhpSdkDev) DevContainer(
 	//+default="false"
 	runInstall bool,
 ) *dagger.Container {
-	ctr := t.BaseContainer.
+	ctr := t.BaseContainer().
 		WithMountedDirectory(".", t.Workspace).
 		WithWorkdir(t.SourcePath)
 
