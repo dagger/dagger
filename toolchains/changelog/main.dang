@@ -1,0 +1,45 @@
+pub description = "A module to generate changelog"
+
+type Changelog {
+  let source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "**",
+    "!**/.changes/",
+    "!CHANGELOG.md",
+    "!**/.changie.yaml",
+  ])
+
+  """
+  Generate the changelog with 'changie merge'. Only run this manually, at release time.
+  """
+  pub generate(): Changeset {
+    let changieVersion = "1.21.0"
+    container.
+      from("ghcr.io/miniscruff/changie:v"+changieVersion).
+      withWorkdir("/src").
+      withMountedDirectory(".", source).
+      withExec(["/changie", "merge"]).
+      directory(".").
+      changes(source)
+  }
+
+  """
+  Lookup the change notes file for the given component and version
+  """
+  pub lookupEntry(
+    """
+    The component to look up change notes for
+    Example: "sdk/php"
+    """
+    component: String!,
+    """
+    The version to look up change notes for
+    """
+    version: String!,
+  ): File! {
+    let path = ".changes/"+version+".md"
+    if (component != "") {
+      path = component.trimSuffix("/")+"/"+path
+    }
+    source.file(path)
+  }
+}

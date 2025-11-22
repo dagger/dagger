@@ -88,10 +88,6 @@ runs:
       run: |
         source ${{ runner.temp }}/actions/call/local-envs
         set -x
-        if [[ -f $HOME/.docker/config.json ]]; then
-          dagger --silent --quiet --mod "${{ inputs.module }}" call --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
-        else
-          dagger --silent --quiet --mod "${{ inputs.module }}" call ${{ inputs.function }}
-        fi
+        dagger --silent --quiet --mod "${{ inputs.module }}" call ${{ inputs.function }}
       env:
         DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"

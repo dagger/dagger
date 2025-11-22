@@ -1,3 +1,4 @@
+// A module to develop, build, test Go softwares
 package main
 
 import (
@@ -23,11 +24,6 @@ const (
 func New(
 	// Project source directory
 	// +defaultPath="/"
-	// +ignore[
-	//  "go.mod",
-	//  "go.sum",
-	//  "**/*.go"
-	// ]
 	source *dagger.Directory,
 	// Go version
 	// +optional
@@ -463,8 +459,8 @@ func (p *Go) findParentDirs(ctx context.Context, dir *dagger.Directory, filename
 // Scan the source for go modules, and return their paths
 func (p *Go) Modules(
 	ctx context.Context,
-	include []string,
-	exclude []string,
+	include []string, // +optional
+	exclude []string, // +optional
 ) ([]string, error) {
 	mods, _, err := p.findParentDirs(ctx, p.Source, "go.mod", include, exclude)
 	if err != nil {
@@ -539,7 +535,17 @@ func (p *Go) CheckTidy(
 	if err != nil {
 		return err
 	}
-	jobs := parallel.New()
+	jobs := parallel.New().
+		// On a large repo this can run dozens of parallel golangci-lint jobs,
+		// which can lead to OOM or extreme CPU usage, so we limit parallelism
+		WithLimit(3).
+		// For better display in 'dagger checks': logs from all functions below the job will
+		// be printed below the job.
+		// TODO: remove this when dagger has a sub-checks API
+		WithRollupLogs(true).
+		// For better display in 'dagger checks': we get a cool activity bar in our sub-checks
+		// TODO: remove this when dagger has a sub-checks API
+		WithRollupSpans(true)
 	for _, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			diffTidy, err := p.TidyModule(ctx, mod)
@@ -599,9 +605,17 @@ func (p *Go) Lint(
 	if err != nil {
 		return err
 	}
-	// On a large repo this can run dozens of parallel golangci-lint jobs,
-	// which can lead to OOM or extreme CPU usage, so we limit parallelism
-	jobs := parallel.New().WithLimit(3)
+	jobs := parallel.New().
+		// On a large repo this can run dozens of parallel golangci-lint jobs,
+		// which can lead to OOM or extreme CPU usage, so we limit parallelism
+		WithLimit(3).
+		// For better display in 'dagger checks': logs from all functions below the job will
+		// be printed below the job.
+		// TODO: remove this when dagger has a sub-checks API
+		WithRollupLogs(true).
+		// For better display in 'dagger checks': we get a cool activity bar in our sub-checks
+		// TODO: remove this when dagger has a sub-checks API
+		WithRollupSpans(true)
 	for _, mod := range mods {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			return p.LintModule(ctx, mod)
@@ -619,26 +633,28 @@ func (p *Go) LintModule(ctx context.Context, mod string) error {
 	if err != nil {
 		return err
 	}
-	_, err = dag.Container().
-		From(lintImage).
-		WithMountedCache("/go/pkg/mod", p.ModuleCache).
-		WithMountedCache("/root/.cache/go-build", p.BuildCache).
-		WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
-		WithWorkdir("/src").
-		WithMountedDirectory(".", p.Source).
-		WithWorkdir(mod).
-		WithExec([]string{
-			"golangci-lint", "run",
-			"--path-prefix", mod + "/",
-			"--output.tab.path=stderr",
-			"--output.tab.print-linter-name=true",
-			"--output.tab.colors=false",
-			"--show-stats=false",
-			"--max-issues-per-linter=0",
-			"--max-same-issues=0",
-		}).
-		Sync(ctx)
-	return err
+	return parallel.Run(ctx, "lint", func(ctx context.Context) error {
+		_, err = dag.Container().
+			From(lintImage).
+			WithMountedCache("/go/pkg/mod", p.ModuleCache).
+			WithMountedCache("/root/.cache/go-build", p.BuildCache).
+			WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", p.Source).
+			WithWorkdir(mod).
+			WithExec([]string{
+				"golangci-lint", "run",
+				"--path-prefix", mod + "/",
+				"--output.tab.path=stderr",
+				"--output.tab.print-linter-name=true",
+				"--output.tab.colors=false",
+				"--show-stats=false",
+				"--max-issues-per-linter=0",
+				"--max-same-issues=0",
+			}).
+			Sync(ctx)
+		return err
+	})
 }
 
 func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {

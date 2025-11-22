@@ -60,7 +60,7 @@ type OtherIface interface {
 	Foo(ctx context.Context) (string, error)
 }
 
-func (m *Dep) WithIface(ctx context.Context, iface CustomIface) (*Dep, error) {
+func (m *Dep) WithIface(iface CustomIface) (*Dep, error) {
 	m.IfaceField = iface
 	return m, nil
 }

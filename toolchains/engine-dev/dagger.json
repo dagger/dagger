@@ -1,0 +1,44 @@
+{
+  "name": "engine-dev",
+  "engineVersion": "v0.19.7",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../engine/distconsts/**/*",
+    "../../sdk/typescript/runtime/**/*",
+    "../../go.mod",
+    "../../go.sum",
+    "../../util/parallel"
+  ],
+  "dependencies": [
+    {
+      "name": "alpine",
+      "source": "../../modules/alpine"
+    },
+    {
+      "name": "codegen",
+      "source": "../../cmd/codegen"
+    },
+    {
+      "name": "dagger-cli",
+      "source": "../cli-dev"
+    },
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    },
+    {
+      "name": "version",
+      "source": "../../version"
+    },
+    {
+      "name": "wolfi",
+      "source": "../../modules/wolfi"
+    },
+    {
+      "name": "notify",
+      "source": "notify"
+    }
+  ]
+}

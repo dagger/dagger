@@ -136,7 +136,7 @@ to dagger.
 - [ ] Bump internal versions (sdks + docs + helm chart) to the target version
 
   ```console
-  dagger call -m releaser bump --version="$ENGINE_VERSION"
+  dagger call release bump --version="$ENGINE_VERSION"
   git add docs sdk helm
   git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
   ```
@@ -160,7 +160,7 @@ to dagger.
 - [ ] Generate release notes `.changes/**/v0.12.4.md` for all releases:
 
   ```console
-  export CHANGIE_MAINTAINERS=$(dagger call -m releaser get-maintainers --github-org-name dagger --github-token="cmd://gh auth token" --json)
+  export CHANGIE_MAINTAINERS=$(dagger call release get-maintainers --github-org-name dagger --github-token="cmd://gh auth token" --json)
   find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
   ```
 
@@ -322,7 +322,6 @@ find .github/ -type f -exec sed -i '' -e 's/0-19-1/0-19-2/g' -e 's/0\.19\.1/0\.1
   cd ..
 
   dagger develop --recursive -m .
-  dagger develop --recursive -m ./releaser
 
   # add, commit and push the changes to the branch
   git commit -a -s -m "chore: bump internal tooling to $ENGINE_VERSION"

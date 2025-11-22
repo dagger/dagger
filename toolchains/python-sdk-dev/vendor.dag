@@ -1,0 +1,10 @@
+#!/usr/bin/env dagger -M
+
+## The k3s module is vendored from github.com/kpenfound/dagger-modules
+## All credits to Kyle Penfound
+## Run this script to update the vendored directory
+
+address https://github.com/kpenfound/dagger-modules#main |
+directory |
+filter --include=dockerd |
+export .

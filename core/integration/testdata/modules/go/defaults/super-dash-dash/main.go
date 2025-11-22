@@ -35,7 +35,6 @@ type SuperDashDash struct {
 }
 
 func (m *SuperDashDash) Message(
-	ctx context.Context,
 	// +default="world"
 	name string,
 ) (string, error) {

@@ -1,0 +1,28 @@
+{
+  "name": "python-sdk-dev",
+  "engineVersion": "v0.19.7",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../go.sum",
+    "../../go.mod",
+    "../../util/parallel",
+    "../../util/dockerfileextractor",
+    "../../sdk/python/runtime/Dockerfile"
+  ],
+  "dependencies": [
+    {
+      "name": "dockerd",
+      "source": "dockerd"
+    },
+    {
+      "name": "dagger-engine",
+      "source": "../engine-dev"
+    },
+    {
+      "name": "wolfi",
+      "source": "../../modules/wolfi"
+    }
+  ]
+}

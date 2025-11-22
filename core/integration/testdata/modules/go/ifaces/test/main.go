@@ -174,6 +174,7 @@ func (m *Test) StaticOtherIfaceList(ctx context.Context, ifaceArg CustomIface) (
 	return ifaceArg.StaticOtherIfaceList(ctx)
 }
 
+//nolint:unparam
 func (m *Test) WithOtherIface(ctx context.Context, ifaceArg CustomIface, other OtherIface) CustomIface {
 	return ifaceArg.WithOtherIface(other)
 }
@@ -182,6 +183,7 @@ func (m *Test) DynamicOtherIfaceList(ctx context.Context, ifaceArg CustomIface) 
 	return ifaceArg.DynamicOtherIfaceList(ctx)
 }
 
+//nolint:unparam
 func (m *Test) WithOtherIfaceByIface(ctx context.Context, ifaceArg CustomIface, other OtherIface) CustomIface {
 	return ifaceArg.WithOtherIfaceByIface(other)
 }
@@ -309,6 +311,7 @@ type OtherCustomObj struct {
 	IfaceList []CustomIface
 }
 
+//nolint:unparam
 func (m *Test) ReturnCustomObj(ifaces []CustomIface, otherIfaces []OtherIface) *CustomObj {
 	return &CustomObj{
 		Iface:     ifaces[0],

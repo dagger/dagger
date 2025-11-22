@@ -1,0 +1,10 @@
+#!/usr/bin/env dagger -M
+
+## The gh module is vendored from github.com/sagikazarmark/daggerverse
+## All credits to Mark Sagikazar
+## Run this script to update the vendored directory
+
+address https://github.com/sagikazarmark/daggerverse#main |
+directory |
+filter --include=gh,apko,registry-config |
+export .

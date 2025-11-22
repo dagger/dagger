@@ -1,0 +1,66 @@
+name: Checks
+"on":
+  push:
+    branches:
+      - main
+      - releases/**
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        filter:
+          - "go/**"
+          - "helm/**"
+          - "security/**"
+          - "docs/**"
+          - "installers/**"
+          - "test-split/test-base"
+          - "test-split/test-cgroups"
+          - "test-split/test-call-and-shell"
+          - "test-split/test-cli-engine"
+          - "test-split/test-client-generator"
+          - "test-split/test-container"
+          - "test-split/test-interface"
+          - "test-split/test-llm"
+          - "test-split/test-module-runtimes"
+          - "test-split/test-modules"
+          - "engine-dev/**"
+          - "go-sdk/**"
+          - "python-sdk/**"
+          - "typescript-sdk/**"
+          - "php-sdk/**"
+          - "java-sdk/**"
+          - "dotnet-sdk/**"
+          - "rust-sdk/**"
+          # - "elixir-sdk/**"
+          - "cli/**"
+          - "check-generated"
+          - "ci/**"
+    runs-on:
+      - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+    name: checks
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .env
+        run: mv .env.gha .env
+      - name: exec
+        id: exec
+        uses: dagger/checks@main
+        with:
+          filter: ${{ matrix.filter }}
+          cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+          # Pinned from dagger/dagger#main, to enable checks.
+          # Once checks are merged and stable, we can switch back to a stable release
+          commit: 0772a9cfc97916c3c8c971966163bfa22bb9585e
+    timeout-minutes: 30

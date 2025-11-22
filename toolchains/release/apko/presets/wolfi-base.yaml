@@ -1,0 +1,13 @@
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-base
+
+cmd: /bin/sh -l
+
+archs:
+  - x86_64
+  - aarch64

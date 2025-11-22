@@ -1,0 +1,201 @@
+pub description = "Toolchain to develop the Dagger Java SDK (experimental)"
+
+type JavaSdkDev {
+  """
+  Base image to create a dev container for the Java SDK
+  """
+  let mavenImage = "maven:3.9.9-eclipse-temurin-21-alpine@sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
+
+  """
+  Workspace with all the files needed to develop the SDK.
+  """
+  pub workspace: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "*",
+    "!sdk/java/dagger-codegen-maven-plugin/",
+    "!sdk/java/dagger-java-annotation-processor/",
+    "!sdk/java/dagger-java-sdk/",
+    "!sdk/java/dagger-java-samples/pom.xml",
+    "!sdk/java/runtime/template/",
+    "!sdk/java/LICENSE",
+    "!sdk/java/README.md",
+    "!sdk/java/pom.xml",
+    "sdk/java/**/src/test",
+    "sdk/java/**/target"
+  ])
+
+  """
+  The path of the SDK in the workspace
+  """
+  pub sourcePath: String! = "sdk/java"
+
+  """
+  Workspace path in the dev container
+  """
+  let workspacePath: String! = "/src"
+
+  """
+  Build a container to run the java toolchain
+  """
+  let devContainer: Container! {
+    daggerEngine().
+      installClient(
+        container.
+          from(mavenImage).
+          withDirectory(workspacePath, workspace).
+          withWorkdir(workspacePath+"/"+sourcePath))
+  }
+
+  pub name: String! {
+    "java"
+  }
+
+  pub source: Directory! {
+    workspace.directory(sourcePath)
+  }
+
+  """
+  Test the Java SDK
+  """
+  pub test(): Void @check {
+    devContainer.
+      withExec(["mvn", "clean", "verify", "-Ddaggerengine.version=local"]).
+      sync
+
+    null
+  }
+
+  """
+  Lint the Java SDK
+  """
+  pub lint(): Void @check {
+    devContainer.
+      withExec(["mvn", "fmt:check"]).
+      sync
+
+    null
+  }
+
+  """
+  Format the Java SDK
+  """
+  pub fmt(): Changeset {
+    devContainer.
+        withExec(["mvn", "com.spotify.fmt:fmt-maven-plugin:format"]).
+        directory(workspacePath).
+        changes(devContainer.directory(workspacePath))
+  }
+
+  """
+  Check that releasing works, without actually releasing
+  """
+  pub releaseDryRun(
+    """Git tag to fake-release"""
+    sourceTag: String! = "HEAD",
+  ): Void @check {
+    let version = sourceTag.trimPrefix(sourcePath+"/v")
+    devContainer.
+      withExec(["apk", "add", "--no-cache", "gpg"]).
+      withExec(["mvn", "versions:set", "-DnewVersion="+version]).
+      withExec(["mvn", "clean", "deploy", "-Prelease", "-Dmaven.deploy.skip=true"]).
+      withExec(["find", ".", "-name", "*.jar"]).
+      sync
+
+    null
+  }
+
+  """
+  Publish the Java SDK
+
+  Java release not yet available, call dry run release
+  """
+  pub release(
+    """Source git tag to release"""
+    sourceTag: String!,
+  ): Void {
+    releaseDryRun(sourceTag)
+  }
+
+  """
+  Bump the Java SDK's Engine dependency
+  """
+  pub bump(version: String!): Changeset {
+    let v = version.trimPrefix("v")
+    # TODO: handle snapshot versions
+    # if (!v.match(/^[0-9]+\.[0-9]+\.[0-9]+$/)) {
+    #   v = v + "-SNAPSHOT"
+    # }
+    let bumpCtr = devContainer.
+      withExec([
+        "mvn",
+        "versions:set",
+        "-DgenerateBackupPoms=false",
+        "-DnewVersion="+v,
+      ]).
+      withExec([
+        "mvn",
+        "versions:set-property",
+        "-DgenerateBackupPoms=false",
+        "-Dproperty=daggerengine.version",
+        "-DnewVersion="+v,
+      ]).
+      withWorkdir("runtime/template").
+      withExec([
+        "mvn",
+        "versions:set-property",
+        "-DgenerateBackupPoms=false",
+        "-Dproperty=dagger.module.deps",
+        "-DnewVersion="+v+"-template-module",
+      ])
+
+    let initialState = directory
+    let bumped = directory
+    for (pom in [
+      sourcePath+"/dagger-codegen-maven-plugin/pom.xml",
+      sourcePath+"/dagger-java-annotation-processor/pom.xml",
+      sourcePath+"/dagger-java-sdk/pom.xml",
+      sourcePath+"/dagger-java-samples/pom.xml",
+      sourcePath+"/pom.xml",
+      sourcePath+"/runtime/template/pom.xml",
+    ]) {
+      initialState = initialState.withFile(pom, workspace.file(pom))
+      bumped = bumped.withFile(pom, bumpCtr.file(workspacePath+"/"+pom))
+    }
+
+    bumped.
+      changes(initialState)
+  }
+
+  """
+  Check dependencies in the Java SDK
+  """
+  pub checkDeps(): Void {
+    let changes = bumpDeps().
+      asPatch().
+      contents()
+    if (changes != "") {
+      container.withError("Updates available for Java dependencies:\n\n"+changes).sync()
+    }
+    null
+  }
+
+  """
+  Bump dependencies in the Java SDK
+  """
+  pub bumpDeps(): Changeset! {
+    let ctr = devContainer
+    for (modPath in [
+      sourcePath+"/dagger-codegen-maven-plugin/",
+      sourcePath+"/dagger-java-annotation-processor",
+      sourcePath+"/dagger-java-sdk",
+      sourcePath+"/dagger-java-samples",
+      sourcePath,
+    ]) {
+      ctr = ctr.
+        withWorkdir(workspacePath+"/"+modPath).
+        withExec(["mvn", "versions:update-properties"])
+    }
+    ctr.
+      directory(workspacePath).
+      changes(devContainer.directory(workspacePath))
+  }
+}

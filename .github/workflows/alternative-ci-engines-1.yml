@@ -101,7 +101,10 @@ jobs:
         id: exec
         run: |
           chmod +x /usr/local/bin/dagger
-          dagger call --cloud --docker-cfg=file:$HOME/.docker/config.json check-go-sdk
+          # NOTE: docker credentials are NOT injected,
+          #  because .env.gha only works inside a local checkout.
+          #  FIXME: get it to work with remotely loaded modules also.
+          dagger call --cloud check-go-sdk
         env:
           DAGGER_CLOUD_TOKEN: oidc
           DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
@@ -121,7 +124,10 @@ jobs:
         id: exec
         run: |
           chmod +x /usr/local/bin/dagger
-          dagger call --cloud --docker-cfg=file:$HOME/.docker/config.json check-php-sdk
+          # NOTE: docker credentials are NOT injected,
+          #  because .env.gha only works inside a local checkout.
+          #  FIXME: get it to work with remotely loaded modules also.
+          dagger call --cloud check-go-sdk
         env:
           DAGGER_CLOUD_TOKEN: oidc
           DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
