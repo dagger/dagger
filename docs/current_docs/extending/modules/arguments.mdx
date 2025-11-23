@@ -841,7 +841,11 @@ dagger call github-api --token=op://infra/github/credential
 </TabItem>
 </Tabs>
 
-Vault can be authenticated with either token or AppRole methods. The Vault host can be specified by setting the environment variable `VAULT_ADDR`. For token authentication, set the environment variable `VAULT_TOKEN`. For AppRole authentication, set the environment variables `VAULT_APPROLE_ROLE_ID` and `VAULT_APPROLE_SECRET_ID`. Additional client configuration can be specified by the default environment variables accepted by Vault.
+Vault can be authenticated with either token or AppRole methods.
+The Vault host can be specified by setting the environment variable `VAULT_ADDR`.
+For token authentication, set the environment variable `VAULT_TOKEN`.
+For AppRole authentication, set the environment variables `VAULT_APPROLE_ROLE_ID` and `VAULT_APPROLE_SECRET_ID` (and optionally the variable `VAULT_APPROLE_AUTH_METHOD`, otherwise the default value will be used - `approle`).
+Additional client configuration can be specified by the default environment variables accepted by Vault.
 
 Vault KvV2 secrets are accessed with the scheme `vault://PATH/TO/SECRET.ITEM`. If your KvV2 is not mounted at `/secret`, specify the mount location with the environment variable `VAULT_PATH_PREFIX`. Here is an example:
 
