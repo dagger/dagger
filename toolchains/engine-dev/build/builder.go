@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/containerd/platforms"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -29,7 +28,6 @@ type Builder struct {
 	platform     dagger.Platform
 	platformSpec ocispecs.Platform
 
-	base       string
 	gpuSupport bool
 
 	race bool
@@ -77,24 +75,6 @@ func (build *Builder) WithPlatform(p dagger.Platform) *Builder {
 	return &b
 }
 
-func (build *Builder) WithUbuntuBase() *Builder {
-	b := *build
-	b.base = "ubuntu"
-	return &b
-}
-
-func (build *Builder) WithAlpineBase() *Builder {
-	b := *build
-	b.base = "alpine"
-	return &b
-}
-
-func (build *Builder) WithWolfiBase() *Builder {
-	b := *build
-	b.base = "wolfi"
-	return &b
-}
-
 func (build *Builder) WithGPUSupport() *Builder {
 	b := *build
 	b.gpuSupport = true
@@ -123,102 +103,29 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		default:
 			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", build.platformSpec.Architecture)
 		}
-
-		switch build.base {
-		case "ubuntu":
-		case "wolfi":
-		default:
-			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
-		}
 	}
 
-	var base *dagger.Container
-	switch build.base {
-	case "alpine", "":
-		base = dag.
-			Alpine(dagger.AlpineOpts{
-				Branch: consts.AlpineVersion,
-				Packages: []string{
-					"ca-certificates",
-					// for Buildkit
-					"git", "openssh-client", "pigz", "xz",
-					// for CNI
-					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
-					// for Kata Containers integration
-					"e2fsprogs",
-					// for Directory.search
-					"ripgrep",
-					// for dbs
-					"sqlite",
-				},
-				Arch: build.platformSpec.Architecture,
-			}).
-			Container().
-			WithExec([]string{"sh", "-c", strings.Join([]string{
-				"mkdir -p /usr/local/sbin",
-				"ln -s /usr/sbin/iptables-legacy /usr/local/sbin/iptables",
-				"ln -s /usr/sbin/iptables-legacy-save /usr/local/sbin/iptables-save",
-				"ln -s /usr/sbin/iptables-legacy-restore /usr/local/sbin/iptables-restore",
-				"ln -s /usr/sbin/ip6tables-legacy /usr/local/sbin/ip6tables",
-				"ln -s /usr/sbin/ip6tables-legacy-save /usr/local/sbin/ip6tables-save",
-				"ln -s /usr/sbin/ip6tables-legacy-restore /usr/local/sbin/ip6tables-restore",
-			}, " && ")})
-	case "ubuntu":
-		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
-			From("ubuntu:"+consts.UbuntuVersion).
-			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
-			WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
-			WithExec([]string{"apt-get", "update"}).
-			WithExec([]string{
-				"apt-get", "install", "-y",
-				"iptables", "git", "dnsmasq-base", "network-manager",
-				"gpg", "curl",
-				"e2fsprogs",
-				// for Directory.search
-				"ripgrep",
-				// for dbs
-				"sqlite",
-			}).
-			WithExec([]string{
-				"update-alternatives",
-				"--set", "iptables", "/usr/sbin/iptables-legacy",
-			}).
-			WithExec([]string{
-				"update-alternatives",
-				"--set", "ip6tables", "/usr/sbin/ip6tables-legacy",
-			}).
-			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
-		if build.gpuSupport {
-			base = base.
-				WithExec([]string{"sh", "-c", `curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`}).
-				WithExec([]string{"sh", "-c", `curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`}).
-				WithExec([]string{"sh", "-c", `apt-get update && apt-get install -y nvidia-container-toolkit`})
-		}
-	case "wolfi":
-		pkgs := []string{
-			// for Buildkit
-			"git", "openssh-client", "pigz", "xz",
-			// for CNI
-			"iptables", "ip6tables", "dnsmasq",
-			// for Kata Containers integration
-			"e2fsprogs",
-			// for Directory.search
-			"ripgrep",
-			// for dbs
-			"sqlite",
-		}
-		if build.gpuSupport {
-			pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")
-		}
-		base = dag.
-			Wolfi().
-			Container(dagger.WolfiContainerOpts{
-				Packages: pkgs,
-				Arch:     build.platformSpec.Architecture,
-			})
-	default:
-		return nil, fmt.Errorf("unsupported engine base %q", build.base)
+	pkgs := []string{
+		// for Buildkit
+		"git", "openssh-client", "pigz", "xz",
+		// for CNI
+		"iptables", "ip6tables", "dnsmasq",
+		// for Kata Containers integration
+		"e2fsprogs",
+		// for Directory.search
+		"ripgrep",
+		// for dbs
+		"sqlite",
 	}
+	if build.gpuSupport {
+		pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")
+	}
+	base := dag.
+		Wolfi().
+		Container(dagger.WolfiContainerOpts{
+			Packages: pkgs,
+			Arch:     build.platformSpec.Architecture,
+		})
 
 	if build.version != "" {
 		base = base.WithAnnotation(distconsts.OCIVersionAnnotation, build.version)
