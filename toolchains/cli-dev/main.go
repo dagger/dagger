@@ -114,8 +114,6 @@ func (cli CliDev) Reference(
 // TODO: remove this
 func (cli *CliDev) DevBinaries(
 	// +optional
-	// runnerHost string,
-	// +optional
 	platform dagger.Platform,
 ) *dagger.Directory {
 	p := platforms.MustParse(string(platform))

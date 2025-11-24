@@ -10,8 +10,8 @@ CONTAINER=${_EXPERIMENTAL_DAGGER_DEV_CONTAINER:-dagger-engine.dev}
 VOLUME=$CONTAINER
 IMAGE=${_EXPERIMENTAL_DAGGER_DEV_IMAGE:-localhost/dagger-engine.dev}
 
-cli |\
-    dev-binaries --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" --platform=current |\
+cli --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" |\
+    dev-binaries --platform=current |\
     export ./bin &
 cli_pid=$!
 
