@@ -25,7 +25,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	// +optional
 	check bool,
 ) (*dagger.Changeset, error) {
-	var genDocs, genEngine, genChangelog, genGHA, genSDKs *dagger.Changeset
+	var genDocs, genEngine, genChangelog, genSDKs *dagger.Changeset
 	maybeCheck := func(ctx context.Context, changes *dagger.Changeset) error {
 		if !check {
 			return nil
@@ -77,7 +77,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	err = parallel.Run(ctx, "merge all changesets", func(ctx context.Context) error {
 		var err error
 		var gen []*dagger.Changeset
-		gen = append(gen, genDocs, genEngine, genChangelog, genGHA, genSDKs)
+		gen = append(gen, genDocs, genEngine, genChangelog, genSDKs)
 		result, err = changesetMerge(gen...).Sync(ctx)
 		return err
 	})
