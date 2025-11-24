@@ -89,7 +89,7 @@ type GoSdkDev {
     """Target git remote to release to"""
     destRemote: String! = "https://github.com/dagger/dagger-go-sdk.git",
     githubToken: Secret,
-    callback: File! @defaultPath(path:"./go-git-filter-callback.py"),
+    callback: File! @defaultPath(path:"./git-filter-callback.py"),
   ): Void {
     let version = sourceTag.trimPrefix(sourcePath)
     gitReleaser().release(
