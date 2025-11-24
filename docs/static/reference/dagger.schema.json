@@ -22,7 +22,7 @@
           "type": "array",
           "description": "The function chain to apply this argument to. Empty or nil for constructor."
         },
-        "name": {
+        "argument": {
           "type": "string",
           "description": "The name of the argument to override."
         },
@@ -45,7 +45,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "name"
+        "argument"
       ],
       "description": "ModuleConfigArgument represents an argument override for a toolchain function"
     },
@@ -81,12 +81,12 @@
           "type": "string",
           "description": "The pinned version of the module dependency."
         },
-        "arguments": {
+        "customization": {
           "items": {
             "$ref": "#/$defs/ModuleConfigArgument"
           },
           "type": "array",
-          "description": "Arguments configuration for toolchains that override function argument pragmas."
+          "description": "Customization configuration for toolchains that override function argument pragmas."
         }
       },
       "additionalProperties": false,
