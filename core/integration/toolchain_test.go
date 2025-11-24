@@ -179,7 +179,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
     {
       "name": "hello",
       "source": "../hello",
-      "customization": [
+      "customizations": [
         {
           "function": ["configurableMessage"],
           "argument": "message",
@@ -210,7 +210,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
     {
       "name": "hello",
       "source": "../hello-with-constructor",
-      "customization": [
+      "customizations": [
         {
           "argument": "config",
           "defaultPath": "./custom-config.txt"
@@ -241,7 +241,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
     {
       "name": "hello",
       "source": "../hello",
-      "customization": [
+      "customizations": [
         {
           "function": ["greet", "planet"],
           "argument": "planet",

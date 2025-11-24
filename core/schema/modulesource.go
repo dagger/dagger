@@ -2003,7 +2003,7 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 
 	// Load the config for all toolchains to populate ConfigToolchains
 	// We need to convert each toolchain into a config entry by loading it as a dependency
-	// Also preserve any existing Customization configuration
+	// Also preserve any existing Customizations configuration
 	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
 	for i, toolchain := range finalToolchains {
 		// Load as a dependency to get the proper config format
@@ -2026,7 +2026,7 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 			// Preserve Customization from the original ConfigToolchains if they exist
 			for _, origToolchain := range parentSrc.ConfigToolchains {
 				if origToolchain.Name == configToolchains[i].Name {
-					configToolchains[i].Customization = origToolchain.Customization
+					configToolchains[i].Customizations = origToolchain.Customizations
 					break
 				}
 			}
@@ -2915,8 +2915,8 @@ func (s *moduleSourceSchema) createBaseModule(
 
 	// Load toolchain argument configurations from the original source
 	for _, tcCfg := range tcCtx.originalSrc.Self().ConfigToolchains {
-		if len(tcCfg.Customization) > 0 {
-			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Customization
+		if len(tcCfg.Customizations) > 0 {
+			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Customizations
 		}
 	}
 
@@ -3577,9 +3577,9 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		// Apply argument configurations from the parent module's toolchain config
 		// Find matching config by toolchain name
 		for _, tcCfg := range src.Self().ConfigToolchains {
-			if tcCfg.Name == clone.OriginalName && len(tcCfg.Customization) > 0 {
+			if tcCfg.Name == clone.OriginalName && len(tcCfg.Customizations) > 0 {
 				// Apply configurations to the toolchain module's functions, including chained functions
-				applyArgumentConfigsToModule(clone, tcCfg.Customization)
+				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
 				break
 			}
 		}

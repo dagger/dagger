@@ -81,12 +81,12 @@
           "type": "string",
           "description": "The pinned version of the module dependency."
         },
-        "customization": {
+        "customizations": {
           "items": {
             "$ref": "#/$defs/ModuleConfigArgument"
           },
           "type": "array",
-          "description": "Customization configuration for toolchains that override function argument pragmas."
+          "description": "Customizations configuration for toolchains that override function argument pragmas."
         }
       },
       "additionalProperties": false,
