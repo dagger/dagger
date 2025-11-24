@@ -173,7 +173,7 @@ func (c *Check) ResultEmoji() string {
 }
 
 func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
-	headers := []string{"check", "description", "success", "message"}
+	headers := []string{"check", "description", "success"}
 	rows := [][]string{}
 	for _, check := range r.Checks {
 		rows = append(rows, []string{
