@@ -6,8 +6,8 @@
   },
   "dependencies": [
     {
-      "name": "dagger-dev",
-      "source": "../.."
+      "name": "engine-dev",
+      "source": "../../toolchains/engine-dev"
     },
     {
       "name": "doug",

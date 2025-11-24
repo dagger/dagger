@@ -1,0 +1,22 @@
+{
+    "distSpecVersion": "1.0.1",
+    "storage": {
+        "rootDirectory": "/tmp/zot"
+    },
+    "http": {
+        "address": "0.0.0.0",
+        "port": "8080",
+        "tls": {
+            "cert": "/etc/zot/tls/zot.pem",
+            "key": "/etc/zot/tls/zot-key.pem"
+        },
+        "auth": {
+            "htpasswd": {
+                "path": "/etc/zot/htpasswd"
+            }
+        }
+    },
+    "log": {
+        "level": "debug"
+    }
+}

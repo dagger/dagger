@@ -1,11 +1,8 @@
 package main
 
-import "context"
-
 type Foobar struct{}
 
 func (m *Foobar) Exclaim(
-	ctx context.Context,
 	message string,
 	// +default=1
 	count int,

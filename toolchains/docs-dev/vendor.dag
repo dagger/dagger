@@ -1,0 +1,7 @@
+#!/usr/bin/env dagger -M
+
+## The docusaurus module is vendored from github.com/levlaz/daggerverse
+## All credits to Lev Lazinskiy
+## Run this script to update the vendored directory
+
+address https://github.com/levlaz/daggerverse#main:docusaurus | directory | export ./docusaurus

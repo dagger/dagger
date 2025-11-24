@@ -19,7 +19,7 @@ func main() {
 	if err != nil {
 		fmt.Println(fmt.Errorf("failed to get module name: %w", err))
 
-		os.Exit(2)
+		os.Exit(2) //nolint:gocritic
 	}
 
 	formattedName := strings.ToUpper(string(name[0])) + name[1:]
@@ -29,7 +29,6 @@ func main() {
 
 		os.Exit(2)
 	}
-
 }
 
 func dispatch(ctx context.Context, modName string) error {

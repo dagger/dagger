@@ -1,0 +1,36 @@
+# This file USED TO BE generated, but we deprecated the generator. Now it is manually edited again.
+name: daggerverse-preview
+"on":
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+    paths:
+      - .changes/v*.md
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+jobs:
+  deploy:
+    runs-on:
+      - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
+      - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.6' || 'ubuntu-24.04' }}
+    name: deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: exec
+        id: exec
+        uses: dagger/dagger-for-github@v8.2.0
+        with:
+          call: --github-token=env:RELEASE_DAGGER_CI_TOKEN deploy-preview-with-dagger-main --target ${{ github.event.number }} --github-assignee $GITHUB_ACTOR
+          cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+          module: modules/daggerverse
+          version: v0.19.6
+        env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+    timeout-minutes: 20

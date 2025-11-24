@@ -1,0 +1,21 @@
+{
+  "name": "go-sdk-dev",
+  "engineVersion": "v0.19.7",
+  "sdk": {
+    "source": "github.com/vito/dang/dagger-sdk@266e75bc46ac1ad596517645f4b7e1355a69b731"
+  },
+  "dependencies": [
+    {
+      "name": "engine-dev",
+      "source": "../engine-dev"
+    },
+    {
+      "name": "git-releaser",
+      "source": "../../modules/git-releaser"
+    },
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    }
+  ]
+}

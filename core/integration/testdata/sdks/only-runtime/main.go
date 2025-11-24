@@ -19,9 +19,9 @@ func New(
 }
 
 func (m *OnlyRuntime) ModuleRuntime(
-	ctx context.Context,
-	modSource *dagger.ModuleSource,
-	introspectionJSON *dagger.File,
+	ctx context.Context, //nolint:unparam
+	modSource *dagger.ModuleSource, //nolint:unparam
+	introspectionJSON *dagger.File, //nolint:unparam
 ) (*dagger.Container, error) {
 	return dag.Container().
 		From("golang:1.25.3-alpine").

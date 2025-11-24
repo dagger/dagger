@@ -1,0 +1,59 @@
+type TestSplit {
+		let testSpecific(run: [String!]!): Void {
+				engineDev().test(race: true, run: run.join("|"))
+		}
+
+		let testSkip(skip: [String!]!): Void {
+				engineDev().test(race: true, skip: skip.join("|"))
+		}
+
+		"""Test Base"""
+		pub testBase(): Void @check {
+				testSkip(["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD"])
+		}
+
+		"""Test Cgroups"""
+		pub testCgroups(): Void @check {
+				testSpecific(["TestProvision", "TestTelemetry"])
+		}
+
+		"""Test Call and Shell"""
+		pub testCallAndShell(): Void @check {
+				testSpecific(["TestCall", "TestShell", "TestDaggerCMD"])
+		}
+
+		"""Test CLI Engine"""
+		pub testCliEngine(): Void @check {
+				testSpecific(["TestCLI", "TestEngine"])
+		}
+
+		"""Test Client Generator"""
+		pub testClientGenerator(): Void @check {
+				testSpecific(["TestClientGenerator"])
+		}
+
+		"""Test Container"""
+		pub testContainer(): Void @check {
+				testSpecific(["TestContainer", "TestDockerfile"])
+		}
+
+		"""Test Interface"""
+		pub testInterface(): Void @check {
+				testSpecific(["TestInterface"])
+		}
+
+		"""Test LLM"""
+		pub testLlm(): Void @check {
+				testSpecific(["TestLLM"])
+		}
+
+		"""Test Module Runtimes"""
+		pub testModuleRuntimes(): Void @check {
+				testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
+		}
+
+		"""Test Modules"""
+		pub testModules(): Void @check {
+				testSpecific(["TestModule"])
+		}
+}

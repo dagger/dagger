@@ -1,0 +1,11 @@
+contents:
+  repositories:
+    - https://dl-cdn.alpinelinux.org/alpine/edge/main
+  packages:
+    - alpine-base
+
+cmd: /bin/sh -l
+
+archs:
+  - x86_64
+  - aarch64

@@ -1,0 +1,25 @@
+{
+  "name": "docs-dev",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dagger-cli",
+      "source": "../cli-dev"
+    },
+    {
+      "name": "docusaurus",
+      "source": "docusaurus"
+    },
+    {
+      "name": "engine-dev",
+      "source": "../engine-dev"
+    },
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    }
+  ]
+}

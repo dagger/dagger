@@ -1,0 +1,25 @@
+pub description = "\"CI in CI\": check that Dagger can still run its own CI"
+
+type CI {
+  """
+  Build dagger from source, and check that it can bootstrap its own CI
+
+  Note: this doesn't actually call all CI checks: only a small subset,
+  selected for maximum coverage of Dagger features with limited compute expenditure.
+  The actual checks being performed is an implementation detail, and should NOT be relied on.
+  In other words, don't skip running <foo> just because it happens to be run here!
+  """
+  pub bootstrap(
+				"""The Dagger repository to run CI against"""
+				repo: GitRepository! @defaultPath(path: "/"),
+		): Void @check {
+				let source = repo.head().tree().withChanges(repo.uncommitted())
+				engineDev().
+						playground().
+						withMountedDirectory("./dagger", source).
+						withWorkdir("./dagger").
+						withExec(["dagger", "checks", "**:*lint*"]).
+						sync()
+				null
+		}
+}
