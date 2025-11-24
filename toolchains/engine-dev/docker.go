@@ -25,14 +25,11 @@ func (dev *EngineDev) LoadToDocker(
 	// +optional
 	platform dagger.Platform,
 
-	// Set target distro
-	// +default="alpine"
-	image Distro,
 	// Enable experimental GPU support
 	// +optional
 	gpuSupport bool,
 ) (*LoadedEngine, error) {
-	ctr, err := dev.Container(ctx, platform, image, gpuSupport, "", "")
+	ctr, err := dev.Container(ctx, platform, gpuSupport, "", "")
 	if err != nil {
 		return nil, err
 	}

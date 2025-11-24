@@ -202,8 +202,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 
 		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
-				// go right to /etc/ssl/certs to avoid testing the custom CA cert support (covered elsewhere)
-				WithMountedFile("/etc/ssl/certs/myCA.pem", certGen.caRootCert).
+				WithMountedFile("/usr/local/share/ca-certificates/myCA.pem", certGen.caRootCert).
 				WithExec([]string{"update-ca-certificates"}).
 				WithEnvVariable("HTTP_PROXY", squidHTTPURL.String()).
 				WithEnvVariable("HTTPS_PROXY", squidHTTPSURL.String()).
