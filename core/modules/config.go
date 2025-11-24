@@ -204,8 +204,8 @@ type ModuleConfigDependency struct {
 	// The pinned version of the module dependency.
 	Pin string `json:"pin,omitempty"`
 
-	// Arguments configuration for toolchains that override function argument pragmas.
-	Arguments []*ModuleConfigArgument `json:"arguments,omitempty"`
+	// Customization configuration for toolchains that override function argument pragmas.
+	Customization []*ModuleConfigArgument `json:"customization,omitempty"`
 }
 
 // ModuleConfigArgument represents an argument override for a toolchain function
@@ -214,7 +214,7 @@ type ModuleConfigArgument struct {
 	Function []string `json:"function,omitempty"`
 
 	// The name of the argument to override.
-	Name string `json:"name"`
+	Argument string `json:"argument"`
 
 	// The default value to use for this argument.
 	Default string `json:"default,omitempty"`
