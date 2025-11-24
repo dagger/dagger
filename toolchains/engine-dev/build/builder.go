@@ -106,8 +106,11 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	}
 
 	pkgs := []string{
-		// for Buildkit
-		"git", "openssh-client", "pigz", "xz",
+		"ca-certificates",
+		// for git
+		"git", "openssh-client",
+		// for decompression
+		"pigz", "xz",
 		// for CNI
 		"iptables", "ip6tables", "dnsmasq",
 		// for Kata Containers integration
