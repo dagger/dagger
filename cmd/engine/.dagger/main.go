@@ -68,8 +68,6 @@ func (e *DaggerEngine) Container(
 	gpuSupport bool,
 	// +optional
 	version string,
-	// +optional
-	tag string,
 ) (*dagger.Container, error) {
 	cfg, err := generateConfig(e.LogLevel)
 	if err != nil {
@@ -84,7 +82,7 @@ func (e *DaggerEngine) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, e.Source, version, tag)
+	builder, err := build.NewBuilder(ctx, e.Source, version)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +159,7 @@ func (e *DaggerEngine) Service(
 		}
 	}
 
-	devEngine, err := e.Container(ctx, "", image, gpuSupport, "", "")
+	devEngine, err := e.Container(ctx, "", image, gpuSupport, "")
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +316,7 @@ func (e *DaggerEngine) buildTargets(ctx context.Context, tags []string) ([]targe
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := e.Container(ctx, platform, target.Image, target.GPUSupport, "", "")
+					ctr, err := e.Container(ctx, platform, target.Image, target.GPUSupport, "")
 					if err != nil {
 						return err
 					}
