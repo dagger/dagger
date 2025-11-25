@@ -312,6 +312,7 @@ func (p *Go) Env(
 			}
 			return c.
 				WithEnvVariable("PKG_CONFIG_SYSROOT_DIR", "/sysroot").
+				WithEnvVariable("PKG_CONFIG_PATH", "/sysroot/usr/lib/pkgconfig:/sysroot/usr/share/pkgconfig").
 				WithMountedDirectory("/sysroot", p.Sysroot)
 		}).
 		WithMountedDirectory("", p.Source)

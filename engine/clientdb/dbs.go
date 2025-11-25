@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/slog"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/moby/locker"
-	_ "modernc.org/sqlite"
 )
 
 type DBs struct {
@@ -86,16 +86,14 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 			Host:   "",
 			Path:   dbPath,
 			RawQuery: url.Values{
-				"_pragma": []string{
-					"foreign_keys=ON",    // we don't use em yet, but makes sense anyway
-					"journal_mode=WAL",   // readers don't block writers and vice versa
-					"synchronous=OFF",    // we don't care about durability and don't want to be surprised by syncs
-					"busy_timeout=10000", // wait up to 10s when there are concurrent writers
-				},
-				"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
+				"_busy_timeout": []string{"10000"},     // 10s
+				"_journal_mode": []string{"WAL"},       // readers don't block writers and vice versa
+				"_synchronous":  []string{"OFF"},       // we don't care about durability
+				"_foreign_keys": []string{"ON"},        // we don't use em yet, but makes sense anyway
+				"_txlock":       []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
 			}.Encode(),
 		}
-		sqlDB, err := sql.Open("sqlite", connURL.String())
+		sqlDB, err := sql.Open("sqlite3", connURL.String())
 		if err != nil {
 			return nil, fmt.Errorf("open %s: %w", connURL, err)
 		}
