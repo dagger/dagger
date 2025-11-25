@@ -131,11 +131,13 @@ func vaultConfigureClient(ctx context.Context) error {
 	if roleID != "" {
 		var opts []auth.LoginOption
 
-		authMethod := os.Getenv("VAULT_APPROLE_AUTH_METHOD")
+		// Sets auth mount path. Default is "approle"
+		authMethod := os.Getenv("VAULT_APPROLE_MOUNT_PATH")
 		if authMethod != "" {
 			opts = append(opts, auth.WithMountPath(authMethod))
 		}
 
+		// Get SecretID
 		secretID := &auth.SecretID{FromEnv: "VAULT_APPROLE_SECRET_ID"}
 
 		// Authenticate
