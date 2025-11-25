@@ -349,6 +349,18 @@ func (s *moduleSourceSchema) localModuleSource(
 		localPath = "."
 	}
 
+	// For local module sources, ensure we have the right client context for filesystem access.
+	// Modules run as their own clients, but need access to the original caller's filesystem
+	// (e.g., the CLI that started the session). Without this, when a module function returns
+	// an interface and that result is loaded from cache in a subsequent session, the module
+	// dependency loading will fail because it tries to stat the path from the module's
+	// container context instead of the host.
+	localSourceClientMetadata, err := query.Self().NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get local source client metadata: %w", err)
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+
 	// figure out the absolute path to the local module source
 	var localAbsPath string
 
