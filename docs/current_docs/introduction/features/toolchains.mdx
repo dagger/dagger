@@ -201,6 +201,78 @@ dagger call builder build --source ./app
 dagger call tester test --source ./app
 ```
 
+## Filtering Toolchain Checks
+
+When you install a toolchain that includes checks, all checks from that toolchain are automatically included when you run `dagger check`. However, there may be times when you want to exclude certain checks from a toolchain while keeping others. The `ignoreChecks` configuration allows you to selectively filter out specific checks from a toolchain.
+
+### Using ignoreChecks
+
+To ignore checks from a toolchain, you can manually edit your `dagger.json` configuration file to add an `ignoreChecks` array to the toolchain configuration:
+
+```json
+{
+  "name": "my-app",
+  "engineVersion": "v0.16.0",
+  "toolchains": [
+    {
+      "name": "linter",
+      "source": "github.com/example/linter",
+      "ignoreChecks": [
+        "failing-check",
+        "optional-check"
+      ]
+    }
+  ]
+}
+```
+
+The check patterns in `ignoreChecks` are scoped to the toolchain, so you don't need to include the toolchain name prefix. For example, if a toolchain named `linter` has a check `linter:code-style`, you would only specify `code-style` in the `ignoreChecks` array.
+
+### Using Glob Patterns
+
+The `ignoreChecks` configuration supports glob patterns, allowing you to ignore multiple checks that match a pattern:
+
+```json
+{
+  "name": "my-app",
+  "engineVersion": "v0.16.0",
+  "toolchains": [
+    {
+      "name": "security-scanner",
+      "source": "github.com/example/security",
+      "ignoreChecks": [
+        "experimental-*",
+        "*-beta"
+      ]
+    }
+  ]
+}
+```
+
+This is useful when you want to:
+- Exclude all experimental or beta checks: `experimental-*`, `*-beta`
+- Skip checks for specific components: `frontend-*`, `*-integration`
+- Ignore checks by category: `style-*`, `performance-*`
+
+### When to Use ignoreChecks
+
+Common use cases for ignoring toolchain checks include:
+
+- **Gradual adoption**: Ignore failing checks while your codebase is being updated to meet new standards
+- **Environment-specific checks**: Skip checks that don't apply to certain projects or environments
+- **Experimental features**: Exclude experimental or beta checks that may not be stable
+- **Performance optimization**: Skip expensive checks that aren't critical for your workflow
+
+### Viewing Active Checks
+
+To see which checks are available after applying `ignoreChecks` filters, use the `dagger check -l` command:
+
+```shell
+dagger check -l
+```
+
+This will list all checks that will run, excluding any that match your `ignoreChecks` patterns.
+
 ## Best Practices
 
 ### Keep Toolchains Focused
@@ -210,6 +282,10 @@ Each toolchain should provide a cohesive set of related functions. Instead of cr
 ### Namespace Considerations
 
 When naming toolchains (especially with `--name`), choose clear, descriptive names that won't conflict with your module's own functions or other toolchains.
+
+### Use ignoreChecks Sparingly
+
+While `ignoreChecks` provides flexibility, it's generally better to work with toolchain maintainers to address problematic checks at the source. Use `ignoreChecks` as a temporary measure or for legitimate environment-specific filtering, not as a way to permanently suppress important checks.
 
 ## Conclusion
 
