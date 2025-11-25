@@ -4,7 +4,9 @@ type JavaSdkDev {
   """
   Base image to create a dev container for the Java SDK
   """
-  let mavenImage = "maven:3.9.9-eclipse-temurin-21-alpine@sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
+  let mavenImage: Container! {
+    workspace.directory("sdk/java/runtime/images/maven").dockerBuild
+  }
 
   """
   Workspace with all the files needed to develop the SDK.
@@ -16,6 +18,7 @@ type JavaSdkDev {
     "!sdk/java/dagger-java-sdk/",
     "!sdk/java/dagger-java-samples/pom.xml",
     "!sdk/java/runtime/template/",
+    "!sdk/java/runtime/images/",
     "!sdk/java/LICENSE",
     "!sdk/java/README.md",
     "!sdk/java/pom.xml",
@@ -39,8 +42,7 @@ type JavaSdkDev {
   let devContainer: Container! {
     daggerEngine().
       installClient(
-        container.
-          from(mavenImage).
+        mavenImage.
           withDirectory(workspacePath, workspace).
           withWorkdir(workspacePath+"/"+sourcePath))
   }
