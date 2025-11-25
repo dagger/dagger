@@ -16,14 +16,6 @@ import (
 	"dagger/engine-dev/internal/dagger"
 )
 
-type Distro string
-
-const (
-	DistroAlpine Distro = "alpine"
-	DistroWolfi  Distro = "wolfi"
-	DistroUbuntu Distro = "ubuntu"
-)
-
 func New(
 	// +defaultPath="/"
 	// +ignore=[
@@ -120,8 +112,7 @@ func (dev *EngineDev) Playground(
 	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
 	svc, err := dev.Service(
 		ctx,
-		"",       // name
-		"alpine", // distro
+		"", // name
 		gpuSupport,
 		sharedCache,
 		metrics,
@@ -138,8 +129,6 @@ func (dev *EngineDev) Container(
 
 	// +optional
 	platform dagger.Platform,
-	// +default="alpine"
-	image Distro,
 	// +optional
 	gpuSupport bool,
 	// +optional
@@ -167,17 +156,6 @@ func (dev *EngineDev) Container(
 	builder = builder.WithRace(dev.Race)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
-	}
-
-	switch image {
-	case DistroAlpine:
-		builder = builder.WithAlpineBase()
-	case DistroWolfi:
-		builder = builder.WithWolfiBase()
-	case DistroUbuntu:
-		builder = builder.WithUbuntuBase()
-	default:
-		return nil, fmt.Errorf("unknown base image type %s", image)
 	}
 
 	if gpuSupport {
@@ -209,8 +187,6 @@ func (dev *EngineDev) Container(
 func (dev *EngineDev) Service(
 	ctx context.Context,
 	name string,
-	// +default="alpine"
-	image Distro,
 	// +optional
 	gpuSupport bool,
 	// +optional
@@ -236,7 +212,7 @@ func (dev *EngineDev) Service(
 		}
 	}
 
-	devEngine, err := dev.Container(ctx, "", image, gpuSupport, "", "")
+	devEngine, err := dev.Container(ctx, "", gpuSupport, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -280,11 +256,10 @@ func (dev *EngineDev) InstallClient(
 		var err error
 		service, err = dev.Service(
 			ctx,
-			"",           // name
-			DistroAlpine, // distro
-			false,        // gpuSupport
-			false,        // sharedCache
-			false,        // metrics
+			"",    // name
+			false, // gpuSupport
+			false, // sharedCache
+			false, // metrics
 		)
 		if err != nil {
 			return nil, err
@@ -402,33 +377,17 @@ func changes(before, after *dagger.Directory, exclude []string) *dagger.Changese
 var targets = []struct {
 	Name       string
 	Tag        string
-	Image      Distro
 	Platforms  []dagger.Platform
 	GPUSupport bool
 }{
 	{
-		Name:      "alpine (default)",
+		Name:      "wolfi (default)",
 		Tag:       "%s",
-		Image:     DistroAlpine,
 		Platforms: []dagger.Platform{"linux/amd64", "linux/arm64"},
 	},
 	{
-		Name:       "ubuntu with nvidia variant",
-		Tag:        "%s-gpu",
-		Image:      DistroUbuntu,
-		Platforms:  []dagger.Platform{"linux/amd64"},
-		GPUSupport: true,
-	},
-	{
-		Name:      "wolfi",
-		Tag:       "%s-wolfi",
-		Image:     DistroWolfi,
-		Platforms: []dagger.Platform{"linux/amd64"},
-	},
-	{
 		Name:       "wolfi with nvidia variant",
-		Tag:        "%s-wolfi-gpu",
-		Image:      DistroWolfi,
+		Tag:        "%s-gpu",
 		Platforms:  []dagger.Platform{"linux/amd64"},
 		GPUSupport: true,
 	},
@@ -494,7 +453,7 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := dev.Container(ctx, platform, target.Image, target.GPUSupport, "", "")
+					ctr, err := dev.Container(ctx, platform, target.GPUSupport, "", "")
 					if err != nil {
 						return err
 					}

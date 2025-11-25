@@ -244,11 +244,10 @@ func (dev *EngineDev) testContainer(ctx context.Context) (*dagger.Container, str
 		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
 		Container(
 			ctx,
-			"",       // platform
-			"alpine", // distro
-			false,    // gpuSupport
-			"",       // version
-			"",       // tag
+			"",    // platform
+			false, // gpuSupport
+			"",    // version
+			"",    // tag
 		)
 	if err != nil {
 		return nil, "", err

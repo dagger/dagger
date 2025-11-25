@@ -7065,6 +7065,14 @@ export class File extends BaseClient {
   }
 
   /**
+   * Parse the file contents as JSON.
+   */
+  asJSON = (): JSONValue => {
+    const ctx = this._ctx.select("asJSON")
+    return new JSONValue(ctx)
+  }
+
+  /**
    * Change the owner of the file recursively.
    * @param owner A user:group to set for the file.
    *

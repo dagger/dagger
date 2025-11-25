@@ -32,6 +32,20 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Parse the file contents as JSON.
+  """
+  @spec as_json(t()) :: Dagger.JSONValue.t()
+  def as_json(%__MODULE__{} = file) do
+    query_builder =
+      file.query_builder |> QB.select("asJSON")
+
+    %Dagger.JSONValue{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Change the owner of the file recursively.
   """
   @spec chown(t(), String.t()) :: Dagger.File.t()

@@ -6664,6 +6664,12 @@ class File(Type):
         _ctx = self._select("asEnvFile", _args)
         return EnvFile(_ctx)
 
+    def as_json(self) -> "JSONValue":
+        """Parse the file contents as JSON."""
+        _args: list[Arg] = []
+        _ctx = self._select("asJSON", _args)
+        return JSONValue(_ctx)
+
     def chown(self, owner: str) -> Self:
         """Change the owner of the file recursively.
 
