@@ -5,15 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"path"
 	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
-	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -22,23 +19,38 @@ import (
 
 // Check represents a validation check with its result
 type Check struct {
-	Path        []string `field:"true" doc:"The path of the check within its module"`
-	Description string   `field:"true" doc:"The description of the check"`
-	Completed   bool     `field:"true" doc:"Whether the check completed"`
-	Passed      bool     `field:"true" doc:"Whether the check passed"`
-	Module      *Module
-}
-
-func (*Check) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Check",
-		NonNull:   true,
-	}
+	Node      *FnTreeNode `json:"node"`
+	Completed bool        `field:"true" doc:"Whether the check completed"`
+	Passed    bool        `field:"true" doc:"Whether the check passed"`
 }
 
 type CheckGroup struct {
-	Module *Module  `json:"modules"`
-	Checks []*Check `json:"checks"`
+	Node   *FnTreeNode `json:"node"`
+	Checks []*Check    `json:"checks"`
+}
+
+func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGroup, error) {
+	rootNode := NewFnTree(mod)
+
+	var exclude []string
+	for toolchainName, toolchainIgnorePatterns := range mod.ToolchainIgnoreChecks {
+		for _, ignorePattern := range toolchainIgnorePatterns {
+			exclude = append(exclude, toolchainName+":"+ignorePattern)
+		}
+	}
+	checkNodes, err := rootNode.RollupChecks(ctx, include, exclude)
+	if err != nil {
+		return nil, err
+	}
+	checks := make([]*Check, 0, len(checkNodes))
+
+	for _, checkNode := range checkNodes {
+		checks = append(checks, &Check{Node: checkNode})
+	}
+	return &CheckGroup{
+		Node:   rootNode,
+		Checks: checks,
+	}, nil
 }
 
 func (*CheckGroup) Type() *ast.Type {
@@ -48,82 +60,15 @@ func (*CheckGroup) Type() *ast.Type {
 	}
 }
 
-// Return the check name matching CLI case
-func (c *Check) CliName() string {
-	path := c.Path
-	for i := range path {
-		path[i] = strcase.ToKebab(path[i])
-	}
-	return strings.Join(path, "/")
-}
-
-func (c *Check) GqlName() string {
-	path := c.Path
-	for i := range path {
-		path[i] = gqlFieldName(path[i])
-	}
-	return strings.Join(path, "/")
-}
-
-func (c *Check) Match(include []string) (bool, error) {
-	if len(include) == 0 {
-		return true, nil
-	}
-	for _, name := range []string{c.CliName(), c.GqlName()} {
-		for _, pattern := range include {
-			if match, err := fnPathContains(pattern, name); err != nil {
-				return false, err
-			} else if match {
-				return true, nil
-			}
-			if match, err := fnPathGlob(pattern, name); err != nil {
-				return false, err
-			} else if match {
-				return true, nil
-			}
-			pattern = strings.ReplaceAll(pattern, ":", "/")
-			name = strings.ReplaceAll(name, ":", "/")
-			matched, err := doublestar.PathMatch(pattern, name)
-			if err != nil {
-				return false, err
-			}
-			if matched {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
-}
-
-// Match a function-path against a glob pattern
-func fnPathGlob(pattern, target string) (bool, error) {
-	// FIXME: match against both gqlFieldCase and cliCase
-	slashPattern := strings.ReplaceAll(pattern, ":", "/")
-	slashTarget := strings.ReplaceAll(target, ":", "/")
-	return doublestar.PathMatch(slashPattern, slashTarget)
-}
-
-// Check if a function-path contains another
-func fnPathContains(base, target string) (bool, error) {
-	// FIXME: match against both gqlFieldCase and cliCase
-	slashTarget := path.Clean("/" + strings.ReplaceAll(target, ":", "/"))
-	slashBase := path.Clean("/" + strings.ReplaceAll(base, ":", "/"))
-	rel, err := filepath.Rel(slashBase, slashTarget)
-	if err != nil {
-		return false, err
-	}
-	return !strings.HasPrefix(rel, ".."), nil
-}
-
-func (r *CheckGroup) List(ctx context.Context) ([]*Check, error) {
-	return r.Checks, nil
+func (r *CheckGroup) List() []*Check {
+	return r.Checks
 }
 
 // Run all the checks in the group
 func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	r = r.Clone()
 
-	dag, err := dagForCheck(ctx, r.Module)
+	dag, err := r.Node.DagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -162,23 +107,13 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	return r, nil
 }
 
-func (c *Check) ResultEmoji() string {
-	if c.Completed {
-		if c.Passed {
-			return "🟢"
-		}
-		return "🔴"
-	}
-	return ""
-}
-
 func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
 	headers := []string{"check", "description", "success"}
 	rows := [][]string{}
 	for _, check := range r.Checks {
 		rows = append(rows, []string{
 			check.Name(),
-			check.Description,
+			check.Description(),
 			check.ResultEmoji(),
 		})
 	}
@@ -205,35 +140,52 @@ func markdownTable(headers []string, rows ...[]string) string {
 
 func (r *CheckGroup) Clone() *CheckGroup {
 	cp := *r
+	cp.Node = cp.Node.Clone()
 	for i := range cp.Checks {
 		cp.Checks[i] = cp.Checks[i].Clone()
 	}
-	cp.Module = r.Module.Clone()
 	return &cp
 }
 
+func (c *Check) Path() []string {
+	return c.Node.Path
+}
+
+func (c *Check) Description() string {
+	return c.Node.Description
+}
+
+func (*Check) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Check",
+		NonNull:   true,
+	}
+}
+
+func (c *Check) ResultEmoji() string {
+	if c.Completed {
+		if c.Passed {
+			return "🟢"
+		}
+		return "🔴"
+	}
+	return ""
+}
+
 func (c *Check) Name() string {
-	return strings.Join(c.Path, ":")
+	return c.Node.Name()
 }
 
 func (c *Check) Clone() *Check {
 	cp := *c
-	cp.Module = c.Module.Clone()
+	cp.Node = c.Node.Clone()
 	return &cp
-}
-
-func (c *Check) Query() []dagql.Selector {
-	var q []dagql.Selector
-	for _, field := range c.Path {
-		q = append(q, dagql.Selector{Field: gqlFieldName(field)})
-	}
-	return q
 }
 
 func (c *Check) Run(ctx context.Context) (*Check, error) {
 	c = c.Clone()
 
-	dag, err := dagForCheck(ctx, c.Module)
+	dag, err := c.Node.DagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -287,33 +239,11 @@ func (c *Check) run(
 			return err
 		}
 	}
-
-	selectPath := []dagql.Selector{{Field: gqlFieldName(c.Module.Name())}}
-	for _, field := range c.Path {
-		selectPath = append(selectPath, dagql.Selector{Field: field})
-	}
-
-	var checkParent dagql.AnyObjectResult
-	if err := (func(ctx context.Context) (rerr error) {
-		ctx, span := Tracer(ctx).Start(ctx, "load check context",
-			// Prevent logs from bubbling up past this point.
-			telemetry.Boundary(),
-			// We're only using this span as a log encapsulation boundary; show
-			// its child spans inline.
-			telemetry.Passthrough(),
-		)
-		defer telemetry.EndWithCause(span, &rerr)
-		return dag.Select(ctx, dag.Root(), &checkParent, selectPath[:len(selectPath)-1]...)
-	})(ctx); err != nil {
-		return err
-	}
-
-	// Call the check
+	// FIXME: re-implement the "tuck away" trick using 2 distinct selects
 	var status dagql.AnyResult
-	if err := dag.Select(dagql.WithNonInternalTelemetry(ctx), checkParent, &status, selectPath[len(selectPath)-1]); err != nil {
+	if err := c.Node.DagqlValue(ctx, &status); err != nil {
 		return err
 	}
-
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
 		// If the check returns a syncable type, sync it
 		if syncField, has := obj.ObjectType().FieldSpec("sync", dag.View); has {
@@ -329,7 +259,6 @@ func (c *Check) run(
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -340,7 +269,7 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 	}
 
 	cloudEngineClient, useCloudEngine, err := q.CloudEngineClient(ctx,
-		c.Module.Source.Value.Self().AsString(),
+		c.Node.RootAddress(),
 		// FIXME: we're saying the "function" is the check and no execCmd,
 		// which works with cloud but is weird
 		c.Name(),
@@ -364,22 +293,23 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 	//
 
 	// load the module, depending on its kind
-	switch c.Module.Source.Value.Self().Kind {
+	mod := c.Node.DagqlRoot
+	switch mod.Source.Value.Self().Kind {
 	case ModuleSourceKindLocal:
 		query = query.Select("moduleSource").
 			Arg("refString", filepath.Join(
-				c.Module.Source.Value.Self().Local.ContextDirectoryPath,
-				c.Module.Source.Value.Self().SourceRootSubpath,
+				mod.Source.Value.Self().Local.ContextDirectoryPath,
+				mod.Source.Value.Self().SourceRootSubpath,
 			))
 	case ModuleSourceKindGit:
 		query = query.Select("moduleSource").
-			Arg("refString", c.Module.Source.Value.Self().AsString()).
-			Arg("refPin", c.Module.Source.Value.Self().Git.Commit).
-			Arg("requireKind", c.Module.Source.Value.Self().Kind)
+			Arg("refString", mod.Source.Value.Self().AsString()).
+			Arg("refPin", mod.Source.Value.Self().Git.Commit).
+			Arg("requireKind", mod.Source.Value.Self().Kind)
 	case ModuleSourceKindDir:
 		// FIXME: whether this actually works or not depends on whether the dir is reproducible. For simplicity,
 		// we just assume it is and will error out later if not. Would be better to explicitly check though.
-		dirID := c.Module.Source.Value.Self().DirSrc.OriginalContextDir.ID()
+		dirID := mod.Source.Value.Self().DirSrc.OriginalContextDir.ID()
 		dirIDEnc, err := dirID.Encode()
 		if err != nil {
 			return true, fmt.Errorf("encode dir ID: %w", err)
@@ -387,7 +317,7 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 		query = query.Select("loadDirectoryFromID").
 			Arg("id", dirIDEnc)
 		query = query.Select("asModuleSource").
-			Arg("sourceRootPath", c.Module.Source.Value.Self().DirSrc.OriginalSourceRootSubpath)
+			Arg("sourceRootPath", mod.Source.Value.Self().DirSrc.OriginalSourceRootSubpath)
 	}
 	query = query.Select("asModule")
 
@@ -412,38 +342,4 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 	}
 
 	return true, nil
-}
-
-// Prepare a dagql.Server for running checks on the given module
-func dagForCheck(ctx context.Context, mod *Module) (*dagql.Server, error) {
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dagqlCache, err := q.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("run checks for module %q: get dagql cache: %w", mod.Name(), err)
-	}
-	dag := dagql.NewServer(q, dagqlCache)
-	dag.Around(AroundFunc)
-	// Install default dependencies (ie the core)
-	defaultDeps, err := q.DefaultDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("run checks for module %q: load core schema: %w", mod.Name(), err)
-	}
-	for _, defaultDep := range defaultDeps.Mods {
-		if err := defaultDep.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("run checks for module %q: serve core schema: %w", mod.Name(), err)
-		}
-	}
-	for _, tcMod := range mod.ToolchainModules {
-		if err := tcMod.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("run checks for module %q: serve toolchain module %q: %w", mod.Name(), tcMod.Name(), err)
-		}
-	}
-	if err := mod.Install(ctx, dag); err != nil {
-		return nil, fmt.Errorf("run checks for module %q: serve module: %w", mod.Name(), err)
-	}
-
-	return dag, nil
 }

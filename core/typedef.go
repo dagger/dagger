@@ -898,10 +898,26 @@ func (obj *ObjectTypeDef) FieldByOriginalName(name string) (*FieldTypeDef, bool)
 
 func (obj *ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
 	for _, fn := range obj.Functions {
-		if fn.Name == name {
+		if fn.Name == gqlFieldName(name) {
 			return fn, true
 		}
 	}
+	return nil, false
+}
+
+// FunctionOrFieldByName searches for either a function or field by the given name in the object type definition.
+// Returns the TypeDef of the function's return type or the field's type, and a boolean indicating whether it was found.
+func (obj *ObjectTypeDef) FunctionOrFieldByName(name string) (*TypeDef, bool) {
+	// Check if it's a function
+	if fn, ok := obj.FunctionByName(name); ok {
+		return fn.ReturnType, true
+	}
+
+	// Check if it's a field
+	if field, ok := obj.FieldByName(name); ok {
+		return field.TypeDef, true
+	}
+
 	return nil, false
 }
 

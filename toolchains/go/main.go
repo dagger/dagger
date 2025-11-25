@@ -220,18 +220,75 @@ func (p *Go) Env(
 }
 
 // List tests
-func (p *Go) Tests(
-	ctx context.Context,
-	// Packages to list tests from (default all packages)
-	// +optional
-	// +default=["./..."]
-	pkgs []string,
-) (string, error) {
-	script := "go test -list=. " + strings.Join(pkgs, " ") + " | grep ^Test | sort"
-	return p.
+func (p *Go) Tests(ctx context.Context) ([]*Test, error) {
+	modules, err := p.Modules(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Store results per module to avoid race conditions
+	moduleTests := make([][]*Test, len(modules))
+	jobs := parallel.New()
+	for i, module := range modules {
+		jobs = jobs.WithJob(module, func(ctx context.Context) error {
+			//			// Generate Dagger runtime if this is a Dagger module
+			//			modP, err := p.GenerateDaggerRuntime(ctx, module)
+			//			if err != nil {
+			//				return err
+			//			}
+			output, err := p.Env(defaultPlatform).
+				WithWorkdir(module).
+				WithExec([]string{
+					"go", "test", "-list", "^Test", "./...",
+				}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+				Stdout(ctx)
+			if err != nil {
+				return err
+			}
+			lines := strings.Split(strings.TrimSpace(output), "\n")
+			var tests []*Test
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" && strings.HasPrefix(line, "Test") {
+					tests = append(tests, &Test{
+						Module:    module,
+						Name:      line,
+						Toolchain: p,
+					})
+				}
+			}
+			moduleTests[i] = tests
+			return nil
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return nil, err
+	}
+	// Flatten results
+	var allTests []*Test
+	for _, tests := range moduleTests {
+		allTests = append(allTests, tests...)
+	}
+	return allTests, nil
+}
+
+type Test struct {
+	Module    string
+	Name      string
+	Toolchain *Go // +private
+}
+
+func (test *Test) Address() string {
+	return fmt.Sprintf("%s:%s", test.Module, test.Name)
+}
+
+// +check
+func (test *Test) Run(ctx context.Context) error {
+	_, err := test.Toolchain.
 		Env(defaultPlatform).
-		WithExec([]string{"sh", "-c", script}).
-		Stdout(ctx)
+		WithWorkdir(test.Module).
+		WithExec([]string{"go", "test", "-run", test.Name}).
+		Sync(ctx)
+	return err
 }
 
 // Build the given main packages, and return the build directory
