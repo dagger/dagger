@@ -11,14 +11,15 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-✔ load module: ./viztest/typescript X.Xs
-├╴✔ finding module configuration X.Xs
-├╴✔ initializing module X.Xs
-├╴✔ inspecting module metadata X.Xs
-╰╴✔ loading type definitions X.Xs
- 
-✔ parsing command line arguments X.Xs
-
+✔ load("./viztest/typescript") X.Xs
+  ✔ transfer files X.Xs
+  ✔ validate X.Xs
+  ╰╴✔ .configExists: Boolean! X.Xs
+    ┃ true
+   
+  ✔ initialize X.Xs
+    ✔ load dependencies X.Xs
+   
 ✔ typescript: Typescript! X.Xs
 ✔ .customSpan: String! X.Xs
 ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ

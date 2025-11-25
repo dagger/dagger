@@ -6,14 +6,24 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-✔ load module: ./viztest/python X.Xs
-├╴✔ finding module configuration X.Xs
-├╴✔ initializing module X.Xs
-├╴✔ inspecting module metadata X.Xs
-╰╴✔ loading type definitions X.Xs
+✔ load("./viztest/python") X.Xs
+  ✔ transfer files X.Xs
+    ✔ moduleSource(refString: "./viztest/python"): ModuleSource! X.Xs
+      ✔ load SDK: python X.Xs
+     
+  ✔ validate X.Xs
+  ╰╴✔ .configExists: Boolean! X.Xs
+    ┃ true
+   
+  ✔ initialize X.Xs
+    ✔ ModuleSource.asModule: Module! X.Xs $ 1
+      ✔ load dependencies X.Xs
+      ✔ module SDK: load runtime X.Xs
+    ✔ .serve(includeDependencies: true): Void X.Xs
+   
+  ✔ inspecting module metadata X.Xs
+  ✔ loading type definitions X.Xs
  
-✔ parsing command line arguments X.Xs
-
 ✔ python: Python! X.Xs
 ✘ .pending: Void X.Xs ERROR
 ┃ ERROR [dagger.mod]: API error while executing function
