@@ -10,8 +10,11 @@ import (
 	"github.com/distribution/reference"
 )
 
-//go:embed Dockerfile
-var dockerfile string
+//go:embed images/base/Dockerfile
+var baseDockerfile string
+
+//go:embed images/uv/Dockerfile
+var uvDockerfile string
 
 // fromLineRegex should match: FROM <image> AS <name>
 var fromLineRegex = regexp.MustCompile(`^FROM\s+([^\s]+)\s+AS\s+([^\s]+)`)
@@ -104,20 +107,22 @@ func NewImage(ref string) (Image, error) {
 // extractImages reads from the bundled Dockerfile to extract the default docker
 // image references.
 func extractImages() (map[string]Image, error) {
-	lines := strings.Split(dockerfile, "\n")
 	images := make(map[string]Image)
+	for _, dockerfile := range []string{baseDockerfile, uvDockerfile} {
+		lines := strings.Split(dockerfile, "\n")
 
-	for _, line := range lines {
-		if matches := fromLineRegex.FindStringSubmatch(strings.TrimSpace(line)); matches != nil {
-			ref := matches[1]
-			name := matches[2]
+		for _, line := range lines {
+			if matches := fromLineRegex.FindStringSubmatch(strings.TrimSpace(line)); matches != nil {
+				ref := matches[1]
+				name := matches[2]
 
-			image, err := NewImage(ref)
-			if err != nil {
-				return nil, fmt.Errorf("parsing %q image ref: %w", name, err)
+				image, err := NewImage(ref)
+				if err != nil {
+					return nil, fmt.Errorf("parsing %q image ref: %w", name, err)
+				}
+
+				images[name] = image
 			}
-
-			images[name] = image
 		}
 	}
 

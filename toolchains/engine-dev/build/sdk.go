@@ -36,17 +36,17 @@ func (content *sdkContent) apply(ctr *dagger.Container) *dagger.Container {
 type sdkContentF func(ctx context.Context) (*sdkContent, error)
 
 func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error) {
-	docker := dag.Directory().WithFile("", build.source.File("sdk/python/runtime/Dockerfile"))
+	base := build.source.Directory("sdk/python/runtime/images/base").
+		DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Platform: build.platform,
+			Target:   "base",
+		})
 
-	base := docker.DockerBuild(dagger.DirectoryDockerBuildOpts{
-		Platform: build.platform,
-		Target:   "base",
-	})
-
-	uv := docker.DockerBuild(dagger.DirectoryDockerBuildOpts{
-		Platform: build.platform,
-		Target:   "uv",
-	})
+	uv := build.source.Directory("sdk/python/runtime/images/uv").
+		DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Platform: build.platform,
+			Target:   "uv",
+		})
 
 	rootfs := dag.Directory().
 		WithDirectory("/", build.source.Directory("sdk/python"), dagger.DirectoryWithDirectoryOpts{
