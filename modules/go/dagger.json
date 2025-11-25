@@ -11,6 +11,10 @@
   ],
   "dependencies": [
     {
+      "name": "alpine",
+      "source": "../alpine"
+    },
+    {
       "name": "wolfi",
       "source": "../wolfi"
     }

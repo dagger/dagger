@@ -346,7 +346,13 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
 func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
-	withGoGenerate := dag.Go(dagger.GoOpts{Source: dev.Source}).Env().
+	withGoGenerate := dag.Go(dagger.GoOpts{
+		Source: dev.Source,
+		ExtraPackages: []string{
+			"protobuf~32",
+			"protobuf-dev~32",
+		},
+	}).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).

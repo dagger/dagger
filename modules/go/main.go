@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -19,6 +20,15 @@ import (
 
 const (
 	defaultPlatform = dagger.Platform("")
+
+	zigVersion = "0.15"
+)
+
+type Libc string
+
+const (
+	LibcGlibc Libc = "glibc"
+	LibcMusl  Libc = "musl"
 )
 
 func New(
@@ -42,6 +52,16 @@ func New(
 	// +optional
 	base *dagger.Container,
 
+	// If set, additional packages to install in the default
+	// container. Invalid to set if 'base' is also set.
+	// +optional
+	extraPackages []string,
+
+	// If set, libc to use in the default container.
+	// +optional
+	// +default="glibc"
+	libc Libc,
+
 	// Pass arguments to 'go build -ldflags''
 	// +optional
 	ldflags []string,
@@ -62,36 +82,52 @@ func New(
 	// Enable go experiments https://pkg.go.dev/internal/goexperiment
 	// +optional
 	experiment []string,
+
+	// go build tags to set
+	// +optional
+	tags []string,
+
+	// If set, a sysroot to mount at /sysroot in the build, which will be
+	// used through pkg-config to link against external C deps
+	// +optional
+	sysroot *dagger.Directory,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
 	}
 	if moduleCache == nil {
-		// Cache volumes should be namespaced by module, but they aren't (yet).
-		// For now, we namespace them explicitly here.
-		moduleCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:modules")
+		moduleCache = dag.CacheVolume("go-modules")
 	}
 	if buildCache == nil {
-		// Cache volumes should be namespaced by module, but they aren't (yet).
-		// For now, we namespace them explicitly here.
-		buildCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:build")
+		buildCache = dag.CacheVolume("go-build")
 	}
 	if base == nil {
-		base = dag.
-			Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: []string{
-				"go~" + version,
-				// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
-				"build-base",
-				// adding the git CLI to inject vcs info into the go binaries
-				"git",
-				// Install protoc for protobug support by default
-				// The specific version is dictated by Dagger's own requirement
-				// FIXME: make this optional with overlay support
-				"protobuf~32", // ADD: brings /usr/bin/protoc and runtime libs
-				"protobuf-dev~32",
-				"ca-certificates",
-			}}).
+		pkgs := []string{
+			"go~" + version,
+			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
+			"build-base",
+			// adding the git CLI to inject vcs info into the go binaries
+			"git",
+			"ca-certificates",
+		}
+		if cgo {
+			// use zig as a c (cross-)compiler, given its plethora of targets supported and built-in caching
+			pkgs = append(pkgs, "zig~"+zigVersion)
+		}
+		pkgs = append(pkgs, extraPackages...)
+
+		switch libc {
+		case LibcGlibc:
+			base = dag.Wolfi().Container(dagger.WolfiContainerOpts{
+				Packages: pkgs,
+			})
+		case LibcMusl:
+			base = dag.Alpine(dagger.AlpineOpts{
+				Packages: pkgs,
+			}).Container()
+		}
+
+		base = base.
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
 			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
@@ -100,6 +136,10 @@ func New(
 			WithMountedCache("/go/pkg/mod", moduleCache).
 			WithMountedCache("/root/.cache/go-build", buildCache).
 			WithWorkdir("/app")
+
+		if cgo {
+			base = base.WithMountedCache("/root/.cache/zig", dag.CacheVolume("zig-cache"))
+		}
 	}
 	return &Go{
 		Version:     version,
@@ -112,6 +152,9 @@ func New(
 		Cgo:         cgo,
 		Race:        race,
 		Experiment:  experiment,
+		Libc:        libc,
+		Tags:        tags,
+		Sysroot:     sysroot,
 	}
 }
 
@@ -146,6 +189,16 @@ type Go struct {
 
 	// Enable go experiments
 	Experiment []string
+
+	// Libc variant configured
+	Libc Libc
+
+	// Build tags to set
+	Tags []string
+
+	// If set, a sysroot to mount at /sysroot in the build, which will be
+	// used through pkg-config to link against external C deps
+	Sysroot *dagger.Directory
 
 	Include []string
 
@@ -207,6 +260,43 @@ func (p *Go) Env(
 					c = c.WithEnvVariable("GOARM", strings.TrimPrefix(spec.Variant, "v"))
 				}
 			}
+
+			if p.Cgo {
+				// only set zig target if not native platform
+				isNonNative := spec.Architecture != runtime.GOARCH || spec.OS != runtime.GOOS
+				var zigTargetArg string
+				if isNonNative {
+					zigArch := spec.Architecture
+					switch spec.Architecture {
+					case "amd64":
+						zigArch = "x86_64"
+					case "arm64":
+						zigArch = "aarch64"
+					}
+
+					zigOS := spec.OS
+					switch spec.OS { //nolint:gocritic
+					case "darwin":
+						zigOS = "macos"
+					}
+
+					var zigABI string
+					switch p.Libc {
+					case LibcGlibc:
+						zigABI = "gnu"
+					case LibcMusl:
+						zigABI = "musl"
+					}
+
+					zigTarget := fmt.Sprintf("%s-%s-%s", zigArch, zigOS, zigABI)
+					zigTargetArg = "-target " + zigTarget
+				}
+
+				c = c.
+					WithEnvVariable("AR", "zig ar "+zigTargetArg).
+					WithEnvVariable("CC", "zig cc "+zigTargetArg).
+					WithEnvVariable("CXX", "zig c++ "+zigTargetArg)
+			}
 			return c
 		}).
 		// Configure experiments
@@ -215,6 +305,14 @@ func (p *Go) Env(
 				return c
 			}
 			return c.WithEnvVariable("GOEXPERIMENT", strings.Join(p.Experiment, ","))
+		}).
+		With(func(c *dagger.Container) *dagger.Container {
+			if p.Sysroot == nil {
+				return c
+			}
+			return c.
+				WithEnvVariable("PKG_CONFIG_SYSROOT_DIR", "/sysroot").
+				WithMountedDirectory("/sysroot", p.Sysroot)
 		}).
 		WithMountedDirectory("", p.Source)
 }
@@ -286,7 +384,7 @@ func (p *Go) Build(
 	env := p.Env(platform)
 	cmd := []string{"go", "build", "-o", output}
 	for _, pkg := range mainPkgs {
-		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Values, p.Race))
+		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Values, p.Race, p.Tags))
 	}
 	return dag.Directory().WithDirectory(output, env.Directory(output)), nil
 }
@@ -317,8 +415,8 @@ func (p *Go) Binary(
 	if err != nil {
 		return nil, err
 	}
-	// The binary might be called dagger or dagger.exe
-	files, err := dir.Glob(ctx, "bin/"+path.Base(pkg)+"*")
+
+	files, err := dir.Glob(ctx, "bin/*")
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +475,7 @@ func (p *Go) Test(
 	}
 	_, err := p.
 		Env(defaultPlatform).
-		WithExec(goCommand(cmd, pkgs, p.Ldflags, p.Values, p.Race)).
+		WithExec(goCommand(cmd, pkgs, p.Ldflags, p.Values, p.Race, p.Tags)).
 		Sync(ctx)
 	return err
 }
@@ -417,6 +515,7 @@ func goCommand(
 	ldflags []string,
 	values []string,
 	race bool,
+	tags []string,
 ) []string {
 	for _, val := range values {
 		ldflags = append(ldflags, "-X '"+val+"'")
@@ -427,6 +526,10 @@ func goCommand(
 	if race {
 		cmd = append(cmd, "-race")
 	}
+	if len(tags) > 0 {
+		cmd = append(cmd, "-tags", strings.Join(tags, " "))
+	}
+
 	cmd = append(cmd, pkgs...)
 	return cmd
 }

@@ -107,6 +107,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	pkgs := []string{
 		"ca-certificates",
+		"posix-libc-utils",
 		// for git
 		"git", "openssh-client",
 		// for decompression
@@ -183,23 +184,23 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 }
 
 func (build *Builder) CodegenBinary() *dagger.File {
-	return build.binary("./cmd/codegen", false, false)
+	return build.binary("./cmd/codegen", false, false, false)
 }
 
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binary("./cmd/engine", true, race)
+	return build.binary("./cmd/engine", true, race, true)
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
-	return build.binary("./cmd/dnsname", false, false)
+	return build.binary("./cmd/dnsname", false, false, false)
 }
 
 func (build *Builder) dialstdioBinary() *dagger.File {
-	return build.binary("./cmd/dialstdio", false, false)
+	return build.binary("./cmd/dialstdio", false, false, false)
 }
 
-func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
-	return build.Go(version, race).
+func (build *Builder) binary(pkg string, version bool, race bool, cgo bool) *dagger.File {
+	return build.Go(version, race, cgo).
 		Binary(pkg, dagger.GoBinaryOpts{
 			Platform:  build.platform,
 			NoSymbols: true,
@@ -207,7 +208,7 @@ func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
 		})
 }
 
-func (build *Builder) Go(version bool, race bool) *dagger.Go {
+func (build *Builder) Go(version bool, race bool, cgo bool) *dagger.Go {
 	var values []string
 	if version && build.version != "" {
 		values = append(values, "github.com/dagger/dagger/engine.Version="+build.version)
@@ -219,30 +220,56 @@ func (build *Builder) Go(version bool, race bool) *dagger.Go {
 		Source: build.source,
 		Values: values,
 		Race:   race,
+		Cgo:    cgo,
 	})
 }
 
 func (build *Builder) runcBin() *dagger.File {
 	// We build runc from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
-	buildCtr := dag.Container().
-		From(consts.GolangImage).
-		With(build.goPlatformEnv).
-		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
-		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
-		WithEnvVariable("CGO_ENABLED", "1").
-		WithExec([]string{"apk", "add", "clang", "lld", "git", "pkgconf"}).
-		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
-		WithExec([]string{"xx-apk", "update"}).
-		WithExec([]string{"xx-apk", "add", "build-base", "pkgconf", "libseccomp-dev", "libseccomp-static"}).
-		WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
-		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build")).
-		WithMountedDirectory("/src", dag.Git("github.com/opencontainers/runc").Tag(consts.RuncVersion).Tree()).
-		WithWorkdir("/src")
+	pkgs := []string{
+		"build-base",
+		"pkgconf",
+		"libseccomp-dev",
+		"libseccomp-static",
+	}
+	var sysroot *dagger.Directory
+	if build.platformSpec.Architecture != runtime.GOARCH {
+		sysroot = dag.Alpine(dagger.AlpineOpts{
+			Arch:     build.platformSpec.Architecture,
+			Packages: pkgs,
+		}).Container().Rootfs()
+		// don't include library deps in host system, it confuses
+		// the various compilers
+		pkgs = []string{
+			"pkgconf",
+		}
+	}
 
-	return buildCtr.
-		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=" + consts.RuncVersion + " -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
-		File("runc")
+	src := dag.Git("github.com/opencontainers/runc").Tag(consts.RuncVersion).Tree()
+	return dag.Go(dagger.GoOpts{
+		Source:        src,
+		Cgo:           true,
+		Libc:          dagger.GoLibcMusl,
+		ExtraPackages: pkgs,
+		Values: []string{
+			"main.version=" + consts.RuncVersion,
+		},
+		Ldflags: []string{
+			"-linkmode", "external",
+			"-extldflags", "'-static'",
+		},
+		Tags: []string{
+			"seccomp",
+			"netgo",
+			"osusergo",
+		},
+		Sysroot: sysroot,
+	}).Binary(".", dagger.GoBinaryOpts{
+		NoSymbols: true,
+		NoDwarf:   true,
+		Platform:  build.platform,
+	})
 }
 
 func (build *Builder) qemuBins(ctx context.Context) []*dagger.File {
@@ -284,7 +311,7 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 }
 
 func (build *Builder) daggerInit() *dagger.File {
-	return build.binary("./cmd/init", false, false)
+	return build.binary("./cmd/init", false, false, false)
 }
 
 func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
