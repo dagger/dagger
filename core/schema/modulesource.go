@@ -2919,12 +2919,16 @@ func (s *moduleSourceSchema) createBaseModule(
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
 		ToolchainModules:              make(map[string]*core.Module),
 		ToolchainArgumentConfigs:      make(map[string][]*modules.ModuleConfigArgument),
+		ToolchainIgnoreChecks:         make(map[string][]string),
 	}
 
 	// Load toolchain argument configurations from the original source
 	for _, tcCfg := range tcCtx.originalSrc.Self().ConfigToolchains {
 		if len(tcCfg.Customizations) > 0 {
 			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Customizations
+		}
+		if len(tcCfg.IgnoreChecks) > 0 {
+			mod.ToolchainIgnoreChecks[tcCfg.Name] = tcCfg.IgnoreChecks
 		}
 	}
 
