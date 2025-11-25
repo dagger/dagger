@@ -13,10 +13,12 @@ import (
 )
 
 // List all core engine tests
-func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	return dag.Go(dagger.GoOpts{Source: dev.Source}).Tests(ctx)
-}
-
+// FIXME
+//
+//	func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
+//		return dag.Go(dagger.GoOpts{Source: dev.Source}).ListTests(ctx)
+//	}
+//
 // Run core engine tests
 // +cache="session"
 func (dev *EngineDev) Test(

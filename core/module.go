@@ -99,75 +99,7 @@ func (mod *Module) Name() string {
 }
 
 func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	mainObj, ok := mod.MainObject()
-	if !ok {
-		return nil, fmt.Errorf("scan for checks: %q: can't load main object", mod.Name())
-	}
-	objChecksCache := map[string][]*Check{}
-	group := &CheckGroup{Module: mod}
-	// 1. Walk main module for checks
-	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
-		match, err := check.Match(include)
-		if err != nil {
-			return nil, err
-		}
-		if match {
-			group.Checks = append(group.Checks, check)
-		}
-	}
-	// 2. Walk toolchain modules for checks
-	for _, dep := range mod.Deps.Mods {
-		if tcMod, ok := dep.(*Module); ok && tcMod.IsToolchain {
-			tcMainObj, ok := tcMod.MainObject()
-			if !ok {
-				continue // skip toolchains without a main object
-			}
-			// Get the ignore patterns for this toolchain
-			ignorePatterns := mod.ToolchainIgnoreChecks[tcMod.OriginalName]
-
-			// Walk the toolchain module's checks
-			for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache) {
-				// Check if this check should be ignored (before prepending toolchain name)
-				// This allows ignoreChecks patterns to be scoped to the toolchain without needing the prefix
-				ignored := false
-				if len(ignorePatterns) > 0 {
-					// Check against ignore patterns using the check path WITHOUT the toolchain prefix
-					for _, ignorePattern := range ignorePatterns {
-						checkMatch, err := check.Match([]string{ignorePattern})
-						if err != nil {
-							return nil, err
-						}
-						if checkMatch {
-							ignored = true
-							break
-						}
-					}
-				}
-
-				if ignored {
-					continue // Skip this check
-				}
-
-				// Prepend the toolchain name to the check path
-				check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
-
-				match, err := check.Match(include)
-				if err != nil {
-					return nil, err
-				}
-				if match {
-					group.Checks = append(group.Checks, check)
-				}
-			}
-		}
-	}
-
-	// set individual check Module field now so it's a consistent value between this
-	// mod and any toolchain mods
-	for _, check := range group.Checks {
-		check.Module = mod
-	}
-	return group, nil
+	return NewCheckGroup(ctx, mod, include)
 }
 
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
@@ -184,57 +116,6 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 		}
 	}
 	return nil, false
-}
-
-func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check { //nolint:unparam
-	if cached, ok := objChecksCache[obj.Name]; ok {
-		return cached
-	}
-	var checks []*Check
-	objChecksCache[obj.Name] = checks
-	subObjects := map[string]*ObjectTypeDef{}
-	for _, fn := range obj.Functions {
-		func() {
-			if functionRequiresArgs(fn) {
-				return
-			}
-			// 1. Scan object for checks
-			if fn.IsCheck {
-				checks = append(checks, &Check{
-					Path:        []string{gqlFieldName(fn.Name)},
-					Description: fn.Description,
-				})
-				return
-			}
-			// 2. Recursively scan reachable children objects
-			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
-				// avoid cycles (X.withFoo: X)
-				fn.ReturnType.ToType().Name() != obj.Name {
-				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
-				if ok {
-					subObjects[fn.Name] = subObj
-				}
-			}
-		}()
-	}
-	// Also walk fields for sub-checks
-	for _, field := range obj.Fields {
-		if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
-			subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
-			if ok {
-				subObjects[field.Name] = subObj
-			}
-		}
-	}
-	for key, subObj := range subObjects {
-		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache)
-		for _, subCheck := range subChecks {
-			subCheck.Path = append([]string{gqlFieldName(key)}, subCheck.Path...)
-		}
-		checks = append(checks, subChecks...)
-	}
-	objChecksCache[obj.Name] = checks
-	return checks
 }
 
 func functionRequiresArgs(fn *Function) bool {
