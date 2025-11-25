@@ -1,5 +1,12 @@
 import { getBooleanFromEnv } from "@opentelemetry/core"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
 import { NodeSDK } from "@opentelemetry/sdk-node"
+import {
+  BatchSpanProcessor,
+  type SpanProcessor,
+} from "@opentelemetry/sdk-trace-base"
+
+import { LiveProcessor } from "./live_processor.js"
 
 const SERVICE_NAME = "dagger-typescript-sdk"
 
@@ -9,6 +16,11 @@ const SERVICE_NAME = "dagger-typescript-sdk"
 function otelConfigured(): boolean {
   return Object.keys(process.env).some((key) => key.startsWith("OTEL_"))
 }
+/**
+ * Batch span processor scheduler delays.
+ * We set to 100ms so it's almost live.
+ */
+const NEARLY_IMMEDIATE = 100
 
 /**
  * A wrapper around the OpenTelemetry SDK to configure it for Dagger.
@@ -40,9 +52,23 @@ export class DaggerOtelConfigurator {
 
     this.setupEnv()
 
+    const exporter = new OTLPTraceExporter()
+
+    let processor: SpanProcessor
+    if (process.env.OTEL_EXPORTER_OTLP_TRACES_LIVE !== undefined) {
+      processor = new LiveProcessor(exporter, {
+        scheduledDelayMillis: NEARLY_IMMEDIATE,
+      })
+    } else {
+      processor = new BatchSpanProcessor(exporter, {
+        scheduledDelayMillis: NEARLY_IMMEDIATE,
+      })
+    }
+
     // Create the node SDK with the context manager, the resource and the exporter.
     this.sdk = new NodeSDK({
       serviceName: SERVICE_NAME,
+      spanProcessors: [processor],
     })
 
     // Register the SDK to the OpenTelemetry API
