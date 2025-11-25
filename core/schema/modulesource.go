@@ -2003,7 +2003,7 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 
 	// Load the config for all toolchains to populate ConfigToolchains
 	// We need to convert each toolchain into a config entry by loading it as a dependency
-	// Also preserve any existing Arguments configuration
+	// Also preserve any existing Customizations configuration
 	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
 	for i, toolchain := range finalToolchains {
 		// Load as a dependency to get the proper config format
@@ -2023,10 +2023,10 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 		if len(tmpConfig.Dependencies) > 0 {
 			configToolchains[i] = tmpConfig.Dependencies[0]
 
-			// Preserve Arguments from the original ConfigToolchains if they exist
+			// Preserve Customization from the original ConfigToolchains if they exist
 			for _, origToolchain := range parentSrc.ConfigToolchains {
 				if origToolchain.Name == configToolchains[i].Name {
-					configToolchains[i].Arguments = origToolchain.Arguments
+					configToolchains[i].Customizations = origToolchain.Customizations
 					break
 				}
 			}
@@ -2292,6 +2292,14 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		depCfg := &modules.ModuleConfigDependency{
 			Name: depSrc.Self().ModuleName,
 		}
+
+		// TODO: this is for backwards compatibility until the configuration change is released
+		if i < len(src.ConfigDependencies) && src.ConfigDependencies[i] != nil {
+			//nolint:staticcheck
+			depCfg.Arguments = src.ConfigDependencies[i].Arguments
+			depCfg.Customizations = src.ConfigDependencies[i].Customizations
+		}
+
 		modCfg.Dependencies[i] = depCfg
 
 		switch src.Kind {
@@ -2915,8 +2923,8 @@ func (s *moduleSourceSchema) createBaseModule(
 
 	// Load toolchain argument configurations from the original source
 	for _, tcCfg := range tcCtx.originalSrc.Self().ConfigToolchains {
-		if len(tcCfg.Arguments) > 0 {
-			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Arguments
+		if len(tcCfg.Customizations) > 0 {
+			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Customizations
 		}
 	}
 
@@ -3034,7 +3042,7 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 
 		// Find the matching argument and apply overrides
 		for _, arg := range fn.Args {
-			if strings.EqualFold(arg.Name, argCfg.Name) || strings.EqualFold(arg.OriginalName, argCfg.Name) {
+			if strings.EqualFold(arg.Name, argCfg.Argument) || strings.EqualFold(arg.OriginalName, argCfg.Argument) {
 				// Apply default value if specified
 				if argCfg.Default != "" {
 					// Parse the default value as JSON to determine its type
@@ -3577,9 +3585,9 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		// Apply argument configurations from the parent module's toolchain config
 		// Find matching config by toolchain name
 		for _, tcCfg := range src.Self().ConfigToolchains {
-			if tcCfg.Name == clone.OriginalName && len(tcCfg.Arguments) > 0 {
+			if tcCfg.Name == clone.OriginalName && len(tcCfg.Customizations) > 0 {
 				// Apply configurations to the toolchain module's functions, including chained functions
-				applyArgumentConfigsToModule(clone, tcCfg.Arguments)
+				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
 				break
 			}
 		}
