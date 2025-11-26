@@ -34,6 +34,10 @@ type Function struct {
 	// IsCheck indicates whether this function is a check
 	IsCheck bool
 
+	// IsGenerator indicates whether this function is a generator
+	IsGenerator   bool
+	GeneratorPath string
+
 	// OriginalName of the parent object
 	ParentOriginalName string
 
@@ -201,6 +205,15 @@ func (fn *Function) WithDeprecated(reason *string) *Function {
 func (fn *Function) WithCheck() *Function {
 	fn = fn.Clone()
 	fn.IsCheck = true
+	return fn
+}
+
+func (fn *Function) WithGenerator(path string) *Function {
+	fn = fn.Clone()
+	fn.IsGenerator = true
+	if path != "" {
+		fn.GeneratorPath = path
+	}
 	return fn
 }
 
