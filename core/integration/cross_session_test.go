@@ -1686,3 +1686,104 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 
 	require.Equal(t, res1.Test.Fn, res2.Test.Fn)
 }
+
+func (InterfaceSuite) TestCrossSessionInterfaceCaching(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	driveDir := filepath.Join(modDir, "drive")
+	err := os.MkdirAll(driveDir, 0755)
+	require.NoError(t, err)
+
+	rollsDir := filepath.Join(modDir, "rolls-royce")
+	err = os.MkdirAll(rollsDir, 0755)
+	require.NoError(t, err)
+
+	// Use unique suffix to avoid hitting stale cache from previous test runs
+	uniqueSuffix := identity.NewID()
+
+	initDriveCmd := hostDaggerCommand(ctx, t, driveDir, "init", "--source=.", "--name=drive", "--sdk=go")
+	initDriveOutput, err := initDriveCmd.CombinedOutput()
+	require.NoError(t, err, string(initDriveOutput))
+	err = os.WriteFile(filepath.Join(driveDir, "main.go"), []byte(`package main
+
+import "context"
+
+// unique: `+uniqueSuffix+`
+
+type Drive struct {
+	Car Car
+}
+
+func New(car Car) *Drive {
+	return &Drive{Car: car}
+}
+
+func (d *Drive) DriveIt(ctx context.Context) error {
+	return d.Car.Drive(ctx)
+}
+
+type Car interface {
+	DaggerObject
+	Drive(ctx context.Context) error
+}
+`), 0644)
+	require.NoError(t, err)
+
+	initRollsCmd := hostDaggerCommand(ctx, t, rollsDir, "init", "--source=.", "--name=rolls-royce", "--sdk=go")
+	initRollsOutput, err := initRollsCmd.CombinedOutput()
+	require.NoError(t, err, string(initRollsOutput))
+
+	err = os.WriteFile(filepath.Join(rollsDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+)
+
+// unique: `+uniqueSuffix+`
+
+type RollsRoyce struct{}
+
+func (r *RollsRoyce) Drive(ctx context.Context) error {
+	fmt.Println("I'm a rolls royce")
+	return nil
+}
+`), 0644)
+	require.NoError(t, err)
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	installDriveMainCmd := hostDaggerCommand(ctx, t, modDir, "install", driveDir)
+	installDriveMainOutput, err := installDriveMainCmd.CombinedOutput()
+	require.NoError(t, err, string(installDriveMainOutput))
+
+	installRollsCmd := hostDaggerCommand(ctx, t, modDir, "install", rollsDir)
+	installRollsOutput, err := installRollsCmd.CombinedOutput()
+	require.NoError(t, err, string(installRollsOutput))
+
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+)
+
+// unique: `+uniqueSuffix+`
+
+type Test struct{}
+
+func (m *Test) DriveRollsRoyce(ctx context.Context) error {
+	return dag.Drive(dag.RollsRoyce().AsDriveCar()).DriveIt(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	callCmd1 := hostDaggerCommand(ctx, t, modDir, "call", "drive-rolls-royce")
+	callOutput1, err := callCmd1.CombinedOutput()
+	require.NoError(t, err, string(callOutput1))
+
+	callCmd2 := hostDaggerCommand(ctx, t, modDir, "call", "drive-rolls-royce")
+	callOutput2, err := callCmd2.CombinedOutput()
+	require.NoError(t, err, string(callOutput2))
+}

@@ -239,11 +239,11 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	}
 	deps := defaultDeps
 	for _, modID := range id.Modules() {
-		mod, err := dagql.NewID[*Module](modID.ID()).Load(ctx, bootstrap)
+		inst, err := GetModuleFromContentDigest(ctx, bootstrap, modID.Name(), string(modID.ID().Digest()))
 		if err != nil {
-			return nil, fmt.Errorf("load source mod: %w", err)
+			return nil, err
 		}
-		deps = deps.Append(mod.Self())
+		deps = deps.Append(inst.Self())
 	}
 	return deps, nil
 }
