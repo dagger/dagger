@@ -18,6 +18,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/containerd/containerd/v2/core/mount"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
@@ -2256,7 +2257,7 @@ func (s *containerSchema) asTarball(
 			bkref.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	err = core.MountRef(ctx, bkref, bkSessionGroup, func(out string) error {
+	err = core.MountRef(ctx, bkref, bkSessionGroup, func(out string, _ *mount.Mount) error {
 		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, filePath), inputByPlatform, opts)
 		if err != nil {
 			return fmt.Errorf("container image to tarball file conversion failed: %w", err)

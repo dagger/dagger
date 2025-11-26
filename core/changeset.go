@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -228,17 +229,17 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, beforeRef, bkSessionGroup, func(before string) error {
+	err = MountRef(ctx, beforeRef, bkSessionGroup, func(before string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(before, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
-		return MountRef(ctx, afterRef, bkSessionGroup, func(after string) error {
+		return MountRef(ctx, afterRef, bkSessionGroup, func(after string, _ *mount.Mount) error {
 			afterDir, err := containerdfs.RootPath(after, ch.After.Self().Dir)
 			if err != nil {
 				return err
 			}
-			return MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+			return MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
 				beforeMount := filepath.Join(root, "a")
 				afterMount := filepath.Join(root, "b")
 				if err := os.Mkdir(beforeMount, 0755); err != nil {

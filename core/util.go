@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -283,12 +284,12 @@ func mountRefAsReadOnly(opt *mountRefOpt) {
 //
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
-func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error, optFns ...mountRefOptFn) error {
-	dir, closer, err := MountRefCloser(ctx, ref, g, optFns...)
+func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string, *mount.Mount) error, optFns ...mountRefOptFn) error {
+	dir, m, closer, err := MountRefCloser(ctx, ref, g, optFns...)
 	if err != nil {
 		return err
 	}
-	err = f(dir)
+	err = f(dir, m)
 	if err != nil {
 		closeErr := closer()
 		if closeErr != nil {
@@ -304,7 +305,7 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 // To simplify external logic, when the ref is nil, i.e. scratch, a tmpdir is created (and deleted when the closer func is called).
 //
 // NOTE: prefer MountRef where possible, unless finer-grained control of when the directory is unmounted is needed.
-func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, optFns ...mountRefOptFn) (string, func() error, error) {
+func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, optFns ...mountRefOptFn) (_ string, _ *mount.Mount, _ func() error, rerr error) {
 	var opt mountRefOpt
 	for _, optFn := range optFns {
 		optFn(&opt)
@@ -313,22 +314,41 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, opt
 	if ref == nil {
 		dir, err := os.MkdirTemp("", "readonly-scratch")
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
-		return dir, func() error {
+		return dir, nil, func() error {
 			return os.RemoveAll(dir)
 		}, nil
 	}
-	mount, err := ref.Mount(ctx, opt.readOnly, g)
+	mountable, err := ref.Mount(ctx, opt.readOnly, g)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	lm := snapshot.LocalMounter(mount)
+	ms, unmount, err := mountable.Mount()
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, unmount())
+		}
+	}()
+	if len(ms) == 0 {
+		return "", nil, nil, fmt.Errorf("no mounts available from ref")
+	}
+	m := ms[0]
+
+	lm := snapshot.LocalMounterWithMounts(ms)
 	dir, err := lm.Mount()
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return dir, lm.Unmount, nil
+	m.Target = dir
+	return dir, &m, func() error {
+		err := lm.Unmount()
+		err = errors.Join(err, unmount())
+		return err
+	}, nil
 }
 
 // mountLLB is a utility for easily mounting an llb definition
@@ -510,7 +530,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 	if !opt.commitSnapshot {
 		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
 	}
-	rootPath, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
+	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
 	if err != nil {
 		return "", nil, err
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -16,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -23,17 +23,20 @@ import (
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sys/unix"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // Directory is a content-addressed directory.
@@ -506,7 +509,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
@@ -573,7 +576,7 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool,
 	}
 
 	results := []*SearchResult{}
-	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
@@ -793,7 +796,7 @@ func (dir *Directory) WithDirectory(
 		// note this always occurs when creating the rebasedDir (to prevent infinite recursion)
 
 		if canDoDirectMerge && srcRef != nil {
-			dir.Result = srcRef
+			dir.Result = srcRef.Clone()
 			return dir, nil
 		}
 		newRef, err := query.BuildkitCache().New(ctx, nil, nil,
@@ -804,7 +807,7 @@ func (dir *Directory) WithDirectory(
 			return nil, fmt.Errorf("buildkitcache.New failed: %w", err)
 		}
 
-		err = MountRef(ctx, newRef, nil, func(copyDest string) error {
+		err = MountRef(ctx, newRef, nil, func(copyDest string, destMnt *mount.Mount) error {
 			resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
 			if err != nil {
 				return err
@@ -829,20 +832,41 @@ func (dir *Directory) WithDirectory(
 			if err != nil {
 				return fmt.Errorf("failed to mount source directory: %w", err)
 			}
-			lm := snapshot.LocalMounter(mounter)
+			ms, unmountSrc, err := mounter.Mount()
+			if err != nil {
+				return fmt.Errorf("failed to mount source directory: %w", err)
+			}
+			defer unmountSrc()
+			if len(ms) == 0 {
+				return fmt.Errorf("no mounts returned for source directory")
+			}
+			srcMnt := ms[0]
+			lm := snapshot.LocalMounterWithMounts(ms)
 			srcPath, err := lm.Mount()
 			if err != nil {
 				return fmt.Errorf("failed to mount source directory: %w", err)
 			}
 			defer lm.Unmount()
+			srcMnt.Target = srcPath
 			resolvedSrcPath, err := containerdfs.RootPath(srcPath, src.Dir)
 			if err != nil {
 				return err
+			}
+			srcResolver, err := pathResolverForMount(&srcMnt)
+			if err != nil {
+				return fmt.Errorf("failed to create source path resolver: %w", err)
+			}
+			destResolver, err := pathResolverForMount(destMnt)
+			if err != nil {
+				return fmt.Errorf("failed to create destination path resolver: %w", err)
 			}
 			var opts []fscopy.Opt
 			opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
 				AlwaysReplaceExistingDestPaths: true,
 				CopyDirContents:                true,
+				EnableHardlinkOptimization:     true,
+				SourcePathResolver:             srcResolver,
+				DestPathResolver:               destResolver,
 			}))
 			for _, pattern := range filter.Include {
 				opts = append(opts, fscopy.WithIncludePattern(pattern))
@@ -930,7 +954,93 @@ func (dir *Directory) WithDirectory(
 	return dir, nil
 }
 
-func copyFile(srcPath, dstPath string) (err error) {
+// TODO: probably move elsewhere for better re-use
+func pathResolverForMount(m *mount.Mount) (fscopy.PathResolver, error) {
+	if m == nil {
+		return nil, nil
+	}
+	switch m.Type {
+	case "bind", "rbind":
+		return func(p string) (string, error) {
+			if m.Target != "" {
+				var err error
+				p, err = filepath.Rel(m.Target, p)
+				if err != nil {
+					return "", err
+				}
+			}
+			return containerdfs.RootPath(m.Source, p)
+		}, nil
+	case "overlay":
+		overlayDirs, err := overlay.GetOverlayLayers(*m)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get overlay layers: %w", err)
+		}
+		return func(p string) (string, error) {
+			if m.Target != "" {
+				var err error
+				p, err = filepath.Rel(m.Target, p)
+				if err != nil {
+					return "", err
+				}
+			}
+			// overlayDirs is lower->upper, so iterate in reverse to check
+			// upper layers first
+			var resolvedUpperdirPath string
+			for i := len(overlayDirs) - 1; i >= 0; i-- {
+				layerRoot := overlayDirs[i]
+				resolvedPath, err := containerdfs.RootPath(layerRoot, p)
+				if err != nil {
+					return "", err
+				}
+				if i == len(overlayDirs)-1 {
+					resolvedUpperdirPath = resolvedPath
+				}
+				_, err = os.Lstat(resolvedPath)
+				switch {
+				case err == nil:
+					return resolvedPath, nil
+				case errors.Is(err, os.ErrNotExist):
+					// try next layer
+				default:
+					return "", fmt.Errorf("failed to stat path %s in overlay layer: %w", resolvedPath, err)
+				}
+			}
+			// path doesn't exist, so if it's gonna exist, it should be in the upperdir
+			return resolvedUpperdirPath, nil
+		}, nil
+	default:
+		return nil, nil
+	}
+}
+
+func copyFile(srcPath, dstPath string, tryHardlink bool) (err error) {
+	if tryHardlink {
+		_, err := os.Lstat(dstPath)
+		switch {
+		case err == nil:
+			// destination already exists, remove it
+			if removeErr := os.Remove(dstPath); removeErr != nil {
+				return fmt.Errorf("failed to remove existing destination file %s: %w", dstPath, removeErr)
+			}
+		case errors.Is(err, os.ErrNotExist):
+			// destination does not exist, proceed
+		default:
+			return fmt.Errorf("failed to stat destination file %s: %w", dstPath, err)
+		}
+
+		err = os.Link(srcPath, dstPath)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, unix.EXDEV), errors.Is(err, unix.EMLINK):
+			// cross-device link or too many links, fall back to copy
+			slog.ExtraDebug("hardlink file failed, falling back to copy", "source", srcPath, "destination", dstPath, "error", err)
+		default:
+			return fmt.Errorf("failed to hard link file from %s to %s: %w", srcPath, dstPath, err)
+		}
+	}
+
 	srcStat, err := os.Stat(srcPath)
 	if err != nil {
 		return err
@@ -956,8 +1066,7 @@ func copyFile(srcPath, dstPath string) (err error) {
 			dst.Close()
 		}
 	}()
-	_, err = io.Copy(dst, src)
-	if err != nil {
+	if err := fscopy.CopyFileContent(dst, src); err != nil {
 		return err
 	}
 	err = dst.Close()
@@ -981,6 +1090,7 @@ func isDir(path string) (bool, error) {
 	return fi.Mode().IsDir(), nil
 }
 
+//nolint:gocyclo
 func (dir *Directory) WithFile(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -1017,53 +1127,108 @@ func (dir *Directory) WithFile(
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, newRef, bkSessionGroup, func(dirRoot string) error {
-		destPath, err := containerdfs.RootPath(dirRoot, destPath)
+
+	var realDestPath string
+	if err := MountRef(ctx, newRef, bkSessionGroup, func(root string, destMnt *mount.Mount) (rerr error) {
+		mntedDestPath, err := containerdfs.RootPath(root, destPath)
 		if err != nil {
 			return err
 		}
-		destIsDir, err := isDir(destPath)
+		destIsDir, err := isDir(mntedDestPath)
 		if err != nil {
 			return err
 		}
 		if destIsDir {
 			_, srcFilename := filepath.Split(src.File)
-			destPath = path.Join(destPath, srcFilename)
+			mntedDestPath = path.Join(mntedDestPath, srcFilename)
 		}
-		destPathDir, _ := filepath.Split(destPath)
+
+		destPathDir, _ := filepath.Split(mntedDestPath)
 		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
 		if err != nil {
 			return err
 		}
-		err = MountRef(ctx, srcCacheRef, bkSessionGroup, func(srcRoot string) error {
-			srcPath, err := containerdfs.RootPath(srcRoot, src.File)
-			if err != nil {
-				return err
-			}
-			return copyFile(srcPath, destPath)
-		})
+
+		resolvedDestRelPath, err := filepath.Rel(root, mntedDestPath)
 		if err != nil {
 			return err
 		}
-		if permissions != nil {
-			if err := os.Chmod(destPath, os.FileMode(*permissions)); err != nil {
-				return fmt.Errorf("failed to set chmod %s: err", destPath)
+		switch destMnt.Type {
+		case "bind", "rbind":
+			realDestPath = filepath.Join(destMnt.Source, resolvedDestRelPath)
+		case "overlay":
+			// touch the dest parent dir to trigger a copy-up of parent dirs
+			// we never try to keep directory modtimes consistent right now, so
+			// this is okay
+			if err := os.Chtimes(destPathDir, time.Now(), time.Now()); err != nil {
+				return fmt.Errorf("failed to touch overlay parent dir %s: %w", destPathDir, err)
 			}
-		}
-		if owner != "" {
-			ownership, err := parseDirectoryOwner(owner)
-			if err != nil {
-				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+
+			var upperdir string
+			for _, opt := range destMnt.Options {
+				if strings.HasPrefix(opt, "upperdir=") {
+					upperdir = strings.TrimPrefix(opt, "upperdir=")
+					break
+				}
 			}
-			if err := os.Chown(destPath, ownership.UID, ownership.GID); err != nil {
-				return fmt.Errorf("failed to set chown %s: err", destPath)
+			if upperdir == "" {
+				return fmt.Errorf("overlay mount missing upperdir option")
 			}
+			realDestPath = filepath.Join(upperdir, resolvedDestRelPath)
+		default:
+			return fmt.Errorf("unsupported mount type for destination: %s", destMnt.Type)
 		}
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
+
+	var realSrcPath string
+	if err := MountRef(ctx, srcCacheRef, bkSessionGroup, func(root string, srcMnt *mount.Mount) (rerr error) {
+		mntedSrcPath, err := containerdfs.RootPath(root, src.File)
+		if err != nil {
+			return err
+		}
+		resolvedSrcRelPath, err := filepath.Rel(root, mntedSrcPath)
+		if err != nil {
+			return err
+		}
+		srcMnt.Target = "" // TODO: cleanup
+		srcResolver, err := pathResolverForMount(srcMnt)
+		if err != nil {
+			return err
+		}
+		realSrcPath, err = srcResolver(resolvedSrcRelPath)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	tryHardlink := permissions == nil && owner == ""
+
+	err = copyFile(realSrcPath, realDestPath, tryHardlink)
 	if err != nil {
 		return nil, err
 	}
+
+	if permissions != nil {
+		if err := os.Chmod(realDestPath, os.FileMode(*permissions)); err != nil {
+			return nil, fmt.Errorf("failed to set chmod %s: err", destPath)
+		}
+	}
+	if owner != "" {
+		ownership, err := parseDirectoryOwner(owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+		}
+		if err := os.Chown(realDestPath, ownership.UID, ownership.GID); err != nil {
+			return nil, fmt.Errorf("failed to set chown %s: err", destPath)
+		}
+	}
+
 	snap, err := newRef.Commit(ctx)
 	if err != nil {
 		return nil, err
@@ -1232,7 +1397,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, err
 	}
 
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
 		fullPath, err := RootPathWithoutFinalSymlink(root, dir.Dir)
 		if err != nil {
 			return err
@@ -1452,7 +1617,7 @@ func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath 
 	}
 
 	var fileInfo os.FileInfo
-	err = MountRef(ctx, immutableRef, nil, func(root string) error {
+	err = MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, path.Join(dir.Dir, targetPath))
 		if err != nil {
 			return err

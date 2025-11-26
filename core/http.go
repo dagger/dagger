@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -127,7 +128,7 @@ func DoHTTPRequest(
 	}()
 
 	h := sha256.New()
-	err = MountRef(ctx, bkref, nil, func(out string) error {
+	err = MountRef(ctx, bkref, nil, func(out string, _ *mount.Mount) error {
 		// create the file
 		dest := filepath.Join(out, filename)
 		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(permissions))
