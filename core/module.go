@@ -70,6 +70,9 @@ type Module struct {
 	// ToolchainArgumentConfigs stores argument configuration overrides for toolchains by their original name
 	ToolchainArgumentConfigs map[string][]*modules.ModuleConfigArgument
 
+	// ToolchainIgnoreChecks stores check patterns to ignore for each toolchain by their original name
+	ToolchainIgnoreChecks map[string][]string
+
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
 
@@ -119,10 +122,35 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 			if !ok {
 				continue // skip toolchains without a main object
 			}
+			// Get the ignore patterns for this toolchain
+			ignorePatterns := mod.ToolchainIgnoreChecks[tcMod.OriginalName]
+
 			// Walk the toolchain module's checks
 			for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache) {
+				// Check if this check should be ignored (before prepending toolchain name)
+				// This allows ignoreChecks patterns to be scoped to the toolchain without needing the prefix
+				ignored := false
+				if len(ignorePatterns) > 0 {
+					// Check against ignore patterns using the check path WITHOUT the toolchain prefix
+					for _, ignorePattern := range ignorePatterns {
+						checkMatch, err := check.Match([]string{ignorePattern})
+						if err != nil {
+							return nil, err
+						}
+						if checkMatch {
+							ignored = true
+							break
+						}
+					}
+				}
+
+				if ignored {
+					continue // Skip this check
+				}
+
 				// Prepend the toolchain name to the check path
 				check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
+
 				match, err := check.Match(include)
 				if err != nil {
 					return nil, err

@@ -260,3 +260,117 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.Contains(t, out, "Greetings from Mars!")
 	})
 }
+
+func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("ignore checks from toolchain using ignoreChecks config", func(ctx context.Context, t *testctx.T) {
+		// Set up test environment with checks test data
+		modGen := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		// Install hello-with-checks as a toolchain
+		modGen = modGen.With(daggerExec("toolchain", "install", "../hello-with-checks"))
+
+		// Verify all checks are visible by default
+		out, err := modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-checks:passing-check")
+		require.Contains(t, out, "hello-with-checks:failing-check")
+		require.Contains(t, out, "hello-with-checks:passing-container")
+		require.Contains(t, out, "hello-with-checks:failing-container")
+
+		// Now add ignoreChecks configuration to filter out failing checks
+		modGen = modGen.WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.16.0",
+  "toolchains": [
+    {
+      "name": "hello-with-checks",
+      "source": "../hello-with-checks",
+      "ignoreChecks": [
+        "failing-check",
+        "failing-container"
+      ]
+    }
+  ]
+}`)
+
+		// List checks again - should only show passing checks
+		out, err = modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-checks:passing-check")
+		require.Contains(t, out, "hello-with-checks:passing-container")
+		require.NotContains(t, out, "hello-with-checks:failing-check")
+		require.NotContains(t, out, "hello-with-checks:failing-container")
+
+		// Run all checks - should only run passing checks (and succeed)
+		out, err = modGen.
+			With(daggerExec("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `passingContainer.*OK`, out)
+		require.NotContains(t, out, "failingCheck")
+		require.NotContains(t, out, "failingContainer")
+	})
+
+	t.Run("ignore checks with glob patterns", func(ctx context.Context, t *testctx.T) {
+		// Set up test environment
+		modGen := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		// Install hello-with-checks as a toolchain
+		modGen = modGen.With(daggerExec("toolchain", "install", "../hello-with-checks"))
+
+		// Add ignoreChecks with wildcard patterns
+		modGen = modGen.WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.16.0",
+  "toolchains": [
+    {
+      "name": "hello-with-checks",
+      "source": "../hello-with-checks",
+      "ignoreChecks": [
+        "failing-*"
+      ]
+    }
+  ]
+}`)
+
+		// List checks - should only show passing checks
+		out, err := modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-checks:passing-check")
+		require.Contains(t, out, "hello-with-checks:passing-container")
+		require.NotContains(t, out, "hello-with-checks:failing-check")
+		require.NotContains(t, out, "hello-with-checks:failing-container")
+
+		// Run all checks - should succeed since only passing checks run
+		out, err = modGen.
+			With(daggerExec("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `passingContainer.*OK`, out)
+	})
+}
