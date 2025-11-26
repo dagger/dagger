@@ -15,7 +15,7 @@ public class QueryExecutorTest
             .Select("from", [new Argument("address", new StringValue("alpine"))])
             .Select("id");
 
-        string id = await SDK.QueryExecutor.ExecuteAsync<string>(gqlClient, queryBuilder);
+        string id = await QueryExecutor.ExecuteAsync<string>(gqlClient, queryBuilder);
 
         Assert.IsFalse(string.IsNullOrWhiteSpace(id));
     }
@@ -31,9 +31,9 @@ public class QueryExecutorTest
             .Select("envVariables")
             .Select("id");
 
-        var ids = await SDK.QueryExecutor.ExecuteListAsync<EnvVariableId>(gqlClient, queryBuilder);
+        var ids = await QueryExecutor.ExecuteListAsync<EnvVariableId>(gqlClient, queryBuilder);
 
-        Assert.IsTrue(ids.Length > 0);
+        Assert.IsNotEmpty(ids);
         CollectionAssert.AllItemsAreNotNull(ids);
 
         Console.WriteLine(ids);
