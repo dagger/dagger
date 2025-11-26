@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -1113,75 +1112,11 @@ func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dag
 	parentChanges := parent.Self()
 	additionalChanges := changes.Self()
 
-	for _, addedPath := range parentChanges.AddedPaths {
-		if slices.Contains(additionalChanges.AddedPaths, addedPath) {
-			err = errors.Join(err, fmt.Errorf("path %q added in both changesets", addedPath))
-			continue
-		}
-	}
-	for _, modifiedPath := range parentChanges.ModifiedPaths {
-		if slices.Contains(additionalChanges.ModifiedPaths, modifiedPath) {
-			err = errors.Join(err, fmt.Errorf("path %q modified in both changesets", modifiedPath))
-			continue
-		}
-		if slices.Contains(additionalChanges.RemovedPaths, modifiedPath) {
-			err = errors.Join(err, fmt.Errorf("path %q both modified and deleted", modifiedPath))
-			continue
-		}
-	}
-	for _, removedPath := range parentChanges.RemovedPaths {
-		if slices.Contains(additionalChanges.ModifiedPaths, removedPath) {
-			err = errors.Join(err, fmt.Errorf("path %q both deleted and modified", removedPath))
-			continue
-		}
-	}
-
-	if err != nil && !args.ContinueOnConflicts {
-		return res, err
-	}
-
-	var before, after dagql.ObjectResult[*core.Directory]
-	srv.Select(ctx, srv.Root(), &before,
-		dagql.Selector{
-			Field: "directory",
-		},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](parentChanges.Before.ID())},
-			},
-		},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](additionalChanges.Before.ID())},
-			},
-		})
-	srv.Select(ctx, srv.Root(), &after,
-		dagql.Selector{
-			Field: "directory",
-		},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](parentChanges.After.ID())},
-			},
-		},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](additionalChanges.After.ID())},
-			},
-		})
-
-	newChanges, err := core.NewChangeset(ctx, before, after)
+	newChanges, err := parentChanges.WithChangeset(ctx, additionalChanges, args.ContinueOnConflicts)
 	if err != nil {
 		return res, err
 	}
+
 	return dagql.NewObjectResultForCurrentID(ctx, srv, newChanges)
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -373,4 +374,79 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	defer telemetry.EndWithCause(span, &rerr)
 
 	return bk.LocalDirExport(ctx, defPB, destPath, true, ch.RemovedPaths)
+}
+
+func (ch *Changeset) WithChangeset(ctx context.Context, other *Changeset, continueOnConflicts bool) (*Changeset, error) {
+	var err error
+	for _, addedPath := range ch.AddedPaths {
+		if slices.Contains(other.AddedPaths, addedPath) {
+			err = errors.Join(err, fmt.Errorf("path %q added in both changesets", addedPath))
+			continue
+		}
+	}
+	for _, modifiedPath := range ch.ModifiedPaths {
+		if slices.Contains(other.ModifiedPaths, modifiedPath) {
+			err = errors.Join(err, fmt.Errorf("path %q modified in both changesets", modifiedPath))
+			continue
+		}
+		if slices.Contains(other.RemovedPaths, modifiedPath) {
+			err = errors.Join(err, fmt.Errorf("path %q both modified and deleted", modifiedPath))
+			continue
+		}
+	}
+	for _, removedPath := range ch.RemovedPaths {
+		if slices.Contains(other.ModifiedPaths, removedPath) {
+			err = errors.Join(err, fmt.Errorf("path %q both deleted and modified", removedPath))
+			continue
+		}
+	}
+
+	if err != nil && !continueOnConflicts {
+		return nil, err
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var before, after dagql.ObjectResult[*Directory]
+	srv.Select(ctx, srv.Root(), &before,
+		dagql.Selector{
+			Field: "directory",
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".")},
+				{Name: "source", Value: dagql.NewID[*Directory](ch.Before.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".")},
+				{Name: "source", Value: dagql.NewID[*Directory](other.Before.ID())},
+			},
+		})
+	srv.Select(ctx, srv.Root(), &after,
+		dagql.Selector{
+			Field: "directory",
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".")},
+				{Name: "source", Value: dagql.NewID[*Directory](ch.After.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".")},
+				{Name: "source", Value: dagql.NewID[*Directory](other.After.ID())},
+			},
+		})
+
+	return NewChangeset(ctx, before, after)
 }

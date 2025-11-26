@@ -170,6 +170,50 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	return group, nil
 }
 
+func (mod *Module) Generators(ctx context.Context, include []string) (*GeneratorGroup, error) {
+	mainObj, ok := mod.MainObject()
+	if !ok {
+		return nil, fmt.Errorf("scan for generators: %q: can't load main object", mod.Name())
+	}
+	objGeneratorCache := map[string][]*Generator{}
+	group := &GeneratorGroup{Module: mod}
+	// 1. Walk main module for generators
+	for _, generator := range mod.walkObjectGenerators(ctx, mainObj, objGeneratorCache) {
+		match, err := generator.Match(include)
+		if err != nil {
+			return nil, err
+		}
+		if match {
+			group.Generators = append(group.Generators, generator)
+		}
+	}
+	// 2. Walk toolchain modules for generators
+	for _, dep := range mod.Deps.Mods {
+		if tcMod, ok := dep.(*Module); ok && tcMod.IsToolchain {
+			tcMainObj, ok := tcMod.MainObject()
+			if !ok {
+				continue
+			}
+			for _, generator := range tcMod.walkObjectGenerators(ctx, tcMainObj, objGeneratorCache) {
+				generator.Path = append([]string{gqlFieldName(tcMod.NameField)}, generator.Path...)
+				match, err := generator.Match(include)
+				if err != nil {
+					return nil, err
+				}
+				if match {
+					group.Generators = append(group.Generators, generator)
+				}
+			}
+		}
+	}
+
+	for _, generator := range group.Generators {
+		generator.Module = mod
+	}
+
+	return group, nil
+}
+
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	return mod.ObjectByName(mod.Name())
 }
@@ -235,6 +279,57 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 	}
 	objChecksCache[obj.Name] = checks
 	return checks
+}
+
+func (mod *Module) walkObjectGenerators(ctx context.Context, obj *ObjectTypeDef, objGeneratorsCache map[string][]*Generator) []*Generator { //nolint:unparam
+	if cached, ok := objGeneratorsCache[obj.Name]; ok {
+		return cached
+	}
+	var generators []*Generator
+	objGeneratorsCache[obj.Name] = generators
+	subObjects := map[string]*ObjectTypeDef{}
+	for _, fn := range obj.Functions {
+		func() {
+			if functionRequiresArgs(fn) {
+				return
+			}
+			// 1. Scan object for generators
+			if fn.IsGenerator {
+				generators = append(generators, &Generator{
+					Path:        []string{gqlFieldName(fn.Name)},
+					Description: fn.Description,
+				})
+				return
+			}
+			// 2. Recursively scan reachable children objects
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
+				// avoid cycles (X.withFoo: X)
+				fn.ReturnType.ToType().Name() != obj.Name {
+				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
+				if ok {
+					subObjects[fn.Name] = subObj
+				}
+			}
+		}()
+	}
+	// Also walk fields for sub-checks
+	for _, field := range obj.Fields {
+		if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
+			subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
+			if ok {
+				subObjects[field.Name] = subObj
+			}
+		}
+	}
+	for key, subObj := range subObjects {
+		subGenerators := mod.walkObjectGenerators(ctx, subObj, objGeneratorsCache)
+		for _, subGenerator := range subGenerators {
+			subGenerator.Path = append([]string{gqlFieldName(key)}, subGenerator.Path...)
+		}
+		generators = append(generators, subGenerators...)
+	}
+	objGeneratorsCache[obj.Name] = generators
+	return generators
 }
 
 func functionRequiresArgs(fn *Function) bool {
