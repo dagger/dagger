@@ -201,6 +201,9 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 	if spec.isCheck {
 		fnTypeDef = fnTypeDef.WithCheck()
 	}
+	if spec.isGenerator {
+		fnTypeDef = fnTypeDef.WithGenerator(spec.generatorPath)
+	}
 
 	for _, argSpec := range spec.argSpecs {
 		if argSpec.isContext {
