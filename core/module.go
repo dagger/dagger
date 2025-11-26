@@ -268,8 +268,9 @@ func (mod *Module) walkObjectGenerators(ctx context.Context, obj *ObjectTypeDef,
 			// 1. Scan object for generators
 			if fn.IsGenerator {
 				generators = append(generators, &Generator{
-					Path:        []string{gqlFieldName(fn.Name)},
-					Description: fn.Description,
+					Path:          []string{gqlFieldName(fn.Name)},
+					Description:   fn.Description,
+					GeneratedPath: fn.GeneratorPath,
 				})
 				return
 			}

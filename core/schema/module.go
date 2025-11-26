@@ -87,6 +87,20 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("name").Doc("The name of the check to retrieve"),
 			),
 
+		dagql.Func("generators", s.moduleGenerators).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return all generators defined by the module`).
+			Args(
+				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+			),
+
+		dagql.Func("generator", s.moduleGenerator).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return the generator defined by the module with the given name. Must match to exactly one generator.`).
+			Args(
+				dagql.Arg("name").Doc("The name of the generator to retrieve"),
+			),
+
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
 

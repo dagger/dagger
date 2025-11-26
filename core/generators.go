@@ -22,7 +22,7 @@ type Generator struct {
 	Description   string     `field:"true" doc:"The description of the generator"`
 	GeneratedPath string     `field:"true" doc:"The path of the generated assets if defined"`
 	Completed     bool       `field:"true" doc:"Whether the generator complete"`
-	Changeset     *Changeset `field:"true" doc:"The generated changeset"`
+	Changes       *Changeset `field:"true" doc:"The generated changeset"`
 	Module        *Module
 }
 
@@ -66,7 +66,7 @@ func (g *Generator) Match(include []string) (bool, error) {
 	if len(include) == 0 {
 		return true, nil
 	}
-	for i, name := range []string{g.CliName(), g.GqlName(), g.GeneratedPath} {
+	for _, name := range []string{g.CliName(), g.GqlName(), g.GeneratedPath} {
 		for _, pattern := range include {
 			if match, err := fnPathContains(pattern, name); err != nil {
 				return false, err
@@ -78,15 +78,12 @@ func (g *Generator) Match(include []string) (bool, error) {
 			} else if match {
 				return true, nil
 			}
-			if i != 2 {
-				// do not check with : as separator for file system path
-				pattern = strings.ReplaceAll(pattern, ":", "/")
-				name = strings.ReplaceAll(name, "", "/")
-				if matched, err := doublestar.PathMatch(pattern, name); err != nil {
-					return false, err
-				} else if matched {
-					return true, nil
-				}
+			pattern = strings.ReplaceAll(pattern, ":", "/")
+			name = strings.ReplaceAll(name, "", "/")
+			if matched, err := doublestar.PathMatch(pattern, name); err != nil {
+				return false, err
+			} else if matched {
+				return true, nil
 			}
 		}
 	}
@@ -121,7 +118,7 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 			),
 		)
 		generator.Completed = false
-		generator.Changeset = nil
+		generator.Changes = nil
 		eg.Go(func() (rerr error) {
 			defer func() {
 				generator.Completed = true
@@ -132,7 +129,7 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 			if err != nil {
 				return err
 			}
-			generator.Changeset = cs
+			generator.Changes = cs
 			return nil
 		})
 	}
@@ -192,7 +189,7 @@ func (g *Generator) Run(ctx context.Context) (*Generator, error) {
 	}
 
 	g.Completed = false
-	g.Changeset = nil
+	g.Changes = nil
 
 	var generatorErr error
 	defer func() {
@@ -203,7 +200,7 @@ func (g *Generator) Run(ctx context.Context) (*Generator, error) {
 			telemetry.EndWithCause(span, &generatorErr)
 		}
 	}()
-	g.Changeset, generatorErr = g.run(ctx, dag, false)
+	g.Changes, generatorErr = g.run(ctx, dag, false)
 	return g, nil
 }
 
@@ -237,14 +234,10 @@ func (g *Generator) run(
 	}
 
 	// Call the generator
-	var status dagql.AnyResult
-	if err := dag.Select(dagql.WithNonInternalTelemetry(ctx), generatorParent, &status, selectPath[len(selectPath)-1]); err != nil {
+	var changes dagql.ObjectResult[*Changeset]
+	if err := dag.Select(dagql.WithNonInternalTelemetry(ctx), generatorParent, &changes, selectPath[len(selectPath)-1]); err != nil {
 		return nil, err
 	}
 
-	if cs, ok := dagql.UnwrapAs[dagql.Nullable[*Changeset]](status); ok {
-		return cs.Value, nil
-	}
-
-	return nil, nil
+	return changes.Self(), nil
 }
