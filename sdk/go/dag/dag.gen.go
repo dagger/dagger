@@ -498,6 +498,12 @@ func LoadSourceMapFromID(id dagger.SourceMapID) *dagger.SourceMap {
 	return client.LoadSourceMapFromID(id)
 }
 
+// Load a Stat from its ID.
+func LoadStatFromID(id dagger.StatID) *dagger.Stat {
+	client := initClient()
+	return client.LoadStatFromID(id)
+}
+
 // Load a Terminal from its ID.
 func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 	client := initClient()

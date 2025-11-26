@@ -165,6 +165,15 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return file status
+     */
+    public function stat(): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Force evaluation in the engine.
      */
     public function sync(): FileId

@@ -38,6 +38,8 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves the size of the file, in bytes.`),
 		dagql.Func("name", s.name).
 			Doc(`Retrieves the name of the file.`),
+		dagql.Func("stat", s.stat).
+			Doc(`Return file status`),
 		dagql.Func("digest", s.digest).
 			Doc(
 				`Return the file's digest.
@@ -137,6 +139,14 @@ func (s *fileSchema) size(ctx context.Context, file *core.File, args struct{}) (
 
 func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
 	return dagql.NewString(filepath.Base(file.File)), nil
+}
+
+func (s *fileSchema) stat(ctx context.Context, parent *core.File, args struct{}) (*core.Stat, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return parent.StatDagOp(ctx, srv)
 }
 
 type fileDigestArgs struct {
