@@ -8,7 +8,9 @@ import (
 
 	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/iancoleman/strcase"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -97,31 +99,31 @@ func (ef *EnvFile) Variables(ctx context.Context, raw bool) ([]EnvVariable, erro
 	if raw {
 		return ef.variablesRaw(ctx)
 	}
-	return ef.variables(ctx)
+	return ef.variables(ctx, false)
 }
 
-func (ef *EnvFile) variablesRaw(_ context.Context) (vars []EnvVariable, _ error) {
+func (ef *EnvFile) variablesRaw(_ context.Context) (vars EnvVariables, _ error) { //nolint:unparam
 	for name, value := range dotenv.AllRaw(ef.Environ) {
 		vars = append(vars, EnvVariable{Name: name, Value: value})
 	}
+	vars.Sort() // dotenv.AllRaw returns a map, so we must keep the ordering consistent for hashing purposes
 	return vars, nil
 }
 
-func (ef *EnvFile) variables(_ context.Context) (vars []EnvVariable, _ error) {
+// allowUnboundVariables should only be used when computing a digest (which is needed to declare values in any order)
+func (ef *EnvFile) variables(ctx context.Context, allowUnboundVariables bool) (vars EnvVariables, _ error) {
 	hostGetEnv := func(name string) string {
-		// FIXME: for now, expanding system env variables is disabled,
-		//  until we address the caching issues.
-		//  See https://github.com/dagger/dagger/pull/11034#discussion_r2401382370
-		// To re-enable, call Host.GetEnv
-		return ""
+		// Fallback to using host values for expansion
+		return Host{}.GetEnv(ctx, name)
 	}
-	all, err := dotenv.All(ef.Environ, hostGetEnv)
+	all, err := dotenv.All(ef.Environ, hostGetEnv, !allowUnboundVariables)
 	if err != nil {
 		return nil, err
 	}
 	for name, value := range all {
 		vars = append(vars, EnvVariable{Name: name, Value: value})
 	}
+	vars.Sort() // dotenv.All returns a map, so we must keep the ordering consistent for hashing purposes
 	return vars, nil
 }
 
@@ -193,11 +195,8 @@ func (ef *EnvFile) Lookup(ctx context.Context, name string, raw bool) (string, b
 		return value, found, nil
 	}
 	hostGetEnv := func(name string) string {
-		// FIXME: for now, expanding system env variables is disabled,
-		//  until we address the caching issues.
-		//  See https://github.com/dagger/dagger/pull/11034#discussion_r2401382370
-		// To re-enable, call Host.GetEnv
-		return ""
+		// Fallback to using host values for expansion
+		return Host{}.GetEnv(ctx, name)
 	}
 	return dotenv.Lookup(ef.Environ, name, hostGetEnv)
 }
@@ -281,4 +280,16 @@ func (ef *EnvFile) WithContents(contents string) (*EnvFile, error) {
 		ef = ef.WithVariable(k, v)
 	}
 	return ef, nil
+}
+
+func (ef *EnvFile) Digest(ctx context.Context) (digest.Digest, error) {
+	vars, err := ef.variables(ctx, true)
+	if err != nil {
+		return "", err
+	}
+	vals := []string{}
+	for _, v := range vars {
+		vals = append(vals, fmt.Sprintf("%s=%s", v.Name, v.Value))
+	}
+	return hashutil.HashStrings(vals...), nil
 }

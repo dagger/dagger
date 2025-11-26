@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dotenv"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -179,17 +181,62 @@ func (EnvFileSuite) TestEvalMatch(ctx context.Context, t *testctx.T) {
 			},
 		},
 		{
-			name: "raw",
+			name: "raw_simple",
 			vars: map[string]string{
-				"simple":        "hello world",
-				"quotes":        `"hello world"`,
+				"simple": "hello world",
+			},
+		},
+		{
+			name: "raw_quotes",
+			vars: map[string]string{
+				"quotes": `"hello world"`,
+			},
+		},
+		{
+			name: "raw_single_quotes",
+			vars: map[string]string{
 				"single_quotes": `'hello world'`,
-				"dollar_sign":   "$FOO",
-				"expansion":     "${FOO}",
-				"command_sub":   "$(echo hello)",
-				"backticks":     "`echo hello`",
-				"backslash":     `hello\nworld`,
-				"mixed":         `"$FOO ${BAR} $(cmd)" and 'more'`,
+			},
+		},
+		{
+			name: "raw_dollar_sign",
+			vars: map[string]string{
+				"dollar_sign": "$FOO",
+			},
+		},
+		{
+			name: "raw_expansion",
+			vars: map[string]string{
+				"expansion": "${FOO}",
+			},
+		},
+		{
+			name: "raw_command_sub",
+			vars: map[string]string{
+				"command_sub": "$(echo hello)",
+			},
+		},
+		{
+			name: "raw_backticks",
+			vars: map[string]string{
+				"backticks": "`echo hello`",
+			},
+		},
+		{
+			name: "raw_backslash",
+			vars: map[string]string{
+				"backslash": `hello\nworld`,
+			},
+		},
+		{
+			name: "raw_mixed",
+			vars: map[string]string{
+				"mixed": `"$FOO ${BAR} $(cmd)" and 'more'`,
+			},
+		},
+		{
+			name: "raw_special_chars",
+			vars: map[string]string{
 				"special_chars": "()&^%$#@!",
 			},
 		},
@@ -333,24 +380,86 @@ func (EnvFileSuite) TestSystemVariables(ctx context.Context, t *testctx.T) {
 		WithNewFile(".env", `GREETING="${SYSTEM_GREETING}"`)
 	output1, err := ctr.
 		WithExec([]string{
-			"dagger", "core", "host", "file", "--path=.env", "as-env-file", "get", "GREETING"},
+			"dagger", "core", "host", "file", "--path=.env", "as-env-file", "get", "--name", "GREETING"},
 			nestedExec,
 		).
 		Stdout(ctx)
-	// FIXME System env variable lookup is temporarily disabled
-	// see https://github.com/dagger/dagger/pull/11034#discussion_r2401382370
-	require.Error(t, err)
-	require.NotEqual(t, "live long and prosper", output1, "output should NOT include the system env variable (feature temporarily disabled)")
+	require.NoError(t, err)
+	require.Equal(t, "live long and prosper", output1)
 	output2, err := ctr.
 		WithExec([]string{
 			"dagger", "core", "host", "file", "--path=.env", "as-env-file", "variables", "value"},
 			nestedExec,
 		).
 		Stdout(ctx)
-	// FIXME System env variable lookup is temporarily disabled
-	// see https://github.com/dagger/dagger/pull/11034#discussion_r2401382370
-	require.Error(t, err)
-	require.NotEqual(t, "live long and prosper", output2, "output should NOT include the system env variable (feature temporarily disabled)")
+	require.NoError(t, err)
+	require.Equal(t, "live long and prosper\n", output2)
+}
+
+func (EnvFileSuite) TestSystemVariableCachePolicy(ctx context.Context, t *testctx.T) {
+	tmp := tempDirWithEnvFile(t,
+		`NAME=${MYNAME}`,
+	)
+	for _, userName := range []string{"user1", "user2"} {
+		c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
+		s, err := c.Host().File(".env").AsEnvFile().Get(ctx, "NAME")
+		require.NoError(t, err)
+		require.Equal(t, userName, s)
+	}
+}
+
+func (EnvFileSuite) TestCaching(ctx context.Context, t *testctx.T) {
+	tmp := tempDirWithEnvFile(t,
+		`NAME=${MYNAME}`,
+	)
+	seenData := map[string]string{}
+	for i := 0; i < 2; i++ {
+		for _, userName := range []string{"user1", "user2"} {
+			c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
+			ef := c.Host().File(".env").AsEnvFile()
+			s, err := c.Container().From(alpineImage).WithEnvFileVariables(ef).
+				WithExec([]string{"sh", "-c", "echo -n \"Hello $NAME here is some random data: \" && cat /dev/urandom | head -c 15 | base64 -w0"}).Stdout(ctx)
+			require.NoError(t, err)
+			expectedPrefix := fmt.Sprintf("Hello %s here is some random data: ", userName)
+			testutil.HasPrefix(t, expectedPrefix, s)
+			data := strings.TrimPrefix(s, expectedPrefix)
+			require.Len(t, data, 15*4/3) // base64 encoding bloats the data by 4/3
+			if i == 0 {
+				seenData[userName] = data
+			} else {
+				d, found := seenData[userName]
+				require.Equal(t, true, found)
+				require.Equal(t, d, data, "expected cached execution; however, different random data indicates it was re-executed")
+			}
+		}
+	}
+}
+
+func (EnvFileSuite) TestCachingWithIndirectVar(ctx context.Context, t *testctx.T) {
+	tmp := tempDirWithEnvFile(t,
+		`MYVAR=NOT_USED`,
+	)
+	seenData := map[string]string{}
+	for i := 0; i < 2; i++ {
+		for _, userName := range []string{"user1", "user2"} {
+			c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
+			ef := c.Host().File(".env").AsEnvFile().WithVariable("NAME", "$MYNAME")
+			s, err := c.Container().From(alpineImage).WithEnvFileVariables(ef).
+				WithExec([]string{"sh", "-c", "echo -n \"Hello $NAME here is some random data: \" && cat /dev/urandom | head -c 15 | base64 -w0"}).Stdout(ctx)
+			require.NoError(t, err)
+			expectedPrefix := fmt.Sprintf("Hello %s here is some random data: ", userName)
+			testutil.HasPrefix(t, expectedPrefix, s)
+			data := strings.TrimPrefix(s, expectedPrefix)
+			require.Len(t, data, 15*4/3) // base64 encoding bloats the data by 4/3
+			if i == 0 {
+				seenData[userName] = data
+			} else {
+				d, found := seenData[userName]
+				require.Equal(t, true, found)
+				require.Equal(t, d, data, "expected cached execution; however, different random data indicates it was re-executed")
+			}
+		}
+	}
 }
 
 func (EnvFileSuite) TestSecretFile(ctx context.Context, t *testctx.T) {

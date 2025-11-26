@@ -2539,6 +2539,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withEnvFileVariables",
+			"p": "Dagger/Container.html#method_withEnvFileVariables",
+			"d": "<p>Export environment variables from an env-file to the container.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withEnvVariable",
 			"p": "Dagger/Container.html#method_withEnvVariable",
 			"d": "<p>Set a new environment variable in the container.</p>"

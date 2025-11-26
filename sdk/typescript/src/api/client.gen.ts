@@ -3941,6 +3941,15 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Export environment variables from an env-file to the container.
+   * @param source Identifier of the envfile
+   */
+  withEnvFileVariables = (source: EnvFile): Container => {
+    const ctx = this._ctx.select("withEnvFileVariables", { source })
+    return new Container(ctx)
+  }
+
+  /**
    * Set a new environment variable in the container.
    * @param name Name of the environment variable (e.g., "HOST").
    * @param value Value of the environment variable. (e.g., "localhost").

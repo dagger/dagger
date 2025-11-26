@@ -167,6 +167,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/opt/bin:$PATH").`),
 			),
 
+		dagql.Func("withEnvFileVariables", s.withEnvFileVariables).
+			Doc(`Export environment variables from an env-file to the container.`).
+			Args(
+				dagql.Arg("source").Doc(`Identifier of the envfile`),
+			),
+
 		// NOTE: this is internal-only for now (hidden from codegen via the __ prefix) as we
 		// currently only want to use it for allowing the Go SDK to inherit custom GOPROXY
 		// settings from the engine container. It may be made public in the future with more
@@ -1320,6 +1326,34 @@ func (s *containerSchema) withEnvVariable(ctx context.Context, parent *core.Cont
 
 		cfg.Env = core.AddEnv(cfg.Env, args.Name, value)
 
+		return cfg
+	})
+}
+
+type withEnvFileVariablesArgs struct {
+	Source core.EnvFileID
+}
+
+func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent *core.Container, args withEnvFileVariablesArgs) (*core.Container, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	ef, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	vars, err := ef.Self().Variables(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		for _, v := range vars {
+			cfg.Env = core.AddEnv(cfg.Env, v.Name, v.Value)
+		}
 		return cfg
 	})
 }

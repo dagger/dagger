@@ -3731,6 +3731,26 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Export environment variables from an env-file to the container.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Identifier of the envfile
+    pub fn with_env_file_variables(&self, source: impl IntoID<EnvFileId>) -> Container {
+        let mut query = self.selection.select("withEnvFileVariables");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Set a new environment variable in the container.
     ///
     /// # Arguments

@@ -277,7 +277,7 @@ func TestAllExpansion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := All(tt.environ, nil)
+			got, err := All(tt.environ, nil, true)
 			if tt.wantError {
 				require.Error(t, err, tt.name)
 			} else {
