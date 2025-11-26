@@ -299,6 +299,14 @@ func (container *Container) WithExec(
 			if err != nil {
 				return
 			}
+
+			// FIXME there was an out of range panic that occurred when accessing execMounts below; however it's not clear why
+			if len(results) > 0 && len(execInputs) == 0 {
+				slog.Warn("results were returned without execMounts",
+					"num_results", len(results),
+					"error", rerr)
+			}
+
 			for i, res := range results {
 				execMounts[p.OutputRefs[i].MountIndex] = res
 			}

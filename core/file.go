@@ -121,7 +121,7 @@ func NewFileWithContents(
 	if err != nil {
 		return nil, err
 	}
-	return dir.FileLLB(ctx, name)
+	return dir.File(ctx, name)
 }
 
 func NewFileSt(ctx context.Context, st llb.State, file string, platform Platform, services ServiceBindings) (*File, error) {
@@ -478,6 +478,70 @@ func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
 	return ref.StatFile(ctx, bkgw.StatRequest{
 		Path: file.File,
 	})
+}
+
+// TODO replace old Stat function with this one (and rename this back to Stat)
+func (file *File) StatDagOp(ctx context.Context, srv *dagql.Server) (*Stat, error) {
+	res, err := file.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		return nil, nil
+	}
+
+	immutableRef, err := ref.CacheRef(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	osStatFunc := os.Stat
+	rootPathFunc := containerdfs.RootPath
+	// TODO Could there be a case where a File() is a symlink?
+	// if doNotFollowSymlinks {
+	// 	// symlink testing requires the Lstat call, which does NOT follow symlinks
+	// 	osStatFunc = os.Lstat
+	// 	// similarly, containerdfs.RootPath can't be used, since it follows symlinks
+	// 	rootPathFunc = RootPathWithoutFinalSymlink
+	// }
+
+	var fileInfo os.FileInfo
+	err = MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
+		resolvedPath, err := rootPathFunc(root, file.File)
+		if err != nil {
+			return err
+		}
+		fileInfo, err = osStatFunc(resolvedPath)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", file.File, err)
+	}
+
+	m := fileInfo.Mode()
+
+	stat := &Stat{
+		Size:        int(fileInfo.Size()),
+		Name:        fileInfo.Name(),
+		Permissions: int(fileInfo.Mode().Perm()),
+	}
+
+	if m.IsDir() {
+		stat.FileType = FileTypeDirectory
+	} else if m.IsRegular() {
+		stat.FileType = FileTypeRegular
+	} else if m&fs.ModeSymlink != 0 {
+		stat.FileType = FileTypeSymlink
+	} else {
+		stat.FileType = FileTypeUnknown
+	}
+
+	return stat, nil
 }
 
 func (file *File) WithName(ctx context.Context, filename string) (*File, error) {
