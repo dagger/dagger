@@ -33,6 +33,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
+	core.FileTypes.Install(srv)
+	dagql.Fields[*core.Stat]{}.Install(srv)
 
 	dagql.Fields[*core.Directory]{
 		Syncer[*core.Directory]().
@@ -125,6 +127,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
+			),
+		dagql.Func("stat", s.stat).
+			Doc(`Return file status`).
+			Args(
+				dagql.Arg("path").Doc(`Path to stat (e.g., "/file.txt").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
 		dagql.NodeFunc("directory", maintainContentHashing(s.subdirectory)).
@@ -844,6 +852,19 @@ func (s *directorySchema) exists(ctx context.Context, parent *core.Directory, ar
 
 	exists, err := parent.Exists(ctx, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
 	return dagql.NewBoolean(exists), err
+}
+
+type statArgs struct {
+	Path                string
+	DoNotFollowSymlinks bool `default:"false"`
+}
+
+func (s *directorySchema) stat(ctx context.Context, parent *core.Directory, args statArgs) (*core.Stat, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return parent.Stat(ctx, srv, args.Path, args.DoNotFollowSymlinks)
 }
 
 type diffArgs struct {

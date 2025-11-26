@@ -211,4 +211,10 @@ var scrubs = []scrubber{
 		`╰╴✘ roll-up pseudo-check span X.Xs ⣷⡆⡆⡆ ERROR`,
 		`⡀⡄⡆⡇⣇⣧⣷⣿`,
 	},
+	// TODO ideally the buildkit mount details should be omitted from error messages, then this scrubber could be removed
+	{
+		regexp.MustCompile(`/tmp/buildkit-mount\d+/`),
+		"/app/main.go: stat /tmp/buildkit-mount4036873152/app/main.go: no such file or directory",
+		"/tmp/buildkit-mount123456/",
+	},
 }

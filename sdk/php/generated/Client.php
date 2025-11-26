@@ -808,6 +808,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Stat from its ID.
+     */
+    public function loadStatFromID(StatId|Stat $id): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadStatFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Terminal from its ID.
      */
     public function loadTerminalFromID(TerminalId|Terminal $id): Terminal

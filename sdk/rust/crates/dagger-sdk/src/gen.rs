@@ -1791,6 +1791,39 @@ impl SourceMapId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct StatId(pub String);
+impl From<&str> for StatId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for StatId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<StatId> for Stat {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<StatId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<StatId> for StatId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<StatId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<StatId, DaggerError>(self) })
+    }
+}
+impl StatId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TerminalId(pub String);
 impl From<&str> for TerminalId {
     fn from(value: &str) -> Self {
@@ -2264,6 +2297,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type Stat
+    pub fn as_stat(&self) -> Stat {
+        let query = self.selection.select("asStat");
+        Stat {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Returns the binding's string value
     pub async fn as_string(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("asString");
@@ -2620,6 +2662,12 @@ pub struct ContainerPublishOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<ContainerId>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerStatOpts {
+    /// If specified, do not follow symlinks.
+    #[builder(setter(into, strip_option), default)]
+    pub do_not_follow_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerTerminalOpts<'a> {
@@ -3423,6 +3471,39 @@ impl Container {
     pub fn rootfs(&self) -> Directory {
         let query = self.selection.select("rootfs");
         Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return file status
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn stat(&self, path: impl Into<String>) -> Stat {
+        let mut query = self.selection.select("stat");
+        query = query.arg("path", path.into());
+        Stat {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return file status
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn stat_opts(&self, path: impl Into<String>, opts: ContainerStatOpts) -> Stat {
+        let mut query = self.selection.select("stat");
+        query = query.arg("path", path.into());
+        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
+            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
+        }
+        Stat {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -5256,6 +5337,12 @@ pub struct DirectorySearchOpts<'a> {
     pub skip_ignored: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryStatOpts {
+    /// If specified, do not follow symlinks.
+    #[builder(setter(into, strip_option), default)]
+    pub do_not_follow_symlinks: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
@@ -5743,6 +5830,39 @@ impl Directory {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// Return file status
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to stat (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn stat(&self, path: impl Into<String>) -> Stat {
+        let mut query = self.selection.select("stat");
+        query = query.arg("path", path.into());
+        Stat {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return file status
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to stat (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn stat_opts(&self, path: impl Into<String>, opts: DirectoryStatOpts) -> Stat {
+        let mut query = self.selection.select("stat");
+        query = query.arg("path", path.into());
+        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
+            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
+        }
+        Stat {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<DirectoryId, DaggerError> {
@@ -7624,6 +7744,51 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type Stat in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Stat value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_stat_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<StatId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withStatInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Stat output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_stat_output(&self, name: impl Into<String>, description: impl Into<String>) -> Env {
+        let mut query = self.selection.select("withStatOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Provides a string input binding to the environment
     ///
     /// # Arguments
@@ -8270,6 +8435,15 @@ impl File {
     pub async fn size(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("size");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Return file status
+    pub fn stat(&self) -> Stat {
+        let query = self.selection.select("stat");
+        Stat {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<FileId, DaggerError> {
@@ -12240,6 +12414,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a Stat from its ID.
+    pub fn load_stat_from_id(&self, id: impl IntoID<StatId>) -> Stat {
+        let mut query = self.selection.select("loadStatFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Stat {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Terminal from its ID.
     pub fn load_terminal_from_id(&self, id: impl IntoID<TerminalId>) -> Terminal {
         let mut query = self.selection.select("loadTerminalFromID");
@@ -12792,6 +12982,39 @@ impl SourceMap {
     /// The URL to the file, if any. This can be used to link to the source map in the browser.
     pub async fn url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("url");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Stat {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Stat {
+    /// file type
+    pub async fn file_type(&self) -> Result<FileType, DaggerError> {
+        let query = self.selection.select("fileType");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Stat.
+    pub async fn id(&self) -> Result<StatId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// file name
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// permission bits
+    pub async fn permissions(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("permissions");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// file size
+    pub async fn size(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("size");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -13352,6 +13575,23 @@ pub enum ExistsType {
     RegularType,
     #[serde(rename = "SYMLINK_TYPE")]
     SymlinkType,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum FileType {
+    #[serde(rename = "DIRECTORY")]
+    Directory,
+    #[serde(rename = "DIRECTORY_TYPE")]
+    DirectoryType,
+    #[serde(rename = "REGULAR")]
+    Regular,
+    #[serde(rename = "REGULAR_TYPE")]
+    RegularType,
+    #[serde(rename = "SYMLINK")]
+    Symlink,
+    #[serde(rename = "SYMLINK_TYPE")]
+    SymlinkType,
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum FunctionCachePolicy {

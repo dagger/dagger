@@ -209,6 +209,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type Stat
+     */
+    public function asStat(): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asStat');
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the binding's string value
      */
     public function asString(): string
