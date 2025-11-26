@@ -349,18 +349,6 @@ func (s *moduleSourceSchema) localModuleSource(
 		localPath = "."
 	}
 
-	// For local module sources, ensure we have the right client context for filesystem access.
-	// Modules run as their own clients, but need access to the original caller's filesystem
-	// (e.g., the CLI that started the session). Without this, when a module function returns
-	// an interface and that result is loaded from cache in a subsequent session, the module
-	// dependency loading will fail because it tries to stat the path from the module's
-	// container context instead of the host.
-	localSourceClientMetadata, err := query.Self().NonModuleParentClientMetadata(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get local source client metadata: %w", err)
-	}
-	ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
-
 	// figure out the absolute path to the local module source
 	var localAbsPath string
 
@@ -940,7 +928,7 @@ func (s *moduleSourceSchema) contextDirectory(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := s.getModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
 	if err != nil {
 		return inst, err
 	}
@@ -982,7 +970,7 @@ func (s *moduleSourceSchema) contextFile(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := s.getModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
 	if err != nil {
 		return inst, err
 	}
@@ -1003,34 +991,6 @@ func (s *moduleSourceSchema) contextFile(
 	// cache keys per result should help fix this.
 	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualFile")
 	inst = inst.WithObjectDigest(dgst)
-	return inst, nil
-}
-
-func (s *moduleSourceSchema) getModuleFromContentDigest(
-	ctx context.Context,
-	dag *dagql.Server,
-	modName string,
-	dgst string,
-) (inst dagql.ObjectResult[*core.Module], err error) {
-	// Load the module based on its content hashed key as saved in ModuleSource.asModule.
-	// We can't accept an actual Module as an argument because the current caching logic
-	// will result in that Module being re-loaded by clients (due to it being CachePerClient)
-	// and then possibly trying to load it from the wrong context (in the case of a cached
-	// result including a _contextDirectory call).
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: dgst,
-	}
-	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
-		return nil, fmt.Errorf("module not found: %s", modName)
-	})
-	if err != nil {
-		return inst, err
-	}
-	inst, ok := modRes.Result().(dagql.ObjectResult[*core.Module])
-	if !ok {
-		return inst, fmt.Errorf("cached module has unexpected type: %T", modRes.Result())
-	}
-
 	return inst, nil
 }
 

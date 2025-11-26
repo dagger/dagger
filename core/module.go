@@ -256,6 +256,34 @@ func (mod *Module) ContentDigestCacheKey() cache.CacheKey[dagql.CacheKeyType] {
 	}
 }
 
+// GetModuleFromContentDigest loads a module based on its content hashed key as saved
+// in ModuleSource.asModule. We sometimes can't directly load a Module because the current
+// caching logic will result in that Module being re-loaded by clients (due to it being
+// CachePerClient) and then possibly trying to load it from the wrong context (in the case
+// of a cached result including a _contextDirectory call).
+func GetModuleFromContentDigest(
+	ctx context.Context,
+	dag *dagql.Server,
+	modName string,
+	dgst string,
+) (inst dagql.ObjectResult[*Module], err error) {
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		CallKey: dgst,
+	}
+	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
+		return nil, fmt.Errorf("module not found: %s", modName)
+	})
+	if err != nil {
+		return inst, err
+	}
+	inst, ok := modRes.Result().(dagql.ObjectResult[*Module])
+	if !ok {
+		return inst, fmt.Errorf("cached module has unexpected type: %T", modRes.Result())
+	}
+
+	return inst, nil
+}
+
 // Return all user defaults for this module
 func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	defaults := NewEnvFile(true)
@@ -324,7 +352,8 @@ func (mod *Module) IDModule() *call.Module {
 		panic(fmt.Sprintf("unexpected module source kind %q", src.Kind))
 	}
 
-	return call.NewModule(mod.ResultID, mod.Name(), ref, pin)
+	contentCacheKey := mod.ContentDigestCacheKey()
+	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey.CallKey)), mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
