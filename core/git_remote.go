@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	ctdmount "github.com/containerd/containerd/v2/core/mount"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -558,7 +559,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			return err
 		}
 
-		err = MountRef(ctx, checkoutRef, bkSessionGroup, func(checkoutDir string) error {
+		err = MountRef(ctx, checkoutRef, bkSessionGroup, func(checkoutDir string, _ *ctdmount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
