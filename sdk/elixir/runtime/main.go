@@ -10,6 +10,7 @@ import (
 
 	"elixir-sdk/internal/dagger"
 
+	"dagger.io/dagger/dag"
 	"github.com/iancoleman/strcase"
 )
 

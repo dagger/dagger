@@ -443,15 +443,27 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	platform := parent.Self().Platform
-	scratchDir := core.Directory{
-		Platform: platform,
-		Dir:      parent.Self().Dir,
+	scratchDir, err := core.NewScratchDirectory(ctx, platform)
+	if err != nil {
+		return inst, err
 	}
 
 	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "")
 	if err != nil {
 		return inst, fmt.Errorf("failed to filter: %w", err)
 	}
+
+	// Preserve host + client info
+	filtered.HostPath = parent.Self().HostPath
+	filtered.HostClient = parent.Self().HostClient
+
+	// Preserve the original directory.
+	if parent.Self().Full.Self() != nil {
+		filtered.Full = parent.Self().Full
+	} else {
+		filtered.Full = parent
+	}
+
 	return dagql.NewObjectResultForCurrentID(ctx, srv, filtered)
 }
 

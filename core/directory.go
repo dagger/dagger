@@ -17,6 +17,7 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/engine"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -43,6 +44,16 @@ type Directory struct {
 
 	Dir      string
 	Platform Platform
+
+	// HostPath is the original host path where this directory originated from,
+	// if it was loaded from a Host.directory() call. This is used to determine
+	// where to export changesets back to.
+	HostPath   string
+	HostClient *engine.ClientMetadata
+
+	// Full is the un-filtered origin of this Directory, to support requesting
+	// more files later.
+	Full dagql.ObjectResult[*Directory]
 
 	// Services necessary to provision the directory.
 	Services ServiceBindings
@@ -621,6 +632,11 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 	}
 
 	dir.Dir = path.Join(dir.Dir, subdir)
+
+	// Update the host path if it was set
+	if dir.HostPath != "" {
+		dir.HostPath = filepath.Join(dir.HostPath, subdir)
+	}
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
