@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -138,6 +139,16 @@ func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, 
 
 	dir := NewDirectory(nil, "/", query.Platform(), nil)
 	dir.Result = ref
+
+	// Retain the host path and client metadata so we can load more files later if
+	// needed
+	meta, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
+	}
+	dir.HostClient = meta
+	log.Println("!!! LOADED HOST DIR", "hostPath", rootPath)
+	dir.HostPath = rootPath
 
 	return dir, nil
 }

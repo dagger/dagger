@@ -1361,14 +1361,18 @@ func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
 }
 
 func (fe *frontendPretty) terminal() {
+	slog.Warn("terminal")
 	if !fe.FocusedSpan.IsValid() {
+		slog.Warn("no focus")
 		return
 	}
 	focused := fe.db.Spans.Map[fe.FocusedSpan]
 	if focused == nil {
+		slog.Warn("no span")
 		return
 	}
 
+	slog.Warn("callback done")
 	callback := fe.terminalCallback(focused)
 	if callback != nil {
 		go func() {
@@ -1376,12 +1380,14 @@ func (fe *frontendPretty) terminal() {
 			if err != nil {
 				slog.Error("failed to open terminal for span", err)
 			}
+			slog.Warn("callback done")
 		}()
 	}
 }
 
 func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 	if fe.dag == nil {
+		slog.Warn("no dag")
 		// we haven't got a dag client, so can't open a terminal
 		return nil
 	}
@@ -1394,14 +1400,17 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 		return nil
 	}
 
+	slog.Warn("open term", "type", call.Type.NamedType)
 	switch call.Type.NamedType {
 	case "Container":
 		if span.IsRunning() {
+			slog.Warn("container running")
 			break
 		}
 		return func() error {
 			id, err := loadIDFromSpan(span)
 			if err != nil {
+				slog.Warn("container running")
 				return err
 			}
 			_, err = fe.dag.LoadContainerFromID(dagger.ContainerID(id)).Terminal().Sync(fe.runCtx)
@@ -1409,6 +1418,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 		}
 	case "Directory":
 		if span.IsRunning() {
+			slog.Warn("container running")
 			break
 		}
 		return func() error {

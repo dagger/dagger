@@ -1148,13 +1148,10 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 	case core.ModuleSourceKindGit:
 		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
 
-		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
-			dagql.Selector{Field: "directory"},
+		err := dag.Select(ctx, src.Git.UnfilteredContextDir, &src.ContextDirectory,
 			dagql.Selector{
-				Field: "withDirectory",
+				Field: "filter",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String("/")},
-					{Name: "source", Value: dagql.NewID[*core.Directory](src.Git.UnfilteredContextDir.ID())},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
 				},
 			},

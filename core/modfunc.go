@@ -1136,18 +1136,17 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		return nil, fmt.Errorf("dagql server is nil but required to ignore pattern on directory %q", arg.OriginalName)
 	}
 
-	applyIgnore := func(dir dagql.IDable) (JSON, error) {
+	applyIgnore := func(dirID dagql.IDable) (JSON, error) {
 		var ignoredDir dagql.Result[*Directory]
 
-		err := dag.Select(ctx, dag.Root(), &ignoredDir,
+		dir, err := dagql.NewID[*Directory](dirID.ID()).Load(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("apply ignore pattern on directory %q: load directory: %w", arg.OriginalName, err)
+		}
+		err = dag.Select(ctx, dir, &ignoredDir,
 			dagql.Selector{
-				Field: "directory",
-			},
-			dagql.Selector{
-				Field: "withDirectory",
+				Field: "filter",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String("/")},
-					{Name: "source", Value: dagql.NewID[*Directory](dir.ID())},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
 				},
 			},
@@ -1156,12 +1155,12 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 			return nil, fmt.Errorf("apply ignore pattern on directory %q: %w", arg.OriginalName, err)
 		}
 
-		dirID, err := ignoredDir.ID().Encode()
+		dirIDEnc, err := ignoredDir.ID().Encode()
 		if err != nil {
 			return nil, fmt.Errorf("apply ignore pattern on directory %q: %w", arg.Name, err)
 		}
 
-		return JSON(dirID), nil
+		return JSON(dirIDEnc), nil
 	}
 
 	switch value := value.(type) {

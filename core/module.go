@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"time"
@@ -90,6 +91,12 @@ func (mod *Module) Env(ctx context.Context) (res dagql.ObjectResult[*Env], _ err
 	if err != nil {
 		return res, err
 	}
+	log.Println("!!! MODULE.ENV WORKSPACE",
+		mod.GetSource().ContextDirectory.ID().Display(),
+		mod.GetSource().ContextDirectory.Self().HostPath,
+		mod.GetSource().ContextDirectory.Self().Full.Self() != nil,
+	)
+
 	var env dagql.ObjectResult[*Env]
 	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
 		Field: "env",

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path"
@@ -620,32 +621,56 @@ func (src *ModuleSource) loadContextFromEnv(
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(src.SourceRootSubpath, path)
 	}
-	envRes, err := dag.Load(ctx, envID)
+	env, err := dagql.NewID[*Env](envID).Load(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load current env: %w", err)
 	}
-	sels := []dagql.Selector{
-		{
-			Field: "workspace",
-		},
-	}
-	if path != "." {
+	workspace := env.Self().Workspace
+	log.Println("!!! LOADING CONTEXT FROM ENV",
+		"workspace", workspace.ID().Display(),
+		"hostPath", workspace.Self().HostPath,
+		"hasFull", workspace.Self().Full.ID(),
+	)
+	if hostPath := workspace.Self().HostPath; hostPath != "" {
+		sels := []dagql.Selector{
+			{Field: "host"},
+		}
 		sels = append(sels, dagql.Selector{
 			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(path)},
-			},
+			Args: append([]dagql.NamedInput{
+				{Name: "path", Value: dagql.String(filepath.Join(hostPath, path))},
+				{Name: "noCache", Value: dagql.Boolean(true)},
+			}, filterInputs...),
 		})
-	}
-	if len(filterInputs) > 0 {
-		sels = append(sels, dagql.Selector{
-			Field: "filter",
-			Args:  filterInputs,
-		})
-	}
-	err = dag.Select(ctx, envRes, &inst, sels...)
-	if err != nil {
-		return inst, fmt.Errorf("failed to select env directory: %w", err)
+		err = dag.Select(engine.ContextWithClientMetadata(ctx, workspace.Self().HostClient), dag.Root(), &inst, sels...)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select env directory: %w", err)
+		}
+	} else {
+		var recv dagql.AnyObjectResult
+		if workspace.Self().Full.Self() != nil {
+			recv = workspace.Self().Full
+		} else {
+			recv = workspace
+		}
+		sels := []dagql.Selector{}
+		if path != "." {
+			sels = append(sels, dagql.Selector{
+				Field: "directory",
+				Args: append([]dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+				}, filterInputs...),
+			})
+		} else if len(filterInputs) > 0 {
+			sels = append(sels, dagql.Selector{
+				Field: "filter",
+				Args:  filterInputs,
+			})
+		}
+		err = dag.Select(ctx, recv, &inst, sels...)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select env directory: %w", err)
+		}
 	}
 	return inst, nil
 }
@@ -738,16 +763,10 @@ func (src *ModuleSource) loadContextFromSource(
 		}
 
 		if len(filterInputs) > 0 {
-			if err := dag.Select(ctx, dag.Root(), &ctxDir,
+			if err := dag.Select(ctx, ctxDir, &ctxDir,
 				dagql.Selector{
-					Field: "directory",
-				},
-				dagql.Selector{
-					Field: "withDirectory",
-					Args: append([]dagql.NamedInput{
-						{Name: "path", Value: dagql.String("/")},
-						{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
-					}, filterInputs...),
+					Field: "filter",
+					Args:  filterInputs,
 				},
 			); err != nil {
 				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
@@ -778,16 +797,10 @@ func (src *ModuleSource) loadContextFromSource(
 		}
 
 		if len(filterInputs) > 0 {
-			if err := dag.Select(ctx, dag.Root(), &ctxDir,
+			if err := dag.Select(ctx, ctxDir, &ctxDir,
 				dagql.Selector{
-					Field: "directory",
-				},
-				dagql.Selector{
-					Field: "withDirectory",
-					Args: append([]dagql.NamedInput{
-						{Name: "path", Value: dagql.String("/")},
-						{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
-					}, filterInputs...),
+					Field: "filter",
+					Args:  filterInputs,
 				},
 			); err != nil {
 				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
