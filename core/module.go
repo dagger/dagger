@@ -85,6 +85,38 @@ func (*Module) Type() *ast.Type {
 	}
 }
 
+func (mod *Module) Env(ctx context.Context) (res dagql.ObjectResult[*Env], _ error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	var env dagql.ObjectResult[*Env]
+	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
+		Field: "env",
+	}, dagql.Selector{
+		Field: "withModule",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "module",
+				Value: dagql.NewID[*Module](mod.ResultID),
+			},
+		},
+	}, dagql.Selector{
+		Field: "withWorkspace",
+		Args: []dagql.NamedInput{
+			{
+				Name: "workspace",
+				Value: dagql.NewID[*Directory](
+					mod.GetSource().ContextDirectory.ID(),
+				),
+			},
+		},
+	}); err != nil {
+		return res, fmt.Errorf("failed to create env: %w", err)
+	}
+	return env, nil
+}
+
 func (*Module) TypeDescription() string {
 	return "A Dagger module."
 }
