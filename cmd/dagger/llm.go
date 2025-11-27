@@ -661,6 +661,7 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 		WithoutSystemPrompts().
 		WithSystemPrompt("You are a helpful AI assistant tasked with summarizing conversations.").
 		WithPrompt(compactPrompt).
+		Loop().
 		LastReply(ctx)
 	if err != nil {
 		return nil, err
