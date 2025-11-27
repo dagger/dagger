@@ -102,6 +102,7 @@ func (t PythonSdkDev) Lint(
 }
 
 // +check
+// +generator
 // Format source files
 func (t PythonSdkDev) Format(
 	// List of files or directories to check
@@ -168,6 +169,7 @@ func (t PythonSdkDev) TestSuite(
 }
 
 // Regenerate the core Python client library
+// +generator="sdk/python"
 func (t PythonSdkDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 	devContainer := t.DevContainer
 

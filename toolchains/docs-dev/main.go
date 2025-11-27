@@ -94,6 +94,7 @@ func (d DocsDev) LintMarkdown(
 }
 
 // Regenerate the API schema and CLI reference docs
+// +generator="docs"
 func (d DocsDev) Generate(
 	// Dagger version to generate API docs for
 	// +optional

@@ -21,6 +21,7 @@ func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
 }
 
 // Run all code generation - SDKs, docs, grpc stubs, changelog
+// +generator
 func (dev *DaggerDev) Generate(ctx context.Context,
 	// +optional
 	check bool,
