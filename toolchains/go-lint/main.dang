@@ -1,0 +1,94 @@
+type GoLint {
+  pub workspace: Directory! @defaultPath(path: "/")
+
+  let goBase = container.
+    from("golang:alpine").
+    withWorkdir("/go/src").
+    withMountedCache("/root/.cache", cacheVolume("go-cache")).
+    withMountedCache("/go/pkg/mod", cacheVolume("go-pkg-mod"))
+
+  let installGoPackages(ctr: Container!, pkgs: [String!]!): Container! {
+    for (pkg in pkgs) {
+      ctr = ctr.withExec(["go", "install", pkg])
+    }
+    ctr
+  }
+
+  let resolve(ctr: Container!): Container! {
+    ctr.sync
+    ctr
+  }
+
+  let base = resolve(installGoPackages(goBase, [
+    "honnef.co/go/tools/cmd/staticcheck@latest",
+    "github.com/timakin/bodyclose@latest",
+    "github.com/mibk/dupl@latest",
+    "github.com/polyfloyd/go-errorlint@latest",
+    "github.com/go-critic/go-critic/cmd/go-critic@latest",
+    "github.com/alexkohler/dogsled/cmd/dogsled@latest",
+  ]).withMountedDirectory("/go/src", workspace))
+
+  let goPackages = base.
+    withExec(["go", "list", "./..."]).
+    stdout().
+    split("\n")
+
+  let goPackagesWithoutBuildkit = goPackages.
+    reject { file => file.contains("/internal/buildkit") }.
+    join(" ")
+
+  let goDirs = goPackages.map { file => file.trimPrefix("github.com/dagger/dagger/") }
+  let goDirsWithoutBuildkit = goDirs.
+    reject { file => file.contains("/internal/buildkit") }.
+    join(" ")
+
+  let runOnPkgsWithoutBuildkit(cmd: String!): Container! {
+    base.withExec(["sh", "-c", cmd + " " + goPackagesWithoutBuildkit])
+  }
+
+  let runOnDirsWithoutBuildkit(cmd: String!): Container! {
+    base.withExec(["sh", "-c", cmd + " " + goDirsWithoutBuildkit])
+  }
+
+  pub baseCtr(): Container! {
+    base
+  }
+
+  """
+  Run staticcheck linter
+  """
+  pub staticcheck: Container! @check {
+    runOnPkgsWithoutBuildkit("staticcheck")
+  }
+
+  """
+  Run linters through go vet
+  - bodyclose
+  """
+  pub vet: Container! @check {
+    runOnPkgsWithoutBuildkit("go vet")
+  }
+
+  pub dogsled: Container! @check {
+    runOnPkgsWithoutBuildkit("dogsled")
+  }
+
+  pub dupl: Container! @check {
+    runOnDirsWithoutBuildkit("dupl")
+  }
+
+  pub errorlint: Container! @check {
+    runOnPkgsWithoutBuildkit("go-errorlint -errorf -errorf-multi -comparison=false -asserts=false")
+  }
+
+  # @generator
+  pub errorlintFix: Changeset! {
+    runOnPkgsWithoutBuildkit("go-errorlint -fix -errorf -errorf-multi -comparison=false -asserts=false").
+      directory(".").
+      changes(base.directory("."))
+  }
+
+  pub gocritic: Container! @check {
+    runOnPkgsWithoutBuildkit("go-critic check -disable ifElseChain")
+  }
+}
