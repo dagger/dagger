@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <RootNamespace>Dagger</RootNamespace>
+    
+    <!-- Suppress NU1510 - System.Collections.Immutable is intentionally explicit -->
+    <NoWarn>$(NoWarn);NU1510</NoWarn>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>DaggerIO</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Dagger</Authors>
+    <Company>Dagger</Company>
+    <Description>Official Dagger SDK for .NET - An open-source runtime for composable workflows. Great for AI agents and CI/CD</Description>
+    <PackageTags>dagger;ci;cd;devops;containers;docker;build;pipeline</PackageTags>
+    <PackageProjectUrl>https://dagger.io</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/dagger/dagger</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dagger.SDK.CodeGen\Dagger.SDK.CodeGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Dagger.SDK.Analyzers\Dagger.SDK.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Dagger.SDK.CodeFixes\Dagger.SDK.CodeFixes.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Collections.Immutable" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

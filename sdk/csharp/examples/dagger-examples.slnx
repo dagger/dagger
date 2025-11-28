@@ -1,0 +1,18 @@
+<!-- This is useful to open for Intellisense in VSCode / Visual Studio / Rider -->
+<Solution>    
+    
+    <!-- independant modules -->
+    <Project Path="./interface-example/InterfaceExample.csproj" Type="Classic C#" />
+    <Project Path="./attributes-example/AttributesExample.csproj" Type="Classic C#" />
+    <Project Path="./constructor-example/ConstructorExample.csproj" Type="Classic C#" />
+    <Project Path="./multi-file-example/MultiFileExample.csproj" Type="Classic C#" />
+    <Project Path="./processor-impl/ProcessorImpl.csproj" Type="Classic C#" />
+    <Project Path="./defaults-example/DefaultsExample.csproj" Type="Classic C#" />
+
+    <!-- consuming module of dependency modules -->
+    <Project Path="./consumer-example/ConsumerExample.csproj" Type="Classic C#" />
+
+
+    <!-- standalone client -->
+    <Project Path="./standalone-client/StandaloneClient.csproj" Type="Classic C#" />
+</Solution>

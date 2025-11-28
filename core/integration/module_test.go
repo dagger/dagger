@@ -7878,6 +7878,8 @@ func sdkSourceFile(sdk string) string {
 		return "src/index.ts"
 	case "java", "./sdk/java":
 		return "src/main/java/io/dagger/modules/test/Test.java"
+	case "csharp":
+		return "Main.cs"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
@@ -7894,6 +7896,8 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 		return "sdk/src/dagger/client/gen.py"
 	case "typescript":
 		return "sdk/client.gen.ts"
+	case "csharp":
+		return "sdk/Dagger.SDK/Dagger.SDK.g.cs"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
@@ -7909,6 +7913,10 @@ func modInit(t *testctx.T, c *dagger.Client, sdk, contents string, extra ...stri
 				require.NoError(t, err)
 				ctr = ctr.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
 				sdk = "./sdk/java"
+			}
+			if sdk == "csharp" {
+				// use the local SDK via git reference for testing
+				sdk = "github.com/pjmagee/dagger/sdk/csharp@dotnet-module-support"
 			}
 			return ctr
 		}).

@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 
+    IMPORTANT: Project File Naming Convention
+    
+    When you run 'dagger init ––sdk=csharp ––name=my-awesome-module', this file will be
+    automatically renamed to match your module name in PascalCase (MyAwesomeModule.csproj).
+    
+    The file name MUST be {ModuleName}.csproj (where ModuleName is the PascalCase version 
+    of the module name in dagger.json). For example:
+      - Module name: "my-awesome-module" → File name: MyAwesomeModule.csproj
+      - Module name: "api-gateway" → File name: ApiGateway.csproj
+    
+    The Dagger engine uses this naming pattern to locate your module's entrypoint.
+    Renaming this file to something else (e.g., "RandomName.csproj") will break your module!
+    
+    For backwards compatibility, DaggerModule.csproj is also supported, but using the
+    module-specific name is strongly recommended for clarity.
+
+    ––
+
+    SDK Source Vendoring:
+    
+    The sdk/ folder contains the Dagger SDK source code, which is automatically 
+    generated during 'dagger develop' and should NOT be manually edited.
+    
+    The SDK is compiled as part of your module build via the <Compile Include="**/*.cs" /> 
+    directive below, which includes all .cs files (including sdk/**/*.cs).
+  -->
+  
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DaggerModule</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Explicitly include all .cs files (SDK automatic inclusion disabled) -->
+    <!-- Exclude obj/bin to avoid duplicate auto-generated assembly attributes -->
+    <Compile Include="**/*.cs" Exclude="**/obj/**;**/bin/**" />
+    <!-- Suppress CS1591 (missing XML comments) only for vendored SDK files -->
+    <Compile Update="sdk/**/*.cs">
+      <NoWarn>CS1591</NoWarn>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Package dependencies required by the vendored SDK -->
+    <PackageReference Include="System.Collections.Immutable" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Disable System.IO implicit using to avoid conflict with Dagger.Directory -->
+    <Using Remove="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Include Dagger SDK Analyzers and Code Fixes for IDE support -->
+    <Analyzer Include="sdk/analyzers/dotnet/cs/Dagger.SDK.Analyzers.dll" />
+    <Analyzer Include="sdk/analyzers/dotnet/cs/Dagger.SDK.CodeFixes.dll" />
+  </ItemGroup>
+</Project>

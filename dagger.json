@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.19.6",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -43,6 +43,10 @@
     {
       "name": "dotnet-sdk-dev",
       "source": "sdk/dotnet/dev"
+    },
+    {
+      "name": "csharp-sdk-dev",
+      "source": "sdk/csharp/dev"
     },
     {
       "name": "elixir-sdk-dev",

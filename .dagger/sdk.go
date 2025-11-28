@@ -24,6 +24,7 @@ func (dev *DaggerDev) SDK() *SDK {
 		PHP:        &PHPSDK{Dagger: dev},
 		Java:       &JavaSDK{Dagger: dev},
 		Dotnet:     &DotnetSDK{Dagger: dev},
+		Csharp:     &CsharpSDK{Dagger: dev},
 	}
 }
 
@@ -47,6 +48,8 @@ type SDK struct {
 	Java *JavaSDK
 	// Develop the Dagger Dotnet SDK (experimental)
 	Dotnet *DotnetSDK
+	// Develop the Dagger C# SDK (experimental)
+	Csharp *CsharpSDK
 }
 
 // Return an "installer" function which, given a container, will attach

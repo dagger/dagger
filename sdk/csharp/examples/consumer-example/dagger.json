@@ -1,0 +1,34 @@
+{
+  "name": "consumer-example",
+  "engineVersion": "v0.19.7",
+  "sdk": {
+    "source": "github.com/pjmagee/dagger/sdk/csharp@dotnet-module-support"
+  },
+  "dependencies": [
+    {
+      "name": "attributes-example",
+      "source": "../attributes-example"
+    },
+    {
+      "name": "constructor-example",
+      "source": "../constructor-example"
+    },
+    {
+      "name": "defaults-example",
+      "source": "../defaults-example"
+    },
+    {
+      "name": "interface-example",
+      "source": "../interface-example"
+    },
+    {
+      "name": "multi-file-example",
+      "source": "../multi-file-example"
+    },
+    {
+      "name": "processor-impl",
+      "source": "../processor-impl"
+    }
+  ],
+  "disableDefaultFunctionCaching": true
+}
