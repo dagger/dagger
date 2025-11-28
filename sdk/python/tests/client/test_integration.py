@@ -229,8 +229,8 @@ async def test_return_list_of_objects(alpine_image: str):
 async def test_service_start_stop(alpine_image: str):
     svc = (
         dag.host()
-        .directory("runtime", include=["Dockerfile"])
-        .docker_build(target="base")
+        .directory("runtime/images/base", include=["Dockerfile"])
+        .docker_build()
         .with_workdir("/work")
         .with_new_file("index.html", "foobar")
         .with_exposed_port(8080)

@@ -35,7 +35,7 @@ func New(
 	//   "!sdk/python/dev/src/**/*.py",
 	//   "!sdk/python/docs/**/*.py",
 	//   "!sdk/python/docs/**/*.rst",
-	//   "!sdk/python/runtime/Dockerfile",
+	//   "!sdk/python/runtime/images",
 	//   "!sdk/python/src/**/*.py",
 	//   "!sdk/python/src/**/py.typed",
 	//   "!sdk/python/tests/**/*.py",
@@ -58,7 +58,7 @@ func New(
 					"/root/.local/bin:/usr/local/bin:$PATH",
 					dagger.ContainerWithEnvVariableOpts{Expand: true}).
 				With(toolsCache("uv", "ruff", "mypy")).
-				With(uvTool()).
+				With(uvTool(workspace)).
 				WithDirectory("/src/sdk/python", workspace.Directory(sourcePath)).
 				WithWorkdir("/src/sdk/python").
 				WithExec(uv("sync"))),
