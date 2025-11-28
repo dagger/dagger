@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -129,7 +130,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		}
 	}()
 	skip := false
-	err = MountRef(ctx, bkref, bkSessionGroup, func(parentRoot string) error {
+	err = MountRef(ctx, bkref, bkSessionGroup, func(parentRoot string, _ *mount.Mount) error {
 		src, err := fs.RootPath(parentRoot, repo.Directory.Self().Dir)
 		if err != nil {
 			return err
@@ -275,7 +276,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git url: %w", err)
 		}
 
-		return MountRef(ctx, bkref, bkSessionGroup, func(checkoutDir string) error {
+		return MountRef(ctx, bkref, bkSessionGroup, func(checkoutDir string, _ *mount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err

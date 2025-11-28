@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/cache/config"
+	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
@@ -1561,9 +1562,12 @@ func (sr *mutableRef) Mount(ctx context.Context, readonly bool, s session.Group)
 		return nil, rerr
 	}
 
-	// Make the mounts sharable. We don't do this for immutableRef mounts because
-	// it requires the raw []mount.Mount for computing diff on overlayfs.
-	mnt = sr.cm.mountPool.setSharable(mnt)
+	if sr.GetRecordType() == client.UsageRecordTypeCacheMount {
+		// Make the mounts sharable. We don't do this for immutableRef mounts because
+		// it requires the raw []mount.Mount for computing diff on overlayfs.
+		mnt = sr.cm.mountPool.setSharable(mnt)
+	}
+
 	sr.mountCache = mnt
 	if readonly {
 		mnt = setReadonly(mnt)

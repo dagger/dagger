@@ -2469,7 +2469,7 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 			Sync(ctx)
 
 		require.Error(t, err)
-		require.Regexp(t, "symlink newtarget /var/lib/dagger/worker/cachemounts/.*/symlink: file exists", err.Error())
+		require.Regexp(t, "symlink newtarget /.*/symlink: file exists", err.Error())
 	})
 }
 
