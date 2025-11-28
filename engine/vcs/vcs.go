@@ -663,10 +663,20 @@ var vcsPaths = []*vcsPath{
 	},
 
 	// Azure DevOps
-	// HTTPS ref
+	// HTTPS ref - cloud
 	{
 		prefix: "dev.azure.com/",
 		re:     `^(?P<root>dev\.azure\.com/(?P<account>[A-Za-z0-9_.% \-]+)(/(?P<project>[A-Za-z0-9_.% \-]+))?/_git/(?P<repo>[A-Za-z0-9_.% \-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		vcs:    "git",
+		repo:   "https://{root}",
+		check: func(match map[string]string) error {
+			match["repo"] = strings.TrimSuffix(match["repo"], ".git")
+			return nil
+		},
+	},
+	// HTTPS ref - on-prem
+	{
+		re:     `^(?P<root>[A-Za-z0-9_.% \-]+\/(tfs\/)?(?P<account>[A-Za-z0-9_.% \-]+)(/(?P<project>[A-Za-z0-9_.% \-]+))?/_git/(?P<repo>[A-Za-z0-9_.% \-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 		check: func(match map[string]string) error {
