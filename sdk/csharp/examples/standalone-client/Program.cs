@@ -14,7 +14,7 @@ Console.WriteLine(output);
 Console.WriteLine("\nExample 2: Running tests in a container");
 var exitCode = await Dag
     .Container()
-    .From("mcr.microsoft.com/dotnet/sdk:8.0")
+    .From("mcr.microsoft.com/dotnet/sdk:10.0")
     .WithDirectory("/src", Dag.Host().Directory("."))
     .WithWorkdir("/src")
     .WithExec(new[] { "dotnet", "build" })
@@ -28,7 +28,7 @@ var source = Dag.Host().Directory(".");
 
 var buildOutput = Dag
     .Container()
-    .From("mcr.microsoft.com/dotnet/sdk:8.0")
+    .From("mcr.microsoft.com/dotnet/sdk:10.0")
     .WithDirectory("/src", source)
     .WithWorkdir("/src")
     .WithExec(new[] { "dotnet", "publish", "-c", "Release", "-o", "/app" })
