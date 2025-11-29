@@ -12,7 +12,6 @@
     <!-- consuming module of dependency modules -->
     <Project Path="./consumer-example/ConsumerExample.csproj" Type="Classic C#" />
 
-
     <!-- standalone client -->
     <Project Path="./standalone-client/StandaloneClient.csproj" Type="Classic C#" />
 </Solution>

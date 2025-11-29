@@ -1,44 +1,39 @@
-using static Dagger.Client;
-
-// Check if running within a Dagger session
-if (
-    string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DAGGER_SESSION_PORT"))
-    && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DAGGER_SESSION_TOKEN"))
-)
-{
-    Console.WriteLine("❌ ERROR: Not running in a Dagger session!");
-    Console.WriteLine();
-    Console.WriteLine("This example requires a Dagger session to be active.");
-    Console.WriteLine("Please run this application using:");
-    Console.WriteLine();
-    Console.WriteLine("  dagger run dotnet run");
-    Console.WriteLine();
-    Console.WriteLine("Or start a Dagger session in another terminal:");
-    Console.WriteLine("  dagger session");
-    Environment.Exit(1);
-}
-
-Console.WriteLine("✅ Running in Dagger session\n");
+using Dagger;
 
 // Example 1: Simple container execution
-Console.WriteLine("Example 1: Running a simple command in a container");
-var output = await Dag.Container()
+Console.WriteLine("Example 1: Running a simple command");
+var output = await Dag
+    .Container()
     .From("alpine:latest")
-    .WithExec(["echo", "Hello from Dagger!"])
+    .WithExec(new[] { "echo", "Hello from Dagger!" })
     .StdoutAsync();
-Console.WriteLine($"Output: {output}");
+Console.WriteLine(output);
 
-// Example 2: Host standalone-client build in container
-Console.WriteLine("\nExample 2: Building current directory in a .NET container");
-var src = Dag.Host().Directory(".");
-output = await Dag.Container()
-    .From("mcr.microsoft.com/dotnet/sdk:10.0")
-    .WithDirectory("/src", src)
+// Example 2: Run tests in a container
+Console.WriteLine("\nExample 2: Running tests in a container");
+var exitCode = await Dag
+    .Container()
+    .From("mcr.microsoft.com/dotnet/sdk:8.0")
+    .WithDirectory("/src", Dag.Host().Directory("."))
     .WithWorkdir("/src")
-    .WithExec(["dotnet", "build", "-c", "Release"])
-    .WithExec(["dotnet", "publish", "-c", "Release", "-o", "/app"])
-    .StdoutAsync();
-Console.WriteLine($"Build Output: {output}");
+    .WithExec(new[] { "dotnet", "build" })
+    .ExitCodeAsync();
 
+Console.WriteLine($"Build exit code: {exitCode}");
 
-Console.WriteLine("\n✅ All examples completed successfully!");
+// Example 3: Build and package
+Console.WriteLine("\nExample 3: Building application");
+var source = Dag.Host().Directory(".");
+
+var buildOutput = Dag
+    .Container()
+    .From("mcr.microsoft.com/dotnet/sdk:8.0")
+    .WithDirectory("/src", source)
+    .WithWorkdir("/src")
+    .WithExec(new[] { "dotnet", "publish", "-c", "Release", "-o", "/app" })
+    .Directory("/app");
+
+var files = await buildOutput.EntriesAsync();
+Console.WriteLine($"Published {files.Length} files");
+
+Console.WriteLine("\n✅ All examples completed!");

@@ -9,7 +9,6 @@ using Dagger;
 public class ConsumerExample
 {
     /// <summary>
-    /// Demonstrates calling the constructor-example module.
     /// Shows how constructor parameters work across module boundaries.
     /// </summary>
     [Function]
@@ -25,7 +24,6 @@ public class ConsumerExample
     }
 
     /// <summary>
-    /// Demonstrates calling the defaults-example module.
     /// Shows optional parameters and default values.
     /// </summary>
     [Function]
@@ -36,7 +34,6 @@ public class ConsumerExample
     }
 
     /// <summary>
-    /// Demonstrates calling the attributes-example module.
     /// Shows [DefaultPath] and [Ignore] attributes in action.
     /// </summary>
     [Function]
@@ -49,7 +46,6 @@ public class ConsumerExample
 
     /// <summary>
     /// Demonstrates calling the multi-file-example module.
-    /// Shows working with custom [Object] types across modules.
     /// </summary>
     [Function]
     public async Task<string> DemoMultiFile()
@@ -60,15 +56,12 @@ public class ConsumerExample
     }
 
     /// <summary>
-    /// Demonstrates interface polymorphism.
-    /// Uses processor-impl module which implements IProcessor from interface-example.
-    /// This is the KEY PATTERN: implementation module + conversion method .AsInterfaceExampleProcessor()
+    /// Demonstrates .AsInterfaceExampleProcessor()
     /// </summary>
     [Function]
     public async Task<string> DemoInterface()
     {
-        var text = "Hello World";
-        
+        var text = "Hello World";        
         ProcessorImpl implementationModule = Dag.ProcessorImpl().WithPrefix(">> ");
         InterfaceExample interfaceModule = Dag.InterfaceExample();
         string result = await interfaceModule.ProcessTextAsync(implementationModule.AsInterfaceExampleProcessor(), text);
