@@ -5,6 +5,11 @@ namespace Dagger.SDK.Tests.Telemetry;
 [TestClass]
 public class TracePropagationTest
 {
+    [TestInitialize]
+    public void Setup()
+    {
+        TracePropagation.Reset();
+    }
     [TestMethod]
     public void GetTraceParent_WhenEnvironmentVariableSet_ReturnsValue()
     {

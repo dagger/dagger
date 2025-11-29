@@ -47,7 +47,7 @@ func (t CsharpSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 // Test the publishing process
 // +check
 func (t CsharpSDK) ReleaseDryRun(ctx context.Context) error {
-	return t.Publish(ctx, "HEAD", true, nil)
+	return t.Publish(ctx, "sdk/csharp/v0.1.0-preview", true, nil)
 }
 
 // Publish the C# SDK to NuGet
@@ -65,7 +65,8 @@ func (t CsharpSDK) Publish(
 	src := t.Dagger.Source.Directory("sdk/csharp")
 	return dag.
 		CsharpSDKDev(dagger.CsharpSDKDevOpts{Source: src}).
-		Publish(ctx, t.Dagger.introspectionJSON(), version, dagger.CsharpSDKDevPublishOpts{
+		Publish(ctx, t.Dagger.introspectionJSON(), dagger.CsharpSDKDevPublishOpts{
+			Version:    version,
 			NugetToken: nugetToken,
 			DryRun:     dryRun,
 		})

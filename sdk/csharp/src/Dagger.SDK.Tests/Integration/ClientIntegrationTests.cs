@@ -191,6 +191,7 @@ RUN echo 'Hello from Dockerfile'
             .WithExec(["sh", "-c", "echo $SECRET"])
             .StdoutAsync();
 
-        Assert.AreEqual("secret-value\n", output);
+        // Secrets are redacted in output for security
+        Assert.AreEqual("***\n", output);
     }
 }

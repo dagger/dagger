@@ -42,4 +42,16 @@ internal static class TracePropagation
         Initialize();
         return _traceParent;
     }
+
+    /// <summary>
+    /// Resets the trace propagation state. This is intended for testing purposes only.
+    /// </summary>
+    internal static void Reset()
+    {
+        lock (InitLock)
+        {
+            _initialized = false;
+            _traceParent = null;
+        }
+    }
 }

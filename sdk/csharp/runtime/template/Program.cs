@@ -3,7 +3,7 @@
 //
 // Debugging:
 //   To enable debug logging, add this before RunAsync:
-//     Dagger.Runtime.ModuleRuntime.ConfigureLogging(true);
+//     Dagger.ModuleRuntime.Entrypoint.ConfigureLogging(true);
 //
 //   Then run your module with:
 //     dagger call --progress=plain <your-function>
@@ -12,4 +12,4 @@
 //     - Terminal stderr (with --progress=plain)
 //     - /tmp/dagger-csharp-debug.log (inside the container)
 
-return await Dagger.Runtime.ModuleRuntime.RunAsync(args);
+return await Dagger.ModuleRuntime.Entrypoint.RunAsync(args);

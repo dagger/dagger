@@ -6,4 +6,5 @@
   <Project Path="Dagger.SDK.Tests\Dagger.SDK.Tests.csproj" />
   <Project Path="..\examples\standalone-client\StandaloneClient.csproj" />
   <Project Path="..\codegen\Codegen.csproj" />
+  <Project Path="..\examples\consumer-example\ConsumerExample.csproj" />
 </Solution>

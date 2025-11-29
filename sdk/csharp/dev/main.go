@@ -11,8 +11,6 @@ import (
 	"csharp-sdk-dev/internal/dagger"
 )
 
-var dag = dagger.Dag()
-
 func New(
 	// C# SDK source.
 	//
@@ -98,6 +96,8 @@ func (m *CsharpSdkDev) Pack(
 func (m *CsharpSdkDev) Publish(
 	ctx context.Context,
 	introspectionJSON *dagger.File,
+
+	// +optional
 	version string,
 
 	// +optional

@@ -119,30 +119,12 @@ func (m *CsharpSdk) CodegenBase(
 
 	codeFixesDll := codeFixesBuild.File("/codefixes-src/csharp/src/Dagger.SDK.CodeFixes/bin/Release/netstandard2.0/Dagger.SDK.CodeFixes.dll")
 
-	// The SDK csproj is different for vendored sdk as it does not reference other projects
-	// We create a clean version here
-	cleanCsproj := `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
-    <RootNamespace>Dagger</RootNamespace>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="System.Collections.Immutable" Version="10.0.0" />
-  </ItemGroup>
-</Project>`
-
-	// Prepare SDK source with generated code and clean project file
+	// Prepare SDK source with generated code (no .csproj - inline compilation via module's <Compile Include="**/*.cs" />)
 	sdkSource := base.
 		WithDirectory("/sdk-src", m.SourceDir).
 		WithWorkdir("/sdk-src/csharp/src/Dagger.SDK").
-		// Remove bin/obj build artifacts if they exist
-		WithExec([]string{"sh", "-c", "rm -rf bin obj || true"}).
-		// Replace the .csproj with a clean one (no broken ProjectReferences)
-		WithNewFile("Dagger.SDK.csproj", cleanCsproj).
+		// Remove bin/obj build artifacts and the .csproj file
+		WithExec([]string{"sh", "-c", "rm -rf bin obj Dagger.SDK.csproj || true"}).
 		// Add the generated Dagger API code
 		WithFile("Dagger.SDK.g.cs", generatedCode).
 		// Add analyzers directory with the built DLLs (both analyzers and code fixes)

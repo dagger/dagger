@@ -49,10 +49,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Collections.Immutable" Version="10.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
     <!-- Include Dagger SDK Analyzers and Code Fixes for IDE support -->
     <Analyzer Include="sdk/analyzers/dotnet/cs/Dagger.SDK.Analyzers.dll" />
     <Analyzer Include="sdk/analyzers/dotnet/cs/Dagger.SDK.CodeFixes.dll" />

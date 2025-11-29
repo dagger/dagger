@@ -2,7 +2,7 @@
   "name": "defaults-example",
   "engineVersion": "v0.19.7",
   "sdk": {
-    "source": "github.com/pjmagee/dagger/sdk/csharp@dotnet-module-support"
+    "source": "github.com/pjmagee/dagger/sdk/csharp@csharp/experimental"
   },
   "disableDefaultFunctionCaching": true
 }

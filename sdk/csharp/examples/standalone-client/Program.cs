@@ -35,8 +35,8 @@ output = await Dag.Container()
     .From("mcr.microsoft.com/dotnet/sdk:10.0")
     .WithDirectory("/src", src)
     .WithWorkdir("/src")
-    .WithExec(new[] { "dotnet", "build", "-c", "Release" })
-    .WithExec(new[] { "dotnet", "publish", "-c", "Release", "-o", "/app" })
+    .WithExec(["dotnet", "build", "-c", "Release"])
+    .WithExec(["dotnet", "publish", "-c", "Release", "-o", "/app"])
     .StdoutAsync();
 Console.WriteLine($"Build Output: {output}");
 

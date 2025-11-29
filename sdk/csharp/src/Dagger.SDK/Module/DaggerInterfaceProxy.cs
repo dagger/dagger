@@ -1,11 +1,8 @@
-using System;
 using System.Collections.Immutable;
 using System.Reflection;
-using System.Threading;
-using System.Threading.Tasks;
 using Dagger.GraphQL;
 
-namespace Dagger.Runtime;
+namespace Dagger.ModuleRuntime;
 
 /// <summary>
 /// DispatchProxy-based implementation of interfaces that routes method calls to the GraphQL API.

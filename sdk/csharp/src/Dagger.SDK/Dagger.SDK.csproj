@@ -5,9 +5,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <RootNamespace>Dagger</RootNamespace>
-    
-    <!-- Suppress NU1510 - System.Collections.Immutable is intentionally explicit -->
+    <RootNamespace>Dagger</RootNamespace>    
     <NoWarn>$(NoWarn);NU1510</NoWarn>
 
     <!-- NuGet Package Metadata -->
@@ -27,16 +25,6 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Dagger.SDK.CodeGen\Dagger.SDK.CodeGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\Dagger.SDK.Analyzers\Dagger.SDK.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\Dagger.SDK.CodeFixes\Dagger.SDK.CodeFixes.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="System.Collections.Immutable" Version="10.0.0" />
-  </ItemGroup>
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />

@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace Dagger.Runtime;
+namespace Dagger.ModuleRuntime;
 
 /// <summary>
 /// Represents information about a discovered module type.
@@ -13,7 +13,7 @@ internal sealed class ModuleTypeInfo
     public required Type ClrType { get; init; }
     public ConstructorInfo? Constructor { get; set; }
     public List<FunctionInfo> Functions { get; } = new();
-    public List<FieldInfo> Fields { get; } = new();
+    public List<DaggerFieldInfo> Fields { get; } = new();
 }
 
 /// <summary>
@@ -56,7 +56,7 @@ internal sealed class ParameterMetadata
 /// <summary>
 /// Represents information about an object field (property).
 /// </summary>
-internal sealed class FieldInfo
+internal sealed class DaggerFieldInfo
 {
     public required string Name { get; init; }
     public string? Description { get; init; }
