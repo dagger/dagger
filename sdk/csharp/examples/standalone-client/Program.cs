@@ -1,4 +1,5 @@
 using Dagger;
+using static Dagger.Client;
 
 // Example 1: Simple container execution
 Console.WriteLine("Example 1: Running a simple command");

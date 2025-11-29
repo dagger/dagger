@@ -106,9 +106,26 @@ func (m *CsharpSdkDev) Publish(
 	// +optional
 	dryRun bool,
 ) error {
-	// Build the package
+	// Build the codegen CLI tool
+	codegenBinary := m.Container.
+		WithWorkdir("/src/sdk/csharp/codegen").
+		WithExec([]string{"dotnet", "build", "Codegen.csproj", "-c", "Release"}).
+		WithExec([]string{"dotnet", "publish", "Codegen.csproj", "-c", "Release", "-o", "/codegen-bin"}).
+		Directory("/codegen-bin")
+
+	// Generate Dagger.SDK.g.cs using the codegen tool
+	generatedCode := m.Container.
+		WithDirectory("/codegen", codegenBinary).
+		WithFile("/schema.json", introspectionJSON).
+		WithExec([]string{
+			"dotnet", "/codegen/dagger-codegen.dll",
+			"/schema.json", "/generated.cs",
+		}).
+		File("/generated.cs")
+
+	// Add generated code to SDK and build package
 	packaged := m.Container.
-		WithFile("introspection.json", introspectionJSON).
+		WithFile("Dagger.SDK/Dagger.SDK.g.cs", generatedCode).
 		WithExec([]string{
 			"dotnet", "pack",
 			"Dagger.SDK/Dagger.SDK.csproj",

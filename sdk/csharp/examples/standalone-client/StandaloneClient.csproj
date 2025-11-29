@@ -7,6 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="DaggerIO" Version="0.1.0-preview.1" />
+    <PackageReference Include="DaggerIO" Version="0.1.0-preview.2" />
   </ItemGroup>
 </Project>
