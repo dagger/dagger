@@ -283,18 +283,30 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 					t.Fatalf("Expected used bytes to decrease below %d from gc, got %d", target, newUsedBytes)
 				}
 			} else {
-				// run an explicit prune using the default prune policy, verify it prunes as expected
-				err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
-					UseDefaultPolicy: true,
-				})
-				require.NoError(t, err)
+				// cleanup after client can be async, which impacts prune, so retry a few times
+				tryCount := 10
+				for i := range tryCount {
+					// run an explicit prune using the default prune policy, verify it prunes as expected
+					err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+						UseDefaultPolicy: true,
+					})
+					require.NoError(t, err)
 
-				cacheEnts = c2.Engine().LocalCache().EntrySet()
-				newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
-				require.NoError(t, err)
+					cacheEnts = c2.Engine().LocalCache().EntrySet()
+					newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
+					require.NoError(t, err)
 
-				if newUsedBytes >= target {
-					t.Fatalf("Expected used bytes to decrease below %d from gc, got %d", target, newUsedBytes)
+					if newUsedBytes < target {
+						break
+					}
+
+					t.Logf("current used bytes %d >= keep storage bytes %d, running explicit prune to free up space", newUsedBytes, target)
+					if i < tryCount-1 {
+						time.Sleep(1 * time.Second)
+						continue
+					}
+
+					t.Fatalf("Expected used bytes to decrease below %d from explicit prune, got %d", target, newUsedBytes)
 				}
 			}
 		}
