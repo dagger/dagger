@@ -7706,10 +7706,37 @@ func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
 	}
 }
 
+func daggerNonNestedExecEcho(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		cmd := ""
+		for _, arg := range append([]string{"dagger"}, args...) {
+			if strings.Contains(arg, "\"") || strings.Contains(arg, "\\") {
+				panic("fucked")
+			}
+			cmd = fmt.Sprintf("%s \"%s\"", cmd, arg)
+		}
+		return c.
+			// Don't persist stable client id between runs. this matches the behavior
+			// of actual nested execs. Stable client IDs on the filesystem don't work
+			// when run inside layered containers that can branch off and run in parallel.
+			WithEnvVariable("XDG_STATE_HOME", "/tmp").
+			WithMountedTemp("/tmp").
+			WithExec([]string{"sh", "-c", "set -x; echo start; " + cmd + "; echo exit=$?; ps aux; env; docker ps -a; echo done"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: false,
+			})
+	}
+}
+
 func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
 	args = append([]string{"run"}, args...)
 
 	return daggerNonNestedExec(args...)
+}
+
+func daggerNonNestedRunEcho(args ...string) dagger.WithContainerFunc {
+	args = append([]string{"run"}, args...)
+
+	return daggerNonNestedExecEcho(args...)
 }
 
 func daggerClientInstall(generator string) dagger.WithContainerFunc {

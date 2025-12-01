@@ -1531,6 +1531,14 @@ main()`))
 			out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
 				Stdout(ctx)
 
+			if err != nil {
+				out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
+					CombinedOutput(ctx)
+				if out == "" {
+					require.NoError(t, err)
+				}
+				require.Equal(t, "welp", out)
+			}
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, out)
 		})
