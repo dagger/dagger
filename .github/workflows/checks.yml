@@ -56,7 +56,7 @@ jobs:
         run: mv .env.gha .env
       - name: exec
         id: exec
-        uses: dagger/checks@main
+        uses: alexcb/dagger-checks@main
         with:
           filter: ${{ matrix.filter }}
           cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
