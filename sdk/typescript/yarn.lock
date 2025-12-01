@@ -709,6 +709,21 @@
   resolved "https://registry.yarnpkg.com/@opentelemetry/semantic-conventions/-/semantic-conventions-1.38.0.tgz#8b5f415395a7ddb7c8e0c7932171deb9278df1a3"
   integrity sha512-kocjix+/sSggfJhwXqClZ3i9Y/MI0fp7b+g7kCRm6psy2dsf8uApTRclwG18h8Avm7C9+fnt+O36PspJ/OzoWg==
 
+"@otel-test-runner/instrumentation@0.0.10":
+  version "0.0.10"
+  resolved "https://registry.yarnpkg.com/@otel-test-runner/instrumentation/-/instrumentation-0.0.10.tgz#a362fa9547f52d9e73e79a44f2ac414bcc4c2c87"
+  integrity sha512-mA4QvWyJ00AJ/U+I6IeqRUuFgGW6upCXWhFlRjZ6WOO3IlOt35fHME+GmYCC8rYQzJcaHImUmUAvknbP7aPpIg==
+  dependencies:
+    "@opentelemetry/sdk-node" "^0.208.0"
+
+"@otel-test-runner/mocha-test@^0.0.10":
+  version "0.0.10"
+  resolved "https://registry.yarnpkg.com/@otel-test-runner/mocha-test/-/mocha-test-0.0.10.tgz#1fe6c539d4900d800f4a2f3e328dc6c90f460926"
+  integrity sha512-/EBQheLYyGTIRMm8r2hoI6IZJIWeBIbjxXwhJiHIlOjQeMaVSs8Qp+4E4+yyPgBl0sLLHYzpcasjjEuBw5AqYQ==
+  dependencies:
+    "@otel-test-runner/instrumentation" "0.0.10"
+    mocha "^11.7.5"
+
 "@pkgjs/parseargs@^0.11.0":
   version "0.11.0"
   resolved "https://registry.npmjs.org/@pkgjs/parseargs/-/parseargs-0.11.0.tgz"

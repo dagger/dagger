@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
+    "@otel-test-runner/mocha-test": "^0.0.10",
     "@trivago/prettier-plugin-sort-imports": "^6.0.0",
     "@types/adm-zip": "^0.5.7",
     "@types/mocha": "^10.0.10",
