@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -28,7 +29,7 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("raw").Doc("Return values exactly as written to the file. No quote removal or variable expansion"),
 			),
-		dagql.Func("withVariable", s.withVariable).
+		dagql.NodeFuncWithCacheKey("withVariable", envFileContentHashWrapper(s.withVariable), dagql.CachePerClient).
 			Doc("Add a variable").
 			Args(
 				dagql.Arg("name").Doc("Variable name"),
@@ -72,7 +73,7 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.File]{
-		dagql.Func("asEnvFile", s.asEnvFile).
+		dagql.NodeFuncWithCacheKey("asEnvFile", envFileContentHashWrapper(s.asEnvFile), dagql.CachePerClient).
 			Args(
 				dagql.Arg("expand").
 					Doc(`Replace "${VAR}" or "$VAR" with the value of other vars`).
@@ -102,11 +103,15 @@ func (s envfileSchema) variables(ctx context.Context, parent *core.EnvFile, args
 	return parent.Variables(ctx, args.Raw.GetOr(dagql.Boolean(false)).Bool())
 }
 
-func (s envfileSchema) withVariable(ctx context.Context, parent *core.EnvFile, args struct {
+type withVariableArgs struct {
 	Name  dagql.String
 	Value dagql.String
-}) (*core.EnvFile, error) {
-	return parent.WithVariable(args.Name.String(), args.Value.String()), nil
+
+	RawDagOpInternalArgs
+}
+
+func (s envfileSchema) withVariable(ctx context.Context, parent dagql.ObjectResult[*core.EnvFile], args withVariableArgs) (*core.EnvFile, error) {
+	return parent.Self().WithVariable(args.Name.String(), args.Value.String()), nil
 }
 
 func (s envfileSchema) withoutVariable(ctx context.Context, parent *core.EnvFile, args struct {
@@ -146,12 +151,48 @@ func (s envfileSchema) namespace(ctx context.Context, parent *core.EnvFile, args
 	return parent.Namespace(ctx, args.Prefix)
 }
 
-func (s envfileSchema) asEnvFile(ctx context.Context, parent *core.File, args struct {
+type asEnvFileArgs struct {
 	Expand dagql.Optional[dagql.Boolean]
-}) (*core.EnvFile, error) {
-	var expand bool
-	if args.Expand.Valid {
-		expand = args.Expand.Value.Bool()
+
+	RawDagOpInternalArgs
+}
+
+func (s envfileSchema) asEnvFile(ctx context.Context, parent dagql.ObjectResult[*core.File], args asEnvFileArgs) (*core.EnvFile, error) {
+	expand := args.Expand.Valid && args.Expand.Value.Bool()
+	return parent.Self().AsEnvFile(ctx, expand)
+}
+
+func envFileContentHashWrapper[T dagql.Typed, A DagOpInternalArgsIface](
+	fn dagql.NodeFuncHandler[T, A, *core.EnvFile],
+) dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.EnvFile]] {
+	return func(ctx context.Context, parent dagql.ObjectResult[T], args A) (inst dagql.ObjectResult[*core.EnvFile], _ error) {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get dagql server: %w", err)
+		}
+
+		if args.InDagOp() {
+			ef, err := fn(ctx, parent, args)
+			if err != nil {
+				return inst, err
+			}
+			return dagql.NewObjectResultForCurrentID(ctx, srv, ef)
+		}
+
+		ef, err := DagOp[T, A, *core.EnvFile](ctx, srv, parent, args, fn)
+		if err != nil {
+			return inst, err
+		}
+
+		dop, err := dagql.NewObjectResultForCurrentID[*core.EnvFile](ctx, srv, ef)
+		if err != nil {
+			return inst, err
+		}
+
+		dgst, err := ef.Digest(ctx)
+		if err != nil {
+			return inst, err
+		}
+		return dop.WithObjectDigest(dgst), nil
 	}
-	return parent.AsEnvFile(ctx, expand)
 }

@@ -2433,6 +2433,20 @@ class Container(Type):
         _ctx = self._select("withEntrypoint", _args)
         return Container(_ctx)
 
+    def with_env_file_variables(self, source: "EnvFile") -> Self:
+        """Export environment variables from an env-file to the container.
+
+        Parameters
+        ----------
+        source:
+            Identifier of the envfile
+        """
+        _args = [
+            Arg("source", source),
+        ]
+        _ctx = self._select("withEnvFileVariables", _args)
+        return Container(_ctx)
+
     def with_env_variable(
         self,
         name: str,
