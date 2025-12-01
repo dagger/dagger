@@ -63,4 +63,8 @@ jobs:
           # Pinned from dagger/dagger#main, to enable checks.
           # Once checks are merged and stable, we can switch back to a stable release
           commit: 0772a9cfc97916c3c8c971966163bfa22bb9585e
+      - name: failure debug
+        shell: bash
+        run: docker ps -a && docker ps -q | xargs -n 1 docker logs
+        if: ${{ failure() }}
     timeout-minutes: 30
