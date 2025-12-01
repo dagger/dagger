@@ -100,6 +100,9 @@ func (*GitRef) TypeDescription() string {
 }
 
 func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	if ref.Backend == nil {
+		return nil, nil
+	}
 	return ref.Backend.PBDefinitions(ctx)
 }
 
