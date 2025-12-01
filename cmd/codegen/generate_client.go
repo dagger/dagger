@@ -32,6 +32,7 @@ var generateClientCmd = &cobra.Command{
 func GenerateClient(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	ctx = telemetry.InitEmbedded(ctx, nil)
+	defer telemetry.Close()
 
 	cfg, err := getGlobalConfig(ctx, false)
 	if err != nil {

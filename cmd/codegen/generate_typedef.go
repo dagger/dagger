@@ -21,6 +21,7 @@ var generateTypeDefsCmd = &cobra.Command{
 func GenerateTypeDefs(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	ctx = telemetry.InitEmbedded(ctx, nil)
+	defer telemetry.Close()
 
 	cfg, err := getGlobalConfig(ctx, true)
 	if err != nil {
