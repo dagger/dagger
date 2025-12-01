@@ -9,8 +9,8 @@ replace github.com/dagger/dagger/engine/distconsts => ../../engine/distconsts
 require github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 
 require (
-	github.com/distribution/reference v0.6.0 // indirect
-	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/sourcegraph/conc v0.3.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 )
 
 require (

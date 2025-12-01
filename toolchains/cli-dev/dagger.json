@@ -22,6 +22,5 @@
       "name": "version",
       "source": "../../version"
     }
-  ],
-  "source": "."
+  ]
 }

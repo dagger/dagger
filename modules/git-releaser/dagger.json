@@ -1,6 +1,6 @@
 {
   "name": "git-releaser",
-  "engineVersion": "v0.19.5",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
