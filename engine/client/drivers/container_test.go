@@ -227,7 +227,7 @@ func TestBackendContainerLs(t *testing.T) {
 			for _, containerName := range containers {
 				found := false
 				for _, listedContainer := range finalList {
-					if strings.Contains(listedContainer, containerName) {
+					if strings.Contains(listedContainer.name, containerName) {
 						found = true
 						break
 					}

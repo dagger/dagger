@@ -400,7 +400,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		return fmt.Errorf("parse runner host: %w", err)
 	}
 
-	driver, err := drivers.GetDriver(ctx, remote.Scheme)
+	matchedDrivers, err := drivers.GetDrivers(ctx, remote.Scheme)
 	if err != nil {
 		return err
 	}
@@ -422,57 +422,61 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
-	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
-		DaggerCloudToken: cloudToken,
-		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
-		Module:           params.Module,
-		Function:         params.Function,
-		ExecCmd:          params.ExecCmd,
-		ClientID:         c.ID,
-		CloudAuth:        params.CloudAuth,
-	})
-	provisionCancel()
-	telemetry.EndWithCause(provisionSpan, &err)
-	if err != nil {
-		return err
-	}
 
-	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
+	type skipErr struct{ error }
 
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-	slog.Debug("connecting", "runner", c.RunnerHost)
+	startAndWait := func(driver drivers.Driver) error {
+		c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
+			DaggerCloudToken: cloudToken,
+			GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
+			Module:           params.Module,
+			Function:         params.Function,
+			ExecCmd:          params.ExecCmd,
+			ClientID:         c.ID,
+			CloudAuth:        params.CloudAuth,
+		})
+		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+		slog.Debug("connecting", "runner", c.RunnerHost)
 
-	bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
-	bkClient, bkInfo, err := newBuildkitClient(bkCtx, remote, c.connector)
-	telemetry.EndWithCause(span, &err)
-	if err != nil {
-		return fmt.Errorf("new client: %w", err)
-	}
-	c.bkClient = bkClient
-	c.bkVersion = bkInfo.BuildkitVersion.Version
-	c.bkName = bkInfo.BuildkitVersion.Revision
-	c.numCPU = bkInfo.SystemInfo.NumCPU
+		bkClient, bkInfo, err := newBuildkitClient(ctx, remote, c.connector)
+		if err != nil {
+			return skipErr{fmt.Errorf("new client: %w", err)}
+		}
+		c.bkClient = bkClient
+		c.bkVersion = bkInfo.BuildkitVersion.Version
+		c.bkName = bkInfo.BuildkitVersion.Revision
+		c.numCPU = bkInfo.SystemInfo.NumCPU
 
-	slog.Info("connected", "name", c.bkName, "client-version", engine.Version, "server-version", c.bkVersion)
+		slog.Info("connected", "name", c.bkName, "client-version", engine.Version, "server-version", c.bkVersion)
 
-	imageBackend := c.ImageLoaderBackend
-	if imageBackend == nil {
-		imageBackend = driver.ImageLoader(ctx)
-	}
-	if imageBackend != nil {
+		imageBackend := c.ImageLoaderBackend
+		if imageBackend == nil {
+			imageBackend = driver.ImageLoader(ctx)
+		}
+		if imageBackend == nil {
+			return nil
+		}
 		imgloadCtx, span := Tracer(ctx).Start(ctx, "configuring image store")
+		defer telemetry.EndWithCause(span, &err)
 		c.imageLoader, err = imageBackend.Loader(imgloadCtx)
 		if err != nil {
-			err = fmt.Errorf("failed to get image loader: %w", err)
+			return skipErr{fmt.Errorf("failed to get image loader: %w", err)}
 		}
-		telemetry.EndWithCause(span, &err)
-		if err != nil {
-			return err
-		}
+		return nil
 	}
 
-	return nil
+	for _, driver := range matchedDrivers {
+		err = startAndWait(driver)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, skipErr{}) {
+			break
+		}
+	}
+	provisionCancel()
+	telemetry.EndWithCause(provisionSpan, &err)
+	return err
 }
 
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
@@ -505,9 +509,6 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
-	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session", telemetry.Encapsulate())
-	defer telemetry.EndWithCause(sessionSpan, &rerr)
-
 	clientMetadata := c.clientMetadata()
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
@@ -579,8 +580,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			<-ctx.Done()
 			cancel(errors.New("startSession context done"))
 		}()
-		c.sessionSrv.Run(ctx)
-		return nil
+		return c.sessionSrv.Run(ctx)
 	})
 
 	c.httpClient = c.newHTTPClient()
@@ -642,8 +642,7 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 			<-ctx.Done()
 			cancel(errors.New("startSession context done"))
 		}()
-		c.sessionSrv.Run(ctx)
-		return nil
+		return c.sessionSrv.Run(ctx)
 	})
 
 	c.httpClient = c.newHTTPClient()
@@ -675,28 +674,7 @@ func ConnectBuildkitSession(
 	if err := req.Write(conn); err != nil {
 		return nil, fmt.Errorf("write request: %w", err)
 	}
-
-	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-	if resp.Body != nil {
-		defer resp.Body.Close()
-	}
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		var respBody []byte
-		if resp.Body != nil {
-			respBody, _ = io.ReadAll(resp.Body)
-		}
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	// We tell the server that we have fully read the response and will now switch to serving gRPC
-	// by sending a single byte ack. This prevents the server from starting to send gRPC client
-	// traffic while we are still reading the previous HTTP response.
-	if _, err := conn.Write([]byte{0}); err != nil {
-		return nil, fmt.Errorf("write ack: %w", err)
-	}
+	sessionSrv.initReq = req
 
 	return sessionSrv, nil
 }
@@ -733,12 +711,44 @@ type BuildkitSessionServer struct {
 	MethodURLs  []string
 	Conn        net.Conn
 	Attachables []bksession.Attachable
+	initReq     *http.Request
 }
 
-func (srv *BuildkitSessionServer) Run(ctx context.Context) {
+func (srv *BuildkitSessionServer) finishSetup() error {
+	resp, err := http.ReadResponse(bufio.NewReader(srv.Conn), srv.initReq)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		var respBody []byte
+		if resp.Body != nil {
+			respBody, _ = io.ReadAll(resp.Body)
+		}
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// We tell the server that we have fully read the response and will now switch to serving gRPC
+	// by sending a single byte ack. This prevents the server from starting to send gRPC client
+	// traffic while we are still reading the previous HTTP response.
+	if _, err := srv.Conn.Write([]byte{0}); err != nil {
+		return fmt.Errorf("write ack: %w", err)
+	}
+
+	srv.initReq = nil
+
+	return nil
+}
+
+func (srv *BuildkitSessionServer) Run(ctx context.Context) error {
 	defer srv.Conn.Close()
 	defer srv.Stop()
 
+	if err := srv.finishSetup(); err != nil {
+		return err
+	}
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
@@ -752,6 +762,7 @@ func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 	case <-ctx.Done():
 	case <-doneCh:
 	}
+	return nil
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {
