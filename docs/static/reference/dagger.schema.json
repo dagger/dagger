@@ -99,6 +99,13 @@
           },
           "type": "array",
           "description": "Customizations configuration for toolchains that override function argument pragmas."
+        },
+        "ignoreChecks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "IgnoreChecks is a list of check patterns to exclude from this toolchain. Patterns can use glob syntax to match check names."
         }
       },
       "additionalProperties": false,

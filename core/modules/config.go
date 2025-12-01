@@ -208,6 +208,10 @@ type ModuleConfigDependency struct {
 	Arguments []*ModuleConfigArgument `json:"arguments,omitempty"`
 	// Customizations configuration for toolchains that override function argument pragmas.
 	Customizations []*ModuleConfigArgument `json:"customizations,omitempty"`
+
+	// IgnoreChecks is a list of check patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match check names.
+	IgnoreChecks []string `json:"ignoreChecks,omitempty"`
 }
 
 // ModuleConfigArgument represents an argument override for a toolchain function
