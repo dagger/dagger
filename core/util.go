@@ -23,6 +23,8 @@ import (
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/overlay"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -343,7 +345,6 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, opt
 	if err != nil {
 		return "", nil, nil, err
 	}
-	m.Target = dir
 	return dir, &m, func() error {
 		err := lm.Unmount()
 		err = errors.Join(err, unmount())
@@ -589,4 +590,66 @@ func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput
 		ins[i] = conv(v)
 	}
 	return ins
+}
+
+func pathResolverForMount(
+	m *mount.Mount,
+	mntedPath string, // if set, paths will be assumed to be provided as seen from under mntedPath
+) (fscopy.PathResolver, error) {
+	if m == nil {
+		return nil, nil
+	}
+	switch m.Type {
+	case "bind", "rbind":
+		return func(p string) (string, error) {
+			if mntedPath != "" {
+				var err error
+				p, err = filepath.Rel(mntedPath, p)
+				if err != nil {
+					return "", err
+				}
+			}
+			return containerdfs.RootPath(m.Source, p)
+		}, nil
+	case "overlay":
+		overlayDirs, err := overlay.GetOverlayLayers(*m)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get overlay layers: %w", err)
+		}
+		return func(p string) (string, error) {
+			if mntedPath != "" {
+				var err error
+				p, err = filepath.Rel(mntedPath, p)
+				if err != nil {
+					return "", err
+				}
+			}
+			// overlayDirs is lower->upper, so iterate in reverse to check
+			// upper layers first
+			var resolvedUpperdirPath string
+			for i := len(overlayDirs) - 1; i >= 0; i-- {
+				layerRoot := overlayDirs[i]
+				resolvedPath, err := containerdfs.RootPath(layerRoot, p)
+				if err != nil {
+					return "", err
+				}
+				if i == len(overlayDirs)-1 {
+					resolvedUpperdirPath = resolvedPath
+				}
+				_, err = os.Lstat(resolvedPath)
+				switch {
+				case err == nil:
+					return resolvedPath, nil
+				case errors.Is(err, os.ErrNotExist):
+					// try next layer
+				default:
+					return "", fmt.Errorf("failed to stat path %s in overlay layer: %w", resolvedPath, err)
+				}
+			}
+			// path doesn't exist, so if it's gonna exist, it should be in the upperdir
+			return resolvedUpperdirPath, nil
+		}, nil
+	default:
+		return nil, nil
+	}
 }

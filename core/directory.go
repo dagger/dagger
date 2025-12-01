@@ -23,7 +23,6 @@ import (
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/patternmatcher"
@@ -842,21 +841,20 @@ func (dir *Directory) WithDirectory(
 			}
 			srcMnt := ms[0]
 			lm := snapshot.LocalMounterWithMounts(ms)
-			srcPath, err := lm.Mount()
+			mntedSrcPath, err := lm.Mount()
 			if err != nil {
 				return fmt.Errorf("failed to mount source directory: %w", err)
 			}
 			defer lm.Unmount()
-			srcMnt.Target = srcPath
-			resolvedSrcPath, err := containerdfs.RootPath(srcPath, src.Dir)
+			resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
 			if err != nil {
 				return err
 			}
-			srcResolver, err := pathResolverForMount(&srcMnt)
+			srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
 			if err != nil {
 				return fmt.Errorf("failed to create source path resolver: %w", err)
 			}
-			destResolver, err := pathResolverForMount(destMnt)
+			destResolver, err := pathResolverForMount(destMnt, copyDest)
 			if err != nil {
 				return fmt.Errorf("failed to create destination path resolver: %w", err)
 			}
@@ -954,66 +952,6 @@ func (dir *Directory) WithDirectory(
 	return dir, nil
 }
 
-// TODO: probably move elsewhere for better re-use
-func pathResolverForMount(m *mount.Mount) (fscopy.PathResolver, error) {
-	if m == nil {
-		return nil, nil
-	}
-	switch m.Type {
-	case "bind", "rbind":
-		return func(p string) (string, error) {
-			if m.Target != "" {
-				var err error
-				p, err = filepath.Rel(m.Target, p)
-				if err != nil {
-					return "", err
-				}
-			}
-			return containerdfs.RootPath(m.Source, p)
-		}, nil
-	case "overlay":
-		overlayDirs, err := overlay.GetOverlayLayers(*m)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get overlay layers: %w", err)
-		}
-		return func(p string) (string, error) {
-			if m.Target != "" {
-				var err error
-				p, err = filepath.Rel(m.Target, p)
-				if err != nil {
-					return "", err
-				}
-			}
-			// overlayDirs is lower->upper, so iterate in reverse to check
-			// upper layers first
-			var resolvedUpperdirPath string
-			for i := len(overlayDirs) - 1; i >= 0; i-- {
-				layerRoot := overlayDirs[i]
-				resolvedPath, err := containerdfs.RootPath(layerRoot, p)
-				if err != nil {
-					return "", err
-				}
-				if i == len(overlayDirs)-1 {
-					resolvedUpperdirPath = resolvedPath
-				}
-				_, err = os.Lstat(resolvedPath)
-				switch {
-				case err == nil:
-					return resolvedPath, nil
-				case errors.Is(err, os.ErrNotExist):
-					// try next layer
-				default:
-					return "", fmt.Errorf("failed to stat path %s in overlay layer: %w", resolvedPath, err)
-				}
-			}
-			// path doesn't exist, so if it's gonna exist, it should be in the upperdir
-			return resolvedUpperdirPath, nil
-		}, nil
-	default:
-		return nil, nil
-	}
-}
-
 func copyFile(srcPath, dstPath string, tryHardlink bool) (err error) {
 	if tryHardlink {
 		_, err := os.Lstat(dstPath)
@@ -1090,7 +1028,6 @@ func isDir(path string) (bool, error) {
 	return fi.Mode().IsDir(), nil
 }
 
-//nolint:gocyclo
 func (dir *Directory) WithFile(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -1185,20 +1122,15 @@ func (dir *Directory) WithFile(
 
 	var realSrcPath string
 	if err := MountRef(ctx, srcCacheRef, bkSessionGroup, func(root string, srcMnt *mount.Mount) (rerr error) {
-		mntedSrcPath, err := containerdfs.RootPath(root, src.File)
+		srcPath, err := containerdfs.RootPath(root, src.File)
 		if err != nil {
 			return err
 		}
-		resolvedSrcRelPath, err := filepath.Rel(root, mntedSrcPath)
+		srcResolver, err := pathResolverForMount(srcMnt, root)
 		if err != nil {
 			return err
 		}
-		srcMnt.Target = "" // TODO: cleanup
-		srcResolver, err := pathResolverForMount(srcMnt)
-		if err != nil {
-			return err
-		}
-		realSrcPath, err = srcResolver(resolvedSrcRelPath)
+		realSrcPath, err = srcResolver(srcPath)
 		if err != nil {
 			return err
 		}
