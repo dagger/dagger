@@ -1480,7 +1480,7 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		return nil, err
 	}
 	if ref == nil {
-		return nil, nil
+		return nil, fmt.Errorf("%s: %w", targetPath, os.ErrNotExist)
 	}
 
 	immutableRef, err := ref.CacheRef(ctx)
