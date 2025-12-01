@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -291,34 +292,38 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	// --- Ambiguous URL handling: recurse to extend the dag and try both protocols if needed --
 	remoteGitRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
 
-	// ref selector to specify the expected ref / commit
-	refSelector := dagql.Selector{
-		Field: "ref",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "name",
-				Value: dagql.NewString(args.Name),
-			},
-		},
-		View: dagql.CurrentID(ctx).View(),
-	}
+	currentID := dagql.CurrentID(ctx)
+	gitID := currentID.Receiver()
 
-	if args.Commit != "" {
-		refSelector.Args = append(refSelector.Args, dagql.NamedInput{
-			Name:  "commit",
-			Value: dagql.NewString(args.Commit),
-		})
-	}
-
-	// lambda to re-enter git(...) with possible URL override and extra args
-	reenter := func(urlOverride string, extra ...dagql.NamedInput) (dagql.Result[*core.GitRef], error) {
-		args := gitSelectArgs(repo, remoteGitRepo, urlOverride)
-		args = append(args, extra...)
-		var out dagql.Result[*core.GitRef]
-		if err := selectWithGit(ctx, srv, args, &out, refSelector); err != nil {
-			return out, err
+	reenter := func(urlOverride string, extraArgs ...*call.Argument) (dagql.Result[*core.GitRef], error) {
+		newGitID := gitID.WithArgument(call.NewArgument("url", call.NewLiteralString(urlOverride), false))
+		for _, arg := range extraArgs {
+			newGitID = newGitID.WithArgument(arg)
 		}
-		return out, nil
+
+		refArgs := []*call.Argument{
+			call.NewArgument("name", call.NewLiteralString(args.Name), false),
+		}
+		if args.Commit != "" {
+			refArgs = append(refArgs, call.NewArgument("commit", call.NewLiteralString(args.Commit), false))
+		}
+
+		newRefID := newGitID.Append(
+			(*core.GitRef)(nil).Type(),
+			"ref",
+			call.WithArgs(refArgs...),
+			call.WithView(currentID.View()),
+		)
+
+		res, err := srv.Load(ctx, newRefID)
+		if err != nil {
+			return inst, err
+		}
+		typed, ok := res.(dagql.ObjectResult[*core.GitRef])
+		if !ok {
+			return inst, fmt.Errorf("expected ObjectResult[*core.GitRef], got %T", res)
+		}
+		return typed.Result, nil
 	}
 
 	repoURL := parent.ID().Arg("url").Value().ToInput().(string)
@@ -368,10 +373,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		}
 
 		return reenter(u.String(),
-			dagql.NamedInput{
-				Name:  "sshAuthSocket",
-				Value: dagql.Opt(dagql.NewID[*core.Socket](sock.ID())),
-			},
+			call.NewArgument("sshAuthSocket", call.NewLiteralID(sock.ID()), false),
 		)
 	}
 
@@ -425,13 +427,13 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 					return inst, fmt.Errorf("create git auth secret: %w", err)
 				}
 
-				extra := []dagql.NamedInput{
-					{Name: "httpAuthToken", Value: dagql.Opt(dagql.NewID[*core.Secret](token.ID()))},
+				extraArgs := []*call.Argument{
+					call.NewArgument("httpAuthToken", call.NewLiteralID(token.ID()), true),
 				}
 				if creds.Username != "" {
-					extra = append(extra, dagql.NamedInput{Name: "httpAuthUsername", Value: dagql.NewString(creds.Username)})
+					extraArgs = append(extraArgs, call.NewArgument("httpAuthUsername", call.NewLiteralString(creds.Username), false))
 				}
-				return reenter(remoteGitRepo.URL.String(), extra...)
+				return reenter(remoteGitRepo.URL.String(), extraArgs...)
 			} else if err != nil {
 				slog.Warn("GetCredential failed", "error", err)
 			}
