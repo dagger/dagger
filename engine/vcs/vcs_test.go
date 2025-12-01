@@ -238,7 +238,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			},
 		},
 
-		// Azure DevOps
+		// Azure DevOps - cloud
 		// short HTTPS ref, with format: user, org and where repo name == org name
 		{
 			"dev.azure.com/dagger-e2e/_git/dagger-modules-test-public/depth1/depth2",
@@ -289,6 +289,16 @@ func TestRepoRootForImportPath(t *testing.T) {
 				VCS:  vcsGit,
 				Repo: "https://dev.azure.com/dagger e2e/public/_git/dagger test modules",
 				Root: "dev.azure.com/dagger e2e/public/_git/dagger test modules.git",
+			},
+		},
+
+		// HTTPS ref - on-prem
+		{
+			"azure.example.com/tfs/collection/project/_git/repository/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://azure.example.com/tfs/collection/project/_git/repository",
+				Root: "azure.example.com/tfs/collection/project/_git/repository",
 			},
 		},
 
