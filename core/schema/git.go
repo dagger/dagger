@@ -315,10 +315,12 @@ func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult
 
 	if isRemote && needsAuthResolution(remoteGitRepo) {
 		result, err := s.resolveAndLoadRepoObject(ctx, srv, parent)
-		if err != nil {
+		if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
 			return inst, err
 		}
-		return result.(dagql.ObjectResult[*core.GitRef]).Result, nil
+		if result != nil {
+			return result.(dagql.ObjectResult[*core.GitRef]).Result, nil
+		}
 	}
 
 	remote, err := repo.Backend.Remote(ctx)
@@ -385,10 +387,12 @@ func (s *gitSchema) tags(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 
 	if isRemote && needsAuthResolution(remoteGitRepo) {
 		result, err := s.resolveAndLoadRepoScalar(ctx, srv, parent)
-		if err != nil {
+		if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
 			return nil, err
 		}
-		return result.Unwrap().(dagql.Array[dagql.String]), nil
+		if result != nil {
+			return result.Unwrap().(dagql.Array[dagql.String]), nil
+		}
 	}
 
 	var patterns []string
@@ -419,10 +423,12 @@ func (s *gitSchema) branches(ctx context.Context, parent dagql.ObjectResult[*cor
 
 	if isRemote && needsAuthResolution(remoteGitRepo) {
 		result, err := s.resolveAndLoadRepoScalar(ctx, srv, parent)
-		if err != nil {
+		if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
 			return nil, err
 		}
-		return result.Unwrap().(dagql.Array[dagql.String]), nil
+		if result != nil {
+			return result.Unwrap().(dagql.Array[dagql.String]), nil
+		}
 	}
 
 	var patterns []string
@@ -566,10 +572,12 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	if gitRef.Backend == nil && isRemote {
 		if gitRef.Ref.SHA == "" || needsAuthResolution(remoteGitRepo) {
 			result, err := s.resolveAndLoad(ctx, srv, parent)
-			if err != nil {
+			if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
 				return inst, err
 			}
-			return result.(dagql.ObjectResult[*core.Directory]), nil
+			if result != nil {
+				return result.(dagql.ObjectResult[*core.Directory]), nil
+			}
 		}
 
 		refBackend, err := remoteGitRepo.Get(ctx, gitRef.Ref)
@@ -763,7 +771,7 @@ func (s *gitSchema) resolveAndLoadRepoObject(
 		}
 	}
 
-	return reenter(remoteGitRepo.URL.String())
+	return nil, errNoAuthResolutionNeeded
 }
 
 func (s *gitSchema) resolveAndLoadRepoScalar(
@@ -894,8 +902,10 @@ func (s *gitSchema) resolveAndLoadRepoScalar(
 		}
 	}
 
-	return reenter(remoteGitRepo.URL.String())
+	return nil, errNoAuthResolutionNeeded
 }
+
+var errNoAuthResolutionNeeded = errors.New("no auth resolution needed")
 
 func needsAuthResolution(repo *core.RemoteGitRepository) bool {
 	if repo.URL == nil {
@@ -1055,6 +1065,10 @@ func (s *gitSchema) resolveAndLoad(
 		}
 	}
 
+	if gitRef.Ref.SHA != "" {
+		return nil, errNoAuthResolutionNeeded
+	}
+
 	backendRemote, err := remoteGitRepo.Remote(ctx)
 	if err != nil {
 		return nil, err
@@ -1062,9 +1076,6 @@ func (s *gitSchema) resolveAndLoad(
 	resolvedRef, err := backendRemote.Lookup(gitRef.Ref.Name)
 	if err != nil {
 		return nil, err
-	}
-	if gitRef.Ref.SHA != "" && gitRef.Ref.SHA != resolvedRef.SHA {
-		resolvedRef.SHA = gitRef.Ref.SHA
 	}
 
 	refArgs := []*call.Argument{
@@ -1233,6 +1244,10 @@ func (s *gitSchema) resolveAndLoadScalar(
 		}
 	}
 
+	if gitRef.Ref.SHA != "" {
+		return nil, errNoAuthResolutionNeeded
+	}
+
 	backendRemote, err := remoteGitRepo.Remote(ctx)
 	if err != nil {
 		return nil, err
@@ -1240,9 +1255,6 @@ func (s *gitSchema) resolveAndLoadScalar(
 	resolvedRef, err := backendRemote.Lookup(gitRef.Ref.Name)
 	if err != nil {
 		return nil, err
-	}
-	if gitRef.Ref.SHA != "" && gitRef.Ref.SHA != resolvedRef.SHA {
-		resolvedRef.SHA = gitRef.Ref.SHA
 	}
 
 	refArgs := []*call.Argument{
@@ -1283,10 +1295,12 @@ func (s *gitSchema) fetchCommit(
 
 	if isRemote && (gitRef.Ref.SHA == "" || needsAuthResolution(remoteGitRepo)) {
 		result, err := s.resolveAndLoadScalar(ctx, srv, parent)
-		if err != nil {
+		if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
 			return "", err
 		}
-		return result.Unwrap().(dagql.String), nil
+		if result != nil {
+			return result.Unwrap().(dagql.String), nil
+		}
 	}
 
 	return dagql.NewString(gitRef.Ref.SHA), nil
@@ -1308,10 +1322,12 @@ func (s *gitSchema) fetchRef(
 
 	if isRemote && (gitRef.Ref.Name == "" || needsAuthResolution(remoteGitRepo)) {
 		result, err := s.resolveAndLoadScalar(ctx, srv, parent)
-		if err != nil {
+		if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
 			return "", err
 		}
-		return result.Unwrap().(dagql.String), nil
+		if result != nil {
+			return result.Unwrap().(dagql.String), nil
+		}
 	}
 
 	return dagql.NewString(cmp.Or(gitRef.Ref.Name, gitRef.Ref.SHA)), nil
@@ -1339,10 +1355,12 @@ func (s *gitSchema) commonAncestor(
 
 	if isRemote && (gitRef.Ref.SHA == "" || needsAuthResolution(remoteGitRepo)) {
 		result, err := s.resolveAndLoad(ctx, srv, parent)
-		if err != nil {
+		if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
 			return inst, err
 		}
-		return result.(dagql.ObjectResult[*core.GitRef]), nil
+		if result != nil {
+			return result.(dagql.ObjectResult[*core.GitRef]), nil
+		}
 	}
 
 	if gitRef.Backend == nil && isRemote {
