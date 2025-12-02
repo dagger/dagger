@@ -615,6 +615,26 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		gitRef.Backend = refBackend
 	}
 
+	if gitRef.Backend == nil && !isRemote {
+		if gitRef.Ref.SHA == "" && gitRef.Ref.Name != "" {
+			remote, err := repo.Backend.Remote(ctx)
+			if err != nil {
+				return inst, err
+			}
+			resolvedRef, err := remote.Lookup(gitRef.Ref.Name)
+			if err != nil {
+				return inst, err
+			}
+			gitRef.Ref = resolvedRef
+		}
+
+		refBackend, err := repo.Backend.Get(ctx, gitRef.Ref)
+		if err != nil {
+			return inst, err
+		}
+		gitRef.Backend = refBackend
+	}
+
 	if args.IsDagOp {
 		dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth)
 		if err != nil {
