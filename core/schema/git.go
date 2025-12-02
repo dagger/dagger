@@ -573,6 +573,20 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	return inst, nil
 }
 
+func (s *gitSchema) resolveRef(ctx context.Context, srv *dagql.Server, ref dagql.ObjectResult[*core.GitRef]) (inst dagql.ObjectResult[*core.GitRef], _ error) {
+	var tree dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, ref, &tree, dagql.Selector{Field: "tree"}); err != nil {
+		return inst, fmt.Errorf("failed to resolve ref: %w", err)
+	}
+
+	resolvedRefID := tree.ID().Receiver()
+	resolvedRef, err := srv.Load(ctx, resolvedRefID)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load resolved ref: %w", err)
+	}
+	return resolvedRef.(dagql.ObjectResult[*core.GitRef]), nil
+}
+
 func needsAuthResolution(repo *core.RemoteGitRepository) bool {
 	if repo.URL == nil {
 		return true
@@ -1008,15 +1022,56 @@ func (s *gitSchema) commonAncestor(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
+
+	gitRef := parent.Self()
+	repo := gitRef.Repo.Self()
+	remoteGitRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
+
+	if isRemote && (gitRef.Ref.SHA == "" || needsAuthResolution(remoteGitRepo)) {
+		result, err := s.resolveAndLoad(ctx, srv, parent)
+		if err != nil {
+			return inst, err
+		}
+		return result.(dagql.ObjectResult[*core.GitRef]), nil
+	}
+
+	if gitRef.Backend == nil && isRemote {
+		refBackend, err := remoteGitRepo.Get(ctx, gitRef.Ref)
+		if err != nil {
+			return inst, err
+		}
+		gitRef.Backend = refBackend
+	}
+
 	other, err := args.Other.Load(ctx, srv)
 	if err != nil {
 		return inst, err
 	}
 
-	result, err := core.MergeBase(ctx, parent.Self(), other.Self())
+	otherRef := other.Self()
+	otherRepo := otherRef.Repo.Self()
+	otherRemoteRepo, otherIsRemote := otherRepo.Backend.(*core.RemoteGitRepository)
+
+	if otherIsRemote && (otherRef.Backend == nil || otherRef.Ref.SHA == "" || needsAuthResolution(otherRemoteRepo)) {
+		resolvedOther, err := s.resolveRef(ctx, srv, other)
+		if err != nil {
+			return inst, err
+		}
+		other = resolvedOther
+		otherRef = other.Self()
+		otherRepo = otherRef.Repo.Self()
+		otherRemoteRepo = otherRepo.Backend.(*core.RemoteGitRepository)
+
+		refBackend, err := otherRemoteRepo.Get(ctx, otherRef.Ref)
+		if err != nil {
+			return inst, err
+		}
+		otherRef.Backend = refBackend
+	}
+
+	result, err := core.MergeBase(ctx, gitRef, otherRef)
 	if err != nil {
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, result)
 }
-
