@@ -20,7 +20,6 @@ import (
 )
 
 type GitRepository struct {
-	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
 	Backend GitRepositoryBackend
 	Remote  *gitutil.Remote
 
@@ -62,15 +61,9 @@ type GitRefBackend interface {
 }
 
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
-	repo := &GitRepository{
+	return &GitRepository{
 		Backend: backend,
-	}
-
-	if remoteBackend, ok := backend.(*RemoteGitRepository); ok && remoteBackend.URL != nil {
-		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
-	}
-
-	return repo, nil
+	}, nil
 }
 
 func (*GitRepository) Type() *ast.Type {
