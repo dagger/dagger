@@ -1,7 +1,8 @@
 {
   "name": "typescript",
-  "engineVersion": "v0.18.9",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "typescript"
-  }
+  },
+  "disableDefaultFunctionCaching": true
 }

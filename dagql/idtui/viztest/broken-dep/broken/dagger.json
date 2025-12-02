@@ -1,5 +1,8 @@
 {
   "name": "broken",
-  "sdk": "go",
-  "engineVersion": "v0.12.7"
+  "engineVersion": "v0.19.7",
+  "sdk": {
+    "source": "go"
+  },
+  "disableDefaultFunctionCaching": true
 }

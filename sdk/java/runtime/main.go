@@ -9,17 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	_ "embed"
+
 	"java-sdk/internal/dagger"
 
 	"github.com/iancoleman/strcase"
 )
 
 const (
-	MavenImage  = "maven:3.9.9-eclipse-temurin-21-alpine"
-	MavenDigest = "sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
-	JavaImage   = "eclipse-temurin:21-jre-alpine-3.21"
-	JavaDigest  = "sha256:4e9ab608d97796571b1d5bbcd1c9f430a89a5f03fe5aa6c093888ceb6756c502"
-
 	ModSourceDirPath = "/src"
 	ModDirPath       = "/opt/module"
 	GenPath          = "/dagger-io"
@@ -369,17 +366,11 @@ func (m *JavaSdk) finalJar(
 }
 
 func (m *JavaSdk) mvnContainer(ctx context.Context) (*dagger.Container, error) {
-	ctr := dag.
-		Container().
-		From(fmt.Sprintf("%s@%s", MavenImage, MavenDigest))
-	return disableSVEOnArm64(ctx, ctr)
+	return disableSVEOnArm64(ctx, m.MavenImage())
 }
 
 func (m *JavaSdk) jreContainer(ctx context.Context) (*dagger.Container, error) {
-	ctr := dag.
-		Container().
-		From(fmt.Sprintf("%s@%s", JavaImage, JavaDigest))
-	return disableSVEOnArm64(ctx, ctr)
+	return disableSVEOnArm64(ctx, m.JavaImage())
 }
 
 func disableSVEOnArm64(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
@@ -463,4 +454,18 @@ func (m *JavaSdk) mavenCommand(args ...string) []string {
 	}
 	args = append(args, "--no-transfer-progress")
 	return args
+}
+
+//go:embed images/maven/Dockerfile
+var mavenImage string
+
+func (m *JavaSdk) MavenImage() *dagger.Container {
+	return dag.Directory().WithNewFile("Dockerfile", mavenImage).DockerBuild()
+}
+
+//go:embed images/java/Dockerfile
+var javaImage string
+
+func (m *JavaSdk) JavaImage() *dagger.Container {
+	return dag.Directory().WithNewFile("Dockerfile", javaImage).DockerBuild()
 }
