@@ -67,6 +67,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRepository]{
+		dagql.NodeFunc("url", s.url).
+			Doc(`The URL of the git repository.`),
 		dagql.NodeFunc("head", s.head).
 			Doc(`Returns details for HEAD.`),
 		dagql.NodeFunc("ref", s.ref).
@@ -243,7 +245,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	// below shall be fine, but wondering if not overkill
 	dgstInputs := []string{
 		// all details of the remote repo
-		repo.URL.Value.String(),
+		args.URL,
 		// legacy args
 		strconv.FormatBool(repo.DiscardGitDir),
 		// also include what auth methods are used, currently we can't
@@ -273,6 +275,32 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 	inst = inst.WithDigest(hashutil.HashStrings(dgstInputs...))
 	return inst, nil
+}
+
+func (s *gitSchema) url(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (dagql.String, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	repo := parent.Self()
+	remoteGitRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
+
+	if isRemote && remoteGitRepo.URL == nil {
+		result, err := s.resolveAndLoadRepoScalar(ctx, srv, parent)
+		if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
+			return "", err
+		}
+		if result != nil {
+			return result.Unwrap().(dagql.String), nil
+		}
+	}
+
+	if isRemote && remoteGitRepo.URL != nil {
+		return dagql.String(remoteGitRepo.URL.String()), nil
+	}
+
+	return "", nil
 }
 
 type refArgs struct {
