@@ -54,6 +54,10 @@ func (ms *mockServer) CurrentModule(context.Context) (*Module, error) {
 	}, nil
 }
 
+func (ms *mockServer) ModuleParent(context.Context) (*Module, error) {
+	return nil, nil
+}
+
 func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error) {
 	return ms.functionCall, nil
 }
