@@ -343,7 +343,6 @@ func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
 	rr, err := RepoRootForImportPathStatic(importPath, "")
 	if err == errUnknownSite {
 		rr, err = RepoRootForImportDynamic(importPath, verbose)
-
 		// RepoRootForImportDynamic returns error detail
 		// that is irrelevant if the user didn't intend to use a
 		// dynamic import in the first place.
@@ -687,9 +686,9 @@ var vcsPaths = []*vcsPath{
 	},
 	// On-prem (Azure DevOps Server)
 	{
-		re:     `^(?P<root>[A-Za-z0-9_.% \-]+\/(tfs\/)?(?P<account>[A-Za-z0-9_.% \-]+)(/(?P<project>[A-Za-z0-9_.% \-]+))?/_git/(?P<repo>[A-Za-z0-9_.% \-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
-		vcs:    "git",
-		repo:   "https://{root}",
+		re:   `^(?P<root>[A-Za-z0-9_.% \-]+\/(tfs\/)?(?P<account>[A-Za-z0-9_.% \-]+)(/(?P<project>[A-Za-z0-9_.% \-]+))?/_git/(?P<repo>[A-Za-z0-9_.% \-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		vcs:  "git",
+		repo: "https://{root}",
 		check: func(match map[string]string) error {
 			match["repo"] = strings.TrimSuffix(match["repo"], ".git")
 			return nil
