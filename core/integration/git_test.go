@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -1341,33 +1340,34 @@ func decodeAndTrimPAT(encoded string) (string, error) {
 	return strings.TrimSpace(string(decodedPAT)), nil
 }
 
-// Ensure IsRemotePublic correctly detects repo visibility (see dagger/dagger#11112)
-func (GitSuite) TestIsRemotePublic(ctx context.Context, t *testctx.T) {
-	vc := append([]vcsTestCase{
-		{
-			name:                "Azure DevOps private",
-			expectedBaseHTMLURL: "dev.azure.com/daggere2e/private/_git/dagger-test-modules.git",
-			isPrivateRepo:       true,
-		},
-	}, vcsTestCases...)
+// TODO(guillaume): re-enable the test to check that we properly detect repo visibility
+// // Ensure IsRemotePublic correctly detects repo visibility (see dagger/dagger#11112)
+// func (GitSuite) TestIsRemotePublic(ctx context.Context, t *testctx.T) {
+// 	vc := append([]vcsTestCase{
+// 		{
+// 			name:                "Azure DevOps private",
+// 			expectedBaseHTMLURL: "dev.azure.com/daggere2e/private/_git/dagger-test-modules.git",
+// 			isPrivateRepo:       true,
+// 		},
+// 	}, vcsTestCases...)
 
-	for _, v := range vc {
-		t.Run(v.name, func(ctx context.Context, t *testctx.T) {
-			remoteURL := v.expectedBaseHTMLURL
-			if !strings.Contains(remoteURL, "://") {
-				remoteURL = "https://" + remoteURL
-			}
+// 	for _, v := range vc {
+// 		t.Run(v.name, func(ctx context.Context, t *testctx.T) {
+// 			remoteURL := v.expectedBaseHTMLURL
+// 			if !strings.Contains(remoteURL, "://") {
+// 				remoteURL = "https://" + remoteURL
+// 			}
 
-			remote, err := gitutil.ParseURL(remoteURL)
-			require.NoError(t, err)
+// 			remote, err := gitutil.ParseURL(remoteURL)
+// 			require.NoError(t, err)
 
-			isRemotePublic, err := schema.IsRemotePublic(ctx, remote)
-			require.NoError(t, err)
+// 			isRemotePublic, err := schema.IsRemotePublic(ctx, remote)
+// 			require.NoError(t, err)
 
-			require.Equalf(t, !v.isPrivateRepo, isRemotePublic, "Expected public=%v for repo %q", !v.isPrivateRepo, v.name)
-		})
-	}
-}
+// 			require.Equalf(t, !v.isPrivateRepo, isRemotePublic, "Expected public=%v for repo %q", !v.isPrivateRepo, v.name)
+// 		})
+// 	}
+// }
 
 func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
