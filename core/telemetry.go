@@ -142,7 +142,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 	call := callID.Call()
 	calleeModule := call.Module
 
-	var callerRef, calleeRef = &moduleCallRef{}, &moduleCallRef{}
+	callerRef, calleeRef := &moduleCallRef{}, &moduleCallRef{}
 	// there's a caller
 
 	var ms *ModuleSource
@@ -160,7 +160,8 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 		callerRef.functionName = fc.Name
 		callerRef.typeName = fc.ParentName
 		if ms.Git != nil {
-			callerRef.ref, callerRef.version, _ = strings.Cut(ms.AsString(), "@")
+			idx := strings.LastIndex(ms.AsString(), "@")
+			callerRef.ref, callerRef.version = ms.AsString()[:idx], ms.AsString()[idx+1:]
 		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
 			callerRef.ref = path.Join(gremote, ms.SourceRootSubpath)
 			if gref, ok := cm.Labels["dagger.io/git.ref"]; ok {
@@ -173,15 +174,11 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 		}
 	}
 
+	callerRef.ref = normalizeRef(callerRef.ref)
+
 	calleeRef.functionName = call.Field
 	calleeRef.version = call.Module.Pin
-	if strings.HasPrefix(call.Module.Ref, "git@") {
-		calleeRef.ref = call.Module.Ref[:strings.LastIndex(call.Module.Ref, "@")]
-		calleeRef.ref = strings.ReplaceAll(strings.TrimPrefix(calleeRef.ref, "git@"), ":", "/")
-	} else {
-		calleeRef.ref, _, _ = strings.Cut(call.Module.Ref, "@")
-		calleeRef.ref = strings.TrimSuffix(calleeRef.ref, "/.")
-	}
+	calleeRef.ref = normalizeRef(call.Module.Ref)
 
 	var voidType Void
 	if callID.Receiver() != nil {
@@ -220,6 +217,19 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 		}
 	}
 	return callerRef, calleeRef
+}
+
+func normalizeRef(ref string) string {
+	if strings.HasPrefix(ref, "git@") {
+		if strings.Count(ref, "@") > 1 {
+			ref = ref[:strings.LastIndex(ref, "@")]
+		}
+		ref = strings.ReplaceAll(strings.TrimPrefix(ref, "git@"), ":", "/")
+	} else {
+		ref, _, _ = strings.Cut(ref, "@")
+		ref = strings.TrimSuffix(ref, "/.")
+	}
+	return ref
 }
 
 // recordStatus records the status of a call on a span.
