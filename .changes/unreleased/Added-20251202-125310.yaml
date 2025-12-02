@@ -1,0 +1,9 @@
+kind: Added
+body: |-
+  Optimize WithDirectory+WithFile to avoid copying file data on disk in more cases.
+
+  These APIs now avoid copying data on disk in all cases except when an owner, permission or timestamp is modified as part of the operation.
+time: 2025-12-02T12:53:10.6952586-08:00
+custom:
+  Author: sipsma
+  PR: "11497"
