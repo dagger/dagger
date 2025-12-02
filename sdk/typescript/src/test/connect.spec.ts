@@ -3,7 +3,6 @@ import assert, { AssertionError } from "assert"
 import * as crypto from "crypto"
 import * as fs from "fs"
 import * as http from "http"
-import { before } from "mocha"
 import { type AddressInfo } from "net"
 import * as os from "os"
 import * as path from "path"
@@ -17,6 +16,8 @@ import { CLI_VERSION } from "../provisioning/default.js"
 
 describe("TypeScript default client", function () {
   it("Should allow using the GQL client", async function () {
+    this.timeout(60000)
+
     await connection(async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await dag.getGQLClient().request<any>(`
@@ -33,9 +34,11 @@ describe("TypeScript default client", function () {
 
       assert.equal(result.container.from.withExec.stdout, "hello world\n")
     })
-  }).timeout(60000)
+  })
 
   it("Should use the default client and close connection on call to close", async function () {
+    this.timeout(60000)
+
     // Check if the connection is actually not set before calling an execution
     // We verify the lazy evaluation that way
     assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
@@ -55,9 +58,11 @@ describe("TypeScript default client", function () {
     })
 
     assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
-  }).timeout(60000)
+  })
 
   it("Should automatically close connection", async function () {
+    this.timeout(60000)
+
     // Check if the connection is actually not set before calling connection
     assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
 
@@ -76,9 +81,11 @@ describe("TypeScript default client", function () {
 
     // Check if the connection has been correctly reset
     assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
-  }).timeout(60000)
+  })
 
   it("Should automatically close connection with config", async function () {
+    this.timeout(60000)
+
     // Check if the connection is actually not set before calling connection
     assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
 
@@ -100,7 +107,7 @@ describe("TypeScript default client", function () {
 
     // Check if the connection has been correctly reset
     assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
-  }).timeout(60000)
+  })
 })
 
 describe("TypeScript sdk Connect", function () {
@@ -114,6 +121,8 @@ describe("TypeScript sdk Connect", function () {
     })
 
     it("Should parse DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN correctly", async function () {
+      this.timeout(60000)
+
       await connect(
         async (client) => {
           const authorization = JSON.stringify(
@@ -130,31 +139,32 @@ describe("TypeScript sdk Connect", function () {
         },
         { LogOutput: process.stderr },
       )
-    }).timeout(60000)
+    })
 
     after(() => {
       process.env = JSON.parse(oldEnv)
     })
   })
 
-  it.skip(
-    "Connect to local engine and execute a simple query to make sure it does not fail",
-    async function () {
-      await connect(
-        async (client) => {
-          await client
-            .container()
-            .from("alpine")
-            .withExec(["apk", "add", "curl"])
-            .withExec(["curl", "https://dagger.io/"])
-            .sync()
-        },
-        { LogOutput: process.stderr },
-      )
-    },
-  ).timeout(60000)
+  it.skip("Connect to local engine and execute a simple query to make sure it does not fail", async function () {
+    this.timeout(60000)
+
+    await connect(
+      async (client) => {
+        await client
+          .container()
+          .from("alpine")
+          .withExec(["apk", "add", "curl"])
+          .withExec(["curl", "https://dagger.io/"])
+          .sync()
+      },
+      { LogOutput: process.stderr },
+    )
+  })
 
   it.skip("throws error", async function () {
+    this.timeout(60000)
+
     try {
       await connect(async (client) => {
         await client.container().from("alpine").file("unknown_file").contents()
@@ -167,7 +177,7 @@ describe("TypeScript sdk Connect", function () {
       }
       assert(e instanceof GraphQLRequestError)
     }
-  }).timeout(60000)
+  })
 
   describe("Automatic Provisioned CLI Binary", function () {
     let oldEnv: string
@@ -182,6 +192,8 @@ describe("TypeScript sdk Connect", function () {
     })
 
     it("Should download and unpack the CLI binary automatically", async function () {
+      this.timeout(30000)
+
       // ignore DAGGER_SESSION_PORT
       delete process.env.DAGGER_SESSION_PORT
 
@@ -264,7 +276,7 @@ describe("TypeScript sdk Connect", function () {
         },
         { LogOutput: process.stderr },
       )
-    }).timeout(60000)
+    })
 
     after(() => {
       process.env = JSON.parse(oldEnv)

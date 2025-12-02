@@ -228,6 +228,8 @@ describe("Registry", function () {
   })
 
   it("Should correctly serialize data", async function () {
+    this.timeout(60000)
+
     const registry = new Registry()
 
     @registry.object()
@@ -266,9 +268,11 @@ describe("Registry", function () {
 
       assert.equal(result, "Hello Dagger")
     })
-  }).timeout(60000)
+  })
 
   it("Should support constructor", async function () {
+    this.timeout(60000)
+
     const registry = new Registry()
 
     @registry.object()
@@ -303,9 +307,11 @@ describe("Registry", function () {
       {},
     )
     assert.deepEqual(result, "Hello Dagger")
-  }).timeout(60000)
+  })
 
   it("Should support overriding default arg", async function () {
+    this.timeout(60000)
+
     const registry = new Registry()
 
     @registry.object()
@@ -333,5 +339,5 @@ describe("Registry", function () {
       },
     )
     assert.deepEqual(result, "hello there")
-  }).timeout(60000)
+  })
 })

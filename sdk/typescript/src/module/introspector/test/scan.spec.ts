@@ -127,6 +127,8 @@ describe("scan by reference TypeScript", function () {
 
   for (const test of testCases) {
     it(`${test.name} - ${test.directory}`, async function () {
+      this.timeout(60000)
+
       try {
         const files = await listFiles(`${rootDirectory}/${test.directory}`)
         const result = await scan(files, test.directory)
@@ -149,20 +151,24 @@ ${jsonResult}
       } catch (e) {
         assert.fail(e as Error)
       }
-    }).timeout(60000)
+    })
   }
 
   describe("Should throw error on invalid module", function () {
     it("Should throw an error when no files are provided", async function () {
+      this.timeout(60000)
+
       try {
         await scan([], "")
         assert.fail("Should throw an error")
       } catch (e: any) {
         assert.equal(e.message, "no files to introspect found")
       }
-    }).timeout(60000)
+    })
 
     it("Should throw an error if the module class has no decorators", async function () {
+      this.timeout(60000)
+
       try {
         const files = await listFiles(`${rootDirectory}/noDecorators`)
 
@@ -174,9 +180,11 @@ ${jsonResult}
           /is used by the module but not exposed with a dagger decorator/,
         )
       }
-    }).timeout(60000)
+    })
 
     it("Should throw an error if a primitive type is used", async function () {
+      this.timeout(60000)
+
       try {
         const files = await listFiles(`${rootDirectory}/primitives`)
 
@@ -191,6 +199,6 @@ ${jsonResult}
           `Use of primitive 'String' type detected, please use 'string' instead.`,
         )
       }
-    }).timeout(60000)
+    })
   })
 })

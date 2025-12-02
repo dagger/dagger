@@ -85,6 +85,7 @@ describe("TypeScript SDK api", function () {
   })
 
   it("Pass a client with an explicit ID as a parameter", async function () {
+    this.timeout(60000)
     await connect(async (client: Client) => {
       const image = await client
         .loadContainerFromID(
@@ -100,9 +101,10 @@ describe("TypeScript SDK api", function () {
 
       assert.strictEqual(image, `foo bar\n`)
     })
-  }).timeout(60000)
+  })
 
   it("Pass a cache volume with an implicit ID as a parameter", async function () {
+    this.timeout(60000)
     await connect(async (client: Client) => {
       const cacheVolume = client.cacheVolume("cache_key")
       const image = await client
@@ -115,7 +117,7 @@ describe("TypeScript SDK api", function () {
 
       assert.strictEqual(image, `foo bar\n`)
     })
-  }).timeout(60000)
+  })
 
   it("Build a query with positionnal and optionals arguments", function () {
     const image = new Client().container().from("alpine:3.16.2")
@@ -144,6 +146,7 @@ describe("TypeScript SDK api", function () {
   })
 
   it("Test awaited Field Immutability", async function () {
+    this.timeout(60000)
     await connect(async (client: Client) => {
       const image = client
         .container()
@@ -156,9 +159,11 @@ describe("TypeScript SDK api", function () {
       const b = await image.stdout()
       assert.strictEqual(b, "hello world\n")
     })
-  }).timeout(60000)
+  })
 
   it("Recursively solve sub queries", async function () {
+    this.timeout(60000)
+
     await connect(async (client) => {
       const image = client.directory().withNewFile(
         "Dockerfile",
@@ -182,7 +187,7 @@ describe("TypeScript SDK api", function () {
 
       assert.strictEqual(copiedFile, "htrshtrhrthrts\n")
     })
-  }).timeout(60000)
+  })
 
   it("Return a flatten Graphql response", function () {
     const tree = {
@@ -216,6 +221,8 @@ describe("TypeScript SDK api", function () {
   })
 
   it("Return custom ExecError", async function () {
+    this.timeout(60000)
+
     const stdout = "STDOUT HERE"
     const stderr = "STDERR HERE"
     const args = ["sh", "-c", "cat /testout >&1; cat /testerr >&2; exit 127"]
@@ -250,9 +257,11 @@ describe("TypeScript SDK api", function () {
         }
       }
     })
-  }).timeout(60000)
+  })
 
   it("Support container sync", async function () {
+    this.timeout(60000)
+
     await connect(async (client: Client) => {
       const base = client.container().from("alpine:3.16.2")
 
@@ -265,9 +274,11 @@ describe("TypeScript SDK api", function () {
       ).stdout()
       assert.strictEqual(out, "foobaz\n")
     })
-  }).timeout(60000)
+  })
 
   it("Support chainable utils via with()", async function () {
+    this.timeout(60000)
+
     const env = (c: Container): Container => c.withEnvVariable("FOO", "bar")
 
     const secret = (token: string, client: Client) => {
@@ -284,7 +295,7 @@ describe("TypeScript SDK api", function () {
         .withExec(["sh", "-c", "test $FOO = bar && test $TOKEN = baz"])
         .sync()
     })
-  }).timeout(60000)
+  })
 
   it("Compute nested arguments", async function () {
     const tree = new Client()
@@ -295,9 +306,11 @@ describe("TypeScript SDK api", function () {
       querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
       `{ directory { dockerBuild (buildArgs: [{value:"foo",name:"test"}]) } }`,
     )
-  }).timeout(60000)
+  })
 
   it("Compute empty string value", async function () {
+    this.timeout(60000)
+
     await connect(async (client) => {
       const alpine = client
         .container()
@@ -307,9 +320,11 @@ describe("TypeScript SDK api", function () {
       const out = await alpine.withExec(["printenv", "FOO"]).stdout()
       assert.strictEqual(out, "\n")
     })
-  }).timeout(60000)
+  })
 
   it("Compute nested array of arguments", async function () {
+    this.timeout(60000)
+
     const platforms: Record<string, string> = {
       "linux/amd64": "x86_64",
       "linux/arm64": "aarch64",
@@ -344,9 +359,11 @@ describe("TypeScript SDK api", function () {
       },
       { LogOutput: process.stderr },
     )
-  }).timeout(60000)
+  })
 
   it("Handle enumeration", async function () {
+    this.timeout(60000)
+
     await connect(async (client) => {
       const ports = await client
         .container()
@@ -358,9 +375,11 @@ describe("TypeScript SDK api", function () {
 
       assert.strictEqual(await ports[0].protocol(), NetworkProtocol.Udp)
     })
-  }).timeout(60000)
+  })
 
   it("Handle list of objects", async function () {
+    this.timeout(60000)
+
     await connect(
       async (client) => {
         const ctr = client
@@ -379,9 +398,11 @@ describe("TypeScript SDK api", function () {
       },
       { LogOutput: process.stderr },
     )
-  }).timeout(60000)
+  })
 
   it("Check conflict with enum", async function () {
+    this.timeout(60000)
+
     await connect(async (client) => {
       const env = await client
         .container()
@@ -391,5 +412,5 @@ describe("TypeScript SDK api", function () {
 
       assert.strictEqual(env, "TCP")
     })
-  }).timeout(60000)
+  })
 })

@@ -24,6 +24,8 @@ const rootDirectory = `${__dirname}/testdata`
  */
 describe("Invoke typescript function", function () {
   it("Should correctly invoke hello world", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/helloWorld`)
 
     // Load function
@@ -44,9 +46,11 @@ describe("Invoke typescript function", function () {
 
     // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
     assert.equal(result, "hello world")
-  }).timeout(60000)
+  })
 
   it("Should correctly execute dagger operation", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/multipleObjects`)
 
     // Load function
@@ -72,9 +76,11 @@ describe("Invoke typescript function", function () {
       // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
       assert.equal(result, "hello world")
     })
-  }).timeout(60000)
+  })
 
   it("Should correctly order arguments", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/multiArgs`)
 
     // Load function
@@ -101,9 +107,11 @@ describe("Invoke typescript function", function () {
       // We verify the result
       assert.equal(result, 11)
     })
-  }).timeout(60000)
+  })
 
   it("Should correctly transfer state", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/state`)
 
     // Load function
@@ -171,9 +179,11 @@ describe("Invoke typescript function", function () {
       // In that case, we verify it's not failing and that it returned a value
       assert.notEqual("", result)
     })
-  }).timeout(60000)
+  })
 
   it("Should correctly handle multiple objects as fields", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/multipleObjectsAsFields`)
 
     // Load function
@@ -219,7 +229,7 @@ describe("Invoke typescript function", function () {
 
     const lintEchoResult = await invoke(executor, scanResult, invokeLintEcho)
     assert.strictEqual("world", lintEchoResult)
-  }).timeout(60000)
+  })
 
   describe("Should correctly invoke variadic functions", async function () {
     type Case = {
@@ -277,6 +287,8 @@ describe("Invoke typescript function", function () {
 
     for (const [name, { ctx, expected }] of Object.entries(cases)) {
       it(name, async function () {
+        this.timeout(60000)
+
         const files = await listFiles(`${rootDirectory}/variadic`)
 
         // Load function
@@ -291,13 +303,15 @@ describe("Invoke typescript function", function () {
           // We verify the result
           assert.equal(result, expected)
         })
-      }).timeout(60000)
+      })
     }
   })
 
   describe("Should correctly handle aliases", async function () {
     // Mocking the fetch from the dagger API
     it("Should correctly invoke hello world", async function () {
+      this.timeout(60000)
+
       const files = await listFiles(`${rootDirectory}/alias`)
 
       // Load function
@@ -336,9 +350,11 @@ describe("Invoke typescript function", function () {
         const result = await invoke(executor, scanResult, input)
         assert.equal("hello Dagger", result)
       })
-    }).timeout(60000)
+    })
 
     it("Should correctly invoke hello world with custom prefix", async function () {
+      this.timeout(60000)
+
       const files = await listFiles(`${rootDirectory}/alias`)
 
       // Load function
@@ -377,10 +393,12 @@ describe("Invoke typescript function", function () {
         assert.equal("test Dagger", result)
       })
     })
-  }).timeout(60000)
+  })
 
   describe("Should correctly handle optional arguments", async function () {
     it("Should correctly use default and nullable values", async function () {
+      this.timeout(60000)
+
       const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
       // Load function
@@ -400,9 +418,11 @@ describe("Invoke typescript function", function () {
 
       // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
       assert.equal(result, `"foo", null, , "foo", null, "bar"`)
-    }).timeout(60000)
+    })
 
     it("Should correctly use overwritten values", async function () {
+      this.timeout(60000)
+
       const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
       // Load function
@@ -429,9 +449,11 @@ describe("Invoke typescript function", function () {
       // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
       assert.equal(result, `"foo", null, "ho", "ah", "baz", null`)
     })
-  }).timeout(60000)
+  })
 
   it("Should correctly handle object arguments", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/objectParam`)
 
     // Load function
@@ -474,9 +496,11 @@ describe("Invoke typescript function", function () {
       { content: "HELLO DAGGER" },
       { content: "HELLO UNIVERSE" },
     ])
-  }).timeout(60000)
+  })
 
   it("Should correctly handle list of returned object", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/list`)
 
     // Load function
@@ -497,9 +521,11 @@ describe("Invoke typescript function", function () {
 
     assert.equal(resultList.length, 3)
     assert.deepEqual(resultList, [{ value: -1 }, { value: 2 }, { value: 3 }])
-  }).timeout(60000)
+  })
 
   it("Should correctly handle enums values", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/enums`)
     let modules: Module[] = []
 
@@ -549,9 +575,11 @@ describe("Invoke typescript function", function () {
     const resultAfterSet = await invoke(executor, module, inputAfterSet)
 
     assert.equal(resultAfterSet, "INACTIVE")
-  }).timeout(60000)
+  })
 
   it("Should correctly handle legacy enum decorator values", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/legacyEnumDecorator`)
     let modules: Module[] = []
 
@@ -600,5 +628,5 @@ describe("Invoke typescript function", function () {
     const resultAfterSet = await invoke(executor, module, inputAfterSet)
 
     assert.equal(resultAfterSet, "INACTIVE")
-  }).timeout(60000)
+  })
 })
