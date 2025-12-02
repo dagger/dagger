@@ -9,7 +9,7 @@
     "../../go.mod",
     "../../util/parallel",
     "../../util/dockerfileextractor",
-    "../../sdk/python/runtime/Dockerfile"
+    "../../sdk/python/runtime/images"
   ],
   "dependencies": [
     {
