@@ -1331,6 +1331,18 @@ func (s *gitSchema) fetchCommit(
 		}
 	}
 
+	if gitRef.Ref.SHA == "" && gitRef.Ref.Name != "" {
+		remote, err := repo.Backend.Remote(ctx)
+		if err != nil {
+			return "", err
+		}
+		resolvedRef, err := remote.Lookup(gitRef.Ref.Name)
+		if err != nil {
+			return "", err
+		}
+		return dagql.NewString(resolvedRef.SHA), nil
+	}
+
 	return dagql.NewString(gitRef.Ref.SHA), nil
 }
 
@@ -1391,8 +1403,20 @@ func (s *gitSchema) commonAncestor(
 		}
 	}
 
-	if gitRef.Backend == nil && isRemote {
-		refBackend, err := remoteGitRepo.Get(ctx, gitRef.Ref)
+	if gitRef.Ref.SHA == "" && gitRef.Ref.Name != "" {
+		remote, err := repo.Backend.Remote(ctx)
+		if err != nil {
+			return inst, err
+		}
+		resolvedRef, err := remote.Lookup(gitRef.Ref.Name)
+		if err != nil {
+			return inst, err
+		}
+		gitRef.Ref = resolvedRef
+	}
+
+	if gitRef.Backend == nil {
+		refBackend, err := repo.Backend.Get(ctx, gitRef.Ref)
 		if err != nil {
 			return inst, err
 		}
@@ -1408,7 +1432,7 @@ func (s *gitSchema) commonAncestor(
 	otherRepo := otherRef.Repo.Self()
 	otherRemoteRepo, otherIsRemote := otherRepo.Backend.(*core.RemoteGitRepository)
 
-	if otherIsRemote && (otherRef.Backend == nil || otherRef.Ref.SHA == "" || needsAuthResolution(otherRemoteRepo)) {
+	if otherIsRemote && (otherRef.Ref.SHA == "" || needsAuthResolution(otherRemoteRepo)) {
 		resolvedOther, err := s.resolveRef(ctx, srv, other)
 		if err != nil {
 			return inst, err
@@ -1416,9 +1440,22 @@ func (s *gitSchema) commonAncestor(
 		other = resolvedOther
 		otherRef = other.Self()
 		otherRepo = otherRef.Repo.Self()
-		otherRemoteRepo = otherRepo.Backend.(*core.RemoteGitRepository)
+	}
 
-		refBackend, err := otherRemoteRepo.Get(ctx, otherRef.Ref)
+	if otherRef.Ref.SHA == "" && otherRef.Ref.Name != "" {
+		remote, err := otherRepo.Backend.Remote(ctx)
+		if err != nil {
+			return inst, err
+		}
+		resolvedRef, err := remote.Lookup(otherRef.Ref.Name)
+		if err != nil {
+			return inst, err
+		}
+		otherRef.Ref = resolvedRef
+	}
+
+	if otherRef.Backend == nil {
+		refBackend, err := otherRepo.Backend.Get(ctx, otherRef.Ref)
 		if err != nil {
 			return inst, err
 		}
