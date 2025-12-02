@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -1023,7 +1024,7 @@ func (svc *Service) runAndSnapshotChanges(
 	}
 	defer mutableRef.Release(ctx)
 
-	err = MountRef(ctx, mutableRef, nil, func(root string) (rerr error) {
+	err = MountRef(ctx, mutableRef, nil, func(root string, _ *mount.Mount) (rerr error) {
 		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
 		if err != nil {
 			return err
@@ -1077,7 +1078,7 @@ func (svc *Service) runAndSnapshotChanges(
 	}()
 
 	// Mount the mutable ref of their changes over the target path.
-	err = MountRef(ctx, abandonedRef, nil, func(root string) (rerr error) {
+	err = MountRef(ctx, abandonedRef, nil, func(root string, _ *mount.Mount) (rerr error) {
 		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
 		if err != nil {
 			return err

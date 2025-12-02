@@ -1,11 +1,13 @@
 package copy
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"os"
 	"syscall"
 
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
@@ -15,7 +17,7 @@ func getUIDGID(fi os.FileInfo) (uid, gid int) {
 	return int(st.Uid), int(st.Gid)
 }
 
-func (c *copier) copyFileInfo(fi os.FileInfo, src, name string) error {
+func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
 	chown := c.chown
 	uid, gid := getUIDGID(fi)
 	old := &User{UID: uid, GID: gid}
@@ -67,22 +69,57 @@ func (c *copier) copyFileTimestamp(fi os.FileInfo, name string) error {
 	return nil
 }
 
-func copyFile(source, target string) error {
+func (c *copier) copyFile(source, target string) (didHardlink bool, rerr error) {
+	if c.enableHardlinkOptimization {
+		_, err := os.Lstat(target)
+		switch {
+		case err == nil:
+			// destination already exists, remove it
+			if removeErr := os.Remove(target); removeErr != nil {
+				return false, fmt.Errorf("failed to remove existing destination file %s: %w", target, removeErr)
+			}
+		case errors.Is(err, os.ErrNotExist):
+			// destination does not exist, proceed
+		default:
+			return false, fmt.Errorf("failed to stat destination file %s: %w", target, err)
+		}
+
+		realSource, err := c.sourcePathResolver(source)
+		if err != nil {
+			return false, fmt.Errorf("failed to resolve source path %s: %w", source, err)
+		}
+		realTarget, err := c.destPathResolver(target)
+		if err != nil {
+			return false, fmt.Errorf("failed to resolve target path %s: %w", target, err)
+		}
+
+		err = os.Link(realSource, realTarget)
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, unix.EXDEV), errors.Is(err, syscall.EMLINK):
+			// either crossing filesystem boundary or too many links, fallback to copy
+			slog.ExtraDebug("hardlink failed, falling back to copy", "source", source, "target", target, "error", err)
+		default:
+			return false, fmt.Errorf("failed to create hardlink from %s to %s: %w", source, target, err)
+		}
+	}
+
 	src, err := os.Open(source)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open source %s", source)
+		return false, errors.Wrapf(err, "failed to open source %s", source)
 	}
 	defer src.Close()
 	tgt, err := os.Create(target)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open target %s", target)
+		return false, errors.Wrapf(err, "failed to open target %s", target)
 	}
 	defer tgt.Close()
 
-	return copyFileContent(tgt, src)
+	return false, CopyFileContent(tgt, src)
 }
 
-func copyFileContent(dst, src *os.File) error {
+func CopyFileContent(dst, src *os.File) error {
 	st, err := src.Stat()
 	if err != nil {
 		return errors.Wrap(err, "unable to stat source")

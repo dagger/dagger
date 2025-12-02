@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -22,6 +23,8 @@ import (
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/overlay"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -283,12 +286,12 @@ func mountRefAsReadOnly(opt *mountRefOpt) {
 //
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
-func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error, optFns ...mountRefOptFn) error {
-	dir, closer, err := MountRefCloser(ctx, ref, g, optFns...)
+func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string, *mount.Mount) error, optFns ...mountRefOptFn) error {
+	dir, m, closer, err := MountRefCloser(ctx, ref, g, optFns...)
 	if err != nil {
 		return err
 	}
-	err = f(dir)
+	err = f(dir, m)
 	if err != nil {
 		closeErr := closer()
 		if closeErr != nil {
@@ -304,7 +307,7 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 // To simplify external logic, when the ref is nil, i.e. scratch, a tmpdir is created (and deleted when the closer func is called).
 //
 // NOTE: prefer MountRef where possible, unless finer-grained control of when the directory is unmounted is needed.
-func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, optFns ...mountRefOptFn) (string, func() error, error) {
+func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, optFns ...mountRefOptFn) (_ string, _ *mount.Mount, _ func() error, rerr error) {
 	var opt mountRefOpt
 	for _, optFn := range optFns {
 		optFn(&opt)
@@ -313,22 +316,40 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, opt
 	if ref == nil {
 		dir, err := os.MkdirTemp("", "readonly-scratch")
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
-		return dir, func() error {
+		return dir, nil, func() error {
 			return os.RemoveAll(dir)
 		}, nil
 	}
-	mount, err := ref.Mount(ctx, opt.readOnly, g)
+	mountable, err := ref.Mount(ctx, opt.readOnly, g)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	lm := snapshot.LocalMounter(mount)
+	ms, unmount, err := mountable.Mount()
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, unmount())
+		}
+	}()
+	if len(ms) == 0 {
+		return "", nil, nil, fmt.Errorf("no mounts available from ref")
+	}
+	m := ms[0]
+
+	lm := snapshot.LocalMounterWithMounts(ms)
 	dir, err := lm.Mount()
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return dir, lm.Unmount, nil
+	return dir, &m, func() error {
+		err := lm.Unmount()
+		err = errors.Join(err, unmount())
+		return err
+	}, nil
 }
 
 // mountLLB is a utility for easily mounting an llb definition
@@ -510,7 +531,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 	if !opt.commitSnapshot {
 		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
 	}
-	rootPath, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
+	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
 	if err != nil {
 		return "", nil, err
 	}
@@ -569,4 +590,66 @@ func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput
 		ins[i] = conv(v)
 	}
 	return ins
+}
+
+func pathResolverForMount(
+	m *mount.Mount,
+	mntedPath string, // if set, paths will be assumed to be provided as seen from under mntedPath
+) (fscopy.PathResolver, error) {
+	if m == nil {
+		return nil, nil
+	}
+	switch m.Type {
+	case "bind", "rbind":
+		return func(p string) (string, error) {
+			if mntedPath != "" {
+				var err error
+				p, err = filepath.Rel(mntedPath, p)
+				if err != nil {
+					return "", err
+				}
+			}
+			return containerdfs.RootPath(m.Source, p)
+		}, nil
+	case "overlay":
+		overlayDirs, err := overlay.GetOverlayLayers(*m)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get overlay layers: %w", err)
+		}
+		return func(p string) (string, error) {
+			if mntedPath != "" {
+				var err error
+				p, err = filepath.Rel(mntedPath, p)
+				if err != nil {
+					return "", err
+				}
+			}
+			// overlayDirs is lower->upper, so iterate in reverse to check
+			// upper layers first
+			var resolvedUpperdirPath string
+			for i := len(overlayDirs) - 1; i >= 0; i-- {
+				layerRoot := overlayDirs[i]
+				resolvedPath, err := containerdfs.RootPath(layerRoot, p)
+				if err != nil {
+					return "", err
+				}
+				if i == len(overlayDirs)-1 {
+					resolvedUpperdirPath = resolvedPath
+				}
+				_, err = os.Lstat(resolvedPath)
+				switch {
+				case err == nil:
+					return resolvedPath, nil
+				case errors.Is(err, os.ErrNotExist):
+					// try next layer
+				default:
+					return "", fmt.Errorf("failed to stat path %s in overlay layer: %w", resolvedPath, err)
+				}
+			}
+			// path doesn't exist, so if it's gonna exist, it should be in the upperdir
+			return resolvedUpperdirPath, nil
+		}, nil
+	default:
+		return nil, nil
+	}
 }
