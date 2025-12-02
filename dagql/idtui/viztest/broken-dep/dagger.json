@@ -1,13 +1,17 @@
 {
   "name": "broken-dep",
-  "engineVersion": "v0.18.3",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
   "dependencies": [
     {
       "name": "broken",
-      "source": "./broken"
+      "source": "broken"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
 }

@@ -12,6 +12,11 @@ require (
 )
 
 require (
+	github.com/sourcegraph/conc v0.3.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+)
+
+require (
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

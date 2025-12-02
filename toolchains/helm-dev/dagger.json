@@ -18,5 +18,7 @@
       "source": "../../modules/wolfi"
     }
   ],
-  "source": "."
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

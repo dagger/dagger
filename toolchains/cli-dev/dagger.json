@@ -23,5 +23,7 @@
       "source": "../../version"
     }
   ],
-  "source": "."
+  "codegen": {
+    "automaticGitignore": false
+  }
 }
