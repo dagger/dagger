@@ -1,7 +1,11 @@
 {
   "name": "greeter",
-  "engineVersion": "v0.16.2",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
-  }
+  },
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
 }

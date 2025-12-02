@@ -1,6 +1,6 @@
 {
   "name": "my-module",
-  "engineVersion": "v0.19.4",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -11,5 +11,8 @@
       "pin": "abcd1a95cef14ad336ca21a9ab836869582617bb"
     }
   ],
+  "codegen": {
+    "automaticGitignore": false
+  },
   "disableDefaultFunctionCaching": true
 }

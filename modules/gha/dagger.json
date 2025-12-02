@@ -9,5 +9,8 @@
       "name": "wolfi",
       "source": "../wolfi"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

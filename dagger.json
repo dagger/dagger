@@ -55,30 +55,6 @@
             "**/broken*/**"
           ]
         }
-      ],
-      "customizations": [
-        {
-          "name": "",
-          "argument": "source",
-          "ignore": [
-            "bin",
-            ".git",
-            "**/node_modules",
-            "**/.venv",
-            "**/__pycache__",
-            "**/sdk/runtime/**",
-            "docs/node_modules",
-            "sdk/typescript/node_modules",
-            "sdk/typescript/dist",
-            "sdk/rust/examples/backend/target",
-            "sdk/rust/target",
-            "sdk/php/vendor",
-            "docs/**",
-            "dagql/idtui/viztest/broken/**",
-            "modules/evals/**",
-            "**/broken*/**"
-          ]
-        }
       ]
     },
     {
@@ -137,24 +113,6 @@
             "dagql/idtui/viztest"
           ]
         }
-      ],
-      "customizations": [
-        {
-          "function": [
-            "scanSource"
-          ],
-          "name": "",
-          "argument": "source",
-          "ignore": [
-            "bin",
-            ".git",
-            "docs",
-            "sdk/rust/examples",
-            "sdk/rust/crates/dagger-sdk/examples",
-            "core/integration/testdata",
-            "dagql/idtui/viztest"
-          ]
-        }
       ]
     },
     {
@@ -198,5 +156,8 @@
       "source": "toolchains/cli-dev"
     }
   ],
-  "source": ".dagger"
+  "source": ".dagger",
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

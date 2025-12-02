@@ -1,6 +1,6 @@
 {
   "name": "recorder",
-  "engineVersion": "v0.19.8",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -19,5 +19,8 @@
       "source": "github.com/sagikazarmark/daggerverse/vhs@vhs/v0.4.0",
       "pin": "0a18e45ba3bb64deb5f57b0d94f10ae45f8a6538"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

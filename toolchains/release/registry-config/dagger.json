@@ -1,6 +1,6 @@
 {
   "name": "registry-config",
-  "engineVersion": "v0.19.8",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -9,5 +9,9 @@
     "!../.devenv",
     "!../go.work",
     "!../go.work.sum"
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
 }

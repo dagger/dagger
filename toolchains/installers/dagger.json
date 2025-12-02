@@ -1,6 +1,6 @@
 {
   "name": "installers",
-  "engineVersion": "v0.19.8",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -22,5 +22,8 @@
       "name": "shellcheck",
       "source": "../../modules/shellcheck"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

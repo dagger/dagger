@@ -469,11 +469,7 @@ func (p *Go) Modules(
 	return mods, nil
 }
 
-func (p *Go) TidyModule(ctx context.Context, mod string) (*dagger.Changeset, error) {
-	p, err := p.GenerateDaggerRuntime(ctx, mod)
-	if err != nil {
-		return nil, err
-	}
+func (p *Go) TidyModule(mod string) *dagger.Changeset {
 	tidyModDir := p.Env(defaultPlatform).
 		WithWorkdir(mod).
 		WithExec([]string{"go", "mod", "tidy"}).
@@ -481,7 +477,7 @@ func (p *Go) TidyModule(ctx context.Context, mod string) (*dagger.Changeset, err
 	return p.Source.
 		WithFile(path.Join(mod, "/go.mod"), tidyModDir.File("go.mod")).
 		WithFile(path.Join(mod, "/go.sum"), tidyModDir.File("go.sum")).
-		Changes(p.Source), nil
+		Changes(p.Source)
 }
 
 func (p *Go) Tidy(
@@ -497,9 +493,8 @@ func (p *Go) Tidy(
 	jobs := parallel.New()
 	for i, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			var err error
-			tidyModules[i], err = p.TidyModule(ctx, mod)
-			return err
+			tidyModules[i] = p.TidyModule(mod)
+			return nil
 		})
 	}
 	if err := jobs.Run(ctx); err != nil {
@@ -548,10 +543,7 @@ func (p *Go) CheckTidy(
 		WithRollupSpans(true)
 	for _, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			diffTidy, err := p.TidyModule(ctx, mod)
-			if err != nil {
-				return err
-			}
+			diffTidy := p.TidyModule(mod)
 			changes, err := diffTidy.AsPatch().Contents(ctx)
 			if err != nil {
 				return err
@@ -629,12 +621,8 @@ func (p *Go) LintModule(ctx context.Context, mod string) error {
 	lintImageTag := "v2.5.0-alpine"
 	lintImageDigest := "sha256:ac072ef3a8a6aa52c04630c68a7514e06be6f634d09d5975be60f2d53b484106"
 	lintImage := lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
-	p, err := p.GenerateDaggerRuntime(ctx, mod)
-	if err != nil {
-		return err
-	}
 	return parallel.Run(ctx, "lint", func(ctx context.Context) error {
-		_, err = dag.Container().
+		_, err := dag.Container().
 			From(lintImage).
 			WithMountedCache("/go/pkg/mod", p.ModuleCache).
 			WithMountedCache("/root/.cache/go-build", p.BuildCache).
@@ -655,64 +643,4 @@ func (p *Go) LintModule(ctx context.Context, mod string) error {
 			Sync(ctx)
 		return err
 	})
-}
-
-func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {
-	var isInside bool
-	var daggerModPath string
-	parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
-		// 1. Are we in a dagger module?
-		daggerJSONPath, err := p.Source.FindUp(ctx, "dagger.json", start)
-		if err != nil {
-			return err
-		}
-		if daggerJSONPath == "" {
-			return nil
-		}
-		daggerJSONContents, err := p.Source.File(daggerJSONPath).Contents(ctx)
-		if err != nil {
-			return err
-		}
-		daggerJSON := dag.JSON().WithContents(dagger.JSON(daggerJSONContents))
-		sdk, err := daggerJSON.Field([]string{"sdk", "source"}).AsString(ctx)
-		if err != nil {
-			// It's valid for a dagger.json to not have a source field
-			return nil //nolint:nilerr
-		}
-		daggerModPath = path.Clean(strings.TrimSuffix(daggerJSONPath, "dagger.json"))
-
-		// 2. Is the dagger module using the Go SDK?
-		if sdk != "go" {
-			return nil
-		}
-		// 3. Are we in the dagger module's *source* directory?
-		sourceField, err := daggerJSON.Field([]string{"source"}).AsString(ctx)
-		if err != nil {
-			// If no source field, default to "."
-			sourceField = "."
-		}
-		runtimeSourcePath := path.Clean(path.Join(daggerModPath, sourceField))
-		rel, err := filepath.Rel(path.Clean("/"+runtimeSourcePath), path.Clean("/"+start))
-		if err != nil {
-			return err
-		}
-		isInside = !strings.HasPrefix(rel, "..")
-		return nil
-	})
-	if isInside {
-		if err := parallel.Run(ctx, "generate dagger runtime: "+daggerModPath, func(ctx context.Context) error {
-			// 4. Match! Load the module and generate its files
-			layer, err := p.Source.
-				AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: daggerModPath}).
-				GeneratedContextDirectory().Sync(ctx)
-			if err != nil {
-				return err
-			}
-			p.Source = p.Source.WithDirectory("", layer)
-			return nil
-		}); err != nil {
-			return nil, err
-		}
-	}
-	return p, nil
 }

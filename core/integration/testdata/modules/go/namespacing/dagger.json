@@ -1,6 +1,6 @@
 {
   "name": "test",
-  "engineVersion": "v0.19.8",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -14,5 +14,8 @@
       "source": "sub2"
     }
   ],
+  "codegen": {
+    "automaticGitignore": false
+  },
   "disableDefaultFunctionCaching": true
 }

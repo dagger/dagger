@@ -9,5 +9,8 @@
       "name": "alpine",
       "source": "../alpine"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

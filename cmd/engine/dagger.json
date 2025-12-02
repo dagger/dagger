@@ -37,5 +37,8 @@
       "source": "../../modules/wolfi"
     }
   ],
-  "source": ".dagger"
+  "source": ".dagger",
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

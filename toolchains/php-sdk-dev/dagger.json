@@ -1,6 +1,6 @@
 {
   "name": "php-sdk-dev",
-  "engineVersion": "v0.19.8",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -18,5 +18,8 @@
       "name": "git-releaser",
       "source": "../../modules/git-releaser"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }
