@@ -14,6 +14,17 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
+type FnTreeNode struct {
+	Parent      *FnTreeNode
+	Path        []string
+	Description string
+	DagqlServer *dagql.Server
+	DagqlRoot   *Module
+	DagqlPath   []dagql.Selector
+	Type        *TypeDef
+	IsCheck     bool
+}
+
 func NewFnTree(ctx context.Context, mod *Module) (*FnTreeNode, error) {
 	mainObj, ok := mod.MainObject()
 	if !ok {
@@ -68,17 +79,6 @@ func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, erro
 		return nil, fmt.Errorf("%q: serve module: %w", mod.Name(), err)
 	}
 	return srv, nil
-}
-
-type FnTreeNode struct {
-	Parent      *FnTreeNode
-	Path        []string
-	Description string
-	DagqlServer *dagql.Server
-	DagqlRoot   *Module
-	DagqlPath   []dagql.Selector
-	Type        *TypeDef
-	IsCheck     bool
 }
 
 // The address of the dagger module that is the root of the tree
