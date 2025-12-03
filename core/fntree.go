@@ -14,12 +14,19 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
-func NewFnTree(mod *Module) *FnTreeNode {
-	return &FnTreeNode{
-		DagqlRoot:   mod,
-		Type:        mod,
-		Description: mod.Description,
+func NewFnTree(_ context.Context, mod *Module) (*FnTreeNode, error) {
+	mainObj, ok := mod.MainObject()
+	if !ok {
+		return nil, fmt.Errorf("%q: no main object", mod.Name())
 	}
+	return &FnTreeNode{
+		DagqlRoot: mod,
+		Type: &TypeDef{
+			Kind:     TypeDefKindObject,
+			AsObject: dagql.NonNull(mainObj),
+		},
+		Description: mod.Description,
+	}, nil
 }
 
 type FnTreeNode struct {
@@ -28,7 +35,7 @@ type FnTreeNode struct {
 	Description string
 	DagqlRoot   *Module
 	DagqlPath   []dagql.Selector
-	Type        any
+	Type        *TypeDef
 	IsCheck     bool
 }
 
@@ -92,7 +99,7 @@ func (node *FnTreeNode) DagqlServer(ctx context.Context) (*dagql.Server, error) 
 func (node *FnTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// We can't direct-select the dagql path, because Select() doesn't support traversing
 	// lists
-	// FIXME: as an optimization, one-shot when possible
+	// FIXME: as an optimization, one-shot when possible?
 	srv, err := node.DagqlServer(ctx)
 	if err != nil {
 		return err
@@ -100,7 +107,7 @@ func (node *FnTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	if node.Parent == nil {
 		return srv.Select(ctx, srv.Root(), dest)
 	}
-	if parentObjType, parentModType := node.Parent.ObjectType(), node.Parent.ModuleType(); parentObjType != nil || parentModType != nil {
+	if parentObjType := node.Parent.ObjectType(); parentObjType != nil {
 		// Parent is an object
 		var parentObjValue dagql.AnyObjectResult
 		if err := node.Parent.DagqlValue(ctx, &parentObjValue); err != nil {
@@ -260,40 +267,8 @@ func (node *FnTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	return nil
 }
 
-func (node *FnTreeNode) moduleToObject() (*FnTreeNode, error) {
-	modType := node.ModuleType()
-	if modType == nil {
-		return nil, fmt.Errorf("%q: not a module node", node.Name())
-	}
-	mainObj, ok := modType.MainObject()
-	if !ok {
-		return nil, fmt.Errorf("%q: no main object", modType.Name())
-	}
-	return &FnTreeNode{
-		DagqlRoot: node.DagqlRoot,
-		Path:      slices.Clone(node.Path),
-		DagqlPath: slices.Clone(node.DagqlPath),
-		Type: &TypeDef{
-			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(mainObj),
-		},
-	}, nil
-}
-
 func (node *FnTreeNode) Children(ctx context.Context) ([]string, error) {
-	// 1. Is this node a module?
-	if modType := node.ModuleType(); modType != nil {
-		objNode, err := node.moduleToObject()
-		if err != nil {
-			return nil, err
-		}
-		children, err := objNode.Children(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return children, nil
-	}
-	// 2. Is this node an object?
+	// 1. Is this node an object?
 	if objType := node.ObjectType(); objType != nil {
 		var children []string
 		for _, fn := range objType.Functions {
@@ -307,7 +282,7 @@ func (node *FnTreeNode) Children(ctx context.Context) ([]string, error) {
 		}
 		return children, nil
 	}
-	// 3. Is this node a list of named objects?
+	// 2. Is this node a list of named objects?
 	if namedObjListType := node.NamedObjectListType(ctx); namedObjListType != nil {
 		srv, err := node.DagqlServer(ctx)
 		if err != nil {
@@ -330,19 +305,6 @@ func (node *FnTreeNode) Children(ctx context.Context) ([]string, error) {
 
 // Return the specified child node, or nil if it doesn't exist
 func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, error) {
-	if modType := node.ModuleType(); modType != nil {
-		// 1. Lookup main object
-		objNode, err := node.moduleToObject()
-		if err != nil {
-			return nil, err
-		}
-		if child, err := objNode.Child(ctx, name); err != nil {
-			return nil, err
-		} else if child != nil {
-			return child, nil
-		}
-		return nil, nil
-	}
 	if objType := node.ObjectType(); objType != nil {
 		fn, isFunction := objType.FunctionByName(name)
 		if isFunction {
@@ -408,7 +370,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 }
 
 func (node *FnTreeNode) NamedObjectListType(ctx context.Context) *ObjectTypeDef {
-	listType := node.typeDef().AsList.Value
+	listType := node.Type.AsList.Value
 	if listType == nil {
 		return nil
 	}
@@ -437,27 +399,7 @@ func (node *FnTreeNode) NamedObjectListType(ctx context.Context) *ObjectTypeDef 
 }
 
 func (node *FnTreeNode) ObjectType() *ObjectTypeDef {
-	return node.typeDef().AsObject.Value
-}
-
-func (node *FnTreeNode) ModuleType() *Module {
-	modType, isMod := node.Type.(*Module)
-	if isMod {
-		return modType
-	}
-	return nil
-}
-
-// If the node's type is a dagql typedef, return that.
-// Otherwise, return a void typedef, to avoid repetitive nil checking
-func (node *FnTreeNode) typeDef() *TypeDef {
-	def, isTypeDef := node.Type.(*TypeDef)
-	if !isTypeDef {
-		return &TypeDef{
-			Kind: TypeDefKindVoid,
-		}
-	}
-	return def
+	return node.Type.AsObject.Value
 }
 
 func (node *FnTreeNode) BaseName() string {

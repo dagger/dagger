@@ -30,7 +30,10 @@ type CheckGroup struct {
 }
 
 func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGroup, error) {
-	rootNode := NewFnTree(mod)
+	rootNode, err := NewFnTree(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
 
 	var exclude []string
 	for toolchainName, toolchainIgnorePatterns := range mod.ToolchainIgnoreChecks {
