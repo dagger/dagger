@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
@@ -20,7 +19,6 @@ type ModTreeNode struct {
 	Description string
 	DagqlServer *dagql.Server
 	Module      *Module
-	DagqlPath   []dagql.Selector
 	Type        *TypeDef
 	IsCheck     bool
 }
@@ -107,7 +105,6 @@ func (node *ModTreeNode) RootAddress() string {
 
 func (node *ModTreeNode) Clone() *ModTreeNode {
 	cp := *node
-	cp.DagqlPath = slices.Clone(node.DagqlPath)
 	return &cp
 }
 
@@ -116,27 +113,35 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// lists
 	// FIXME: as an optimization, one-shot when possible?
 	srv := node.DagqlServer
+	// 1. Are we the root?
 	if node.Parent == nil {
 		return srv.Select(ctx, srv.Root(), dest)
 	}
+	// 2. Is parent an object?
 	if parentObjType := node.Parent.ObjectType(); parentObjType != nil {
-		// Parent is an object
 		var parentObjValue dagql.AnyObjectResult
 		if err := node.Parent.DagqlValue(ctx, &parentObjValue); err != nil {
 			return err
 		}
-		return srv.Select(ctx, parentObjValue, dest, node.DagqlPath[len(node.DagqlPath)-1:]...)
+		return srv.Select(ctx, parentObjValue, dest, dagql.Selector{Field: node.Name})
 	}
+	// 3. Is parent a list of named objects?
 	if parentNamedObjListType := node.Parent.NamedObjectListType(ctx); parentNamedObjListType != nil {
-		var parentListValue []dagql.AnyObjectResult
-		if err := node.Parent.DagqlValue(ctx, &parentListValue); err != nil {
+		var siblingValues []dagql.AnyObjectResult
+		if err := node.Parent.DagqlValue(ctx, &siblingValues); err != nil {
 			return err
 		}
-		// FIXME: we rely on list indices being stable...
-		index := node.DagqlPath[len(node.DagqlPath)-1].Nth
-		return srv.Select(ctx, parentListValue[index], dest)
+		for _, sibling := range siblingValues {
+			var name string
+			if err := srv.Select(ctx, sibling, &name, dagql.Selector{Field: "name"}); err != nil {
+				return err
+			}
+			if name == node.Name {
+				return srv.Select(ctx, sibling, dest)
+			}
+		}
 	}
-	return fmt.Errorf("%q: no known way to get dagql value", node.PathString())
+	return fmt.Errorf("%q: get value: parent is neither an object nor a list of objects", node.PathString())
 }
 
 func (node *ModTreeNode) Get(ctx context.Context, path []string) (*ModTreeNode, error) {
@@ -267,11 +272,7 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	if err != nil {
 		return err
 	}
-	for _, childName := range children {
-		child, err := node.Child(ctx, childName)
-		if err != nil {
-			return err
-		}
+	for _, child := range children {
 		if err := child.Walk(ctx, fn); err != nil {
 			return err
 		}
@@ -279,100 +280,84 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	return nil
 }
 
-func (node *ModTreeNode) Children(ctx context.Context) ([]string, error) {
-	// 1. Is this node an object?
+func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
+	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
-		var children []string
+		// 1. Is this node an object?
 		for _, fn := range objType.Functions {
 			if functionRequiresArgs(fn) {
 				continue
 			}
-			children = append(children, fn.Name)
-		}
-		for _, field := range objType.Fields {
-			children = append(children, field.Name)
-		}
-		return children, nil
-	}
-	// 2. Is this node a list of named objects?
-	if namedObjListType := node.NamedObjectListType(ctx); namedObjListType != nil {
-		srv := node.DagqlServer
-		var namedObjectValues []dagql.AnyObjectResult
-		if err := srv.Select(ctx, srv.Root(), &namedObjectValues, node.DagqlPath...); err != nil {
-			return nil, err
-		}
-		names := make([]string, len(namedObjectValues))
-		for i, namedObj := range namedObjectValues {
-			if err := srv.Select(ctx, namedObj, &names[i], dagql.Selector{Field: "name"}); err != nil {
-				return nil, err
-			}
-		}
-		return names, nil
-	}
-	return nil, nil
-}
-
-// Return the specified child node, or nil if it doesn't exist
-func (node *ModTreeNode) Child(ctx context.Context, name string) (*ModTreeNode, error) {
-	if objType := node.ObjectType(); objType != nil {
-		fn, isFunction := objType.FunctionByName(name)
-		if isFunction {
-			return &ModTreeNode{
+			children = append(children, &ModTreeNode{
 				Parent:      node,
-				Name:        name,
+				Name:        fn.Name,
 				DagqlServer: node.DagqlServer,
 				Module:      node.Module,
-				DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Field: gqlFieldName(name)}),
 				Type:        fn.ReturnType,
 				IsCheck:     fn.IsCheck,
 				Description: fn.Description,
-			}, nil
+			})
 		}
-		field, isField := objType.FieldByName(name)
-		if isField {
-			return &ModTreeNode{
+		for _, field := range objType.Fields {
+			children = append(children, &ModTreeNode{
+				Parent:      node,
+				Name:        field.Name,
+				DagqlServer: node.DagqlServer,
+				Module:      node.Module,
+				Type:        field.TypeDef,
+				IsCheck:     false,
+				Description: field.Description,
+			})
+		}
+	} else if namedObjListType := node.NamedObjectListType(ctx); namedObjListType != nil {
+		// 2. Is this node a list of named objects?
+
+		srv := node.DagqlServer
+		var namedObjects []dagql.AnyObjectResult
+		if err := node.DagqlValue(ctx, &namedObjects); err != nil {
+			return nil, err
+		}
+		for _, namedObj := range namedObjects {
+			var name string
+			if err := srv.Select(ctx, namedObj, &name, dagql.Selector{Field: "name"}); err != nil {
+				return nil, err
+			}
+			children = append(children, &ModTreeNode{
 				Parent:      node,
 				Name:        name,
 				DagqlServer: node.DagqlServer,
 				Module:      node.Module,
-				DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Field: gqlFieldName(name)}),
-				Type:        field.TypeDef,
-				IsCheck:     false,
-				Description: field.Description,
-			}, nil
+				Type: &TypeDef{
+					Kind:     TypeDefKindObject,
+					AsObject: dagql.NonNull(namedObjListType),
+				},
+				Description: "", // FIXME: how to support dynamic description?
+			})
 		}
-		return nil, nil
 	}
-	if namedObjectListType := node.NamedObjectListType(ctx); namedObjectListType != nil {
-		srv := node.DagqlServer
-		var namedObjectValues []dagql.AnyObjectResult
-		if err := srv.Select(ctx, srv.Root(), &namedObjectValues, node.DagqlPath...); err != nil {
-			return nil, err
-		}
-		for i, namedObj := range namedObjectValues {
-			var objName string
-			if err := srv.Select(ctx, namedObj, &objName, dagql.Selector{Field: "name"}); err != nil {
-				return nil, err
-			}
-			if objName == name {
-				// FIXME: this assumes the list result is cached at least for the session, and
-				// indices are stable across re-selections of the same list value.
-				// If this is not the case (eg. if the function returning the list has caching disabled *and* doesn't produce the same list each time),
-				// then indices will be wrong and bad things will happen
-				// FIXME: fix the above by caching previously selected dagql values, and re-using them across calls to the node. This might be a PITA.
-				return &ModTreeNode{
-					Parent:      node,
-					Name:        objName,
-					DagqlServer: node.DagqlServer,
-					Module:      node.Module,
-					DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Nth: i}),
-					Type: &TypeDef{
-						Kind:     TypeDefKindObject,
-						AsObject: dagql.NonNull(namedObjectListType),
-					},
-					// FIXME: support dynamic description(). For now description is blank
-				}, nil
-			}
+	return children, nil
+}
+
+func (node *ModTreeNode) ChildrenNames(ctx context.Context) ([]string, error) {
+	children, err := node.Children(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(children))
+	for i := range children {
+		names[i] = children[i].Name
+	}
+	return names, nil
+}
+
+func (node *ModTreeNode) Child(ctx context.Context, name string) (*ModTreeNode, error) {
+	children, err := node.Children(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, child := range children {
+		if child.Name == name {
+			return child, nil
 		}
 	}
 	return nil, nil
