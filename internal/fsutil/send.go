@@ -2,6 +2,7 @@ package fsutil
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -54,6 +55,7 @@ type sender struct {
 }
 
 func (s *sender) run(ctx context.Context) error {
+	fmt.Printf("ACB sender.run called\n")
 	g, ctx := errgroup.WithContext(ctx)
 
 	defer s.updateProgress(0, true)

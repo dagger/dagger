@@ -121,6 +121,16 @@ func (c *Client) LocalDirExport(
 		return fmt.Errorf("failed to convert result: %w", err)
 	}
 
+	//	return localexporter.New(localexporter.Opt{
+	//		SessionManager: sm,
+	//	})
+
+	//	progress := NewProgressHandler(ctx, lbl)
+	//	if err := filesync.CopyToCaller(ctx, outputFS, e.id, caller, progress); err != nil {
+	//		return err
+	//	}
+	//	return nil
+
 	// TODO: lift this to dagger
 	exporter, err := c.Worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
 	if err != nil {
