@@ -286,13 +286,18 @@ func (s *gitSchema) url(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	repo := parent.Self()
 	remoteGitRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
 
-	if isRemote && remoteGitRepo.URL == nil {
+	if isRemote && (remoteGitRepo.URL == nil || needsAuthResolution(remoteGitRepo)) {
 		result, err := s.resolveAndLoadRepoScalar(ctx, srv, parent)
 		if err != nil && !errors.Is(err, errNoAuthResolutionNeeded) {
 			return "", err
 		}
 		if result != nil {
 			return result.Unwrap().(dagql.String), nil
+		}
+		// errNoAuthResolutionNeeded was returned - verify URL works via ls-remote
+		// This catches the case where a private repo is accessed without auth
+		if _, err := remoteGitRepo.Remote(ctx); err != nil {
+			return "", fmt.Errorf("%w: %v", gitutil.ErrGitAuthFailed, err)
 		}
 	}
 
