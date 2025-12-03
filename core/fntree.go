@@ -16,13 +16,23 @@ import (
 
 type FnTreeNode struct {
 	Parent      *FnTreeNode
-	Path        []string
+	Name        string
 	Description string
 	DagqlServer *dagql.Server
 	DagqlRoot   *Module
 	DagqlPath   []dagql.Selector
 	Type        *TypeDef
 	IsCheck     bool
+}
+
+func (n *FnTreeNode) Path() []string {
+	if n.Parent == nil {
+		return nil
+	}
+	var path []string
+	path = append(path, n.Parent.Path()...)
+	path = append(path, n.Name)
+	return path
 }
 
 func NewFnTree(ctx context.Context, mod *Module) (*FnTreeNode, error) {
@@ -97,7 +107,6 @@ func (node *FnTreeNode) RootAddress() string {
 
 func (node *FnTreeNode) Clone() *FnTreeNode {
 	cp := *node
-	cp.Path = slices.Clone(node.Path)
 	cp.DagqlPath = slices.Clone(node.DagqlPath)
 	return &cp
 }
@@ -127,7 +136,7 @@ func (node *FnTreeNode) DagqlValue(ctx context.Context, dest any) error {
 		index := node.DagqlPath[len(node.DagqlPath)-1].Nth
 		return srv.Select(ctx, parentListValue[index], dest)
 	}
-	return fmt.Errorf("%q: no known way to get dagql value", node.Name())
+	return fmt.Errorf("%q: no known way to get dagql value", node.PathString())
 }
 
 func (node *FnTreeNode) Get(ctx context.Context, path []string) (*FnTreeNode, error) {
@@ -185,14 +194,14 @@ func (node *FnTreeNode) Match(include []string) (bool, error) {
 		return true, nil
 	}
 	cliName := func() string {
-		path := node.Path
+		path := node.Path()
 		for i := range path {
 			path[i] = strcase.ToKebab(path[i])
 		}
 		return strings.Join(path, "/")
 	}
 	gqlName := func() string {
-		path := node.Path
+		path := node.Path()
 		for i := range path {
 			path[i] = gqlFieldName(path[i])
 		}
@@ -244,8 +253,8 @@ func fnPathContains(base, target string) (bool, error) {
 	return !strings.HasPrefix(rel, ".."), nil
 }
 
-func (n *FnTreeNode) Name() string {
-	return strings.Join(n.Path, ":")
+func (n *FnTreeNode) PathString() string {
+	return strings.Join(n.Path(), ":")
 }
 
 type WalkFunc func(context.Context, *FnTreeNode) error
@@ -310,7 +319,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 		if isFunction {
 			return &FnTreeNode{
 				Parent:      node,
-				Path:        append(slices.Clone(node.Path), name),
+				Name:        name,
 				DagqlServer: node.DagqlServer,
 				DagqlRoot:   node.DagqlRoot,
 				DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Field: gqlFieldName(name)}),
@@ -323,7 +332,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 		if isField {
 			return &FnTreeNode{
 				Parent:      node,
-				Path:        append(slices.Clone(node.Path), name),
+				Name:        name,
 				DagqlServer: node.DagqlServer,
 				DagqlRoot:   node.DagqlRoot,
 				DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Field: gqlFieldName(name)}),
@@ -353,7 +362,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 				// FIXME: fix the above by caching previously selected dagql values, and re-using them across calls to the node. This might be a PITA.
 				return &FnTreeNode{
 					Parent:      node,
-					Path:        append(slices.Clone(node.Path), objName),
+					Name:        objName,
 					DagqlServer: node.DagqlServer,
 					DagqlRoot:   node.DagqlRoot,
 					DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Nth: i}),
@@ -400,11 +409,4 @@ func (node *FnTreeNode) NamedObjectListType(ctx context.Context) *ObjectTypeDef 
 
 func (node *FnTreeNode) ObjectType() *ObjectTypeDef {
 	return node.Type.AsObject.Value
-}
-
-func (node *FnTreeNode) BaseName() string {
-	if len(node.Path) == 0 {
-		return ""
-	}
-	return node.Path[len(node.Path)-1]
 }

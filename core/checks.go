@@ -148,7 +148,7 @@ func (r *CheckGroup) Clone() *CheckGroup {
 }
 
 func (c *Check) Path() []string {
-	return c.Node.Path
+	return c.Node.Path()
 }
 
 func (c *Check) Description() string {
@@ -173,7 +173,7 @@ func (c *Check) ResultEmoji() string {
 }
 
 func (c *Check) Name() string {
-	return c.Node.Name()
+	return c.Node.PathString()
 }
 
 func (c *Check) Clone() *Check {
