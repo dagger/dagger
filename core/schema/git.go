@@ -256,13 +256,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	}
 
 	if args.SSHAuthSocket.Valid {
-		dgstInputs = append(dgstInputs, "sshAuthSock", "true")
+		dgstInputs = append(dgstInputs, "sshAuthSock", args.SSHAuthSocket.Value.ID().Digest().String())
 	}
 	if args.HTTPAuthToken.Valid {
-		dgstInputs = append(dgstInputs, "authToken", "true")
+		dgstInputs = append(dgstInputs, "authToken", args.HTTPAuthToken.Value.ID().Digest().String())
 	}
 	if args.HTTPAuthHeader.Valid {
-		dgstInputs = append(dgstInputs, "authHeader", "true")
+		dgstInputs = append(dgstInputs, "authHeader", args.HTTPAuthHeader.Value.ID().Digest().String())
 	}
 
 	if head != nil {
