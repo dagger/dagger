@@ -19,7 +19,7 @@ type FnTreeNode struct {
 	Name        string
 	Description string
 	DagqlServer *dagql.Server
-	DagqlRoot   *Module
+	Module      *Module
 	DagqlPath   []dagql.Selector
 	Type        *TypeDef
 	IsCheck     bool
@@ -46,7 +46,7 @@ func NewFnTree(ctx context.Context, mod *Module) (*FnTreeNode, error) {
 	}
 	return &FnTreeNode{
 		DagqlServer: srv,
-		DagqlRoot:   mod,
+		Module:      mod,
 		Type: &TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(mainObj),
@@ -94,7 +94,7 @@ func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, erro
 // The address of the dagger module that is the root of the tree
 // If the node is a "file", the root address is the URL of the filesystem root
 func (node *FnTreeNode) RootAddress() string {
-	mod := node.DagqlRoot
+	mod := node.Module
 	if mod == nil {
 		return ""
 	}
@@ -321,7 +321,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 				Parent:      node,
 				Name:        name,
 				DagqlServer: node.DagqlServer,
-				DagqlRoot:   node.DagqlRoot,
+				Module:      node.Module,
 				DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Field: gqlFieldName(name)}),
 				Type:        fn.ReturnType,
 				IsCheck:     fn.IsCheck,
@@ -334,7 +334,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 				Parent:      node,
 				Name:        name,
 				DagqlServer: node.DagqlServer,
-				DagqlRoot:   node.DagqlRoot,
+				Module:      node.Module,
 				DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Field: gqlFieldName(name)}),
 				Type:        field.TypeDef,
 				IsCheck:     false,
@@ -364,7 +364,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 					Parent:      node,
 					Name:        objName,
 					DagqlServer: node.DagqlServer,
-					DagqlRoot:   node.DagqlRoot,
+					Module:      node.Module,
 					DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Nth: i}),
 					Type: &TypeDef{
 						Kind:     TypeDefKindObject,
@@ -386,7 +386,7 @@ func (node *FnTreeNode) NamedObjectListType(ctx context.Context) *ObjectTypeDef 
 	if listType.ElementTypeDef.Kind != TypeDefKindObject {
 		return nil
 	}
-	objModType, ok, err := node.DagqlRoot.ModTypeFor(ctx, listType.ElementTypeDef, true)
+	objModType, ok, err := node.Module.ModTypeFor(ctx, listType.ElementTypeDef, true)
 	if err != nil {
 		return nil
 	}

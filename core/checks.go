@@ -289,7 +289,7 @@ func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 	//
 
 	// load the module, depending on its kind
-	mod := c.Node.DagqlRoot
+	mod := c.Node.Module
 	switch mod.Source.Value.Self().Kind {
 	case ModuleSourceKindLocal:
 		query = query.Select("moduleSource").
