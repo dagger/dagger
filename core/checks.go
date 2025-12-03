@@ -71,10 +71,7 @@ func (r *CheckGroup) List() []*Check {
 func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	r = r.Clone()
 
-	dag, err := r.Node.DagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
+	dag := r.Node.DagqlServer
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -188,11 +185,7 @@ func (c *Check) Clone() *Check {
 func (c *Check) Run(ctx context.Context) (*Check, error) {
 	c = c.Clone()
 
-	dag, err := c.Node.DagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	dag := c.Node.DagqlServer
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err

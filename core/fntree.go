@@ -14,13 +14,18 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
-func NewFnTree(_ context.Context, mod *Module) (*FnTreeNode, error) {
+func NewFnTree(ctx context.Context, mod *Module) (*FnTreeNode, error) {
 	mainObj, ok := mod.MainObject()
 	if !ok {
 		return nil, fmt.Errorf("%q: no main object", mod.Name())
 	}
+	srv, err := dagqlServerForModule(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
 	return &FnTreeNode{
-		DagqlRoot: mod,
+		DagqlServer: srv,
+		DagqlRoot:   mod,
 		Type: &TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(mainObj),
@@ -29,10 +34,47 @@ func NewFnTree(_ context.Context, mod *Module) (*FnTreeNode, error) {
 	}, nil
 }
 
+// Initialize a standalone dagql server for querying the given module
+func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := q.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%q: get dagql cache: %w", mod.Name(), err)
+	}
+	srv := dagql.NewServer(q, cache)
+	srv.Around(AroundFunc)
+	// Install default "dependencies" (ie the core)
+	defaultDeps, err := q.DefaultDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%q: load core schema: %w", mod.Name(), err)
+	}
+	// Install dependencies
+	for _, defaultDep := range defaultDeps.Mods {
+		if err := defaultDep.Install(ctx, srv); err != nil {
+			return nil, fmt.Errorf("%q: serve core schema: %w", mod.Name(), err)
+		}
+	}
+	// Install toolchains
+	for _, tcMod := range mod.ToolchainModules {
+		if err := tcMod.Install(ctx, srv); err != nil {
+			return nil, fmt.Errorf("%q: serve toolchain module %q: %w", mod.Name(), tcMod.Name(), err)
+		}
+	}
+	// Install the main module
+	if err := mod.Install(ctx, srv); err != nil {
+		return nil, fmt.Errorf("%q: serve module: %w", mod.Name(), err)
+	}
+	return srv, nil
+}
+
 type FnTreeNode struct {
 	Parent      *FnTreeNode
 	Path        []string
 	Description string
+	DagqlServer *dagql.Server
 	DagqlRoot   *Module
 	DagqlPath   []dagql.Selector
 	Type        *TypeDef
@@ -60,50 +102,11 @@ func (node *FnTreeNode) Clone() *FnTreeNode {
 	return &cp
 }
 
-// Prepare a dagql Server for querying this node
-func (node *FnTreeNode) DagqlServer(ctx context.Context) (*dagql.Server, error) {
-	if node.Parent != nil {
-		return node.Parent.DagqlServer(ctx)
-	}
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dagqlCache, err := q.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("%q: get dagql cache: %w", node.Name(), err)
-	}
-	dag := dagql.NewServer(q, dagqlCache)
-	dag.Around(AroundFunc)
-	// Install default dependencies (ie the core)
-	defaultDeps, err := q.DefaultDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("%q: load core schema: %w", node.Name(), err)
-	}
-	for _, defaultDep := range defaultDeps.Mods {
-		if err := defaultDep.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("%q: serve core schema: %w", node.Name(), err)
-		}
-	}
-	for _, tcMod := range node.DagqlRoot.ToolchainModules {
-		if err := tcMod.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("%q: serve toolchain module %q: %w", node.Name(), tcMod.Name(), err)
-		}
-	}
-	if err := node.DagqlRoot.Install(ctx, dag); err != nil {
-		return nil, fmt.Errorf("%q: serve module: %w", node.Name(), err)
-	}
-	return dag, nil
-}
-
 func (node *FnTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// We can't direct-select the dagql path, because Select() doesn't support traversing
 	// lists
 	// FIXME: as an optimization, one-shot when possible?
-	srv, err := node.DagqlServer(ctx)
-	if err != nil {
-		return err
-	}
+	srv := node.DagqlServer
 	if node.Parent == nil {
 		return srv.Select(ctx, srv.Root(), dest)
 	}
@@ -284,10 +287,7 @@ func (node *FnTreeNode) Children(ctx context.Context) ([]string, error) {
 	}
 	// 2. Is this node a list of named objects?
 	if namedObjListType := node.NamedObjectListType(ctx); namedObjListType != nil {
-		srv, err := node.DagqlServer(ctx)
-		if err != nil {
-			return nil, err
-		}
+		srv := node.DagqlServer
 		var namedObjectValues []dagql.AnyObjectResult
 		if err := srv.Select(ctx, srv.Root(), &namedObjectValues, node.DagqlPath...); err != nil {
 			return nil, err
@@ -311,6 +311,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 			return &FnTreeNode{
 				Parent:      node,
 				Path:        append(slices.Clone(node.Path), name),
+				DagqlServer: node.DagqlServer,
 				DagqlRoot:   node.DagqlRoot,
 				DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Field: gqlFieldName(name)}),
 				Type:        fn.ReturnType,
@@ -323,6 +324,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 			return &FnTreeNode{
 				Parent:      node,
 				Path:        append(slices.Clone(node.Path), name),
+				DagqlServer: node.DagqlServer,
 				DagqlRoot:   node.DagqlRoot,
 				DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Field: gqlFieldName(name)}),
 				Type:        field.TypeDef,
@@ -333,10 +335,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 		return nil, nil
 	}
 	if namedObjectListType := node.NamedObjectListType(ctx); namedObjectListType != nil {
-		srv, err := node.DagqlServer(ctx)
-		if err != nil {
-			return nil, err
-		}
+		srv := node.DagqlServer
 		var namedObjectValues []dagql.AnyObjectResult
 		if err := srv.Select(ctx, srv.Root(), &namedObjectValues, node.DagqlPath...); err != nil {
 			return nil, err
@@ -353,10 +352,11 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 				// then indices will be wrong and bad things will happen
 				// FIXME: fix the above by caching previously selected dagql values, and re-using them across calls to the node. This might be a PITA.
 				return &FnTreeNode{
-					Parent:    node,
-					Path:      append(slices.Clone(node.Path), objName),
-					DagqlRoot: node.DagqlRoot,
-					DagqlPath: append(slices.Clone(node.DagqlPath), dagql.Selector{Nth: i}),
+					Parent:      node,
+					Path:        append(slices.Clone(node.Path), objName),
+					DagqlServer: node.DagqlServer,
+					DagqlRoot:   node.DagqlRoot,
+					DagqlPath:   append(slices.Clone(node.DagqlPath), dagql.Selector{Nth: i}),
 					Type: &TypeDef{
 						Kind:     TypeDefKindObject,
 						AsObject: dagql.NonNull(namedObjectListType),
