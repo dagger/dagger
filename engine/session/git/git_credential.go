@@ -78,10 +78,15 @@ func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCred
 	input += "\n"
 	cmd.Stdin = strings.NewReader(input)
 
-	// Never prompt the user for credentials
+	// Disable credential prompting to prevent GUI popups (e.g., VS Code sets
+	// GIT_ASKPASS to trigger its own credential dialog).
+	//
+	// Setting GIT_ASKPASS="" (not unsetting) prevents Git from falling back to
+	// SSH_ASKPASS. GIT_TERMINAL_PROMPT=0 disables the terminal fallback.
+	// See: https://git-scm.com/docs/gitcredentials
 	cmd.Env = append(os.Environ(),
-		"GIT_ASKPASS=",          // Do not use external programs to ask for credentials
-		"GIT_TERMINAL_PROMPT=0", // Disable Git's builtin prompting
+		"GIT_ASKPASS=",
+		"GIT_TERMINAL_PROMPT=0",
 	)
 
 	// Run the command

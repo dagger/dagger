@@ -1659,6 +1659,42 @@ password netrcpass
 				Password: "netrcpass",
 			},
 		},
+		{
+			// Test case: GIT_ASKPASS is ignored
+			// Verifies that even when GIT_ASKPASS is set in the environment (e.g., by VS Code),
+			// credentials are retrieved from the credential helper without triggering askpass.
+			// This prevents unwanted GUI prompts in IDE environments.
+			// See: https://git-scm.com/docs/gitcredentials
+			name: "GIT_ASKPASS_IGNORED",
+			setup: func(c *dagger.Container) *dagger.Container {
+				return c.
+					WithNewFile("/usr/local/bin/git-credential-valid", `#!/bin/sh
+echo "protocol=https"
+echo "host=github.com"
+echo "username=helperuser"
+echo "password=helperpass"
+`).
+					WithExec([]string{"chmod", "+x", "/usr/local/bin/git-credential-valid"}).
+					WithExec([]string{"git", "config", "--global", "credential.helper", "valid"}).
+					WithNewFile("/usr/local/bin/fake-askpass", `#!/bin/sh
+# This script should never be called - if it is, the test fails
+echo "ASKPASS_WAS_CALLED" >&2
+exit 1
+`).
+					WithExec([]string{"chmod", "+x", "/usr/local/bin/fake-askpass"}).
+					WithEnvVariable("GIT_ASKPASS", "/usr/local/bin/fake-askpass")
+			},
+			request: &gitsession.GitCredentialRequest{
+				Protocol: "https",
+				Host:     "github.com",
+			},
+			expectedResponse: &gitsession.CredentialInfo{
+				Protocol: "https",
+				Host:     "github.com",
+				Username: "helperuser",
+				Password: "helperpass",
+			},
+		},
 	}
 
 	// setup dagger
