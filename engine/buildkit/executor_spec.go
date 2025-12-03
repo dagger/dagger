@@ -104,7 +104,7 @@ type execState struct {
 	resolvConfPath   string
 	hostsFilePath    string
 	exitCodePath     string
-	metaMount        *specs.Mount
+	metaMountDirPath string
 	origEnvMap       map[string]string
 
 	startedOnce *sync.Once
@@ -402,6 +402,12 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		return os.RemoveAll(state.rootfsPath)
 	})
 	state.spec.Root.Path = state.rootfsPath
+	if state.rootMount.Selector != "" {
+		state.spec.Root.Path, err = fs.RootPath(state.rootfsPath, state.rootMount.Selector)
+		if err != nil {
+			return fmt.Errorf("root mount %s points to invalid root path: %w", state.rootMount.Selector, err)
+		}
+	}
 
 	rootMountable, err := state.rootMount.Src.Mount(ctx, false)
 	if err != nil {
@@ -414,16 +420,6 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	if releaseRootMount != nil {
 		state.cleanups.Add("release rootfs mount", releaseRootMount)
 	}
-	// TODO: is this robust? the one for submounts is very complicated
-	if state.rootMount.Selector != "" {
-		for i, mnt := range rootMnts {
-			mnt.Source, err = fs.RootPath(mnt.Source, state.rootMount.Selector)
-			if err != nil {
-				return fmt.Errorf("root mount %s points to invalid source: %w", state.rootMount.Selector, err)
-			}
-			rootMnts[i] = mnt
-		}
-	}
 	if err := mount.All(rootMnts, state.rootfsPath); err != nil {
 		return fmt.Errorf("mount rootfs: %w", err)
 	}
@@ -433,10 +429,11 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 
 	var nonRootMounts []mount.Mount
 	var filteredMounts []specs.Mount
+	var metaMount *specs.Mount
 	for _, mnt := range state.spec.Mounts {
 		switch {
 		case mnt.Destination == MetaMountDestPath:
-			state.metaMount = &mnt
+			metaMount = &mnt
 
 		case mnt.Destination == BuildkitQemuEmulatorMountPoint:
 			// buildkit puts the qemu emulator under /dev, which we aren't mounting now, so just
@@ -461,6 +458,33 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	}
 	state.spec.Mounts = filteredMounts
 
+	if metaMount != nil {
+		switch metaMount.Type {
+		case "bind", "rbind":
+			state.metaMountDirPath = metaMount.Source
+		default:
+			mntPath, err := os.MkdirTemp("", "meta-mount")
+			if err != nil {
+				return fmt.Errorf("create meta mount temp dir: %w", err)
+			}
+			state.cleanups.Add("remove meta mount temp dir", func() error {
+				return os.RemoveAll(mntPath)
+			})
+			mnts := []mount.Mount{{
+				Type:    metaMount.Type,
+				Source:  metaMount.Source,
+				Options: metaMount.Options,
+			}}
+			if err := mount.All(mnts, mntPath); err != nil {
+				return fmt.Errorf("mount meta mount: %w", err)
+			}
+			state.cleanups.Add("unmount meta mount", func() error {
+				return mount.UnmountMounts(mnts, mntPath, 0)
+			})
+			state.metaMountDirPath = mntPath
+		}
+	}
+
 	state.cleanups.Add("cleanup rootfs stubs", cleanups.Infallible(executor.MountStubsCleaner(
 		ctx,
 		state.rootfsPath,
@@ -469,7 +493,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	)))
 
 	for _, mnt := range nonRootMounts {
-		dstPath, err := fs.RootPath(state.rootfsPath, mnt.Target)
+		dstPath, err := fs.RootPath(state.spec.Root.Path, mnt.Target)
 		if err != nil {
 			return fmt.Errorf("mount %s points to invalid target: %w", mnt.Target, err)
 		}
@@ -510,7 +534,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 			}
 		}
 
-		if err := mnt.Mount(state.rootfsPath); err != nil {
+		if err := mnt.Mount(state.spec.Root.Path); err != nil {
 			return fmt.Errorf("mount to rootfs %s: %w", mnt.Target, err)
 		}
 		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
@@ -543,8 +567,8 @@ func (w *Worker) setUserGroup(_ context.Context, state *execState) error {
 }
 
 func (w *Worker) setExitCodePath(_ context.Context, state *execState) error {
-	if state.metaMount != nil {
-		state.exitCodePath = filepath.Join(state.metaMount.Source, MetaMountExitCodePath)
+	if state.metaMountDirPath != "" {
+		state.exitCodePath = filepath.Join(state.metaMountDirPath, MetaMountExitCodePath)
 	}
 	return nil
 }
@@ -555,11 +579,11 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 		// no more stdio setup needed
 		return nil
 	}
-	if state.metaMount == nil {
+	if state.metaMountDirPath == "" {
 		return nil
 	}
 
-	combinedOutputPath := filepath.Join(state.metaMount.Source, MetaMountCombinedOutputPath)
+	combinedOutputPath := filepath.Join(state.metaMountDirPath, MetaMountCombinedOutputPath)
 	combinedOutputFile, err := os.OpenFile(combinedOutputPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open combined output file: %w", err)
@@ -570,7 +594,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	if state.procInfo.Stdout != nil {
 		stdoutWriters = append(stdoutWriters, state.procInfo.Stdout)
 	}
-	stdoutPath := filepath.Join(state.metaMount.Source, MetaMountStdoutPath)
+	stdoutPath := filepath.Join(state.metaMountDirPath, MetaMountStdoutPath)
 	stdoutFile, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open stdout file: %w", err)
@@ -583,7 +607,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	if state.procInfo.Stderr != nil {
 		stderrWriters = append(stderrWriters, state.procInfo.Stderr)
 	}
-	stderrPath := filepath.Join(state.metaMount.Source, MetaMountStderrPath)
+	stderrPath := filepath.Join(state.metaMountDirPath, MetaMountStderrPath)
 	stderrFile, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open stderr file: %w", err)
@@ -920,7 +944,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return nil
 	}
 
-	clientIDPath := filepath.Join(state.metaMount.Source, MetaMountClientIDPath)
+	clientIDPath := filepath.Join(state.metaMountDirPath, MetaMountClientIDPath)
 	if err := os.WriteFile(clientIDPath, []byte(w.execMD.ClientID), 0o600); err != nil {
 		return fmt.Errorf("failed to write client id %s to %s: %w", w.execMD.ClientID, clientIDPath, err)
 	}

@@ -366,7 +366,8 @@ func (*Viztest) FailLogNative(ctx context.Context) error {
 func (*Viztest) FailSlow(ctx context.Context,
 	// +optional
 	// +default="10"
-	after string) error {
+	after string,
+) error {
 	_, err := dag.Container().
 		From("alpine").
 		WithEnvVariable("NOW", time.Now().String()).
@@ -637,7 +638,6 @@ func (*Viztest) TraceFunctionCalls(ctx context.Context) error {
 // +cache="session"
 func (*Viztest) TraceRemoteFunctionCalls(ctx context.Context) error {
 	dag.Versioned().Hello(ctx)
-	dag.VersionedGit().Hello(ctx)
 	return nil
 }
 

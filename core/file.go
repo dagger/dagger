@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -273,7 +274,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]
 	}
 
 	results := []*SearchResult{}
-	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, filepath.Dir(file.File))
 		if err != nil {
 			return err
@@ -395,7 +396,7 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
 		resolvedPath, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err

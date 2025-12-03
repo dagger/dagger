@@ -26,14 +26,21 @@ import (
 )
 
 type mockServer struct {
+	moduleSource   *ModuleSource
+	functionCall   *FunctionCall
+	clientMetadata *engine.ClientMetadata
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error {
 	return nil
 }
+
 func (ms *mockServer) CurrentModule(context.Context) (*Module, error) {
+	if ms.moduleSource == nil {
+		return nil, nil
+	}
 	c := call.New().Append(&ast.Type{}, "caller1")
-	rs, err := dagql.NewResultForID(&ModuleSource{}, c)
+	rs, err := dagql.NewResultForID(ms.moduleSource, c)
 	if err != nil {
 		panic(err)
 	}
@@ -46,15 +53,22 @@ func (ms *mockServer) CurrentModule(context.Context) (*Module, error) {
 		Source: dn,
 	}, nil
 }
+
 func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error) {
-	return nil, nil
+	return ms.functionCall, nil
 }
+
 func (ms *mockServer) CurrentServedDeps(context.Context) (*ModDeps, error) {
 	return &ModDeps{}, nil
 }
+
 func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
+	if ms.clientMetadata != nil {
+		return ms.clientMetadata, nil
+	}
 	return &engine.ClientMetadata{}, nil
 }
+
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
@@ -109,8 +123,29 @@ func TestParseCallerCalleeRefs(t *testing.T) {
 			"versioned_git_ssh",
 			"git@github.com:dagger/dagger-test-modules/versioned@main", "0cabe03cc0a9079e738c92b2c589d81fd560011f",
 		)))
-	_, calleeRef := parseCallerCalleeRefs(t.Context(), &Query{Server: &mockServer{}}, pcID)
 
+	// Set up mock server with Git source for the caller
+	mockSrv := &mockServer{
+		moduleSource: &ModuleSource{
+			Kind: ModuleSourceKindGit,
+			Git: &GitModuleSource{
+				CloneRef: "git@github.com:dagger/dagger-test-modules/caller",
+				Version:  "v1.0.0",
+			},
+		},
+		functionCall: &FunctionCall{
+			Name: "callerFunction",
+		},
+	}
+
+	callerRef, calleeRef := parseCallerCalleeRefs(t.Context(), &Query{Server: mockSrv}, pcID)
+
+	require.NotNil(t, callerRef)
+	require.Equal(t, "github.com/dagger/dagger-test-modules/caller", callerRef.ref)
+	require.Equal(t, "v1.0.0", callerRef.version)
+	require.Equal(t, "callerFunction", callerRef.functionName)
+
+	require.NotNil(t, calleeRef)
 	require.Equal(t, "github.com/dagger/dagger-test-modules/versioned", calleeRef.ref)
 	require.Equal(t, "0cabe03cc0a9079e738c92b2c589d81fd560011f", calleeRef.version)
 	require.Equal(t, "VersionedGitSSH.hello", calleeRef.functionName)

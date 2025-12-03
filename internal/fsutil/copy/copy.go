@@ -70,6 +70,13 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 	for _, o := range opts {
 		o(&ci)
 	}
+	ci.EnableHardlinkOptimization = ci.EnableHardlinkOptimization &&
+		ci.SourcePathResolver != nil &&
+		ci.DestPathResolver != nil &&
+		ci.Chown == nil &&
+		ci.Utime == nil &&
+		ci.Mode == nil
+
 	ensureDstPath := dst
 	if d, f := filepath.Split(dst); f != "" && f != "." {
 		ensureDstPath = d
@@ -89,7 +96,7 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		return err
 	}
 
-	c, err := newCopier(dstRoot, ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler, ci.Only, ci.IncludePatterns, ci.ExcludePatterns, ci.UseGitignore, ci.AlwaysReplaceExistingDestPaths, ci.ChangeFunc)
+	c, err := newCopier(dstRoot, ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler, ci.Only, ci.IncludePatterns, ci.ExcludePatterns, ci.UseGitignore, ci.AlwaysReplaceExistingDestPaths, ci.EnableHardlinkOptimization, ci.SourcePathResolver, ci.DestPathResolver, ci.ChangeFunc)
 	if err != nil {
 		return err
 	}
@@ -189,7 +196,21 @@ type CopyInfo struct {
 	// This situation occurs when `UseGitignore` is enabled, as patterns may be
 	// sourced from directories higher up than the requested directory.
 	BaseCopyPath string
+
+	// Whether to attempt hardlinking rather than copying files when safe to do so.
+	// Only safe to enable when the source and destination are immutable layers.
+	// Setting options like Chown, Utime, or Mode will disable the optimization even
+	// if this is set to true.
+	// Requires that SourcePathResolver and DestPathResolver are set
+	EnableHardlinkOptimization bool
+	// Functions to resolve "real" source and destination paths for hardlink optimization,
+	// real paths being those on the underlying filesystem as opposed to in a bind/overlay
+	// mount.
+	SourcePathResolver PathResolver
+	DestPathResolver   PathResolver
 }
+
+type PathResolver func(string) (string, error)
 
 type Opt func(*CopyInfo)
 
@@ -262,6 +283,9 @@ type copier struct {
 	changefn                       fsutil.ChangeFunc
 	destRoot                       string
 	alwaysReplaceExistingDestPaths bool
+	enableHardlinkOptimization     bool
+	sourcePathResolver             PathResolver
+	destPathResolver               PathResolver
 }
 
 type parentDir struct {
@@ -270,7 +294,7 @@ type parentDir struct {
 	copied  bool
 }
 
-func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, only map[string]struct{}, includePatterns, excludePatterns []string, useGitignore bool, alwaysReplaceExistingDestPaths bool, changeFunc fsutil.ChangeFunc) (*copier, error) {
+func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, only map[string]struct{}, includePatterns, excludePatterns []string, useGitignore bool, alwaysReplaceExistingDestPaths bool, enableHardlinkOptimization bool, sourcePathResolver, destPathResolver PathResolver, changeFunc fsutil.ChangeFunc) (*copier, error) {
 	if xeh == nil {
 		xeh = func(dst, src, key string, err error) error {
 			return err
@@ -317,6 +341,9 @@ func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAt
 		gitignoreMatcher:               gitignoreMatcher,
 		changefn:                       changeFunc,
 		alwaysReplaceExistingDestPaths: alwaysReplaceExistingDestPaths,
+		enableHardlinkOptimization:     enableHardlinkOptimization,
+		sourcePathResolver:             sourcePathResolver,
+		destPathResolver:               destPathResolver,
 	}, nil
 }
 
@@ -420,6 +447,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	}
 
 	copyFileInfo := include
+	var usedHardlinkCopy bool
 	restoreFileTimestamp := false
 	notify := true
 
@@ -444,7 +472,11 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 			if err := os.Link(link, target); err != nil {
 				return errors.Wrap(err, "failed to create hard link")
 			}
-		} else if err := copyFile(src, target); err != nil {
+			break
+		}
+		var err error
+		usedHardlinkCopy, err = c.copyFile(src, target)
+		if err != nil {
 			return errors.Wrap(err, "failed to copy files")
 		}
 	case (fi.Mode() & os.ModeSymlink) == os.ModeSymlink:
@@ -463,19 +495,21 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 		}
 	}
 
-	if copyFileInfo {
-		if err := c.copyFileInfo(fi, src, target); err != nil {
-			return errors.Wrap(err, "failed to copy file info")
-		}
-
-		if err := copyXAttrs(target, src, c.xattrErrorHandler); err != nil {
-			return errors.Wrap(err, "failed to copy xattrs")
-		}
-	} else if restoreFileTimestamp && targetFi != nil {
-		if err := c.copyFileTimestamp(fi, target); err != nil {
-			return errors.Wrap(err, "failed to restore file timestamp")
+	if !usedHardlinkCopy {
+		if copyFileInfo {
+			if err := c.copyFileInfo(fi, target); err != nil {
+				return errors.Wrap(err, "failed to copy file info")
+			}
+			if err := copyXAttrs(target, src, c.xattrErrorHandler); err != nil {
+				return errors.Wrap(err, "failed to copy xattrs")
+			}
+		} else if restoreFileTimestamp && targetFi != nil {
+			if err := c.copyFileTimestamp(fi, target); err != nil {
+				return errors.Wrap(err, "failed to restore file timestamp")
+			}
 		}
 	}
+
 	if notify {
 		if err := c.notifyChange(target, fi); err != nil {
 			return err
@@ -553,7 +587,7 @@ func (c *copier) createParentDirs(overwriteTargetMetadata bool) error {
 			return err
 		}
 		if created {
-			if err := c.copyFileInfo(fi, parentDir.srcPath, parentDir.dstPath); err != nil {
+			if err := c.copyFileInfo(fi, parentDir.dstPath); err != nil {
 				return errors.Wrap(err, "failed to copy file info")
 			}
 
