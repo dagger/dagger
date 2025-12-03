@@ -14,8 +14,8 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
-type FnTreeNode struct {
-	Parent      *FnTreeNode
+type ModTreeNode struct {
+	Parent      *ModTreeNode
 	Name        string
 	Description string
 	DagqlServer *dagql.Server
@@ -25,7 +25,7 @@ type FnTreeNode struct {
 	IsCheck     bool
 }
 
-func (n *FnTreeNode) Path() []string {
+func (n *ModTreeNode) Path() []string {
 	if n.Parent == nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func (n *FnTreeNode) Path() []string {
 	return path
 }
 
-func NewFnTree(ctx context.Context, mod *Module) (*FnTreeNode, error) {
+func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 	mainObj, ok := mod.MainObject()
 	if !ok {
 		return nil, fmt.Errorf("%q: no main object", mod.Name())
@@ -44,7 +44,7 @@ func NewFnTree(ctx context.Context, mod *Module) (*FnTreeNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FnTreeNode{
+	return &ModTreeNode{
 		DagqlServer: srv,
 		Module:      mod,
 		Type: &TypeDef{
@@ -93,7 +93,7 @@ func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, erro
 
 // The address of the dagger module that is the root of the tree
 // If the node is a "file", the root address is the URL of the filesystem root
-func (node *FnTreeNode) RootAddress() string {
+func (node *ModTreeNode) RootAddress() string {
 	mod := node.Module
 	if mod == nil {
 		return ""
@@ -105,13 +105,13 @@ func (node *FnTreeNode) RootAddress() string {
 	return modSrc.AsString()
 }
 
-func (node *FnTreeNode) Clone() *FnTreeNode {
+func (node *ModTreeNode) Clone() *ModTreeNode {
 	cp := *node
 	cp.DagqlPath = slices.Clone(node.DagqlPath)
 	return &cp
 }
 
-func (node *FnTreeNode) DagqlValue(ctx context.Context, dest any) error {
+func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// We can't direct-select the dagql path, because Select() doesn't support traversing
 	// lists
 	// FIXME: as an optimization, one-shot when possible?
@@ -139,7 +139,7 @@ func (node *FnTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	return fmt.Errorf("%q: no known way to get dagql value", node.PathString())
 }
 
-func (node *FnTreeNode) Get(ctx context.Context, path []string) (*FnTreeNode, error) {
+func (node *ModTreeNode) Get(ctx context.Context, path []string) (*ModTreeNode, error) {
 	target := node
 	for _, segment := range path {
 		if target == nil {
@@ -163,9 +163,9 @@ func debugTrace(ctx context.Context, msg string, args ...any) {
 }
 
 // Walk the tree and return all check nodes, with include and exclude filters applied.
-func (node *FnTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*FnTreeNode, error) {
-	var checks []*FnTreeNode
-	err := node.Walk(ctx, func(ctx context.Context, n *FnTreeNode) error {
+func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	var checks []*ModTreeNode
+	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) error {
 		if !n.IsCheck {
 			return nil
 		}
@@ -189,7 +189,7 @@ func (node *FnTreeNode) RollupChecks(ctx context.Context, include []string, excl
 	return checks, err
 }
 
-func (node *FnTreeNode) Match(include []string) (bool, error) {
+func (node *ModTreeNode) Match(include []string) (bool, error) {
 	if len(include) == 0 {
 		return true, nil
 	}
@@ -253,13 +253,13 @@ func fnPathContains(base, target string) (bool, error) {
 	return !strings.HasPrefix(rel, ".."), nil
 }
 
-func (n *FnTreeNode) PathString() string {
+func (n *ModTreeNode) PathString() string {
 	return strings.Join(n.Path(), ":")
 }
 
-type WalkFunc func(context.Context, *FnTreeNode) error
+type WalkFunc func(context.Context, *ModTreeNode) error
 
-func (node *FnTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
+func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	if err := fn(ctx, node); err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func (node *FnTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	return nil
 }
 
-func (node *FnTreeNode) Children(ctx context.Context) ([]string, error) {
+func (node *ModTreeNode) Children(ctx context.Context) ([]string, error) {
 	// 1. Is this node an object?
 	if objType := node.ObjectType(); objType != nil {
 		var children []string
@@ -313,11 +313,11 @@ func (node *FnTreeNode) Children(ctx context.Context) ([]string, error) {
 }
 
 // Return the specified child node, or nil if it doesn't exist
-func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, error) {
+func (node *ModTreeNode) Child(ctx context.Context, name string) (*ModTreeNode, error) {
 	if objType := node.ObjectType(); objType != nil {
 		fn, isFunction := objType.FunctionByName(name)
 		if isFunction {
-			return &FnTreeNode{
+			return &ModTreeNode{
 				Parent:      node,
 				Name:        name,
 				DagqlServer: node.DagqlServer,
@@ -330,7 +330,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 		}
 		field, isField := objType.FieldByName(name)
 		if isField {
-			return &FnTreeNode{
+			return &ModTreeNode{
 				Parent:      node,
 				Name:        name,
 				DagqlServer: node.DagqlServer,
@@ -360,7 +360,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 				// If this is not the case (eg. if the function returning the list has caching disabled *and* doesn't produce the same list each time),
 				// then indices will be wrong and bad things will happen
 				// FIXME: fix the above by caching previously selected dagql values, and re-using them across calls to the node. This might be a PITA.
-				return &FnTreeNode{
+				return &ModTreeNode{
 					Parent:      node,
 					Name:        objName,
 					DagqlServer: node.DagqlServer,
@@ -378,7 +378,7 @@ func (node *FnTreeNode) Child(ctx context.Context, name string) (*FnTreeNode, er
 	return nil, nil
 }
 
-func (node *FnTreeNode) NamedObjectListType(ctx context.Context) *ObjectTypeDef {
+func (node *ModTreeNode) NamedObjectListType(ctx context.Context) *ObjectTypeDef {
 	listType := node.Type.AsList.Value
 	if listType == nil {
 		return nil
@@ -407,6 +407,6 @@ func (node *FnTreeNode) NamedObjectListType(ctx context.Context) *ObjectTypeDef 
 	return objType
 }
 
-func (node *FnTreeNode) ObjectType() *ObjectTypeDef {
+func (node *ModTreeNode) ObjectType() *ObjectTypeDef {
 	return node.Type.AsObject.Value
 }

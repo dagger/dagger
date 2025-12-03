@@ -19,18 +19,18 @@ import (
 
 // Check represents a validation check with its result
 type Check struct {
-	Node      *FnTreeNode `json:"node"`
-	Completed bool        `field:"true" doc:"Whether the check completed"`
-	Passed    bool        `field:"true" doc:"Whether the check passed"`
+	Node      *ModTreeNode `json:"node"`
+	Completed bool         `field:"true" doc:"Whether the check completed"`
+	Passed    bool         `field:"true" doc:"Whether the check passed"`
 }
 
 type CheckGroup struct {
-	Node   *FnTreeNode `json:"node"`
-	Checks []*Check    `json:"checks"`
+	Node   *ModTreeNode `json:"node"`
+	Checks []*Check     `json:"checks"`
 }
 
 func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGroup, error) {
-	rootNode, err := NewFnTree(ctx, mod)
+	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
 	}
