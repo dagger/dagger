@@ -1,3 +1,4 @@
+import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
 
 import { convertToPascalCase } from "../case_convertor.js"

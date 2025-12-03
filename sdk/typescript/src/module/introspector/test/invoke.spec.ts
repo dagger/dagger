@@ -1,11 +1,11 @@
+import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
-import { describe, it } from "mocha"
 import Module from "node:module"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
 import { connection } from "../../../connect.js"
-import { InvokeCtx } from "../../entrypoint/context.js"
+import { type InvokeCtx } from "../../entrypoint/context.js"
 import { invoke } from "../../entrypoint/invoke.js"
 import { load } from "../../entrypoint/load.js"
 import { Executor } from "../../executor.js"
