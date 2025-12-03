@@ -145,7 +145,6 @@ func debugTrace(ctx context.Context, msg string, args ...any) {
 
 // Walk the tree and return all check nodes, with include and exclude filters applied.
 func (node *FnTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*FnTreeNode, error) {
-	debugTrace(ctx, "rollupChecks\n [include=%v]\n [exclude=%v]\n", include, exclude)
 	var checks []*FnTreeNode
 	err := node.Walk(ctx, func(ctx context.Context, n *FnTreeNode) error {
 		if !n.IsCheck {
@@ -155,7 +154,6 @@ func (node *FnTreeNode) RollupChecks(ctx context.Context, include []string, excl
 			if match, err := n.Match(include); err != nil {
 				return err
 			} else if !match {
-				debugTrace(ctx, "%q: no include match (%v)", n.Name(), include)
 				return nil
 			}
 		}
@@ -163,7 +161,6 @@ func (node *FnTreeNode) RollupChecks(ctx context.Context, include []string, excl
 			if match, err := n.Match(exclude); err != nil {
 				return err
 			} else if match {
-				debugTrace(ctx, "%q: exclude match (%v)", n.Name(), exclude)
 				return nil
 			}
 		}
