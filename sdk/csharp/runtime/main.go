@@ -170,6 +170,9 @@ func (m *CsharpSdk) CodegenBase(
 		className := toPascalCase(name)
 		projectFileName := className + ".csproj"
 		
+		// Calculate relative path to dagger.json based on source subpath
+		daggerJsonPath := getDaggerJsonPath(subPath)
+		
 		ctr = ctr.
 			WithDirectory(".", runtime.Directory("template")).
 			// Rename DaggerModule.csproj to {ModuleName}.csproj
@@ -178,6 +181,11 @@ func (m *CsharpSdk) CodegenBase(
 			WithExec([]string{"sh", "-c", fmt.Sprintf(
 				"sed -i 's/DaggerModule/%s/g' Main.cs %s",
 				className, projectFileName,
+			)}).
+			// Replace DAGGER_JSON_PATH with the correct relative path
+			WithExec([]string{"sh", "-c", fmt.Sprintf(
+				"sed -i 's|DAGGER_JSON_PATH|%s|g' %s",
+				daggerJsonPath, projectFileName,
 			)})
 	}
 
@@ -246,6 +254,34 @@ func toPascalCase(name string) string {
 		return "DaggerModule"
 	}
 
+	return result
+}
+
+// getDaggerJsonPath calculates the relative path from the module source to dagger.json
+// based on the source subpath
+func getDaggerJsonPath(subPath string) string {
+	if subPath == "" || subPath == "." {
+		// dagger.json is in the same directory
+		return "dagger.json"
+	}
+	
+	// Count the number of directory levels in subPath
+	// e.g., "src" has 1 level -> "../dagger.json"
+	//       "src/mymodule" has 2 levels -> "../../dagger.json"
+	depth := 1 // Start with 1 for the first directory component
+	for _, char := range subPath {
+		if char == '/' || char == '\\' {
+			depth++
+		}
+	}
+	
+	// Build the relative path with correct number of "../"
+	result := ""
+	for i := 0; i < depth; i++ {
+		result += "../"
+	}
+	result += "dagger.json"
+	
 	return result
 }
 

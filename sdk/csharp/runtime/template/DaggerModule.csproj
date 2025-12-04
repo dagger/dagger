@@ -57,4 +57,10 @@
     <Analyzer Include="sdk/analyzers/dotnet/cs/Dagger.SDK.Analyzers.dll" />
     <Analyzer Include="sdk/analyzers/dotnet/cs/Dagger.SDK.CodeFixes.dll" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Include dagger.json as additional file for module configuration analyzers -->
+    <!-- This path is automatically set during 'dagger init' based on the --source flag -->
+    <AdditionalFiles Include="DAGGER_JSON_PATH" />
+  </ItemGroup>
 </Project>

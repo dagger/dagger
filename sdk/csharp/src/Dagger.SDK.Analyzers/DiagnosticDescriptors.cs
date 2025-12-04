@@ -105,4 +105,36 @@ public static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "The [DefaultPath] attribute is only valid on parameters of type Directory or File. The Dagger engine validates this at runtime and will reject functions with [DefaultPath] on other parameter types."
     );
+
+    public static readonly DiagnosticDescriptor MissingDaggerJson = new(
+        id: "DAGGER011",
+        title: "Dagger module requires dagger.json configuration file",
+        messageFormat: "Dagger module with [Object] class requires dagger.json configuration file (searched up to '{0}')",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Dagger modules require a dagger.json configuration file in the module directory or a parent directory. Run 'dagger init' to create one.",
+        customTags: WellKnownDiagnosticTags.CompilationEnd
+    );
+
+    public static readonly DiagnosticDescriptor ModuleClassNameMismatch = new(
+        id: "DAGGER012",
+        title: "Module must have a root class matching dagger.json module name",
+        messageFormat: "At least one [Object] class must be named '{0}' to match dagger.json module name '{1}' and serve as the module root",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Dagger modules require one class with [Object] attribute to be named according to the module name in dagger.json. This class serves as the module root. For example, 'my-module' requires a class named 'MyModule'."
+    );
+
+    public static readonly DiagnosticDescriptor ProjectFileNameMismatch = new(
+        id: "DAGGER013",
+        title: "Project file name should match dagger.json module name",
+        messageFormat: "Project file should be named '{0}.csproj' to match dagger.json module name '{1}' (currently '{2}.csproj')",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The .csproj file name should match the PascalCase transformation of the module name in dagger.json. Renaming requires closing and reopening the solution.",
+        customTags: WellKnownDiagnosticTags.CompilationEnd
+    );
 }

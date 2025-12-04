@@ -151,9 +151,205 @@ public string Version { get; set; }
 public string Version { get; set; }
 ```
 
+### DAGGER008: Invalid Cache value in Function attribute
+
+**Severity:** Warning
+
+Validates that the `Cache` property in `[Function]` attribute uses valid values.
+
+```csharp
+// ❌ Error: Invalid cache value
+[Function(Cache = "invalid")]
+public string Hello() => "world";
+
+// ✅ Correct: Use "never", "session", or duration strings
+[Function(Cache = "never")]
+[Function(Cache = "session")]
+[Function(Cache = "5m")]    // 5 minutes
+[Function(Cache = "1h")]    // 1 hour
+[Function(Cache = "30s")]   // 30 seconds
+[Function(Cache = "2h30m")] // 2 hours 30 minutes
+public string Hello() => "world";
+```
+
+### DAGGER009: [Ignore] attribute can only be applied to Directory parameters
+
+**Severity:** Error
+
+Prevents using `[Ignore]` attribute on non-Directory parameters, which would cause runtime errors.
+
+```csharp
+// ❌ Error: [Ignore] only valid on Directory parameters
+[Function]
+public string Build([Ignore("*.log")] string name) { }
+
+// ✅ Correct
+[Function]
+public async Task Build(
+    [Ignore("*.log")]
+    Directory source) { }
+```
+
+### DAGGER010: [DefaultPath] attribute can only be applied to Directory or File parameters
+
+**Severity:** Error
+
+Prevents using `[DefaultPath]` attribute on invalid parameter types.
+
+```csharp
+// ❌ Error: [DefaultPath] only valid on Directory/File parameters
+[Function]
+public string Build([DefaultPath(".")] string name) { }
+
+// ✅ Correct
+[Function]
+public async Task Build(
+    [DefaultPath(".")]
+    Directory source) { }
+```
+
+### DAGGER011: Dagger module requires dagger.json configuration file
+
+**Severity:** Warning
+
+Ensures that Dagger modules have a required `dagger.json` configuration file.
+
+```csharp
+// ❌ Warning: No dagger.json found
+[Object]
+public class MyModule { }
+```
+
+**Resolution:** Run `dagger init --sdk=csharp` to create a `dagger.json` file for your module.
+
+### DAGGER012: Module class name should match dagger.json module name
+
+**Severity:** Error  
+**Code Fix:** ✅ Available (renames class)
+
+Ensures the module class name matches the PascalCase transformation of the `dagger.json` module name.
+
+```csharp
+// dagger.json: { "name": "my-module" }
+
+// ❌ Error: Class name doesn't match
+[Object]
+public class SomethingElse { }
+
+// ✅ Correct: Matches PascalCase of "my-module"
+[Object]
+public class MyModule { }
+```
+
+**Naming Convention:**
+- `my-module` → `MyModule`
+- `api-gateway` → `ApiGateway`
+- `my_service` → `MyService`
+- `hello-world` → `HelloWorld`
+
+**Code Fix:** Use the 💡 icon to automatically rename the class and update all references.
+
+### DAGGER013: Project file name should match dagger.json module name
+
+**Severity:** Warning
+
+Recommends that the `.csproj` file name matches the module name from `dagger.json`.
+
+```csharp
+// dagger.json: { "name": "my-module" }
+
+// ❌ Warning: Project file is "WrongName.csproj"
+// ✅ Correct: Project file should be "MyModule.csproj"
+```
+
+**Resolution:** Manually rename the `.csproj` file to match the expected name. This requires closing and reopening the solution in your IDE.
+
 ## Usage
 
 The analyzers are automatically included when you reference the `Dagger.SDK` NuGet package. They run in the IDE (Visual Studio, VS Code with C# extension, Rider) and provide real-time feedback as you write your Dagger modules.
+
+### Automatic Configuration
+
+When you run `dagger init --sdk=csharp`, the generated `.csproj` file automatically includes the correct path to `dagger.json`:
+
+```xml
+<ItemGroup>
+  <!-- Path is automatically calculated based on --source flag -->
+  <AdditionalFiles Include="dagger.json" />
+  <!-- or "../dagger.json" or "../../dagger.json" etc. -->
+</ItemGroup>
+```
+
+This enables the module configuration analyzers (DAGGER011-013) to validate your module structure without any manual setup. The path is determined during initialization based on your module's source directory relative to `dagger.json`.
+
+## Configuration
+
+You can customize analyzer severity and behavior using the `.editorconfig` file that's automatically created with your module. The file includes commented examples for all Dagger analyzers.
+
+### Individual Rule Configuration
+
+Configure specific rules by their diagnostic ID:
+
+```ini
+[*.cs]
+# Disable a specific analyzer
+dotnet_diagnostic.DAGGER001.severity = none
+
+# Make a suggestion into a warning
+dotnet_diagnostic.DAGGER002.severity = warning
+
+# Make a warning into an error (blocks build)
+dotnet_diagnostic.DAGGER011.severity = error
+```
+
+### Category-Level Configuration
+
+Configure all Dagger analyzers at once:
+
+```ini
+[*.cs]
+# Make all Dagger analyzers warnings by default
+dotnet_analyzer_diagnostic.category-Dagger.severity = warning
+
+# Then override specific rules as needed
+dotnet_diagnostic.DAGGER012.severity = error
+```
+
+### Severity Levels
+
+| Severity | Description | IDE Behavior | Build Behavior |
+|----------|-------------|--------------|----------------|
+| `none` | Completely disabled | Not shown | Not reported |
+| `silent` | Runs but hidden | Not shown (code fixes still available) | Not reported |
+| `suggestion` | Low priority | Gray dots/underlines | Reported in Messages |
+| `warning` | Medium priority | Green squiggles | Build warnings |
+| `error` | High priority | Red squiggles | Build errors (fails build) |
+
+### Common Configuration Scenarios
+
+**Disable all documentation analyzers:**
+```ini
+[*.cs]
+dotnet_diagnostic.DAGGER002.severity = none  # Function documentation
+dotnet_diagnostic.DAGGER003.severity = none  # Parameter documentation
+dotnet_diagnostic.DAGGER006.severity = none  # Class documentation
+dotnet_diagnostic.DAGGER007.severity = none  # Field documentation
+```
+
+**Make module naming errors strict:**
+```ini
+[*.cs]
+dotnet_diagnostic.DAGGER012.severity = error  # Class name mismatch
+dotnet_diagnostic.DAGGER013.severity = error  # Project name mismatch
+```
+
+**Disable all Dagger analyzers:**
+```ini
+[*.cs]
+dotnet_analyzer_diagnostic.category-Dagger.severity = none
+```
+
+For more information, see Microsoft's [EditorConfig documentation](https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/configuration-files).
 
 ## Configuration
 
