@@ -13,10 +13,12 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type directorySchema struct{}
@@ -308,7 +310,17 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Files and directories that existed before and were updated in the newer directory.`),
 		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesetRemovedPaths)).
 			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
+		dagql.NodeFunc("withChangeset", s.changesetWithChangeset).
+			Doc(`Add changes to an existing changeset`,
+				`By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted
+				using onConflict argument`).
+			Args(
+				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
+				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
+			),
 	}.Install(srv)
+
+	ChangesetMergeConflictEnum.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -1092,6 +1104,183 @@ func (s *directorySchema) exportLegacy(ctx context.Context, parent dagql.ObjectR
 		return false, err
 	}
 	return true, nil
+}
+
+type ChangesetMergeConflict string
+
+var ChangesetMergeConflictEnum = dagql.NewEnum[ChangesetMergeConflict]()
+
+var (
+	FailOnMergeConflict = ChangesetMergeConflictEnum.Register("FAIL",
+		`A conflict causes the merge operation to fail`)
+	SkipOnMergeConflict = ChangesetMergeConflictEnum.Register("SKIP",
+		`A conflict is skipped, the merge operation continues`)
+	PreferSelfOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_SELF",
+		`The conflict is resolved by applying the version of the calling changeset`)
+	PreferOtherOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_OTHER",
+		`The conflict is resolved by applying the version of the other changeset`)
+)
+
+func (proto ChangesetMergeConflict) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ChangesetMergeConflict",
+		NonNull:   true,
+	}
+}
+
+func (proto ChangesetMergeConflict) TypeDescription() string {
+	return "Mediatypes to use in published or exported image metadata."
+}
+
+func (proto ChangesetMergeConflict) Decoder() dagql.InputDecoder {
+	return ChangesetMergeConflictEnum
+}
+
+func (proto ChangesetMergeConflict) ToLiteral() call.Literal {
+	return ChangesetMergeConflictEnum.Literal(proto)
+}
+
+type changesetWithChangesetArgs struct {
+	Changes    dagql.ID[*core.Changeset]
+	OnConflict ChangesetMergeConflict `default:"FAIL"`
+}
+
+func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithChangesetMergeConflict {
+	var conflictStrategy core.WithChangesetMergeConflict
+	switch onConflict {
+	case SkipOnMergeConflict:
+		conflictStrategy = core.SkipOnConflict
+	case PreferSelfOnMergeConflict:
+		conflictStrategy = core.PreferSelfOnConflict
+	case PreferOtherOnMergeConflict:
+		conflictStrategy = core.PreferOtherOnConflict
+	case FailOnMergeConflict:
+		fallthrough
+	default:
+		conflictStrategy = core.FailOnConflict
+	}
+	return conflictStrategy
+}
+
+func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (res dagql.ObjectResult[*core.Changeset], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	changes, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+
+	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
+
+	parentChanges := parent.Self()
+	additionalChanges := changes.Self()
+
+	parentPaths, err := parentChanges.ComputePaths(ctx)
+	if err != nil {
+		return res, err
+	}
+	additionalPaths, err := additionalChanges.ComputePaths(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	conflicts := parentPaths.CheckConflicts(additionalPaths)
+	hasConflicts := !conflicts.IsEmpty()
+
+	if hasConflicts {
+		if args.OnConflict == FailOnMergeConflict {
+			return res, conflicts.Error()
+		}
+
+		parentAfterSelector, additionalAfterSelector, err := core.AfterSelectorsForConflictResolution(
+			ctx,
+			srv,
+			parentChanges,
+			additionalChanges,
+			conflicts,
+			onConflictStrategy)
+		if err != nil {
+			return res, err
+		}
+
+		// apply modifications to the after directories to fix conflicts
+		// and refresh the changeset with those new after directories
+
+		if err := srv.Select(ctx, parentChanges.After, &parent,
+			append(parentAfterSelector, dagql.Selector{
+				Field: "changes",
+				Args: []dagql.NamedInput{
+					{Name: "from", Value: dagql.NewID[*core.Directory](parentChanges.Before.ID())},
+				},
+			})...,
+		); err != nil {
+			return res, err
+		}
+
+		if err := srv.Select(ctx, additionalChanges.After, &changes,
+			append(additionalAfterSelector, dagql.Selector{
+				Field: "changes",
+				Args: []dagql.NamedInput{
+					{Name: "from", Value: dagql.NewID[*core.Directory](additionalChanges.Before.ID())},
+				},
+			})...,
+		); err != nil {
+			return res, err
+		}
+	}
+
+	// Now all possible conflicts have been resolved according to the strategy,
+	// merge the two resulting changesets in one:
+	// - before state is the combination of the two before directories from both changesets
+	var before dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &before,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](parentChanges.Before.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](additionalChanges.Before.ID())},
+			},
+		},
+	); err != nil {
+		return res, err
+	}
+
+	// - after state is the before state (combination of both) on which we are applying both set of changes
+	var after dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, before, &after,
+		dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*core.Changeset](parent.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*core.Changeset](changes.ID())},
+			},
+		},
+	); err != nil {
+		return res, err
+	}
+
+	// generate the new changeset merging the two changesets, with conflict resolved
+	newChanges, err := core.NewChangeset(ctx, before, after)
+	if err != nil {
+		return res, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, newChanges)
 }
 
 type dirDockerBuildArgs struct {
