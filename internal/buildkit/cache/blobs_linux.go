@@ -22,7 +22,7 @@ import (
 
 var emptyDesc = ocispecs.Descriptor{}
 
-// computeOverlayBlob provides overlayfs-specialized method to compute
+// tryComputeOverlayBlob provides overlayfs-specialized method to compute
 // diff between lower and upper snapshot. If the passed mounts cannot
 // be computed (e.g. because the mounts aren't overlayfs), it returns
 // an error.
