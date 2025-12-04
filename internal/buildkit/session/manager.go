@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -135,14 +134,12 @@ func (sm *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[strin
 	for _, m := range opts[headerSessionMethod] {
 		c.supported[strings.ToLower(m)] = struct{}{}
 	}
-	fmt.Printf("ACB adding session %v\n", id)
 	sm.sessions[id] = c
 	sm.updateCondition.Broadcast()
 	sm.mu.Unlock()
 
 	defer func() {
 		sm.mu.Lock()
-		fmt.Printf("ACB deleting session %v\n", id)
 		delete(sm.sessions, id)
 		sm.mu.Unlock()
 	}()

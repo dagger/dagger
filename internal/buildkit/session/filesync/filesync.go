@@ -362,7 +362,6 @@ func CopyToCaller(ctx context.Context, fs fsutil.FS, id int, c session.Caller, p
 		return errors.WithStack(err)
 	}
 
-	fmt.Printf("ACB made it here1\n")
 	return sendDiffCopy(cc, fs, progress)
 }
 

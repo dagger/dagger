@@ -9,14 +9,17 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/containerd/continuity/fs"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/exporter/local"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 
 	"github.com/dagger/dagger/engine"
@@ -160,6 +163,64 @@ func (c *Client) LocalDirExport(
 	if descRef != nil {
 		descRef.Release()
 	}
+	return nil
+}
+
+func (c *Client) LocalDirExportDagOp(
+	ctx context.Context,
+	srcPath string,
+	destPath string,
+	merge bool,
+	removePaths []string,
+) (rerr error) {
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
+	bklog.G(ctx).Debug("exporting local dir")
+	defer func() {
+		lg := bklog.G(ctx)
+		if rerr != nil {
+			lg = lg.WithError(rerr)
+		}
+		lg.Trace("finished exporting local dir")
+	}()
+
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return err
+	}
+	defer cancel(errors.New("local dir export done"))
+
+	outputFS, err := fsutil.NewFS(srcPath)
+	if err != nil {
+		return err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	timeoutCtx, cancel := context.WithCancelCause(ctx)
+	timeoutCtx, _ = context.WithTimeoutCause(timeoutCtx, 5*time.Second, context.DeadlineExceeded) // FIXME errors.WithStack(context.DeadlineExceeded)
+	defer cancel(context.Canceled)                                                                // FIXME errors.WithStack(context.Canceled)
+
+	caller, err := c.SessionManager.Get(timeoutCtx, clientMetadata.ClientID, false)
+	if err != nil {
+		return err
+	}
+
+	destPath = path.Clean(destPath)
+	ctx = engine.LocalExportOpts{
+		Path:        destPath,
+		Merge:       merge,
+		RemovePaths: removePaths,
+	}.AppendToOutgoingContext(ctx)
+
+	lbl := "copying files"
+	progress := local.NewProgressHandler(ctx, lbl)
+	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, progress); err != nil {
+		return err
+	}
+
 	return nil
 }
 

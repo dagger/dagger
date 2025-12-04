@@ -17,16 +17,12 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
-	"github.com/dagger/dagger/engine"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	"github.com/dagger/dagger/internal/buildkit/exporter/local"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/fsutil"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/patternmatcher"
@@ -1633,33 +1629,6 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 }
 
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
-	timeoutCtx, cancel := context.WithCancelCause(ctx)
-	//FIXME timeoutCtx, _ = context.WithTimeoutCause(timeoutCtx, 5*time.Second, errors.WithStack(context.DeadlineExceeded))
-	//FIXME defer cancel(errors.WithStack(context.Canceled))
-	timeoutCtx, _ = context.WithTimeoutCause(timeoutCtx, 30*time.Second, context.DeadlineExceeded) // TODO lower back to 5 seconds
-	defer cancel(context.Canceled)
-
-	//dirRef, err := getRefOrEvaluate(ctx, dir)
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to get directory ref: %w", err)
-	//}
-
-	root, closer, err := mountObj(ctx, dir, allowNilBuildkitSession)
-	if err != nil {
-		return fmt.Errorf("failed to mount directory: %w", err)
-	}
-	defer closer(false)
-
-	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
-	defer telemetry.EndWithCause(span, &rerr)
-
-	fmt.Printf("ACB mounted %s\n", root)
-
-	outputFS, err := fsutil.NewFS(root)
-	if err != nil {
-		return err
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -1669,55 +1638,21 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
+	defer telemetry.EndWithCause(span, &rerr)
+
+	root, closer, err := mountObj(ctx, dir, allowNilBuildkitSession)
+	if err != nil {
+		return fmt.Errorf("failed to mount directory: %w", err)
+	}
+	defer closer(false)
+
+	root, err = containerdfs.RootPath(root, dir.Dir)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("ACB calling Get for session %v\n", clientMetadata.SessionID)
-	caller, err := bk.SessionManager.Get(timeoutCtx, clientMetadata.SessionID, false)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("ACB made it here0\n")
-	lbl := "copying files"
-	progress := local.NewProgressHandler(ctx, lbl)
-	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, progress); err != nil {
-		return err
-	}
-
-	return nil
-
-	//query, err := CurrentQuery(ctx)
-	//if err != nil {
-	//	return err
-	//}
-	//bk, err := query.Buildkit(ctx)
-	//if err != nil {
-	//	return fmt.Errorf("failed to get buildkit client: %w", err)
-	//}
-
-	//var defPB *pb.Definition
-	//if dir.Dir != "" && dir.Dir != "/" {
-	//	src, err := dir.State()
-	//	if err != nil {
-	//		return err
-	//	}
-	//	src = llb.Scratch().File(llb.Copy(src, dir.Dir, ".", &llb.CopyInfo{
-	//		CopyDirContentsOnly: true,
-	//	}))
-
-	//	def, err := src.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
-	//	if err != nil {
-	//		return err
-	//	}
-	//	defPB = def.ToPB()
-	//} else {
-	//	defPB = dir.LLB
-	//}
-
-	//return bk.LocalDirExport(ctx, defPB, destPath, merge, nil)
+	return bk.LocalDirExportDagOp(ctx, root, destPath, merge, nil)
 }
 
 // Root removes any relative path from the directory.
