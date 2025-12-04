@@ -232,7 +232,7 @@ func debugTrace(ctx context.Context, msg string, args ...any) {
 }
 
 // Walk the tree and return all check nodes, with include and exclude filters applied.
-func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string, all bool) ([]*ModTreeNode, error) {
 	var checks []*ModTreeNode
 	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) (bool, error) {
 		if len(include) > 0 {
@@ -252,6 +252,12 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 		if n.IsCheck {
 			checks = append(checks, n)
 			return false, nil // checks are always leaves - no point in trying to walk
+		}
+		if !all {
+			// If all=false, don't walk dynamic object lists (they're more expensive)
+			if namedObjectListType := n.NamedObjectListType(ctx); namedObjectListType != nil {
+				return false, nil
+			}
 		}
 		return true, nil
 	})

@@ -24,7 +24,7 @@ type CheckGroup struct {
 	Checks []*Check     `json:"checks"`
 }
 
-func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGroup, error) {
+func NewCheckGroup(ctx context.Context, mod *Module, include []string, all bool) (*CheckGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -36,7 +36,7 @@ func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGr
 			exclude = append(exclude, toolchainName+":"+ignorePattern)
 		}
 	}
-	checkNodes, err := rootNode.RollupChecks(ctx, include, exclude)
+	checkNodes, err := rootNode.RollupChecks(ctx, include, exclude, all)
 	if err != nil {
 		return nil, err
 	}
