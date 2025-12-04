@@ -13,9 +13,7 @@ import (
 	"github.com/dagger/dagger/internal/cloud"
 )
 
-var (
-	TLSHandshakeTimeout = 15 * time.Second
-)
+var TLSHandshakeTimeout = 15 * time.Second
 
 func init() {
 	register("dagger-cloud", &daggerCloudDriver{})
@@ -80,9 +78,12 @@ func (d *daggerCloudDriver) Available(ctx context.Context) (bool, error) {
 }
 
 func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *DriverOpts) (Connector, error) {
-	client, err := cloud.NewClient(ctx, opts.CloudBasicAuthToken)
-	if err != nil {
+	if opts.CloudAuth == nil {
 		return nil, errors.New("please run `dagger login <org>` first or configure a DAGGER_CLOUD_TOKEN")
+	}
+	client, err := cloud.NewClient(ctx, opts.CloudAuth)
+	if err != nil {
+		return nil, err
 	}
 
 	var (
