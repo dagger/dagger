@@ -5,7 +5,7 @@ using Dagger;
 /// These attributes customize how Directory parameters are loaded and filtered.
 /// </summary>
 [Object]
-public class AttributesExamples
+public class AttributesExample
 {
     /// <summary>
     /// Demonstrates [DefaultPath] attribute.

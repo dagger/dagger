@@ -233,6 +233,9 @@ public class ModuleConfigurationAnalyzerTests
 
         var expected = new[]
         {
+            VerifyCS.Diagnostic(ModuleClassNameMismatch)
+                .WithSpan(11, 14, 11, 25)
+                .WithArguments("MyModule", "my-module"),
             VerifyCS.Diagnostic(ProjectFileNameMismatch)
                 .WithSpan(4, 14, 4, 22)
                 .WithArguments("MyModule", "my-module", "TestProject"),

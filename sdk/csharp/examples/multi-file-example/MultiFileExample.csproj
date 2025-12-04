@@ -42,9 +42,6 @@
     <!-- Exclude obj/bin to avoid duplicate auto-generated assembly attributes -->
     <Compile Include="**/*.cs" Exclude="**/obj/**;**/bin/**" />
     <!-- Suppress CS1591 (missing XML comments) only for vendored SDK files -->
-    <Compile Update="sdk/**/*.cs">
-      <NoWarn>CS1591,CS8669</NoWarn>
-    </Compile>
   </ItemGroup>
 
 

@@ -33,11 +33,7 @@ public class ModuleConfigurationAnalyzer : DiagnosticAnalyzer
             context.Options.AdditionalFiles
         );
 
-        // Collect all [Object] classes and check for module root in compilation-end
-        var objectClasses = new List<INamedTypeSymbol>();
-        var objectClassesLock = new object();
-
-        // Register symbol action to collect [Object] classes
+        // Register symbol action to check each [Object] class immediately
         context.RegisterSymbolAction(symbolContext =>
         {
             var namedType = (INamedTypeSymbol)symbolContext.Symbol;
@@ -50,87 +46,74 @@ public class ModuleConfigurationAnalyzer : DiagnosticAnalyzer
                     || IsAttributeType(attr, "Dagger", "Object")
                 );
 
-            if (hasObjectAttribute)
-            {
-                lock (objectClassesLock)
-                {
-                    objectClasses.Add(namedType);
-                }
+            if (!hasObjectAttribute)
+                return;
 
-                // If no dagger.json, report immediately
-                if (daggerConfig == null)
-                {
-                    var location = namedType.Locations.FirstOrDefault();
-                    if (location != null)
-                    {
-                        var projectDirectory = GetProjectDirectory(symbolContext.Compilation);
-                        var diagnostic = Diagnostic.Create(
-                            DiagnosticDescriptors.MissingDaggerJson,
-                            location,
-                            projectDirectory ?? "project directory"
-                        );
-                        symbolContext.ReportDiagnostic(diagnostic);
-                    }
-                }
+            var location = namedType.Locations.FirstOrDefault();
+            if (location == null)
+                return;
+
+            // DAGGER011: If no dagger.json, report immediately
+            if (daggerConfig == null)
+            {
+                var projectDirectory = GetProjectDirectory(symbolContext.Compilation);
+                var diagnostic = Diagnostic.Create(
+                    DiagnosticDescriptors.MissingDaggerJson,
+                    location,
+                    projectDirectory ?? "project directory"
+                );
+                symbolContext.ReportDiagnostic(diagnostic);
+                return; // Don't check further if no config
+            }
+
+            // DAGGER012: Check if this class name matches the expected module name
+            var expectedClassName = DaggerJsonReader.FormatName(daggerConfig.Name);
+            if (namedType.Name != expectedClassName)
+            {
+                var diagnostic = Diagnostic.Create(
+                    DiagnosticDescriptors.ModuleClassNameMismatch,
+                    location,
+                    expectedClassName,
+                    daggerConfig.Name
+                );
+                symbolContext.ReportDiagnostic(diagnostic);
             }
         }, SymbolKind.NamedType);
 
-        // Use compilation-end to determine if module root exists, then report on all classes if missing
+        // DAGGER013: Check project file name at compilation-end (only needs to run once)
         context.RegisterCompilationEndAction(compilationContext =>
         {
-            if (daggerConfig == null || objectClasses.Count == 0)
-            {
+            if (daggerConfig == null)
                 return;
-            }
 
             var expectedClassName = DaggerJsonReader.FormatName(daggerConfig.Name);
-
-            // Order classes by location for deterministic reporting
-            var orderedObjectClasses = objectClasses
-                .Where(cls => cls.Locations.FirstOrDefault() != null)
-                .OrderBy(cls => cls.Locations[0].SourceTree?.FilePath ?? string.Empty)
-                .ThenBy(cls => cls.Locations[0].SourceSpan.Start)
-                .ToList();
-
-            // Check if at least one [Object] class matches the expected module root name
-            var hasModuleRoot = orderedObjectClasses.Any(cls => cls.Name == expectedClassName);
-
-            if (!hasModuleRoot)
-            {
-                // No class matches - warn on all [Object] classes
-                foreach (var objectClass in orderedObjectClasses)
-                {
-                    var location = objectClass.Locations.FirstOrDefault();
-                    if (location != null)
-                    {
-                        var diagnostic = Diagnostic.Create(
-                            DiagnosticDescriptors.ModuleClassNameMismatch,
-                            location,
-                            expectedClassName,
-                            daggerConfig.Name
-                        );
-                        compilationContext.ReportDiagnostic(diagnostic);
-                    }
-                }
-            }
-
-            // Check project file name (report once on first [Object] class)
             var assemblyName = compilationContext.Compilation.AssemblyName;
-            if (!string.IsNullOrEmpty(assemblyName) && assemblyName != expectedClassName)
+            
+            if (string.IsNullOrEmpty(assemblyName) || assemblyName == expectedClassName)
+                return;
+
+            // Find any [Object] class to report on
+            var objectClass = compilationContext.Compilation.GetSymbolsWithName(
+                _ => true,
+                SymbolFilter.Type
+            )
+            .OfType<INamedTypeSymbol>()
+            .FirstOrDefault(t => t.GetAttributes().Any(attr =>
+                IsAttributeType(attr, "Dagger", "ObjectAttribute")
+                || IsAttributeType(attr, "Dagger", "Object")
+            ));
+
+            var location = objectClass?.Locations.FirstOrDefault();
+            if (location != null)
             {
-                var firstObjectClass = orderedObjectClasses.FirstOrDefault();
-                var location = firstObjectClass?.Locations.FirstOrDefault();
-                if (location != null)
-                {
-                    var diagnostic = Diagnostic.Create(
-                        DiagnosticDescriptors.ProjectFileNameMismatch,
-                        location,
-                        expectedClassName,
-                        daggerConfig.Name,
-                        assemblyName
-                    );
-                    compilationContext.ReportDiagnostic(diagnostic);
-                }
+                var diagnostic = Diagnostic.Create(
+                    DiagnosticDescriptors.ProjectFileNameMismatch,
+                    location,
+                    expectedClassName,
+                    daggerConfig.Name,
+                    assemblyName
+                );
+                compilationContext.ReportDiagnostic(diagnostic);
             }
         });
     }

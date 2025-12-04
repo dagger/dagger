@@ -45,32 +45,62 @@ for module in "${modules_to_process[@]}"; do
     fi
 done
 
-# Process base modules first
-for module in "${base_to_process[@]}"; do
+# Process base modules in parallel (they have no dependencies)
+process_base_module() {
+    local module=$1
     if [ ! -d "$module" ]; then
         echo "⚠ Module '$module' not found, skipping..."
-        echo ""
-        continue
+        return 1
     fi
+    
     echo "Processing base module: $module"
-    cd "$module"
+    cd "$module" || return 1
     
     if [ -d "sdk" ]; then
-        echo "  Deleting sdk folder..."
+        echo "  [$module] Deleting sdk folder..."
         rm -rf sdk
     fi
     
-    echo "  Running dagger develop..."
-    if dagger develop; then
-        echo "  ✓ Success"
+    echo "  [$module] Running dagger develop..."
+    if dagger develop > "../.dagger-develop-$module.log" 2>&1; then
+        echo "  [$module] ✓ Success"
+        rm -f "../.dagger-develop-$module.log"
+        cd ..
+        return 0
     else
-        echo "  ✗ Failed"
+        echo "  [$module] ✗ Failed - check .dagger-develop-$module.log"
+        cd ..
+        return 1
+    fi
+}
+
+export -f process_base_module
+
+if [ ${#base_to_process[@]} -gt 0 ]; then
+    echo "Running ${#base_to_process[@]} base modules in parallel..."
+    echo ""
+    
+    # Run base modules in parallel using background jobs
+    pids=()
+    for module in "${base_to_process[@]}"; do
+        process_base_module "$module" &
+        pids+=("$!")
+    done
+    
+    # Wait for all background jobs and check exit codes
+    failed=0
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            failed=1
+        fi
+    done
+    
+    echo ""
+    if [ $failed -ne 0 ]; then
+        echo "⚠ Some base modules failed" >&2
         exit 1
     fi
-    
-    cd ..
-    echo ""
-done
+fi
 
 # Process consumer modules
 for module in "${consumer_to_process[@]}"; do

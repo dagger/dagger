@@ -40,6 +40,7 @@ public class DefaultsExample
         /// <summary>
         ///
         /// </summary>
+        [EnumValue(Deprecated = "for some reason", Description = "Use Fast instead"  )]
         None,
         /// <summary>
         ///

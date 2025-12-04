@@ -111,7 +111,7 @@ public static class DiagnosticDescriptors
         title: "Dagger module requires dagger.json configuration file",
         messageFormat: "Dagger module with [Object] class requires dagger.json configuration file (searched up to '{0}')",
         category: Category,
-        defaultSeverity: DiagnosticSeverity.Error,
+        defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "Dagger modules require a dagger.json configuration file in the module directory or a parent directory. Run 'dagger init' to create one."
     );
@@ -119,7 +119,7 @@ public static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor ModuleClassNameMismatch = new(
         id: "DAGGER012",
         title: "Module must have a root class matching dagger.json module name",
-        messageFormat: "At least one [Object] class must be named '{0}' to match dagger.json module name '{1}' and serve as the module root",
+        messageFormat: "One [Object] class must be named '{0}' to match dagger.json module name '{1}' and serve as the module root",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
