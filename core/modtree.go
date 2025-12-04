@@ -26,13 +26,13 @@ type ModTreeNode struct {
 	IsCheck     bool
 }
 
-func (n *ModTreeNode) Path() []string {
-	if n.Parent == nil {
+func (node *ModTreeNode) Path() []string {
+	if node.Parent == nil {
 		return nil
 	}
 	var path []string
-	path = append(path, n.Parent.Path()...)
-	path = append(path, n.Name)
+	path = append(path, node.Parent.Path()...)
+	path = append(path, node.Name)
 	return path
 }
 
@@ -56,25 +56,25 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 	}, nil
 }
 
-func (n *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
-	if n.IsCheck {
-		return n.runLeafCheck(ctx)
+func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
+	if node.IsCheck {
+		return node.runLeafCheck(ctx)
 	}
-	children, err := n.Children(ctx)
+	children, err := node.Children(ctx)
 	if err != nil {
 		return err
 	}
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, child := range children {
 		if len(include) > 0 {
-			if match, err := n.Match(include); err != nil {
+			if match, err := node.Match(include); err != nil {
 				return err
 			} else if !match {
 				continue
 			}
 		}
 		if len(exclude) > 0 {
-			if match, err := n.Match(exclude); err != nil {
+			if match, err := node.Match(exclude); err != nil {
 				return err
 			} else if match {
 				continue
@@ -87,13 +87,13 @@ func (n *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) e
 	return jobs.Run(ctx)
 }
 
-func (n *ModTreeNode) runLeafCheck(ctx context.Context) error {
-	ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
+func (node *ModTreeNode) runLeafCheck(ctx context.Context) error {
+	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
 		telemetry.Reveal(),
 		trace.WithAttributes(
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-			attribute.String(telemetry.CheckNameAttr, n.PathString()),
+			attribute.String(telemetry.CheckNameAttr, node.PathString()),
 		),
 	)
 	var checkErr error
@@ -106,12 +106,12 @@ func (n *ModTreeNode) runLeafCheck(ctx context.Context) error {
 	}()
 	checkErr = func() error {
 		var status dagql.AnyResult
-		if err := n.DagqlValue(ctx, &status); err != nil {
+		if err := node.DagqlValue(ctx, &status); err != nil {
 			return err
 		}
 		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
 			// If the check returns a syncable type, sync it
-			srv := n.DagqlServer
+			srv := node.DagqlServer
 			if syncField, has := obj.ObjectType().FieldSpec("sync", srv.View); has {
 				if !syncField.Args.HasRequired(srv.View) {
 					if err := srv.Select(
@@ -326,8 +326,8 @@ func fnPathContains(base, target string) (bool, error) {
 	return !strings.HasPrefix(rel, ".."), nil
 }
 
-func (n *ModTreeNode) PathString() string {
-	return strings.Join(n.Path(), ":")
+func (node *ModTreeNode) PathString() string {
+	return strings.Join(node.Path(), ":")
 }
 
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
