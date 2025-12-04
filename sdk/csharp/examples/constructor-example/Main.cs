@@ -27,7 +27,7 @@ public class ConstructorExample
         _greeting = greeting;
         _port = port;
         _enableLogging = enableLogging;
-        
+
         if (_enableLogging)
         {
             Console.Error.WriteLine($"[ConstructorExample] Initialized with greeting='{_greeting}', port={_port}");

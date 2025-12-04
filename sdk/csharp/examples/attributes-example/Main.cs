@@ -5,7 +5,7 @@ using Dagger;
 /// These attributes customize how Directory parameters are loaded and filtered.
 /// </summary>
 [Object]
-public class AttributesExample
+public class AttributesExamples
 {
     /// <summary>
     /// Demonstrates [DefaultPath] attribute.
@@ -14,7 +14,7 @@ public class AttributesExample
     /// <param name="source">Source directory to analyze</param>
     [Function]
     public async Task<string> AnalyzeSource(
-        [DefaultPath(".")] 
+        [DefaultPath(".")]
         Directory source)
     {
         var id = await source.IdAsync();

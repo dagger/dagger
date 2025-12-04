@@ -111,10 +111,9 @@ public static class DiagnosticDescriptors
         title: "Dagger module requires dagger.json configuration file",
         messageFormat: "Dagger module with [Object] class requires dagger.json configuration file (searched up to '{0}')",
         category: Category,
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Dagger modules require a dagger.json configuration file in the module directory or a parent directory. Run 'dagger init' to create one.",
-        customTags: WellKnownDiagnosticTags.CompilationEnd
+        description: "Dagger modules require a dagger.json configuration file in the module directory or a parent directory. Run 'dagger init' to create one."
     );
 
     public static readonly DiagnosticDescriptor ModuleClassNameMismatch = new(
@@ -136,5 +135,15 @@ public static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "The .csproj file name should match the PascalCase transformation of the module name in dagger.json. Renaming requires closing and reopening the solution.",
         customTags: WellKnownDiagnosticTags.CompilationEnd
+    );
+
+    public static readonly DiagnosticDescriptor CustomReturnTypeMissingObjectAttribute = new(
+        id: "DAGGER014",
+        title: "Custom return type must have [Object] attribute",
+        messageFormat: "Return type '{0}' must be decorated with [Object] attribute to be used as a Dagger function return type",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Custom types returned from [Function] methods must be decorated with [Object] and have their properties marked with [Field]. This is required for Dagger's reflection-based serialization."
     );
 }

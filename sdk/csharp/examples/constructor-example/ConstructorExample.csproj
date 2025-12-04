@@ -41,6 +41,10 @@
     <!-- Explicitly include all .cs files (SDK automatic inclusion disabled) -->
     <!-- Exclude obj/bin to avoid duplicate auto-generated assembly attributes -->
     <Compile Include="**/*.cs" Exclude="**/obj/**;**/bin/**" />
+    <!-- Suppress CS1591 (missing XML comments) only for vendored SDK files -->
+    <Compile Update="sdk/**/*.cs">
+      <NoWarn>CS1591</NoWarn>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>
@@ -49,6 +53,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Include dagger.json as additional file for module configuration analyzers -->
+    <AdditionalFiles Include="dagger.json" />
+
     <!-- Include Dagger SDK Analyzers and Code Fixes for IDE support -->
     <Analyzer Include="sdk/analyzers/dotnet/cs/Dagger.SDK.Analyzers.dll" />
     <Analyzer Include="sdk/analyzers/dotnet/cs/Dagger.SDK.CodeFixes.dll" />
