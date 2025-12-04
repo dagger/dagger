@@ -13,9 +13,21 @@ public class DefaultsExample
     [Enum]
     public enum LogLevel
     {
+        /// <summary>
+        ///
+        /// </summary>
         Debug,
+        /// <summary>
+        ///
+        /// </summary>
         Info,
+        /// <summary>
+        ///
+        /// </summary>
         Warning,
+        /// <summary>
+        ///
+        /// </summary>
         Error
     }
 
@@ -25,8 +37,17 @@ public class DefaultsExample
     [Enum]
     public enum CompressionLevel
     {
+        /// <summary>
+        ///
+        /// </summary>
         None,
+        /// <summary>
+        ///
+        /// </summary>
         Fast,
+        /// <summary>
+        ///
+        /// </summary>
         Best
     }
 
@@ -73,17 +94,17 @@ public class DefaultsExample
         int? port = null)
     {
         var ctr = Dag.Container().From(image);
-        
+
         if (command != null && command.Length > 0)
         {
             ctr = ctr.WithExec(command);
         }
-        
+
         if (port.HasValue)
         {
             ctr = ctr.WithExposedPort(port.Value);
         }
-        
+
         return ctr;
     }
 

@@ -146,4 +146,14 @@ public static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "Custom types returned from [Function] methods must be decorated with [Object] and have their properties marked with [Field]. This is required for Dagger's reflection-based serialization."
     );
+
+    public static readonly DiagnosticDescriptor EnumMemberMissingEnumValueAttribute = new(
+        id: "DAGGER015",
+        title: "Enum member should have [EnumValue] attribute",
+        messageFormat: "Enum member '{0}' in enum '{1}' marked with [Enum] should have [EnumValue] attribute for metadata support",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "Enum members in enums marked with [Enum] should have the [EnumValue] attribute to provide descriptions and deprecation information."
+    );
 }

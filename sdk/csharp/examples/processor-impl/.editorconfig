@@ -19,6 +19,8 @@ trim_trailing_whitespace = true
 # These files should never be manually edited
 [sdk/**]
 generated_code = true
+dotnet_diagnostic.CS8669.severity = none
+dotnet_diagnostic.CS1591.severity = none
 
 # C# files
 [*.cs]

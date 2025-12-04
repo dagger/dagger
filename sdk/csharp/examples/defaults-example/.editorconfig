@@ -19,6 +19,8 @@ trim_trailing_whitespace = true
 # These files should never be manually edited
 [sdk/**]
 generated_code = true
+dotnet_diagnostic.CS8669.severity = none
+dotnet_diagnostic.CS1591.severity = none
 
 # C# files
 [*.cs]
@@ -94,6 +96,14 @@ indent_size = 4
 # DAGGER013: Project file name should match dagger.json module name
 # Default: Warning
 # dotnet_diagnostic.DAGGER013.severity = warning
+
+# DAGGER014: Custom return type must have [Object] attribute
+# Default: Error
+# dotnet_diagnostic.DAGGER014.severity = error
+
+# DAGGER015: Enum member should have [EnumValue] attribute
+# Default: Info
+# dotnet_diagnostic.DAGGER015.severity = suggestion
 
 # ========================================
 # Configure all Dagger analyzers at once
