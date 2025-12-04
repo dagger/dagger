@@ -246,6 +246,100 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "PythonSdk":
 		switch fnName {
+		case "AddNewFile":
+			var parent PythonSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			var contents string
+			if inputArgs["contents"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["contents"]), &contents)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg contents", err))
+				}
+			}
+			(*PythonSdk).AddNewFile(&parent, name, contents)
+			return nil, nil
+		case "AddFile":
+			var parent PythonSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			var file *dagger.File
+			if inputArgs["file"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg file", err))
+				}
+			}
+			(*PythonSdk).AddFile(&parent, name, file)
+			return nil, nil
+		case "GetFile":
+			var parent PythonSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			return (*PythonSdk).GetFile(&parent, name), nil
+		case "UseUvLock":
+			var parent PythonSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PythonSdk).UseUvLock(&parent), nil
+		case "AddDirectory":
+			var parent PythonSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			var dir *dagger.Directory
+			if inputArgs["dir"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dir"]), &dir)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dir", err))
+				}
+			}
+			(*PythonSdk).AddDirectory(&parent, name, dir)
+			return nil, nil
+		case "Source":
+			var parent PythonSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PythonSdk).Source(&parent), nil
 		case "WithoutUserConfig":
 			var parent PythonSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -351,100 +445,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*PythonSdk).ExtraIndexURL(&parent), nil
-		case "AddNewFile":
-			var parent PythonSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			var contents string
-			if inputArgs["contents"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["contents"]), &contents)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg contents", err))
-				}
-			}
-			(*PythonSdk).AddNewFile(&parent, name, contents)
-			return nil, nil
-		case "AddFile":
-			var parent PythonSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			var file *dagger.File
-			if inputArgs["file"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg file", err))
-				}
-			}
-			(*PythonSdk).AddFile(&parent, name, file)
-			return nil, nil
-		case "GetFile":
-			var parent PythonSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			return (*PythonSdk).GetFile(&parent, name), nil
-		case "UseUvLock":
-			var parent PythonSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PythonSdk).UseUvLock(&parent), nil
-		case "AddDirectory":
-			var parent PythonSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			var dir *dagger.Directory
-			if inputArgs["dir"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["dir"]), &dir)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dir", err))
-				}
-			}
-			(*PythonSdk).AddDirectory(&parent, name, dir)
-			return nil, nil
-		case "Source":
-			var parent PythonSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PythonSdk).Source(&parent), nil
 		case "Codegen":
 			var parent PythonSdk
 			err = json.Unmarshal(parentJSON, &parent)

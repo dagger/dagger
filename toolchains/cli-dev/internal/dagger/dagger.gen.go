@@ -7985,6 +7985,42 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../..
 	return response, q.Execute(ctx)
 }
 
+// GoGenerateOpts contains options for Go.Generate
+type GoGenerateOpts struct {
+	Include []string // go (../../../../modules/go/main.go:651:2)
+
+	Exclude []string // go (../../../../modules/go/main.go:652:2)
+}
+
+// Generate the Dagger runtime for all Go modules
+func (r *Go) Generate(opts ...GoGenerateOpts) *Changeset { // go (../../../../modules/go/main.go:649:1)
+	q := r.query.Select("generate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Generate the Dagger runtime for a Go module
+func (r *Go) GenerateDaggerRuntime(start string) *Changeset { // go (../../../../modules/go/main.go:673:1)
+	q := r.query.Select("generateDaggerRuntime")
+	q = q.Arg("start", start)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // A unique identifier for this Go.
 func (r *Go) ID(ctx context.Context) (GoID, error) {
 	if r.id != nil {

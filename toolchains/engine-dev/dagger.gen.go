@@ -410,6 +410,216 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*EngineDev).TestTelemetry(&parent, ctx, run, skip, update, failfast, parallel, timeout, race, count, envFile, testVerbose)
+		case "Benchmark":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var run string
+			if inputArgs["run"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
+				}
+			}
+			var skip string
+			if inputArgs["skip"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
+				}
+			}
+			var pkg string
+			if inputArgs["pkg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
+				}
+			}
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+				}
+			}
+			var timeout string
+			if inputArgs["timeout"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
+				}
+			}
+			var race bool
+			if inputArgs["race"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
+				}
+			}
+			var count int
+			if inputArgs["count"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
+				}
+			}
+			var testVerbose bool
+			if inputArgs["testVerbose"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
+				}
+			}
+			var prewarm bool
+			if inputArgs["prewarm"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["prewarm"]), &prewarm)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg prewarm", err))
+				}
+			}
+			var discordWebhook *dagger.Secret
+			if inputArgs["discordWebhook"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["discordWebhook"]), &discordWebhook)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg discordWebhook", err))
+				}
+			}
+			var repo *dagger.GitRepository
+			if inputArgs["repo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
+				}
+			}
+			return nil, (*EngineDev).Benchmark(&parent, ctx, run, skip, pkg, failfast, timeout, race, count, testVerbose, prewarm, discordWebhook, repo)
+		case "BenchmarkDump":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var run string
+			if inputArgs["run"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
+				}
+			}
+			var skip string
+			if inputArgs["skip"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
+				}
+			}
+			var pkg string
+			if inputArgs["pkg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
+				}
+			}
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+				}
+			}
+			var timeout string
+			if inputArgs["timeout"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
+				}
+			}
+			var race bool
+			if inputArgs["race"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
+				}
+			}
+			var count int
+			if inputArgs["count"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
+				}
+			}
+			var testVerbose bool
+			if inputArgs["testVerbose"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
+				}
+			}
+			var route string
+			if inputArgs["route"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["route"]), &route)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg route", err))
+				}
+			}
+			var noFinal bool
+			if inputArgs["noFinal"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["noFinal"]), &noFinal)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg noFinal", err))
+				}
+			}
+			var delay string
+			if inputArgs["delay"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["delay"]), &delay)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg delay", err))
+				}
+			}
+			var interval string
+			if inputArgs["interval"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["interval"]), &interval)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg interval", err))
+				}
+			}
+			return (*EngineDev).BenchmarkDump(&parent, ctx, run, skip, pkg, failfast, timeout, race, count, testVerbose, route, noFinal, delay, interval)
+		case "LoadToDocker":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var docker *dagger.Socket
+			if inputArgs["docker"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["docker"]), &docker)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg docker", err))
+				}
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			var platform dagger.Platform
+			if inputArgs["platform"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
+				}
+			}
+			var gpuSupport bool
+			if inputArgs["gpuSupport"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
+				}
+			}
+			return (*EngineDev).LoadToDocker(&parent, ctx, docker, name, platform, gpuSupport)
 		case "NetworkCidr":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -690,216 +900,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*EngineDev).Publish(&parent, ctx, image, tag, dryRun, registryUsername, registryPassword)
-		case "Benchmark":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var run string
-			if inputArgs["run"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
-				}
-			}
-			var skip string
-			if inputArgs["skip"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
-				}
-			}
-			var pkg string
-			if inputArgs["pkg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
-				}
-			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
-				}
-			}
-			var timeout string
-			if inputArgs["timeout"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
-				}
-			}
-			var race bool
-			if inputArgs["race"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
-				}
-			}
-			var count int
-			if inputArgs["count"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
-				}
-			}
-			var testVerbose bool
-			if inputArgs["testVerbose"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
-				}
-			}
-			var prewarm bool
-			if inputArgs["prewarm"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["prewarm"]), &prewarm)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg prewarm", err))
-				}
-			}
-			var discordWebhook *dagger.Secret
-			if inputArgs["discordWebhook"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["discordWebhook"]), &discordWebhook)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg discordWebhook", err))
-				}
-			}
-			var repo *dagger.GitRepository
-			if inputArgs["repo"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
-				}
-			}
-			return nil, (*EngineDev).Benchmark(&parent, ctx, run, skip, pkg, failfast, timeout, race, count, testVerbose, prewarm, discordWebhook, repo)
-		case "BenchmarkDump":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var run string
-			if inputArgs["run"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
-				}
-			}
-			var skip string
-			if inputArgs["skip"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
-				}
-			}
-			var pkg string
-			if inputArgs["pkg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
-				}
-			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
-				}
-			}
-			var timeout string
-			if inputArgs["timeout"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
-				}
-			}
-			var race bool
-			if inputArgs["race"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
-				}
-			}
-			var count int
-			if inputArgs["count"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
-				}
-			}
-			var testVerbose bool
-			if inputArgs["testVerbose"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
-				}
-			}
-			var route string
-			if inputArgs["route"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["route"]), &route)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg route", err))
-				}
-			}
-			var noFinal bool
-			if inputArgs["noFinal"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["noFinal"]), &noFinal)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg noFinal", err))
-				}
-			}
-			var delay string
-			if inputArgs["delay"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["delay"]), &delay)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg delay", err))
-				}
-			}
-			var interval string
-			if inputArgs["interval"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["interval"]), &interval)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg interval", err))
-				}
-			}
-			return (*EngineDev).BenchmarkDump(&parent, ctx, run, skip, pkg, failfast, timeout, race, count, testVerbose, route, noFinal, delay, interval)
-		case "LoadToDocker":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var docker *dagger.Socket
-			if inputArgs["docker"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["docker"]), &docker)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg docker", err))
-				}
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			var platform dagger.Platform
-			if inputArgs["platform"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
-				}
-			}
-			var gpuSupport bool
-			if inputArgs["gpuSupport"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
-				}
-			}
-			return (*EngineDev).LoadToDocker(&parent, ctx, docker, name, platform, gpuSupport)
 		case "TestDump":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

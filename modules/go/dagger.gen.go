@@ -539,6 +539,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*Go).LintModule(&parent, ctx, mod)
+		case "Generate":
+			var parent Go
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var include []string
+			if inputArgs["include"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["include"]), &include)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg include", err))
+				}
+			}
+			var exclude []string
+			if inputArgs["exclude"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["exclude"]), &exclude)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg exclude", err))
+				}
+			}
+			return (*Go).Generate(&parent, ctx, include, exclude)
+		case "GenerateDaggerRuntime":
+			var parent Go
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var start string
+			if inputArgs["start"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["start"]), &start)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg start", err))
+				}
+			}
+			return (*Go).GenerateDaggerRuntime(&parent, ctx, start)
 		case "":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)

@@ -736,34 +736,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Gha).Workflow(&parent, name, pullRequestConcurrency, noDispatch, permissions, onIssueComment, onIssueCommentCreated, onIssueCommentEdited, onIssueCommentDeleted, onPullRequest, onPullRequestBranches, onPullRequestPaths, onPullRequestAssigned, onPullRequestUnassigned, onPullRequestLabeled, onPullRequestUnlabeled, onPullRequestOpened, onPullRequestEdited, onPullRequestClosed, onPullRequestReopened, onPullRequestSynchronize, onPullRequestConvertedToDraft, onPullRequestLocked, onPullRequestUnlocked, onPullRequestEnqueued, onPullRequestDequeued, onPullRequestMilestoned, onPullRequestDemilestoned, onPullRequestReadyForReview, onPullRequestReviewRequested, onPullRequestReviewRequestRemoved, onPullRequestAutoMergeEnabled, onPullRequestAutoMergeDisabled, onPush, onPushTags, onPushBranches, onPushPaths, onSchedule), nil
-		case "Generate":
-			var parent Gha
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var directory *dagger.Directory
-			if inputArgs["directory"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["directory"]), &directory)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg directory", err))
-				}
-			}
-			var asJson bool
-			if inputArgs["asJSON"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["asJSON"]), &asJson)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg asJSON", err))
-				}
-			}
-			var fileExtension string
-			if inputArgs["fileExtension"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["fileExtension"]), &fileExtension)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg fileExtension", err))
-				}
-			}
-			return (*Gha).Generate(&parent, directory, asJson, fileExtension), nil
 		case "Job":
 			var parent Gha
 			err = json.Unmarshal(parentJSON, &parent)
@@ -876,6 +848,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Gha).Job(&parent, name, command, condition, setupCommands, teardownCommands, publicToken, stopEngine, timeoutMinutes, debug, secrets, env, runner, module, daggerVersion, cloudEngine), nil
+		case "Generate":
+			var parent Gha
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var directory *dagger.Directory
+			if inputArgs["directory"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["directory"]), &directory)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg directory", err))
+				}
+			}
+			var asJson bool
+			if inputArgs["asJSON"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["asJSON"]), &asJson)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg asJSON", err))
+				}
+			}
+			var fileExtension string
+			if inputArgs["fileExtension"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["fileExtension"]), &fileExtension)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg fileExtension", err))
+				}
+			}
+			return (*Gha).Generate(&parent, directory, asJson, fileExtension), nil
 		case "":
 			var parent Gha
 			err = json.Unmarshal(parentJSON, &parent)

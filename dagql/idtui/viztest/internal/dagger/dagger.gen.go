@@ -299,9 +299,6 @@ type TerminalID string
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
 
-// The `VersionedGitID` scalar type represents an identifier for an object of type VersionedGit.
-type VersionedGitID string
-
 // The `VersionedID` scalar type represents an identifier for an object of type Versioned.
 type VersionedID string
 
@@ -788,15 +785,6 @@ func (r *Binding) AsVersioned() *Versioned {
 	q := r.query.Select("asVersioned")
 
 	return &Versioned{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type VersionedGit
-func (r *Binding) AsVersionedGit() *VersionedGit {
-	q := r.query.Select("asVersionedGit")
-
-	return &VersionedGit{
 		query: q,
 	}
 }
@@ -5505,30 +5493,6 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 // Declares a desired string output binding
 func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type VersionedGit in the environment
-func (r *Env) WithVersionedGitInput(name string, value *VersionedGit, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withVersionedGitInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired VersionedGit output to be assigned in the environment
-func (r *Env) WithVersionedGitOutput(name string, description string) *Env {
-	q := r.query.Select("withVersionedGitOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -11317,16 +11281,6 @@ func (r *Client) LoadVersionedFromID(id VersionedID) *Versioned {
 	}
 }
 
-// Load a VersionedGit from its ID.
-func (r *Client) LoadVersionedGitFromID(id VersionedGitID) *VersionedGit {
-	q := r.query.Select("loadVersionedGitFromID")
-	q = q.Arg("id", id)
-
-	return &VersionedGit{
-		query: q,
-	}
-}
-
 // Create a new module.
 func (r *Client) Module() *Module {
 	q := r.query.Select("module")
@@ -11450,14 +11404,6 @@ func (r *Client) Versioned() *Versioned { // versioned (https://github.com/dagge
 	q := r.query.Select("versioned")
 
 	return &Versioned{
-		query: q,
-	}
-}
-
-func (r *Client) VersionedGit() *VersionedGit { // versioned_git (https://github.com/dagger/dagger-test-modules/tree/0cabe03cc0a9079e738c92b2c589d81fd560011f/versioned/main.go#L3)
-	q := r.query.Select("versionedGit")
-
-	return &VersionedGit{
 		query: q,
 	}
 }
@@ -13055,80 +13001,6 @@ func (r *Versioned) UnmarshalJSON(bs []byte) error {
 		return err
 	}
 	*r = *dag.LoadVersionedFromID(VersionedID(id))
-	return nil
-}
-
-type VersionedGit struct { // versioned_git (https://github.com/dagger/dagger-test-modules/tree/0cabe03cc0a9079e738c92b2c589d81fd560011f/versioned/main.go#L3)
-	query *querybuilder.Selection
-
-	hello *string
-	id    *VersionedGitID
-}
-
-func (r *VersionedGit) WithGraphQLQuery(q *querybuilder.Selection) *VersionedGit {
-	return &VersionedGit{
-		query: q,
-	}
-}
-
-func (r *VersionedGit) Hello(ctx context.Context) (string, error) { // versioned_git (https://github.com/dagger/dagger-test-modules/tree/0cabe03cc0a9079e738c92b2c589d81fd560011f/versioned/main.go#L5)
-	if r.hello != nil {
-		return *r.hello, nil
-	}
-	q := r.query.Select("hello")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this VersionedGit.
-func (r *VersionedGit) ID(ctx context.Context) (VersionedGitID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response VersionedGitID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *VersionedGit) XXX_GraphQLType() string {
-	return "VersionedGit"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *VersionedGit) XXX_GraphQLIDType() string {
-	return "VersionedGitID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *VersionedGit) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *VersionedGit) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *VersionedGit) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadVersionedGitFromID(VersionedGitID(id))
 	return nil
 }
 
