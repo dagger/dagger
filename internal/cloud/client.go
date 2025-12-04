@@ -42,18 +42,19 @@ func NewClient(
 
 	var ts oauth2.TokenSource
 	if cloudAuth != nil {
+		t := *cloudAuth.Token
 		if cloudAuth.Token.Type() == "Basic" {
-			cloudAuth.Token.AccessToken = base64.StdEncoding.EncodeToString([]byte(cloudAuth.Token.AccessToken + ":"))
-			ts = oauth2.StaticTokenSource(cloudAuth.Token)
+			t.AccessToken = base64.StdEncoding.EncodeToString([]byte(t.AccessToken + ":"))
+			ts = oauth2.StaticTokenSource(&t)
 		} else if cloudAuth.Token.Type() == "OIDC" {
 			// translate OIDC token to Bearer but using a static source since
 			// we don't have a refresh token to get new OIDC tokens
 			ts = oauth2.StaticTokenSource(&oauth2.Token{
-				AccessToken: cloudAuth.Token.AccessToken,
+				AccessToken: t.AccessToken,
 				TokenType:   "Bearer",
 			})
 		} else {
-			ats, err := auth.TokenSource(ctx, cloudAuth.Token)
+			ats, err := auth.TokenSource(ctx, &t)
 			if err != nil {
 				return nil, err
 			}
