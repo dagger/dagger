@@ -247,7 +247,6 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 			if match, err := n.Match(include); err != nil {
 				return false, err
 			} else if !match {
-				debugTrace(ctx, "rollupChecks(%q): NOT INCLUDED IN %v", n.PathString(), include)
 				return false, nil
 			}
 		}
@@ -255,7 +254,6 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 			if match, err := n.Match(exclude); err != nil {
 				return false, err
 			} else if match {
-				debugTrace(ctx, "rollupChecks(%q): EXCLUDED IN %v", n.PathString(), exclude)
 				return false, nil
 			}
 		}
@@ -263,7 +261,6 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 			checks = append(checks, n)
 			return false, nil // checks are always leaves - no point in trying to walk
 		}
-		debugTrace(ctx, "rollupChecks(%q): not a check but please walk children", n.PathString())
 		return true, nil
 	})
 	return checks, err
@@ -344,13 +341,11 @@ func (n *ModTreeNode) PathString() string {
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
 
 func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
-	debugTrace(ctx, "walk(%q)", node.PathString())
 	enter, err := fn(ctx, node)
 	if err != nil {
 		return err
 	}
 	if !enter {
-		debugTrace(ctx, "walk(%q) -> NOT walking children", node.PathString())
 		return nil
 	}
 	children, err := node.Children(ctx)
