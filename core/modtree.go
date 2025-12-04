@@ -254,8 +254,30 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 			return false, nil // checks are always leaves - no point in trying to walk
 		}
 		if !all {
-			// If all=false, don't walk dynamic object lists (they're more expensive)
-			if namedObjectListType := n.NamedObjectListType(ctx); namedObjectListType != nil {
+			if namedObjListType := n.NamedObjectListType(ctx); namedObjListType != nil {
+				debugTrace(ctx, "%q: static-walking dynamic object list", n.PathString())
+				// If all=false, don't walk dynamic object lists (they're more expensive)
+				// Instead, walk (statically) their element object, to determine if it contains checks
+				staticNode := &ModTreeNode{
+					Parent:      n,
+					Name:        "...",
+					DagqlServer: node.DagqlServer,
+					Module:      node.Module,
+					Type: &TypeDef{
+						Kind:     TypeDefKindObject,
+						AsObject: dagql.NonNull(namedObjListType),
+					},
+					Description: namedObjListType.Description,
+				}
+				staticChecks, err := staticNode.RollupChecks(ctx, include, exclude, false)
+				if err != nil {
+					return false, err
+				}
+				debugTrace(ctx, "%q: static-walk: %d checks per object", n.PathString(), len(staticChecks))
+				if len(staticChecks) > 0 {
+					debugTrace(ctx, "%q: static-walk: %d checks per object: success! adding to check list", n.PathString(), len(staticChecks))
+					checks = append(checks, n)
+				}
 				return false, nil
 			}
 		}
