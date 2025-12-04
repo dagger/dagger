@@ -26,7 +26,7 @@
     },
     {
       "name": "go",
-      "source": "../../modules/go"
+      "source": "../go"
     },
     {
       "name": "version",
