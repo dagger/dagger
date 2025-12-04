@@ -7,10 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ModTreeNode struct {
@@ -51,6 +55,89 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 		},
 		Description: mod.Description,
 	}, nil
+}
+
+func (n *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
+	if n.IsCheck {
+		return n.runLeafCheck(ctx)
+	}
+	children, err := n.Children(ctx)
+	if err != nil {
+		return err
+	}
+	jobs := parallel.New().WithContextualTracer(true)
+	for _, child := range children {
+		if len(include) > 0 {
+			if match, err := n.Match(include); err != nil {
+				return err
+			} else if !match {
+				continue
+			}
+		}
+		if len(exclude) > 0 {
+			if match, err := n.Match(exclude); err != nil {
+				return err
+			} else if match {
+				continue
+			}
+		}
+		jobs = jobs.WithJob(child.Name, func(ctx context.Context) error {
+			return child.RunCheck(ctx, nil, nil)
+		})
+	}
+	return jobs.Run(ctx)
+}
+
+func (n *ModTreeNode) runLeafCheck(ctx context.Context) error {
+	clientMD, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	var span trace.Span
+	if clientMD.CloudScaleOutEngineID != "" { // don't dupe telemetry if the client is an engine scaling out to us
+		ctx, span = Tracer(ctx).Start(ctx, n.PathString(),
+			telemetry.Reveal(),
+			trace.WithAttributes(
+				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+				attribute.String(telemetry.CheckNameAttr, n.PathString()),
+			),
+		)
+	}
+	var checkErr error
+	defer func() {
+		if span != nil {
+			// Set the passed attribute on the span for telemetry
+			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, checkErr == nil))
+			telemetry.EndWithCause(span, &checkErr)
+		}
+	}()
+	checkErr = func() error {
+		var status dagql.AnyResult
+		if err := n.DagqlValue(ctx, &status); err != nil {
+			return err
+		}
+		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
+			// If the check returns a syncable type, sync it
+			srv := n.DagqlServer
+			if syncField, has := obj.ObjectType().FieldSpec("sync", srv.View); has {
+				if !syncField.Args.HasRequired(srv.View) {
+					if err := srv.Select(
+						dagql.WithNonInternalTelemetry(ctx),
+						obj,
+						&status,
+						dagql.Selector{Field: "sync"},
+					); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}()
+	// We can't distinguish legitimate errors from failed checks, so we just discard.
+	// Bubbling them up to here makes telemetry more useful (no green when a check failed)
+	return nil
 }
 
 // Initialize a standalone dagql server for querying the given module
@@ -155,31 +242,38 @@ func debugTrace(ctx context.Context, msg string, args ...any) {
 // Walk the tree and return all check nodes, with include and exclude filters applied.
 func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
 	var checks []*ModTreeNode
-	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) error {
-		if !n.IsCheck {
-			return nil
-		}
+	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) (bool, error) {
 		if len(include) > 0 {
 			if match, err := n.Match(include); err != nil {
-				return err
+				return false, err
 			} else if !match {
-				return nil
+				debugTrace(ctx, "rollupChecks(%q): NOT INCLUDED IN %v", n.PathString(), include)
+				return false, nil
 			}
 		}
 		if len(exclude) > 0 {
 			if match, err := n.Match(exclude); err != nil {
-				return err
+				return false, err
 			} else if match {
-				return nil
+				debugTrace(ctx, "rollupChecks(%q): EXCLUDED IN %v", n.PathString(), exclude)
+				return false, nil
 			}
 		}
-		checks = append(checks, n)
-		return nil
+		if n.IsCheck {
+			checks = append(checks, n)
+			return false, nil // checks are always leaves - no point in trying to walk
+		}
+		debugTrace(ctx, "rollupChecks(%q): not a check but please walk children", n.PathString())
+		return true, nil
 	})
 	return checks, err
 }
 
 func (node *ModTreeNode) Match(include []string) (bool, error) {
+	if node.Parent == nil {
+		// The root node matches everything
+		return true, nil
+	}
 	if len(include) == 0 {
 		return true, nil
 	}
@@ -247,11 +341,17 @@ func (n *ModTreeNode) PathString() string {
 	return strings.Join(n.Path(), ":")
 }
 
-type WalkFunc func(context.Context, *ModTreeNode) error
+type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
 
 func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
-	if err := fn(ctx, node); err != nil {
+	debugTrace(ctx, "walk(%q)", node.PathString())
+	enter, err := fn(ctx, node)
+	if err != nil {
 		return err
+	}
+	if !enter {
+		debugTrace(ctx, "walk(%q) -> NOT walking children", node.PathString())
+		return nil
 	}
 	children, err := node.Children(ctx)
 	if err != nil {
