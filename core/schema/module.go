@@ -78,6 +78,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("all").Doc("List all checks in the list, even dynamic ones"),
 			),
 
 		dagql.Func("check", s.moduleCheck).
@@ -770,6 +771,7 @@ func (s *moduleSchema) moduleChecks(
 	mod *core.Module,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		All     *bool
 	},
 ) (*core.CheckGroup, error) {
 	var include []string
@@ -778,7 +780,11 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Checks(ctx, include)
+	var all bool
+	if args.All != nil {
+		all = *args.All
+	}
+	return mod.Checks(ctx, include, all)
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -788,7 +794,8 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := mod.Checks(ctx, []string{args.Name})
+	// FIXME: streamline this
+	checkGroup, err := mod.Checks(ctx, []string{args.Name}, true)
 	if err != nil {
 		return nil, err
 	}

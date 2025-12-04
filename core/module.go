@@ -98,8 +98,8 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	return NewCheckGroup(ctx, mod, include)
+func (mod *Module) Checks(ctx context.Context, include []string, all bool) (*CheckGroup, error) {
+	return NewCheckGroup(ctx, mod, include, all)
 }
 
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
