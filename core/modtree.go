@@ -202,7 +202,7 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 		if err := node.Parent.DagqlValue(ctx, &parentObjValue); err != nil {
 			return err
 		}
-		return srv.Select(ctx, parentObjValue, dest, dagql.Selector{Field: node.Name})
+		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{Field: node.Name})
 	}
 	// 3. Is parent a list of named objects?
 	if parentNamedObjListType := node.Parent.NamedObjectListType(ctx); parentNamedObjListType != nil {
@@ -216,7 +216,7 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 				return err
 			}
 			if name == node.Name {
-				return srv.Select(ctx, sibling, dest)
+				return srv.Select(dagql.WithNonInternalTelemetry(ctx), sibling, dest)
 			}
 		}
 	}
