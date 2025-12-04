@@ -25,7 +25,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	// +optional
 	check bool,
 ) (*dagger.Changeset, error) {
-	var genDocs, genEngine, genChangelog, genSDKs *dagger.Changeset
+	var genDocs, genEngine, genChangelog, genSDKs, modules *dagger.Changeset
 	maybeCheck := func(ctx context.Context, changes *dagger.Changeset) error {
 		if !check {
 			return nil
@@ -65,6 +65,14 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			}
 			return maybeCheck(ctx, genSDKs)
 		}).
+		WithJob("modules", func(ctx context.Context) error {
+			var err error
+			modules, err = dag.Go().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, modules)
+		}).
 		Run(ctx)
 	if err != nil {
 		return nil, err
@@ -77,7 +85,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	err = parallel.Run(ctx, "merge all changesets", func(ctx context.Context) error {
 		var err error
 		var gen []*dagger.Changeset
-		gen = append(gen, genDocs, genEngine, genChangelog, genSDKs)
+		gen = append(gen, genDocs, genEngine, genChangelog, genSDKs, modules)
 		result, err = changesetMerge(gen...).Sync(ctx)
 		return err
 	})
