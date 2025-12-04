@@ -10,7 +10,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"go.opentelemetry.io/otel/attribute"
@@ -89,21 +88,14 @@ func (n *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) e
 }
 
 func (n *ModTreeNode) runLeafCheck(ctx context.Context) error {
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return err
-	}
-	var span trace.Span
-	if clientMD.CloudScaleOutEngineID != "" { // don't dupe telemetry if the client is an engine scaling out to us
-		ctx, span = Tracer(ctx).Start(ctx, n.PathString(),
-			telemetry.Reveal(),
-			trace.WithAttributes(
-				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				attribute.String(telemetry.CheckNameAttr, n.PathString()),
-			),
-		)
-	}
+	ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.String(telemetry.CheckNameAttr, n.PathString()),
+		),
+	)
 	var checkErr error
 	defer func() {
 		if span != nil {
