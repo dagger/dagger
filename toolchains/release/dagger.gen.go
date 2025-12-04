@@ -292,6 +292,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Release":
 		switch fnName {
+		case "Bump":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var engineVersion string
+			if inputArgs["engineVersion"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["engineVersion"]), &engineVersion)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg engineVersion", err))
+				}
+			}
+			return (*Release).Bump(&parent, ctx, engineVersion)
 		case "GetMaintainers":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -516,20 +530,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*Release).Notify(&parent, ctx, repository, target, name, discordWebhook, dryRun)
-		case "Bump":
-			var parent Release
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var engineVersion string
-			if inputArgs["engineVersion"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["engineVersion"]), &engineVersion)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg engineVersion", err))
-				}
-			}
-			return (*Release).Bump(&parent, ctx, engineVersion)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
