@@ -644,3 +644,91 @@ func (p *Go) LintModule(ctx context.Context, mod string) error {
 		return err
 	})
 }
+
+// Generate the Dagger runtime for all Go modules
+func (p *Go) Generate(
+	ctx context.Context,
+	include []string, //+optional
+	exclude []string, //+optional
+) (*dagger.Changeset, error) {
+	modules, err := p.Modules(ctx, include, exclude)
+	if err != nil {
+		return nil, err
+	}
+	generatedModules := make([]*dagger.Changeset, len(modules))
+	jobs := parallel.New()
+	for i, mod := range modules {
+		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
+			generatedModules[i], err = p.GenerateDaggerRuntime(ctx, mod)
+			return err
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return nil, err
+	}
+	return changesetMerge(generatedModules...), nil
+}
+
+// Generate the Dagger runtime for a Go module
+func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*dagger.Changeset, error) {
+	var isInside bool
+	var daggerModPath string
+	generatedSource := p.Source
+	parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
+		// 1. Are we in a dagger module?
+		daggerJSONPath, err := p.Source.FindUp(ctx, "dagger.json", start)
+		if err != nil {
+			return err
+		}
+		if daggerJSONPath == "" {
+			return nil
+		}
+		daggerJSONContents, err := p.Source.File(daggerJSONPath).Contents(ctx)
+		if err != nil {
+			return err
+		}
+		daggerJSON := dag.JSON().WithContents(dagger.JSON(daggerJSONContents))
+		sdk, err := daggerJSON.Field([]string{"sdk", "source"}).AsString(ctx)
+		if err != nil {
+			// It's valid for a dagger.json to not have a source field
+			return nil //nolint:nilerr
+		}
+		daggerModPath = path.Clean(strings.TrimSuffix(daggerJSONPath, "dagger.json"))
+
+		// 2. Is the dagger module using the Go SDK?
+		if sdk != "go" {
+			return nil
+		}
+		// 3. Are we in the dagger module's *source* directory?
+		sourceField, err := daggerJSON.Field([]string{"source"}).AsString(ctx)
+		if err != nil {
+			// If no source field, default to "."
+			sourceField = "."
+		}
+		runtimeSourcePath := path.Clean(path.Join(daggerModPath, sourceField))
+		rel, err := filepath.Rel(path.Clean("/"+runtimeSourcePath), path.Clean("/"+start))
+		if err != nil {
+			return err
+		}
+		isInside = !strings.HasPrefix(rel, "..")
+		return nil
+	})
+
+	if isInside {
+		if err := parallel.Run(ctx, "generate dagger runtime: "+daggerModPath, func(ctx context.Context) error {
+			// 4. Match! Load the module and generate its files
+			layer, err := p.Source.
+				AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: daggerModPath}).
+				GeneratedContextDirectory().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			generatedSource = generatedSource.WithDirectory("", layer)
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	return generatedSource.Changes(p.Source), nil
+}
