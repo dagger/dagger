@@ -687,7 +687,7 @@ func (sr *immutableRef) Clone() ImmutableRef {
 	return sr.clone()
 }
 
-// layertoDistributable changes the passed in media type to the "distributable" version of the media type.
+// layerToDistributable changes the passed in media type to the "distributable" version of the media type.
 func layerToDistributable(mt string) string {
 	if !images.IsNonDistributable(mt) {
 		// Layer is already a distributable media type (or this is not even a layer).

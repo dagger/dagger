@@ -15,6 +15,9 @@ import (
 func changesetMerge(changesets ...*dagger.Changeset) *dagger.Changeset {
 	before := dag.Directory()
 	for _, changeset := range changesets {
+		if changeset == nil {
+			continue
+		}
 		before = before.WithDirectory("", changeset.Before())
 	}
 	after := before

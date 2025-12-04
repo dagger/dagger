@@ -7675,6 +7675,56 @@ func (m *Depdep) TestFile(
 	})
 }
 
+func (ModuleSuite) TestNestedClientCreatedByModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, cli *dagger.File, modDir *dagger.Directory) (string, error) {
+	return dag.Container().From("`+alpineImage+`").
+		WithMountedFile("/bin/dagger", cli).
+		WithMountedDirectory("/dir", modDir).
+		WithWorkdir("/dir").
+		WithExec([]string{"dagger", "develop", "--recursive"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		WithExec([]string{"dagger", "call", "str"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+}
+
+func (m *Test) Str() string {
+	return "yoyoyo"
+}
+`,
+		).
+		WithWorkdir("/work/some/sub/dir").
+		With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+		WithWorkdir("/work").
+		With(daggerExec("install", "./some/sub/dir"))
+
+	out, err := modGen.
+		With(daggerCall("fn",
+			"--cli", testCLIBinPath,
+			"--modDir", ".",
+		)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "yoyoyo", out)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{

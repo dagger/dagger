@@ -375,7 +375,7 @@ func (svc *Service) startContainer(
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
 
 	var domain string
-	if mod, err := query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
+	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
 		domain = network.ModuleDomain(mod.ResultID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started

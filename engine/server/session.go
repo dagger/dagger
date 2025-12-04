@@ -1348,6 +1348,24 @@ func (srv *Server) CurrentModule(ctx context.Context) (*core.Module, error) {
 	return nil, core.ErrNoCurrentModule
 }
 
+// If the current client is a module client or a client created by a module function, returns that module.
+func (srv *Server) ModuleParent(ctx context.Context) (*core.Module, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if client.mod != nil {
+		return client.mod, nil
+	}
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		if parent.mod != nil {
+			return parent.mod, nil
+		}
+	}
+	return nil, core.ErrNoCurrentModule
+}
+
 // If the current client is coming from a function, return the function call metadata
 func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
 	client, err := srv.clientFromContext(ctx)

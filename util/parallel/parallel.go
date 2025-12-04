@@ -14,7 +14,8 @@ import (
 func New() parallelJobs {
 	return parallelJobs{
 		Internal: false,
-		Reveal:   true,
+		Reveal:   false, // this used to be 'true', but it caused too many "hiding noisy spans" in web trace view
+
 		// Don't use the contextual tracer by default: this breaks in Dagger *clients* (including modules),
 		// because a freshly connected client does not have
 		ContextualTracer: false,
