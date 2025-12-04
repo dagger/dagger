@@ -12,7 +12,7 @@
   "dependencies": [
     {
       "name": "wolfi",
-      "source": "../wolfi"
+      "source": "../../modules/wolfi"
     }
   ]
 }
