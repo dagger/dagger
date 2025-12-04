@@ -144,21 +144,6 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	return fmt.Errorf("%q: get value: parent is neither an object nor a list of objects", node.PathString())
 }
 
-func (node *ModTreeNode) Get(ctx context.Context, path []string) (*ModTreeNode, error) {
-	target := node
-	for _, segment := range path {
-		if target == nil {
-			return nil, fmt.Errorf("node not found: %s", segment)
-		}
-		var err error
-		target, err = target.Child(ctx, segment)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return node, nil
-}
-
 func debugTrace(ctx context.Context, msg string, args ...any) {
 	_ = parallel.
 		New().
