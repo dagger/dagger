@@ -8,13 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/util/parallel"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 )
 
 // Check represents a validation check with its result
@@ -71,39 +66,21 @@ func (r *CheckGroup) List() []*Check {
 func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	r = r.Clone()
 
-	dag := r.Node.DagqlServer
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	eg := new(errgroup.Group)
+	jobs := parallel.New().WithContextualTracer(true)
 	for _, check := range r.Checks {
-		ctx, span := Tracer(ctx).Start(ctx, check.Name(),
-			telemetry.Reveal(),
-			trace.WithAttributes(
-				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				attribute.String(telemetry.CheckNameAttr, check.Name()),
-			),
-		)
 		// Reset output fields, in case we're re-running
 		check.Completed = false
 		check.Passed = false
-		eg.Go(func() (rerr error) {
-			defer func() {
-				check.Completed = true
-				check.Passed = rerr == nil
-				// Set the passed attribute on the span for telemetry
-				span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, check.Passed))
-				telemetry.EndWithCause(span, &rerr)
-			}()
-			return check.run(ctx, dag, clientMD.EnableCloudScaleOut)
+		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
+			err := check.Node.RunCheck(ctx, nil, nil)
+			check.Completed = true
+			check.Passed = (err == nil)
+			return err
 		})
 	}
-	// We can't distinguish legitimate errors from failed checks, so we just discard.
-	// Bubbling them up to here makes telemetry more useful (no green when a check failed)
-	_ = eg.Wait()
+	if err := jobs.Run(ctx); err != nil {
+		return nil, err
+	}
 	return r, nil
 }
 
@@ -185,77 +162,10 @@ func (c *Check) Clone() *Check {
 func (c *Check) Run(ctx context.Context) (*Check, error) {
 	c = c.Clone()
 
-	dag := c.Node.DagqlServer
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var span trace.Span
-	if clientMD.CloudScaleOutEngineID != "" { // don't dupe telemetry if the client is an engine scaling out to us
-		ctx, span = Tracer(ctx).Start(ctx, c.Name(),
-			telemetry.Reveal(),
-			trace.WithAttributes(
-				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				attribute.String(telemetry.CheckNameAttr, c.Name()),
-			),
-		)
-	}
-
-	// Reset output fields, in case we're re-running
-	c.Completed = false
-	c.Passed = false
-
-	var checkErr error
-	defer func() {
-		c.Completed = true
-		c.Passed = checkErr == nil
-
-		if span != nil {
-			// Set the passed attribute on the span for telemetry
-			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, c.Passed))
-			telemetry.EndWithCause(span, &checkErr)
-		}
-	}()
-	checkErr = c.run(ctx, dag, false)
-
-	// We can't distinguish legitimate errors from failed checks, so we just discard.
-	// Bubbling them up to here makes telemetry more useful (no green when a check failed)
+	err := c.Node.RunCheck(ctx, nil, nil)
+	c.Completed = true
+	c.Passed = (err == nil)
 	return c, nil
-}
-
-func (c *Check) run(
-	ctx context.Context,
-	dag *dagql.Server,
-	tryScaleOut bool,
-) (rerr error) {
-	if tryScaleOut {
-		if ok, err := c.tryScaleOut(ctx); ok {
-			return err
-		}
-	}
-	// FIXME: re-implement the "tuck away" trick using 2 distinct selects
-	var status dagql.AnyResult
-	if err := c.Node.DagqlValue(ctx, &status); err != nil {
-		return err
-	}
-	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
-		// If the check returns a syncable type, sync it
-		if syncField, has := obj.ObjectType().FieldSpec("sync", dag.View); has {
-			if !syncField.Args.HasRequired(dag.View) {
-				if err := dag.Select(
-					dagql.WithNonInternalTelemetry(ctx),
-					obj,
-					&status,
-					dagql.Selector{Field: "sync"},
-				); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
 }
 
 func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
