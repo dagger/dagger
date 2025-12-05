@@ -188,6 +188,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Notify":
 		switch fnName {
+		case "DaggerCloudTraceURL":
+			var parent Notify
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Notify).DaggerCloudTraceURL(&parent, ctx)
 		case "Discord":
 			var parent Notify
 			err = json.Unmarshal(parentJSON, &parent)
@@ -279,13 +286,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Notify).Slack(&parent, ctx, token, color, message, channelId, title, footer, footerIcon, imageUrl, threadId)
-		case "DaggerCloudTraceURL":
-			var parent Notify
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Notify).DaggerCloudTraceURL(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

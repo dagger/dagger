@@ -205,20 +205,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Dev).Agent(&parent, ctx)
-		case "Test":
-			var parent Dev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var filter string
-			if inputArgs["filter"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["filter"]), &filter)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg filter", err))
-				}
-			}
-			return nil, (*Dev).Test(&parent, ctx, filter)
 		case "Git":
 			var parent Dev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -247,6 +233,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Dev).Github(&parent, ctx, args)
+		case "Test":
+			var parent Dev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var filter string
+			if inputArgs["filter"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["filter"]), &filter)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg filter", err))
+				}
+			}
+			return nil, (*Dev).Test(&parent, ctx, filter)
 		case "":
 			var parent Dev
 			err = json.Unmarshal(parentJSON, &parent)

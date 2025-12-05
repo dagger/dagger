@@ -456,6 +456,146 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Gha":
 		switch fnName {
+		case "Generate":
+			var parent Gha
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var directory *dagger.Directory
+			if inputArgs["directory"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["directory"]), &directory)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg directory", err))
+				}
+			}
+			var asJson bool
+			if inputArgs["asJSON"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["asJSON"]), &asJson)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg asJSON", err))
+				}
+			}
+			var fileExtension string
+			if inputArgs["fileExtension"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["fileExtension"]), &fileExtension)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg fileExtension", err))
+				}
+			}
+			return (*Gha).Generate(&parent, directory, asJson, fileExtension), nil
+		case "Job":
+			var parent Gha
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			var command string
+			if inputArgs["command"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["command"]), &command)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg command", err))
+				}
+			}
+			var condition string
+			if inputArgs["condition"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["condition"]), &condition)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg condition", err))
+				}
+			}
+			var setupCommands []string
+			if inputArgs["setupCommands"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["setupCommands"]), &setupCommands)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg setupCommands", err))
+				}
+			}
+			var teardownCommands []string
+			if inputArgs["teardownCommands"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["teardownCommands"]), &teardownCommands)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg teardownCommands", err))
+				}
+			}
+			var publicToken string
+			if inputArgs["publicToken"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["publicToken"]), &publicToken)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg publicToken", err))
+				}
+			}
+			var stopEngine bool
+			if inputArgs["stopEngine"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["stopEngine"]), &stopEngine)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg stopEngine", err))
+				}
+			}
+			var timeoutMinutes int
+			if inputArgs["timeoutMinutes"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["timeoutMinutes"]), &timeoutMinutes)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeoutMinutes", err))
+				}
+			}
+			var debug bool
+			if inputArgs["debug"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["debug"]), &debug)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg debug", err))
+				}
+			}
+			var secrets []string
+			if inputArgs["secrets"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["secrets"]), &secrets)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg secrets", err))
+				}
+			}
+			var env []string
+			if inputArgs["env"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["env"]), &env)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg env", err))
+				}
+			}
+			var runner []string
+			if inputArgs["runner"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["runner"]), &runner)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg runner", err))
+				}
+			}
+			var module string
+			if inputArgs["module"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["module"]), &module)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg module", err))
+				}
+			}
+			var daggerVersion string
+			if inputArgs["daggerVersion"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["daggerVersion"]), &daggerVersion)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg daggerVersion", err))
+				}
+			}
+			var cloudEngine bool
+			if inputArgs["cloudEngine"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cloudEngine"]), &cloudEngine)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cloudEngine", err))
+				}
+			}
+			return (*Gha).Job(&parent, name, command, condition, setupCommands, teardownCommands, publicToken, stopEngine, timeoutMinutes, debug, secrets, env, runner, module, daggerVersion, cloudEngine), nil
 		case "WithWorkflow":
 			var parent Gha
 			err = json.Unmarshal(parentJSON, &parent)
@@ -736,146 +876,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Gha).Workflow(&parent, name, pullRequestConcurrency, noDispatch, permissions, onIssueComment, onIssueCommentCreated, onIssueCommentEdited, onIssueCommentDeleted, onPullRequest, onPullRequestBranches, onPullRequestPaths, onPullRequestAssigned, onPullRequestUnassigned, onPullRequestLabeled, onPullRequestUnlabeled, onPullRequestOpened, onPullRequestEdited, onPullRequestClosed, onPullRequestReopened, onPullRequestSynchronize, onPullRequestConvertedToDraft, onPullRequestLocked, onPullRequestUnlocked, onPullRequestEnqueued, onPullRequestDequeued, onPullRequestMilestoned, onPullRequestDemilestoned, onPullRequestReadyForReview, onPullRequestReviewRequested, onPullRequestReviewRequestRemoved, onPullRequestAutoMergeEnabled, onPullRequestAutoMergeDisabled, onPush, onPushTags, onPushBranches, onPushPaths, onSchedule), nil
-		case "Generate":
-			var parent Gha
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var directory *dagger.Directory
-			if inputArgs["directory"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["directory"]), &directory)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg directory", err))
-				}
-			}
-			var asJson bool
-			if inputArgs["asJSON"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["asJSON"]), &asJson)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg asJSON", err))
-				}
-			}
-			var fileExtension string
-			if inputArgs["fileExtension"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["fileExtension"]), &fileExtension)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg fileExtension", err))
-				}
-			}
-			return (*Gha).Generate(&parent, directory, asJson, fileExtension), nil
-		case "Job":
-			var parent Gha
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			var command string
-			if inputArgs["command"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["command"]), &command)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg command", err))
-				}
-			}
-			var condition string
-			if inputArgs["condition"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["condition"]), &condition)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg condition", err))
-				}
-			}
-			var setupCommands []string
-			if inputArgs["setupCommands"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["setupCommands"]), &setupCommands)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg setupCommands", err))
-				}
-			}
-			var teardownCommands []string
-			if inputArgs["teardownCommands"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["teardownCommands"]), &teardownCommands)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg teardownCommands", err))
-				}
-			}
-			var publicToken string
-			if inputArgs["publicToken"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["publicToken"]), &publicToken)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg publicToken", err))
-				}
-			}
-			var stopEngine bool
-			if inputArgs["stopEngine"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["stopEngine"]), &stopEngine)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg stopEngine", err))
-				}
-			}
-			var timeoutMinutes int
-			if inputArgs["timeoutMinutes"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["timeoutMinutes"]), &timeoutMinutes)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeoutMinutes", err))
-				}
-			}
-			var debug bool
-			if inputArgs["debug"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["debug"]), &debug)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg debug", err))
-				}
-			}
-			var secrets []string
-			if inputArgs["secrets"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["secrets"]), &secrets)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg secrets", err))
-				}
-			}
-			var env []string
-			if inputArgs["env"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["env"]), &env)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg env", err))
-				}
-			}
-			var runner []string
-			if inputArgs["runner"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["runner"]), &runner)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg runner", err))
-				}
-			}
-			var module string
-			if inputArgs["module"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["module"]), &module)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg module", err))
-				}
-			}
-			var daggerVersion string
-			if inputArgs["daggerVersion"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["daggerVersion"]), &daggerVersion)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg daggerVersion", err))
-				}
-			}
-			var cloudEngine bool
-			if inputArgs["cloudEngine"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["cloudEngine"]), &cloudEngine)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cloudEngine", err))
-				}
-			}
-			return (*Gha).Job(&parent, name, command, condition, setupCommands, teardownCommands, publicToken, stopEngine, timeoutMinutes, debug, secrets, env, runner, module, daggerVersion, cloudEngine), nil
 		case "":
 			var parent Gha
 			err = json.Unmarshal(parentJSON, &parent)
@@ -902,20 +902,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "Workflow":
 		switch fnName {
-		case "WithJob":
-			var parent Workflow
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var job *Job
-			if inputArgs["job"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["job"]), &job)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg job", err))
-				}
-			}
-			return (*Workflow).WithJob(&parent, job), nil
 		case "Check":
 			var parent Workflow
 			err = json.Unmarshal(parentJSON, &parent)
@@ -930,6 +916,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*Workflow).Check(&parent, ctx, repo)
+		case "WithJob":
+			var parent Workflow
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var job *Job
+			if inputArgs["job"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["job"]), &job)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg job", err))
+				}
+			}
+			return (*Workflow).WithJob(&parent, job), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

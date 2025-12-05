@@ -194,221 +194,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Viztest":
 		switch fnName {
-		case "HelloWorld":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).HelloWorld(&parent), nil
-		case "Spam":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).Spam(&parent), nil
-		case "Encapsulate":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Viztest).Encapsulate(&parent, ctx)
-		case "FailEncapsulated":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Viztest).FailEncapsulated(&parent, ctx)
-		case "FailEffect":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).FailEffect(&parent), nil
-		case "FailMulti":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Viztest).FailMulti(&parent, ctx)
-		case "LogStdout":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			(*Viztest).LogStdout(&parent)
-			return nil, nil
-		case "Terminal":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).Terminal(&parent), nil
-		case "PrimaryLines":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var n int
-			if inputArgs["n"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["n"]), &n)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg n", err))
-				}
-			}
-			return (*Viztest).PrimaryLines(&parent, n), nil
-		case "ManyLines":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var n int
-			if inputArgs["n"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["n"]), &n)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg n", err))
-				}
-			}
-			(*Viztest).ManyLines(&parent, n)
-			return nil, nil
-		case "CustomSpan":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).CustomSpan(&parent, ctx)
-		case "RevealedSpans":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).RevealedSpans(&parent, ctx)
-		case "RevealAndLog":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).RevealAndLog(&parent, ctx)
-		case "ManySpans":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var n int
-			if inputArgs["n"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["n"]), &n)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg n", err))
-				}
-			}
-			var delayMs int
-			if inputArgs["delayMs"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["delayMs"]), &delayMs)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg delayMs", err))
-				}
-			}
-			(*Viztest).ManySpans(&parent, ctx, n, delayMs)
-			return nil, nil
-		case "StreamingLogs":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var batchSize int
-			if inputArgs["batchSize"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["batchSize"]), &batchSize)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg batchSize", err))
-				}
-			}
-			var delayMs int
-			if inputArgs["delayMs"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["delayMs"]), &delayMs)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg delayMs", err))
-				}
-			}
-			(*Viztest).StreamingLogs(&parent, ctx, batchSize, delayMs)
-			return nil, nil
-		case "StreamingChunks":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var batchSize int
-			if inputArgs["batchSize"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["batchSize"]), &batchSize)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg batchSize", err))
-				}
-			}
-			var delayMs int
-			if inputArgs["delayMs"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["delayMs"]), &delayMs)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg delayMs", err))
-				}
-			}
-			(*Viztest).StreamingChunks(&parent, ctx, batchSize, delayMs)
-			return nil, nil
-		case "Echo":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var message string
-			if inputArgs["message"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["message"]), &message)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg message", err))
-				}
-			}
-			return (*Viztest).Echo(&parent, ctx, message)
-		case "Uppercase":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var message string
-			if inputArgs["message"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["message"]), &message)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg message", err))
-				}
-			}
-			return (*Viztest).Uppercase(&parent, ctx, message)
-		case "SameDiffClients":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var message string
-			if inputArgs["message"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["message"]), &message)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg message", err))
-				}
-			}
-			return (*Viztest).SameDiffClients(&parent, ctx, message)
 		case "Accounting":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -416,13 +201,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Viztest).Accounting(&parent), nil
-		case "DeepSleep":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).DeepSleep(&parent), nil
 		case "Add":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -437,56 +215,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Viztest).Add(&parent, diff), nil
-		case "CountFiles":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var dir *dagger.Directory
-			if inputArgs["dir"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["dir"]), &dir)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dir", err))
-				}
-			}
-			return (*Viztest).CountFiles(&parent, ctx, dir)
-		case "LogStderr":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			(*Viztest).LogStderr(&parent)
-			return nil, nil
-		case "FailLog":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Viztest).FailLog(&parent, ctx)
-		case "FailLogNative":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Viztest).FailLogNative(&parent, ctx)
-		case "FailSlow":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var after string
-			if inputArgs["after"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["after"]), &after)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg after", err))
-				}
-			}
-			return nil, (*Viztest).FailSlow(&parent, ctx, after)
 		case "CachedExecService":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -501,48 +229,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*Viztest).CachedExecs(&parent, ctx)
-		case "UseCachedExecService":
+		case "CallBubblingDep":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*Viztest).UseCachedExecService(&parent, ctx)
-		case "ExecService":
+			return nil, (*Viztest).CallBubblingDep(&parent, ctx)
+		case "CallFailingDep":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Viztest).ExecService(&parent), nil
-		case "UseExecService":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Viztest).UseExecService(&parent, ctx)
-		case "NoExecService":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).NoExecService(&parent), nil
-		case "UseNoExecService":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).UseNoExecService(&parent, ctx)
-		case "Pending":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Viztest).Pending(&parent, ctx)
+			return nil, (*Viztest).CallFailingDep(&parent, ctx)
 		case "Colors16":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -557,35 +257,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Viztest).Colors256(&parent, ctx)
-		case "DockerBuildCached":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).DockerBuildCached(&parent), nil
-		case "DockerBuild":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).DockerBuild(&parent), nil
-		case "DockerBuildFail":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).DockerBuildFail(&parent), nil
-		case "DiskMetrics":
-			var parent Viztest
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Viztest).DiskMetrics(&parent, ctx)
-		case "List":
+		case "CountFiles":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
@@ -598,7 +270,126 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dir", err))
 				}
 			}
-			return (*Viztest).List(&parent, ctx, dir)
+			return (*Viztest).CountFiles(&parent, ctx, dir)
+		case "CustomSpan":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).CustomSpan(&parent, ctx)
+		case "DeepSleep":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).DeepSleep(&parent), nil
+		case "DiskMetrics":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).DiskMetrics(&parent, ctx)
+		case "DockerBuild":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).DockerBuild(&parent), nil
+		case "DockerBuildCached":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).DockerBuildCached(&parent), nil
+		case "DockerBuildFail":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).DockerBuildFail(&parent), nil
+		case "Echo":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var message string
+			if inputArgs["message"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["message"]), &message)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg message", err))
+				}
+			}
+			return (*Viztest).Echo(&parent, ctx, message)
+		case "Encapsulate":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).Encapsulate(&parent, ctx)
+		case "ExecService":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).ExecService(&parent), nil
+		case "FailEffect":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).FailEffect(&parent), nil
+		case "FailEncapsulated":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).FailEncapsulated(&parent, ctx)
+		case "FailLog":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).FailLog(&parent, ctx)
+		case "FailLogNative":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).FailLogNative(&parent, ctx)
+		case "FailMulti":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).FailMulti(&parent, ctx)
+		case "FailSlow":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var after string
+			if inputArgs["after"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["after"]), &after)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg after", err))
+				}
+			}
+			return nil, (*Viztest).FailSlow(&parent, ctx, after)
 		case "GitReadme":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -641,13 +432,87 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Viztest).HTTPReadme(&parent, ctx, remote, version)
-		case "ObjectLists":
+		case "HelloWorld":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Viztest).ObjectLists(&parent, ctx)
+			return (*Viztest).HelloWorld(&parent), nil
+		case "List":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var dir *dagger.Directory
+			if inputArgs["dir"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dir"]), &dir)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dir", err))
+				}
+			}
+			return (*Viztest).List(&parent, ctx, dir)
+		case "LogStderr":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			(*Viztest).LogStderr(&parent)
+			return nil, nil
+		case "LogStdout":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			(*Viztest).LogStdout(&parent)
+			return nil, nil
+		case "LogWithChildren":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).LogWithChildren(&parent, ctx), nil
+		case "ManyLines":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var n int
+			if inputArgs["n"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["n"]), &n)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg n", err))
+				}
+			}
+			(*Viztest).ManyLines(&parent, n)
+			return nil, nil
+		case "ManySpans":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var n int
+			if inputArgs["n"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["n"]), &n)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg n", err))
+				}
+			}
+			var delayMs int
+			if inputArgs["delayMs"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["delayMs"]), &delayMs)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg delayMs", err))
+				}
+			}
+			(*Viztest).ManySpans(&parent, ctx, n, delayMs)
+			return nil, nil
 		case "NestedCalls":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -655,6 +520,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Viztest).NestedCalls(&parent, ctx)
+		case "NoExecService":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).NoExecService(&parent), nil
+		case "ObjectLists":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).ObjectLists(&parent, ctx)
 		case "PathArgs":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -690,20 +569,113 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*Viztest).PathArgs(&parent, ctx, file, dir, contextFile, contextDir)
-		case "CallFailingDep":
+		case "Pending":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*Viztest).CallFailingDep(&parent, ctx)
-		case "CallBubblingDep":
+			return nil, (*Viztest).Pending(&parent, ctx)
+		case "PrimaryLines":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*Viztest).CallBubblingDep(&parent, ctx)
+			var n int
+			if inputArgs["n"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["n"]), &n)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg n", err))
+				}
+			}
+			return (*Viztest).PrimaryLines(&parent, n), nil
+		case "RevealAndLog":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).RevealAndLog(&parent, ctx)
+		case "RevealedSpans":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).RevealedSpans(&parent, ctx)
+		case "SameDiffClients":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var message string
+			if inputArgs["message"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["message"]), &message)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg message", err))
+				}
+			}
+			return (*Viztest).SameDiffClients(&parent, ctx, message)
+		case "Spam":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).Spam(&parent), nil
+		case "StreamingChunks":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var batchSize int
+			if inputArgs["batchSize"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["batchSize"]), &batchSize)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg batchSize", err))
+				}
+			}
+			var delayMs int
+			if inputArgs["delayMs"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["delayMs"]), &delayMs)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg delayMs", err))
+				}
+			}
+			(*Viztest).StreamingChunks(&parent, ctx, batchSize, delayMs)
+			return nil, nil
+		case "StreamingLogs":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var batchSize int
+			if inputArgs["batchSize"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["batchSize"]), &batchSize)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg batchSize", err))
+				}
+			}
+			var delayMs int
+			if inputArgs["delayMs"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["delayMs"]), &delayMs)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg delayMs", err))
+				}
+			}
+			(*Viztest).StreamingLogs(&parent, ctx, batchSize, delayMs)
+			return nil, nil
+		case "Terminal":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).Terminal(&parent), nil
 		case "TraceFunctionCalls":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -718,13 +690,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*Viztest).TraceRemoteFunctionCalls(&parent, ctx)
-		case "LogWithChildren":
+		case "Uppercase":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Viztest).LogWithChildren(&parent, ctx), nil
+			var message string
+			if inputArgs["message"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["message"]), &message)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg message", err))
+				}
+			}
+			return (*Viztest).Uppercase(&parent, ctx, message)
+		case "UseCachedExecService":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).UseCachedExecService(&parent, ctx)
+		case "UseExecService":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).UseExecService(&parent, ctx)
+		case "UseNoExecService":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).UseNoExecService(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

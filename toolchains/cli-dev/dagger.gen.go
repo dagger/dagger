@@ -202,6 +202,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "CliDev":
 		switch fnName {
+		case "Binary":
+			var parent CliDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var platform dagger.Platform
+			if inputArgs["platform"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
+				}
+			}
+			return (*CliDev).Binary(&parent, platform), nil
+		case "DevBinaries":
+			var parent CliDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var platform dagger.Platform
+			if inputArgs["platform"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
+				}
+			}
+			return (*CliDev).DevBinaries(&parent, platform), nil
 		case "Publish":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -328,27 +356,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*CliDev).PublishMetadata(&parent, ctx, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
-		case "ReleaseDryRun":
-			var parent CliDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*CliDev).ReleaseDryRun(&parent, ctx)
-		case "Binary":
-			var parent CliDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var platform dagger.Platform
-			if inputArgs["platform"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
-				}
-			}
-			return (*CliDev).Binary(&parent, platform), nil
 		case "Reference":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -370,20 +377,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*CliDev).Reference(&parent, frontmatter, includeExperimental), nil
-		case "DevBinaries":
+		case "ReleaseDryRun":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var platform dagger.Platform
-			if inputArgs["platform"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
-				}
-			}
-			return (*CliDev).DevBinaries(&parent, platform), nil
+			return nil, (*CliDev).ReleaseDryRun(&parent, ctx)
 		case "":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)

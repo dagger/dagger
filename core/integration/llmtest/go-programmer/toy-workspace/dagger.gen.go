@@ -194,6 +194,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "ToyWorkspace":
 		switch fnName {
+		case "Build":
+			var parent ToyWorkspace
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*ToyWorkspace).Build(&parent, ctx)
 		case "Read":
 			var parent ToyWorkspace
 			err = json.Unmarshal(parentJSON, &parent)
@@ -215,13 +222,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*ToyWorkspace).Write(&parent, content), nil
-		case "Build":
-			var parent ToyWorkspace
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*ToyWorkspace).Build(&parent, ctx)
 		case "":
 			var parent ToyWorkspace
 			err = json.Unmarshal(parentJSON, &parent)

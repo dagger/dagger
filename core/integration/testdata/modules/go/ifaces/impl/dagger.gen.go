@@ -333,6 +333,48 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Impl":
 		switch fnName {
+		case "DynamicOtherIfaceByIfaceList":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Impl).DynamicOtherIfaceByIfaceList(&parent), nil
+		case "DynamicOtherIfaceList":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Impl).DynamicOtherIfaceList(&parent), nil
+		case "OtherIface":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Impl).OtherIface(&parent), nil
+		case "SelfIface":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Impl).SelfIface(&parent), nil
+		case "SelfIfaceList":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Impl).SelfIfaceList(&parent), nil
+		case "StaticOtherIfaceList":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Impl).StaticOtherIfaceList(&parent), nil
 		case "Void":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
@@ -340,76 +382,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*Impl).Void(&parent)
-		case "WithStr":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var strArg string
-			if inputArgs["strArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["strArg"]), &strArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strArg", err))
-				}
-			}
-			return (*Impl).WithStr(&parent, strArg), nil
-		case "WithOptionalPragmaStr":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var strArg string
-			if inputArgs["strArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["strArg"]), &strArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strArg", err))
-				}
-			}
-			return (*Impl).WithOptionalPragmaStr(&parent, strArg), nil
-		case "WithStrList":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var strListArg []string
-			if inputArgs["strListArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["strListArg"]), &strListArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strListArg", err))
-				}
-			}
-			return (*Impl).WithStrList(&parent, strListArg), nil
-		case "WithInt":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var intArg int
-			if inputArgs["intArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["intArg"]), &intArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg intArg", err))
-				}
-			}
-			return (*Impl).WithInt(&parent, intArg), nil
-		case "WithIntList":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var intListArg []int
-			if inputArgs["intListArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["intListArg"]), &intListArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg intListArg", err))
-				}
-			}
-			return (*Impl).WithIntList(&parent, intListArg), nil
 		case "WithBool":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
@@ -438,6 +410,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Impl).WithBoolList(&parent, boolListArg), nil
+		case "WithInt":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var intArg int
+			if inputArgs["intArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["intArg"]), &intArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg intArg", err))
+				}
+			}
+			return (*Impl).WithInt(&parent, intArg), nil
+		case "WithIntList":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var intListArg []int
+			if inputArgs["intListArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["intListArg"]), &intListArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg intListArg", err))
+				}
+			}
+			return (*Impl).WithIntList(&parent, intListArg), nil
 		case "WithObj":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
@@ -452,20 +452,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Impl).WithObj(&parent, objArg), nil
-		case "WithOptionalPragmaObj":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var objArg *dagger.Directory
-			if inputArgs["objArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["objArg"]), &objArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg objArg", err))
-				}
-			}
-			return (*Impl).WithOptionalPragmaObj(&parent, objArg), nil
 		case "WithObjList":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
@@ -480,34 +466,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Impl).WithObjList(&parent, objListArg), nil
-		case "SelfIface":
+		case "WithOptionalPragmaObj":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Impl).SelfIface(&parent), nil
-		case "SelfIfaceList":
+			var objArg *dagger.Directory
+			if inputArgs["objArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["objArg"]), &objArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg objArg", err))
+				}
+			}
+			return (*Impl).WithOptionalPragmaObj(&parent, objArg), nil
+		case "WithOptionalPragmaStr":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Impl).SelfIfaceList(&parent), nil
-		case "OtherIface":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			var strArg string
+			if inputArgs["strArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["strArg"]), &strArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strArg", err))
+				}
 			}
-			return (*Impl).OtherIface(&parent), nil
-		case "StaticOtherIfaceList":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Impl).StaticOtherIfaceList(&parent), nil
+			return (*Impl).WithOptionalPragmaStr(&parent, strArg), nil
 		case "WithOtherIface":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
@@ -522,13 +508,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Impl).WithOtherIface(&parent, other), nil
-		case "DynamicOtherIfaceList":
-			var parent Impl
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Impl).DynamicOtherIfaceList(&parent), nil
 		case "WithOtherIfaceByIface":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
@@ -543,13 +522,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Impl).WithOtherIfaceByIface(&parent, other.toIface()), nil
-		case "DynamicOtherIfaceByIfaceList":
+		case "WithStr":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Impl).DynamicOtherIfaceByIfaceList(&parent), nil
+			var strArg string
+			if inputArgs["strArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["strArg"]), &strArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strArg", err))
+				}
+			}
+			return (*Impl).WithStr(&parent, strArg), nil
+		case "WithStrList":
+			var parent Impl
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var strListArg []string
+			if inputArgs["strListArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["strListArg"]), &strListArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strListArg", err))
+				}
+			}
+			return (*Impl).WithStrList(&parent, strListArg), nil
 		case "":
 			var parent Impl
 			err = json.Unmarshal(parentJSON, &parent)

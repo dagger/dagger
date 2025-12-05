@@ -194,6 +194,55 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "TypescriptSdk":
 		switch fnName {
+		case "Codegen":
+			var parent TypescriptSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var modSource *dagger.ModuleSource
+			if inputArgs["modSource"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
+				}
+			}
+			var introspectionJson *dagger.File
+			if inputArgs["introspectionJSON"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
+				}
+			}
+			return (*TypescriptSdk).Codegen(&parent, ctx, modSource, introspectionJson)
+		case "GenerateClient":
+			var parent TypescriptSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var modSource *dagger.ModuleSource
+			if inputArgs["modSource"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
+				}
+			}
+			var introspectionJson *dagger.File
+			if inputArgs["introspectionJSON"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
+				}
+			}
+			var outputDir string
+			if inputArgs["outputDir"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["outputDir"]), &outputDir)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg outputDir", err))
+				}
+			}
+			return (*TypescriptSdk).GenerateClient(&parent, ctx, modSource, introspectionJson, outputDir)
 		case "ModuleRuntime":
 			var parent TypescriptSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -243,27 +292,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*TypescriptSdk).ModuleTypes(&parent, ctx, modSource, introspectionJson, outputFilePath)
-		case "Codegen":
-			var parent TypescriptSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var modSource *dagger.ModuleSource
-			if inputArgs["modSource"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
-				}
-			}
-			var introspectionJson *dagger.File
-			if inputArgs["introspectionJSON"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
-				}
-			}
-			return (*TypescriptSdk).Codegen(&parent, ctx, modSource, introspectionJson)
 		case "RequiredClientGenerationFiles":
 			var parent TypescriptSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -271,34 +299,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*TypescriptSdk).RequiredClientGenerationFiles(&parent), nil
-		case "GenerateClient":
-			var parent TypescriptSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var modSource *dagger.ModuleSource
-			if inputArgs["modSource"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
-				}
-			}
-			var introspectionJson *dagger.File
-			if inputArgs["introspectionJSON"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
-				}
-			}
-			var outputDir string
-			if inputArgs["outputDir"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["outputDir"]), &outputDir)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg outputDir", err))
-				}
-			}
-			return (*TypescriptSdk).GenerateClient(&parent, ctx, modSource, introspectionJson, outputDir)
 		case "":
 			var parent TypescriptSdk
 			err = json.Unmarshal(parentJSON, &parent)

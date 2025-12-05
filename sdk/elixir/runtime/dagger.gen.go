@@ -198,7 +198,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "ElixirSdk":
 		switch fnName {
-		case "ModuleRuntime":
+		case "Base":
 			var parent ElixirSdk
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
@@ -211,14 +211,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
 				}
 			}
-			var introspectionJson *dagger.File
-			if inputArgs["introspectionJSON"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
+			var subPath string
+			if inputArgs["subPath"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["subPath"]), &subPath)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg subPath", err))
 				}
 			}
-			return (*ElixirSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson)
+			return (*ElixirSdk).Base(&parent, modSource, subPath), nil
 		case "Codegen":
 			var parent ElixirSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -261,7 +261,21 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*ElixirSdk).Common(&parent, ctx, modSource, introspectionJson)
-		case "Base":
+		case "GenerateCode":
+			var parent ElixirSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var introspectionJson *dagger.File
+			if inputArgs["introspectionJSON"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
+				}
+			}
+			return (*ElixirSdk).GenerateCode(&parent, introspectionJson), nil
+		case "ModuleRuntime":
 			var parent ElixirSdk
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
@@ -274,14 +288,21 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
 				}
 			}
-			var subPath string
-			if inputArgs["subPath"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["subPath"]), &subPath)
+			var introspectionJson *dagger.File
+			if inputArgs["introspectionJSON"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg subPath", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
 				}
 			}
-			return (*ElixirSdk).Base(&parent, modSource, subPath), nil
+			return (*ElixirSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson)
+		case "WithDaggerCodegen":
+			var parent ElixirSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*ElixirSdk).WithDaggerCodegen(&parent), nil
 		case "WithNewElixirPackage":
 			var parent ElixirSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -310,27 +331,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*ElixirSdk).WithSDK(&parent, introspectionJson), nil
-		case "WithDaggerCodegen":
-			var parent ElixirSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*ElixirSdk).WithDaggerCodegen(&parent), nil
-		case "GenerateCode":
-			var parent ElixirSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var introspectionJson *dagger.File
-			if inputArgs["introspectionJSON"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
-				}
-			}
-			return (*ElixirSdk).GenerateCode(&parent, introspectionJson), nil
 		case "":
 			var parent ElixirSdk
 			err = json.Unmarshal(parentJSON, &parent)

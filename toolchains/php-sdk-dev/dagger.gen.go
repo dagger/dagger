@@ -213,6 +213,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*PhpSdkDev).BaseContainer(&parent), nil
+		case "Bump":
+			var parent PhpSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*PhpSdkDev).Bump(&parent, ctx, version)
+		case "Changes":
+			var parent PhpSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PhpSdkDev).Changes(&parent), nil
 		case "DevContainer":
 			var parent PhpSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -227,13 +248,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*PhpSdkDev).DevContainer(&parent, runInstall), nil
-		case "Source":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PhpSdkDev).Source(&parent), nil
 		case "DoctumConfig":
 			var parent PhpSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -241,6 +255,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*PhpSdkDev).DoctumConfig(&parent), nil
+		case "Generate":
+			var parent PhpSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PhpSdkDev).Generate(&parent, ctx)
 		case "PhpCodeSniffer":
 			var parent PhpSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -255,83 +276,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*PhpSdkDev).PhpStan(&parent, ctx)
-		case "Test":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*PhpSdkDev).Test(&parent, ctx)
-		case "Generate":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PhpSdkDev).Generate(&parent, ctx)
-		case "Changes":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PhpSdkDev).Changes(&parent), nil
-		case "WithGeneratedClient":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PhpSdkDev).WithGeneratedClient(&parent), nil
-		case "WithGeneratedDocs":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PhpSdkDev).WithGeneratedDocs(&parent, ctx)
-		case "ReleaseDryRun":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var sourceRepo *dagger.GitRepository
-			if inputArgs["sourceRepo"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["sourceRepo"]), &sourceRepo)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourceRepo", err))
-				}
-			}
-			var sourceTag string
-			if inputArgs["sourceTag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["sourceTag"]), &sourceTag)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourceTag", err))
-				}
-			}
-			var destRemote string
-			if inputArgs["destRemote"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["destRemote"]), &destRemote)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg destRemote", err))
-				}
-			}
-			return nil, (*PhpSdkDev).ReleaseDryRun(&parent, ctx, sourceRepo, sourceTag, destRemote)
-		case "VersionFromTag":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var tag string
-			if inputArgs["tag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
-				}
-			}
-			return (*PhpSdkDev).VersionFromTag(&parent, tag), nil
 		case "Release":
 			var parent PhpSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -367,20 +311,76 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*PhpSdkDev).Release(&parent, ctx, sourceRepo, sourceTag, dest, githubToken)
-		case "Bump":
+		case "ReleaseDryRun":
 			var parent PhpSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+			var sourceRepo *dagger.GitRepository
+			if inputArgs["sourceRepo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["sourceRepo"]), &sourceRepo)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourceRepo", err))
 				}
 			}
-			return (*PhpSdkDev).Bump(&parent, ctx, version)
+			var sourceTag string
+			if inputArgs["sourceTag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["sourceTag"]), &sourceTag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourceTag", err))
+				}
+			}
+			var destRemote string
+			if inputArgs["destRemote"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["destRemote"]), &destRemote)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg destRemote", err))
+				}
+			}
+			return nil, (*PhpSdkDev).ReleaseDryRun(&parent, ctx, sourceRepo, sourceTag, destRemote)
+		case "Source":
+			var parent PhpSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PhpSdkDev).Source(&parent), nil
+		case "Test":
+			var parent PhpSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*PhpSdkDev).Test(&parent, ctx)
+		case "VersionFromTag":
+			var parent PhpSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			return (*PhpSdkDev).VersionFromTag(&parent, tag), nil
+		case "WithGeneratedClient":
+			var parent PhpSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PhpSdkDev).WithGeneratedClient(&parent), nil
+		case "WithGeneratedDocs":
+			var parent PhpSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PhpSdkDev).WithGeneratedDocs(&parent, ctx)
 		case "":
 			var parent PhpSdkDev
 			err = json.Unmarshal(parentJSON, &parent)

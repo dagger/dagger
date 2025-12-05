@@ -604,6 +604,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Dep":
 		switch fnName {
+		case "IfaceFieldStr":
+			var parent Dep
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Dep).IfaceFieldStr(&parent, ctx)
 		case "WithIface":
 			var parent Dep
 			err = json.Unmarshal(parentJSON, &parent)
@@ -618,13 +625,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Dep).WithIface(&parent, iface.toIface())
-		case "IfaceFieldStr":
-			var parent Dep
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Dep).IfaceFieldStr(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

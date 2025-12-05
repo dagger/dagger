@@ -198,6 +198,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Doug":
 		switch fnName {
+		case "Agent":
+			var parent Doug
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var base *dagger.LLM
+			if inputArgs["base"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg base", err))
+				}
+			}
+			return (*Doug).Agent(&parent, ctx, base)
 		case "Dev":
 			var parent Doug
 			err = json.Unmarshal(parentJSON, &parent)
@@ -219,48 +233,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Doug).Dev(&parent, ctx, source, module)
-		case "Agent":
-			var parent Doug
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var base *dagger.LLM
-			if inputArgs["base"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg base", err))
-				}
-			}
-			return (*Doug).Agent(&parent, ctx, base)
-		case "ReadFile":
-			var parent Doug
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var filePath string
-			if inputArgs["filePath"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["filePath"]), &filePath)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg filePath", err))
-				}
-			}
-			var offset *int
-			if inputArgs["offset"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["offset"]), &offset)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg offset", err))
-				}
-			}
-			var limit *int
-			if inputArgs["limit"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["limit"]), &limit)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg limit", err))
-				}
-			}
-			return (*Doug).ReadFile(&parent, ctx, filePath, offset, limit)
 		case "EditFile":
 			var parent Doug
 			err = json.Unmarshal(parentJSON, &parent)
@@ -296,27 +268,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Doug).EditFile(&parent, ctx, filePath, oldString, newString, replaceAll)
-		case "Write":
-			var parent Doug
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var filePath string
-			if inputArgs["filePath"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["filePath"]), &filePath)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg filePath", err))
-				}
-			}
-			var contents string
-			if inputArgs["contents"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["contents"]), &contents)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg contents", err))
-				}
-			}
-			return (*Doug).Write(&parent, filePath, contents), nil
 		case "Glob":
 			var parent Doug
 			err = json.Unmarshal(parentJSON, &parent)
@@ -394,6 +345,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Doug).Grep(&parent, ctx, pattern, literalText, paths, glob, multiline, content, insensitive, limit)
+		case "ReadFile":
+			var parent Doug
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var filePath string
+			if inputArgs["filePath"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["filePath"]), &filePath)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg filePath", err))
+				}
+			}
+			var offset *int
+			if inputArgs["offset"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["offset"]), &offset)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg offset", err))
+				}
+			}
+			var limit *int
+			if inputArgs["limit"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["limit"]), &limit)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg limit", err))
+				}
+			}
+			return (*Doug).ReadFile(&parent, ctx, filePath, offset, limit)
 		case "Task":
 			var parent Doug
 			err = json.Unmarshal(parentJSON, &parent)
@@ -443,6 +422,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Doug).TodoWrite(&parent, ctx, pending, inProgress, completed)
+		case "Write":
+			var parent Doug
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var filePath string
+			if inputArgs["filePath"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["filePath"]), &filePath)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg filePath", err))
+				}
+			}
+			var contents string
+			if inputArgs["contents"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["contents"]), &contents)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg contents", err))
+				}
+			}
+			return (*Doug).Write(&parent, filePath, contents), nil
 		case "":
 			var parent Doug
 			err = json.Unmarshal(parentJSON, &parent)

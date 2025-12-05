@@ -201,13 +201,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*Tests).All(&parent, ctx)
-		case "Help":
-			var parent Tests
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Tests).Help(&parent, ctx)
 		case "Clone":
 			var parent Tests
 			err = json.Unmarshal(parentJSON, &parent)
@@ -215,6 +208,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*Tests).Clone(&parent, ctx)
+		case "Help":
+			var parent Tests
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Tests).Help(&parent, ctx)
 		case "WithGitExec":
 			var parent Tests
 			err = json.Unmarshal(parentJSON, &parent)

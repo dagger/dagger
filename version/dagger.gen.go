@@ -202,13 +202,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Version":
 		switch fnName {
-		case "Version":
-			var parent Version
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Version).Version(&parent, ctx)
 		case "ImageTag":
 			var parent Version
 			err = json.Unmarshal(parentJSON, &parent)
@@ -230,6 +223,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Version).NextReleaseVersion(&parent, ctx)
+		case "Version":
+			var parent Version
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Version).Version(&parent, ctx)
 		case "":
 			var parent Version
 			err = json.Unmarshal(parentJSON, &parent)

@@ -357,41 +357,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Workspace":
 		switch fnName {
-		case "WithoutDefaultSystemPrompt":
-			var parent Workspace
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Workspace).WithoutDefaultSystemPrompt(&parent), nil
-		case "WithSystemPrompt":
-			var parent Workspace
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var prompt string
-			if inputArgs["prompt"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["prompt"]), &prompt)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg prompt", err))
-				}
-			}
-			return (*Workspace).WithSystemPrompt(&parent, prompt), nil
-		case "WithSystemPromptFile":
-			var parent Workspace
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var file *dagger.File
-			if inputArgs["file"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg file", err))
-				}
-			}
-			return (*Workspace).WithSystemPromptFile(&parent, ctx, file)
 		case "Backoff":
 			var parent Workspace
 			err = json.Unmarshal(parentJSON, &parent)
@@ -406,34 +371,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Workspace).Backoff(&parent, seconds), nil
-		case "WithEval":
-			var parent Workspace
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var eval *evalImpl
-			if inputArgs["eval"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["eval"]), &eval)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg eval", err))
-				}
-			}
-			return (*Workspace).WithEval(&parent, eval.toIface()), nil
-		case "WithEvals":
-			var parent Workspace
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var evals []*evalImpl
-			if inputArgs["evals"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["evals"]), &evals)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg evals", err))
-				}
-			}
-			return (*Workspace).WithEvals(&parent, convertSlice(evals, (*evalImpl).toIface)), nil
 		case "EvalNames":
 			var parent Workspace
 			err = json.Unmarshal(parentJSON, &parent)
@@ -441,27 +378,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Workspace).EvalNames(&parent, ctx)
-		case "KnownModels":
-			var parent Workspace
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Workspace).KnownModels(&parent), nil
-		case "WithFinding":
-			var parent Workspace
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var finding string
-			if inputArgs["finding"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["finding"]), &finding)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg finding", err))
-				}
-			}
-			return (*Workspace).WithFinding(&parent, finding), nil
 		case "Evaluate":
 			var parent Workspace
 			err = json.Unmarshal(parentJSON, &parent)
@@ -490,6 +406,90 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Workspace).Evaluate(&parent, ctx, name, model, attempts)
+		case "KnownModels":
+			var parent Workspace
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Workspace).KnownModels(&parent), nil
+		case "WithEval":
+			var parent Workspace
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var eval *evalImpl
+			if inputArgs["eval"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["eval"]), &eval)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg eval", err))
+				}
+			}
+			return (*Workspace).WithEval(&parent, eval.toIface()), nil
+		case "WithEvals":
+			var parent Workspace
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var evals []*evalImpl
+			if inputArgs["evals"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["evals"]), &evals)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg evals", err))
+				}
+			}
+			return (*Workspace).WithEvals(&parent, convertSlice(evals, (*evalImpl).toIface)), nil
+		case "WithFinding":
+			var parent Workspace
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var finding string
+			if inputArgs["finding"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["finding"]), &finding)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg finding", err))
+				}
+			}
+			return (*Workspace).WithFinding(&parent, finding), nil
+		case "WithSystemPrompt":
+			var parent Workspace
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var prompt string
+			if inputArgs["prompt"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["prompt"]), &prompt)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg prompt", err))
+				}
+			}
+			return (*Workspace).WithSystemPrompt(&parent, prompt), nil
+		case "WithSystemPromptFile":
+			var parent Workspace
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var file *dagger.File
+			if inputArgs["file"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg file", err))
+				}
+			}
+			return (*Workspace).WithSystemPromptFile(&parent, ctx, file)
+		case "WithoutDefaultSystemPrompt":
+			var parent Workspace
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Workspace).WithoutDefaultSystemPrompt(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

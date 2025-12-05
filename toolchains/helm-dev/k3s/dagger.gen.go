@@ -206,6 +206,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "K3S":
 		switch fnName {
+		case "Config":
+			var parent K3S
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var local bool
+			if inputArgs["local"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["local"]), &local)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg local", err))
+				}
+			}
+			return (*K3S).Config(&parent, local), nil
+		case "Kns":
+			var parent K3S
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*K3S).Kns(&parent), nil
+		case "Kubectl":
+			var parent K3S
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var args string
+			if inputArgs["args"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["args"]), &args)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg args", err))
+				}
+			}
+			return (*K3S).Kubectl(&parent, args), nil
 		case "Server":
 			var parent K3S
 			err = json.Unmarshal(parentJSON, &parent)
@@ -227,41 +262,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*K3S).WithContainer(&parent, c), nil
-		case "Config":
-			var parent K3S
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var local bool
-			if inputArgs["local"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["local"]), &local)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg local", err))
-				}
-			}
-			return (*K3S).Config(&parent, local), nil
-		case "Kubectl":
-			var parent K3S
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var args string
-			if inputArgs["args"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["args"]), &args)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg args", err))
-				}
-			}
-			return (*K3S).Kubectl(&parent, args), nil
-		case "Kns":
-			var parent K3S
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*K3S).Kns(&parent), nil
 		case "":
 			var parent K3S
 			err = json.Unmarshal(parentJSON, &parent)

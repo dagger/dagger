@@ -340,13 +340,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Issue":
 		switch fnName {
-		case "IsError":
-			var parent Issue
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Issue).IsError(&parent), nil
 		case "Filename":
 			var parent Issue
 			err = json.Unmarshal(parentJSON, &parent)
@@ -354,6 +347,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Issue).Filename(&parent), nil
+		case "IsError":
+			var parent Issue
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Issue).IsError(&parent), nil
 		case "Summary":
 			var parent Issue
 			err = json.Unmarshal(parentJSON, &parent)
@@ -366,20 +366,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "LintRun":
 		switch fnName {
-		case "Report":
-			var parent LintRun
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*LintRun).Report(&parent), nil
-		case "Issues":
-			var parent LintRun
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*LintRun).Issues(&parent, ctx)
 		case "Assert":
 			var parent LintRun
 			err = json.Unmarshal(parentJSON, &parent)
@@ -387,13 +373,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*LintRun).Assert(&parent, ctx)
-		case "Summary":
-			var parent LintRun
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*LintRun).Summary(&parent, ctx)
 		case "ErrorCount":
 			var parent LintRun
 			err = json.Unmarshal(parentJSON, &parent)
@@ -401,6 +380,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*LintRun).ErrorCount(&parent, ctx)
+		case "Issues":
+			var parent LintRun
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*LintRun).Issues(&parent, ctx)
+		case "Report":
+			var parent LintRun
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*LintRun).Report(&parent), nil
+		case "Summary":
+			var parent LintRun
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*LintRun).Summary(&parent, ctx)
 		case "WarningCount":
 			var parent LintRun
 			err = json.Unmarshal(parentJSON, &parent)

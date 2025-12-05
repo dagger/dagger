@@ -188,13 +188,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Dep":
 		switch fnName {
-		case "GetFiles":
+		case "BubblingFunction":
 			var parent Dep
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Dep).GetFiles(&parent)
+			return nil, (*Dep).BubblingFunction(&parent, ctx)
+		case "FailingFunction":
+			var parent Dep
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Dep).FailingFunction(&parent)
 		case "FileContents":
 			var parent Dep
 			err = json.Unmarshal(parentJSON, &parent)
@@ -209,20 +216,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Dep).FileContents(&parent, ctx, files)
-		case "FailingFunction":
+		case "GetFiles":
 			var parent Dep
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*Dep).FailingFunction(&parent)
-		case "BubblingFunction":
-			var parent Dep
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Dep).BubblingFunction(&parent, ctx)
+			return (*Dep).GetFiles(&parent)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

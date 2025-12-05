@@ -202,34 +202,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "AndOperator":
 		switch fnName {
-		case "Name":
-			var parent AndOperator
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*AndOperator).Name(&parent), nil
-		case "Source":
-			var parent AndOperator
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*AndOperator).Source(&parent), nil
-		case "Prompt":
-			var parent AndOperator
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var base *dagger.LLM
-			if inputArgs["base"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg base", err))
-				}
-			}
-			return (*AndOperator).Prompt(&parent, base), nil
 		case "Check":
 			var parent AndOperator
 			err = json.Unmarshal(parentJSON, &parent)
@@ -244,11 +216,46 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*AndOperator).Check(&parent, ctx, prompt)
+		case "Name":
+			var parent AndOperator
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*AndOperator).Name(&parent), nil
+		case "Prompt":
+			var parent AndOperator
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var base *dagger.LLM
+			if inputArgs["base"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg base", err))
+				}
+			}
+			return (*AndOperator).Prompt(&parent, base), nil
+		case "Source":
+			var parent AndOperator
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*AndOperator).Source(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
 	case "Evals":
 		switch fnName {
+		case "AndOperator":
+			var parent Evals
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Evals).AndOperator(&parent), nil
 		case "Check":
 			var parent Evals
 			err = json.Unmarshal(parentJSON, &parent)
@@ -263,13 +270,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Evals).Iterate(&parent, ctx)
-		case "AndOperator":
-			var parent Evals
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Evals).AndOperator(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

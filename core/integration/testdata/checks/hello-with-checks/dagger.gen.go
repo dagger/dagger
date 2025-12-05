@@ -188,13 +188,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "HelloWithChecks":
 		switch fnName {
-		case "PassingCheck":
-			var parent HelloWithChecks
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*HelloWithChecks).PassingCheck(&parent, ctx)
 		case "FailingCheck":
 			var parent HelloWithChecks
 			err = json.Unmarshal(parentJSON, &parent)
@@ -202,13 +195,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*HelloWithChecks).FailingCheck(&parent, ctx)
-		case "PassingContainer":
-			var parent HelloWithChecks
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*HelloWithChecks).PassingContainer(&parent), nil
 		case "FailingContainer":
 			var parent HelloWithChecks
 			err = json.Unmarshal(parentJSON, &parent)
@@ -216,6 +202,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*HelloWithChecks).FailingContainer(&parent), nil
+		case "PassingCheck":
+			var parent HelloWithChecks
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*HelloWithChecks).PassingCheck(&parent, ctx)
+		case "PassingContainer":
+			var parent HelloWithChecks
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*HelloWithChecks).PassingContainer(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

@@ -2444,6 +2444,17 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 	}
 }
 
+// Export environment variables from an env-file to the container.
+func (r *Container) WithEnvFileVariables(source *EnvFile) *Container {
+	assertNotNil("source", source)
+	q := r.query.Select("withEnvFileVariables")
+	q = q.Arg("source", source)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithEnvVariableOpts contains options for Container.WithEnvVariable
 type ContainerWithEnvVariableOpts struct {
 	// Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
@@ -6219,6 +6230,15 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 
 	return &EnvFile{
+		query: q,
+	}
+}
+
+// Parse the file contents as JSON.
+func (r *File) AsJSON() *JSONValue {
+	q := r.query.Select("asJSON")
+
+	return &JSONValue{
 		query: q,
 	}
 }

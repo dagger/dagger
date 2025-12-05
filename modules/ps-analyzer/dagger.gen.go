@@ -272,6 +272,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "PsAnalyzer":
 		switch fnName {
+		case "Base":
+			var parent PsAnalyzer
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PsAnalyzer).Base(&parent), nil
 		case "Check":
 			var parent PsAnalyzer
 			err = json.Unmarshal(parentJSON, &parent)
@@ -293,13 +300,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*PsAnalyzer).Check(&parent, ctx, file, excludeRules)
-		case "Base":
-			var parent PsAnalyzer
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PsAnalyzer).Base(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

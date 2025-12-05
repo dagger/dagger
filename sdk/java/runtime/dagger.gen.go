@@ -202,27 +202,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "JavaSdk":
 		switch fnName {
-		case "WithConfig":
-			var parent JavaSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var mavenErrors bool
-			if inputArgs["mavenErrors"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["mavenErrors"]), &mavenErrors)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg mavenErrors", err))
-				}
-			}
-			var mavenDebugLogging bool
-			if inputArgs["mavenDebugLogging"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["mavenDebugLogging"]), &mavenDebugLogging)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg mavenDebugLogging", err))
-				}
-			}
-			return (*JavaSdk).WithConfig(&parent, mavenErrors, mavenDebugLogging), nil
 		case "Codegen":
 			var parent JavaSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -244,6 +223,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*JavaSdk).Codegen(&parent, ctx, modSource, introspectionJson)
+		case "JavaImage":
+			var parent JavaSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*JavaSdk).JavaImage(&parent), nil
+		case "MavenImage":
+			var parent JavaSdk
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*JavaSdk).MavenImage(&parent), nil
 		case "ModuleRuntime":
 			var parent JavaSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -265,20 +258,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*JavaSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson)
-		case "MavenImage":
+		case "WithConfig":
 			var parent JavaSdk
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*JavaSdk).MavenImage(&parent), nil
-		case "JavaImage":
-			var parent JavaSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			var mavenErrors bool
+			if inputArgs["mavenErrors"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["mavenErrors"]), &mavenErrors)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg mavenErrors", err))
+				}
 			}
-			return (*JavaSdk).JavaImage(&parent), nil
+			var mavenDebugLogging bool
+			if inputArgs["mavenDebugLogging"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["mavenDebugLogging"]), &mavenDebugLogging)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg mavenDebugLogging", err))
+				}
+			}
+			return (*JavaSdk).WithConfig(&parent, mavenErrors, mavenDebugLogging), nil
 		case "":
 			var parent JavaSdk
 			err = json.Unmarshal(parentJSON, &parent)
