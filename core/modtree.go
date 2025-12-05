@@ -56,7 +56,7 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 	}, nil
 }
 
-func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
+func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
 		telemetry.Reveal(),
 		trace.WithAttributes(
@@ -65,24 +65,19 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 			attribute.String(telemetry.CheckNameAttr, node.PathString()),
 		),
 	)
-	var checkErr error
 	defer func() {
-		if span != nil {
-			// Set the passed attribute on the span for telemetry
-			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, checkErr == nil))
-			telemetry.EndWithCause(span, &checkErr)
-		}
+		span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
+		telemetry.EndWithCause(span, &rerr)
 	}()
 
 	if node.IsCheck {
-		checkErr = node.runLeafCheck(ctx)
-		return nil
+		return node.runLeafCheck(ctx)
 	}
 	children, err := node.Children(ctx)
 	if err != nil {
 		return err
 	}
-	jobs := parallel.New().WithContextualTracer(true)
+	jobs := parallel.New().WithTracing(false)
 	for _, child := range children {
 		if len(include) > 0 {
 			if match, err := node.Match(include); err != nil {
@@ -102,8 +97,7 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 			return child.RunCheck(ctx, nil, nil)
 		})
 	}
-	checkErr = jobs.Run(ctx)
-	return nil
+	return jobs.Run(ctx) // don't suppress the error. That can be handled by the top-level caller if necessary
 }
 
 func (node *ModTreeNode) runLeafCheck(ctx context.Context) error {
