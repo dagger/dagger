@@ -168,7 +168,7 @@ type ElixirSdkDev {
   }
 
   let isSemver(version: String!): Boolean! {
-    let binary = go(source: currentModule.source.directory("is-semver")).binary(".")
+    let binary=go(source:currentModule.source.directory("is-semver")).binary("is-semver")
     let exitCode = devContainer.
       from("alpine:3").
       withFile("/bin/is-semver", binary).
