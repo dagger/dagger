@@ -45,7 +45,7 @@ This example calls multiple functions from the Dagger API in sequence to create 
 
 Like regular functions, Dagger functions can accept arguments. You can see this in the previous example: the `from` function accepts a container image address (`--address`) as argument, the file function accepts a filesystem location (`--path`) as argument, and so on.
 
-In addition to supporting basic types (string, boolean, integer, array...), the Dagger API also provides [powerful types](../getting-started/types/index.mdx) for working with workflows, such as `Container`, `GitRepository`, `Directory`, `Service`, `Secret`. You can use these types as arguments to Dagger functions.
+In addition to basic types (e.g., strings, Booleans, integers, arrays...), the Dagger API also provides [complex types](../getting-started/types/index.mdx) such as `Container`, `GitRepository`, `Directory`, `Service`, `Secret` &hellip; You can use instances of these types as arguments to Dagger functions &mdash; making them very useful for writing workflows.
 
 Here's an example:
 
@@ -82,13 +82,13 @@ This example creates a scratch container, adds Dagger's GitHub repository to it,
 
 ## Chaining
 
-Each of Dagger's types comes with functions of its own, which can be used to interact with the corresponding object.
+There may be many functions available to interact with each type in the Dagger API.
 
-When calling a Dagger function that returns a type, the Dagger API lets you follow up by calling one of that type's functions, which itself can return another type, and so on. This is called "function chaining", and is a core feature of Dagger.
+Furthermore, when a function returns a complex type, the Dagger API allows you to "chain" multiple functions one after another &mdash; as long as each function expects as input the return type of the previous function.
 
-For example, if a Dagger function returns a `Directory`, the caller can continue the chain by calling a function from the `Directory` type to export it to the local filesystem, modify it, mount it into a container, and so on.
+For example, if a Dagger function returns a `Directory`, you can "chain" another function &mdash; which expects a `Directory` as input &mdash; to export it to the local filesystem, modify it, mount it into a container, &hellip;
 
-Although you may not have realized it, you've already seen function chaining in action. Both the previous examples chain functions together into workflows. Here is one more example to illustrate the concept:
+In fact, you've already seen chaining in action! Both the previous examples chain functions together into workflows. Here is one more illustrative example:
 
 <Tabs groupId="shell">
 <TabItem value="System shell">
