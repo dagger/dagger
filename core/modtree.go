@@ -57,8 +57,26 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 }
 
 func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
+	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.String(telemetry.CheckNameAttr, node.PathString()),
+		),
+	)
+	var checkErr error
+	defer func() {
+		if span != nil {
+			// Set the passed attribute on the span for telemetry
+			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, checkErr == nil))
+			telemetry.EndWithCause(span, &checkErr)
+		}
+	}()
+
 	if node.IsCheck {
-		return node.runLeafCheck(ctx)
+		checkErr = node.runLeafCheck(ctx)
+		return nil
 	}
 	children, err := node.Children(ctx)
 	if err != nil {
@@ -84,27 +102,12 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 			return child.RunCheck(ctx, nil, nil)
 		})
 	}
-	return jobs.Run(ctx)
+	checkErr = jobs.Run(ctx)
+	return nil
 }
 
 func (node *ModTreeNode) runLeafCheck(ctx context.Context) error {
-	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
-		telemetry.Reveal(),
-		trace.WithAttributes(
-			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-			attribute.String(telemetry.CheckNameAttr, node.PathString()),
-		),
-	)
-	var checkErr error
-	defer func() {
-		if span != nil {
-			// Set the passed attribute on the span for telemetry
-			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, checkErr == nil))
-			telemetry.EndWithCause(span, &checkErr)
-		}
-	}()
-	checkErr = func() error {
+	return func() error {
 		var status dagql.AnyResult
 		if err := node.DagqlValue(ctx, &status); err != nil {
 			return err
@@ -127,9 +130,6 @@ func (node *ModTreeNode) runLeafCheck(ctx context.Context) error {
 		}
 		return nil
 	}()
-	// We can't distinguish legitimate errors from failed checks, so we just discard.
-	// Bubbling them up to here makes telemetry more useful (no green when a check failed)
-	return nil
 }
 
 // Initialize a standalone dagql server for querying the given module
