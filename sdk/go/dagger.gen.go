@@ -214,6 +214,12 @@ type FunctionID string
 // The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
 type GeneratedCodeID string
 
+// The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
+type GeneratorGroupID string
+
+// The `GeneratorID` scalar type represents an identifier for an object of type Generator.
+type GeneratorID string
+
 // The `GitRefID` scalar type represents an identifier for an object of type GitRef.
 type GitRefID string
 
@@ -641,6 +647,24 @@ func (r *Binding) AsFile() *File {
 	q := r.query.Select("asFile")
 
 	return &File{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Generator
+func (r *Binding) AsGenerator() *Generator {
+	q := r.query.Select("asGenerator")
+
+	return &Generator{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type GeneratorGroup
+func (r *Binding) AsGeneratorGroup() *GeneratorGroup {
+	q := r.query.Select("asGeneratorGroup")
+
+	return &GeneratorGroup{
 		query: q,
 	}
 }
@@ -5394,6 +5418,54 @@ func (r *Env) WithFileOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type GeneratorGroup in the environment
+func (r *Env) WithGeneratorGroupInput(name string, value *GeneratorGroup, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withGeneratorGroupInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired GeneratorGroup output to be assigned in the environment
+func (r *Env) WithGeneratorGroupOutput(name string, description string) *Env {
+	q := r.query.Select("withGeneratorGroupOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Generator in the environment
+func (r *Env) WithGeneratorInput(name string, value *Generator, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withGeneratorInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Generator output to be assigned in the environment
+func (r *Env) WithGeneratorOutput(name string, description string) *Env {
+	q := r.query.Select("withGeneratorOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type GitRef in the environment
 func (r *Env) WithGitRefInput(name string, value *GitRef, description string) *Env {
 	assertNotNil("value", value)
@@ -6964,6 +7036,16 @@ func (r *Function) WithDescription(description string) *Function {
 	}
 }
 
+// Returns the function with a flag indicating it's a generator.
+func (r *Function) WithGenerator(path string) *Function {
+	q := r.query.Select("withGenerator")
+	q = q.Arg("path", path)
+
+	return &Function{
+		query: q,
+	}
+}
+
 // Returns the function with the given source map.
 func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 	assertNotNil("sourceMap", sourceMap)
@@ -7468,6 +7550,252 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
+		query: q,
+	}
+}
+
+type Generator struct {
+	query *querybuilder.Selection
+
+	completed     *bool
+	description   *string
+	generatedPath *string
+	id            *GeneratorID
+	name          *string
+}
+type WithGeneratorFunc func(r *Generator) *Generator
+
+// With calls the provided function with current Generator.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Generator) With(f WithGeneratorFunc) *Generator {
+	return f(r)
+}
+
+func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
+	return &Generator{
+		query: q,
+	}
+}
+
+// The generated changeset
+func (r *Generator) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Whether the generator complete
+func (r *Generator) Completed(ctx context.Context) (bool, error) {
+	if r.completed != nil {
+		return *r.completed, nil
+	}
+	q := r.query.Select("completed")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The description of the generator
+func (r *Generator) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The path of the generated assets if defined
+func (r *Generator) GeneratedPath(ctx context.Context) (string, error) {
+	if r.generatedPath != nil {
+		return *r.generatedPath, nil
+	}
+	q := r.query.Select("generatedPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Generator.
+func (r *Generator) ID(ctx context.Context) (GeneratorID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response GeneratorID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Generator) XXX_GraphQLType() string {
+	return "Generator"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Generator) XXX_GraphQLIDType() string {
+	return "GeneratorID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Generator) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Generator) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return the fully qualified name of the generator
+func (r *Generator) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The path of the generator within its module
+func (r *Generator) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Execute the generator
+func (r *Generator) Run() *Generator {
+	q := r.query.Select("run")
+
+	return &Generator{
+		query: q,
+	}
+}
+
+type GeneratorGroup struct {
+	query *querybuilder.Selection
+
+	id *GeneratorGroupID
+}
+type WithGeneratorGroupFunc func(r *GeneratorGroup) *GeneratorGroup
+
+// With calls the provided function with current GeneratorGroup.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GeneratorGroup) With(f WithGeneratorGroupFunc) *GeneratorGroup {
+	return f(r)
+}
+
+func (r *GeneratorGroup) WithGraphQLQuery(q *querybuilder.Selection) *GeneratorGroup {
+	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// A unique identifier for this GeneratorGroup.
+func (r *GeneratorGroup) ID(ctx context.Context) (GeneratorGroupID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response GeneratorGroupID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GeneratorGroup) XXX_GraphQLType() string {
+	return "GeneratorGroup"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GeneratorGroup) XXX_GraphQLIDType() string {
+	return "GeneratorGroupID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GeneratorGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GeneratorGroup) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return a list of individual generatos and their details
+func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id GeneratorID
+	}
+
+	convert := func(fields []list) []Generator {
+		out := []Generator{}
+
+		for i := range fields {
+			val := Generator{id: &fields[i].Id}
+			val.query = q.Root().Select("loadGeneratorFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Execute all selected generators
+func (r *GeneratorGroup) Run() *GeneratorGroup {
+	q := r.query.Select("run")
+
+	return &GeneratorGroup{
 		query: q,
 	}
 }
@@ -9226,6 +9554,41 @@ func (r *Module) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Return the generator defined by the module with the given name. Must match to exactly one generator.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Module) Generator(name string) *Generator {
+	q := r.query.Select("generator")
+	q = q.Arg("name", name)
+
+	return &Generator{
+		query: q,
+	}
+}
+
+// ModuleGeneratorsOpts contains options for Module.Generators
+type ModuleGeneratorsOpts struct {
+	// Only include generators matching the specified patterns
+	Include []string
+}
+
+// Return all generators defined by the module
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
+	q := r.query.Select("generators")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &GeneratorGroup{
 		query: q,
 	}
 }
@@ -11242,6 +11605,26 @@ func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 	q = q.Arg("id", id)
 
 	return &GeneratedCode{
+		query: q,
+	}
+}
+
+// Load a Generator from its ID.
+func (r *Client) LoadGeneratorFromID(id GeneratorID) *Generator {
+	q := r.query.Select("loadGeneratorFromID")
+	q = q.Arg("id", id)
+
+	return &Generator{
+		query: q,
+	}
+}
+
+// Load a GeneratorGroup from its ID.
+func (r *Client) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
+	q := r.query.Select("loadGeneratorGroupFromID")
+	q = q.Arg("id", id)
+
+	return &GeneratorGroup{
 		query: q,
 	}
 }
