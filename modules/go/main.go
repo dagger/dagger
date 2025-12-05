@@ -219,73 +219,95 @@ func (p *Go) Env(
 		WithMountedDirectory("", p.Source)
 }
 
-// List tests
+// List tests by searching for test functions in *_test.go files
 func (p *Go) Tests(ctx context.Context) ([]*Test, error) {
-	modules, err := p.Modules(ctx, nil, nil)
+	// Search for test function declarations in all *_test.go files
+	results, err := p.Source.Search(
+		ctx,
+		`^func (Test\w+)\(`,
+		dagger.DirectorySearchOpts{
+			Globs: []string{"**/*_test.go"},
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
-	// Store results per module to avoid race conditions
-	moduleTests := make([][]*Test, len(modules))
-	jobs := parallel.New()
-	for i, module := range modules {
-		jobs = jobs.WithJob(module, func(ctx context.Context) error {
-			//			// Generate Dagger runtime if this is a Dagger module
-			//			modP, err := p.GenerateDaggerRuntime(ctx, module)
-			//			if err != nil {
-			//				return err
-			//			}
-			output, err := p.Env(defaultPlatform).
-				WithWorkdir(module).
-				WithExec([]string{
-					"go", "test", "-list", "^Test", "./...",
-				}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
-				Stdout(ctx)
-			if err != nil {
-				return err
-			}
-			lines := strings.Split(strings.TrimSpace(output), "\n")
-			var tests []*Test
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line != "" && strings.HasPrefix(line, "Test") {
-					tests = append(tests, &Test{
-						Module:    module,
-						Name:      line,
-						Toolchain: p,
-					})
-				}
-			}
-			moduleTests[i] = tests
-			return nil
+
+	// Use a map to deduplicate tests by directory+name
+	// (same test name can exist in different directories)
+	seen := make(map[string]bool)
+	var tests []*Test
+
+	for _, result := range results {
+		filePath, err := result.FilePath(ctx)
+		if err != nil {
+			return nil, err
+		}
+		matchedLine, err := result.MatchedLines(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract the test name from the matched line (e.g., "func TestFoo(" -> "TestFoo")
+		testName := extractTestName(matchedLine)
+		if testName == "" {
+			continue
+		}
+
+		// Use directory path as the package identifier
+		dir := filepath.Dir(filePath)
+		if dir == "" {
+			dir = "."
+		}
+
+		// Deduplicate by directory+testName
+		key := dir + ":" + testName
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		tests = append(tests, &Test{
+			Path:      dir,
+			Name:      testName,
+			Toolchain: p,
 		})
 	}
-	if err := jobs.Run(ctx); err != nil {
-		return nil, err
+
+	return tests, nil
+}
+
+// extractTestName extracts the test function name from a line like "func TestFoo(t *testing.T) {"
+func extractTestName(line string) string {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "func Test") {
+		return ""
 	}
-	// Flatten results
-	var allTests []*Test
-	for _, tests := range moduleTests {
-		allTests = append(allTests, tests...)
+	// Remove "func " prefix
+	line = strings.TrimPrefix(line, "func ")
+	// Find the opening parenthesis
+	idx := strings.Index(line, "(")
+	if idx == -1 {
+		return ""
 	}
-	return allTests, nil
+	return line[:idx]
 }
 
 type Test struct {
-	Module    string
+	Path      string
 	Name      string
 	Toolchain *Go // +private
 }
 
 func (test *Test) Address() string {
-	return fmt.Sprintf("%s:%s", test.Module, test.Name)
+	return fmt.Sprintf("%s:%s", test.Path, test.Name)
 }
 
 // +check
 func (test *Test) Run(ctx context.Context) error {
 	_, err := test.Toolchain.
 		Env(defaultPlatform).
-		WithWorkdir(test.Module).
+		WithWorkdir(test.Path).
 		WithExec([]string{"go", "test", "-run", test.Name}).
 		Sync(ctx)
 	return err
