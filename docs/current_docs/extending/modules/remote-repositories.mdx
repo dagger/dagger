@@ -32,7 +32,7 @@ Dagger provides additional flexibility in referencing file and directory argumen
 One approach is to pre-resolve a private Git repository into a `Directory` object at the top-level call. This allows you to decide exactly which repository (and branch or commit) is made available to downstream modules:
 
 ```bash
-dagger call clone --dir git@github.com:private/secret-repo@main
+dagger call clone --dir git@github.com:private/secret-repo#main
 ```
 
 In this approach, the module simply receives a `Directory` object and never directly accesses your SSH agent. [Refer to the cookbook for an example](../../cookbook/filesystems.mdx#mount-or-copy-a-directory-or-remote-repository-to-a-container).
