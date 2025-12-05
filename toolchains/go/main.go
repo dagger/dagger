@@ -219,15 +219,13 @@ func (p *Go) Env(
 		WithMountedDirectory("", p.Source)
 }
 
-// List tests by searching for test functions in *_test.go files
+// List tests by searching for top-level test functions in *_test.go files
 func (p *Go) Tests(ctx context.Context) ([]*Test, error) {
-	// Search for test function declarations in all *_test.go files
-	// This regex matches both:
-	// - Top-level test functions: func TestFoo(
-	// - Test suite methods: func (s *MySuite) TestFoo(
+	// Search for top-level test function declarations (not methods with receivers)
+	// This matches "func TestXxx(" but not "func (s *Suite) TestXxx("
 	results, err := p.Source.Search(
 		ctx,
-		`^func (\([^)]+\)\s+)?(Test\w+)\(`,
+		`^func (Test\w+)\(`,
 		dagger.DirectorySearchOpts{
 			Globs: []string{"**/*_test.go"},
 		},
@@ -280,34 +278,15 @@ func (p *Go) Tests(ctx context.Context) ([]*Test, error) {
 	return tests, nil
 }
 
-// extractTestName extracts the test function name from lines like:
-// - "func TestFoo(t *testing.T) {" -> "TestFoo"
-// - "func (s *MySuite) TestBar() {" -> "TestBar"
+// extractTestName extracts the test function name from a line like "func TestFoo(t *testing.T) {"
 func extractTestName(line string) string {
 	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, "func ") {
+	if !strings.HasPrefix(line, "func Test") {
 		return ""
 	}
 	// Remove "func " prefix
 	line = strings.TrimPrefix(line, "func ")
-
-	// Check if this is a method (has receiver)
-	if strings.HasPrefix(line, "(") {
-		// Find the closing parenthesis of the receiver
-		closeIdx := strings.Index(line, ")")
-		if closeIdx == -1 {
-			return ""
-		}
-		// Skip past the receiver and any whitespace
-		line = strings.TrimSpace(line[closeIdx+1:])
-	}
-
-	// Now line should start with the test name
-	if !strings.HasPrefix(line, "Test") {
-		return ""
-	}
-
-	// Find the opening parenthesis of the function parameters
+	// Find the opening parenthesis
 	idx := strings.Index(line, "(")
 	if idx == -1 {
 		return ""
