@@ -1802,7 +1802,7 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 		{Name: "path", Value: dagql.String(mntSubpath)},
 	}
 	if targetType != "" {
-		args = append(args, dagql.NamedInput{Name: "type", Value: dagql.Opt[ExistsType](targetType)})
+		args = append(args, dagql.NamedInput{Name: "expectedType", Value: dagql.Opt[ExistsType](targetType)})
 	}
 	if doNotFollowSymlinks {
 		args = append(args, dagql.NamedInput{Name: "doNotFollowSymlinks", Value: dagql.Opt[dagql.Boolean](dagql.Boolean(doNotFollowSymlinks))})
@@ -1839,6 +1839,54 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 	}
 
 	return exists, nil
+}
+
+func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetPath string, doNotFollowSymlinks bool) (*Stat, error) {
+	mnt, mntSubpath, err := locatePath(container, targetPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate path %s: %w", targetPath, err)
+	}
+
+	args := []dagql.NamedInput{
+		{Name: "path", Value: dagql.String(mntSubpath)},
+	}
+	if doNotFollowSymlinks {
+		args = append(args, dagql.NamedInput{Name: "doNotFollowSymlinks", Value: dagql.Opt[dagql.Boolean](dagql.Boolean(doNotFollowSymlinks))})
+	}
+
+	var stat *Stat
+	switch {
+	case mnt == nil: // rootfs
+		err = srv.Select(ctx, container.FS, &stat, dagql.Selector{
+			Field: "stat",
+			Args:  args,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+	case mnt.DirectorySource != nil: // directory mount
+		err = srv.Select(ctx, mnt.DirectorySource, &stat, dagql.Selector{
+			Field: "stat",
+			Args:  args,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+	case mnt.FileSource != nil: // file mount
+		err = srv.Select(ctx, mnt.FileSource, &stat, dagql.Selector{
+			Field: "stat",
+		})
+		if err != nil {
+			return nil, err
+		}
+
+	default:
+		return nil, fmt.Errorf("invalid mount source for %s", targetPath)
+	}
+
+	return stat, nil
 }
 
 func (container *Container) WithAnnotation(ctx context.Context, key, value string) (*Container, error) {

@@ -293,6 +293,19 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return file status
+     */
+    public function stat(string $path, ?bool $doNotFollowSymlinks = false): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $doNotFollowSymlinks) {
+        $innerQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Force evaluation in the engine.
      */
     public function sync(): DirectoryId

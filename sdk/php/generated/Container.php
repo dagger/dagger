@@ -377,6 +377,19 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return file status
+     */
+    public function stat(string $path, ?bool $doNotFollowSymlinks = false): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $doNotFollowSymlinks) {
+        $innerQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The buffered standard error stream of the last executed command
      *
      * Returns an error if no command was executed
