@@ -132,7 +132,6 @@ func (r *Release) Publish( //nolint:gocyclo
 
 	discordWebhook *dagger.Secret, // +optional
 ) (*ReleaseReport, error) {
-	_ = hexAPIKey
 	version := ""
 	if semver.IsValid(tag) {
 		version = tag
