@@ -269,7 +269,7 @@ func (p *Go) Tests(ctx context.Context) ([]*Test, error) {
 
 		tests = append(tests, &Test{
 			Path:      dir,
-			Name:      testName,
+			TestName:  testName,
 			Toolchain: p,
 		})
 	}
@@ -295,12 +295,12 @@ func extractTestName(line string) string {
 
 type Test struct {
 	Path      string
-	Name      string
+	TestName  string
 	Toolchain *Go // +private
 }
 
-func (test *Test) Address() string {
-	return fmt.Sprintf("%s:%s", test.Path, test.Name)
+func (test *Test) Name() string {
+	return fmt.Sprintf("%s.%s", test.Path, test.TestName)
 }
 
 // +check
@@ -308,7 +308,7 @@ func (test *Test) Run(ctx context.Context) error {
 	_, err := test.Toolchain.
 		Env(defaultPlatform).
 		WithWorkdir(test.Path).
-		WithExec([]string{"go", "test", "-run", test.Name}).
+		WithExec([]string{"go", "test", "-run", test.TestName}).
 		Sync(ctx)
 	return err
 }
