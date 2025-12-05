@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/util/cleanups"
 	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -125,6 +126,12 @@ func withEngine(
 		if hasTTY {
 			params.PromptHandler = Frontend
 		}
+
+		ca, err := auth.GetCloudAuth(ctx)
+		if err != nil {
+			return cleanup.Run, err
+		}
+		params.CloudAuth = ca
 
 		// Connect to and run with the engine
 		sess, err := client.Connect(ctx, params)

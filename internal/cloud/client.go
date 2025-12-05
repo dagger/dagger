@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,19 +25,41 @@ import (
 var ErrNoOrg = errors.New("no org associated with this Engine")
 
 type Client struct {
-	u              *url.URL
-	g              *graphql.Client
-	h              *http.Client
-	basicAuthToken string
+	u  *url.URL
+	g  *graphql.Client
+	h  *http.Client
+	ca *auth.Cloud
 }
 
 func NewClient(
 	ctx context.Context,
-	basicAuthToken string, // optional, if not set tries default sources
+	cloudAuth *auth.Cloud,
 ) (*Client, error) {
 	api := "https://api.dagger.cloud"
 	if cloudURL := os.Getenv("DAGGER_CLOUD_URL"); cloudURL != "" {
 		api = cloudURL
+	}
+
+	var ts oauth2.TokenSource
+	if cloudAuth != nil {
+		t := *cloudAuth.Token
+		if cloudAuth.Token.Type() == "Basic" {
+			t.AccessToken = base64.StdEncoding.EncodeToString([]byte(t.AccessToken + ":"))
+			ts = oauth2.StaticTokenSource(&t)
+		} else if cloudAuth.Token.Type() == "OIDC" {
+			// translate OIDC token to Bearer but using a static source since
+			// we don't have a refresh token to get new OIDC tokens
+			ts = oauth2.StaticTokenSource(&oauth2.Token{
+				AccessToken: t.AccessToken,
+				TokenType:   "Bearer",
+			})
+		} else {
+			ats, err := auth.TokenSource(ctx, &t)
+			if err != nil {
+				return nil, err
+			}
+			ts = ats
+		}
 	}
 
 	u, err := url.Parse(api)
@@ -44,34 +67,12 @@ func NewClient(
 		return nil, err
 	}
 
-	httpClient := &http.Client{}
-
-	if basicAuthToken == "" {
-		basicAuthToken = os.Getenv("DAGGER_CLOUD_TOKEN")
-	}
-	if basicAuthToken != "" {
-		httpClient.Transport, err = auth.DaggerCloudTransport(ctx, basicAuthToken)
-		if err != nil {
-			return nil, err
-		}
-
-		return &Client{
-			u:              u,
-			h:              httpClient,
-			basicAuthToken: basicAuthToken,
-		}, nil
-	}
-
-	// try oauth token
-	tokenSource, err := auth.TokenSource(ctx)
-	if err != nil {
-		return nil, err
-	}
-	httpClient = oauth2.NewClient(ctx, tokenSource)
+	httpClient := oauth2.NewClient(ctx, ts)
 	return &Client{
-		u: u,
-		g: graphql.NewClient(u.JoinPath("/query").String(), httpClient),
-		h: httpClient,
+		u:  u,
+		g:  graphql.NewClient(u.JoinPath("/query").String(), httpClient),
+		h:  httpClient,
+		ca: cloudAuth,
 	}, nil
 }
 
@@ -187,12 +188,8 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 		return nil, fmt.Errorf("failed to generate a remote Engine request: %w", err)
 	}
 
-	if c.basicAuthToken == "" {
-		org, err := auth.CurrentOrg()
-		if err != nil {
-			return nil, ErrNoOrg
-		}
-		r.Header.Set("X-Dagger-Org", org.ID)
+	if c.ca.Org != nil && c.ca.Org.ID != "" {
+		r.Header.Set("X-Dagger-Org", c.ca.Org.ID)
 	}
 
 	resp, err := c.h.Do(r)

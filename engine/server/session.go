@@ -1582,7 +1582,7 @@ func (srv *Server) CloudEngineClient(
 			Function: function,
 			ExecCmd:  execCmd,
 
-			CloudBasicAuthToken: parentClient.clientMetadata.CloudBasicAuthToken,
+			CloudAuth: parentClient.clientMetadata.CloudAuth,
 
 			EngineTrace:   parentClient.spanExporter,
 			EngineLogs:    parentClient.logExporter,

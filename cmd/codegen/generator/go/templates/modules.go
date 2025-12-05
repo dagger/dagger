@@ -517,6 +517,11 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 		return nil
 	}
 
+	// Sort methods alphabetically to ensure deterministic codegen output
+	sort.Slice(methods, func(i, j int) bool {
+		return methods[i].fn.Name() < methods[j].fn.Name()
+	})
+
 	for _, method := range methods {
 		fnName, sig := method.fn.Name(), method.fn.Type().(*types.Signature)
 		if err := ps.fillObjectFunctionCase(objName, fnName, fnName, sig, method.paramSpecs, cases); err != nil {

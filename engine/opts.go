@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
+	"github.com/dagger/dagger/internal/cloud/auth"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -91,8 +92,8 @@ type ClientMetadata struct {
 	// Disable lazy loading on module runtime.
 	EagerRuntime bool `json:"eager_runtime"`
 
-	// If set, the basic auth token for cloud requests; currently only used for scale-out
-	CloudBasicAuthToken string `json:"cloud_basic_auth_token,omitempty"`
+	// If set, the auth for cloud requests; used for PARC and scale-out
+	CloudAuth *auth.Cloud `json:"cloud_auth,omitempty"`
 
 	// If true, this client enables scaling checks out to cloud engines
 	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`

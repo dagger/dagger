@@ -95,10 +95,13 @@ func Logout() error {
 	return err
 }
 
-func TokenSource(ctx context.Context) (oauth2.TokenSource, error) {
-	token, err := Token(ctx)
-	if err != nil {
-		return nil, err
+func TokenSource(ctx context.Context, token *oauth2.Token) (oauth2.TokenSource, error) {
+	if token == nil {
+		var err error
+		token, err = Token(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return authConfig.TokenSource(ctx, token), nil
@@ -162,6 +165,11 @@ func writeFile(filename string, data []byte, perm os.FileMode) error {
 type Org struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type Cloud struct {
+	Token *oauth2.Token `json:"token,omitempty"`
+	Org   *Org          `json:"org,omitempty"`
 }
 
 func CurrentOrg() (*Org, error) {
@@ -245,15 +253,6 @@ func GetDaggerCloudAuth(ctx context.Context, token string) (string, error) {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(token+":")), nil
 }
 
-func DaggerCloudTransport(ctx context.Context, token string) (http.RoundTripper, error) {
-	header, err := GetDaggerCloudAuth(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-
-	return &authTransport{header: header}, nil
-}
-
 type oidcTokenResponse struct {
 	Token   string `json:"token"`
 	OrgID   string `json:"org_id"`
@@ -321,15 +320,27 @@ func getOIDCToken(ctx context.Context) (*oidcTokenResponse, error) {
 	return nil, fmt.Errorf("OIDC authentication is not supported in this context, please use a DAGGER_CLOUD_TOKEN or 'dagger login'")
 }
 
-type authTransport struct {
-	header string
-}
-
-func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r2 := req.Clone(req.Context())
-	r2.Header.Set("Authorization", t.header)
-
-	return http.DefaultTransport.RoundTrip(r2)
+func GetCloudAuth(ctx context.Context) (*Cloud, error) {
+	var auth *Cloud
+	if dct := os.Getenv("DAGGER_CLOUD_TOKEN"); len(dct) > 0 {
+		// OIDC is a special case within DAGGER_CLOUD_TOKEN
+		if dct == "oidc" {
+			t, err := fetchOIDCAuth(ctx)
+			if err != nil {
+				return nil, err
+			}
+			auth = &Cloud{Token: &oauth2.Token{AccessToken: t, TokenType: "OIDC"}}
+		} else {
+			auth = &Cloud{Token: &oauth2.Token{AccessToken: dct, TokenType: "Basic"}}
+		}
+	} else if at, err := Token(ctx); err == nil {
+		org, err := CurrentOrg()
+		if err != nil {
+			return nil, err
+		}
+		auth = &Cloud{Token: at, Org: org}
+	}
+	return auth, nil
 }
 
 type daggerToken struct {

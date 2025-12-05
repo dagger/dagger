@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/dagger/dagger/engine/client/imageload"
+	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
 type Driver interface {
@@ -35,13 +36,13 @@ type Connector interface {
 }
 
 type DriverOpts struct {
-	DaggerCloudToken    string
-	GPUSupport          string
-	Module              string
-	Function            string
-	ExecCmd             []string
-	ClientID            string
-	CloudBasicAuthToken string
+	DaggerCloudToken string
+	GPUSupport       string
+	Module           string
+	Function         string
+	ExecCmd          []string
+	ClientID         string
+	CloudAuth        *auth.Cloud
 }
 
 const (

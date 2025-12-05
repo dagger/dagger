@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
 
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cloud"
@@ -43,10 +44,6 @@ func init() {
 
 type CloudCLI struct{}
 
-func (cli *CloudCLI) Client(ctx context.Context) (*cloud.Client, error) {
-	return cloud.NewClient(ctx, "")
-}
-
 func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
@@ -62,7 +59,13 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := cli.Client(ctx)
+	var t *oauth2.Token
+	var err error
+	if t, err = auth.Token(ctx); err != nil {
+		return err
+	}
+
+	client, err := cloud.NewClient(ctx, &auth.Cloud{Token: t})
 	if err != nil {
 		return err
 	}

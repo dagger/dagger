@@ -114,7 +114,7 @@ type Params struct {
 
 	EagerRuntime bool
 
-	CloudBasicAuthToken string
+	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
 }
 
@@ -402,13 +402,13 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
-		DaggerCloudToken:    cloudToken,
-		GPUSupport:          os.Getenv(drivers.EnvGPUSupport),
-		Module:              params.Module,
-		Function:            params.Function,
-		ExecCmd:             params.ExecCmd,
-		ClientID:            c.ID,
-		CloudBasicAuthToken: params.CloudBasicAuthToken,
+		DaggerCloudToken: cloudToken,
+		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
+		Module:           params.Module,
+		Function:         params.Function,
+		ExecCmd:          params.ExecCmd,
+		ClientID:         c.ID,
+		CloudAuth:        params.CloudAuth,
 	})
 	provisionCancel()
 	telemetry.EndWithCause(provisionSpan, &err)
@@ -1348,11 +1348,6 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		cloudOrg = o
 	}
 
-	basicToken := c.CloudBasicAuthToken
-	if basicToken == "" {
-		basicToken = os.Getenv("DAGGER_CLOUD_TOKEN")
-	}
-
 	var remoteEngineID string
 	if c.connector != nil {
 		remoteEngineID = c.connector.EngineID()
@@ -1375,7 +1370,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		SSHAuthSocketPath:         sshAuthSock,
 		AllowedLLMModules:         c.AllowedLLMModules,
 		EagerRuntime:              c.EagerRuntime,
-		CloudBasicAuthToken:       basicToken,
+		CloudAuth:                 c.CloudAuth,
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
 	}
