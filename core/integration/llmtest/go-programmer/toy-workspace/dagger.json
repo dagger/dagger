@@ -1,7 +1,11 @@
 {
   "name": "toy-workspace",
-  "engineVersion": "v0.16.3",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
-  }
+  },
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
 }

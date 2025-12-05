@@ -10,5 +10,8 @@
       "source": "broken"
     }
   ],
+  "codegen": {
+    "automaticGitignore": false
+  },
   "disableDefaultFunctionCaching": true
 }

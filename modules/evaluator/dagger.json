@@ -9,5 +9,8 @@
       "name": "workspace",
       "source": "workspace"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

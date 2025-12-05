@@ -9,5 +9,9 @@
       "name": "invalid",
       "source": "./invalid"
     }
-  ]
+  ],
+  "automaticGitignore": false,
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

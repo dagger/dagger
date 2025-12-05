@@ -22,5 +22,8 @@
       "name": "shellcheck",
       "source": "../../modules/shellcheck"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }
