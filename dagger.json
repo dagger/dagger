@@ -32,9 +32,10 @@
     {
       "name": "go",
       "source": "modules/go",
-      "arguments": [
+      "customizations": [
         {
-          "name": "source",
+          "name": "",
+          "argument": "source",
           "ignore": [
             "bin",
             ".git",
@@ -94,12 +95,13 @@
     {
       "name": "security",
       "source": "toolchains/security",
-      "arguments": [
+      "customizations": [
         {
           "function": [
             "scanSource"
           ],
-          "name": "source",
+          "name": "",
+          "argument": "source",
           "ignore": [
             "bin",
             ".git",
@@ -153,8 +155,5 @@
       "source": "toolchains/cli-dev"
     }
   ],
-  "source": ".dagger",
-  "codegen": {
-    "automaticGitignore": false
-  }
+  "source": ".dagger"
 }
