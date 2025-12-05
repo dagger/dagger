@@ -33,6 +33,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
+	core.FileTypes.Install(srv)
+	dagql.Fields[*core.Stat]{}.Install(srv)
 
 	dagql.Fields[*core.Directory]{
 		Syncer[*core.Directory]().
@@ -127,6 +129,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
+		dagql.Func("stat", s.stat).
+			Doc(`Return file status`).
+			Args(
+				dagql.Arg("path").Doc(`Path to stat (e.g., "/file.txt").`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
+			),
 		dagql.NodeFunc("directory", maintainContentHashing(s.subdirectory)).
 			Doc(`Retrieves a directory at the given path.`).
 			Args(
@@ -188,7 +196,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc(`Changes to apply to the directory`),
 			),
-		dagql.Func("export", s.export).
+		dagql.NodeFunc("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
@@ -196,9 +204,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
 				dagql.Arg("wipe").Doc(`If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
 			),
-		dagql.Func("export", s.exportLegacy).
-			View(BeforeVersion("v0.12.0")).
-			Extend(),
+		//dagql.Func("export", s.exportLegacy).
+		//	View(BeforeVersion("v0.12.0")).
+		//	Extend(),
 		dagql.NodeFunc("dockerBuild", s.dockerBuild).
 			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
 			Args(
@@ -846,6 +854,19 @@ func (s *directorySchema) exists(ctx context.Context, parent *core.Directory, ar
 	return dagql.NewBoolean(exists), err
 }
 
+type statArgs struct {
+	Path                string
+	DoNotFollowSymlinks bool `default:"false"`
+}
+
+func (s *directorySchema) stat(ctx context.Context, parent *core.Directory, args statArgs) (*core.Stat, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return parent.Stat(ctx, srv, args.Path, args.DoNotFollowSymlinks)
+}
+
 type diffArgs struct {
 	Other core.DirectoryID
 
@@ -1035,10 +1056,12 @@ func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.Objec
 type dirExportArgs struct {
 	Path string
 	Wipe bool `default:"false"`
+
+	//FSDagOpInternalArgs
 }
 
-func (s *directorySchema) export(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.String, error) {
-	err := parent.Export(ctx, args.Path, !args.Wipe)
+func (s *directorySchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirExportArgs) (dagql.String, error) {
+	err := parent.Self().Export(ctx, args.Path, !args.Wipe)
 	if err != nil {
 		return "", err
 	}
@@ -1057,13 +1080,13 @@ func (s *directorySchema) export(ctx context.Context, parent *core.Directory, ar
 	return dagql.String(stat.Path), err
 }
 
-func (s *directorySchema) exportLegacy(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.Boolean, error) {
-	_, err := s.export(ctx, parent, args)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}
+//func (s *directorySchema) exportLegacy(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.Boolean, error) {
+//	_, err := s.export(ctx, parent, args)
+//	if err != nil {
+//		return false, err
+//	}
+//	return true, nil
+//}
 
 type dirDockerBuildArgs struct {
 	Platform   dagql.Optional[core.Platform]
