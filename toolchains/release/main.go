@@ -273,12 +273,16 @@ func (r *Release) Publish( //nolint:gocyclo
 			},
 		},
 		{
-			name:    "🧪 Elixir SDK",
-			path:    "sdk/elixir/",
-			tag:     "sdk/elixir/",
-			link:    "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
-			release: nil, // FIXME
-			dryRun:  nil, // FIXME
+			name: "🧪 Elixir SDK",
+			path: "sdk/elixir/",
+			tag:  "sdk/elixir/",
+			link: "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
+			release: func(ctx context.Context) error {
+				return dag.ElixirSDKDev().Publish(ctx, tag, hexAPIKey)
+			},
+			dryRun: func(ctx context.Context) error {
+				return dag.ElixirSDKDev().ReleaseDryRun(ctx)
+			},
 		},
 		{
 			name: "⚙️ Rust SDK",
