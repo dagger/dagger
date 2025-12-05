@@ -182,8 +182,10 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 		}
 		if lastCall != nil {
 			if base := span.Base(); base != nil {
-				tree.Chained = base.Digest == lastCall.Span.CallDigest ||
-					base.Digest == lastCall.Span.Output
+				tree.Chained =
+					lastCall.Parent == tree.Parent &&
+						(base.Digest == lastCall.Span.CallDigest ||
+							base.Digest == lastCall.Span.Output)
 				lastCall.Final = !tree.Chained
 			}
 		}
