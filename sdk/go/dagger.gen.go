@@ -9123,6 +9123,8 @@ func (r *Module) Check(name string) *Check {
 type ModuleChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// List all checks in the list, even dynamic ones
+	All bool
 }
 
 // Return all checks defined by the module
@@ -9134,6 +9136,10 @@ func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
 		}
 	}
 
