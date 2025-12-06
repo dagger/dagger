@@ -219,6 +219,56 @@ func (p *Go) Env(
 		WithMountedDirectory("", p.Source)
 }
 
+func (p *Go) RunTests(
+	ctx context.Context,
+	// Path of the working directory for 'go test', relative to the workspace root
+	workdir,
+	// Tests to include, in the standard go test pattern format (go test -run)
+	// +optional
+	include string,
+	// Tests to exclude, in the standard go test pattern format (go test -skip)
+	// +optional
+	exclude string,
+	// Abort test run on first failure
+	// +optional
+	failfast bool,
+	// How many tests to run in parallel - defaults to the number of CPUs
+	// +optional
+	// +default=0
+	parallel int,
+	// How long before timing out the test run
+	// +optional
+	// +default="30m"
+	timeout string,
+	// +optional
+	// +default=1
+	count int,
+) error {
+	if p.Race {
+		p.Cgo = true
+	}
+	cmd := []string{"go", "test", "-v"}
+	if parallel != 0 {
+		cmd = append(cmd, fmt.Sprintf("-parallel=%d", parallel))
+	}
+	cmd = append(cmd, fmt.Sprintf("-timeout=%s", timeout))
+	cmd = append(cmd, fmt.Sprintf("-count=%d", count))
+	if include != "" {
+		cmd = append(cmd, "-run", include)
+	}
+	if exclude != "" {
+		cmd = append(cmd, "-skip", exclude)
+	}
+	if failfast {
+		cmd = append(cmd, "-failfast")
+	}
+	_, err := p.
+		Env(defaultPlatform).
+		WithExec(goCommand(cmd, []string{"."}, p.Ldflags, p.Values, p.Race)).
+		Sync(ctx)
+	return err
+}
+
 // List tests by searching for top-level test functions in *_test.go files
 func (p *Go) Tests(ctx context.Context) ([]*Test, error) {
 	// Search for top-level test function declarations (not methods with receivers)

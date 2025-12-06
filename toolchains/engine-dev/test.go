@@ -12,69 +12,52 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
-// List all core engine tests
-// FIXME
-//
-//	func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-//		return dag.Go(dagger.GoOpts{Source: dev.Source}).ListTests(ctx)
-//	}
-//
-// Run core engine tests
-// +cache="session"
-func (dev *EngineDev) Test(
-	ctx context.Context,
-	// Only run these tests
-	// +optional
-	run string,
-	// Skip these tests
-	// +optional
-	skip string,
-	// +optional
-	// +default="./..."
-	pkg string,
-	// Abort test run on first failure
-	// +optional
-	failfast bool,
-	// How many tests to run in parallel - defaults to the number of CPUs
-	// +optional
-	parallel int,
-	// How long before timing out the test run
-	// +optional
-	timeout string,
-	// +optional
-	race bool,
-	// +default=1
-	// +optional
-	count int,
-	// +optional
-	envFile *dagger.Secret,
-	// Enable verbose output
-	// +optional
-	testVerbose bool,
-	// Update golden files
-	// +optional
-	update bool,
-) error {
-	// FIXME: use the damn standard Go toolchain
-	ctr, _, err := dev.testContainer(ctx)
+// Engine e2e tests
+func (dev *EngineDev) Tests(ctx context.Context) ([]*Test, error) {
+	goTests, err := dag.Go(dagger.GoOpts{
+		Source: dev.Source,
+	}).Tests(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tests := make([]*Test, len(goTests))
+	for i := range goTests {
+		tests[i] = &Test{
+			Native: &goTests[i],
+		}
+	}
+	return tests, nil
+}
+
+type Test struct {
+	Native *dagger.GoTest // +private
+	Dev    *EngineDev     // +private
+}
+
+func (test *Test) Name(ctx context.Context) (string, error) {
+	return test.Native.Name(ctx)
+}
+
+// +check
+func (test *Test) Run(ctx context.Context) error {
+	devContainer, _, err := test.Dev.testContainer(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = dev.test(ctx, ctr, &testOpts{
-		runTestRegex:  run,
-		skipTestRegex: skip,
-		pkg:           pkg,
-		failfast:      failfast,
-		parallel:      parallel,
-		timeout:       timeout,
-		race:          race,
-		count:         count,
-		envs:          envFile,
-		testVerbose:   testVerbose,
-		update:        update,
-	},
-	).Sync(ctx)
-	return err
+	workdir, err := test.Native.Dir(ctx)
+	if err != nil {
+		return err
+	}
+	testName, err := test.Native.TestName(ctx)
+	if err != nil {
+		return err
+	}
+	return dag.Go(dagger.GoOpts{
+		Source: test.Dev.Source,
+		Base:   devContainer,
+	}).RunTests(ctx, workdir, dagger.GoRunTestsOpts{
+		Include: testName,
+	})
 }
 
 // Run telemetry tests
