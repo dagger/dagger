@@ -99,6 +99,26 @@ defmodule ArgOptions do
   end
 end
 
+defmodule CacheAttribute do
+  @moduledoc false
+  use Dagger.Mod.Object, name: "CacheAttribute"
+
+  @cache :never
+  defn never_cached() :: Dagger.Void.t() do
+    :ok
+  end
+
+  @cache :per_session
+  defn per_session_cached() :: Dagger.Void.t() do
+    :ok
+  end
+
+  @cache ttl: "42s"
+  defn ttl_cached() :: Dagger.Void.t() do
+    :ok
+  end
+end
+
 defmodule ReturnVoid do
   @moduledoc false
   use Dagger.Mod.Object, name: "ReturnVoid"

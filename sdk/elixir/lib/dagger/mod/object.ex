@@ -103,6 +103,34 @@ defmodule Dagger.Mod.Object do
     {module_doc, function_docs}
   end
 
+  @doc """
+  Get function cache policy.
+
+  Return `Dagger.FunctionCachePolicy` or `nil` if the function did not specify `@cache` attributes
+  """
+  @spec get_function_cache_policy(struct()) ::
+          Dagger.FunctionCachePolicy.t()
+          | {Dagger.FunctionCachePolicy.t(), {:ttl, String.t()}}
+          | nil
+
+  def get_function_cache_policy(fun_def) do
+    policy = fun_def |> Map.get(:cache_policy)
+
+    case policy do
+      :never ->
+        Dagger.FunctionCachePolicy.never()
+
+      :per_session ->
+        Dagger.FunctionCachePolicy.per_session()
+
+      [ttl: ttl] ->
+        {Dagger.FunctionCachePolicy.default(), [time_to_live: ttl]}
+
+      nil ->
+        nil
+    end
+  end
+
   defmacro __before_compile__(env) do
     if Module.get_attribute(env.module, :struct_declared) do
       required_fields = Module.get_attribute(env.module, :required_fields) || []
@@ -134,6 +162,7 @@ defmodule Dagger.Mod.Object do
 
       Module.register_attribute(__MODULE__, :function, accumulate: true, persist: true)
       Module.register_attribute(__MODULE__, :field, accumulate: true, persist: true)
+      Module.register_attribute(__MODULE__, :cache, accumulate: false, persist: true)
 
       @before_compile Dagger.Mod.Object
 
@@ -172,9 +201,13 @@ defmodule Dagger.Mod.Object do
     return_def = compile_typespec!(return)
 
     quote do
+      cache_attr =
+        Module.get_attribute(__MODULE__, :cache)
+
       @function {unquote(name),
                  %Dagger.Mod.Object.FunctionDef{
                    self: unquote(has_self?),
+                   cache_policy: cache_attr,
                    args: unquote(arg_defs),
                    return: unquote(return_def)
                  }}
