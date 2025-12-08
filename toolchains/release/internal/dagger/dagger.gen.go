@@ -186,6 +186,9 @@ type DocsDevID string
 // The `DotnetSdkDevID` scalar type represents an identifier for an object of type DotnetSdkDev.
 type DotnetSDKDevID string
 
+// The `ElixirSdkDevID` scalar type represents an identifier for an object of type ElixirSdkDev.
+type ElixirSDKDevID string
+
 // The `EngineDevID` scalar type represents an identifier for an object of type EngineDev.
 type EngineDevID string
 
@@ -721,6 +724,15 @@ func (r *Binding) AsDotnetSDKDev() *DotnetSDKDev {
 	q := r.query.Select("asDotnetSdkDev")
 
 	return &DotnetSDKDev{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ElixirSdkDev
+func (r *Binding) AsElixirSDKDev() *ElixirSDKDev {
+	q := r.query.Select("asElixirSdkDev")
+
+	return &ElixirSDKDev{
 		query: q,
 	}
 }
@@ -5238,6 +5250,227 @@ func (r *DotnetSDKDev) Workspace() *Directory {
 	}
 }
 
+type ElixirSDKDev struct {
+	query *querybuilder.Selection
+
+	baseImage     *string
+	codegenTest   *Void
+	id            *ElixirSDKDevID
+	lint          *Void
+	publish       *Void
+	releaseDryRun *Void
+	sdkTest       *Void
+	sourcePath    *string
+	test          *Void
+}
+
+func (r *ElixirSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *ElixirSDKDev {
+	return &ElixirSDKDev{
+		query: q,
+	}
+}
+
+func (r *ElixirSDKDev) BaseImage(ctx context.Context) (string, error) {
+	if r.baseImage != nil {
+		return *r.baseImage, nil
+	}
+	q := r.query.Select("baseImage")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Bump the Elixir SDK's Engine dependency
+func (r *ElixirSDKDev) Bump(version string) *Changeset {
+	q := r.query.Select("bump")
+	q = q.Arg("version", version)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Run dagger_codegen tests
+func (r *ElixirSDKDev) CodegenTest(ctx context.Context) error {
+	if r.codegenTest != nil {
+		return nil
+	}
+	q := r.query.Select("codegenTest")
+
+	return q.Execute(ctx)
+}
+
+func (r *ElixirSDKDev) DevContainer() *Container {
+	q := r.query.Select("devContainer")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Regenerate the Elixir SDK API
+func (r *ElixirSDKDev) Generate(introspectionJson *File) *Changeset {
+	assertNotNil("introspectionJson", introspectionJson)
+	q := r.query.Select("generate")
+	q = q.Arg("introspectionJson", introspectionJson)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// A unique identifier for this ElixirSdkDev.
+func (r *ElixirSDKDev) ID(ctx context.Context) (ElixirSDKDevID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ElixirSDKDevID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ElixirSDKDev) XXX_GraphQLType() string {
+	return "ElixirSdkDev"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ElixirSDKDev) XXX_GraphQLIDType() string {
+	return "ElixirSDKDevID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ElixirSDKDev) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ElixirSDKDev) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *ElixirSDKDev) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadElixirSDKDevFromID(ElixirSDKDevID(id))
+	return nil
+}
+
+// Lint the SDK
+func (r *ElixirSDKDev) Lint(ctx context.Context) error {
+	if r.lint != nil {
+		return nil
+	}
+	q := r.query.Select("lint")
+
+	return q.Execute(ctx)
+}
+
+// ElixirSDKDevPublishOpts contains options for ElixirSDKDev.Publish
+type ElixirSDKDevPublishOpts struct {
+	DryRun bool
+}
+
+// Publish the Elixir SDK
+func (r *ElixirSDKDev) Publish(ctx context.Context, tag string, hexApiKey *Secret, opts ...ElixirSDKDevPublishOpts) error {
+	assertNotNil("hexApiKey", hexApiKey)
+	if r.publish != nil {
+		return nil
+	}
+	q := r.query.Select("publish")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `dryRun` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DryRun) {
+			q = q.Arg("dryRun", opts[i].DryRun)
+		}
+	}
+	q = q.Arg("tag", tag)
+	q = q.Arg("hexApiKey", hexApiKey)
+
+	return q.Execute(ctx)
+}
+
+// Test the publishing process
+func (r *ElixirSDKDev) ReleaseDryRun(ctx context.Context) error {
+	if r.releaseDryRun != nil {
+		return nil
+	}
+	q := r.query.Select("releaseDryRun")
+
+	return q.Execute(ctx)
+}
+
+// Run the SDK tests
+func (r *ElixirSDKDev) SDKTest(ctx context.Context) error {
+	if r.sdkTest != nil {
+		return nil
+	}
+	q := r.query.Select("sdkTest")
+
+	return q.Execute(ctx)
+}
+
+func (r *ElixirSDKDev) Source() *Directory {
+	q := r.query.Select("source")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+func (r *ElixirSDKDev) SourcePath(ctx context.Context) (string, error) {
+	if r.sourcePath != nil {
+		return *r.sourcePath, nil
+	}
+	q := r.query.Select("sourcePath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Sync Elixir image to keep both dev and runtime modules consistent
+func (r *ElixirSDKDev) SyncImage() *File {
+	q := r.query.Select("syncImage")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Test the SDK
+func (r *ElixirSDKDev) Test(ctx context.Context) error {
+	if r.test != nil {
+		return nil
+	}
+	q := r.query.Select("test")
+
+	return q.Execute(ctx)
+}
+
+func (r *ElixirSDKDev) Workspace() *Directory {
+	q := r.query.Select("workspace")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 type EngineDev struct { // engine-dev (../../../../toolchains/engine-dev/main.go:58:6)
 	query *querybuilder.Selection
 
@@ -7074,6 +7307,30 @@ func (r *Env) WithDotnetSDKDevInput(name string, value *DotnetSDKDev, descriptio
 // Declare a desired DotnetSdkDev output to be assigned in the environment
 func (r *Env) WithDotnetSDKDevOutput(name string, description string) *Env {
 	q := r.query.Select("withDotnetSdkDevOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ElixirSdkDev in the environment
+func (r *Env) WithElixirSDKDevInput(name string, value *ElixirSDKDev, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withElixirSdkDevInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ElixirSdkDev output to be assigned in the environment
+func (r *Env) WithElixirSDKDevOutput(name string, description string) *Env {
+	q := r.query.Select("withElixirSdkDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -15324,6 +15581,37 @@ func (r *Client) DotnetSDKDev(opts ...DotnetSDKDevOpts) *DotnetSDKDev {
 	}
 }
 
+// ElixirSDKDevOpts contains options for Client.ElixirSDKDev
+type ElixirSDKDevOpts struct {
+	BaseImage string
+
+	Workspace *Directory
+
+	SourcePath string
+}
+
+func (r *Client) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev {
+	q := r.query.Select("elixirSdkDev")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `baseImage` optional argument
+		if !querybuilder.IsZeroValue(opts[i].BaseImage) {
+			q = q.Arg("baseImage", opts[i].BaseImage)
+		}
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
+		}
+		// `sourcePath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
+			q = q.Arg("sourcePath", opts[i].SourcePath)
+		}
+	}
+
+	return &ElixirSDKDev{
+		query: q,
+	}
+}
+
 // EngineDevOpts contains options for Client.EngineDev
 type EngineDevOpts struct {
 	Source *Directory // engine-dev (../../../../toolchains/engine-dev/main.go:41:2)
@@ -15832,6 +16120,16 @@ func (r *Client) LoadDotnetSDKDevFromID(id DotnetSDKDevID) *DotnetSDKDev {
 	q = q.Arg("id", id)
 
 	return &DotnetSDKDev{
+		query: q,
+	}
+}
+
+// Load a ElixirSdkDev from its ID.
+func (r *Client) LoadElixirSDKDevFromID(id ElixirSDKDevID) *ElixirSDKDev {
+	q := r.query.Select("loadElixirSdkDevFromID")
+	q = q.Arg("id", id)
+
+	return &ElixirSDKDev{
 		query: q,
 	}
 }
