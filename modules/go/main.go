@@ -690,7 +690,7 @@ func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*dagger.C
 		daggerJSON := dag.JSON().WithContents(dagger.JSON(daggerJSONContents))
 		sdk, err := daggerJSON.Field([]string{"sdk", "source"}).AsString(ctx)
 		if err != nil {
-			// It's valid for a dagger.json to not have a source field
+			// It's valid for a dagger.json to not have an SDK field
 			return nil //nolint:nilerr
 		}
 		daggerModPath = path.Clean(strings.TrimSuffix(daggerJSONPath, "dagger.json"))
@@ -706,7 +706,13 @@ func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*dagger.C
 			sourceField = "."
 		}
 		runtimeSourcePath := path.Clean(path.Join(daggerModPath, sourceField))
-		rel, err := filepath.Rel(path.Clean("/"+runtimeSourcePath), path.Clean("/"+start))
+
+		// Normalize both paths to absolute paths for proper comparison
+		// Since we're working with paths relative to the source root, prepend "/"
+		absRuntimeSourcePath := path.Clean("/" + runtimeSourcePath)
+		absStart := path.Clean("/" + start)
+
+		rel, err := filepath.Rel(absRuntimeSourcePath, absStart)
 		if err != nil {
 			return err
 		}
