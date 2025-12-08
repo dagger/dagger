@@ -103,26 +103,6 @@ func (r *Repo) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r PullRequest) MarshalJSON() ([]byte, error) {
-	var concrete struct {
-		Gh *Gh
-	}
-	concrete.Gh = r.Gh
-	return json.Marshal(&concrete)
-}
-
-func (r *PullRequest) UnmarshalJSON(bs []byte) error {
-	var concrete struct {
-		Gh *Gh
-	}
-	err := json.Unmarshal(bs, &concrete)
-	if err != nil {
-		return err
-	}
-	r.Gh = concrete.Gh
-	return nil
-}
-
 func (r Release) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Gh *Gh
@@ -143,34 +123,22 @@ func (r *Release) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r PullRequestReview) MarshalJSON() ([]byte, error) {
+func (r PullRequest) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		PullRequest string
-		Body        string
-		BodyFile    *dagger.File
-		Gh          *Gh
+		Gh *Gh
 	}
-	concrete.PullRequest = r.PullRequest
-	concrete.Body = r.Body
-	concrete.BodyFile = r.BodyFile
 	concrete.Gh = r.Gh
 	return json.Marshal(&concrete)
 }
 
-func (r *PullRequestReview) UnmarshalJSON(bs []byte) error {
+func (r *PullRequest) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		PullRequest string
-		Body        string
-		BodyFile    *dagger.File
-		Gh          *Gh
+		Gh *Gh
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
-	r.PullRequest = concrete.PullRequest
-	r.Body = concrete.Body
-	r.BodyFile = concrete.BodyFile
 	r.Gh = concrete.Gh
 	return nil
 }
@@ -222,6 +190,38 @@ func (r *Latest) UnmarshalJSON(bs []byte) error {
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
+	return nil
+}
+
+func (r PullRequestReview) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		PullRequest string
+		Body        string
+		BodyFile    *dagger.File
+		Gh          *Gh
+	}
+	concrete.PullRequest = r.PullRequest
+	concrete.Body = r.Body
+	concrete.BodyFile = r.BodyFile
+	concrete.Gh = r.Gh
+	return json.Marshal(&concrete)
+}
+
+func (r *PullRequestReview) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		PullRequest string
+		Body        string
+		BodyFile    *dagger.File
+		Gh          *Gh
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.PullRequest = concrete.PullRequest
+	r.Body = concrete.Body
+	r.BodyFile = concrete.BodyFile
+	r.Gh = concrete.Gh
 	return nil
 }
 
