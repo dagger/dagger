@@ -47,7 +47,7 @@ export type FunctionOptions = {
    * A duration string (e.g., "5m", "1h") means persistent caching for that duration.
    * By default, caching is enabled with a long default set by the engine.
    */
-  cache?: string
+  cache?: "never" | "session" | string
 
   /**
    * An optional alias to use for the function when exposed on the API.
@@ -112,7 +112,7 @@ export class Registry {
    * class' method that must be exposed to the Dagger API.
    */
   func = (
-    alias?: string,
+    opts?: FunctionOptions | string,
   ): ((
     target: object,
     propertyKey: string | symbol,
