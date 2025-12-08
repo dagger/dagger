@@ -17,7 +17,7 @@
   },
   "main": "dist/src/index.js",
   "dependencies": {
-    "@grpc/grpc-js": "^1.14.1",
+    "@grpc/grpc-js": "^1.14.2",
     "@lifeomic/axios-fetch": "^3.1.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/core": "^2.2.0",
@@ -52,23 +52,23 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
-    "@otel-test-runner/mocha-test": "0.0.12",
+    "@otel-test-runner/mocha-test": "0.1.0",
     "@trivago/prettier-plugin-sort-imports": "^6.0.0",
     "@types/adm-zip": "^0.5.7",
     "@types/mocha": "^10.0.10",
     "@types/node": "~24.10.1",
     "@types/tar": "^6.1.13",
-    "@typescript-eslint/eslint-plugin": "^8.48.0",
-    "@typescript-eslint/parser": "^8.48.0",
+    "@typescript-eslint/eslint-plugin": "^8.48.1",
+    "@typescript-eslint/parser": "^8.48.1",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "mocha": "^11.7.5",
-    "prettier": "^3.7.3",
+    "prettier": "^3.7.4",
     "rollup": "^4.53.3",
     "rollup-plugin-dts": "^6.3.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript-eslint": "^8.48.0"
+    "typescript-eslint": "^8.48.1"
   }
 }
