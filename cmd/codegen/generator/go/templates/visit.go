@@ -5,6 +5,7 @@ import (
 	"go/types"
 	"os"
 	"runtime/debug"
+	"sort"
 )
 
 type (
@@ -76,6 +77,18 @@ func (funcs goTemplateFuncs) visitTypes(
 	added := map[string]struct{}{}
 
 	for len(tps) != 0 {
+		// Sort types by name to ensure deterministic ordering of generated code.
+		// This is especially important for MarshalJSON/UnmarshalJSON methods.
+		sort.Slice(tps, func(i, j int) bool {
+			iNamed, iOk := tps[i].(*types.Named)
+			jNamed, jOk := tps[j].(*types.Named)
+			if iOk && jOk {
+				return iNamed.Obj().Name() < jNamed.Obj().Name()
+			}
+			// If either is not named, fallback to string representation
+			return tps[i].String() < tps[j].String()
+		})
+
 		var nextTps []types.Type
 		for _, tp := range tps {
 			tp = dealias(tp)
