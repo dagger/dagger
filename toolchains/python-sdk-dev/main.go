@@ -57,6 +57,7 @@ func New(
 					"PATH",
 					"/root/.local/bin:/usr/local/bin:$PATH",
 					dagger.ContainerWithEnvVariableOpts{Expand: true}).
+				WithEnvVariable("UV_NATIVE_TLS", "1").
 				With(toolsCache("uv", "ruff", "mypy")).
 				With(uvTool(workspace)).
 				WithDirectory("/src/sdk/python", workspace.Directory(sourcePath)).

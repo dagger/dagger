@@ -124,6 +124,7 @@ const TypescriptSDKTSXVersion = "4.15.6"
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
 	tsxNodeModule := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultNodeImageRef).
+		WithEnvVariable("NODE_EXTRA_CA_CERTS", "/etc/ssl/certs/ca-certificates.crt").
 		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("tsx@%s", TypescriptSDKTSXVersion)}).
 		Directory("/usr/local/lib/node_modules/tsx")
 
@@ -146,6 +147,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 
 	bunBuilderCtr := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultBunImageRef).
+		WithEnvVariable("NODE_USE_SYSTEM_CA", "1").
 		// NodeJS is required to run tsc.
 		WithExec([]string{"apk", "add", "nodejs"}).
 		// Install tsc binary.

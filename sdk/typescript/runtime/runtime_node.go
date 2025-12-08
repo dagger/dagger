@@ -236,7 +236,8 @@ func NewYarnPkgManager(runtime *NodeRuntime) *YarnPkgManager {
 	runtime.ctr = runtime.ctr.
 		WithMountedCache("/root/.cache/yarn", dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModeShared,
-		})
+		}).
+		WithExec([]string{"yarn", "config", "set", "cafile", "/etc/ssl/certs/ca-certificates.crt"})
 
 	return &YarnPkgManager{
 		NodeRuntime: runtime,

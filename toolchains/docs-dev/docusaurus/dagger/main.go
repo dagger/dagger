@@ -128,7 +128,9 @@ func (m *Docusaurus) packageManager() string {
 
 func (m *Docusaurus) packageManagerInstall(ctr *dagger.Container) *dagger.Container {
 	if m.Yarn {
-		return ctr.WithExec([]string{"yarn", "install", "--frozen-lockfile"})
+		return ctr.
+			WithExec([]string{"yarn", "config", "set", "cafile", "/etc/ssl/certs/ca-certificates.crt"}).
+			WithExec([]string{"yarn", "install", "--frozen-lockfile"})
 	}
 	return ctr.WithExec([]string{"npm", "ci"})
 }

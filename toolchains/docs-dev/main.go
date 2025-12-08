@@ -113,6 +113,7 @@ func (d DocsDev) Generate(
 		WithMountedDirectory("/src", withGqlSchema).
 		WithMountedDirectory("/mnt/spectaql", spectaql()).
 		WithWorkdir("/src/docs").
+		WithExec([]string{"yarn", "config", "set", "cafile", "/etc/ssl/certs/ca-certificates.crt"}).
 		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).
 		// -t specifies the target directory where spectaql will write the generated output
 		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "./static/api/reference/"}).
@@ -263,6 +264,7 @@ func spectaql() *dagger.Directory {
 		// https://github.com/jedevc/spectaql/commit/174cde65e8457cea4f594a71686a1cfcd6042fd0
 		WithMountedDirectory("/src", dag.Git("https://github.com/jedevc/spectaql").Commit("174cde65e8457cea4f594a71686a1cfcd6042fd0").Tree()).
 		WithWorkdir("/src").
+		WithExec([]string{"yarn", "config", "set", "cafile", "/etc/ssl/certs/ca-certificates.crt"}).
 		WithExec([]string{"yarn", "install"}).
 		WithExec([]string{"yarn", "run", "build"}).
 		Directory("./")
