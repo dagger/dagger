@@ -15,6 +15,7 @@ export const object = registry.object
  * class' method that must be exposed to the Dagger API.
  *
  * @param alias The alias to use for the field when exposed on the API.
+ * @param cache The cache setting to use for that function.
  */
 export const func = registry.func
 
