@@ -48,8 +48,8 @@ dependencies = [
 "Community" = "https://discord.gg/ufnyBtc8uY"
 "Twitter" = "https://twitter.com/dagger_io"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "codegen",
     # lint
     "ruff>=0.3.4",
