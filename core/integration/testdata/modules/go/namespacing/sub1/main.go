@@ -10,7 +10,6 @@ type Obj struct {
 	Foo string `json:"foo"`
 }
 
-//nolint:unparam
 func (m *Obj) GetFoo() (string, error) {
 	return m.Foo, nil
 }

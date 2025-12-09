@@ -10,7 +10,6 @@ type Sub2Obj struct {
 	Bar string `json:"bar"`
 }
 
-//nolint:unparam
 func (m *Sub2Obj) GetBar() (string, error) {
 	return m.Bar, nil
 }

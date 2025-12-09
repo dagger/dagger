@@ -1,6 +1,6 @@
 {
   "name": "defaults",
-  "engineVersion": "v0.18.19",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
   },
@@ -9,5 +9,6 @@
       "name": "foobar",
       "source": "foobar"
     }
-  ]
+  ],
+  "disableDefaultFunctionCaching": true
 }

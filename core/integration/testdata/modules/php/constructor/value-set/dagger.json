@@ -1,7 +1,8 @@
 {
   "name": "value-set",
-  "engineVersion": "v0.18.9",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "php"
-  }
+  },
+  "disableDefaultFunctionCaching": true
 }

@@ -1,7 +1,8 @@
 {
   "name": "dep",
-  "engineVersion": "v0.18.12",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
-  }
+  },
+  "disableDefaultFunctionCaching": true
 }

@@ -1,7 +1,8 @@
 {
   "name": "test",
-  "engineVersion": "v0.18.14",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "python"
-  }
+  },
+  "disableDefaultFunctionCaching": true
 }
