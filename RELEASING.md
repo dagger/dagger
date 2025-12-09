@@ -301,14 +301,21 @@ find .github/ -type f -exec sed -i '' -e 's/0-19-1/0-19-2/g' -e 's/0\.19\.1/0\.1
       practice regardless).
 
   ```console
-  # update deps
-  go mod edit -require dagger.io/dagger@$ENGINE_VERSION
-  go mod edit -require github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
-  go mod tidy
+  # remove generated .dagger/internal so go mod tidy matches CI
+  rm -rf .dagger/internal/
+
+  # update deps at root
+  go get dagger.io/dagger@$ENGINE_VERSION github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
+
+  # update deps in .dagger
   cd .dagger
-  go mod edit -require github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
-  go mod tidy
+  go get github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
   cd ..
+
+  # update deps in toolchains that directly import distconsts
+  cd toolchains/engine-dev
+  go get github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
+  cd ../..
 
   dagger develop --recursive -m .
 
@@ -318,6 +325,9 @@ find .github/ -type f -exec sed -i '' -e 's/0-19-1/0-19-2/g' -e 's/0\.19\.1/0\.1
   # update docs recorder modules
   dagger develop -m docs/recorder
   dagger develop -m docs/recorder2
+
+  # run go mod tidy on all go modules that were updated (excluding root, which was already tidied)
+  find . -name go.mod -not -path "./docs/*" -not -path "./go.mod" -not -path "./.dagger/*" -execdir go mod tidy \;
 
   # add, commit and push the changes to the branch
   git commit -a -s -m "chore: bump internal tooling to $ENGINE_VERSION"

@@ -29,6 +29,7 @@ require (
 )
 
 require (
+	github.com/dagger/dagger/engine/distconsts v0.19.8 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 )

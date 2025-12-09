@@ -3,8 +3,8 @@ module github.com/dagger/dagger
 go 1.24.4
 
 require (
-	dagger.io/dagger v0.19.7
-	github.com/dagger/dagger/engine/distconsts v0.19.7
+	dagger.io/dagger v0.19.8
+	github.com/dagger/dagger/engine/distconsts v0.19.8
 )
 
 replace (
@@ -158,7 +158,6 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.57.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/otel v1.38.0
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.14.2
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.38.0
@@ -344,6 +343,7 @@ require (
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.14.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	google.golang.org/api v0.239.0 // indirect
