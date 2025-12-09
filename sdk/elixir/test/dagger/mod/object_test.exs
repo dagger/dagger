@@ -291,6 +291,29 @@ defmodule Dagger.Mod.ObjectTest do
              ]
     end
 
+    test "cache policy" do
+      assert CacheAttribute.__object__(:functions) == [
+               never_cached: %FunctionDef{
+                 self: false,
+                 args: [],
+                 return: Dagger.Void,
+                 cache_policy: :never
+               },
+               per_session_cached: %FunctionDef{
+                 self: false,
+                 args: [],
+                 return: Dagger.Void,
+                 cache_policy: :per_session
+               },
+               ttl_cached: %FunctionDef{
+                 self: false,
+                 args: [],
+                 return: Dagger.Void,
+                 cache_policy: [{:ttl, "42s"}]
+               }
+             ]
+    end
+
     test "type option validation" do
       assert_raise FunctionClauseError, fn ->
         defmodule TypeOptDoc do
