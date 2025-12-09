@@ -13935,6 +13935,8 @@ func (v ModuleSourceExperimentalFeature) Name() string {
 	switch v {
 	case ModuleSourceExperimentalFeatureSelfCalls:
 		return "SELF_CALLS"
+	case ModuleSourceExperimentalFeaturePortableApi:
+		return "PORTABLE_API"
 	default:
 		return ""
 	}
@@ -13963,6 +13965,8 @@ func (v *ModuleSourceExperimentalFeature) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
+	case "PORTABLE_API":
+		*v = ModuleSourceExperimentalFeaturePortableApi
 	case "SELF_CALLS":
 		*v = ModuleSourceExperimentalFeatureSelfCalls
 	default:
@@ -13974,6 +13978,9 @@ func (v *ModuleSourceExperimentalFeature) UnmarshalJSON(dt []byte) error {
 const (
 	// Self calls
 	ModuleSourceExperimentalFeatureSelfCalls ModuleSourceExperimentalFeature = "SELF_CALLS"
+
+	// Portable API
+	ModuleSourceExperimentalFeaturePortableApi ModuleSourceExperimentalFeature = "PORTABLE_API"
 )
 
 // The kind of module source.

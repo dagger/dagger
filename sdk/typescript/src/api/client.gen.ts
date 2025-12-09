@@ -1856,6 +1856,11 @@ export type ModuleID = string & { __ModuleID: never }
  */
 export enum ModuleSourceExperimentalFeature {
   /**
+   * Portable API
+   */
+  PortableApi = "PORTABLE_API",
+
+  /**
    * Self calls
    */
   SelfCalls = "SELF_CALLS",
@@ -1869,6 +1874,8 @@ function ModuleSourceExperimentalFeatureValueToName(
   value: ModuleSourceExperimentalFeature,
 ): string {
   switch (value) {
+    case ModuleSourceExperimentalFeature.PortableApi:
+      return "PORTABLE_API"
     case ModuleSourceExperimentalFeature.SelfCalls:
       return "SELF_CALLS"
     default:
@@ -1884,6 +1891,8 @@ function ModuleSourceExperimentalFeatureNameToValue(
   name: string,
 ): ModuleSourceExperimentalFeature {
   switch (name) {
+    case "PORTABLE_API":
+      return ModuleSourceExperimentalFeature.PortableApi
     case "SELF_CALLS":
       return ModuleSourceExperimentalFeature.SelfCalls
     default:

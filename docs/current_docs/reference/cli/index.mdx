@@ -206,6 +206,7 @@ dagger develop [options]
       --eager-runtime            load module runtime eagerly
       --license string           License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
   -m, --mod string               Module reference to load, either a local path or a remote git repo (defaults to current directory)
+      --portable-api             Use portable dagger API (experimental)
   -r, --recursive                Develop recursively into local dependencies
       --sdk string               Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address
       --source string            Source directory used by the installed SDK. Defaults to module root
@@ -315,6 +316,7 @@ dagger init --sdk=go
       --include strings    Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).
       --license string     License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
       --name string        Name of the new module (defaults to parent directory name)
+      --portable-api       Use portable dagger API (experimental)
       --sdk string         Optionally install a Dagger SDK
       --source string      Source directory used by the installed SDK. Defaults to module root
       --with-self-calls    Enable self-calls capability for the module (experimental)

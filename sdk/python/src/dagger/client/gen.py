@@ -414,6 +414,9 @@ class ImageMediaTypes(Enum):
 class ModuleSourceExperimentalFeature(Enum):
     """Experimental features of a module"""
 
+    PORTABLE_API = "PORTABLE_API"
+    """Portable API"""
+
     SELF_CALLS = "SELF_CALLS"
     """Self calls"""
 

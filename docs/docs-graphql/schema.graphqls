@@ -4302,6 +4302,9 @@ type ModuleSource {
 enum ModuleSourceExperimentalFeature {
   """Self calls"""
   SELF_CALLS
+
+  """Portable API"""
+  PORTABLE_API
 }
 
 """
