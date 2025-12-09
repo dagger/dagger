@@ -85,6 +85,9 @@ const (
 	// TODO: redundant with span status?
 	CheckPassedAttr = "dagger.io/check.passed"
 
+	// The name of the generator that this span represents.
+	GeneratorNameAttr = "dagger.io/generator.name"
+
 	// Clarifies the meaning of a link between two spans.
 	LinkPurposeAttr = "dagger.io/link.purpose"
 	// The linked span caused the current span to run - in other words, this span

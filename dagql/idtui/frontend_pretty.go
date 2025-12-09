@@ -1945,6 +1945,8 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			row.Span.Call() != nil ||
 			// ensure gaps before checks
 			row.Span.CheckName != "" ||
+			// ensure gaps before generators
+			row.Span.GeneratorName != "" ||
 			// ensure gaps between calls and non-calls
 			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
 			// ensure gaps between messages

@@ -113,7 +113,7 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 			trace.WithAttributes(
 				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				// 		attribute.String(telemetry.GeneratorNameAttr, generator.Name()),
+				attribute.String(telemetry.GeneratorNameAttr, generator.Name()),
 			),
 		)
 		generator.Completed = false
@@ -198,7 +198,7 @@ func (g *Generator) Run(ctx context.Context) (*Generator, error) {
 			trace.WithAttributes(
 				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				// attribute.String(telemetry.GeneratorNameAttr, g.Name()),
+				attribute.String(telemetry.GeneratorNameAttr, g.Name()),
 			),
 		)
 	}
