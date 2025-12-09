@@ -307,9 +307,10 @@ find .github/ -type f -exec sed -i '' -e 's/0-19-1/0-19-2/g' -e 's/0\.19\.1/0\.1
   # update deps at root
   go get dagger.io/dagger@$ENGINE_VERSION github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
 
-  # update deps in .dagger
+  # update deps in .dagger (use go mod edit + tidy to avoid adding versioned require for replaced module)
   cd .dagger
-  go get github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
+  go mod edit -require github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
+  go mod tidy
   cd ..
 
   # update deps in toolchains that directly import distconsts
