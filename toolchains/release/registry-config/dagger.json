@@ -9,5 +9,9 @@
     "!../.devenv",
     "!../go.work",
     "!../go.work.sum"
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
 }

@@ -70,5 +70,8 @@
       "name": "typescript-sdk-dev",
       "source": "../typescript-sdk-dev"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

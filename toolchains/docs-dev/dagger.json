@@ -21,5 +21,8 @@
       "name": "go",
       "source": "../../modules/go"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

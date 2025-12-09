@@ -1,6 +1,6 @@
 {
   "name": "tests",
-  "engineVersion": "v0.18.19",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -15,5 +15,9 @@
       "name": "apko",
       "source": ".."
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
 }
