@@ -53,11 +53,12 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	// If the module is generated from a dev engine, also generate internal telemetry and querybuilder
 	if moduleConfig.LibVersion == "" {
 		layers = append(layers,
-			&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
-			&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
+			&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, internalDir(moduleConfig.PortableDaggerAPI))},
+			&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, internalDir(moduleConfig.PortableDaggerAPI))},
 		)
-
-		pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
+		if !moduleConfig.PortableDaggerAPI {
+			pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
+		}
 	}
 
 	genSt.Overlay = layerfs.New(layers...)
@@ -91,7 +92,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	if len(initialGoFiles) == 0 {
 		// write an initial main.go if no main pkg exists yet
-		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
+		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName, moduleConfig.PortableDaggerAPI)), 0600); err != nil {
 			return nil, err
 		}
 
@@ -124,87 +125,116 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 
 	var needsRegen bool
 
-	var daggerModPath string
-	var goMod *modfile.File
+	type goModGen struct {
+		modname     string
+		relpath     string
+		packageInfo *PackageInfo
+	}
+	var goModGens []*goModGen
+	if g.Config.IsPortableDaggerAPI() {
+		goModGens = append(goModGens, &goModGen{
+			modname: "dagger.io/dagger",
+			relpath: "internal/dagger",
+		})
+	}
+	mainModGen := goModGen{
+		modname: fmt.Sprintf("dagger/%s", strcase.ToKebab(moduleConfig.ModuleName)),
+		relpath: "",
+	}
+	goModGens = append(goModGens, &mainModGen)
 
-	modname := fmt.Sprintf("dagger/%s", strcase.ToKebab(moduleConfig.ModuleName))
-	// check for a go.mod already for the dagger module
-	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, moduleConfig.ModuleSourcePath, "go.mod")); err == nil {
-		daggerModPath = moduleConfig.ModuleSourcePath
+	for _, gmg := range goModGens {
+		var goMod *modfile.File
+		modname := gmg.modname
 
-		goMod, err = modfile.ParseLax("go.mod", content, nil)
+		daggerModPath := filepath.Join(moduleConfig.ModuleSourcePath, gmg.relpath)
+		absDaggerModPath := filepath.Join(g.Config.OutputDir, daggerModPath)
+		// check for a go.mod already for the dagger module
+		if content, err := os.ReadFile(filepath.Join(absDaggerModPath, "go.mod")); err == nil {
+			goMod, err = modfile.ParseLax("go.mod", content, nil)
+			if err != nil {
+				return nil, false, fmt.Errorf("parse go.mod: %w", err)
+			}
+
+			if moduleConfig.IsInit && goMod.Module.Mod.Path != modname {
+				return nil, false, fmt.Errorf("existing go.mod path %q does not match the module's name %q", goMod.Module.Mod.Path, modname)
+			}
+		}
+
+		// could not find a go.mod, so we can init a basic one
+		if goMod == nil {
+			goMod = new(modfile.File)
+
+			goMod.AddModuleStmt(modname)
+			goMod.AddGoStmt(goVersion)
+
+			if g.Config.IsPortableDaggerAPI() && gmg.relpath == "" {
+				if err := goMod.AddRequire("dagger.io/dagger", "v0.0.0"); err != nil {
+					return nil, false, fmt.Errorf("add dagger.io/dagger: %w", err)
+				}
+				if err := goMod.AddReplace("dagger.io/dagger", "", "./internal/dagger", ""); err != nil {
+					return nil, false, fmt.Errorf("add dagger.io/dagger: %w", err)
+				}
+			}
+
+			needsRegen = true
+		}
+
+		// sanity check the parsed go version
+		//
+		// if this fails, then the go.mod version is too high! and in that case, we
+		// won't be able to load the resulting package
+		if goMod.Go == nil {
+			return nil, false, fmt.Errorf("go.mod has no go directive")
+		}
+		if semver.Compare("v"+goMod.Go.Version, "v"+goVersion) > 0 {
+			return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", goMod.Go.Version, goVersion)
+		}
+
+		if !noTidy {
+			if _, errDirExists := os.Stat(absDaggerModPath); errDirExists == nil {
+				if err := g.syncModReplaceAndTidy(goMod, genSt, daggerModPath); err != nil {
+					return nil, false, err
+				}
+			}
+		}
+
+		// try and find a go.sum next to the go.mod, and use that to pin
+		sum, err := os.ReadFile(filepath.Join(absDaggerModPath, "go.sum"))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, false, fmt.Errorf("could not read go.sum: %w", err)
+		}
+		sum = append(sum, '\n')
+		sum = append(sum, dagger.GoSum...)
+
+		modBody, err := goMod.Format()
 		if err != nil {
-			return nil, false, fmt.Errorf("parse go.mod: %w", err)
+			return nil, false, fmt.Errorf("format go.mod: %w", err)
 		}
 
-		if moduleConfig.IsInit && goMod.Module.Mod.Path != modname {
-			return nil, false, fmt.Errorf("existing go.mod path %q does not match the module's name %q", goMod.Module.Mod.Path, modname)
-		}
-	}
-
-	// could not find a go.mod, so we can init a basic one
-	if goMod == nil {
-		daggerModPath = moduleConfig.ModuleSourcePath
-		goMod = new(modfile.File)
-
-		goMod.AddModuleStmt(modname)
-		goMod.AddGoStmt(goVersion)
-
-		needsRegen = true
-	}
-
-	// sanity check the parsed go version
-	//
-	// if this fails, then the go.mod version is too high! and in that case, we
-	// won't be able to load the resulting package
-	if goMod.Go == nil {
-		return nil, false, fmt.Errorf("go.mod has no go directive")
-	}
-	if semver.Compare("v"+goMod.Go.Version, "v"+goVersion) > 0 {
-		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", goMod.Go.Version, goVersion)
-	}
-
-	if !noTidy {
-		if err := g.syncModReplaceAndTidy(goMod, genSt, daggerModPath); err != nil {
+		if err := mfs.MkdirAll(daggerModPath, 0700); err != nil {
 			return nil, false, err
 		}
-	}
+		if err := mfs.WriteFile(filepath.Join(daggerModPath, "go.mod"), modBody, 0600); err != nil {
+			return nil, false, err
+		}
+		if err := mfs.WriteFile(filepath.Join(daggerModPath, "go.sum"), sum, 0600); err != nil {
+			return nil, false, err
+		}
 
-	// try and find a go.sum next to the go.mod, and use that to pin
-	sum, err := os.ReadFile(filepath.Join(g.Config.OutputDir, daggerModPath, "go.sum"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, false, fmt.Errorf("could not read go.sum: %w", err)
+		packageImport, err := filepath.Rel(daggerModPath, moduleConfig.ModuleSourcePath)
+		if err != nil {
+			return nil, false, err
+		}
+		gmg.packageInfo = &PackageInfo{
+			// PackageName is unknown until we load the package
+			PackageImport: path.Join(goMod.Module.Mod.Path, packageImport),
+			// Assume the utility package are from the remote library but this
+			// will be overridden to packageImport is it's a dev engine.
+			UtilityPkgImport: "dagger.io/dagger",
+		}
 	}
-	sum = append(sum, '\n')
-	sum = append(sum, dagger.GoSum...)
-
-	modBody, err := goMod.Format()
-	if err != nil {
-		return nil, false, fmt.Errorf("format go.mod: %w", err)
-	}
-
-	if err := mfs.MkdirAll(daggerModPath, 0700); err != nil {
-		return nil, false, err
-	}
-	if err := mfs.WriteFile(filepath.Join(daggerModPath, "go.mod"), modBody, 0600); err != nil {
-		return nil, false, err
-	}
-	if err := mfs.WriteFile(filepath.Join(daggerModPath, "go.sum"), sum, 0600); err != nil {
-		return nil, false, err
-	}
-
-	packageImport, err := filepath.Rel(daggerModPath, moduleConfig.ModuleSourcePath)
-	if err != nil {
-		return nil, false, err
-	}
-	return &PackageInfo{
-		// PackageName is unknown until we load the package
-		PackageImport: path.Join(goMod.Module.Mod.Path, packageImport),
-
-		// Assume the utility package are from the remote library but this
-		// will be overridden to packageImport is it's a dev engine.
-		UtilityPkgImport: "dagger.io/dagger",
-	}, needsRegen, nil
+	return mainModGen.packageInfo, needsRegen, nil
 }
 
 func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.GeneratedState, modPath string) error {
@@ -272,8 +302,15 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	return nil
 }
 
-func baseModuleSource(pkgInfo *PackageInfo, moduleName string) string {
+func baseModuleSource(pkgInfo *PackageInfo, moduleName string, usePortableAPI bool) string {
 	moduleStructName := strcase.ToCamel(moduleName)
+
+	var daggerImport string
+	if usePortableAPI {
+		daggerImport = "dagger.io/dagger"
+	} else {
+		daggerImport = pkgInfo.PackageImport + "/internal/dagger"
+	}
 
 	return fmt.Sprintf(`// A generated module for %[1]s functions
 //
@@ -293,7 +330,7 @@ package main
 
 import (
 	"context"
-	"%[2]s/internal/dagger"
+	"%[2]s"
 )
 
 type %[1]s struct{}
@@ -312,7 +349,7 @@ func (m *%[1]s) GrepDir(ctx context.Context, directoryArg *dagger.Directory, pat
 		WithExec([]string{"grep", "-R", pattern, "."}).
 		Stdout(ctx)
 }
-`, moduleStructName, pkgInfo.PackageImport)
+`, moduleStructName, daggerImport)
 }
 
 func goEnv(dir string, env string) (string, error) {
