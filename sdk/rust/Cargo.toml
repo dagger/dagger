@@ -13,43 +13,45 @@ dagger-codegen = { path = "crates/dagger-codegen" }
 dagger-bootstrap = { path = "crates/dagger-bootstrap" }
 dagger-sdk = { path = "crates/dagger-sdk", default-features = false }
 
-eyre = "0.6.9"
-color-eyre = "0.6.2"
-serde = { version = "1.0.195", features = ["derive"] }
-serde_json = "1.0.111"
-serde_graphql_input = { version = "0.1.1" }
-tokio = { version = "1.35.1", features = ["full"] }
-tracing = { version = "0.1.40", features = ["log"] }
-tracing-subscriber = { version = "0.3.18", features = [
+eyre = "0.6.12"
+color-eyre = "0.6.5"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+serde_graphql_input = { version = "0.1.2" }
+tokio = { version = "1.48.0", features = ["full"] }
+tracing = { version = "0.1.43", features = ["log"] }
+tracing-subscriber = { version = "0.3.22", features = [
   "tracing-log",
   "tracing",
 ] }
-thiserror = "1.0.56"
-futures = "0.3.30"
-derive_builder = "0.12.0"
-base64 = "0.21.6"
-dirs = "5.0.1"
-flate2 = { version = "1.0.28", features = ["rust_backend"] }
-graphql_client = { version = "0.13.0", features = [
+thiserror = "2.0.17"
+futures = "0.3.31"
+derive_builder = "0.20.2"
+base64 = "0.22.1"
+dirs = "6.0.0"
+flate2 = { version = "1.1.5", features = ["rust_backend"] }
+graphql_client = { version = "0.15.0", features = [
   "reqwest-rustls",
   "graphql_query_derive",
 ], default-features = false }
 hex = "0.4.3"
-hex-literal = "0.4.1"
-platform-info = "2.0.2"
-reqwest = { version = "0.11.23", features = [
+hex-literal = "1.1.0"
+platform-info = "2.0.5"
+reqwest = { version = "0.12.25", features = [
   "stream",
   "rustls-tls",
+  "rustls-tls-native-roots",
+  "system-proxy",
 ], default-features = false }
-sha2 = "0.10.8"
-tar = "0.4.40"
-tempfile = "3.9.0"
-async-trait = "0.1.77"
-genco = "0.17.8"
-convert_case = "0.6.0"
-itertools = "0.12.0"
+sha2 = "0.10.9"
+tar = "0.4.44"
+tempfile = "3.23.0"
+async-trait = "0.1.89"
+genco = "0.19.0"
+convert_case = "0.10.0"
+itertools = "0.14.0"
 
-pretty_assertions = "1.4.0"
-rand = "0.8.5"
-tracing-test = "0.2.4"
-clap = "4.4.14"
+pretty_assertions = "1.4.1"
+rand = "0.9.2"
+tracing-test = "0.2.5"
+clap = "4.5.53"

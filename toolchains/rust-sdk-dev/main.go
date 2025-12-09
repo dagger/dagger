@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	rustSdkImage       = "rust:1.77-bookworm"
-	rustSdkImageDigest = "sha256:83101f6985c93e1e6501b3375de188ee3d2cbb89968bcc91611591f9f447bd42"
+	rustSdkImage       = "rust:1.91-trixies"
+	rustSdkImageDigest = "sha256:9eb64ffdc684afc552415009d523e7c1bb60d23f5caccd7d20612e811eb70176"
 
 	rustVersionFilePath         = "sdk/rust/crates/dagger-sdk/src/core/version.rs"
 	rustCargoTomlFilePath       = "sdk/rust/Cargo.toml"
@@ -23,8 +23,8 @@ const (
 	rustGeneratedClientFilePath = "crates/dagger-sdk/src/gen.rs"
 
 	rustSdkCrate     = "dagger-sdk"
-	cargoEditVersion = "0.13.0"
-	cargoChefVersion = "0.1.62"
+	cargoEditVersion = "0.13.8"
+	cargoChefVersion = "0.1.73"
 )
 
 // Develop the Dagger Rust SDK (experimental)
