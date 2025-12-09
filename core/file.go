@@ -649,19 +649,21 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	src, err := file.State()
-	if err != nil {
-		return err
-	}
-	def, err := src.Marshal(ctx, llb.Platform(file.Platform.Spec()))
-	if err != nil {
-		return err
-	}
-
 	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", filepath.Base(file.File), dest))
 	defer telemetry.EndWithCause(vtx, &rerr)
 
-	return bk.LocalFileExport(ctx, def.ToPB(), dest, file.File, allowParentDirPath)
+	root, closer, err := mountObj(ctx, file)
+	if err != nil {
+		return fmt.Errorf("failed to mount directory: %w", err)
+	}
+	defer closer(false)
+
+	path, err := containerdfs.RootPath(root, file.File)
+	if err != nil {
+		return err
+	}
+
+	return bk.LocalFileExport(ctx, path, file.File, dest, allowParentDirPath)
 }
 
 func (file *File) Mount(ctx context.Context, f func(string) error) error {

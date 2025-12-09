@@ -10,12 +10,8 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/exporter/local"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
-	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
@@ -144,9 +140,9 @@ func (c *Client) LocalDirExport(
 
 func (c *Client) LocalFileExport(
 	ctx context.Context,
-	def *bksolverpb.Definition,
-	destPath string,
+	srcPath string,
 	filePath string,
+	destPath string,
 	allowParentDirPath bool,
 ) (rerr error) {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
@@ -171,30 +167,7 @@ func (c *Client) LocalFileExport(
 
 	destPath = path.Clean(destPath)
 
-	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def, Evaluate: true})
-	if err != nil {
-		return fmt.Errorf("failed to solve for local export: %w", err)
-	}
-	ref, err := res.SingleRef()
-	if err != nil {
-		return fmt.Errorf("failed to get single ref: %w", err)
-	}
-
-	mountable, err := ref.getMountable(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get mountable: %w", err)
-	}
-	mounter := snapshot.LocalMounter(mountable)
-	mountPath, err := mounter.Mount()
-	if err != nil {
-		return fmt.Errorf("failed to mount: %w", err)
-	}
-	defer mounter.Unmount()
-	mntFilePath, err := fs.RootPath(mountPath, filePath)
-	if err != nil {
-		return fmt.Errorf("failed to get root path: %w", err)
-	}
-	file, err := os.Open(mntFilePath)
+	file, err := os.Open(srcPath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
