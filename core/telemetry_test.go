@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -118,6 +119,8 @@ func (ms *mockServer) Clients() []string  { return []string{} }
 func (ms *mockServer) CloudEngineClient(context.Context, string, string, []string) (*engineclient.Client, bool, error) {
 	return nil, false, nil
 }
+
+func (ms *mockServer) CleanMountNS() *os.File { return nil }
 
 func TestParseCallerCalleeRefs(t *testing.T) {
 	mID := call.New().Append(&ast.Type{}, "callee1")

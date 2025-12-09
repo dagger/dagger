@@ -9,10 +9,10 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -162,6 +162,7 @@ type Server struct {
 	enabledPlatforms []ocispecs.Platform
 	defaultPlatform  ocispecs.Platform
 	registryHosts    docker.RegistryHosts
+	cleanMntNS       *os.File
 
 	//
 	// telemetry config+state
@@ -392,11 +393,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	//
 
 	srv.runc = &runc.Runc{
-		Command:      distconsts.RuncPath,
-		Log:          filepath.Join(srv.executorRootDir, "runc-log.json"),
-		LogFormat:    runc.JSON,
-		Setpgid:      true,
-		PdeathSignal: syscall.SIGKILL,
+		Command:   distconsts.RuncPath,
+		Log:       filepath.Join(srv.executorRootDir, "runc-log.json"),
+		LogFormat: runc.JSON,
+		Setpgid:   true,
+		// TODO: this isn't technically needed (and breaks obscure things around goroutines+namespaces) right now,
+		// but could be if we support the engine running outside a container someday
+		// PdeathSignal: syscall.SIGKILL,
 	}
 
 	var npResolvedMode string
@@ -497,6 +500,28 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// if the operation is called.
 	srv.workerSourceManager.Register(local.NewSource())
 
+	hostMntNS, err := os.OpenFile("/proc/self/ns/mnt", os.O_RDONLY, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open host mount namespace: %w", err)
+	}
+
+	var eg errgroup.Group
+	eg.Go(func() error {
+		runtime.LockOSThread()
+		if err := unix.Unshare(unix.CLONE_NEWNS); err != nil {
+			return fmt.Errorf("failed to create clean mount namespace: %w", err)
+		}
+		var err error
+		srv.cleanMntNS, err = os.OpenFile("/proc/thread-self/ns/mnt", os.O_RDONLY, 0)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
+	}
+
 	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
 		WorkerRoot:       srv.workerRootDir,
 		ExecutorRoot:     srv.executorRootDir,
@@ -517,6 +542,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		NetworkProviders:    srv.networkProviders,
 		ParallelismSem:      srv.parallelismSem,
 		WorkerCache:         srv.workerCache,
+
+		HostMntNS:  hostMntNS,
+		CleanMntNS: srv.cleanMntNS,
 	})
 
 	//

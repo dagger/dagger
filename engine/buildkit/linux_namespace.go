@@ -378,15 +378,15 @@ func (nsw *dynamicNamespaceWorker) enterNamespaces() error {
 
 	for _, ns := range nsw.namespaces {
 		if ns.setNSArg == unix.CLONE_NEWNS {
-			// Unshare the mount namespace first, otherwise setns to another mount
+			// Unshare FS metadata first, otherwise setns to another mount
 			// namespace doesn't work.
 			//
 			// Possibly relevant Kernel docs:
 			//
-			// For security reasons, a process can't join a new user namespace if it
+			// For security reasons, a process can't join a new mount namespace if it
 			// is sharing filesystem-related attributes (the attributes whose sharing
 			// is controlled by the clone(2) CLONE_FS flag) with another process.
-			if err := unix.Unshare(unix.CLONE_NEWNS); err != nil {
+			if err := unix.Unshare(unix.CLONE_FS); err != nil {
 				return fmt.Errorf("failed to unshare mount namespace: %w", err)
 			}
 		}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -1602,6 +1603,14 @@ func (srv *Server) CloudEngineClient(
 	}
 
 	return engineClient, true, nil
+}
+
+// A mount namespace guaranteed to not have any mounts created by engine operations.
+// Should be used when creating goroutines/processes that unshare a mount namespace,
+// otherwise those unshared mnt namespaces may inherit mounts from engine operations
+// and leak them.
+func (srv *Server) CleanMountNS() *os.File {
+	return srv.cleanMntNS
 }
 
 type httpError struct {
