@@ -3,7 +3,6 @@ package snapshot
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
@@ -82,7 +81,7 @@ func (lm *localMounter) Unmount() error {
 	defer lm.mu.Unlock()
 
 	if lm.target != "" {
-		if err := mount.Unmount(lm.target, syscall.MNT_DETACH); err != nil {
+		if err := mount.Unmount(lm.target, 0); err != nil {
 			return err
 		}
 		os.RemoveAll(lm.tmpDir)

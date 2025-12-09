@@ -3,6 +3,7 @@ package buildkit
 import (
 	"context"
 	"net/http"
+	"os"
 	"sync"
 
 	runc "github.com/containerd/go-runc"
@@ -61,6 +62,9 @@ type sharedWorkerState struct {
 	parallelismSem   *semaphore.Weighted
 	workerCache      bkcache.Manager
 
+	hostMntNS  *os.File
+	cleanMntNS *os.File
+
 	running map[string]*execState
 	mu      sync.RWMutex
 }
@@ -93,6 +97,9 @@ type NewWorkerOpts struct {
 	NetworkProviders    map[pb.NetMode]network.Provider
 	ParallelismSem      *semaphore.Weighted
 	WorkerCache         bkcache.Manager
+
+	HostMntNS  *os.File
+	CleanMntNS *os.File
 }
 
 func NewWorker(opts *NewWorkerOpts) *Worker {
@@ -116,6 +123,9 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 		entitlements:     opts.Entitlements,
 		parallelismSem:   opts.ParallelismSem,
 		workerCache:      opts.WorkerCache,
+
+		hostMntNS:  opts.HostMntNS,
+		cleanMntNS: opts.CleanMntNS,
 
 		running: make(map[string]*execState),
 	}}
