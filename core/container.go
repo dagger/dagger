@@ -1511,6 +1511,7 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 		f, err = container.FS.Self().File(ctx, subpath)
 	case mnt.DirectorySource != nil: // mounted directory
 		f, err = mnt.DirectorySource.Self().File(ctx, subpath)
+		err = RestoreErrPath(err, filePath) // preserve the full filePath, rather than subpath
 	case mnt.FileSource != nil: // mounted file
 		return mnt.FileSource.Self(), nil
 	default:

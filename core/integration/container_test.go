@@ -4811,7 +4811,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 
 		// make sure the other mount wasn't changed
 		_, err = ctr.File("/mnt-to-other-dir/my-symlink").Sync(ctx)
-		require.ErrorContains(t, err, "no such file or directory")
+		require.ErrorContains(t, err, "/mnt-to-other-dir/my-symlink: no such file or directory")
 
 		content, err := ctr.File("/mnt/my-symlink").Contents(ctx)
 		require.NoError(t, err)

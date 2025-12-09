@@ -358,7 +358,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 
 		barEntries, err := c.Host().Directory(filepath.Join(hostDir, "bar/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.Error(t, err, fmt.Errorf("expected error, got: %#v (root entries: %#v)", barEntries, rootEntries))
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "bar: no such file or directory")
 	})
 
 	t.Run("correctly handle excluded gitignore", func(ctx context.Context, t *testctx.T) {
