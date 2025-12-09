@@ -1,4 +1,8 @@
 {
   "name": "sub1",
-  "sdk": "go"
+  "engineVersion": "v0.19.8",
+  "sdk": {
+    "source": "go"
+  },
+  "disableDefaultFunctionCaching": true
 }

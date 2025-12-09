@@ -1,5 +1,8 @@
 {
   "name": "impl",
-  "engineVersion": "v0.18.10",
-  "sdk": "typescript"
+  "engineVersion": "v0.19.8",
+  "sdk": {
+    "source": "typescript"
+  },
+  "disableDefaultFunctionCaching": true
 }

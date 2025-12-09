@@ -43,7 +43,6 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.38.0
 	go.opentelemetry.io/otel/trace v1.38.0
 	go.opentelemetry.io/proto/otlp v1.8.0
-	golang.org/x/mod v0.28.0
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sync v0.17.0
 	golang.org/x/sys v0.36.0 // indirect

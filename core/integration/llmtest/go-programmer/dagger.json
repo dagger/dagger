@@ -1,6 +1,6 @@
 {
   "name": "go-programmer",
-  "engineVersion": "v0.17.3-250331173525-8a7ed062118e",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
   },
@@ -9,5 +9,6 @@
       "name": "toy-workspace",
       "source": "toy-workspace"
     }
-  ]
+  ],
+  "disableDefaultFunctionCaching": true
 }

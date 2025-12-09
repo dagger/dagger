@@ -1,6 +1,6 @@
 {
   "name": "recorder",
-  "engineVersion": "v0.19.4",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
   },
@@ -11,7 +11,7 @@
     },
     {
       "name": "docker",
-      "source": "github.com/shykes/x/docker",
+      "source": "github.com/shykes/x/docker@main",
       "pin": "36ad35ca2d917b7fe965fa3aeb2b5f74f6dda106"
     },
     {
