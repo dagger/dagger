@@ -40,6 +40,7 @@ type localMounter struct {
 	target       string
 	release      func() error
 	forceRemount bool
+	tmpDir       string
 }
 
 func ForceRemount() LocalMounterOpt {
