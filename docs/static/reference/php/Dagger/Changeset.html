@@ -251,6 +251,16 @@
                                             <p><p>Force evaluation in the engine.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withChangeset">withChangeset</a>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes, bool|null $continueOnConflicts = false)
+        
+                                            <p><p>Add changes to an existing changeset</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
             </div>
 
 
@@ -697,6 +707,54 @@
                     <table class="table table-condensed">
         <tr>
             <td><a href="../Dagger/ChangesetId.html"><abbr title="Dagger\ChangesetId">ChangesetId</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withChangeset">
+        <div class="location">at line 123</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>withChangeset</strong>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes, bool|null $continueOnConflicts = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add changes to an existing changeset</p></p>                <p><p>If any conflict occurs, for instance if the same file is modified in both changesets, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.</p>
+<p>Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr></td>
+                <td>$changes</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$continueOnConflicts</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
             <td></td>
         </tr>
     </table>

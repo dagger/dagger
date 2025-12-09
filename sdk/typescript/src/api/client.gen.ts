@@ -111,6 +111,13 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+export type ChangesetWithChangesetOpts = {
+  /**
+   * Continue to merge changes even if conflict exists, like the same file modified in both changesets
+   */
+  continueOnConflicts?: boolean
+}
+
 /**
  * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
  */
@@ -740,6 +747,13 @@ export type ContainerWithoutUnixSocketOpts = {
  * The `ContainerID` scalar type represents an identifier for an object of type Container.
  */
 export type ContainerID = string & { __ContainerID: never }
+
+export type CurrentModuleGeneratorsOpts = {
+  /**
+   * Only include generators matching the specified patterns
+   */
+  include?: string[]
+}
 
 export type CurrentModuleWorkdirOpts = {
   /**
@@ -1440,6 +1454,30 @@ export type FunctionID = string & { __FunctionID: never }
  */
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
+export type GeneratorGroupChangesOpts = {
+  /**
+   * Continue to merge changes even if conflict exists, like the same file modified by multiple generators
+   */
+  continueOnConflicts?: boolean
+}
+
+export type GeneratorGroupIsEmptyOpts = {
+  /**
+   * Continue to merge changes even if conflict exists, like the same file modified by multiple generators
+   */
+  continueOnConflicts?: boolean
+}
+
+/**
+ * The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
+ */
+export type GeneratorGroupID = string & { __GeneratorGroupID: never }
+
+/**
+ * The `GeneratorID` scalar type represents an identifier for an object of type Generator.
+ */
+export type GeneratorID = string & { __GeneratorID: never }
+
 export type GitRefTreeOpts = {
   /**
    * Set to true to discard .git directory.
@@ -1685,6 +1723,13 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
 export type ModuleChecksOpts = {
   /**
    * Only include checks matching the specified patterns
+   */
+  include?: string[]
+}
+
+export type ModuleGeneratorsOpts = {
+  /**
+   * Only include generators matching the specified patterns
    */
   include?: string[]
 }
@@ -2720,6 +2765,22 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Generator
+   */
+  asGenerator = (): Generator => {
+    const ctx = this._ctx.select("asGenerator")
+    return new Generator(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type GeneratorGroup
+   */
+  asGeneratorGroup = (): GeneratorGroup => {
+    const ctx = this._ctx.select("asGeneratorGroup")
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type GitRef
    */
   asGitRef = (): GitRef => {
@@ -3069,6 +3130,32 @@ export class Changeset extends BaseClient {
     const response: Awaited<ChangesetID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadChangesetFromID(response)
+  }
+
+  /**
+   * Add changes to an existing changeset
+   *
+   * If any conflict occurs, for instance if the same file is modified in both changesets, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
+   *
+   * Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+   * @param changes Changes to merge into the actual changeset
+   * @param opts.continueOnConflicts Continue to merge changes even if conflict exists, like the same file modified in both changesets
+   */
+  withChangeset = (
+    changes: Changeset,
+    opts?: ChangesetWithChangesetOpts,
+  ): Changeset => {
+    const ctx = this._ctx.select("withChangeset", { changes, ...opts })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Call the provided function with current Changeset.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Changeset) => Changeset) => {
+    return arg(this)
   }
 }
 
@@ -4694,6 +4781,16 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
+   * Return all generators defined by the module
+   * @param opts.include Only include generators matching the specified patterns
+   * @experimental
+   */
+  generators = (opts?: CurrentModuleGeneratorsOpts): GeneratorGroup => {
+    const ctx = this._ctx.select("generators", { ...opts })
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
    * The name of the module being executed in
    */
   name = async (): Promise<string> => {
@@ -6288,6 +6385,67 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type GeneratorGroup in the environment
+   * @param name The name of the binding
+   * @param value The GeneratorGroup value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGeneratorGroupInput = (
+    name: string,
+    value: GeneratorGroup,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withGeneratorGroupInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired GeneratorGroup output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGeneratorGroupOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGeneratorGroupOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Generator in the environment
+   * @param name The name of the binding
+   * @param value The Generator value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGeneratorInput = (
+    name: string,
+    value: Generator,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withGeneratorInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Generator output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGeneratorOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGeneratorOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type GitRef in the environment
    * @param name The name of the binding
    * @param value The GitRef value to assign to the binding
@@ -7617,6 +7775,14 @@ export class Function_ extends BaseClient {
   }
 
   /**
+   * Returns the function with a flag indicating it's a generator.
+   */
+  withGenerator = (): Function_ => {
+    const ctx = this._ctx.select("withGenerator")
+    return new Function_(ctx)
+  }
+
+  /**
    * Returns the function with the given source map.
    * @param sourceMap The source map for the function definition.
    */
@@ -8079,6 +8245,236 @@ export class GeneratedCode extends BaseClient {
    * This is useful for reusability and readability by not breaking the calling chain.
    */
   with = (arg: (param: GeneratedCode) => GeneratedCode) => {
+    return arg(this)
+  }
+}
+
+export class Generator extends BaseClient {
+  private readonly _id?: GeneratorID = undefined
+  private readonly _completed?: boolean = undefined
+  private readonly _description?: string = undefined
+  private readonly _isEmpty?: boolean = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: GeneratorID,
+    _completed?: boolean,
+    _description?: string,
+    _isEmpty?: boolean,
+    _name?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._completed = _completed
+    this._description = _description
+    this._isEmpty = _isEmpty
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this Generator.
+   */
+  id = async (): Promise<GeneratorID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<GeneratorID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The generated changeset
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Whether the generator complete
+   */
+  completed = async (): Promise<boolean> => {
+    if (this._completed) {
+      return this._completed
+    }
+
+    const ctx = this._ctx.select("completed")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the generator
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Wether changeset from the generator execution is empty or not
+   */
+  isEmpty = async (): Promise<boolean> => {
+    if (this._isEmpty) {
+      return this._isEmpty
+    }
+
+    const ctx = this._ctx.select("isEmpty")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the fully qualified name of the generator
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The path of the generator within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Execute the generator
+   */
+  run = (): Generator => {
+    const ctx = this._ctx.select("run")
+    return new Generator(ctx)
+  }
+
+  /**
+   * Call the provided function with current Generator.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Generator) => Generator) => {
+    return arg(this)
+  }
+}
+
+export class GeneratorGroup extends BaseClient {
+  private readonly _id?: GeneratorGroupID = undefined
+  private readonly _isEmpty?: boolean = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: GeneratorGroupID, _isEmpty?: boolean) {
+    super(ctx)
+
+    this._id = _id
+    this._isEmpty = _isEmpty
+  }
+
+  /**
+   * A unique identifier for this GeneratorGroup.
+   */
+  id = async (): Promise<GeneratorGroupID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<GeneratorGroupID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The combined changes from the generators execution
+   *
+   * If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
+   *
+   * Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+   * @param opts.continueOnConflicts Continue to merge changes even if conflict exists, like the same file modified by multiple generators
+   */
+  changes = (opts?: GeneratorGroupChangesOpts): Changeset => {
+    const ctx = this._ctx.select("changes", { ...opts })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Wether changeset from the generator execution is empty or not
+   * @param opts.continueOnConflicts Continue to merge changes even if conflict exists, like the same file modified by multiple generators
+   */
+  isEmpty = async (opts?: GeneratorGroupIsEmptyOpts): Promise<boolean> => {
+    if (this._isEmpty) {
+      return this._isEmpty
+    }
+
+    const ctx = this._ctx.select("isEmpty", { ...opts })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return a list of individual generators and their details
+   */
+  list = async (): Promise<Generator[]> => {
+    type list = {
+      id: GeneratorID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadGeneratorFromID(r.id))
+  }
+
+  /**
+   * Execute all selected generators
+   */
+  run = (): GeneratorGroup => {
+    const ctx = this._ctx.select("run")
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
+   * Call the provided function with current GeneratorGroup.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GeneratorGroup) => GeneratorGroup) => {
     return arg(this)
   }
 }
@@ -9456,6 +9852,26 @@ export class Module_ extends BaseClient {
   generatedContextDirectory = (): Directory => {
     const ctx = this._ctx.select("generatedContextDirectory")
     return new Directory(ctx)
+  }
+
+  /**
+   * Return the generator defined by the module with the given name. Must match to exactly one generator.
+   * @param name The name of the generator to retrieve
+   * @experimental
+   */
+  generator = (name: string): Generator => {
+    const ctx = this._ctx.select("generator", { name })
+    return new Generator(ctx)
+  }
+
+  /**
+   * Return all generators defined by the module
+   * @param opts.include Only include generators matching the specified patterns
+   * @experimental
+   */
+  generators = (opts?: ModuleGeneratorsOpts): GeneratorGroup => {
+    const ctx = this._ctx.select("generators", { ...opts })
+    return new GeneratorGroup(ctx)
   }
 
   /**
@@ -11101,6 +11517,22 @@ export class Client extends BaseClient {
   loadGeneratedCodeFromID = (id: GeneratedCodeID): GeneratedCode => {
     const ctx = this._ctx.select("loadGeneratedCodeFromID", { id })
     return new GeneratedCode(ctx)
+  }
+
+  /**
+   * Load a Generator from its ID.
+   */
+  loadGeneratorFromID = (id: GeneratorID): Generator => {
+    const ctx = this._ctx.select("loadGeneratorFromID", { id })
+    return new Generator(ctx)
+  }
+
+  /**
+   * Load a GeneratorGroup from its ID.
+   */
+  loadGeneratorGroupFromID = (id: GeneratorGroupID): GeneratorGroup => {
+    const ctx = this._ctx.select("loadGeneratorGroupFromID", { id })
+    return new GeneratorGroup(ctx)
   }
 
   /**

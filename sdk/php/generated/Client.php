@@ -578,6 +578,26 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Generator from its ID.
+     */
+    public function loadGeneratorFromID(GeneratorId|Generator $id): Generator
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratorFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a GeneratorGroup from its ID.
+     */
+    public function loadGeneratorGroupFromID(GeneratorGroupId|GeneratorGroup $id): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratorGroupFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a GitRef from its ID.
      */
     public function loadGitRefFromID(GitRefId|GitRef $id): GitRef

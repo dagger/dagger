@@ -72,6 +72,28 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return the generator defined by the module with the given name. Must match to exactly one generator.
+     */
+    public function generator(string $name): Generator
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generator');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return all generators defined by the module
+     */
+    public function generators(?array $include = null): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Module.
      */
     public function id(): ModuleId

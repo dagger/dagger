@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\CurrentModule | API</title>
+    <title>Dagger\Generator | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_CurrentModule" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_Generator" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,26 +75,24 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>CurrentModule</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Generator</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>CurrentModule    
+        <h1>Generator    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>CurrentModule</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>Generator</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
     
         
 
-            <div class="description">
-            <p><p>Reflective module API provided to functions at runtime.</p></p>                    </div>
             
         
     
@@ -143,32 +141,32 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_dependencies">dependencies</a>()
+                    <a href="#method_changes">changes</a>()
         
-                                            <p><p>The dependencies of the module.</p></p>                </div>
+                                            <p><p>The generated changeset</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+                    bool
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_generatedContextDirectory">generatedContextDirectory</a>()
+                    <a href="#method_completed">completed</a>()
         
-                                            <p><p>The generated files and directories made on top of the module source's context directory.</p></p>                </div>
+                                            <p><p>Whether the generator complete</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_generators">generators</a>(array|null $include = null)
+                    <a href="#method_description">description</a>()
         
-                                            <p><p>Return all generators defined by the module</p></p>                </div>
+                                            <p><p>The description of the generator</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -178,7 +176,17 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this CurrentModule.</p></p>                </div>
+                                            <p><p>A unique identifier for this Generator.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    bool
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_isEmpty">isEmpty</a>()
+        
+                                            <p><p>Wether changeset from the generator execution is empty or not</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -188,37 +196,27 @@
                 <div class="col-md-8">
                     <a href="#method_name">name</a>()
         
-                                            <p><p>The name of the module being executed in</p></p>                </div>
+                                            <p><p>Return the fully qualified name of the generator</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+                    array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_source">source</a>()
+                    <a href="#method_path">path</a>()
         
-                                            <p><p>The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).</p></p>                </div>
+                                            <p><p>The path of the generator within its module</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+                    <a href="../Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_workdir">workdir</a>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
+                    <a href="#method_run">run</a>()
         
-                                            <p><p>Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_workdirFile">workdirFile</a>(string $path)
-        
-                                            <p><p>Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p></p>                </div>
+                                            <p><p>Execute the generator</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -317,10 +315,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_dependencies">
-        <div class="location">at line 19</div>
-        <code>                    array
-    <strong>dependencies</strong>()
+                    <h3 id="method_changes">
+        <div class="location">at line 16</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>changes</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -328,7 +326,7 @@
             
 
         <div class="method-description">
-                            <p><p>The dependencies of the module.</p></p>                        
+                            <p><p>The generated changeset</p></p>                        
         </div>
         <div class="tags">
             
@@ -336,7 +334,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>array</td>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -349,10 +347,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_generatedContextDirectory">
-        <div class="location">at line 28</div>
-        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>generatedContextDirectory</strong>()
+                    <h3 id="method_completed">
+        <div class="location">at line 25</div>
+        <code>                    bool
+    <strong>completed</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -360,7 +358,7 @@
             
 
         <div class="method-description">
-                            <p><p>The generated files and directories made on top of the module source's context directory.</p></p>                        
+                            <p><p>Whether the generator complete</p></p>                        
         </div>
         <div class="tags">
             
@@ -368,7 +366,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
+            <td>bool</td>
             <td></td>
         </tr>
     </table>
@@ -381,84 +379,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_generators">
-        <div class="location">at line 37</div>
-        <code>                    <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
-    <strong>generators</strong>(array|null $include = null)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Return all generators defined by the module</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>array|null</td>
-                <td>$include</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_id">
-        <div class="location">at line 49</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
-    <strong>id</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>A unique identifier for this CurrentModule.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_name">
-        <div class="location">at line 58</div>
+                    <h3 id="method_description">
+        <div class="location">at line 34</div>
         <code>                    string
-    <strong>name</strong>()
+    <strong>description</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -466,7 +390,7 @@
             
 
         <div class="method-description">
-                            <p><p>The name of the module being executed in</p></p>                        
+                            <p><p>The description of the generator</p></p>                        
         </div>
         <div class="tags">
             
@@ -487,10 +411,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_source">
-        <div class="location">at line 67</div>
-        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>source</strong>()
+                    <h3 id="method_id">
+        <div class="location">at line 43</div>
+        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+    <strong>id</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -498,7 +422,7 @@
             
 
         <div class="method-description">
-                            <p><p>The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).</p></p>                        
+                            <p><p>A unique identifier for this Generator.</p></p>                        
         </div>
         <div class="tags">
             
@@ -506,7 +430,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
+            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -519,10 +443,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_workdir">
-        <div class="location">at line 76</div>
-        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>workdir</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
+                    <h3 id="method_isEmpty">
+        <div class="location">at line 52</div>
+        <code>                    bool
+    <strong>isEmpty</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -530,40 +454,15 @@
             
 
         <div class="method-description">
-                            <p><p>Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p></p>                        
+                            <p><p>Wether changeset from the generator execution is empty or not</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$exclude</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$include</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$gitignore</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
+            <td>bool</td>
             <td></td>
         </tr>
     </table>
@@ -576,10 +475,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_workdirFile">
-        <div class="location">at line 99</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>workdirFile</strong>(string $path)
+                    <h3 id="method_name">
+        <div class="location">at line 61</div>
+        <code>                    string
+    <strong>name</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -587,25 +486,79 @@
             
 
         <div class="method-description">
-                            <p><p>Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p></p>                        
+                            <p><p>Return the fully qualified name of the generator</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_path">
+        <div class="location">at line 70</div>
+        <code>                    array
+    <strong>path</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The path of the generator within its module</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_run">
+        <div class="location">at line 79</div>
+        <code>                    <a href="../Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a>
+    <strong>run</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Execute the generator</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></td>
             <td></td>
         </tr>
     </table>

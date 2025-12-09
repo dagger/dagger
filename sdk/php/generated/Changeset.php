@@ -112,4 +112,21 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
+
+    /**
+     * Add changes to an existing changeset
+     *
+     * If any conflict occurs, for instance if the same file is modified in both changesets, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
+     *
+     * Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+     */
+    public function withChangeset(ChangesetId|Changeset $changes, ?bool $continueOnConflicts = false): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangeset');
+        $innerQueryBuilder->setArgument('changes', $changes);
+        if (null !== $continueOnConflicts) {
+        $innerQueryBuilder->setArgument('continueOnConflicts', $continueOnConflicts);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }
