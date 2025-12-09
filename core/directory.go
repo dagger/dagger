@@ -610,28 +610,47 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool,
 	return results, nil
 }
 
+// cleanDotsAndSlashes is similar to path.Clean; however it does not remove any directory names, e.g. "keep/../this//.//" will return "keep/../this".
+// This is needed for cases where a referenced directory is a symlink, e.g. consider keep linking to some/other/directory, then keep/../this,
+// would end up being some/other/directory/../this, which would end up as some/other/this
+func cleanDotsAndSlashes(path string) string {
+	cleaned := []string{}
+	for _, d := range filepath.SplitList(path) {
+		if d == "" || d == "." || d == "/" {
+			continue
+		}
+		cleaned = append(cleaned, d)
+	}
+	return filepath.Join(cleaned...)
+}
+
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
+	if cleanDotsAndSlashes(subdir) == "" {
+		return dir, nil
+	}
+
 	dir = dir.Clone()
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bk, err := query.Buildkit(ctx)
+
+	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, err
 	}
 
 	dir.Dir = path.Join(dir.Dir, subdir)
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.StatLLB(ctx, bk, ".")
+	info, err := dir.Stat(ctx, srv, ".", false)
 	if err != nil {
-		return nil, err
+		return nil, RestoreErrPath(err, subdir)
 	}
 
-	if !info.IsDir() {
+	if info.FileType != FileTypeDirectory {
 		return nil, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", subdir)}
 	}
 
@@ -1234,7 +1253,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 		if err != nil {
 			return err
 		}
-		return os.MkdirAll(resolvedDir, permissions)
+		return RestoreErrPath(os.MkdirAll(resolvedDir, permissions), dest)
 	}, withSavedSnapshot("withNewDirectory %s", dest))
 }
 
@@ -1577,7 +1596,7 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		return nil, err
 	}
 	if ref == nil {
-		return nil, fmt.Errorf("%s: %w", targetPath, syscall.ENOENT)
+		return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
 	}
 
 	immutableRef, err := ref.CacheRef(ctx)
@@ -1601,10 +1620,10 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 			return err
 		}
 		fileInfo, err = osStatFunc(resolvedPath)
-		return err
+		return RestoreErrPath(err, targetPath)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", targetPath, err)
+		return nil, err
 	}
 
 	m := fileInfo.Mode()

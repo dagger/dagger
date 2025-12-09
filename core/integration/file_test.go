@@ -178,7 +178,13 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 
 	t.Run("not found file", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().File("to/file.txt").Name(ctx)
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "to/file.txt: no such file or directory")
+	})
+
+	t.Run("not found file displays full path in error", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Directory().File("keep/../this").Name(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "keep/../this: no such file or directory")
 	})
 }
 
@@ -857,11 +863,11 @@ func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().File("baz").Sync(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "baz: no such file or directory")
 
 		_, err = c.Container().From(alpineImage).File("/bar").Sync(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "bar: no such file or directory")
 	})
 
 	t.Run("allows chaining", func(ctx context.Context, t *testctx.T) {
@@ -1089,5 +1095,49 @@ func (FileSuite) TestFileAsJSON(ctx context.Context, t *testctx.T) {
 
 		require.Error(t, err)
 		require.ErrorContains(t, err, "invalid JSON")
+	})
+}
+
+func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("root-level", func(ctx context.Context, t *testctx.T) {
+		s, err := c.Container().
+			From(alpineImage).
+			WithExec([]string{"sh", "-c", "echo -n 'important' > data && ln -s data d"}).
+			File("d").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "important", s)
+	})
+	t.Run("target-in-subdir", func(ctx context.Context, t *testctx.T) {
+		s, err := c.Container().
+			From(alpineImage).
+			WithExec([]string{"sh", "-c", "mkdir data-store && echo -n 'important' > data-store/data && ln -s data-store/data d"}).
+			File("d").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "important", s)
+	})
+	t.Run("target-in-parent-dir", func(ctx context.Context, t *testctx.T) {
+		d := c.Container().
+			From(alpineImage).
+			WithExec([]string{"sh", "-c", "mkdir subdir && echo -n 'important' > data && cd subdir && ln -s ../data d"})
+
+		s, err := d.
+			File("subdir/d").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "important", s)
+
+		s, err = d.
+			Directory("subdir").
+			File("d").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "important", s)
 	})
 }

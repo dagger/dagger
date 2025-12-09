@@ -562,6 +562,16 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 	}, nil
 }
 
+// RestoreErrPath will restore the path of an error, which is useful for both removing buildkit mount root paths and referencing uncleaned paths
+func RestoreErrPath(err error, path string) error {
+	if pe, ok := err.(*os.PathError); ok {
+		pe.Path = path
+	} else {
+		slog.Warn("RestorePathErr: unhandled type", "type", fmt.Sprintf("%T", err))
+	}
+	return err
+}
+
 func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
 	ref := t.getResult()
 	if ref != nil {
