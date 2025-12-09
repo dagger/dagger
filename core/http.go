@@ -163,7 +163,11 @@ func DoHTTPRequest(
 	if err != nil {
 		return nil, "", nil, err
 	}
-	defer snap.Release(context.WithoutCancel(ctx))
+	defer func() {
+		if rerr != nil && snap != nil {
+			snap.Release(context.WithoutCancel(ctx))
+		}
+	}()
 	bkref = nil
 
 	contentDgst := digest.NewDigest(digest.SHA256, h)
