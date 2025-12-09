@@ -57,7 +57,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	}
 
 	// If dagger.io/dagger package is replaced, we need to add the SDK locally
-	if replaced {
+	if replaced && !g.Config.ClientConfig.PortableDaggerAPI {
 		layers = append(
 			layers,
 			&MountedFS{FS: dagger.GoSDK, Name: replacedPath},
