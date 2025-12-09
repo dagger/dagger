@@ -301,7 +301,7 @@ find .github/ -type f -exec sed -i '' -e 's/0-19-1/0-19-2/g' -e 's/0\.19\.1/0\.1
       practice regardless).
 
   ```console
-  # remove generated .dagger/internal so go mod tidy matches CI
+  # remove generated .dagger/internal so that disconsts is not referenced as a direct dependency when doing below `go mod tidy`
   rm -rf .dagger/internal/
 
   # update deps at root
