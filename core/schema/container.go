@@ -447,6 +447,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
 
+		dagql.Func("stat", s.stat).
+			Doc(`Return file status`).
+			Args(
+				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
+			),
+
 		dagql.NodeFunc("withError", s.withError).
 			Doc(`Raise an error.`).
 			Args(
@@ -1529,6 +1536,14 @@ func (s *containerSchema) exists(ctx context.Context, parent *core.Container, ar
 	}
 	exists, err := parent.Exists(ctx, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
 	return dagql.NewBoolean(exists), err
+}
+
+func (s *containerSchema) stat(ctx context.Context, parent *core.Container, args statArgs) (*core.Stat, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+	return parent.Stat(ctx, srv, args.Path, args.DoNotFollowSymlinks)
 }
 
 type containerPublishArgs struct {
