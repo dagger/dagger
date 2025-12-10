@@ -46,6 +46,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
+	"github.com/dagger/dagger/engine/ovltracer"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
@@ -356,6 +357,24 @@ func main() { //nolint:gocyclo
 		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
 		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
+
+		// Start the overlay in-use tracer (optional, non-fatal if unavailable)
+		if err := exec.CommandContext(ctx, "mount", "-t", "tracefs", "tracefs", "/sys/kernel/tracing").Run(); err != nil {
+			slog.Error("could not mount tracefs", "err", err.Error())
+		}
+		ovlTracer, err := ovltracer.New()
+		if err != nil {
+			slog.Debug("ovltracer: disabled", "reason", err.Error())
+		} else {
+			tracerCtx, cancelTracer := context.WithCancel(ctx)
+			defer func() {
+				cancelTracer()
+				if err := ovlTracer.Close(); err != nil {
+					slog.Warn("ovltracer: error closing", "error", err)
+				}
+			}()
+			go ovlTracer.Run(tracerCtx)
+		}
 
 		bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 
