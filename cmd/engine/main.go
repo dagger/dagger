@@ -24,6 +24,7 @@ import (
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/ebpf"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
 	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
@@ -42,10 +43,13 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
+	"github.com/dagger/dagger/engine/ebpf/filetracer"
+	"github.com/dagger/dagger/engine/ebpf/ovltracer"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
@@ -53,6 +57,30 @@ import (
 )
 
 const gracefulStopTimeout = 5 * time.Minute // need to sync disks, which could be expensive
+const ebpfProgramEnvPrefix = "DAGGER_EBPF_PROG_"
+
+type ebpfProgram struct {
+	name string
+	new  func() (ebpf.Tracer, error)
+}
+
+// Program names map to env vars: _DAGGER_EBPF_PROG_<NAME> (uppercased, non-alnum -> _).
+var ebpfPrograms = []ebpfProgram{
+	{
+		name: "ovl_inuse",
+		new:  ovltracer.New,
+	},
+	{
+		name: "filetracer",
+		new:  filetracer.New,
+	},
+}
+
+// eBPF programs that run by default when extra-debug (or trace) logging is enabled.
+var defaultEbpfPrograms = map[string]struct{}{
+	// "ovl_inuse":  {},
+	// "filetracer": {},
+}
 
 func init() {
 	apicaps.ExportedProduct = "dagger-engine"
@@ -60,6 +88,48 @@ func init() {
 
 	if reexec.Init() {
 		os.Exit(0)
+	}
+}
+
+func isDefaultEbpfProgram(name string) bool {
+	for prog := range defaultEbpfPrograms {
+		if prog == name {
+			return true
+		}
+	}
+	return false
+}
+
+func enabledEbpfPrograms(loadDefaults bool) []ebpfProgram {
+	enabled := make([]ebpfProgram, 0, len(ebpfPrograms))
+	for _, prog := range ebpfPrograms {
+		envName := ebpfProgramEnvPrefix + strings.ToUpper(prog.name)
+		if _, ok := os.LookupEnv(envName); ok {
+			enabled = append(enabled, prog)
+			continue
+		}
+		if loadDefaults {
+			if _, ok := defaultEbpfPrograms[prog.name]; ok {
+				enabled = append(enabled, prog)
+			}
+		}
+	}
+	return enabled
+}
+
+func startEbpfProgram(ctx context.Context, prog ebpfProgram) func() {
+	tracer, err := prog.new()
+	if err != nil {
+		slog.Debug("eBPF program disabled", "program", prog.name, "reason", err.Error())
+		return nil
+	}
+	tracerCtx, cancelTracer := context.WithCancel(ctx)
+	go tracer.Run(tracerCtx)
+	return func() {
+		cancelTracer()
+		if err := tracer.Close(); err != nil {
+			slog.Warn("eBPF program close failed", "program", prog.name, "error", err)
+		}
 	}
 }
 
@@ -334,8 +404,9 @@ func main() { //nolint:gocyclo
 				logLevel = config.LevelDebug
 			}
 		}
+		var slogLevel slog.Level
 		if logLevel != "" {
-			slogLevel, err := logLevel.ToSlogLevel()
+			slogLevel, err = logLevel.ToSlogLevel()
 			if err != nil {
 				return err
 			}
@@ -356,6 +427,31 @@ func main() { //nolint:gocyclo
 		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
 		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
+
+		extraDebugEnabled := slogLevel == slog.LevelExtraDebug || slogLevel == slog.LevelTrace
+		enabledEbpfPrgs := enabledEbpfPrograms(extraDebugEnabled)
+		loadEbpf := len(enabledEbpfPrgs) > 0
+		if loadEbpf {
+			_, err := os.Lstat("/sys/kernel/tracing/trace")
+			switch {
+			case err == nil:
+			case errors.Is(err, os.ErrNotExist):
+				if err := unix.Mount("", "/sys/kernel/tracing", "tracefs", unix.MS_NODEV, ""); err != nil {
+					loadEbpf = false
+					slog.Debug("could not mount tracefs, skipping ebpf", "err", err.Error())
+				}
+			default:
+				loadEbpf = false
+				slog.Debug("failed to stat /sys/kernel/tracing, skipping ebpf", "err", err.Error())
+			}
+		}
+		if loadEbpf {
+			for _, prog := range enabledEbpfPrgs {
+				if cleanup := startEbpfProgram(ctx, prog); cleanup != nil {
+					defer cleanup()
+				}
+			}
+		}
 
 		bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 

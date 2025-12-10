@@ -62,6 +62,11 @@ func New(
 	// Enable go experiments https://pkg.go.dev/internal/goexperiment
 	// +optional
 	experiment []string,
+
+	// extra system packages to include in the default base image; only
+	// valid if 'base' arg is nil
+	// +optional
+	extraPackages []string,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
@@ -77,21 +82,25 @@ func New(
 		buildCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:build")
 	}
 	if base == nil {
+		packages := []string{
+			"go~" + version,
+			"ca-certificates",
+			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
+			"build-base",
+			// adding the git CLI to inject vcs info into the go binaries
+			"git",
+			// Install protoc for protobug support by default
+			// The specific version is dictated by Dagger's own requirement
+			// FIXME: make this optional with overlay support
+			"protobuf~32", // ADD: brings /usr/bin/protoc and runtime libs
+			"protobuf-dev~32",
+		}
+		if len(extraPackages) > 0 {
+			packages = append(packages, extraPackages...)
+		}
 		base = dag.
 			Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: []string{
-				"go~" + version,
-				// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
-				"build-base",
-				// adding the git CLI to inject vcs info into the go binaries
-				"git",
-				// Install protoc for protobug support by default
-				// The specific version is dictated by Dagger's own requirement
-				// FIXME: make this optional with overlay support
-				"protobuf~32", // ADD: brings /usr/bin/protoc and runtime libs
-				"protobuf-dev~32",
-				"ca-certificates",
-			}}).
+			Container(dagger.WolfiContainerOpts{Packages: packages}).
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
 			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
