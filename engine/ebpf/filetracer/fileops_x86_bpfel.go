@@ -12,6 +12,11 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type fileopsStatCtx struct {
+	Path    [256]int8
+	Statbuf uint64
+}
+
 // loadFileops returns the embedded CollectionSpec for fileops.
 func loadFileops() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_FileopsBytes)
@@ -54,10 +59,12 @@ type fileopsSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type fileopsProgramSpecs struct {
-	TpSysEnterOpenat    *ebpf.ProgramSpec `ebpf:"tp_sys_enter_openat"`
-	TpSysEnterRenameat  *ebpf.ProgramSpec `ebpf:"tp_sys_enter_renameat"`
-	TpSysEnterRenameat2 *ebpf.ProgramSpec `ebpf:"tp_sys_enter_renameat2"`
-	TpSysEnterUnlinkat  *ebpf.ProgramSpec `ebpf:"tp_sys_enter_unlinkat"`
+	TpSysEnterNewfstatat *ebpf.ProgramSpec `ebpf:"tp_sys_enter_newfstatat"`
+	TpSysEnterOpenat     *ebpf.ProgramSpec `ebpf:"tp_sys_enter_openat"`
+	TpSysEnterStatx      *ebpf.ProgramSpec `ebpf:"tp_sys_enter_statx"`
+	TpSysEnterUnlinkat   *ebpf.ProgramSpec `ebpf:"tp_sys_enter_unlinkat"`
+	TpSysExitNewfstatat  *ebpf.ProgramSpec `ebpf:"tp_sys_exit_newfstatat"`
+	TpSysExitStatx       *ebpf.ProgramSpec `ebpf:"tp_sys_exit_statx"`
 }
 
 // fileopsMapSpecs contains maps before they are loaded into the kernel.
@@ -65,6 +72,7 @@ type fileopsProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type fileopsMapSpecs struct {
 	Events     *ebpf.MapSpec `ebpf:"events"`
+	StatCtxMap *ebpf.MapSpec `ebpf:"stat_ctx_map"`
 	TargetComm *ebpf.MapSpec `ebpf:"target_comm"`
 }
 
@@ -95,12 +103,14 @@ func (o *fileopsObjects) Close() error {
 // It can be passed to loadFileopsObjects or ebpf.CollectionSpec.LoadAndAssign.
 type fileopsMaps struct {
 	Events     *ebpf.Map `ebpf:"events"`
+	StatCtxMap *ebpf.Map `ebpf:"stat_ctx_map"`
 	TargetComm *ebpf.Map `ebpf:"target_comm"`
 }
 
 func (m *fileopsMaps) Close() error {
 	return _FileopsClose(
 		m.Events,
+		m.StatCtxMap,
 		m.TargetComm,
 	)
 }
@@ -115,18 +125,22 @@ type fileopsVariables struct {
 //
 // It can be passed to loadFileopsObjects or ebpf.CollectionSpec.LoadAndAssign.
 type fileopsPrograms struct {
-	TpSysEnterOpenat    *ebpf.Program `ebpf:"tp_sys_enter_openat"`
-	TpSysEnterRenameat  *ebpf.Program `ebpf:"tp_sys_enter_renameat"`
-	TpSysEnterRenameat2 *ebpf.Program `ebpf:"tp_sys_enter_renameat2"`
-	TpSysEnterUnlinkat  *ebpf.Program `ebpf:"tp_sys_enter_unlinkat"`
+	TpSysEnterNewfstatat *ebpf.Program `ebpf:"tp_sys_enter_newfstatat"`
+	TpSysEnterOpenat     *ebpf.Program `ebpf:"tp_sys_enter_openat"`
+	TpSysEnterStatx      *ebpf.Program `ebpf:"tp_sys_enter_statx"`
+	TpSysEnterUnlinkat   *ebpf.Program `ebpf:"tp_sys_enter_unlinkat"`
+	TpSysExitNewfstatat  *ebpf.Program `ebpf:"tp_sys_exit_newfstatat"`
+	TpSysExitStatx       *ebpf.Program `ebpf:"tp_sys_exit_statx"`
 }
 
 func (p *fileopsPrograms) Close() error {
 	return _FileopsClose(
+		p.TpSysEnterNewfstatat,
 		p.TpSysEnterOpenat,
-		p.TpSysEnterRenameat,
-		p.TpSysEnterRenameat2,
+		p.TpSysEnterStatx,
 		p.TpSysEnterUnlinkat,
+		p.TpSysExitNewfstatat,
+		p.TpSysExitStatx,
 	)
 }
 
