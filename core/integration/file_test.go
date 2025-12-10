@@ -178,7 +178,7 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 
 	t.Run("not found file", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().File("to/file.txt").Name(ctx)
-		requireErrOut(t, err, "file does not exist")
+		requireErrOut(t, err, "no such file or directory")
 	})
 }
 
@@ -857,7 +857,7 @@ func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().File("baz").Sync(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "file does not exist")
+		requireErrOut(t, err, "no such file or directory")
 
 		_, err = c.Container().From(alpineImage).File("/bar").Sync(ctx)
 		require.Error(t, err)

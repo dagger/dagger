@@ -2646,6 +2646,53 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
+	t.Run("file-exists", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stat := c.Directory().
+			WithNewFile("f", "data", dagger.DirectoryWithNewFileOpts{Permissions: 0o444}).
+			Stat("f")
+
+		name, err := stat.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "f", name)
+
+		size, err := stat.Size(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 4, size)
+
+		fileType, err := stat.FileType(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dagger.FileTypeRegularType, fileType)
+
+		permissions, err := stat.Permissions(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0o444, permissions)
+	})
+	t.Run("file-dir-exists", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stat := c.Directory().
+			WithNewDirectory("d", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o750}).
+			Stat("d")
+
+		name, err := stat.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "d", name)
+
+		size, err := stat.Size(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 4096, size)
+
+		fileType, err := stat.FileType(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dagger.FileTypeDirectoryType, fileType)
+
+		permissions, err := stat.Permissions(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0o750, permissions)
+	})
+}
+
 func (DirectorySuite) TestExistsUsingAbsoluteSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ok, err := c.Directory().
