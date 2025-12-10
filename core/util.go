@@ -566,7 +566,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 func RestoreErrPath(err error, path string) error {
 	if pe, ok := err.(*os.PathError); ok {
 		pe.Path = path
-	} else {
+	} else if err != nil {
 		slog.Warn("RestorePathErr: unhandled type", "type", fmt.Sprintf("%T", err))
 	}
 	return err

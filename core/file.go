@@ -517,10 +517,10 @@ func (file *File) StatDagOp(ctx context.Context, srv *dagql.Server) (*Stat, erro
 			return err
 		}
 		fileInfo, err = osStatFunc(resolvedPath)
-		return err
+		return RestoreErrPath(err, file.File)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", file.File, err)
+		return nil, err
 	}
 
 	m := fileInfo.Mode()
