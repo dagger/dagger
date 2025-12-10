@@ -2429,7 +2429,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if len(generatedCode.VCSGeneratedPaths) > 0 {
 		gitAttrsPath := filepath.Join(srcInst.Self().SourceSubpath, ".gitattributes")
 		var gitAttrsContents []byte
-		gitAttrsFile, err := srcInst.Self().ContextDirectory.Self().FileLLB(ctx, gitAttrsPath)
+		gitAttrsFile, err := srcInst.Self().ContextDirectory.Self().File(ctx, gitAttrsPath)
 		if err == nil {
 			gitAttrsContents, err = gitAttrsFile.Contents(ctx, nil, nil)
 			if err != nil {
@@ -2475,7 +2475,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
 		gitIgnorePath := filepath.Join(srcInst.Self().SourceSubpath, ".gitignore")
 		var gitIgnoreContents []byte
-		gitIgnoreFile, err := srcInst.Self().ContextDirectory.Self().FileLLB(ctx, gitIgnorePath)
+		gitIgnoreFile, err := srcInst.Self().ContextDirectory.Self().File(ctx, gitIgnorePath)
 		if err == nil {
 			gitIgnoreContents, err = gitIgnoreFile.Contents(ctx, nil, nil)
 			if err != nil {

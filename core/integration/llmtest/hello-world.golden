@@ -28,7 +28,7 @@
   },
   {
     "role": "user",
-    "content": "lstat /app/main.go: no such file or directory [traceparent:dfd6c4edd9550ded889de3c4cfec4646-fd9e714e00b16a68]",
+    "content": "stat /app/main.go: no such file or directory [traceparent:dfd6c4edd9550ded889de3c4cfec4646-fd9e714e00b16a68]",
     "tool_call_id": "toolu_011jkXpEMCTWmzgedkZGkMv3",
     "tool_errored": true
   },

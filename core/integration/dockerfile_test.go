@@ -296,16 +296,16 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		require.Equal(t, "foo-contents", content)
 
 		cts, err := dir.DockerBuild().Directory("/src").File(".dockerignore").Contents(ctx)
-		require.ErrorContains(t, err, "/src/.dockerignore: file does not exist", fmt.Sprintf("cts is %s", cts))
+		require.ErrorContains(t, err, ".dockerignore: no such file or directory", fmt.Sprintf("cts is %s", cts))
 
 		_, err = dir.DockerBuild().Directory("/src").File("Dockerfile").Contents(ctx)
-		require.ErrorContains(t, err, "/src/Dockerfile: file does not exist")
+		require.ErrorContains(t, err, "Dockerfile: no such file or directory")
 
 		_, err = dir.DockerBuild().Directory("/src").File("bar").Contents(ctx)
-		require.ErrorContains(t, err, "/src/bar: file does not exist")
+		require.ErrorContains(t, err, "bar: no such file or directory")
 
 		_, err = dir.DockerBuild().Directory("/src").File("baz").Contents(ctx)
-		require.ErrorContains(t, err, "/src/baz: file does not exist")
+		require.ErrorContains(t, err, "baz: no such file or directory")
 
 		content, err = dir.DockerBuild().Directory("/src").File("bay").Contents(ctx)
 		require.NoError(t, err)
