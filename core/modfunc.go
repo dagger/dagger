@@ -632,6 +632,9 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagq
 }
 
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
+	fmt.Printf("DEBUG: ModuleFunction.Call START - mod=%s (IsToolchain=%v), function=%s\n", 
+		fn.mod.Name(), fn.mod.IsToolchain, fn.metadata.Name)
+	
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)

@@ -171,6 +171,13 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("toolchains").Doc(`The toolchain modules to add.`),
 			),
 
+		dagql.Func("withOverlayFor", s.moduleSourceWithOverlayFor).
+			Doc(`Set a toolchain as an overlay for another toolchain.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the toolchain to make an overlay.`),
+				dagql.Arg("overlayFor").Doc(`The name of the base toolchain to overlay.`),
+			),
+
 		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
 			Doc(`Update one or more toolchains.`).
 			Args(
@@ -765,11 +772,111 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 					if err != nil {
 						return fmt.Errorf("failed to resolve toolchain to source: %w", err)
 					}
+					// Set the OverlayFor field if this toolchain is configured as an overlay
+					if pcfg.OverlayFor != "" {
+						fmt.Printf("DEBUG: Setting OverlayFor on toolchain source: %s overlays %s\n", pcfg.Name, pcfg.OverlayFor)
+						toolchain.Self().OverlayFor = pcfg.OverlayFor
+						fmt.Printf("DEBUG: Confirmed - toolchain.Self().OverlayFor = %s\n", toolchain.Self().OverlayFor)
+					}
 					src.Toolchains[i] = toolchain
 					return nil
 				})
 			}
-			return toolchainJobs.Run(ctx)
+			if err := toolchainJobs.Run(ctx); err != nil {
+				return err
+			}
+
+			// Second pass: inject base toolchains as dependencies of overlays
+			// This must happen after all toolchains are loaded
+			// Build maps for quick lookup
+			toolchainsByName := make(map[string]dagql.ObjectResult[*core.ModuleSource])
+			configsByName := make(map[string]*modules.ModuleConfigDependency)
+			for i, pcfg := range src.ConfigToolchains {
+				toolchainsByName[pcfg.Name] = src.Toolchains[i]
+				configsByName[pcfg.Name] = pcfg
+			}
+
+			// Validate no circular overlay dependencies BEFORE processing
+			overlayNames := make(map[string]bool)
+			for _, pcfg := range src.ConfigToolchains {
+				if pcfg.OverlayFor != "" {
+					overlayNames[pcfg.Name] = true
+				}
+			}
+			
+			for _, pcfg := range src.ConfigToolchains {
+				if pcfg.OverlayFor != "" {
+					// Check if the base toolchain is also an overlay
+					if overlayNames[pcfg.OverlayFor] {
+						return fmt.Errorf("circular overlay dependency detected: %s overlays %s, but %s is also an overlay", 
+							pcfg.Name, pcfg.OverlayFor, pcfg.OverlayFor)
+					}
+				}
+			}
+
+			// For each overlay, inject its base toolchain as a dependency
+			for i, pcfg := range src.ConfigToolchains {
+				if pcfg.OverlayFor != "" {
+					// This is an overlay - find its base toolchain
+					baseToolchain, found := toolchainsByName[pcfg.OverlayFor]
+					if !found {
+						return fmt.Errorf("overlay %q references non-existent base toolchain %q", pcfg.Name, pcfg.OverlayFor)
+					}
+
+					baseCfg, baseConfigFound := configsByName[pcfg.OverlayFor]
+					
+					overlayToolchain := src.Toolchains[i]
+					
+					// Inject the base toolchain as a dependency of the overlay
+					// We need to add it to the overlay's Toolchains array
+					overlaySelf := overlayToolchain.Self()
+					if overlaySelf.Toolchains == nil {
+						overlaySelf.Toolchains = []dagql.ObjectResult[*core.ModuleSource]{}
+					}
+					
+					// Add the base toolchain to the overlay's toolchains
+					overlaySelf.Toolchains = append(overlaySelf.Toolchains, baseToolchain)
+					
+					// Also need to update ConfigToolchains to match
+					if overlaySelf.ConfigToolchains == nil {
+						overlaySelf.ConfigToolchains = []*modules.ModuleConfigDependency{}
+					}
+					
+					// Merge customizations from base and overlay
+					// Overlay customizations take precedence
+					mergedCustomizations := []*modules.ModuleConfigArgument{}
+					
+					// Start with base toolchain customizations if they exist
+					if baseConfigFound && len(baseCfg.Customizations) > 0 {
+						// Deep copy base customizations
+						for _, baseCustom := range baseCfg.Customizations {
+							copied := &modules.ModuleConfigArgument{
+								Function:    append([]string{}, baseCustom.Function...),
+								Name:        baseCustom.Name,
+								Argument:    baseCustom.Argument,
+								Default:     baseCustom.Default,
+								DefaultPath: baseCustom.DefaultPath,
+								Ignore:      append([]string{}, baseCustom.Ignore...),
+							}
+							mergedCustomizations = append(mergedCustomizations, copied)
+						}
+					}
+					
+					// Apply overlay customizations, overriding base where they conflict
+					if len(pcfg.Customizations) > 0 {
+						mergedCustomizations = mergeCustomizations(mergedCustomizations, pcfg.Customizations)
+					}
+					
+					// Create a config entry for the base toolchain dependency
+					baseToolchainCfg := &modules.ModuleConfigDependency{
+						Name:           pcfg.OverlayFor,
+						Source:         baseToolchain.Self().AsString(),
+						Customizations: mergedCustomizations,
+					}
+					overlaySelf.ConfigToolchains = append(overlaySelf.ConfigToolchains, baseToolchainCfg)
+				}
+			}
+			return nil
 		})
 	}
 	return jobs.Run(ctx)
@@ -2010,6 +2117,34 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 	return parentSrc, nil
 }
 
+func (s *moduleSourceSchema) moduleSourceWithOverlayFor(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Name       string
+		OverlayFor string
+	},
+) (*core.ModuleSource, error) {
+	parentSrc = parentSrc.Clone()
+
+	// Find the toolchain with the given name and set its overlayFor field
+	found := false
+	for _, toolchain := range parentSrc.ConfigToolchains {
+		if toolchain.Name == args.Name {
+			toolchain.OverlayFor = args.OverlayFor
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return nil, fmt.Errorf("toolchain %q not found", args.Name)
+	}
+
+	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
+	return parentSrc, nil
+}
+
 func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
@@ -3243,13 +3378,108 @@ func addToolchainFieldsToObject(
 ) (*core.TypeDef, error) {
 	objectDef = objectDef.Clone()
 
+	// First pass: build overlay map and detect circular dependencies
+	overlayMap := make(map[string]*core.Module) // base toolchain name -> overlay module
+	overlayNames := make(map[string]bool)       // set of overlay module names
+	baseNames := make(map[string]bool)          // set of base toolchain names
+	
+	// Collect overlay and base names
 	for _, tcMod := range toolchainMods {
-		for _, obj := range tcMod.ObjectDefs {
-			if obj.AsObject.Value.Name == strcase.ToCamel(tcMod.NameField) {
+		if tcMod.Source.Valid && tcMod.Source.Value.Self() != nil {
+			modSrc := tcMod.Source.Value.Self()
+			if modSrc.OverlayFor != "" {
+				overlayNames[tcMod.NameField] = true
+			} else {
+				baseNames[tcMod.NameField] = true
+			}
+		}
+	}
+	
+	// Process overlays and validate
+	for _, tcMod := range toolchainMods {
+		// Skip overlay toolchains - they should not be exposed as separate fields
+		// They are handled transparently by the overlay routing logic in object.go
+		if tcMod.Source.Valid && tcMod.Source.Value.Self() != nil {
+			modSrc := tcMod.Source.Value.Self()
+			if modSrc.OverlayFor != "" {
+				// Check for circular overlay dependency - an overlay cannot point to another overlay
+				if overlayNames[modSrc.OverlayFor] {
+					return nil, fmt.Errorf("circular overlay dependency detected: %s overlays %s, but %s is also an overlay", 
+						tcMod.NameField, modSrc.OverlayFor, modSrc.OverlayFor)
+				}
+				
+				// Validate that the base toolchain exists
+				if !baseNames[modSrc.OverlayFor] {
+					return nil, fmt.Errorf("overlay %s references base toolchain %q, but it is not installed", 
+						tcMod.NameField, modSrc.OverlayFor)
+				}
+				
+				// This is an overlay - add it to ToolchainModules for routing but don't expose as a field
+				// Store by ModuleName (which comes from config) for routing lookup
+				fmt.Printf("DEBUG: Found overlay toolchain: %s (overlays %s) in module %s\n", 
+					modSrc.ModuleName, modSrc.OverlayFor, mod.Name())
+				overlayMap[modSrc.OverlayFor] = tcMod
+				mod.ToolchainModules[modSrc.ModuleName] = tcMod
+				// Also track in ToolchainOverlays map for function call routing
+				if mod.ToolchainOverlays == nil {
+					mod.ToolchainOverlays = make(map[string]*core.Module)
+				}
+				mod.ToolchainOverlays[modSrc.OverlayFor] = tcMod
+				fmt.Printf("DEBUG: Added to ToolchainOverlays[%s] = %s\n", modSrc.OverlayFor, tcMod.Name())
+				continue
+			}
+		}
+	}
+
+	// Second pass: add base toolchains, using overlay module if one exists
+	for _, tcMod := range toolchainMods {
+		// Skip overlay toolchains - already handled in first pass
+		if tcMod.Source.Valid && tcMod.Source.Value.Self() != nil {
+			modSrc := tcMod.Source.Value.Self()
+			if modSrc.OverlayFor != "" {
+				continue
+			}
+		}
+
+		originalName := tcMod.NameField
+
+		// Check if this base toolchain has an overlay
+		effectiveTcMod := tcMod
+		hasOverlay := false
+		if overlayMod, ok := overlayMap[originalName]; ok {
+			// Use overlay module for the field exposed to users
+			effectiveTcMod = overlayMod
+			hasOverlay = true
+			fmt.Printf("DEBUG: Using overlay module %s for base toolchain %s\n", 
+				overlayMod.Name(), originalName)
+		}
+
+		// Store the effective module (overlay if exists, otherwise base)
+		// This is what gets looked up in object.go when resolving toolchain calls
+		// The overlay module should have the base as a dependency, so it can call it
+		mod.ToolchainModules[originalName] = effectiveTcMod
+		fmt.Printf("DEBUG: Stored %s module %s under name %s\n", 
+			map[bool]string{true: "overlay", false: "base"}[hasOverlay], 
+			effectiveTcMod.Name(), originalName)
+
+		// When looking for the main object:
+		// - Base toolchains: look for object matching base name (e.g., "Hello")
+		// - Overlays: look for object matching overlay module name (e.g., "HelloOverlay")
+		// This is because Dagger SDK renames types to match the module name
+		var objectNameToFind string
+		if hasOverlay {
+			objectNameToFind = strcase.ToCamel(effectiveTcMod.NameField) // Overlay module name
+		} else {
+			objectNameToFind = strcase.ToCamel(tcMod.NameField) // Base name
+		}
+		fmt.Printf("DEBUG: Looking for object %s in module %s (has %d objects)\n", 
+			objectNameToFind, effectiveTcMod.Name(), len(effectiveTcMod.ObjectDefs))
+		for i, obj := range effectiveTcMod.ObjectDefs {
+			fmt.Printf("DEBUG:   [%d] Object Name=%s\n", i, obj.AsObject.Value.Name)
+			if obj.AsObject.Value.Name == objectNameToFind {
 				// Use the original name (with hyphens) as the map key,
 				// but use camelCase for the GraphQL field name
-				originalName := tcMod.NameField
-				fieldName := strcase.ToLowerCamel(tcMod.NameField)
+				fieldName := strcase.ToLowerCamel(tcMod.NameField) // Use base name for field
 
 				// Always add toolchains as functions (treating them as zero-argument constructors
 				// if they don't have an explicit constructor). This ensures consistent behavior
@@ -3270,9 +3500,9 @@ func addToolchainFieldsToObject(
 				}
 
 				constructor.Name = fieldName
-				constructor.OriginalName = originalName
-				constructor.Description = tcMod.Description
-				constructor.ReturnType = obj
+				constructor.OriginalName = originalName // Use base toolchain name
+				constructor.Description = effectiveTcMod.Description
+				constructor.ReturnType = obj // This is now the overlay's ObjectDef!
 
 				var err error
 				objectDef, err = objectDef.WithFunction(constructor)
@@ -3280,7 +3510,6 @@ func addToolchainFieldsToObject(
 					return nil, fmt.Errorf("failed to add toolchain function %q: %w", fieldName, err)
 				}
 
-				mod.ToolchainModules[originalName] = tcMod
 				break
 			}
 		}
@@ -3570,6 +3799,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 
 		deps = deps.Append(clone)
 	}
+	
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core
@@ -3800,6 +4030,51 @@ func rebasePatterns(patterns []string, base string) ([]string, error) {
 		rebased = append(rebased, relPath)
 	}
 	return rebased, nil
+}
+
+// mergeCustomizations merges overlay customizations into base customizations.
+// Overlay customizations take precedence for matching function/argument combinations.
+func mergeCustomizations(
+	baseCustomizations []*modules.ModuleConfigArgument,
+	overlayCustomizations []*modules.ModuleConfigArgument,
+) []*modules.ModuleConfigArgument {
+	// Create a map for quick lookup of base customizations
+	// Key is "function_chain:argument_name"
+	baseMap := make(map[string]*modules.ModuleConfigArgument)
+	for _, baseCustom := range baseCustomizations {
+		key := customizationKey(baseCustom)
+		baseMap[key] = baseCustom
+	}
+
+	// Start with all base customizations
+	result := make([]*modules.ModuleConfigArgument, 0, len(baseCustomizations)+len(overlayCustomizations))
+	usedKeys := make(map[string]bool)
+
+	// Add overlay customizations (they take precedence)
+	for _, overlayCustom := range overlayCustomizations {
+		key := customizationKey(overlayCustom)
+		usedKeys[key] = true
+		result = append(result, overlayCustom)
+	}
+
+	// Add base customizations that weren't overridden
+	for _, baseCustom := range baseCustomizations {
+		key := customizationKey(baseCustom)
+		if !usedKeys[key] {
+			result = append(result, baseCustom)
+		}
+	}
+
+	return result
+}
+
+// customizationKey creates a unique key for a customization based on its function chain and argument
+func customizationKey(custom *modules.ModuleConfigArgument) string {
+	functionChain := strings.Join(custom.Function, ".")
+	if functionChain == "" {
+		functionChain = "<constructor>"
+	}
+	return functionChain + ":" + custom.Argument
 }
 
 // Match a version string in a list of versions with optional subPath

@@ -67,6 +67,10 @@ type Module struct {
 	// This enables proxy field resolution to route calls to the toolchain's runtime
 	ToolchainModules map[string]*Module
 
+	// ToolchainOverlays maps base toolchain names to their overlay modules
+	// This enables routing function calls from base toolchains through their overlays
+	ToolchainOverlays map[string]*Module
+
 	// ToolchainArgumentConfigs stores argument configuration overrides for toolchains by their original name
 	ToolchainArgumentConfigs map[string][]*modules.ModuleConfigArgument
 
@@ -418,9 +422,19 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 			}
 		}
 
+		// Check if this module is a toolchain being loaded in a parent context with an overlay
+		// If so, we need to check if there's an overlay and use the overlay's implementation
+		effectiveMod := mod
+		effectiveObjDef := objDef
+		
+		// Look through all modules to find if any module has this as an overlaid toolchain
+		// This is a bit inefficient but necessary since we don't have parent context here
+		// Actually, we can't do this here because we don't have access to the parent module
+		// The overlay logic needs to happen at a different level
+		
 		obj := &ModuleObject{
-			Module:  mod,
-			TypeDef: objDef,
+			Module:  effectiveMod,
+			TypeDef: effectiveObjDef,
 		}
 
 		if err := obj.Install(ctx, dag); err != nil {
@@ -714,7 +728,15 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 				// Allow types from toolchain modules
-				if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
+				allowExternal := false
+				if tcMod, ok := sourceMod.(*Module); ok && tcMod.IsToolchain {
+					allowExternal = true
+				}
+				// Allow overlay modules to return types from the module they overlay
+				if mod.Source.Valid && mod.Source.Value.Self() != nil && mod.Source.Value.Self().OverlayFor == sourceMod.Name() {
+					allowExternal = true
+				}
+				if !allowExternal {
 					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
 						obj.OriginalName,
 						fn.OriginalName,
@@ -1067,6 +1089,41 @@ func (mod Module) Clone() *Module {
 
 	if cp.SDKConfig != nil {
 		cp.SDKConfig = cp.SDKConfig.Clone()
+	}
+
+	// Clone toolchain-related maps to ensure per-session isolation
+	if mod.ToolchainModules != nil {
+		cp.ToolchainModules = make(map[string]*Module, len(mod.ToolchainModules))
+		for k, v := range mod.ToolchainModules {
+			cp.ToolchainModules[k] = v
+		}
+	}
+
+	if mod.ToolchainOverlays != nil {
+		cp.ToolchainOverlays = make(map[string]*Module, len(mod.ToolchainOverlays))
+		for k, v := range mod.ToolchainOverlays {
+			cp.ToolchainOverlays[k] = v
+		}
+	}
+
+	if mod.ToolchainArgumentConfigs != nil {
+		cp.ToolchainArgumentConfigs = make(map[string][]*modules.ModuleConfigArgument, len(mod.ToolchainArgumentConfigs))
+		for k, v := range mod.ToolchainArgumentConfigs {
+			// Create a new slice copy
+			configs := make([]*modules.ModuleConfigArgument, len(v))
+			copy(configs, v)
+			cp.ToolchainArgumentConfigs[k] = configs
+		}
+	}
+
+	if mod.ToolchainIgnoreChecks != nil {
+		cp.ToolchainIgnoreChecks = make(map[string][]string, len(mod.ToolchainIgnoreChecks))
+		for k, v := range mod.ToolchainIgnoreChecks {
+			// Create a new slice copy
+			checks := make([]string, len(v))
+			copy(checks, v)
+			cp.ToolchainIgnoreChecks[k] = checks
+		}
 	}
 
 	return &cp
