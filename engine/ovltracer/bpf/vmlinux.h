@@ -167,4 +167,26 @@ struct task_struct {
     char comm[16];
 };
 
+/* Quick string - used for dentry names */
+struct qstr {
+    union {
+        struct {
+            u32 hash;
+            u32 len;
+        };
+        u64 hash_len;
+    };
+    const unsigned char *name;
+};
+
+/* Directory entry - represents a path component */
+struct dentry {
+    unsigned int d_flags;
+    void *d_seq_padding;      /* seqcount_spinlock_t */
+    void *d_hash_padding;     /* struct hlist_bl_node */
+    struct dentry *d_parent;
+    struct qstr d_name;
+    /* ... more fields we don't need */
+};
+
 #endif /* __VMLINUX_H__ */

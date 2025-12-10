@@ -19,6 +19,8 @@ type ovlinuseMountArgs struct {
 	Mntns uint32
 }
 
+type ovlinuseProbeCtx struct{ DentryPtr uint64 }
+
 // loadOvlinuse returns the embedded CollectionSpec for ovlinuse.
 func loadOvlinuse() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_OvlinuseBytes)
@@ -61,18 +63,23 @@ type ovlinuseSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type ovlinuseProgramSpecs struct {
-	KpOvlReportInUse *ebpf.ProgramSpec `ebpf:"kp_ovl_report_in_use"`
-	TpSysEnterMount  *ebpf.ProgramSpec `ebpf:"tp_sys_enter_mount"`
-	TpSysExitMount   *ebpf.ProgramSpec `ebpf:"tp_sys_exit_mount"`
+	KpOvlInuseTrylock    *ebpf.ProgramSpec `ebpf:"kp_ovl_inuse_trylock"`
+	KpOvlIsInuse         *ebpf.ProgramSpec `ebpf:"kp_ovl_is_inuse"`
+	KretpOvlInuseTrylock *ebpf.ProgramSpec `ebpf:"kretp_ovl_inuse_trylock"`
+	KretpOvlIsInuse      *ebpf.ProgramSpec `ebpf:"kretp_ovl_is_inuse"`
+	TpSysEnterMount      *ebpf.ProgramSpec `ebpf:"tp_sys_enter_mount"`
+	TpSysExitMount       *ebpf.ProgramSpec `ebpf:"tp_sys_exit_mount"`
 }
 
 // ovlinuseMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type ovlinuseMapSpecs struct {
-	Events       *ebpf.MapSpec `ebpf:"events"`
-	MountArgsMap *ebpf.MapSpec `ebpf:"mount_args_map"`
-	TmpMountArgs *ebpf.MapSpec `ebpf:"tmp_mount_args"`
+	Events        *ebpf.MapSpec `ebpf:"events"`
+	IsInuseCtxMap *ebpf.MapSpec `ebpf:"is_inuse_ctx_map"`
+	MountArgsMap  *ebpf.MapSpec `ebpf:"mount_args_map"`
+	TmpMountArgs  *ebpf.MapSpec `ebpf:"tmp_mount_args"`
+	TrylockCtxMap *ebpf.MapSpec `ebpf:"trylock_ctx_map"`
 }
 
 // ovlinuseVariableSpecs contains global variables before they are loaded into the kernel.
@@ -101,16 +108,20 @@ func (o *ovlinuseObjects) Close() error {
 //
 // It can be passed to loadOvlinuseObjects or ebpf.CollectionSpec.LoadAndAssign.
 type ovlinuseMaps struct {
-	Events       *ebpf.Map `ebpf:"events"`
-	MountArgsMap *ebpf.Map `ebpf:"mount_args_map"`
-	TmpMountArgs *ebpf.Map `ebpf:"tmp_mount_args"`
+	Events        *ebpf.Map `ebpf:"events"`
+	IsInuseCtxMap *ebpf.Map `ebpf:"is_inuse_ctx_map"`
+	MountArgsMap  *ebpf.Map `ebpf:"mount_args_map"`
+	TmpMountArgs  *ebpf.Map `ebpf:"tmp_mount_args"`
+	TrylockCtxMap *ebpf.Map `ebpf:"trylock_ctx_map"`
 }
 
 func (m *ovlinuseMaps) Close() error {
 	return _OvlinuseClose(
 		m.Events,
+		m.IsInuseCtxMap,
 		m.MountArgsMap,
 		m.TmpMountArgs,
+		m.TrylockCtxMap,
 	)
 }
 
@@ -124,14 +135,20 @@ type ovlinuseVariables struct {
 //
 // It can be passed to loadOvlinuseObjects or ebpf.CollectionSpec.LoadAndAssign.
 type ovlinusePrograms struct {
-	KpOvlReportInUse *ebpf.Program `ebpf:"kp_ovl_report_in_use"`
-	TpSysEnterMount  *ebpf.Program `ebpf:"tp_sys_enter_mount"`
-	TpSysExitMount   *ebpf.Program `ebpf:"tp_sys_exit_mount"`
+	KpOvlInuseTrylock    *ebpf.Program `ebpf:"kp_ovl_inuse_trylock"`
+	KpOvlIsInuse         *ebpf.Program `ebpf:"kp_ovl_is_inuse"`
+	KretpOvlInuseTrylock *ebpf.Program `ebpf:"kretp_ovl_inuse_trylock"`
+	KretpOvlIsInuse      *ebpf.Program `ebpf:"kretp_ovl_is_inuse"`
+	TpSysEnterMount      *ebpf.Program `ebpf:"tp_sys_enter_mount"`
+	TpSysExitMount       *ebpf.Program `ebpf:"tp_sys_exit_mount"`
 }
 
 func (p *ovlinusePrograms) Close() error {
 	return _OvlinuseClose(
-		p.KpOvlReportInUse,
+		p.KpOvlInuseTrylock,
+		p.KpOvlIsInuse,
+		p.KretpOvlInuseTrylock,
+		p.KretpOvlIsInuse,
 		p.TpSysEnterMount,
 		p.TpSysExitMount,
 	)

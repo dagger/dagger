@@ -9,6 +9,7 @@ char LICENSE[] SEC("license") = "GPL";
 
 #define MAX_PATH_LEN 256
 #define MAX_DATA_LEN 512
+#define DENTRY_NAME_LEN 64
 
 /* Event sent to userspace when EBUSY occurs */
 struct event {
@@ -16,10 +17,12 @@ struct event {
     __u32 mntns;
     __u32 tgid;
     char comm[16];
-    char inuse_path[MAX_PATH_LEN];    /* The path that's already in use */
-    char mount_src[MAX_PATH_LEN];     /* What we tried to mount */
-    char mount_dst[MAX_PATH_LEN];     /* Where we tried to mount it */
-    char mount_data[MAX_DATA_LEN];    /* Mount options (contains lowerdir/upperdir/workdir) */
+    char dentry_name0[DENTRY_NAME_LEN];  /* The dentry itself */
+    char dentry_name1[DENTRY_NAME_LEN];  /* Parent */
+    char dentry_name2[DENTRY_NAME_LEN];  /* Grandparent */
+    char mount_src[MAX_PATH_LEN];        /* What we tried to mount */
+    char mount_dst[MAX_PATH_LEN];        /* Where we tried to mount it */
+    char mount_data[MAX_DATA_LEN];       /* Mount options (contains lowerdir/upperdir/workdir) */
 };
 
 /* Ring buffer for events */
@@ -51,6 +54,27 @@ struct {
     __type(key, __u32);
     __type(value, struct mount_args);
 } tmp_mount_args SEC(".maps");
+
+/* Store dentry pointer between kprobe entry and kretprobe
+ * We use __u64 instead of struct dentry* for bpf2go compatibility */
+struct probe_ctx {
+    __u64 dentry_ptr;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10240);
+    __type(key, __u64);
+    __type(value, struct probe_ctx);
+} trylock_ctx_map SEC(".maps");
+
+/* Separate map for ovl_is_inuse probes */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10240);
+    __type(key, __u64);
+    __type(value, struct probe_ctx);
+} is_inuse_ctx_map SEC(".maps");
 
 /* Helper to get mount namespace inum */
 static __always_inline __u32 get_mntns(struct task_struct *task)
@@ -100,29 +124,22 @@ int tp_sys_exit_mount(struct trace_event_raw_sys_exit *ctx)
 }
 
 /* ========================================================================
- * The main event: catch ovl_report_in_use (called when EBUSY happens)
- *
- * This function is called by overlayfs when it detects a directory is
- * already in use by another overlay mount. The second argument is the
- * path string that's in use.
- *
- * Note: The exact symbol name may vary by kernel. Common variants:
- *   - ovl_report_in_use
- *   - ovl_report_in_use.isra.0
- *   - ovl_report_in_use.constprop.0
+ * Helper to emit an event given a dentry pointer
  * ======================================================================== */
-
-SEC("kprobe/ovl_report_in_use")
-int BPF_KPROBE(kp_ovl_report_in_use, void *ofs, const char *path)
+static __always_inline void emit_inuse_event(__u64 pid_tgid, struct dentry *dentry)
 {
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
     struct event *e;
     struct task_struct *task;
     struct mount_args *margs;
+    struct dentry *cur;
+    const unsigned char *name;
+
+    if (!dentry)
+        return;
 
     e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
     if (!e)
-        return 0;
+        return;
 
     task = (struct task_struct *)bpf_get_current_task();
 
@@ -131,8 +148,30 @@ int BPF_KPROBE(kp_ovl_report_in_use, void *ofs, const char *path)
     e->tgid = pid_tgid >> 32;
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
 
-    /* Read the in-use path from kernel memory */
-    bpf_probe_read_kernel_str(e->inuse_path, sizeof(e->inuse_path), path);
+    /* Read up to 3 levels of dentry names - Go will concatenate them */
+    cur = dentry;
+
+    /* Level 0 - the dentry itself */
+    name = BPF_CORE_READ(cur, d_name.name);
+    if (name)
+        bpf_probe_read_kernel_str(e->dentry_name0, sizeof(e->dentry_name0), name);
+
+    /* Level 1 - parent */
+    cur = BPF_CORE_READ(cur, d_parent);
+    if (cur && cur != dentry) {
+        name = BPF_CORE_READ(cur, d_name.name);
+        if (name)
+            bpf_probe_read_kernel_str(e->dentry_name1, sizeof(e->dentry_name1), name);
+
+        /* Level 2 - grandparent */
+        struct dentry *parent = cur;
+        cur = BPF_CORE_READ(cur, d_parent);
+        if (cur && cur != parent) {
+            name = BPF_CORE_READ(cur, d_name.name);
+            if (name)
+                bpf_probe_read_kernel_str(e->dentry_name2, sizeof(e->dentry_name2), name);
+        }
+    }
 
     /* Retrieve the mount args we saved at syscall entry */
     margs = bpf_map_lookup_elem(&mount_args_map, &pid_tgid);
@@ -143,5 +182,81 @@ int BPF_KPROBE(kp_ovl_report_in_use, void *ofs, const char *path)
     }
 
     bpf_ringbuf_submit(e, 0);
+}
+
+/* ========================================================================
+ * Catch ovl_inuse_trylock - called when overlayfs tries to lock a dir
+ *
+ * bool ovl_inuse_trylock(struct dentry *dentry)
+ * Returns true if lock acquired (not in use), false if already in use
+ * ======================================================================== */
+
+SEC("kprobe/ovl_inuse_trylock")
+int BPF_KPROBE(kp_ovl_inuse_trylock, struct dentry *dentry)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct probe_ctx pctx = { .dentry_ptr = (__u64)dentry };
+
+    bpf_map_update_elem(&trylock_ctx_map, &pid_tgid, &pctx, BPF_ANY);
+    return 0;
+}
+
+SEC("kretprobe/ovl_inuse_trylock")
+int BPF_KRETPROBE(kretp_ovl_inuse_trylock, int ret)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct probe_ctx *pctx;
+
+    /* trylock returns true (non-zero) if lock acquired = NOT in use
+     * We care about ret == 0 meaning it was already in use */
+    if (ret != 0)
+        goto cleanup;
+
+    pctx = bpf_map_lookup_elem(&trylock_ctx_map, &pid_tgid);
+    if (!pctx)
+        return 0;
+
+    emit_inuse_event(pid_tgid, (struct dentry *)pctx->dentry_ptr);
+
+cleanup:
+    bpf_map_delete_elem(&trylock_ctx_map, &pid_tgid);
+    return 0;
+}
+
+/* ========================================================================
+ * Catch ovl_is_inuse - called to check if a dentry is marked in use
+ *
+ * bool ovl_is_inuse(struct dentry *dentry)
+ * Returns true if in use, false if not
+ * ======================================================================== */
+
+SEC("kprobe/ovl_is_inuse")
+int BPF_KPROBE(kp_ovl_is_inuse, struct dentry *dentry)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct probe_ctx pctx = { .dentry_ptr = (__u64)dentry };
+
+    bpf_map_update_elem(&is_inuse_ctx_map, &pid_tgid, &pctx, BPF_ANY);
+    return 0;
+}
+
+SEC("kretprobe/ovl_is_inuse")
+int BPF_KRETPROBE(kretp_ovl_is_inuse, int ret)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct probe_ctx *pctx;
+
+    /* is_inuse returns true (non-zero) if the dentry IS in use = conflict */
+    if (ret == 0)
+        goto cleanup;
+
+    pctx = bpf_map_lookup_elem(&is_inuse_ctx_map, &pid_tgid);
+    if (!pctx)
+        return 0;
+
+    emit_inuse_event(pid_tgid, (struct dentry *)pctx->dentry_ptr);
+
+cleanup:
+    bpf_map_delete_elem(&is_inuse_ctx_map, &pid_tgid);
     return 0;
 }
