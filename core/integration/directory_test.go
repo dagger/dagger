@@ -1163,11 +1163,11 @@ func (DirectorySuite) TestSync(ctx context.Context, t *testctx.T) {
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().Directory("/foo").Sync(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "foo: no such file or directory")
 
 		_, err = c.Container().From(alpineImage).Directory("/bar").Sync(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "bar: no such file or directory")
 	})
 
 	t.Run("allows chaining", func(ctx context.Context, t *testctx.T) {
@@ -1311,7 +1311,7 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 
 	t.Run("directory doesn't exist", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().Directory("foo").Glob(ctx, "**/*")
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "foo: no such file or directory")
 	})
 }
 
@@ -1372,7 +1372,12 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 
 	t.Run("not found directory", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().Directory("foo").Name(ctx)
-		requireErrOut(t, err, "no such file or directory")
+		requireErrOut(t, err, "foo: no such file or directory")
+	})
+
+	t.Run("not found file displays full path in error", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Directory().Directory("keep/../this").Name(ctx)
+		requireErrOut(t, err, "keep/../this: no such file or directory")
 	})
 
 	t.Run("structured directory", func(ctx context.Context, t *testctx.T) {
@@ -2644,6 +2649,53 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.Expected, exists)
 		})
 	}
+}
+
+func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
+	t.Run("file-exists", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stat := c.Directory().
+			WithNewFile("f", "data", dagger.DirectoryWithNewFileOpts{Permissions: 0o444}).
+			Stat("f")
+
+		name, err := stat.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "f", name)
+
+		size, err := stat.Size(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 4, size)
+
+		fileType, err := stat.FileType(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dagger.FileTypeRegularType, fileType)
+
+		permissions, err := stat.Permissions(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0o444, permissions)
+	})
+	t.Run("file-dir-exists", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stat := c.Directory().
+			WithNewDirectory("d", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o750}).
+			Stat("d")
+
+		name, err := stat.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "d", name)
+
+		size, err := stat.Size(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 4096, size)
+
+		fileType, err := stat.FileType(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dagger.FileTypeDirectoryType, fileType)
+
+		permissions, err := stat.Permissions(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0o750, permissions)
+	})
 }
 
 func (DirectorySuite) TestExistsUsingAbsoluteSymlink(ctx context.Context, t *testctx.T) {
