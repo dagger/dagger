@@ -35,6 +35,9 @@ __pycache__
 # Built Binary
 /bin
 
+# eBPF build artifacts
+engine/ebpf/**/*_bpfel.o
+
 # Local environment variables, usually secrets
 .env
 /.envrc
