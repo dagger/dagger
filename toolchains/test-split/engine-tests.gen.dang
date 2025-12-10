@@ -1,10 +1,10 @@
 type TestSplit {
-		let testSpecific(run: [String!]!): Void {
-				engineDev().test(race: true, run: run.join("|"))
+		let testSpecific(run: [String!]!, ebpfProgs: [String!]): Void {
+				engineDev().test(race: true, run: run.join("|"), ebpfProgs: ebpfProgs)
 		}
 
-		let testSkip(skip: [String!]!): Void {
-				engineDev().test(race: true, skip: skip.join("|"))
+		let testSkip(skip: [String!]!, ebpfProgs: [String!]): Void {
+				engineDev().test(race: true, skip: skip.join("|"), ebpfProgs: ebpfProgs)
 		}
 
 		"""Test Base"""
