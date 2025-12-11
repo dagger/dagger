@@ -138,6 +138,25 @@ func TestBaseVersion(t *testing.T) {
 	}
 }
 
+func TestIsDevVersion(t *testing.T) {
+	tc := []struct {
+		version string
+		isDev   bool
+	}{
+		{version: "", isDev: true},
+		{version: "v0.19.9", isDev: false},
+		{version: "v0.19.9-241210-dev-abc123", isDev: true},
+		{version: "v0.19.9-241210123456-dev-abc123def456", isDev: true},
+		{version: "v0.19.9-123", isDev: false},
+		{version: "v0.19.9-rc1", isDev: false},
+	}
+	for _, tc := range tc {
+		t.Run(tc.version, func(t *testing.T) {
+			require.Equal(t, tc.isDev, IsDevVersion(tc.version))
+		})
+	}
+}
+
 func setVersion(t *testing.T, version string) {
 	t.Helper()
 	oldVersion := Version
