@@ -360,6 +360,18 @@ func LoadGeneratedCodeFromID(id dagger.GeneratedCodeID) *dagger.GeneratedCode {
 	return client.LoadGeneratedCodeFromID(id)
 }
 
+// Load a Generator from its ID.
+func LoadGeneratorFromID(id dagger.GeneratorID) *dagger.Generator {
+	client := initClient()
+	return client.LoadGeneratorFromID(id)
+}
+
+// Load a GeneratorGroup from its ID.
+func LoadGeneratorGroupFromID(id dagger.GeneratorGroupID) *dagger.GeneratorGroup {
+	client := initClient()
+	return client.LoadGeneratorGroupFromID(id)
+}
+
 // Load a GitRef from its ID.
 func LoadGitRefFromID(id dagger.GitRefID) *dagger.GitRef {
 	client := initClient()

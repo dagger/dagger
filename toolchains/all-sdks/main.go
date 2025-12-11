@@ -24,6 +24,7 @@ func (sdks *AllSdks) List() []string {
 }
 
 // Generate all SDKs, and return the combined diff
+// +generator="sdk"
 func (sdks *AllSdks) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	jobs := parallel.New()
 	// 2. SDK toolchains in standalone modules have a lazy signature

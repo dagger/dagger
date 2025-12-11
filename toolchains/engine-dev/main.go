@@ -345,6 +345,7 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
+// +generator
 func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 	withGoGenerate := dag.Go(dagger.GoOpts{Source: dev.Source}).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
