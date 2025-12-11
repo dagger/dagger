@@ -1568,10 +1568,19 @@ func (container *Container) replaceMount(
 ) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
+	var prev ContainerMount
+	for _, mnt := range container.Mounts {
+		if mnt.Target == target {
+			prev = mnt
+			break
+		}
+	}
+
 	var err error
 	container.Mounts, err = container.Mounts.Replace(ContainerMount{
 		DirectorySource: &dir,
 		Target:          target,
+		Readonly:        prev.Readonly,
 	})
 	if err != nil {
 		return nil, err
