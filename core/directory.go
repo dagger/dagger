@@ -1747,27 +1747,81 @@ func (dir *Directory) Chown(ctx context.Context, chownPath string, owner string)
 	}
 
 	dir = dir.Clone()
-	return execInMount(ctx, dir, func(root string) error {
-		chownPath := path.Join(dir.Dir, chownPath)
-		chownPath, err := containerdfs.RootPath(root, chownPath)
-		if err != nil {
-			return err
-		}
+	targetPath := path.Join(dir.Dir, chownPath)
 
-		err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	cache := query.BuildkitCache()
+
+	parentRef, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	newRef, err := cache.New(ctx, parentRef, bkSessionGroup,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("chown %s %s", chownPath, owner)))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if dir.Result == nil {
+			_ = newRef.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	err = MountRef(ctx, newRef, bkSessionGroup, func(dstRoot string, dstMnt *mount.Mount) error {
+		return MountRef(ctx, parentRef, bkSessionGroup, func(srcRoot string, srcMnt *mount.Mount) error {
+			resolvedSrc, err := containerdfs.RootPath(srcRoot, targetPath)
 			if err != nil {
 				return err
 			}
-			if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
-				return fmt.Errorf("failed to set chown %s: %w", path, err)
+			srcInfo, err := os.Lstat(resolvedSrc)
+			if err != nil {
+				return err
 			}
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
-		}
-		return nil
-	}, withSavedSnapshot("chown %s %s", chownPath, owner))
+
+			srcResolver, err := pathResolverForMount(srcMnt, srcRoot)
+			if err != nil {
+				return err
+			}
+			destResolver, err := pathResolverForMount(dstMnt, dstRoot)
+			if err != nil {
+				return err
+			}
+
+			opts := []fscopy.Opt{
+				fscopy.WithCopyInfo(fscopy.CopyInfo{
+					AlwaysReplaceExistingDestPaths: true,
+					EnableHardlinkOptimization:     true,
+					SourcePathResolver:             srcResolver,
+					DestPathResolver:               destResolver,
+					CopyDirContents:                srcInfo.IsDir(),
+				}),
+				fscopy.WithChown(ownership.UID, ownership.GID),
+			}
+
+			return fscopy.Copy(ctx, srcRoot, targetPath, dstRoot, targetPath, opts...)
+		}, mountRefAsReadOnly)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
+
+	return dir, nil
 }
 
 func validateFileName(file string) error {
