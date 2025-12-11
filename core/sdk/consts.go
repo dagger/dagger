@@ -13,6 +13,7 @@ const (
 	sdkPHP        sdk = "php"
 	sdkElixir     sdk = "elixir"
 	sdkJava       sdk = "java"
+	sdkCSharp     sdk = "csharp"
 )
 
 // this list is to format the invalid sdk msg
@@ -24,6 +25,7 @@ var validInbuiltSDKs = []sdk{
 	sdkPHP,
 	sdkElixir,
 	sdkJava,
+	sdkCSharp,
 }
 
 // The list of functions that may be implemented by a SDK module.
