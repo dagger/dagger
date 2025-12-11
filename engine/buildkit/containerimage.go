@@ -63,6 +63,46 @@ func (c *Client) PublishContainerImage(
 	return resp, nil
 }
 
+func (c *Client) PublishContainerImageDagOp(
+	ctx context.Context,
+	inputByPlatform map[string]ContainerExportDagOp,
+	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
+) (map[string]string, error) {
+	ctx = buildkitTelemetryProvider(ctx)
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel(errors.New("publish container image done"))
+
+	fmt.Printf("ACB in PublishContainerImageDagOp with opts %+v\n", opts)
+
+	combinedResult, err := c.getContainerResultDagOp(ctx, inputByPlatform)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: lift this to dagger
+	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
+	if err != nil {
+		return nil, err
+	}
+
+	expResult, err := exporter.Resolve(ctx, 0, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
+	}
+
+	resp, descRef, err := expResult.Export(ctx, combinedResult, nil, c.ID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to export: %w", err)
+	}
+	if descRef != nil {
+		descRef.Release()
+	}
+	return resp, nil
+}
+
 func (c *Client) ExportContainerImage(
 	ctx context.Context,
 	inputByPlatform map[string]ContainerExport,
@@ -98,6 +138,74 @@ func (c *Client) ExportContainerImage(
 		return nil, err
 	}
 
+	expResult, err := exporter.Resolve(ctx, 0, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get requester session ID from client metadata: %w", err)
+	}
+
+	ctx = engine.LocalExportOpts{
+		Path:         destPath,
+		IsFileStream: true,
+	}.AppendToOutgoingContext(ctx)
+
+	resp, descRef, err := expResult.Export(ctx, combinedResult, nil, clientMetadata.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to export: %w", err)
+	}
+	if descRef != nil {
+		descRef.Release()
+	}
+	return resp, nil
+}
+
+type Maybe struct {
+}
+
+type ContainerExportDagOp struct {
+	Ref    bkcache.ImmutableRef
+	Config specs.ImageConfig
+}
+
+func (c *Client) ExportContainerImageDagOp(
+	ctx context.Context,
+	destPath string,
+	inputByPlatform map[string]ContainerExportDagOp,
+) (map[string]string, error) {
+	ctx = buildkitTelemetryProvider(ctx)
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel(errors.New("export container image done"))
+
+	destPath = path.Clean(destPath)
+
+	combinedResult, err := c.getContainerResultDagOp(ctx, inputByPlatform)
+	if err != nil {
+		return nil, err
+	}
+
+	variant := ociexporter.VariantDocker
+	if len(combinedResult.Refs) > 1 {
+		variant = ociexporter.VariantOCI
+	}
+
+	exporter, err := ociexporter.New(ociexporter.Opt{
+		SessionManager: c.SessionManager,
+		ImageWriter:    c.Worker.ImageWriter,
+		Variant:        variant,
+		LeaseManager:   c.Worker.LeaseManager(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	opts := map[string]string{}
 	expResult, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
@@ -229,6 +337,72 @@ func (c *Client) getContainerResult(
 				Platform: platform,
 			}
 			combinedResult.AddRef(platformString, ref)
+		}
+	}
+
+	if len(combinedResult.Refs) > 1 {
+		platformBytes, err := json.Marshal(expPlatforms)
+		if err != nil {
+			return nil, err
+		}
+		combinedResult.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
+	}
+
+	return combinedResult, nil
+}
+
+func (c *Client) getContainerResultDagOp(
+	ctx context.Context,
+	inputByPlatform map[string]ContainerExportDagOp,
+) (*solverresult.Result[bkcache.ImmutableRef], error) {
+	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
+	expPlatforms := &exptypes.Platforms{
+		Platforms: make([]exptypes.Platform, len(inputByPlatform)),
+	}
+	// TODO: probably faster to do this in parallel for each platform
+	for platformString, input := range inputByPlatform {
+		//res, err := c.Solve(ctx, bkgw.SolveRequest{
+		//	Definition: input.Definition,
+		//	Evaluate:   true,
+		//})
+		//if err != nil {
+		//	return nil, fmt.Errorf("failed to solve for container publish: %w", err)
+		//}
+		//cacheRes, err := ConvertToWorkerCacheResult(ctx, res)
+		//if err != nil {
+		//	return nil, fmt.Errorf("failed to convert result: %w", err)
+		//}
+		//ref, err := cacheRes.SingleRef()
+		//if err != nil {
+		//	return nil, err
+		//}
+
+		platform, err := platforms.Parse(platformString)
+		if err != nil {
+			return nil, err
+		}
+		cfgBytes, err := json.Marshal(specs.Image{
+			Platform: specs.Platform{
+				Architecture: platform.Architecture,
+				OS:           platform.OS,
+				OSVersion:    platform.OSVersion,
+				OSFeatures:   platform.OSFeatures,
+			},
+			Config: input.Config,
+		})
+		if err != nil {
+			return nil, err
+		}
+		combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
+		if len(inputByPlatform) == 1 {
+			combinedResult.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+			combinedResult.SetRef(input.Ref)
+		} else {
+			expPlatforms.Platforms[len(combinedResult.Refs)] = exptypes.Platform{
+				ID:       platformString,
+				Platform: platform,
+			}
+			combinedResult.AddRef(platformString, input.Ref)
 		}
 	}
 

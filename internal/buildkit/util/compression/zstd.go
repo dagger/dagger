@@ -2,6 +2,7 @@ package compression
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -11,6 +12,7 @@ import (
 )
 
 func (c zstdType) Compress(ctx context.Context, comp Config) (compressorFunc Compressor, finalize Finalizer) {
+	fmt.Printf("ACB zstdType.Compress called\n")
 	return func(dest io.Writer, _ string) (io.WriteCloser, error) {
 		return zstdWriter(comp)(dest)
 	}, nil

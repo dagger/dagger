@@ -3797,6 +3797,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
 			_, err := c.Container().
 				From(alpineImage).
+				WithExec([]string{"touch", string(tc.compression)}).
 				Publish(ctx, ref, dagger.ContainerPublishOpts{
 					ForcedCompression: tc.compression,
 				})

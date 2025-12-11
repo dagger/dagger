@@ -2027,6 +2027,115 @@ func (container *Container) Publish(
 	return ref, nil
 }
 
+func (container *Container) PublishDagOp(
+	ctx context.Context,
+	ref string,
+	platformVariants []*Container,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+) (string, error) {
+	fmt.Printf("ACB in PublishDagOp ref=%s forcedCompression=%s mediaTypes=%s\n", ref, forcedCompression, mediaTypes)
+	if mediaTypes == "" {
+		// Modern registry implementations support oci types and docker daemons
+		// have been capable of pulling them since 2018:
+		// https://github.com/moby/moby/pull/37359
+		// So they are a safe default.
+		mediaTypes = OCIMediaTypes
+	}
+
+	opts := map[string]string{
+		string(exptypes.OptKeyName):     ref,
+		string(exptypes.OptKeyPush):     strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
+	}
+	if forcedCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	inputByPlatform := map[string]buildkit.ContainerExportDagOp{}
+
+	variants := append([]*Container{container}, platformVariants...)
+	for _, variant := range variants {
+		if variant.FS == nil {
+			continue
+		}
+		rootFS := variant.FS.Self()
+		if rootFS == nil {
+			continue // TODO is this correct?
+		}
+
+		fsRef, err := getRefOrEvaluate(ctx, rootFS) // TODO in parallel
+		if err != nil {
+			return "", err
+		}
+
+		platformSpec := variant.Platform.Spec()
+		platformString := variant.Platform.Format()
+		if _, ok := inputByPlatform[platformString]; ok {
+			return "", fmt.Errorf("duplicate platform %q", platformString)
+		}
+		inputByPlatform[platformString] = buildkit.ContainerExportDagOp{
+			Ref:    fsRef,
+			Config: variant.Config,
+		}
+
+		if len(variants) == 1 {
+			// single platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+			}
+		} else {
+			// multi platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+			}
+		}
+	}
+	if len(inputByPlatform) == 0 {
+		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
+		return "", errors.New("no containers to export")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	resp, err := bk.PublishContainerImageDagOp(ctx, inputByPlatform, opts)
+	if err != nil {
+		return "", err
+	}
+
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return "", err
+	}
+
+	imageDigest, found := resp[exptypes.ExporterImageDigestKey]
+	if found {
+		dig, err := digest.Parse(imageDigest)
+		if err != nil {
+			return "", fmt.Errorf("parse digest: %w", err)
+		}
+
+		withDig, err := reference.WithDigest(refName, dig)
+		if err != nil {
+			return "", fmt.Errorf("with digest: %w", err)
+		}
+
+		return withDig.String(), nil
+	}
+
+	return ref, nil
+}
+
 type ExportOpts struct {
 	Dest              string
 	PlatformVariants  []*Container
@@ -2123,6 +2232,64 @@ func (container *Container) Export(
 	if err != nil {
 		return nil, err
 	}
+	encodedDesc, ok := resp[exptypes.ExporterImageDescriptorKey]
+	if !ok {
+		return nil, fmt.Errorf("exporter response missing %s", exptypes.ExporterImageDescriptorKey)
+	}
+	rawDesc, err := base64.StdEncoding.DecodeString(encodedDesc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
+	}
+
+	var desc specs.Descriptor
+	err = json.Unmarshal(rawDesc, &desc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
+	}
+	return &desc, nil
+}
+
+func (container *Container) ExportDagOp(ctx context.Context, opts ExportOpts) (*specs.Descriptor, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	_ = bk
+
+	inputByPlatform := map[string]buildkit.ContainerExportDagOp{}
+	variants := append([]*Container{container}, opts.PlatformVariants...)
+	for _, variant := range variants {
+		if variant.FS == nil {
+			continue
+		}
+		rootFS := variant.FS.Self()
+		if rootFS == nil {
+			continue // TODO is this correct?
+		}
+
+		fsRef, err := getRefOrEvaluate(ctx, rootFS) // TODO in parallel
+		if err != nil {
+			return nil, err
+		}
+
+		//fmt.Printf("ACB pass along %+v to export for platform=%+v\n", parentRef, variant.Platform)
+		platformString := variant.Platform.Format()
+		inputByPlatform[platformString] = buildkit.ContainerExportDagOp{
+			Ref:    fsRef,
+			Config: variant.Config,
+		}
+
+	}
+
+	resp, err := bk.ExportContainerImageDagOp(ctx, opts.Dest, inputByPlatform)
+	if err != nil {
+		return nil, err
+	}
+
 	encodedDesc, ok := resp[exptypes.ExporterImageDescriptorKey]
 	if !ok {
 		return nil, fmt.Errorf("exporter response missing %s", exptypes.ExporterImageDescriptorKey)

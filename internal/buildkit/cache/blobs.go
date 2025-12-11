@@ -107,6 +107,7 @@ func computeBlobChain(ctx context.Context, sr *immutableRef, createIfNeeded bool
 					}
 				}()
 
+				fmt.Printf("ACB computeBlobChain calling Compress\n")
 				compressorFunc, finalize := comp.Type.Compress(ctx, comp)
 				mediaType := comp.Type.MediaType()
 

@@ -207,6 +207,7 @@ func (e *imageExporterInstance) Attrs() map[string]string {
 }
 
 func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source, inlineCache exptypes.InlineCache, sessionID string) (_ map[string]string, descref exporter.DescriptorReference, err error) {
+	fmt.Printf("ACB in containerimage/imageExporterInstance.Export\n")
 	src = src.Clone()
 	if src.Metadata == nil {
 		src.Metadata = make(map[string][]byte)
