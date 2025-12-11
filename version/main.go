@@ -29,11 +29,17 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes", ".changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack"]
 	inputs *dagger.Directory,
+
+	// File containing the next release version (e.g. .changes/.next)
+	// +optional
+	// +defaultPath="/.changes/.next"
+	nextVersionFile *dagger.File,
 ) *Version {
 	return &Version{
-		Git:    git.AsGit(),
-		GitDir: git,
-		Inputs: inputs,
+		Git:             git.AsGit(),
+		GitDir:          git,
+		Inputs:          inputs,
+		NextVersionFile: nextVersionFile,
 	}
 }
 
@@ -44,6 +50,9 @@ type Version struct {
 
 	// +private
 	Inputs *dagger.Directory
+
+	// +private
+	NextVersionFile *dagger.File
 }
 
 // Generate a version string from the current context
@@ -56,7 +65,10 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	if dirty {
 		// this is a dirty version - git state is dirty
 		// (v<major>.<minor>.<patch>-<timestamp>-dev-<inputdigest>)
-		next := "v0.0.0"
+		next, err := v.NextReleaseVersion(ctx)
+		if err != nil {
+			return "", err
+		}
 		rawDigest, err := v.Inputs.Digest(ctx)
 		if err != nil {
 			return "", err
@@ -78,6 +90,10 @@ func (v Version) Version(ctx context.Context) (string, error) {
 
 	// this is a clean, untagged version - git state is clean, but no tag
 	// (v<major>.<minor>.<patch>-<timestamp>-dev-<commit>)
+	next, err := v.NextReleaseVersion(ctx)
+	if err != nil {
+		return "", err
+	}
 	head := v.Git.Head()
 	commit, err := head.Commit(ctx)
 	if err != nil {
@@ -87,7 +103,6 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	next := "v0.0.0"
 	return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(commitDate), commit[:12]), nil
 }
 
@@ -101,13 +116,17 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 		return tag, nil
 	}
 
+	// For untagged builds, find merge-base with main
+	// Try local main first, then origin/main for CI (detached HEAD)
 	head := v.Git.Head()
-	main := v.Git.Branch("main")
-	mergeBase, err := head.CommonAncestor(main).Commit(ctx)
-	if err != nil {
-		return "", err
+	for _, ref := range []string{"main", "origin/main"} {
+		if branch := v.Git.Branch(ref); branch != nil {
+			if mergeBase, err := head.CommonAncestor(branch).Commit(ctx); err == nil {
+				return mergeBase, nil
+			}
+		}
 	}
-	return mergeBase, nil
+	return head.Commit(ctx)
 }
 
 func (v Version) Dirty(ctx context.Context) (bool, error) {
@@ -185,4 +204,22 @@ func refTimestamp(ctx context.Context, head *dagger.GitRef) (time.Time, error) {
 func pseudoversionTimestamp(t time.Time) string {
 	// go time formatting is bizarre - this translates to "yymmddhhmmss"
 	return t.Format("060102150405")
+}
+
+// NextReleaseVersion returns the next release version from .changes/.next
+func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
+	if v.NextVersionFile == nil {
+		return "", fmt.Errorf("next version file not provided")
+	}
+	content, err := v.NextVersionFile.Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "v") && semver.IsValid(line) {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("no valid version found in next version file")
 }
