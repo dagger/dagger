@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -707,27 +708,82 @@ func (file *File) Chown(ctx context.Context, owner string) (*File, error) {
 	}
 
 	file = file.Clone()
-	return execInMount(ctx, file, func(root string) error {
-		chownPath := file.File
-		chownPath, err := containerdfs.RootPath(root, chownPath)
-		if err != nil {
-			return err
-		}
 
-		err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	cache := query.BuildkitCache()
+
+	parentRef, err := getRefOrEvaluate(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	newRef, err := cache.New(ctx, parentRef, bkSessionGroup,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("chown %s %s", file.File, owner)))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if file.Result == nil {
+			_ = newRef.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	err = MountRef(ctx, newRef, bkSessionGroup, func(dstRoot string, dstMnt *mount.Mount) error {
+		return MountRef(ctx, parentRef, bkSessionGroup, func(srcRoot string, srcMnt *mount.Mount) error {
+			resolvedSrc, err := containerdfs.RootPath(srcRoot, file.File)
 			if err != nil {
 				return err
 			}
-			if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
-				return fmt.Errorf("failed to set chown %s: %w", path, err)
+			srcInfo, err := os.Lstat(resolvedSrc)
+			if err != nil {
+				return err
 			}
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
-		}
-		return nil
-	}, withSavedSnapshot("chown %s %s", file.File, owner))
+			if srcInfo.IsDir() {
+				return fmt.Errorf("path %s is a directory, not a file", file.File)
+			}
+
+			srcResolver, err := pathResolverForMount(srcMnt, srcRoot)
+			if err != nil {
+				return err
+			}
+			destResolver, err := pathResolverForMount(dstMnt, dstRoot)
+			if err != nil {
+				return err
+			}
+
+			opts := []fscopy.Opt{
+				fscopy.WithCopyInfo(fscopy.CopyInfo{
+					AlwaysReplaceExistingDestPaths: true,
+					EnableHardlinkOptimization:     true,
+					SourcePathResolver:             srcResolver,
+					DestPathResolver:               destResolver,
+				}),
+				fscopy.WithChown(ownership.UID, ownership.GID),
+			}
+
+			return fscopy.Copy(ctx, srcRoot, file.File, dstRoot, file.File, opts...)
+		}, mountRefAsReadOnly)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file.Result = snap
+
+	return file, nil
 }
 
 // bkRef returns the buildkit reference from the solved def.
