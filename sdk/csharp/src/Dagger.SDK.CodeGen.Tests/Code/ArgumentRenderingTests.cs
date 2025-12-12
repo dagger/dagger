@@ -78,10 +78,7 @@ public class ArgumentRenderingTests
             result.Contains("bool enabled = false"),
             $"Expected 'bool enabled = false' but got: {result}"
         );
-        Assert.IsFalse(
-            result.Contains("bool?"),
-            $"Should not contain 'bool?' but got: {result}"
-        );
+        Assert.IsFalse(result.Contains("bool?"), $"Should not contain 'bool?' but got: {result}");
     }
 
     [TestMethod]
@@ -104,10 +101,7 @@ public class ArgumentRenderingTests
             result.Contains("bool enabled = true"),
             $"Expected 'bool enabled = true' but got: {result}"
         );
-        Assert.IsFalse(
-            result.Contains("bool?"),
-            $"Should not contain 'bool?' but got: {result}"
-        );
+        Assert.IsFalse(result.Contains("bool?"), $"Should not contain 'bool?' but got: {result}");
     }
 
     [TestMethod]

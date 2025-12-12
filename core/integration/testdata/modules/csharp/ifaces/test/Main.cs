@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Dagger;
 
 [Interface]
@@ -79,6 +77,12 @@ public interface CustomIface
 
     [Function]
     Task<List<OtherIface>> DynamicOtherIfaceList();
+
+    [Function]
+    CustomIface WithOtherIfaceByIface(OtherIface other);
+
+    [Function]
+    Task<List<OtherIface>> DynamicOtherIfaceByIfaceList();
 }
 
 [Interface]
@@ -93,6 +97,11 @@ public class Test
 {
     [Field]
     public CustomIface? IfaceField { get; set; }
+
+    [Field]
+    public CustomIface? IfaceFieldNeverSet { get; set; }
+
+    public CustomIface? IfaceFieldPrivate { get; set; }
 
     [Field]
     public List<CustomIface> IfaceListField { get; set; } = new List<CustomIface>();
@@ -262,6 +271,31 @@ public class Test
         return new Test
         {
             IfaceField = iface,
+            IfaceFieldPrivate = IfaceFieldPrivate,
+            IfaceListField = [.. IfaceListField],
+            OtherIfaceListField = [.. OtherIfaceListField],
+        };
+    }
+
+    [Function]
+    public Test WithOptionalIface(CustomIface? iface = null)
+    {
+        return new Test
+        {
+            IfaceField = iface ?? IfaceField,
+            IfaceFieldPrivate = IfaceFieldPrivate,
+            IfaceListField = [.. IfaceListField],
+            OtherIfaceListField = [.. OtherIfaceListField],
+        };
+    }
+
+    [Function]
+    public Test WithPrivateIface(CustomIface iface)
+    {
+        return new Test
+        {
+            IfaceField = IfaceField,
+            IfaceFieldPrivate = iface,
             IfaceListField = [.. IfaceListField],
             OtherIfaceListField = [.. OtherIfaceListField],
         };
@@ -273,6 +307,7 @@ public class Test
         return new Test
         {
             IfaceField = IfaceField,
+            IfaceFieldPrivate = IfaceFieldPrivate,
             IfaceListField = [.. ifaces],
             OtherIfaceListField = [.. OtherIfaceListField],
         };
@@ -284,18 +319,23 @@ public class Test
         return new Test
         {
             IfaceField = IfaceField,
+            IfaceFieldPrivate = IfaceFieldPrivate,
             IfaceListField = [.. IfaceListField],
             OtherIfaceListField = [.. ifaces],
         };
     }
 
     [Function]
-    public async Task<string> ParentIfaceFields()
+    public async Task<List<string>> ParentIfaceFields()
     {
         var parts = new List<string>();
         if (IfaceField != null)
         {
             parts.Add(await IfaceField.Str());
+        }
+        if (IfaceFieldPrivate != null)
+        {
+            parts.Add(await IfaceFieldPrivate.Str());
         }
         foreach (var iface in IfaceListField)
         {
@@ -305,7 +345,7 @@ public class Test
         {
             parts.Add(await iface.Foo());
         }
-        return string.Join(" ", parts);
+        return parts;
     }
 
     [Function]
@@ -313,9 +353,10 @@ public class Test
     {
         return new CustomObj
         {
-            Foo = "foo",
-            SelfIface = ifaces[0],
-            OtherIface = otherIfaces[0],
+            Iface = ifaces[0],
+            IfaceList = ifaces,
+            Other = new OtherCustomObj { Iface = ifaces[0], IfaceList = ifaces },
+            OtherList = [new OtherCustomObj { Iface = ifaces[0], IfaceList = ifaces }],
         };
     }
 
@@ -330,17 +371,42 @@ public class Test
     {
         return await ifaceArg.DynamicOtherIfaceList();
     }
+
+    [Function]
+    public CustomIface WithOtherIfaceByIface(CustomIface ifaceArg, OtherIface other)
+    {
+        return ifaceArg.WithOtherIfaceByIface(other);
+    }
+
+    [Function]
+    public async Task<List<OtherIface>> DynamicOtherIfaceByIfaceList(CustomIface ifaceArg)
+    {
+        return await ifaceArg.DynamicOtherIfaceByIfaceList();
+    }
+}
+
+[Object]
+public class OtherCustomObj
+{
+    [Field]
+    public CustomIface? Iface { get; set; }
+
+    [Field]
+    public List<CustomIface> IfaceList { get; set; } = [];
 }
 
 [Object]
 public class CustomObj
 {
     [Field]
-    public string Foo { get; set; } = "";
+    public CustomIface? Iface { get; set; }
 
     [Field]
-    public CustomIface? SelfIface { get; set; }
+    public List<CustomIface> IfaceList { get; set; } = [];
 
     [Field]
-    public OtherIface? OtherIface { get; set; }
+    public OtherCustomObj? Other { get; set; }
+
+    [Field]
+    public List<OtherCustomObj> OtherList { get; set; } = [];
 }

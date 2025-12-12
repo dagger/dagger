@@ -7,12 +7,13 @@
   "dependencies": [
     {
       "name": "impl",
-      "source": "../impl"
+      "source": "impl"
     },
     {
       "name": "test",
-      "source": "../test"
+      "source": "test"
     }
   ],
-  "disableDefaultFunctionCaching": true
+  "source": "caller",
+  "disableDefaultFunctionCaching": true  
 }

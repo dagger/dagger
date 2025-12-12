@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using Dagger;
 
 [Object]
@@ -31,6 +29,9 @@ public class Impl
 
     [Field]
     public List<OtherImpl> Others { get; set; } = [];
+
+    [Field]
+    public List<OtherIface> OtherIfaces { get; set; } = [];
 
     public Impl() { }
 
@@ -68,6 +69,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
     }
 
@@ -85,6 +87,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
     }
 
@@ -102,6 +105,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
     }
 
@@ -119,6 +123,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
     }
 
@@ -136,6 +141,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
     }
 
@@ -153,6 +159,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
     }
 
@@ -170,6 +177,7 @@ public class Impl
             Obj = objArg,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
     }
 
@@ -187,6 +195,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. objListArg],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
     }
 
@@ -211,11 +220,7 @@ public class Impl
     [Function]
     public List<OtherImpl> StaticOtherIfaceList()
     {
-        return
-        [
-            new OtherImpl { Foo = Str + "other1" },
-            new OtherImpl { Foo = Str + "other2" },
-        ];
+        return [new OtherImpl { Foo = Str + "other1" }, new OtherImpl { Foo = Str + "other2" }];
     }
 
     [Function]
@@ -232,6 +237,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
         if (strArg != null)
         {
@@ -254,6 +260,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
         if (objArg != null)
         {
@@ -276,6 +283,7 @@ public class Impl
             Obj = Obj,
             ObjList = [.. ObjList],
             Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
         };
         result.Others.Add(other);
         return result;
@@ -286,6 +294,39 @@ public class Impl
     {
         return Others;
     }
+
+    [Function]
+    public Impl WithOtherIfaceByIface(OtherIface other)
+    {
+        var result = new Impl
+        {
+            Str = Str,
+            StrList = [.. StrList],
+            IntValue = IntValue,
+            IntList = [.. IntList],
+            BoolValue = BoolValue,
+            BoolList = [.. BoolList],
+            Obj = Obj,
+            ObjList = [.. ObjList],
+            Others = [.. Others],
+            OtherIfaces = [.. OtherIfaces],
+        };
+        result.OtherIfaces.Add(other);
+        return result;
+    }
+
+    [Function]
+    public List<OtherIface> DynamicOtherIfaceByIfaceList()
+    {
+        return OtherIfaces;
+    }
+}
+
+[Interface]
+public interface OtherIface
+{
+    [Function]
+    Task<string> Foo();
 }
 
 [Object]

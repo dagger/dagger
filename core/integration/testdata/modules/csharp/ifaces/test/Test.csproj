@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <!-- Import SDK defaults BEFORE user settings -->
   <Import Project="sdk/Dagger.SDK.props" Condition="Exists('sdk/Dagger.SDK.props')" />
 
@@ -16,5 +15,4 @@
 
   <!-- Import SDK build logic AFTER user settings -->
   <Import Project="sdk/Dagger.SDK.targets" Condition="Exists('sdk/Dagger.SDK.targets')" />
-
 </Project>

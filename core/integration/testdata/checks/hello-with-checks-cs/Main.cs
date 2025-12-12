@@ -11,9 +11,9 @@ public class HelloWithChecksCs
     /// </summary>
     [Function]
     [Check]
-    public async Task PassingCheck()
+    public Task PassingCheck()
     {
-        await Dag.Container().From("alpine:3").WithExec(["sh", "-c", "exit 0"]).Sync();
+        return Dag.Container().From("alpine:3").WithExec(["sh", "-c", "exit 0"]).SyncAsync();
     }
 
     /// <summary>
@@ -21,8 +21,8 @@ public class HelloWithChecksCs
     /// </summary>
     [Function]
     [Check]
-    public async Task FailingCheck()
+    public Task FailingCheck()
     {
-        await Dag.Container().From("alpine:3").WithExec(["sh", "-c", "exit 1"]).Sync();
+        return Dag.Container().From("alpine:3").WithExec(["sh", "-c", "exit 1"]).SyncAsync();
     }
 }

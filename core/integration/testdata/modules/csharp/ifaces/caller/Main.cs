@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Dagger;
 
 [Object]
@@ -81,6 +79,7 @@ public class Caller
         var staticOtherArray = staticOtherList.ToList();
         if (staticOtherArray.Count != 2)
             throw new Exception($"Expected 2 static other ifaces, got {staticOtherArray.Count}");
+
         var other1Str = await staticOtherArray[0].FooAsync();
         if (other1Str != "aother1")
             throw new Exception($"Expected 'aother1', got '{other1Str}'");
@@ -102,26 +101,24 @@ public class Caller
         var dynamicOthersArray = dynamicOthers.ToList();
         if (dynamicOthersArray.Count != 2)
             throw new Exception($"Expected 2 dynamic others, got {dynamicOthersArray.Count}");
+
         var dyn1 = await dynamicOthersArray[0].FooAsync();
         if (dyn1 != "arg1other")
             throw new Exception($"Expected 'arg1other', got '{dyn1}'");
+
         var dyn2 = await dynamicOthersArray[1].FooAsync();
         if (dyn2 != "arg2other")
             throw new Exception($"Expected 'arg2other', got '{dyn2}'");
 
         // Interface list args test
         var ifaceListArgs = await test.IfaceListArgsAsync(
-            [
-                impl.AsTestCustomIface(),
-                impl.SelfIface().AsTestCustomIface(),
-            ],
-            [
-                impl.OtherIface().AsTestOtherIface(),
-                impl.SelfIface().OtherIface().AsTestOtherIface(),
-            ]
+            [impl.AsTestCustomIface(), impl.SelfIface().AsTestCustomIface()],
+            [impl.OtherIface().AsTestOtherIface(), impl.SelfIface().OtherIface().AsTestOtherIface()]
         );
+
         if (ifaceListArgs.Count() != 4)
             throw new Exception($"Expected 4 items, got {ifaceListArgs.Count()}");
+
         if (
             ifaceListArgs[0] != "a"
             || ifaceListArgs[1] != "aself"
@@ -130,54 +127,111 @@ public class Caller
         )
             throw new Exception($"Unexpected ifaceListArgs values");
 
-        // Parent interface fields test
-        var parentFields = await test.WithIface(impl.AsTestCustomIface())
-            .WithIfaceList(
-                [
-                    impl.AsTestCustomIface(),
-                    impl.SelfIface().AsTestCustomIface(),
-                ]
-            )
-            .WithOtherIfaceList(
-                [
-                    impl.OtherIface().AsTestOtherIface(),
-                    impl.SelfIface().OtherIface().AsTestOtherIface(),
-                ]
-            )
-            .ParentIfaceFieldsAsync();
-        if (parentFields != "a a aself aother aselfother")
-            throw new Exception($"Expected 'a a aself aother aselfother', got '{parentFields}'");
-
-        // Return custom object test
-        var customObj = test.ReturnCustomObj(
-            [
-                impl.AsTestCustomIface(),
-                impl.SelfIface().AsTestCustomIface(),
-            ],
-            [
-                impl.OtherIface().AsTestOtherIface(),
-                impl.SelfIface().OtherIface().AsTestOtherIface(),
-            ]
+        // Interface-by-interface tests
+        var dynamicByIfaceEmpty = await test.DynamicOtherIfaceByIfaceListAsync(
+            impl.AsTestCustomIface()
         );
 
-        if (await customObj.FooAsync() != "foo")
-            throw new Exception($"Expected 'foo', got '{await customObj.FooAsync()}'");
+        if (dynamicByIfaceEmpty.Count() != 0)
+            throw new Exception(
+                $"Expected 0 dynamic by iface others, got {dynamicByIfaceEmpty.Count()}"
+            );
 
-        var customObjSelfIface = customObj.SelfIface();
-        if (customObjSelfIface == null)
-            throw new Exception("Expected SelfIface to be non-null");
+        var withByIface1 = test.WithOtherIfaceByIface(
+            impl.AsTestCustomIface(),
+            impl.WithStr("arg1").OtherIface().AsTestOtherIface()
+        );
 
-        var customObjSelfStr = await customObjSelfIface.StrAsync();
-        if (customObjSelfStr != "a")
-            throw new Exception($"Expected 'a' from customObj.SelfIface, got '{customObjSelfStr}'");
+        var withByIface2 = test.WithOtherIfaceByIface(
+            withByIface1,
+            impl.WithStr("arg2").OtherIface().AsTestOtherIface()
+        );
 
-        var customObjOtherIface = customObj.OtherIface();
+        var dynamicByIface = await test.DynamicOtherIfaceByIfaceListAsync(withByIface2);
+        var dynamicByIfaceArray = dynamicByIface.ToList();
+        if (dynamicByIfaceArray.Count != 2)
+            throw new Exception($"Expected 2 dynamic by iface, got {dynamicByIfaceArray.Count}");
+
+        var byIface1 = await dynamicByIfaceArray[0].FooAsync();
+        if (byIface1 != "arg1other")
+            throw new Exception($"Expected 'arg1other', got '{byIface1}'");
+
+        var byIface2 = await dynamicByIfaceArray[1].FooAsync();
+        if (byIface2 != "arg2other")
+            throw new Exception($"Expected 'arg2other', got '{byIface2}'");
+
+        // Parent interface fields test with private field
+        var privateImpl = Dag.Impl(
+            ["private"],
+            [99],
+            [false],
+            [Dag.Directory().WithNewFile("/private", "private")]
+        );
+
+        var parentFields = await test.WithIface(impl.AsTestCustomIface())
+            .WithPrivateIface(privateImpl.AsTestCustomIface())
+            .WithIfaceList([impl.AsTestCustomIface(), impl.SelfIface().AsTestCustomIface()])
+            .WithOtherIfaceList([
+                impl.OtherIface().AsTestOtherIface(),
+                impl.SelfIface().OtherIface().AsTestOtherIface(),
+            ])
+            .ParentIfaceFieldsAsync();
+
+        var parentFieldsArray = parentFields.ToList();
+        if (parentFieldsArray.Count != 6)
+            throw new Exception($"Expected 6 fields, got {parentFieldsArray.Count}");
+        if (
+            parentFieldsArray[0] != "a"
+            || parentFieldsArray[1] != "private"
+            || parentFieldsArray[2] != "a"
+            || parentFieldsArray[3] != "aself"
+            || parentFieldsArray[4] != "aother"
+            || parentFieldsArray[5] != "aselfother"
+        )
+            throw new Exception(
+                $"Unexpected parentFields values: [{string.Join(", ", parentFieldsArray)}]"
+            );
+
+        // Optional interface test
+        var withOptional1 = await test.WithOptionalIface()
+            .WithOptionalIface(impl.AsTestCustomIface())
+            .WithOptionalIface()
+            .ParentIfaceFieldsAsync();
+        if (withOptional1.Count() != 1 || withOptional1[0] != "a")
+            throw new Exception($"Expected ['a'], got [{string.Join(", ", withOptional1)}]");
+
+        // Return custom object test with nested structure
+        var customObj = test.ReturnCustomObj(
+            [impl.AsTestCustomIface(), impl.SelfIface().AsTestCustomIface()],
+            [impl.OtherIface().AsTestOtherIface(), impl.SelfIface().OtherIface().AsTestOtherIface()]
+        );
+
+        var customObjIface = customObj.Iface();
+        if (customObjIface == null)
+            throw new Exception("Expected Iface to be non-null");
+        var customObjIfaceStr = await customObjIface.StrAsync();
+        if (customObjIfaceStr != "a")
+            throw new Exception($"Expected 'a' from customObj.Iface, got '{customObjIfaceStr}'");
+
+        var customObjIfaceList = await customObj.IfaceListAsync();
+        if (customObjIfaceList.Count() != 2)
+            throw new Exception($"Expected 2 ifaces, got {customObjIfaceList.Count()}");
+        if (await customObjIfaceList[0].StrAsync() != "a")
+            throw new Exception("Expected first iface to be 'a'");
+        if (await customObjIfaceList[1].StrAsync() != "aself")
+            throw new Exception("Expected second iface to be 'aself'");
+
+        var customObjOther = customObj.Other();
+        if (customObjOther == null)
+            throw new Exception("Expected Other to be non-null");
+        var customObjOtherIface = customObjOther.Iface();
         if (customObjOtherIface == null)
-            throw new Exception("Expected OtherIface to be non-null");
+            throw new Exception("Expected Other.Iface to be non-null");
+        if (await customObjOtherIface.StrAsync() != "a")
+            throw new Exception("Expected Other.Iface to be 'a'");
 
-        var customObjOtherStr = await customObjOtherIface.FooAsync();
-        if (customObjOtherStr != "aother")
-            throw new Exception($"Expected 'aother' from customObj.OtherIface, got '{customObjOtherStr}'");
-
+        var customObjOtherList = await customObj.OtherListAsync();
+        if (customObjOtherList.Count() != 1)
+            throw new Exception($"Expected 1 other, got {customObjOtherList.Count()}");
     }
 }
