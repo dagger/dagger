@@ -158,11 +158,19 @@ public class ModuleConfigurationAnalyzer : DiagnosticAnalyzer
             if (!string.IsNullOrEmpty(filePath))
             {
                 var directory = Path.GetDirectoryName(filePath);
-                // Normalize path separators to forward slashes for consistent diagnostics
-                return directory?.Replace('\\', '/');
+                // Normalize to forward slashes for consistent cross-platform diagnostics
+                return NormalizePath(directory);
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Normalizes path separators to forward slashes for consistent cross-platform display.
+    /// </summary>
+    private static string? NormalizePath(string? path)
+    {
+        return path?.Replace('\\', '/');
     }
 }

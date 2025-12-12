@@ -69,6 +69,11 @@ func (m *CsharpSdk) CodegenBase(
 		return nil, fmt.Errorf("could not load module source path: %w", err)
 	}
 
+	sourceRootSubpath, err := modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load source root path: %w", err)
+	}
+
 	base := dag.Container().
 		From(DotnetImage).
 		WithExec([]string{"apt-get", "update"}).
@@ -131,6 +136,14 @@ func (m *CsharpSdk) CodegenBase(
 		WithDirectory("analyzers/dotnet/cs", dag.Directory().
 			WithFile("Dagger.SDK.Analyzers.dll", analyzerDll).
 			WithFile("Dagger.SDK.CodeFixes.dll", codeFixesDll)).
+		// Add SDK build configuration files (props/targets)
+		WithFile("Dagger.SDK.props", runtime.File("template/sdk/Dagger.SDK.props")).
+		WithFile("Dagger.SDK.targets", runtime.File("template/sdk/Dagger.SDK.targets")).
+		// Replace DAGGER_JSON_PATH placeholder with correct relative path
+		WithExec([]string{"sh", "-c", fmt.Sprintf(
+			"sed -i 's|DAGGER_JSON_PATH|%s|g' Dagger.SDK.targets",
+			getDaggerJsonPath(sourceRootSubpath, subPath),
+		)}).
 		// Return the SDK source directory (includes Module/ for runtime functionality)
 		Directory("/sdk-src/csharp/src/Dagger.SDK")
 
@@ -169,10 +182,7 @@ func (m *CsharpSdk) CodegenBase(
 		// Convert module name to valid C# identifier (PascalCase)
 		className := toPascalCase(name)
 		projectFileName := className + ".csproj"
-		
-		// Calculate relative path to dagger.json based on source subpath
-		daggerJsonPath := getDaggerJsonPath(subPath)
-		
+
 		ctr = ctr.
 			WithDirectory(".", runtime.Directory("template")).
 			// Rename DaggerModule.csproj to {ModuleName}.csproj
@@ -181,11 +191,6 @@ func (m *CsharpSdk) CodegenBase(
 			WithExec([]string{"sh", "-c", fmt.Sprintf(
 				"sed -i 's/DaggerModule/%s/g' Main.cs %s",
 				className, projectFileName,
-			)}).
-			// Replace DAGGER_JSON_PATH with the correct relative path
-			WithExec([]string{"sh", "-c", fmt.Sprintf(
-				"sed -i 's|DAGGER_JSON_PATH|%s|g' %s",
-				daggerJsonPath, projectFileName,
 			)})
 	}
 
@@ -257,32 +262,60 @@ func toPascalCase(name string) string {
 	return result
 }
 
-// getDaggerJsonPath calculates the relative path from the module source to dagger.json
-// based on the source subpath
-func getDaggerJsonPath(subPath string) string {
-	if subPath == "" || subPath == "." {
-		// dagger.json is in the same directory
+// getDaggerJsonPath calculates the relative path from the module source directory to dagger.json
+// sourceRootSubpath: path from context dir to where dagger.json lives
+// sourceSubpath: path from context dir to where module source code lives
+func getDaggerJsonPath(sourceRootSubpath, sourceSubpath string) string {
+	// Clean paths to handle empty strings and normalize separators
+	sourceRootSubpath = filepath.Clean(sourceRootSubpath)
+	sourceSubpath = filepath.Clean(sourceSubpath)
+
+	// If they're the same, dagger.json is in the source directory
+	if sourceRootSubpath == sourceSubpath {
 		return "dagger.json"
 	}
-	
-	// Count the number of directory levels in subPath
-	// e.g., "src" has 1 level -> "../dagger.json"
-	//       "src/mymodule" has 2 levels -> "../../dagger.json"
-	depth := 1 // Start with 1 for the first directory component
-	for _, char := range subPath {
-		if char == '/' || char == '\\' {
+
+	// Convert both to forward slashes for consistent processing
+	sourceRootPath := filepath.ToSlash(sourceRootSubpath)
+	sourcePath := filepath.ToSlash(sourceSubpath)
+
+	// Normalize "." to empty string for prefix matching
+	if sourceRootPath == "." {
+		sourceRootPath = ""
+	}
+	if sourcePath == "." {
+		sourcePath = ""
+	}
+
+	// Check if sourceSubpath is a child of sourceRootSubpath
+	var remaining string
+	if sourceRootPath == "" {
+		// dagger.json is at context root, source is in subdirectory
+		remaining = sourcePath
+	} else if len(sourcePath) > len(sourceRootPath) &&
+		sourcePath[:len(sourceRootPath)] == sourceRootPath &&
+		sourcePath[len(sourceRootPath)] == '/' {
+		// sourceSubpath starts with sourceRootSubpath/
+		remaining = sourcePath[len(sourceRootPath)+1:]
+	} else {
+		// Not a parent-child relationship
+		return "dagger.json"
+	}
+
+	// Count directory levels in remaining path
+	depth := 1
+	for _, char := range remaining {
+		if char == '/' {
 			depth++
 		}
 	}
-	
-	// Build the relative path with correct number of "../"
+
+	// Build relative path
 	result := ""
 	for i := 0; i < depth; i++ {
 		result += "../"
 	}
-	result += "dagger.json"
-	
-	return result
+	return result + "dagger.json"
 }
 
 func (m *CsharpSdk) ModuleRuntime(
