@@ -41,17 +41,18 @@ import (
 )
 
 type RemoteGitRepository struct {
+	// when URL is nil, it indicates an ambiguous git URL that needs to be resolved
 	URL *gitutil.GitURL
 
 	SSHKnownHosts string
-	SSHAuthSocket dagql.ObjectResult[*Socket]
+	SSHAuthSocket dagql.Optional[SocketID]
 
 	Services ServiceBindings
 	Platform Platform
 
 	AuthUsername string
-	AuthToken    dagql.ObjectResult[*Secret]
-	AuthHeader   dagql.ObjectResult[*Secret]
+	AuthToken    dagql.Optional[SecretID]
+	AuthHeader   dagql.Optional[SecretID]
 }
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
@@ -148,17 +149,17 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 // instead of being too smart, we just scope the cache key to the auth configuration: less chance of cache poisoning
 func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	scope := make([]string, 0, 4)
-	if token := repo.AuthToken; token.Self() != nil && token.ID() != nil {
-		scope = append(scope, "token:"+token.ID().Digest().String())
+	if repo.AuthToken.Valid && repo.AuthToken.Value.ID() != nil {
+		scope = append(scope, "token:"+repo.AuthToken.Value.ID().Digest().String())
 	}
-	if header := repo.AuthHeader; header.Self() != nil && header.ID() != nil {
-		scope = append(scope, "header:"+header.ID().Digest().String())
+	if repo.AuthHeader.Valid && repo.AuthHeader.Value.ID() != nil {
+		scope = append(scope, "header:"+repo.AuthHeader.Value.ID().Digest().String())
 	}
 	if repo.AuthUsername != "" {
 		scope = append(scope, "username:"+repo.AuthUsername)
 	}
-	if sshSock := repo.SSHAuthSocket; sshSock.Self() != nil {
-		scope = append(scope, "ssh-sock:"+sshSock.Self().IDDigest.String())
+	if repo.SSHAuthSocket.Valid && repo.SSHAuthSocket.Value.ID() != nil {
+		scope = append(scope, "ssh-sock:"+repo.SSHAuthSocket.Value.ID().Digest().String())
 	}
 	return scope
 }
@@ -215,10 +216,15 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		}
 	}()
 
-	if repo.SSHAuthSocket.Self() != nil {
+	if repo.SSHAuthSocket.Valid && repo.SSHAuthSocket.Value.ID() != nil {
 		socketStore, err := query.Sockets(ctx)
 		if err == nil {
-			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.Self().IDDigest)
+			srv, _ := CurrentDagqlServer(ctx)
+			sockObj, err := repo.SSHAuthSocket.Value.Load(ctx, srv)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to load SSH socket: %w", err)
+			}
+			sockpath, cleanup, err := socketStore.MountSocket(ctx, sockObj.Self().IDDigest)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 			}
@@ -257,22 +263,22 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		})
 	}
 
-	if repo.AuthToken.Self() != nil {
+	if repo.AuthToken.Valid && repo.AuthToken.Value.ID() != nil {
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
+		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.Value.ID().Digest())
 		if err != nil {
 			return nil, nil, err
 		}
 		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
-	} else if repo.AuthHeader.Self() != nil {
+	} else if repo.AuthHeader.Valid && repo.AuthHeader.Value.ID() != nil {
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.Value.ID().Digest())
 		if err != nil {
 			return nil, nil, err
 		}
