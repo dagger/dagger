@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/cache/config"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -1739,6 +1740,7 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	var overlayIncompatDir string
 	if sm.curMounts == nil {
 		mounts, release, err := sm.Mountable.Mount()
 		if err != nil {
@@ -1778,9 +1780,31 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 		if err := mount.All(mounts, dir); err != nil {
 			return nil, nil, err
 		}
+		// TODO: dedupe
+		if len(mounts) == 1 && (mounts[0].Type == "overlay") {
+			var hasVolatile bool
+			var workDir string
+			for _, opt := range mounts[0].Options {
+				if opt == "volatile" {
+					hasVolatile = true
+					continue
+				}
+				if strings.HasPrefix(opt, "workdir=") {
+					workDir = strings.TrimPrefix(opt, "workdir=")
+					continue
+				}
+			}
+			if hasVolatile && workDir != "" {
+				overlayIncompatDir = filepath.Join(workDir, "work/incompat")
+			}
+		}
+
 		defer func() {
 			if retErr != nil {
 				mount.Unmount(dir, 0)
+				if overlayIncompatDir != "" {
+					os.RemoveAll(overlayIncompatDir)
+				}
 			}
 		}()
 		sm.curMounts = []mount.Mount{
@@ -1817,7 +1841,11 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 		// no mount exist. release the current mount.
 		sm.curMounts = nil
 		if err := mount.Unmount(sm.curMountPoint, 0); err != nil {
+			slog.Error("failed to unmount sharable mount", "err", err)
 			return err
+		}
+		if overlayIncompatDir != "" {
+			os.RemoveAll(overlayIncompatDir)
 		}
 		if err := sm.curRelease(); err != nil {
 			return err

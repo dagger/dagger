@@ -427,8 +427,36 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	if err := mount.All(rootMnts, state.rootfsPath); err != nil {
 		return fmt.Errorf("mount rootfs: %w", err)
 	}
+
+	// TODO: dedupe
+	var overlayIncompatDir string
+	if len(rootMnts) == 1 && (rootMnts[0].Type == "overlay") {
+		var hasVolatile bool
+		var workDir string
+		for _, opt := range rootMnts[0].Options {
+			if opt == "volatile" {
+				hasVolatile = true
+				continue
+			}
+			if strings.HasPrefix(opt, "workdir=") {
+				workDir = strings.TrimPrefix(opt, "workdir=")
+				continue
+			}
+		}
+		if hasVolatile && workDir != "" {
+			overlayIncompatDir = filepath.Join(workDir, "work/incompat")
+		}
+	}
+
 	state.cleanups.Add("unmount rootfs", func() error {
-		return mount.Unmount(state.rootfsPath, 0)
+		err := mount.Unmount(state.rootfsPath, 0)
+		if err != nil {
+			return err
+		}
+		if overlayIncompatDir != "" {
+			return os.RemoveAll(overlayIncompatDir)
+		}
+		return nil
 	})
 
 	var filteredMounts []specs.Mount
@@ -540,8 +568,35 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		if err := mnt.Mount(state.spec.Root.Path); err != nil {
 			return fmt.Errorf("mount to rootfs %s: %w", mnt.Target, err)
 		}
+		// TODO: dedupe
+		var overlayIncompatDir string
+		if len(rootMnts) == 1 && (rootMnts[0].Type == "overlay") {
+			var hasVolatile bool
+			var workDir string
+			for _, opt := range rootMnts[0].Options {
+				if opt == "volatile" {
+					hasVolatile = true
+					continue
+				}
+				if strings.HasPrefix(opt, "workdir=") {
+					workDir = strings.TrimPrefix(opt, "workdir=")
+					continue
+				}
+			}
+			if hasVolatile && workDir != "" {
+				overlayIncompatDir = filepath.Join(workDir, "work/incompat")
+			}
+		}
+
 		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
-			return mount.Unmount(dstPath, 0)
+			err := mount.Unmount(dstPath, 0)
+			if err != nil {
+				return err
+			}
+			if overlayIncompatDir != "" {
+				return os.RemoveAll(overlayIncompatDir)
+			}
+			return nil
 		})
 	}
 
