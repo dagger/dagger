@@ -152,7 +152,7 @@ func GetContentHashFromDef(
 			FollowLinks: true,
 		}, nil)
 		if err != nil {
-			return "", fmt.Errorf("failed to checksum ref: %w", err)
+			return "", fmt.Errorf("failed to checksum ref at subdir %s: %w", subdir, err)
 		}
 
 		if subdir == "/" {
