@@ -6442,6 +6442,46 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 	}
 }
 
+func (ModuleSuite) TestPortableAPI(ctx context.Context, t *testctx.T) {
+	t.Run("checkPortableCode", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		modGen := modInit(t, c, "go", `// portable code
+package main
+
+import (
+	"dagger.io/dagger"
+)
+
+type Test struct{}
+
+// Returns a container that echoes whatever string argument is provided
+func (m *Test) ContainerEcho(stringArg string) *dagger.Container {
+	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
+}
+`, "--portable-api")
+
+		t.Run("has an API go.mod in internal/dagger", func(ctx context.Context, w *testctx.W[*testing.T]) {
+			_, err := modGen.
+				WithExec([]string{"grep", `module\s*dagger\.io/dagger`, "internal/dagger/go.mod"}).
+				Sync(ctx)
+			require.NoError(t, err)
+		})
+		t.Run("has a dagger.io/dagger replace in go.mod", func(ctx context.Context, w *testctx.W[*testing.T]) {
+			_, err := modGen.
+				WithExec([]string{"grep", `dagger\.io/dagger\s*=>\s*\./internal/dagger`, "go.mod"}).
+				Sync(ctx)
+			require.NoError(t, err)
+		})
+		t.Run("can call a function", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.
+				With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "hello")
+		})
+	})
+}
+
 func (ModuleSuite) TestModuleDeprecationIntrospection(ctx context.Context, t *testctx.T) {
 	type sdkCase struct {
 		sdk        string
