@@ -774,9 +774,7 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 					}
 					// Set the OverlayFor field if this toolchain is configured as an overlay
 					if pcfg.OverlayFor != "" {
-						fmt.Printf("DEBUG: Setting OverlayFor on toolchain source: %s overlays %s\n", pcfg.Name, pcfg.OverlayFor)
 						toolchain.Self().OverlayFor = pcfg.OverlayFor
-						fmt.Printf("DEBUG: Confirmed - toolchain.Self().OverlayFor = %s\n", toolchain.Self().OverlayFor)
 					}
 					src.Toolchains[i] = toolchain
 					return nil
@@ -3416,8 +3414,6 @@ func addToolchainFieldsToObject(
 
 				// This is an overlay - add it to ToolchainModules for routing but don't expose as a field
 				// Store by ModuleName (which comes from config) for routing lookup
-				fmt.Printf("DEBUG: Found overlay toolchain: %s (overlays %s) in module %s\n",
-					modSrc.ModuleName, modSrc.OverlayFor, mod.Name())
 				overlayMap[modSrc.OverlayFor] = tcMod
 				mod.ToolchainModules[modSrc.ModuleName] = tcMod
 				// Also track in ToolchainOverlays map for function call routing
@@ -3425,7 +3421,6 @@ func addToolchainFieldsToObject(
 					mod.ToolchainOverlays = make(map[string]*core.Module)
 				}
 				mod.ToolchainOverlays[modSrc.OverlayFor] = tcMod
-				fmt.Printf("DEBUG: Added to ToolchainOverlays[%s] = %s\n", modSrc.OverlayFor, tcMod.Name())
 				continue
 			}
 		}
@@ -3450,17 +3445,12 @@ func addToolchainFieldsToObject(
 			// Use overlay module for the field exposed to users
 			effectiveTcMod = overlayMod
 			hasOverlay = true
-			fmt.Printf("DEBUG: Using overlay module %s for base toolchain %s\n",
-				overlayMod.Name(), originalName)
 		}
 
 		// Store the effective module (overlay if exists, otherwise base)
 		// This is what gets looked up in object.go when resolving toolchain calls
 		// The overlay module should have the base as a dependency, so it can call it
 		mod.ToolchainModules[originalName] = effectiveTcMod
-		fmt.Printf("DEBUG: Stored %s module %s under name %s\n",
-			map[bool]string{true: "overlay", false: "base"}[hasOverlay],
-			effectiveTcMod.Name(), originalName)
 
 		// When looking for the main object:
 		// - Base toolchains: look for object matching base name (e.g., "Hello")
@@ -3472,10 +3462,7 @@ func addToolchainFieldsToObject(
 		} else {
 			objectNameToFind = strcase.ToCamel(tcMod.NameField) // Base name
 		}
-		fmt.Printf("DEBUG: Looking for object %s in module %s (has %d objects)\n",
-			objectNameToFind, effectiveTcMod.Name(), len(effectiveTcMod.ObjectDefs))
-		for i, obj := range effectiveTcMod.ObjectDefs {
-			fmt.Printf("DEBUG:   [%d] Object Name=%s\n", i, obj.AsObject.Value.Name)
+		for _, obj := range effectiveTcMod.ObjectDefs {
 			if obj.AsObject.Value.Name == objectNameToFind {
 				// Use the original name (with hyphens) as the map key,
 				// but use camelCase for the GraphQL field name
