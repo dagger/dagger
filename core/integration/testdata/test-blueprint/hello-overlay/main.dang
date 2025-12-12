@@ -1,9 +1,0 @@
-type Hello {
-  pub message(): String {
-    "overlay: " + hello.message()
-  }
-  
-  pub configurableMessage(message: String = "hola"): String {
-    "overlay says: " + hello.configurableMessage(message: message)
-  }
-}
