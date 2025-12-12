@@ -59,17 +59,15 @@ func TestVersionCompatibility(t *testing.T) {
 
 		// even more complicated dev versions
 		{
-			// v0.2.0-dev-123 ~= v0.2.0
-			targetVersion:  "v0.2.0-dev-123",
-			minVersion:     "v0.2.0",
-			currentVersion: "v0.2.0-dev-123",
+			targetVersion:  "v0.0.0-dev-123",
+			minVersion:     "v0.0.0",
+			currentVersion: "v0.0.0-dev-123",
 			compatible:     true,
 		},
 		{
-			// v0.2.0-dev-123 ~= v0.2.0
-			targetVersion:  "v0.2.0-dev-123",
-			minVersion:     "v0.2.0",
-			currentVersion: "v0.2.0-dev-456",
+			targetVersion:  "v0.0.0-dev-123",
+			minVersion:     "v0.0.0",
+			currentVersion: "v0.0.0-dev-456",
 			compatible:     true,
 		},
 	}
@@ -131,10 +129,30 @@ func TestBaseVersion(t *testing.T) {
 		{version: "v0.2.0+456", result: "v0.2.0"},
 		{version: "", result: ""},
 		{version: "foobar", result: "foobar"},
+		{version: "v0.0.0-010101000000-dev-deadbeefdead", result: "v0.0.0"},
 	}
 	for _, tc := range tc {
 		t.Run(tc.version, func(t *testing.T) {
 			require.Equal(t, tc.result, BaseVersion(tc.version))
+		})
+	}
+}
+
+func TestIsDevVersion(t *testing.T) {
+	tc := []struct {
+		version string
+		isDev   bool
+	}{
+		{version: "", isDev: true},
+		{version: "v0.19.9", isDev: false},
+		{version: "v0.19.9-241210-dev-abc123", isDev: true},
+		{version: "v0.19.9-241210123456-dev-abc123def456", isDev: true},
+		{version: "v0.19.9-123", isDev: false},
+		{version: "v0.19.9-rc1", isDev: false},
+	}
+	for _, tc := range tc {
+		t.Run(tc.version, func(t *testing.T) {
+			require.Equal(t, tc.isDev, IsDevVersion(tc.version))
 		})
 	}
 }
