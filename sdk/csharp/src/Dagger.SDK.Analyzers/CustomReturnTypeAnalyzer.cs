@@ -91,15 +91,17 @@ public class CustomReturnTypeAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // Check if the return type has [Object] attribute
-        var hasObjectAttribute = returnType
+        // Check if the return type has [Object] or [Interface] attribute
+        var hasObjectOrInterfaceAttribute = returnType
             .GetAttributes()
             .Any(attr =>
                 IsAttributeType(attr, "Dagger", "ObjectAttribute")
                 || IsAttributeType(attr, "Dagger", "Object")
+                || IsAttributeType(attr, "Dagger", "InterfaceAttribute")
+                || IsAttributeType(attr, "Dagger", "Interface")
             );
 
-        if (!hasObjectAttribute)
+        if (!hasObjectOrInterfaceAttribute)
         {
             // Report diagnostic at the return type location
             var returnTypeLocation = methodDeclaration.ReturnType.GetLocation();

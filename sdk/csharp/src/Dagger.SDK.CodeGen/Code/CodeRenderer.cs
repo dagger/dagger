@@ -368,9 +368,10 @@ public class CodeRenderer : ICodeRenderer
         return $"{GetNormalizedTypeName(arg)} {arg.GetVarName()}";
     }
 
-    private static string RenderOptionalArgument(InputValue arg)
+    internal static string RenderOptionalArgument(InputValue arg)
     {
-        var nullableType = GetNormalizedTypeName(arg) + "?";
+        var baseType = GetNormalizedTypeName(arg);
+        var nullableType = baseType + "?";
 
         if (arg.DefaultValue != null)
         {
@@ -386,7 +387,13 @@ public class CodeRenderer : ICodeRenderer
 
             if (arg.Type.IsEnum() && !string.IsNullOrWhiteSpace(arg.DefaultValue.Trim('"')))
             {
-                return $"{nullableType} {arg.GetVarName()} = {GetNormalizedTypeName(arg)}.{arg.DefaultValue}";
+                return $"{nullableType} {arg.GetVarName()} = {baseType}.{arg.DefaultValue}";
+            }
+
+            // For boolean types with non-null default values, use non-nullable type
+            if (baseType == "bool" && (arg.DefaultValue == "true" || arg.DefaultValue == "false"))
+            {
+                return $"{baseType} {arg.GetVarName()} = {arg.DefaultValue}";
             }
 
             return $"{nullableType} {arg.GetVarName()} = {arg.DefaultValue}";
@@ -496,7 +503,7 @@ public class CodeRenderer : ICodeRenderer
         return builder.ToString();
     }
 
-    private static string RenderArgumentValue(
+    internal static string RenderArgumentValue(
         InputValue arg,
         bool addVarSuffix = false,
         bool asProperty = false
@@ -556,13 +563,16 @@ public class CodeRenderer : ICodeRenderer
 
             if (tr.IsScalar())
             {
-                var value = tr.GetType_().GetTypeName() switch
+                var type = tr.GetType_().GetTypeName();
+                var token = SyntaxFacts.GetKeywordKind(type);
+
+                var value = token switch
                 {
-                    "string" => "new StringValue(v)",
-                    "int" => "new IntValue(v)",
-                    "float" => "new FloatValue(v)",
-                    "boolean" => "new BooleanValue(v)",
-                    var type => (type.EndsWith("Id") && !string.Equals(arg.Name, "id"))
+                    SyntaxKind.StringKeyword => "new StringValue(v)",
+                    SyntaxKind.IntKeyword => "new IntValue(v)",
+                    SyntaxKind.FloatKeyword => "new FloatValue(v)",
+                    SyntaxKind.BoolKeyword => "new BooleanValue(v)",
+                    _ => (type.EndsWith("Id") && !string.Equals(arg.Name, "id"))
                         ? $"new IdValue<{type}>(v)"
                         : "new StringValue(v.Value)",
                 };
