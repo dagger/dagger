@@ -41,7 +41,8 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 	defer cfg.Close()
 
 	clientConfig := &generator.ClientGeneratorConfig{
-		ClientDir: outputDir,
+		ClientDir:         outputDir,
+		PortableDaggerAPI: portableAPI,
 	}
 
 	// If a client dir is provided, we use it.
@@ -92,4 +93,5 @@ func init() {
 	// Specific client generation flags
 	generateClientCmd.Flags().StringVar(&moduleSourceID, "module-source-id", "", "id of the module to generate code for")
 	generateClientCmd.Flags().StringVar(&clientDir, "client-dir", "", "directory where the client will be generated (output by default)")
+	generateClientCmd.Flags().BoolVar(&portableAPI, "portable-api", false, "generate portable go code with dagger.io/dagger imports")
 }
