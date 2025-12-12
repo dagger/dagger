@@ -94,7 +94,7 @@ func GetOverlayLayers(m mount.Mount) ([]string, error) {
 			for i, j := 0, len(l)-1; i < j; i, j = i+1, j-1 {
 				l[i], l[j] = l[j], l[i] // make l[0] = bottommost
 			}
-		} else if strings.HasPrefix(o, "workdir=") || o == "index=off" || o == "userxattr" || strings.HasPrefix(o, "redirect_dir=") {
+		} else if strings.HasPrefix(o, "workdir=") || o == "index=off" || o == "userxattr" || strings.HasPrefix(o, "redirect_dir=") || o == "volatile" {
 			// these options are possible to specfied by the snapshotter but not indicate dir locations.
 			continue
 		} else {

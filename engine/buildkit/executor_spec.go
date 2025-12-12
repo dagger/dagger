@@ -33,6 +33,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
+	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/google/uuid"
@@ -396,6 +397,7 @@ func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
 	return nil
 }
 
+//nolint:gocyclo
 func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	var err error
 	state.rootfsPath, err = os.MkdirTemp("", "rootfs")
@@ -427,8 +429,19 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	if err := mount.All(rootMnts, state.rootfsPath); err != nil {
 		return fmt.Errorf("mount rootfs: %w", err)
 	}
+
+	overlayIncompatDirs := overlay.VolatileIncompatDirs(rootMnts)
+
 	state.cleanups.Add("unmount rootfs", func() error {
-		return mount.Unmount(state.rootfsPath, 0)
+		if err := mount.Unmount(state.rootfsPath, 0); err != nil {
+			return err
+		}
+		for _, dir := range overlayIncompatDirs {
+			if err := os.RemoveAll(dir); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 
 	var filteredMounts []specs.Mount
@@ -540,8 +553,18 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		if err := mnt.Mount(state.spec.Root.Path); err != nil {
 			return fmt.Errorf("mount to rootfs %s: %w", mnt.Target, err)
 		}
+		overlayIncompatDir := overlay.VolatileIncompatDir(mnt)
+
 		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
-			return mount.Unmount(dstPath, 0)
+			if err := mount.Unmount(dstPath, 0); err != nil {
+				return err
+			}
+			if overlayIncompatDir != "" {
+				if err := os.RemoveAll(overlayIncompatDir); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 	}
 
