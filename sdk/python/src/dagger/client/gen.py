@@ -10262,6 +10262,23 @@ class ModuleSource(Type):
         _ctx = self._select("withName", _args)
         return ModuleSource(_ctx)
 
+    def with_overlay_for(self, name: str, overlay_for: str) -> Self:
+        """Set a toolchain as an overlay for another toolchain.
+
+        Parameters
+        ----------
+        name:
+            The name of the toolchain to make an overlay.
+        overlay_for:
+            The name of the base toolchain to overlay.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("overlayFor", overlay_for),
+        ]
+        _ctx = self._select("withOverlayFor", _args)
+        return ModuleSource(_ctx)
+
     def with_sdk(self, source: str) -> Self:
         """Update the module source with a new SDK.
 

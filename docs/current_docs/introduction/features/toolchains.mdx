@@ -273,6 +273,217 @@ dagger check -l
 
 This will list all checks that will run, excluding any that match your `ignoreChecks` patterns.
 
+## Toolchain Overlays
+
+Toolchain overlays allow you to wrap and customize existing toolchains by writing a small amount of code that acts as middleware. When you need more control than what the `customizations` configuration provides, overlays let you intercept and modify toolchain behavior while still leveraging the base toolchain's functionality.
+
+### What are Overlays?
+
+An overlay is a Dagger module that wraps another toolchain (called the "base toolchain"). When you configure an overlay, all calls to the base toolchain are automatically routed through your overlay module first, giving you complete control over:
+
+- How functions are called
+- What parameters are passed
+- How results are processed
+- What additional functionality to add
+
+The overlay module can then call the base toolchain's functions in any way it needs, effectively acting as middleware.
+
+### When to Use Overlays
+
+Consider using overlays when:
+
+- **Complex customization**: You need to combine multiple toolchain functions in a specific way
+- **Adding integrations**: You want to integrate multiple toolchains together (e.g., using one toolchain's output as input to another)
+- **Environment-specific behavior**: Different deployment targets need different toolchain configurations
+- **Advanced parameter processing**: You need to transform or validate parameters before passing them to the base toolchain
+- **Adding observability**: You want to add logging, metrics, or tracing around toolchain operations
+
+### Creating an Overlay
+
+To create an overlay toolchain:
+
+1. **Create a new Dagger module** that will act as your overlay:
+
+```shell
+mkdir my-overlay
+cd my-overlay
+dagger init --sdk=go
+```
+
+2. **Implement functions with the same names** as the base toolchain functions you want to override. Your overlay can then call the base toolchain:
+
+```go
+package main
+
+import (
+    "context"
+    "dagger/my-overlay/internal/dagger"
+)
+
+type MyOverlay struct{}
+
+// Wrap the base toolchain's Build function
+func (m *MyOverlay) Build(
+    ctx context.Context,
+    source *dagger.Directory,
+) (*dagger.Container, error) {
+    // Call the base toolchain with custom parameters
+    return dag.BaseToolchain().
+        Build(ctx, source, dagger.BaseToolchainBuildOpts{
+            Optimize: true,
+            Target:   "production",
+        })
+}
+
+// Add new functionality not in the base toolchain
+func (m *MyOverlay) BuildAndTest(
+    ctx context.Context,
+    source *dagger.Directory,
+) (string, error) {
+    // Build using base toolchain
+    container, err := dag.BaseToolchain().Build(ctx, source)
+    if err != nil {
+        return "", err
+    }
+    
+    // Run tests using another toolchain
+    return dag.Tester().Test(ctx, container)
+}
+```
+
+3. **Install the overlay** in your module using the `--overlay-for` flag:
+
+```shell
+cd /path/to/your/module
+dagger toolchain install /path/to/my-overlay --overlay-for base-toolchain
+```
+
+The `--overlay-for` flag tells Dagger that this toolchain should wrap the base toolchain named `base-toolchain`. When you call functions on `base-toolchain`, they will automatically route through your overlay.
+
+### How Overlays Work
+
+When you configure a toolchain as an overlay:
+
+1. **Transparent routing**: All calls to the base toolchain are automatically routed through the overlay
+2. **Base toolchain as dependency**: The base toolchain is automatically added as a dependency of the overlay, making it accessible via `dag.BaseToolchain()`
+3. **Function matching**: Only functions you implement in the overlay are overridden; other base toolchain functions remain accessible
+4. **Customizations merge**: Any `customizations` defined for both the base and overlay are merged, with overlay customizations taking precedence
+
+### Example: Wrapping a Build Toolchain
+
+Let's say you have a generic Go build toolchain but need project-specific customizations:
+
+**Base toolchain** (`github.com/example/go-builder`):
+```go
+type GoBuilder struct{}
+
+func (b *GoBuilder) Build(
+    ctx context.Context,
+    source *dagger.Directory,
+    // +optional
+    // +default="latest"
+    goVersion string,
+) (*dagger.Container, error) {
+    return dag.Container().
+        From("golang:" + goVersion).
+        WithDirectory("/src", source).
+        WithWorkdir("/src").
+        WithExec([]string{"go", "build", "-o", "app"}).
+        File("/src/app")
+}
+```
+
+**Your overlay** (`./build-overlay`):
+```go
+type BuildOverlay struct{}
+
+func (o *BuildOverlay) Build(
+    ctx context.Context,
+    source *dagger.Directory,
+) (*dagger.Container, error) {
+    // Pre-process: Add private dependencies
+    sourceWithDeps := source.
+        WithFile(".netrc", dag.Host().EnvVariable("NETRC_FILE"))
+    
+    // Call base toolchain with your custom Go version
+    container, err := dag.GoBuilder().Build(ctx, sourceWithDeps, 
+        dagger.GoBuilderBuildOpts{GoVersion: "1.21"})
+    if err != nil {
+        return nil, err
+    }
+    
+    // Post-process: Add runtime dependencies
+    return container.
+        WithExec([]string{"apt-get", "update"}).
+        WithExec([]string{"apt-get", "install", "-y", "ca-certificates"}), nil
+}
+```
+
+**Install the overlay**:
+```shell
+dagger toolchain install github.com/example/go-builder
+dagger toolchain install ./build-overlay --overlay-for go-builder
+```
+
+**Use it**:
+```shell
+# This call goes through your overlay automatically
+dagger call go-builder build --source ./
+```
+
+### Overlays with Customizations
+
+Overlays work seamlessly with the `customizations` configuration. When both the base toolchain and the overlay have customizations, they are merged with overlay customizations taking precedence:
+
+```json
+{
+  "name": "my-app",
+  "toolchains": [
+    {
+      "name": "builder",
+      "source": "github.com/example/builder",
+      "customizations": [
+        {
+          "function": ["build"],
+          "argument": "optimize",
+          "default": "false"
+        }
+      ]
+    },
+    {
+      "name": "build-overlay",
+      "source": "./overlay",
+      "overlayFor": "builder",
+      "customizations": [
+        {
+          "function": ["build"],
+          "argument": "optimize",
+          "default": "true"
+        }
+      ]
+    }
+  ]
+}
+```
+
+In this case, the overlay's customization (`optimize: true`) takes precedence over the base toolchain's customization.
+
+### Validation and Safety
+
+Dagger validates overlay configurations to prevent common issues:
+
+- **Missing base toolchain**: You cannot install an overlay without first installing its base toolchain
+- **Circular dependencies**: Overlays cannot reference other overlays as their base, preventing circular chains
+- **Clear error messages**: Configuration errors provide specific guidance on how to fix the issue
+
+### Overlay Best Practices
+
+1. **Keep overlays focused**: An overlay should enhance or customize a single base toolchain, not combine unrelated functionality
+2. **Document wrapper behavior**: Clearly document which base toolchain functions your overlay modifies and how
+3. **Leverage base functionality**: Always call through to the base toolchain rather than reimplementing its logic
+4. **Use for project-specific needs**: Overlays are ideal for project-specific customizations while keeping the base toolchain generic
+5. **Test overlay independently**: Write tests that verify your overlay's behavior separate from the base toolchain
+
 ## Best Practices
 
 ### Keep Toolchains Focused

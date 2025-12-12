@@ -10094,6 +10094,16 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Set a toolchain as an overlay for another toolchain.
+   * @param name The name of the toolchain to make an overlay.
+   * @param overlayFor The name of the base toolchain to overlay.
+   */
+  withOverlayFor = (name: string, overlayFor: string): ModuleSource => {
+    const ctx = this._ctx.select("withOverlayFor", { name, overlayFor })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update the module source with a new SDK.
    * @param source The SDK source to set.
    */

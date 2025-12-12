@@ -4897,6 +4897,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withOverlayFor",
+			"p": "Dagger/ModuleSource.html#method_withOverlayFor",
+			"d": "<p>Set a toolchain as an overlay for another toolchain.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withSDK",
 			"p": "Dagger/ModuleSource.html#method_withSDK",
 			"d": "<p>Update the module source with a new SDK.</p>"

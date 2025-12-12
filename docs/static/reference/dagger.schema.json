@@ -86,6 +86,10 @@
           "type": "string",
           "description": "The pinned version of the module dependency."
         },
+        "overlayFor": {
+          "type": "string",
+          "description": "OverlayFor specifies the name of another toolchain that this toolchain overlays. When set, this toolchain acts as middleware, wrapping the target toolchain's fields and functions. This allows customizing toolchain behavior without modifying the base toolchain module."
+        },
         "arguments": {
           "items": {
             "$ref": "#/$defs/ModuleConfigArgument"

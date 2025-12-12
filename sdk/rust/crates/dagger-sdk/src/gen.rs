@@ -10568,6 +10568,26 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Set a toolchain as an overlay for another toolchain.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the toolchain to make an overlay.
+    /// * `overlay_for` - The name of the base toolchain to overlay.
+    pub fn with_overlay_for(
+        &self,
+        name: impl Into<String>,
+        overlay_for: impl Into<String>,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withOverlayFor");
+        query = query.arg("name", name.into());
+        query = query.arg("overlayFor", overlay_for.into());
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update the module source with a new SDK.
     ///
     /// # Arguments

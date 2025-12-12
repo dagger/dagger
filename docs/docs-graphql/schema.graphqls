@@ -4058,6 +4058,15 @@ type ModuleSource {
     name: String!
   ): ModuleSource!
 
+  """Set a toolchain as an overlay for another toolchain."""
+  withOverlayFor(
+    """The name of the toolchain to make an overlay."""
+    name: String!
+
+    """The name of the base toolchain to overlay."""
+    overlayFor: String!
+  ): ModuleSource!
+
   """Update the module source with a new SDK."""
   withSDK(
     """The SDK source to set."""

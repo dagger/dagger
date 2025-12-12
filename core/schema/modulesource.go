@@ -803,12 +803,12 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 					overlayNames[pcfg.Name] = true
 				}
 			}
-			
+
 			for _, pcfg := range src.ConfigToolchains {
 				if pcfg.OverlayFor != "" {
 					// Check if the base toolchain is also an overlay
 					if overlayNames[pcfg.OverlayFor] {
-						return fmt.Errorf("circular overlay dependency detected: %s overlays %s, but %s is also an overlay", 
+						return fmt.Errorf("circular overlay dependency detected: %s overlays %s, but %s is also an overlay",
 							pcfg.Name, pcfg.OverlayFor, pcfg.OverlayFor)
 					}
 				}
@@ -824,28 +824,28 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 					}
 
 					baseCfg, baseConfigFound := configsByName[pcfg.OverlayFor]
-					
+
 					overlayToolchain := src.Toolchains[i]
-					
+
 					// Inject the base toolchain as a dependency of the overlay
 					// We need to add it to the overlay's Toolchains array
 					overlaySelf := overlayToolchain.Self()
 					if overlaySelf.Toolchains == nil {
 						overlaySelf.Toolchains = []dagql.ObjectResult[*core.ModuleSource]{}
 					}
-					
+
 					// Add the base toolchain to the overlay's toolchains
 					overlaySelf.Toolchains = append(overlaySelf.Toolchains, baseToolchain)
-					
+
 					// Also need to update ConfigToolchains to match
 					if overlaySelf.ConfigToolchains == nil {
 						overlaySelf.ConfigToolchains = []*modules.ModuleConfigDependency{}
 					}
-					
+
 					// Merge customizations from base and overlay
 					// Overlay customizations take precedence
 					mergedCustomizations := []*modules.ModuleConfigArgument{}
-					
+
 					// Start with base toolchain customizations if they exist
 					if baseConfigFound && len(baseCfg.Customizations) > 0 {
 						// Deep copy base customizations
@@ -861,12 +861,12 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 							mergedCustomizations = append(mergedCustomizations, copied)
 						}
 					}
-					
+
 					// Apply overlay customizations, overriding base where they conflict
 					if len(pcfg.Customizations) > 0 {
 						mergedCustomizations = mergeCustomizations(mergedCustomizations, pcfg.Customizations)
 					}
-					
+
 					// Create a config entry for the base toolchain dependency
 					baseToolchainCfg := &modules.ModuleConfigDependency{
 						Name:           pcfg.OverlayFor,
@@ -3382,7 +3382,7 @@ func addToolchainFieldsToObject(
 	overlayMap := make(map[string]*core.Module) // base toolchain name -> overlay module
 	overlayNames := make(map[string]bool)       // set of overlay module names
 	baseNames := make(map[string]bool)          // set of base toolchain names
-	
+
 	// Collect overlay and base names
 	for _, tcMod := range toolchainMods {
 		if tcMod.Source.Valid && tcMod.Source.Value.Self() != nil {
@@ -3394,7 +3394,7 @@ func addToolchainFieldsToObject(
 			}
 		}
 	}
-	
+
 	// Process overlays and validate
 	for _, tcMod := range toolchainMods {
 		// Skip overlay toolchains - they should not be exposed as separate fields
@@ -3404,19 +3404,19 @@ func addToolchainFieldsToObject(
 			if modSrc.OverlayFor != "" {
 				// Check for circular overlay dependency - an overlay cannot point to another overlay
 				if overlayNames[modSrc.OverlayFor] {
-					return nil, fmt.Errorf("circular overlay dependency detected: %s overlays %s, but %s is also an overlay", 
+					return nil, fmt.Errorf("circular overlay dependency detected: %s overlays %s, but %s is also an overlay",
 						tcMod.NameField, modSrc.OverlayFor, modSrc.OverlayFor)
 				}
-				
+
 				// Validate that the base toolchain exists
 				if !baseNames[modSrc.OverlayFor] {
-					return nil, fmt.Errorf("overlay %s references base toolchain %q, but it is not installed", 
+					return nil, fmt.Errorf("overlay %s references base toolchain %q, but it is not installed",
 						tcMod.NameField, modSrc.OverlayFor)
 				}
-				
+
 				// This is an overlay - add it to ToolchainModules for routing but don't expose as a field
 				// Store by ModuleName (which comes from config) for routing lookup
-				fmt.Printf("DEBUG: Found overlay toolchain: %s (overlays %s) in module %s\n", 
+				fmt.Printf("DEBUG: Found overlay toolchain: %s (overlays %s) in module %s\n",
 					modSrc.ModuleName, modSrc.OverlayFor, mod.Name())
 				overlayMap[modSrc.OverlayFor] = tcMod
 				mod.ToolchainModules[modSrc.ModuleName] = tcMod
@@ -3450,7 +3450,7 @@ func addToolchainFieldsToObject(
 			// Use overlay module for the field exposed to users
 			effectiveTcMod = overlayMod
 			hasOverlay = true
-			fmt.Printf("DEBUG: Using overlay module %s for base toolchain %s\n", 
+			fmt.Printf("DEBUG: Using overlay module %s for base toolchain %s\n",
 				overlayMod.Name(), originalName)
 		}
 
@@ -3458,8 +3458,8 @@ func addToolchainFieldsToObject(
 		// This is what gets looked up in object.go when resolving toolchain calls
 		// The overlay module should have the base as a dependency, so it can call it
 		mod.ToolchainModules[originalName] = effectiveTcMod
-		fmt.Printf("DEBUG: Stored %s module %s under name %s\n", 
-			map[bool]string{true: "overlay", false: "base"}[hasOverlay], 
+		fmt.Printf("DEBUG: Stored %s module %s under name %s\n",
+			map[bool]string{true: "overlay", false: "base"}[hasOverlay],
 			effectiveTcMod.Name(), originalName)
 
 		// When looking for the main object:
@@ -3472,7 +3472,7 @@ func addToolchainFieldsToObject(
 		} else {
 			objectNameToFind = strcase.ToCamel(tcMod.NameField) // Base name
 		}
-		fmt.Printf("DEBUG: Looking for object %s in module %s (has %d objects)\n", 
+		fmt.Printf("DEBUG: Looking for object %s in module %s (has %d objects)\n",
 			objectNameToFind, effectiveTcMod.Name(), len(effectiveTcMod.ObjectDefs))
 		for i, obj := range effectiveTcMod.ObjectDefs {
 			fmt.Printf("DEBUG:   [%d] Object Name=%s\n", i, obj.AsObject.Value.Name)
@@ -3799,7 +3799,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 
 		deps = deps.Append(clone)
 	}
-	
+
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core

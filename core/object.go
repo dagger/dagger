@@ -408,7 +408,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	objDef := obj.TypeDef
 	fmt.Printf("DEBUG: ModuleObject.functions() - Module=%s, TypeDef.Name=%s, TypeDef.SourceModuleName=%s, %d functions\n",
 		obj.Module.Name(), objDef.Name, objDef.SourceModuleName, len(obj.TypeDef.Functions))
-	
+
 	// Determine the effective module to use for function creation
 	// If the TypeDef has a SourceModuleName (set by overlay), use that module instead
 	effectiveMod := obj.Module
@@ -422,7 +422,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 			fmt.Printf("DEBUG: WARNING: TypeDef.SourceModuleName=%s but module not found in ToolchainModules\n", objDef.SourceModuleName)
 		}
 	}
-	
+
 	for _, fun := range obj.TypeDef.Functions {
 		fmt.Printf("DEBUG:   Function: %s (OriginalName=%s)\n", fun.Name, fun.OriginalName)
 		// Check if this is a toolchain proxy function
@@ -498,7 +498,7 @@ func getMapKeys(m map[string]*Module) []string {
 // it calls the constructor function with the provided arguments.
 // If the toolchain has no constructor, it returns an uninitialized object (treating it like a
 // zero-argument constructor).
-// 
+//
 // If an overlay is configured for this toolchain, the overlay's implementation will be used instead.
 func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcMod *Module, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	// Check if there's an overlay for this toolchain
@@ -511,7 +511,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 		if overlayMod, ok := mod.ToolchainOverlays[tcMod.OriginalName]; ok {
 			// Found an overlay! Use the overlay module instead
 			effectiveTcMod = overlayMod
-			fmt.Printf("DEBUG: toolchainProxyFunction - using overlay %s for base toolchain %s\n", 
+			fmt.Printf("DEBUG: toolchainProxyFunction - using overlay %s for base toolchain %s\n",
 				overlayMod.Name(), tcMod.OriginalName)
 		} else {
 			fmt.Printf("DEBUG: toolchainProxyFunction - NO overlay found for base toolchain %s\n", tcMod.OriginalName)
@@ -544,13 +544,13 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 	if effectiveTcMod != tcMod {
 		// This is an overlay - find the overlay's main object
 		// The main object is the one whose name matches the overlay module's name
-		fmt.Printf("DEBUG: Looking for overlay's main object for module: %s (gql: %s)\n", 
+		fmt.Printf("DEBUG: Looking for overlay's main object for module: %s (gql: %s)\n",
 			effectiveTcMod.OriginalName, gqlObjectName(effectiveTcMod.OriginalName))
 		fmt.Printf("DEBUG: Overlay module has %d objects:\n", len(effectiveTcMod.ObjectDefs))
 		var overlayObjDef *ObjectTypeDef
 		for i, objDef := range effectiveTcMod.ObjectDefs {
 			if objDef.AsObject.Valid {
-				fmt.Printf("DEBUG:   [%d] Object OriginalName=%s (gql: %s)\n", 
+				fmt.Printf("DEBUG:   [%d] Object OriginalName=%s (gql: %s)\n",
 					i, objDef.AsObject.Value.OriginalName, gqlObjectName(objDef.AsObject.Value.OriginalName))
 			}
 			if objDef.AsObject.Valid && gqlObjectName(objDef.AsObject.Value.OriginalName) == gqlObjectName(effectiveTcMod.OriginalName) {
@@ -562,7 +562,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 		if overlayObjDef == nil {
 			return dagql.Field[*ModuleObject]{}, fmt.Errorf("overlay toolchain module %q has no main object", effectiveTcMod.Name())
 		}
-		
+
 		// Create a merged TypeDef: use the base's name but overlay's functions/fields
 		// This ensures the type name matches what's expected in the schema
 		mergedObjDef := mainObjDef.Clone()
@@ -572,7 +572,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 		// CRITICAL: Set SourceModuleName to the overlay so we can identify which module to use later
 		mergedObjDef.SourceModuleName = effectiveTcMod.OriginalName
 		effectiveObjDef = mergedObjDef
-		fmt.Printf("DEBUG: Created merged TypeDef with base name=%s, overlay functions, SourceModuleName=%s\n", 
+		fmt.Printf("DEBUG: Created merged TypeDef with base name=%s, overlay functions, SourceModuleName=%s\n",
 			mergedObjDef.Name, mergedObjDef.SourceModuleName)
 	} else {
 		// Not an overlay - use the same object definition
@@ -598,7 +598,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 				// Return an instance of the toolchain's main object with empty fields
 				// The toolchain module's own resolvers will handle function calls on this object
 				// Use effectiveObjDef for the TypeDef (overlay's definition) and effectiveTcMod for the Module (overlay's implementation)
-				fmt.Printf("DEBUG: Returning ModuleObject with Module=%s (effectiveTcMod), TypeDef.Name=%s\n", 
+				fmt.Printf("DEBUG: Returning ModuleObject with Module=%s (effectiveTcMod), TypeDef.Name=%s\n",
 					effectiveTcMod.Name(), effectiveObjDef.Name)
 				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
 					Module:  effectiveTcMod,
