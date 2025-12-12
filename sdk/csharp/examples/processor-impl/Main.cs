@@ -32,6 +32,7 @@ public class ProcessorImpl
     [Function]
     public ProcessorImpl WithPrefix(string prefix)
     {
-        return new ProcessorImpl { Text = prefix };
+        Text = prefix;
+        return this;
     }
 }

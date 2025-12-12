@@ -17,18 +17,21 @@ public class DefaultsExample
         ///
         /// </summary>
         Debug,
+
         /// <summary>
         ///
         /// </summary>
         Info,
+
         /// <summary>
         ///
         /// </summary>
         Warning,
+
         /// <summary>
         ///
         /// </summary>
-        Error
+        Error,
     }
 
     /// <summary>
@@ -40,25 +43,25 @@ public class DefaultsExample
         /// <summary>
         ///
         /// </summary>
-        [EnumValue(Deprecated = "for some reason", Description = "Use Fast instead"  )]
+        [EnumValue(Deprecated = "for some reason", Description = "Use Fast instead")]
         None,
+
         /// <summary>
         ///
         /// </summary>
         Fast,
+
         /// <summary>
         ///
         /// </summary>
-        Best
+        Best,
     }
 
     /// <summary>
     /// Creates a file with optional custom content (defaults to "data.txt" with "Hello, Dagger!")
     /// </summary>
     [Function]
-    public Directory CreateFile(
-        string filename = "data.txt",
-        string content = "Hello, Dagger!")
+    public Directory CreateFile(string filename = "data.txt", string content = "Hello, Dagger!")
     {
         return Dag.Directory().WithNewFile(filename, content);
     }
@@ -67,9 +70,7 @@ public class DefaultsExample
     /// Logs a message with a specified log level (defaults to Info)
     /// </summary>
     [Function]
-    public string Log(
-        string message,
-        LogLevel level = LogLevel.Info)
+    public string Log(string message, LogLevel level = LogLevel.Info)
     {
         return $"[{level}] {message}";
     }
@@ -80,7 +81,8 @@ public class DefaultsExample
     [Function]
     public async Task<string> Compress(
         [DefaultPath(".")] Directory source,
-        CompressionLevel level = CompressionLevel.Fast)
+        CompressionLevel level = CompressionLevel.Fast
+    )
     {
         return $"Compressing directory (ID: {await source.IdAsync()}) with level: {level}";
     }
@@ -92,7 +94,8 @@ public class DefaultsExample
     public Container CreateContainer(
         string image = "alpine:latest",
         string[]? command = null,
-        int? port = null)
+        int? port = null
+    )
     {
         var ctr = Dag.Container().From(image);
 
@@ -117,7 +120,8 @@ public class DefaultsExample
         [DefaultPath(".")] Directory source,
         string pattern = "**/*",
         bool includeHidden = false,
-        int? maxDepth = null)
+        int? maxDepth = null
+    )
     {
         var info = $"Analyzing directory (ID: {await source.IdAsync()})\n";
         info += $"  Pattern: {pattern}\n";
@@ -136,7 +140,8 @@ public class DefaultsExample
         bool verbose = false,
         LogLevel level = LogLevel.Info,
         string[]? tags = null,
-        double? ratio = null)
+        double? ratio = null
+    )
     {
         var result = $"Name: {name}\n";
         result += $"Count: {count}\n";

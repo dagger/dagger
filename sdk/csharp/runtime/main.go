@@ -184,7 +184,8 @@ func (m *CsharpSdk) CodegenBase(
 		projectFileName := className + ".csproj"
 
 		ctr = ctr.
-			WithDirectory(".", runtime.Directory("template")).
+			// Copy template files, excluding sdk/ directory (which is always generated)
+			WithDirectory(".", runtime.Directory("template").WithoutDirectory("sdk")).
 			// Rename DaggerModule.csproj to {ModuleName}.csproj
 			WithExec([]string{"mv", "DaggerModule.csproj", projectFileName}).
 			// Replace all occurrences of DaggerModule with the actual module name
