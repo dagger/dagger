@@ -4811,7 +4811,7 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 
 		// make sure the other mount wasn't changed
 		_, err = ctr.File("/mnt-to-other-dir/my-symlink").Sync(ctx)
-		require.ErrorContains(t, err, "no such file or directory")
+		require.ErrorContains(t, err, "/mnt-to-other-dir/my-symlink: no such file or directory")
 
 		content, err := ctr.File("/mnt/my-symlink").Contents(ctx)
 		require.NoError(t, err)
@@ -5172,6 +5172,57 @@ func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
 	exists, err := ctr.Exists(ctx, "subdir/data")
 	require.NoError(t, err)
 	require.Equal(t, true, exists)
+}
+
+func (ContainerSuite) TestStat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithWorkdir("/sub").
+		WithNewFile("subdir/data", "contents")
+	stat := ctr.Stat("subdir/data")
+
+	fileType, err := stat.FileType(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.FileTypeRegularType, fileType)
+
+	fileSize, err := stat.Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 8, fileSize)
+}
+
+func (ContainerSuite) TestStatWithMountedDir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	d := c.Directory().WithNewFile("the-file", "the data")
+	ctr := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/mnt", d)
+	stat := ctr.Stat("/mnt/the-file")
+
+	fileType, err := stat.FileType(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.FileTypeRegularType, fileType)
+
+	fileSize, err := stat.Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 8, fileSize)
+}
+
+func (ContainerSuite) TestStatWithMountedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	f := c.Directory().WithNewFile("the-file", "the data").File("the-file")
+	ctr := c.Container().
+		From(alpineImage).
+		WithMountedFile("/mnt-file", f)
+	stat := ctr.Stat("/mnt-file")
+
+	fileType, err := stat.FileType(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.FileTypeRegularType, fileType)
+
+	fileSize, err := stat.Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 8, fileSize)
 }
 
 func (ContainerSuite) TestWithoutFileOnMountedFile(ctx context.Context, t *testctx.T) {

@@ -297,6 +297,13 @@ export type ContainerPublishOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
+export type ContainerStatOpts = {
+  /**
+   * If specified, do not follow symlinks.
+   */
+  doNotFollowSymlinks?: boolean
+}
+
 export type ContainerTerminalOpts = {
   /**
    * If set, override the container's default terminal command and invoke these command arguments instead.
@@ -910,6 +917,13 @@ export type DirectorySearchOpts = {
   limit?: number
 }
 
+export type DirectoryStatOpts = {
+  /**
+   * If specified, do not follow symlinks.
+   */
+  doNotFollowSymlinks?: boolean
+}
+
 export type DirectoryTerminalOpts = {
   /**
    * If set, override the default container used for the terminal.
@@ -1234,6 +1248,83 @@ export type FileWithReplacedOpts = {
  */
 export type FileID = string & { __FileID: never }
 
+/**
+ * File type.
+ */
+export enum FileType {
+  /**
+   * directory file type
+   */
+  Directory = "DIRECTORY",
+
+  /**
+   * directory file type
+   */
+  DirectoryType = FileType.Directory,
+
+  /**
+   * regular file type
+   */
+  Regular = "REGULAR",
+
+  /**
+   * regular file type
+   */
+  RegularType = FileType.Regular,
+
+  /**
+   * symlink file type
+   */
+  Symlink = "SYMLINK",
+
+  /**
+   * symlink file type
+   */
+  SymlinkType = FileType.Symlink,
+
+  /**
+   * unknown file type
+   */
+  Unknown = "UNKNOWN",
+}
+
+/**
+ * Utility function to convert a FileType value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function FileTypeValueToName(value: FileType): string {
+  switch (value) {
+    case FileType.Directory:
+      return "DIRECTORY"
+    case FileType.Regular:
+      return "REGULAR"
+    case FileType.Symlink:
+      return "SYMLINK"
+    case FileType.Unknown:
+      return "UNKNOWN"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a FileType name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function FileTypeNameToValue(name: string): FileType {
+  switch (name) {
+    case "DIRECTORY":
+      return FileType.Directory
+    case "REGULAR":
+      return FileType.Regular
+    case "SYMLINK":
+      return FileType.Symlink
+    case "UNKNOWN":
+      return FileType.Unknown
+    default:
+      return name as FileType
+  }
+}
 export type FunctionWithArgOpts = {
   /**
    * A doc string for the argument, if any
@@ -2059,6 +2150,11 @@ export type SocketID = string & { __SocketID: never }
 export type SourceMapID = string & { __SourceMapID: never }
 
 /**
+ * The `StatID` scalar type represents an identifier for an object of type Stat.
+ */
+export type StatID = string & { __StatID: never }
+
+/**
  * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
  */
 export type TerminalID = string & { __TerminalID: never }
@@ -2709,6 +2805,14 @@ export class Binding extends BaseClient {
   asSocket = (): Socket => {
     const ctx = this._ctx.select("asSocket")
     return new Socket(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Stat
+   */
+  asStat = (): Stat => {
+    const ctx = this._ctx.select("asStat")
+    return new Stat(ctx)
   }
 
   /**
@@ -3767,6 +3871,16 @@ export class Container extends BaseClient {
   rootfs = (): Directory => {
     const ctx = this._ctx.select("rootfs")
     return new Directory(ctx)
+  }
+
+  /**
+   * Return file status
+   * @param path Path to check (e.g., "/file.txt").
+   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   */
+  stat = (path: string, opts?: ContainerStatOpts): Stat => {
+    const ctx = this._ctx.select("stat", { path, ...opts })
+    return new Stat(ctx)
   }
 
   /**
@@ -4934,6 +5048,16 @@ export class Directory extends BaseClient {
     return response.map((r) =>
       new Client(ctx.copy()).loadSearchResultFromID(r.id),
     )
+  }
+
+  /**
+   * Return file status
+   * @param path Path to stat (e.g., "/file.txt").
+   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   */
+  stat = (path: string, opts?: DirectoryStatOpts): Stat => {
+    const ctx = this._ctx.select("stat", { path, ...opts })
+    return new Stat(ctx)
   }
 
   /**
@@ -6498,6 +6622,27 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type Stat in the environment
+   * @param name The name of the binding
+   * @param value The Stat value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withStatInput = (name: string, value: Stat, description: string): Env => {
+    const ctx = this._ctx.select("withStatInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Stat output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withStatOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withStatOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Provides a string input binding to the environment
    * @param name The name of the binding
    * @param value The string value to assign to the binding
@@ -7203,6 +7348,14 @@ export class File extends BaseClient {
     const response: Awaited<number> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Return file status
+   */
+  stat = (): Stat => {
+    const ctx = this._ctx.select("stat")
+    return new Stat(ctx)
   }
 
   /**
@@ -11147,6 +11300,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Stat from its ID.
+   */
+  loadStatFromID = (id: StatID): Stat => {
+    const ctx = this._ctx.select("loadStatFromID", { id })
+    return new Stat(ctx)
+  }
+
+  /**
    * Load a Terminal from its ID.
    */
   loadTerminalFromID = (id: TerminalID): Terminal => {
@@ -12033,6 +12194,112 @@ export class SourceMap extends BaseClient {
     const ctx = this._ctx.select("url")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A file or directory status object.
+ */
+export class Stat extends BaseClient {
+  private readonly _id?: StatID = undefined
+  private readonly _fileType?: FileType = undefined
+  private readonly _name?: string = undefined
+  private readonly _permissions?: number = undefined
+  private readonly _size?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: StatID,
+    _fileType?: FileType,
+    _name?: string,
+    _permissions?: number,
+    _size?: number,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._fileType = _fileType
+    this._name = _name
+    this._permissions = _permissions
+    this._size = _size
+  }
+
+  /**
+   * A unique identifier for this Stat.
+   */
+  id = async (): Promise<StatID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<StatID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * file type
+   */
+  fileType = async (): Promise<FileType> => {
+    if (this._fileType) {
+      return this._fileType
+    }
+
+    const ctx = this._ctx.select("fileType")
+
+    const response: Awaited<FileType> = await ctx.execute()
+
+    return FileTypeNameToValue(response)
+  }
+
+  /**
+   * file name
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * permission bits
+   */
+  permissions = async (): Promise<number> => {
+    if (this._permissions) {
+      return this._permissions
+    }
+
+    const ctx = this._ctx.select("permissions")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * file size
+   */
+  size = async (): Promise<number> => {
+    if (this._size) {
+      return this._size
+    }
+
+    const ctx = this._ctx.select("size")
+
+    const response: Awaited<number> = await ctx.execute()
 
     return response
   }

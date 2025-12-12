@@ -1,6 +1,8 @@
 {
   "name": "git-dep",
-  "sdk": "../extended",
-  "source": ".",
-  "engineVersion": "v0.13.6"
+  "engineVersion": "v0.19.8",
+  "sdk": {
+    "source": "../extended"
+  },
+  "disableDefaultFunctionCaching": true
 }

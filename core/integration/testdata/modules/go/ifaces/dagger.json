@@ -1,6 +1,6 @@
 {
   "name": "caller",
-  "engineVersion": "v0.18.12",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
   },
@@ -13,5 +13,6 @@
       "name": "test",
       "source": "test"
     }
-  ]
+  ],
+  "disableDefaultFunctionCaching": true
 }

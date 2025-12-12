@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
@@ -155,6 +156,12 @@ type Server interface {
 		useCloudClient bool,
 		err error,
 	)
+
+	// A mount namespace guaranteed to not have any mounts created by engine operations.
+	// Should be used when creating goroutines/processes that unshare a mount namespace,
+	// otherwise those unshared mnt namespaces may inherit mounts from engine operations
+	// and leak them.
+	CleanMountNS() *os.File
 }
 
 type queryKey struct{}

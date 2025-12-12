@@ -1,6 +1,6 @@
 {
   "name": "examples",
-  "engineVersion": "v0.13.6",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
   },
@@ -9,5 +9,6 @@
       "name": "gha",
       "source": "../.."
     }
-  ]
+  ],
+  "disableDefaultFunctionCaching": true
 }

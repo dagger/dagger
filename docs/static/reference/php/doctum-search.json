@@ -1248,6 +1248,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Stat",
+			"p": "Dagger/Stat.html",
+			"d": "<p>A file or directory status object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\StatId",
+			"p": "Dagger/StatId.html",
+			"d": "<p>The <code>StatID</code> scalar type represents an identifier for an object of type Stat.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Terminal",
 			"p": "Dagger/Terminal.html",
 			"d": "<p>An interactive terminal that clients can connect to.</p>",
@@ -1516,6 +1536,12 @@
 			"n": "Dagger\\Binding::asSocket",
 			"p": "Dagger/Binding.html#method_asSocket",
 			"d": "<p>Retrieve the binding value, as type Socket</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asStat",
+			"p": "Dagger/Binding.html#method_asStat",
+			"d": "<p>Retrieve the binding value, as type Stat</p>"
 		},
 		{
 			"t": "M",
@@ -2143,6 +2169,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadStatFromID",
+			"p": "Dagger/Client.html#method_loadStatFromID",
+			"d": "<p>Load a Stat from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadTerminalFromID",
 			"p": "Dagger/Client.html#method_loadTerminalFromID",
 			"d": "<p>Load a Terminal from its ID.</p>"
@@ -2470,6 +2502,12 @@
 			"n": "Dagger\\Container::rootfs",
 			"p": "Dagger/Container.html#method_rootfs",
 			"d": "<p>Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::stat",
+			"p": "Dagger/Container.html#method_stat",
+			"d": "<p>Return file status</p>"
 		},
 		{
 			"t": "M",
@@ -2932,6 +2970,12 @@
 			"n": "Dagger\\Directory::search",
 			"p": "Dagger/Directory.html#method_search",
 			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::stat",
+			"p": "Dagger/Directory.html#method_stat",
+			"d": "<p>Return file status</p>"
 		},
 		{
 			"t": "M",
@@ -3541,6 +3585,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withStatInput",
+			"p": "Dagger/Env.html#method_withStatInput",
+			"d": "<p>Create or update a binding of type Stat in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withStatOutput",
+			"p": "Dagger/Env.html#method_withStatOutput",
+			"d": "<p>Declare a desired Stat output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withStringInput",
 			"p": "Dagger/Env.html#method_withStringInput",
 			"d": "<p>Provides a string input binding to the environment</p>"
@@ -3772,6 +3828,12 @@
 			"n": "Dagger\\File::size",
 			"p": "Dagger/File.html#method_size",
 			"d": "<p>Retrieves the size of the file, in bytes.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::stat",
+			"p": "Dagger/File.html#method_stat",
+			"d": "<p>Return file status</p>"
 		},
 		{
 			"t": "M",
@@ -5296,6 +5358,36 @@
 			"n": "Dagger\\SourceMap::url",
 			"p": "Dagger/SourceMap.html#method_url",
 			"d": "<p>The URL to the file, if any. This can be used to link to the source map in the browser.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Stat::fileType",
+			"p": "Dagger/Stat.html#method_fileType",
+			"d": "<p>file type</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Stat::id",
+			"p": "Dagger/Stat.html#method_id",
+			"d": "<p>A unique identifier for this Stat.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Stat::name",
+			"p": "Dagger/Stat.html#method_name",
+			"d": "<p>file name</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Stat::permissions",
+			"p": "Dagger/Stat.html#method_permissions",
+			"d": "<p>permission bits</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Stat::size",
+			"p": "Dagger/Stat.html#method_size",
+			"d": "<p>file size</p>"
 		},
 		{
 			"t": "M",

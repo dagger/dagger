@@ -1,7 +1,8 @@
 {
   "name": "myblueprint-ts",
-  "engineVersion": "v0.18.17",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "typescript"
-  }
+  },
+  "disableDefaultFunctionCaching": true
 }

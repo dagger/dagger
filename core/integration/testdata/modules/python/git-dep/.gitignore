@@ -1,2 +1,4 @@
 /sdk
 /.env
+/.venv
+/**/__pycache__

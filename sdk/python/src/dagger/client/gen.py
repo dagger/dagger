@@ -276,6 +276,11 @@ class SourceMapID(Scalar):
     object of type SourceMap."""
 
 
+class StatID(Scalar):
+    """The `StatID` scalar type represents an identifier for an object of
+    type Stat."""
+
+
 class TerminalID(Scalar):
     """The `TerminalID` scalar type represents an identifier for an object
     of type Terminal."""
@@ -315,6 +320,28 @@ class ExistsType(Enum):
 
     SYMLINK_TYPE = "SYMLINK_TYPE"
     """Tests path is a symlink"""
+
+
+class FileType(Enum):
+    """File type."""
+
+    DIRECTORY = "DIRECTORY"
+    """directory file type"""
+    DIRECTORY_TYPE = "DIRECTORY"
+    """directory file type"""
+
+    REGULAR = "REGULAR"
+    """regular file type"""
+    REGULAR_TYPE = "REGULAR"
+    """regular file type"""
+
+    SYMLINK = "SYMLINK"
+    """symlink file type"""
+    SYMLINK_TYPE = "SYMLINK"
+    """symlink file type"""
+
+    UNKNOWN = "UNKNOWN"
+    """unknown file type"""
 
 
 class FunctionCachePolicy(Enum):
@@ -779,6 +806,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asSocket", _args)
         return Socket(_ctx)
+
+    def as_stat(self) -> "Stat":
+        """Retrieve the binding value, as type Stat"""
+        _args: list[Arg] = []
+        _ctx = self._select("asStat", _args)
+        return Stat(_ctx)
 
     async def as_string(self) -> str | None:
         """Returns the binding's string value
@@ -2095,6 +2128,28 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
+
+    def stat(
+        self,
+        path: str,
+        *,
+        do_not_follow_symlinks: bool | None = False,
+    ) -> "Stat":
+        """Return file status
+
+        Parameters
+        ----------
+        path:
+            Path to check (e.g., "/file.txt").
+        do_not_follow_symlinks:
+            If specified, do not follow symlinks.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+        ]
+        _ctx = self._select("stat", _args)
+        return Stat(_ctx)
 
     async def stderr(self) -> str:
         """The buffered standard error stream of the last executed command
@@ -4045,6 +4100,28 @@ class Directory(Type):
         ]
         _ctx = self._select("search", _args)
         return await _ctx.execute_object_list(SearchResult)
+
+    def stat(
+        self,
+        path: str,
+        *,
+        do_not_follow_symlinks: bool | None = False,
+    ) -> "Stat":
+        """Return file status
+
+        Parameters
+        ----------
+        path:
+            Path to stat (e.g., "/file.txt").
+        do_not_follow_symlinks:
+            If specified, do not follow symlinks.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+        ]
+        _ctx = self._select("stat", _args)
+        return Stat(_ctx)
 
     async def sync(self) -> Self:
         """Force evaluation in the engine.
@@ -6091,6 +6168,48 @@ class Env(Type):
         _ctx = self._select("withSocketOutput", _args)
         return Env(_ctx)
 
+    def with_stat_input(
+        self,
+        name: str,
+        value: "Stat",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Stat in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Stat value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withStatInput", _args)
+        return Env(_ctx)
+
+    def with_stat_output(self, name: str, description: str) -> Self:
+        """Declare a desired Stat output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withStatOutput", _args)
+        return Env(_ctx)
+
     def with_string_input(
         self,
         name: str,
@@ -6935,6 +7054,12 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("size", _args)
         return await _ctx.execute(int)
+
+    def stat(self) -> "Stat":
+        """Return file status"""
+        _args: list[Arg] = []
+        _ctx = self._select("stat", _args)
+        return Stat(_ctx)
 
     async def sync(self) -> Self:
         """Force evaluation in the engine.
@@ -11479,6 +11604,14 @@ class Client(Root):
         _ctx = self._select("loadSourceMapFromID", _args)
         return SourceMap(_ctx)
 
+    def load_stat_from_id(self, id: StatID) -> "Stat":
+        """Load a Stat from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadStatFromID", _args)
+        return Stat(_ctx)
+
     def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
         """Load a Terminal from its ID."""
         _args = [
@@ -12488,6 +12621,117 @@ class SourceMap(Type):
 
 
 @typecheck
+class Stat(Type):
+    """A file or directory status object."""
+
+    async def file_type(self) -> FileType | None:
+        """file type
+
+        Returns
+        -------
+        FileType | None
+            File type.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("fileType", _args)
+        return await _ctx.execute(FileType | None)
+
+    async def id(self) -> StatID:
+        """A unique identifier for this Stat.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        StatID
+            The `StatID` scalar type represents an identifier for an object of
+            type Stat.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(StatID)
+
+    async def name(self) -> str:
+        """file name
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def permissions(self) -> int:
+        """permission bits
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("permissions", _args)
+        return await _ctx.execute(int)
+
+    async def size(self) -> int:
+        """file size
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("size", _args)
+        return await _ctx.execute(int)
+
+
+@typecheck
 class Terminal(Type):
     """An interactive terminal that clients can connect to."""
 
@@ -12951,6 +13195,7 @@ __all__ = [
     "FieldTypeDefID",
     "File",
     "FileID",
+    "FileType",
     "Function",
     "FunctionArg",
     "FunctionArgID",
@@ -13015,6 +13260,8 @@ __all__ = [
     "SocketID",
     "SourceMap",
     "SourceMapID",
+    "Stat",
+    "StatID",
     "Terminal",
     "TerminalID",
     "TypeDef",

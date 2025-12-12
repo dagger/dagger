@@ -1,6 +1,6 @@
 {
   "name": "release",
-  "engineVersion": "v0.19.7",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
   },

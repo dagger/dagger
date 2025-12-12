@@ -1,6 +1,6 @@
 {
   "name": "caller",
-  "engineVersion": "v0.18.4-250415212740-f47c672df3e3",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "python"
   },
@@ -14,5 +14,6 @@
       "source": "test"
     }
   ],
-  "source": ".dagger"
+  "source": ".dagger",
+  "disableDefaultFunctionCaching": true
 }

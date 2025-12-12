@@ -1,7 +1,8 @@
 {
   "name": "only-runtime",
-  "engineVersion": "v0.18.9",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
-  }
+  },
+  "disableDefaultFunctionCaching": true
 }

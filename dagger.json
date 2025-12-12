@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.19.7",
+  "engineVersion": "v0.19.8",
   "sdk": {
     "source": "go"
   },
@@ -35,12 +35,14 @@
       "arguments": [
         {
           "name": "source",
+          "argument": "",
           "ignore": [
             "bin",
             ".git",
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",
+            "**/sdk/runtime/**",
             "docs/node_modules",
             "sdk/typescript/node_modules",
             "sdk/typescript/dist",
@@ -56,6 +58,7 @@
       ],
       "customizations": [
         {
+          "name": "",
           "argument": "source",
           "ignore": [
             "bin",
@@ -63,6 +66,7 @@
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",
+            "**/sdk/runtime/**",
             "docs/node_modules",
             "sdk/typescript/node_modules",
             "sdk/typescript/dist",
@@ -118,8 +122,11 @@
       "source": "toolchains/security",
       "arguments": [
         {
-          "function": ["scanSource"],
+          "function": [
+            "scanSource"
+          ],
           "name": "source",
+          "argument": "",
           "ignore": [
             "bin",
             ".git",
@@ -133,7 +140,10 @@
       ],
       "customizations": [
         {
-          "function": ["scanSource"],
+          "function": [
+            "scanSource"
+          ],
+          "name": "",
           "argument": "source",
           "ignore": [
             "bin",

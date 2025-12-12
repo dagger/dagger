@@ -40,7 +40,7 @@ var StaticEntrypointTS string
 
 var TemplateIndexTS = func(name string) string {
 	return fmt.Sprintf(`/**
- * A generated module for QuickStart functions
+ * A generated module for %s functions
  *
  * This module has been generated via dagger init and serves as a reference to
  * basic module structure as you get started with Dagger.
@@ -80,5 +80,5 @@ export class %s {
       .stdout()
   }
 }
-`, name)
+`, name, name)
 }

@@ -101,6 +101,7 @@
               <li><a href="#query-loadServiceFromID">loadServiceFromID</a></li>
               <li><a href="#query-loadSocketFromID">loadSocketFromID</a></li>
               <li><a href="#query-loadSourceMapFromID">loadSourceMapFromID</a></li>
+              <li><a href="#query-loadStatFromID">loadStatFromID</a></li>
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
               <li><a href="#query-module">module</a></li>
@@ -165,6 +166,7 @@
               <li><a href="#definition-FieldTypeDefID">FieldTypeDefID</a></li>
               <li><a href="#definition-File">File</a></li>
               <li><a href="#definition-FileID">FileID</a></li>
+              <li><a href="#definition-FileType">FileType</a></li>
               <li><a href="#definition-Function">Function</a></li>
               <li><a href="#definition-FunctionArg">FunctionArg</a></li>
               <li><a href="#definition-FunctionArgID">FunctionArgID</a></li>
@@ -233,6 +235,8 @@
               <li><a href="#definition-SocketID">SocketID</a></li>
               <li><a href="#definition-SourceMap">SourceMap</a></li>
               <li><a href="#definition-SourceMapID">SourceMapID</a></li>
+              <li><a href="#definition-Stat">Stat</a></li>
+              <li><a href="#definition-StatID">StatID</a></li>
               <li><a href="#definition-String">String</a></li>
               <li><a href="#definition-Terminal">Terminal</a></li>
               <li><a href="#definition-TerminalID">TerminalID</a></li>
@@ -4102,6 +4106,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadStatFromID" class="operation operation-query" data-traverse-target="query-loadStatFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadStatFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Stat from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Stat"><code>Stat</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-StatID"><code>StatID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadTerminalFromID" class="operation operation-query" data-traverse-target="query-loadTerminalFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -4799,6 +4856,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asSocket" href="#Binding-asSocket"><code>asSocket</code></a> - <span class="property-type"><a href="#definition-Socket"><code>Socket!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Socket </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asStat" href="#Binding-asStat"><code>asStat</code></a> - <span class="property-type"><a href="#definition-Stat"><code>Stat</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Stat </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
@@ -5702,6 +5763,27 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-rootfs" href="#Container-rootfs"><code>rootfs</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-stat" href="#Container-stat"><code>stat</code></a> - <span class="property-type"><a href="#definition-Stat"><code>Stat</code></a></span> </td>
+                        <td> Return file status </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path to check (e.g., &quot;/file.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If specified, do not follow symlinks.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-stderr" href="#Container-stderr"><code>stderr</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -7328,6 +7410,27 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>limit</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
                                 <p>Limit the number of results to return</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-stat" href="#Directory-stat"><code>stat</code></a> - <span class="property-type"><a href="#definition-Stat"><code>Stat</code></a></span> </td>
+                        <td> Return file status </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path to stat (e.g., &quot;/file.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If specified, do not follow symlinks.</p>
                               </div>
                             </div>
                           </div>
@@ -9194,6 +9297,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withStatInput" href="#Env-withStatInput"><code>withStatInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Stat in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-StatID"><code>StatID!</code></a></span></h6>
+                                <p>The Stat value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withStatOutput" href="#Env-withStatOutput"><code>withStatOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Stat output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withStringInput" href="#Env-withStringInput"><code>withStringInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Provides a string input binding to the environment </td>
                       </tr>
@@ -9925,6 +10074,10 @@
                         <td> Retrieves the size of the file, in bytes. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="File-stat" href="#File-stat"><code>stat</code></a> - <span class="property-type"><a href="#definition-Stat"><code>Stat</code></a></span> </td>
+                        <td> Return file status </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="File-sync" href="#File-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span> </td>
                         <td> Force evaluation in the engine. </td>
                       </tr>
@@ -10014,6 +10167,82 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>FileID</code> scalar type represents an identifier for an object of type File.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-FileType" class="definition definition-enum" data-traverse-target="definition-FileType">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">FileType</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>File type.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>UNKNOWN</code></p>
+                        </td>
+                        <td> unknown file type </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>REGULAR</code></p>
+                        </td>
+                        <td> regular file type </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIRECTORY</code></p>
+                        </td>
+                        <td> directory file type </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SYMLINK</code></p>
+                        </td>
+                        <td> symlink file type </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>REGULAR_TYPE</code></p>
+                        </td>
+                        <td> regular file type </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIRECTORY_TYPE</code></p>
+                        </td>
+                        <td> directory file type </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SYMLINK_TYPE</code></p>
+                        </td>
+                        <td> symlink file type </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"UNKNOWN"</span>
+</code></pre>
                 </div>
               </div>
             </div>
@@ -13752,6 +13981,67 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>SourceMapID</code> scalar type represents an identifier for an object of type SourceMap.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Stat" class="definition definition-object" data-traverse-target="definition-Stat">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Stat</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A file or directory status object.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Stat-fileType" href="#Stat-fileType"><code>fileType</code></a> - <span class="property-type"><a href="#definition-FileType"><code>FileType</code></a></span> </td>
+                        <td> file type </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Stat-id" href="#Stat-id"><code>id</code></a> - <span class="property-type"><a href="#definition-StatID"><code>StatID!</code></a></span> </td>
+                        <td> A unique identifier for this Stat. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Stat-name" href="#Stat-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> file name </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Stat-permissions" href="#Stat-permissions"><code>permissions</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> permission bits </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Stat-size" href="#Stat-size"><code>size</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> file size </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-StatID" class="definition definition-scalar" data-traverse-target="definition-StatID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">StatID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>StatID</code> scalar type represents an identifier for an object of type Stat.</p>
                 </div>
               </div>
             </div>

@@ -130,6 +130,9 @@ type Binding {
   """Retrieve the binding value, as type Socket"""
   asSocket: Socket!
 
+  """Retrieve the binding value, as type Stat"""
+  asStat: Stat
+
   """Returns the binding's string value"""
   asString: String
 
@@ -651,6 +654,15 @@ type Container {
   modifications.
   """
   rootfs: Directory!
+
+  """Return file status"""
+  stat(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Stat
 
   """
   The buffered standard error stream of the last executed command
@@ -1762,6 +1774,15 @@ type Directory {
     limit: Int
   ): [SearchResult!]!
 
+  """Return file status"""
+  stat(
+    """Path to stat (e.g., "/file.txt")."""
+    path: String!
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Stat
+
   """Force evaluation in the engine."""
   sync: DirectoryID!
 
@@ -2626,6 +2647,27 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type Stat in the environment"""
+  withStatInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Stat value to assign to the binding"""
+    value: StatID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Stat output to be assigned in the environment"""
+  withStatOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Provides a string input binding to the environment"""
   withStringInput(
     """The name of the binding"""
@@ -2935,6 +2977,9 @@ type File {
   """Retrieves the size of the file, in bytes."""
   size: Int!
 
+  """Return file status"""
+  stat: Stat
+
   """Force evaluation in the engine."""
   sync: FileID!
 
@@ -2986,6 +3031,30 @@ type File {
 The `FileID` scalar type represents an identifier for an object of type File.
 """
 scalar FileID
+
+"""File type."""
+enum FileType {
+  """unknown file type"""
+  UNKNOWN
+
+  """regular file type"""
+  REGULAR
+
+  """directory file type"""
+  DIRECTORY
+
+  """symlink file type"""
+  SYMLINK
+
+  """regular file type"""
+  REGULAR_TYPE
+
+  """directory file type"""
+  DIRECTORY_TYPE
+
+  """symlink file type"""
+  SYMLINK_TYPE
+}
 
 """
 Function represents a resolver provided by a Module.
@@ -4596,6 +4665,9 @@ type Query {
   """Load a SourceMap from its ID."""
   loadSourceMapFromID(id: SourceMapID!): SourceMap!
 
+  """Load a Stat from its ID."""
+  loadStatFromID(id: StatID!): Stat
+
   """Load a Terminal from its ID."""
   loadTerminalFromID(id: TerminalID!): Terminal!
 
@@ -4919,6 +4991,29 @@ type SourceMap {
 The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 """
 scalar SourceMapID
+
+"""A file or directory status object."""
+type Stat {
+  """file type"""
+  fileType: FileType
+
+  """A unique identifier for this Stat."""
+  id: StatID!
+
+  """file name"""
+  name: String!
+
+  """permission bits"""
+  permissions: Int!
+
+  """file size"""
+  size: Int!
+}
+
+"""
+The `StatID` scalar type represents an identifier for an object of type Stat.
+"""
+scalar StatID
 
 """An interactive terminal that clients can connect to."""
 type Terminal {
