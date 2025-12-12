@@ -374,3 +374,149 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 		require.Regexp(t, `passingContainer.*OK`, out)
 	})
 }
+
+func (ToolchainSuite) TestToolchainOverlay(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("basic overlay functionality", func(ctx context.Context, t *testctx.T) {
+		// Install base toolchain first
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "../hello"))
+
+		// Verify base toolchain works
+		out, err := modGen.
+			With(daggerExec("call", "hello", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+
+		out, err = modGen.
+			With(daggerExec("call", "hello", "configurable-message", "--message", "bonjour")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bonjour from blueprint")
+
+		// Install overlay toolchain
+		modGen = modGen.WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello"
+    },
+    {
+      "name": "hello-overlay",
+      "source": "../hello-overlay",
+      "overlayFor": "hello"
+    }
+  ]
+}
+		`)
+
+		// Verify overlay wraps the base toolchain
+		out, err = modGen.
+			With(daggerExec("call", "hello", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "overlay: hello from blueprint")
+
+		out, err = modGen.
+			With(daggerExec("call", "hello", "configurable-message", "--message", "bonjour")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "overlay says: bonjour from blueprint")
+	})
+
+	t.Run("overlay with customizations", func(ctx context.Context, t *testctx.T) {
+		// Install base and overlay with customizations
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+	{
+	  "name": "app",
+	  "engineVersion": "v0.19.4",
+	  "toolchains": [
+	    {
+	      "name": "hello",
+	      "source": "../hello",
+	      "customizations": [
+	        {
+	          "function": ["configurableMessage"],
+	          "argument": "message",
+	          "default": "base custom"
+	        }
+	      ]
+	    },
+	    {
+	      "name": "hello-overlay",
+	      "source": "../hello-overlay",
+	      "overlayFor": "hello",
+	      "customizations": [
+	        {
+	          "function": ["configurableMessage"],
+	          "argument": "message",
+	          "default": "overlay custom"
+	        }
+	      ]
+	    }
+	  ]
+	}
+				`)
+
+		// Verify overlay customization takes precedence
+		out, err := modGen.
+			With(daggerExec("call", "hello", "configurable-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "overlay says: overlay custom from blueprint")
+	})
+
+	t.Run("error on missing base toolchain", func(ctx context.Context, t *testctx.T) {
+		// Try to install overlay without base
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		// This should fail because hello doesn't exist
+		_, err := modGen.
+			With(daggerExec("toolchain", "install", "../hello-overlay", "--overlay-for", "hello")).
+			Stdout(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("error on circular overlay dependency", func(ctx context.Context, t *testctx.T) {
+		// Try to create circular overlay
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+	{
+	  "name": "app",
+	  "engineVersion": "v0.19.4",
+	  "toolchains": [
+	    {
+	      "name": "toolchain-a",
+	      "source": "../hello",
+	      "overlayFor": "toolchain-b"
+	    },
+	    {
+	      "name": "toolchain-b",
+	      "source": "../hello-overlay",
+	      "overlayFor": "toolchain-a"
+	    }
+	  ]
+	}
+				`)
+
+		// This should fail with circular dependency error
+		_, err := modGen.
+			With(daggerExec("call", "toolchain-a", "message")).
+			Stdout(ctx)
+		require.Error(t, err)
+	})
+}
