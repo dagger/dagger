@@ -3,8 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"path"
-	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -26,11 +24,11 @@ type ModTreeNode struct {
 	IsCheck     bool
 }
 
-func (node *ModTreeNode) Path() []string {
+func (node *ModTreeNode) Path() ModTreePath {
 	if node.Parent == nil {
 		return nil
 	}
-	var path []string
+	var path ModTreePath
 	path = append(path, node.Parent.Path()...)
 	path = append(path, node.Name)
 	return path
@@ -281,72 +279,78 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 	return checks, err
 }
 
-func (node *ModTreeNode) Match(include []string) (bool, error) {
-	if node.Parent == nil {
-		// The root node matches everything
-		return true, nil
+type ModTreePath []string
+
+func (p ModTreePath) CliCase() []string {
+	cliCase := make([]string, len(p))
+	for i := range p {
+		cliCase[i] = strcase.ToKebab(p[i])
 	}
-	if len(include) == 0 {
-		return true, nil
+	return cliCase
+}
+
+func (p ModTreePath) ApiCase() []string {
+	apiCase := make([]string, len(p))
+	for i := range p {
+		apiCase[i] = gqlFieldName(p[i])
 	}
-	cliName := func() string {
-		path := node.Path()
-		for i := range path {
-			path[i] = strcase.ToKebab(path[i])
+	return apiCase
+}
+
+func (p ModTreePath) Contains(target ModTreePath) bool {
+	if len(target) < len(p) {
+		// if the target is shorter, it can't be a sub-path
+		return false
+	}
+	targetParent := ModTreePath(target[:len(p)])
+	return p.Equals(targetParent)
+}
+
+func (p ModTreePath) Equals(other ModTreePath) bool {
+	if len(p) != len(other) {
+		return false
+	}
+	for i := range p {
+		if gqlFieldName(p[i]) != gqlFieldName(other[i]) {
+			return false
 		}
-		return strings.Join(path, "/")
 	}
-	gqlName := func() string {
-		path := node.Path()
-		for i := range path {
-			path[i] = gqlFieldName(path[i])
-		}
-		return strings.Join(path, "/")
-	}
-	for _, name := range []string{cliName(), gqlName()} {
-		for _, pattern := range include {
-			if match, err := fnPathContains(pattern, name); err != nil {
-				return false, err
-			} else if match {
-				return true, nil
-			}
-			if match, err := fnPathGlob(pattern, name); err != nil {
-				return false, err
-			} else if match {
-				return true, nil
-			}
-			pattern = strings.ReplaceAll(pattern, ":", "/")
-			name = strings.ReplaceAll(name, ":", "/")
-			matched, err := doublestar.PathMatch(pattern, name)
-			if err != nil {
-				return false, err
-			}
-			if matched {
-				return true, nil
-			}
+	return true
+}
+
+func (p ModTreePath) Glob(pattern string) (bool, error) {
+	slashPattern := strings.ReplaceAll(pattern, ":", "/")
+	for _, pathVariant := range [][]string{p.ApiCase(), p.CliCase()} {
+		slashPath := strings.Join(pathVariant, "/")
+		if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
+			return false, err
+		} else if match {
+			return true, nil
 		}
 	}
 	return false, nil
 }
 
-// Match a function-path against a glob pattern
-func fnPathGlob(pattern, target string) (bool, error) {
-	// FIXME: match against both gqlFieldCase and cliCase
-	slashPattern := strings.ReplaceAll(pattern, ":", "/")
-	slashTarget := strings.ReplaceAll(target, ":", "/")
-	return doublestar.PathMatch(slashPattern, slashTarget)
-}
-
-// Check if a function-path contains another
-func fnPathContains(base, target string) (bool, error) {
-	// FIXME: match against both gqlFieldCase and cliCase
-	slashTarget := path.Clean("/" + strings.ReplaceAll(target, ":", "/"))
-	slashBase := path.Clean("/" + strings.ReplaceAll(base, ":", "/"))
-	rel, err := filepath.Rel(slashBase, slashTarget)
-	if err != nil {
-		return false, err
+func (node *ModTreeNode) Match(patterns []string) (bool, error) {
+	if node.Parent == nil {
+		// The root node matches everything
+		return true, nil
 	}
-	return !strings.HasPrefix(rel, ".."), nil
+	if len(patterns) == 0 {
+		return true, nil
+	}
+	for _, pattern := range patterns {
+		if match, err := node.Path().Glob(pattern); err != nil {
+			return false, err
+		} else if match {
+			return true, nil
+		}
+		patternAsPath := ModTreePath(strings.Split(pattern, ":"))
+		if patternAsPath.Contains(node.Path()) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (node *ModTreeNode) PathString() string {
