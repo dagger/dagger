@@ -50,6 +50,64 @@ func (test *Test) Run(ctx context.Context) error {
 	return test.Native.Run(ctx)
 }
 
+// Run core engine tests
+// +cache="session"
+func (dev *EngineDev) Test(
+	ctx context.Context,
+	// Only run these tests
+	// +optional
+	run string,
+	// Skip these tests
+	// +optional
+	skip string,
+	// +optional
+	// +default="./..."
+	pkg string,
+	// Abort test run on first failure
+	// +optional
+	failfast bool,
+	// How many tests to run in parallel - defaults to the number of CPUs
+	// +optional
+	parallel int,
+	// How long before timing out the test run
+	// +optional
+	timeout string,
+	// +optional
+	race bool,
+	// +default=1
+	// +optional
+	count int,
+	// +optional
+	envFile *dagger.Secret,
+	// Enable verbose output
+	// +optional
+	testVerbose bool,
+	// Update golden files
+	// +optional
+	update bool,
+) error {
+	// FIXME: use the damn standard Go toolchain
+	ctr, _, err := dev.testContainer(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = dev.test(ctx, ctr, &testOpts{
+		runTestRegex:  run,
+		skipTestRegex: skip,
+		pkg:           pkg,
+		failfast:      failfast,
+		parallel:      parallel,
+		timeout:       timeout,
+		race:          race,
+		count:         count,
+		envs:          envFile,
+		testVerbose:   testVerbose,
+		update:        update,
+	},
+	).Sync(ctx)
+	return err
+}
+
 // Run telemetry tests
 // +cache="session"
 func (dev *EngineDev) TestTelemetry(
