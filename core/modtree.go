@@ -233,6 +233,7 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 			if match, err := n.Match(include); err != nil {
 				return false, err
 			} else if !match {
+				debugTrace(ctx, "%q: does not match %v. Skipping", n.PathString(), include)
 				return false, nil
 			}
 		}
