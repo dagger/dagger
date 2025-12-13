@@ -12,9 +12,42 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
-// List all core engine tests
-func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	return dag.Go(dagger.GoOpts{Source: dev.Source}).Tests(ctx)
+// Engine e2e tests
+func (dev *EngineDev) Tests(ctx context.Context) ([]*Test, error) {
+	devContainer, _, err := dev.testContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	goTests, err := dag.Go(dagger.GoOpts{
+		Source: dev.Source,
+		Base:   devContainer,
+	}).Tests(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tests := make([]*Test, len(goTests))
+	for i := range goTests {
+		tests[i] = &Test{
+			Native: &goTests[i],
+			Dev:    dev,
+		}
+	}
+	return tests, nil
+}
+
+type Test struct {
+	Native *dagger.GoTest // +private
+	Dev    *EngineDev     // +private
+}
+
+func (test *Test) Name(ctx context.Context) (string, error) {
+	return test.Native.Name(ctx)
+}
+
+// +check
+func (test *Test) Run(ctx context.Context) error {
+	return test.Native.Run(ctx)
 }
 
 // Run core engine tests

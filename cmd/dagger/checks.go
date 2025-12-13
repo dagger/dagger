@@ -20,11 +20,13 @@ import (
 
 var (
 	checksListMode       bool
+	checkAll             bool
 	enableChecksScaleOut bool
 )
 
 func init() {
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
+	checksCmd.Flags().BoolVarP(&checkAll, "all", "a", false, "Include dynamic checks")
 
 	checksCmd.Flags().BoolVar(&enableChecksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	checksCmd.Flags().MarkHidden("scale-out")
@@ -57,9 +59,9 @@ Examples:
 				}
 				var checks *dagger.CheckGroup
 				if len(args) > 0 {
-					checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
+					checks = mod.Checks(dagger.ModuleChecksOpts{Include: args, All: checkAll})
 				} else {
-					checks = mod.Checks()
+					checks = mod.Checks(dagger.ModuleChecksOpts{All: checkAll})
 				}
 				if checksListMode {
 					return listChecks(ctx, checks, cmd)
