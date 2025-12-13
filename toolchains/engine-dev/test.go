@@ -14,8 +14,14 @@ import (
 
 // Engine e2e tests
 func (dev *EngineDev) Tests(ctx context.Context) ([]*Test, error) {
+	devContainer, _, err := dev.testContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	goTests, err := dag.Go(dagger.GoOpts{
 		Source: dev.Source,
+		Base:   devContainer,
 	}).Tests(ctx)
 	if err != nil {
 		return nil, err
@@ -24,6 +30,7 @@ func (dev *EngineDev) Tests(ctx context.Context) ([]*Test, error) {
 	for i := range goTests {
 		tests[i] = &Test{
 			Native: &goTests[i],
+			Dev:    dev,
 		}
 	}
 	return tests, nil
@@ -40,24 +47,7 @@ func (test *Test) Name(ctx context.Context) (string, error) {
 
 // +check
 func (test *Test) Run(ctx context.Context) error {
-	devContainer, _, err := test.Dev.testContainer(ctx)
-	if err != nil {
-		return err
-	}
-	workdir, err := test.Native.Dir(ctx)
-	if err != nil {
-		return err
-	}
-	testName, err := test.Native.TestName(ctx)
-	if err != nil {
-		return err
-	}
-	return dag.Go(dagger.GoOpts{
-		Source: test.Dev.Source,
-		Base:   devContainer,
-	}).RunTests(ctx, workdir, dagger.GoRunTestsOpts{
-		Include: testName,
-	})
+	return test.Native.Run(ctx)
 }
 
 // Run telemetry tests
