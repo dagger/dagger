@@ -1,8 +1,10 @@
 package core
 
 import (
+	"context"
 	"testing"
 
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -12,10 +14,10 @@ type ModTreePathTestSuite struct {
 }
 
 func TestModTreePath(t *testing.T) {
-	suite.Run(t, new(ModTreePathTestSuite))
+	testctx.New(t).RunTests(ModTreePathTestSuite{})
 }
 
-func (s *ModTreePathTestSuite) TestIsParentOf() {
+func (s *ModTreePathTestSuite) TestIsParentOf(ctx context.Context, t *testctx.T) {
 	testCases := []struct {
 		name     string
 		parent   ModTreePath
@@ -134,13 +136,13 @@ func (s *ModTreePathTestSuite) TestIsParentOf() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			result := tc.parent.Contains(tc.child)
+			result := tc.parent.Contains(ctx, tc.child)
 			require.Equal(s.T(), tc.expected, result, "parent: %v, child: %v", tc.parent, tc.child)
 		})
 	}
 }
 
-func (s *ModTreePathTestSuite) TestGlob() {
+func (s *ModTreePathTestSuite) TestGlob(ctx context.Context, t *testctx.T) {
 	testCases := []struct {
 		name     string
 		path     ModTreePath
@@ -331,7 +333,7 @@ func (s *ModTreePathTestSuite) TestGlob() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			result, err := tc.path.Glob(tc.pattern)
+			result, err := tc.path.Glob(ctx, tc.pattern)
 			require.NoError(s.T(), err)
 			require.Equal(s.T(), tc.expected, result, "path: %v, pattern: %s", tc.path, tc.pattern)
 		})
