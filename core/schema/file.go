@@ -77,7 +77,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("all").Doc(`Replace all occurrences of the pattern.`),
 				dagql.Arg("firstFrom").Doc(`Replace the first match starting from the specified line.`),
 			),
-		dagql.Func("export", s.export).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.export), dagql.CachePerClient).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the file to a file path on the host.`).
@@ -87,7 +87,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 					`If allowParentDirPath is true, the path argument can be a directory
 				path, in which case the file will be created in that directory.`),
 			),
-		dagql.Func("export", s.exportLegacy).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.exportLegacy), dagql.CachePerClient).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("withTimestamps", DagOpFileWrapper(srv, s.withTimestamps, WithPathFn(keepParentFile[fileWithTimestampsArgs]))).
@@ -173,6 +173,8 @@ func (s *fileSchema) withName(ctx context.Context, parent *core.File, args fileW
 type fileExportArgs struct {
 	Path               string
 	AllowParentDirPath bool `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
@@ -202,8 +204,8 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 }
 
-func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.String, error) {
-	err := parent.Export(ctx, args.Path, args.AllowParentDirPath)
+func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileExportArgs) (dagql.String, error) {
+	err := parent.Self().Export(ctx, args.Path, args.AllowParentDirPath)
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +224,7 @@ func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExp
 	return dagql.String(stat.Path), err
 }
 
-func (s *fileSchema) exportLegacy(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.Boolean, error) {
+func (s *fileSchema) exportLegacy(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileExportArgs) (dagql.Boolean, error) {
 	_, err := s.export(ctx, parent, args)
 	if err != nil {
 		return false, err
