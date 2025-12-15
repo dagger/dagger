@@ -21,11 +21,11 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/util/patchpreview"
 	"github.com/iancoleman/strcase"
 	"github.com/jedevc/diffparser"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -426,7 +426,7 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		if err != nil {
 			return "", fmt.Errorf("parse patch: %w", err)
 		}
-		preview := &idtui.PatchPreview{
+		preview := &patchpreview.PatchPreview{
 			Patch:       patch,
 			AddedDirs:   addedDirectories,
 			RemovedDirs: removedDirectories,
