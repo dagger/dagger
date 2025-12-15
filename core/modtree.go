@@ -78,14 +78,14 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 	jobs := parallel.New().WithTracing(false)
 	for _, child := range children {
 		if len(include) > 0 {
-			if match, err := node.Match(include); err != nil {
+			if match, err := node.Match(ctx, include); err != nil {
 				return err
 			} else if !match {
 				continue
 			}
 		}
 		if len(exclude) > 0 {
-			if match, err := node.Match(exclude); err != nil {
+			if match, err := node.Match(ctx, exclude); err != nil {
 				return err
 			} else if match {
 				continue
@@ -227,22 +227,24 @@ func debugTrace(ctx context.Context, msg string, args ...any) {
 func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string, all bool) ([]*ModTreeNode, error) {
 	var checks []*ModTreeNode
 	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) (bool, error) {
-		if len(include) > 0 {
-			if match, err := n.Match(include); err != nil {
-				return false, err
-			} else if !match {
-				debugTrace(ctx, "%q: does not match %v. Skipping", n.PathString(), include)
-				return false, nil
-			}
-		}
-		if len(exclude) > 0 {
-			if match, err := n.Match(exclude); err != nil {
-				return false, err
-			} else if match {
-				return false, nil
-			}
-		}
+		// FIXME: prune the search tree more aggressively, for efficiency
+		// BUT be careful to not break matching!
 		if n.IsCheck {
+			if len(include) > 0 {
+				if match, err := n.Match(ctx, include); err != nil {
+					return false, err
+				} else if !match {
+					debugTrace(ctx, "%q: does not match %v. Skipping", n.PathString(), include)
+					return false, nil
+				}
+			}
+			if len(exclude) > 0 {
+				if match, err := n.Match(ctx, exclude); err != nil {
+					return false, err
+				} else if match {
+					return false, nil
+				}
+			}
 			checks = append(checks, n)
 			return false, nil // checks are always leaves - no point in trying to walk
 		}
@@ -281,6 +283,10 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 
 type ModTreePath []string
 
+func NewModTreePath(s string) ModTreePath {
+	return ModTreePath(strings.Split(s, ":"))
+}
+
 func (p ModTreePath) CliCase() []string {
 	cliCase := make([]string, len(p))
 	for i := range p {
@@ -297,41 +303,51 @@ func (p ModTreePath) ApiCase() []string {
 	return apiCase
 }
 
-func (p ModTreePath) Contains(target ModTreePath) bool {
+func (p ModTreePath) Contains(ctx context.Context, target ModTreePath) (result bool) {
+	defer func() {
+		debugTrace(ctx, "%v.Contains(%v) -> %v", p, target, result)
+	}()
 	if len(target) < len(p) {
 		// if the target is shorter, it can't be a sub-path
 		return false
 	}
 	targetParent := ModTreePath(target[:len(p)])
-	return p.Equals(targetParent)
+	return p.Equals(ctx, targetParent)
 }
 
-func (p ModTreePath) Equals(other ModTreePath) bool {
+func (p ModTreePath) Equals(ctx context.Context, other ModTreePath) (result bool) {
+	defer func() {
+		debugTrace(ctx, "%v.Equals(%v) -> %v", p, other, result)
+
+	}()
 	if len(p) != len(other) {
 		return false
 	}
 	for i := range p {
 		if gqlFieldName(p[i]) != gqlFieldName(other[i]) {
+			debugTrace(ctx, "%v.Equals(%v): %q != %q -> NOT EQUAL", p, other, gqlFieldName(p[i]), gqlFieldName(other[i]))
 			return false
 		}
 	}
 	return true
 }
 
-func (p ModTreePath) Glob(pattern string) (bool, error) {
+func (p ModTreePath) Glob(ctx context.Context, pattern string) (bool, error) {
 	slashPattern := strings.ReplaceAll(pattern, ":", "/")
 	for _, pathVariant := range [][]string{p.ApiCase(), p.CliCase()} {
 		slashPath := strings.Join(pathVariant, "/")
 		if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
 			return false, err
 		} else if match {
+			debugTrace(ctx, "%q.Glob(%q) -> MATCH", slashPath, slashPattern)
 			return true, nil
 		}
+		debugTrace(ctx, "%q.Glob(%q) -> no match", slashPath, slashPattern)
 	}
 	return false, nil
 }
 
-func (node *ModTreeNode) Match(patterns []string) (bool, error) {
+func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, error) {
 	if node.Parent == nil {
 		// The root node matches everything
 		return true, nil
@@ -340,13 +356,13 @@ func (node *ModTreeNode) Match(patterns []string) (bool, error) {
 		return true, nil
 	}
 	for _, pattern := range patterns {
-		if match, err := node.Path().Glob(pattern); err != nil {
+		if match, err := node.Path().Glob(ctx, pattern); err != nil {
 			return false, err
 		} else if match {
 			return true, nil
 		}
-		patternAsPath := ModTreePath(strings.Split(pattern, ":"))
-		if patternAsPath.Contains(node.Path()) {
+		patternAsPath := NewModTreePath(pattern)
+		if patternAsPath.Contains(ctx, node.Path()) {
 			return true, nil
 		}
 	}
