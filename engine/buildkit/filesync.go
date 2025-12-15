@@ -10,7 +10,6 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/dagger/dagger/internal/buildkit/exporter/local"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
@@ -129,9 +128,7 @@ func (c *Client) LocalDirExport(
 		RemovePaths: removePaths,
 	}.AppendToOutgoingContext(ctx)
 
-	lbl := "copying files"
-	progress := local.NewProgressHandler(ctx, lbl)
-	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, progress); err != nil {
+	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, nil); err != nil {
 		return err
 	}
 
