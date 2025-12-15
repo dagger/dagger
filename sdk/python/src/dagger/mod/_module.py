@@ -650,6 +650,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        cache: str | None = None,
         deprecated: str | None = None,
     ) -> Func[P, R]: ...
 
@@ -659,6 +660,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        cache: str | None = None,
         deprecated: str | None = None,
     ) -> Callable[[Func[P, R]], Func[P, R]]: ...
 
