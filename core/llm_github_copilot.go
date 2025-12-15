@@ -36,6 +36,15 @@ func newGhcpClient(endpoint *LLMEndpoint, cliVersion string) *GhcpClient {
 
 var _ LLMClient = (*GhcpClient)(nil)
 
+var gitHubModelPrefixes = []string{
+	"github-",
+	"github/",
+	"gh-",
+	"gh/",
+	"ghcp-",
+	"ghcp/",
+}
+
 func GhcpClientContainer(
 	ctx context.Context,
 	token string,

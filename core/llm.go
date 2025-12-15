@@ -193,12 +193,12 @@ func (r *LLMRouter) isMistralModel(model string) bool {
 }
 
 func (r *LLMRouter) isGitHubModel(model string) bool {
-	return strings.HasPrefix(model, "github-") ||
-		strings.HasPrefix(model, "github/") ||
-		strings.HasPrefix(model, "gh-") ||
-		strings.HasPrefix(model, "gh/") ||
-		strings.HasPrefix(model, "ghcp-") ||
-		strings.HasPrefix(model, "ghcp/")
+	for _, prefix := range gitHubModelPrefixes {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *LLMRouter) isReplay(model string) bool {
