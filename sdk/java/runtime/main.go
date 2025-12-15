@@ -391,9 +391,14 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 	if err != nil {
 		return err
 	}
-	dirPath, err := modSource.LocalContextDirectoryPath(ctx)
-	if err != nil {
+	var dirPath string
+	if kind, err := modSource.Kind(ctx); err != nil {
 		return err
+	} else if kind == dagger.ModuleSourceKindLocal {
+		dirPath, err = modSource.LocalContextDirectoryPath(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	m.moduleConfig = moduleConfig{
 		name:    modName,
