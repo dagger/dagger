@@ -26,7 +26,7 @@ func newGhcpClient(endpoint *LLMEndpoint, cliVersion string) *GhcpClient {
 	ctx := context.Background()
 
 	// Since there is no official Go SDK for GitHub Copilot at the moment, we will use the GitHub Copilot CLI via a Dagger container.
-	var container = GhcpContainer(ctx, endpoint.Key, cliVersion)
+	var container = GhcpClientContainer(ctx, endpoint.Key, cliVersion)
 
 	return &GhcpClient{
 		client:   container,
@@ -36,7 +36,7 @@ func newGhcpClient(endpoint *LLMEndpoint, cliVersion string) *GhcpClient {
 
 var _ LLMClient = (*GhcpClient)(nil)
 
-func GhcpContainer(
+func GhcpClientContainer(
 	ctx context.Context,
 	token string,
 	cliVersion string,
