@@ -45,6 +45,19 @@ var gitHubModelPrefixes = []string{
 	"ghcp/",
 }
 
+// Strip Model Prefix from GitHub Model Names
+// E.g "github-gpt-5" -> "gpt-5"
+// Since GitHub uses various models we want to avoid model name collisions with other providers
+// we default to "github-gpt-5" for now but will update this in future to allow the GHCP CLI to fall back to its own default model
+func StripGitHubModelPrefix(model string) string {
+	for _, prefix := range gitHubModelPrefixes {
+		if strings.HasPrefix(model, prefix) {
+			return strings.TrimPrefix(model, prefix)
+		}
+	}
+	return model
+}
+
 func GhcpClientContainer(
 	ctx context.Context,
 	token string,
@@ -60,6 +73,7 @@ func GhcpClientContainer(
 // Satisfy the LLMClient interface with SendQuery and IsRetryable
 func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 
+	var copilotModel = StripGitHubModelPrefix(c.endpoint.Model)
 	// instrument the call with telemetry
 	// todo: moving to setup function to clean this up
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
@@ -72,7 +86,7 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
 		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
-		attribute.String("model", c.endpoint.Model),
+		attribute.String("model", copilotModel),
 		attribute.String("provider", string(c.endpoint.Provider)),
 	}
 
@@ -91,7 +105,12 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 		return nil, fmt.Errorf("failed to get outputTokens gauge: %w", err)
 	}
 
-	var copilot = c.client
+	var copilot = c.client.WithExec([]string{
+		"copilot",
+		"--model", copilotModel,
+		"--prompt-", "hi",
+		"--stream", "off",
+	})
 
 	var toolCalls []LLMToolCall
 
