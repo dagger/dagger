@@ -77,7 +77,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("invalid digest: %s", rawDigest)
 		}
-		return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Time{}), digest[:12]), nil
+		return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Now()), digest[:12]), nil
 	}
 
 	if tag, err := v.CurrentTag(ctx); err != nil {
@@ -202,8 +202,9 @@ func refTimestamp(ctx context.Context, head *dagger.GitRef) (time.Time, error) {
 }
 
 func pseudoversionTimestamp(t time.Time) string {
-	// go time formatting is bizarre - this translates to "yymmddhhmmss"
-	return t.Format("060102150405")
+	// go time formatting is bizarre - this translates to "yyyymmddhhmmss"
+	// inspired from: https://cs.opensource.google/go/x/mod/+/refs/tags/v0.22.0:module/pseudo.go
+	return t.UTC().Format("20060102150405")
 }
 
 // NextReleaseVersion returns the next release version from .changes/.next
