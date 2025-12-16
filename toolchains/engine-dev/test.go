@@ -4,50 +4,147 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"dagger/engine-dev/internal/dagger"
 
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 // Engine e2e tests
-func (dev *EngineDev) Tests(ctx context.Context) ([]*Test, error) {
-	devContainer, _, err := dev.testContainer(ctx)
-	if err != nil {
-		return nil, err
+func (dev *EngineDev) Tests(ctx context.Context) ([]*TestDirectory, error) {
+	ws := &TestWorkspace{
+		Root:      dev.Source,
+		Toolchain: dev,
 	}
+	return ws.Tests(ctx)
+}
 
-	goTests, err := dag.Go(dagger.GoOpts{
-		Source: dev.Source,
-		Base:   devContainer,
-	}).Tests(ctx)
+type TestWorkspace struct {
+	Root      *dagger.Directory
+	Toolchain *EngineDev // +private
+}
+
+func (ws *TestWorkspace) Tests(ctx context.Context) ([]*TestDirectory, error) {
+	dirs := make(map[string]*TestDirectory)
+	err := parallel.New().WithJob("scan workspace for go tests", func(ctx context.Context) error {
+		// Search for top-level test function declarations (not methods with receivers)
+		// This matches "func TestXxx(" but not "func (s *Suite) TestXxx("
+		results, err := ws.Root.Search(
+			ctx,
+			`^func (Test\w+)\(`,
+			dagger.DirectorySearchOpts{
+				Globs: []string{"**/*_test.go"},
+			},
+		)
+		if err != nil {
+			return err
+		}
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			if err != nil {
+				return err
+			}
+			matchedLine, err := result.MatchedLines(ctx)
+			if err != nil {
+				return err
+			}
+			// Extract the test name from the matched line
+			testName := extractTestName(matchedLine)
+			if testName == "" {
+				continue
+			}
+			// Use directory path as the package identifier
+			dir := path.Clean(filepath.Dir(filePath))
+			if dir == "" {
+				dir = "."
+			}
+			if _, ok := dirs[dir]; !ok {
+				dirs[dir] = &TestDirectory{
+					Workspace: ws,
+					Path:      dir,
+				}
+			}
+			dirs[dir].TestNames = append(dirs[dir].TestNames, testName)
+		}
+		return nil
+	}).Run(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tests := make([]*Test, len(goTests))
-	for i := range goTests {
-		tests[i] = &Test{
-			Native: &goTests[i],
-			Dev:    dev,
-		}
+	dirlist := make([]*TestDirectory, 0, len(dirs))
+	for _, dir := range dirs {
+		dirlist = append(dirlist, dir)
 	}
-	return tests, nil
+	return dirlist, nil
+}
+
+// extractTestName extracts the test function name from a line like "func TestFoo(t *testing.T) {"
+func extractTestName(line string) string {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "func Test") {
+		return ""
+	}
+	// Remove "func " prefix
+	line = strings.TrimPrefix(line, "func ")
+	// Find the opening parenthesis
+	idx := strings.Index(line, "(")
+	if idx == -1 {
+		return ""
+	}
+	return line[:idx]
+}
+
+type TestDirectory struct {
+	Workspace *TestWorkspace // +private
+	Path      string
+	TestNames []string // +private
+}
+
+func (dir *TestDirectory) Name() string {
+	return dir.Path
+}
+
+func (dir *TestDirectory) Tests() []*Test {
+	var tests []*Test
+	for _, name := range dir.TestNames {
+		tests = append(tests, &Test{
+			Dir:  dir,
+			Name: name,
+		})
+	}
+	return tests
 }
 
 type Test struct {
-	Native *dagger.GoTest // +private
-	Dev    *EngineDev     // +private
-}
-
-func (test *Test) Name(ctx context.Context) (string, error) {
-	return test.Native.Name(ctx)
+	Dir  *TestDirectory // +private
+	Name string
 }
 
 // +check
 func (test *Test) Run(ctx context.Context) error {
-	return test.Native.Run(ctx)
+	// FIXME: we re-build a full test environment on each individual test run
+	//  on a single node, will this be de-duplicated properly?
+	//  when scaling out, is this overhead of doing this once per node worth it?
+	var testContainer *dagger.Container
+	if err := parallel.New().WithJob("build test container", func(ctx context.Context) error {
+		var err error
+		testContainer, _, err = test.Dir.Workspace.Toolchain.testContainer(ctx)
+		return err
+	}).Run(ctx); err != nil {
+		return err
+	}
+	_, err := dag.Go(dagger.GoOpts{
+		Source: test.Dir.Workspace.Root,
+		Base:   testContainer,
+	}).Env().
+		WithWorkdir(test.Dir.Path).
+		WithExec([]string{"go", "test", "-run", test.Name}).
+		Sync(ctx)
+	return err
 }
 
 // Run core engine tests
