@@ -673,14 +673,6 @@ type WithFileArgs struct {
 
 var _ core.Inputs = WithFileArgs{}
 
-func (args WithFileArgs) Digest() (digest.Digest, error) {
-	var inputs []string
-
-	inputs = append(inputs, args.Path)
-
-	return hashutil.HashStrings(inputs...), nil
-}
-
 func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
 	deps := []llb.State{}
 	srv, err := core.CurrentDagqlServer(ctx)
