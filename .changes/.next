@@ -2,7 +2,7 @@
 # this version is used to determine how dev versions should be tagged.
 #
 # For example, if set to vX.Y.Z, then dev versions will be tagged as
-# vX.Y.Z-<prerelease> using go pseudoversioning.
+# vX.Y.Z-dev-<commit> or vX.Y.Z-dev-<inputdigest>.
 #
 # This file can also be left empty - if it is, then the next version is
 # automagically determined from release note entries (and then adding to the

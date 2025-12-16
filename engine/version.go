@@ -13,10 +13,8 @@ var (
 	// Note: this is filled at link-time.
 	//
 	// - For official tagged releases, this is simple semver like vX.Y.Z
-	// - For builds off our repo's main branch, this is a pre-release of the
-	//   form vX.Y.Z-<timestamp>-<commit>
-	// - For local dev builds with no other specified version, this is a
-	//   pre-release of the form vX.Y.Z-<timestamp>-dev-<dirhash>
+	// - For builds off our repo's main branch, this is vX.Y.Z-dev-<commit>
+	// - For local dev builds with uncommitted changes, this is vX.Y.Z-dev-<inputdigest>
 	Version string
 
 	// Tag holds the tag that the respective engine version is tagged with.

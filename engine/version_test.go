@@ -129,7 +129,7 @@ func TestBaseVersion(t *testing.T) {
 		{version: "v0.2.0+456", result: "v0.2.0"},
 		{version: "", result: ""},
 		{version: "foobar", result: "foobar"},
-		{version: "v0.0.0-010101000000-dev-deadbeefdead", result: "v0.0.0"},
+		{version: "v0.0.0-dev-deadbeefdead", result: "v0.0.0"},
 	}
 	for _, tc := range tc {
 		t.Run(tc.version, func(t *testing.T) {
@@ -145,8 +145,7 @@ func TestIsDevVersion(t *testing.T) {
 	}{
 		{version: "", isDev: true},
 		{version: "v0.19.9", isDev: false},
-		{version: "v0.19.9-241210-dev-abc123", isDev: true},
-		{version: "v0.19.9-241210123456-dev-abc123def456", isDev: true},
+		{version: "v0.19.9-dev-abc123def456", isDev: true},
 		{version: "v0.19.9-123", isDev: false},
 		{version: "v0.19.9-rc1", isDev: false},
 	}
