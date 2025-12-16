@@ -18,6 +18,7 @@ func New(
 	// A git repository containing the source code of the artifact to be versioned.
 	// +optional
 	// +defaultPath="/.git"
+	// +ignore=["objects/pack/", "rr-cache"]
 	git *dagger.Directory,
 
 	// A directory containing all the inputs of the artifact to be versioned.
@@ -99,7 +100,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	commitDate, err := refTimestamp(ctx, head)
+	commitDate, err := refTimestamp(ctx, v.GitDir)
 	if err != nil {
 		return "", err
 	}
@@ -130,13 +131,11 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 }
 
 func (v Version) Dirty(ctx context.Context) (bool, error) {
-	checkout := v.Git.Head().Tree()
-	// XXX: doesn't handle removed files :(
-	checkout = checkout.WithDirectory("", v.Inputs)
 	status, err := dag.Container().
 		From("alpine/git:latest").
 		WithWorkdir("/src").
-		WithMountedDirectory(".", checkout).
+		WithMountedDirectory(".", v.Inputs).
+		WithMountedDirectory(".git", v.GitDir).
 		WithExec([]string{"git", "status", "--porcelain"}).
 		Stdout(ctx)
 	if err != nil {
@@ -164,37 +163,41 @@ func (v Version) CurrentTag(ctx context.Context) (string, error) {
 }
 
 func (v Version) tagsAtCommit(ctx context.Context, commit string) ([]string, error) {
-	// NOTE: this uses the git dir directly rather than the git repo
-	// since there's no dagger API to do this operation
+	content, err := v.GitDir.File("packed-refs").Contents(ctx)
+	if err != nil {
+		return nil, nil
+	}
+	var tags []string
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		sha, ref := parts[0], parts[1]
+		if sha == commit && strings.HasPrefix(ref, "refs/tags/") {
+			tag := strings.TrimPrefix(ref, "refs/tags/")
+			tags = append(tags, tag)
+		}
+	}
+	return tags, nil
+}
+
+func refTimestamp(ctx context.Context, gitDir *dagger.Directory) (time.Time, error) {
 	out, err := dag.Container().
 		From("alpine/git:latest").
 		WithWorkdir("/src").
-		WithMountedDirectory(".git", v.GitDir).
-		WithExec([]string{"git", "tag", "-l", "--points-at=" + commit}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out = strings.TrimSpace(out)
-	if out == "" {
-		return nil, nil
-	}
-	return strings.Split(out, "\n"), nil
-}
-
-func refTimestamp(ctx context.Context, head *dagger.GitRef) (time.Time, error) {
-	checkout := head.Tree()
-	status, err := dag.Container().
-		From("alpine/git:latest").
-		WithWorkdir("/src").
-		WithMountedDirectory(".", checkout).
+		WithMountedDirectory(".git", gitDir).
 		WithExec([]string{"git", "log", "-1", "--format=%cI"}).
 		Stdout(ctx)
 	if err != nil {
 		return time.Time{}, err
 	}
-	status = strings.TrimSpace(status)
-	t, err := time.Parse(time.RFC3339, status)
+	out = strings.TrimSpace(out)
+	t, err := time.Parse(time.RFC3339, out)
 	if err != nil {
 		return time.Time{}, err
 	}
