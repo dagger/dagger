@@ -309,6 +309,22 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class ChangesetMergeConflict(Enum):
+    """Mediatypes to use in published or exported image metadata."""
+
+    FAIL = "FAIL"
+    """A conflict causes the merge operation to fail"""
+
+    PREFER_OURS = "PREFER_OURS"
+    """The conflict is resolved by applying the version of the calling changeset"""
+
+    PREFER_THEIRS = "PREFER_THEIRS"
+    """The conflict is resolved by applying the version of the other changeset"""
+
+    SKIP = "SKIP"
+    """A conflict is skipped, the merge operation continues"""
+
+
 class ExistsType(Enum):
     """File type."""
 
@@ -1150,6 +1166,68 @@ class Changeset(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+    def with_changeset(
+        self,
+        changes: Self,
+        *,
+        on_conflict: ChangesetMergeConflict | None = ChangesetMergeConflict.FAIL,
+    ) -> Self:
+        """Add changes to an existing changeset
+
+        By default the opperation will fail in case of conflicts, for instance
+        a file modified in both changesets. The behavior can be adjusted using
+        onConflict argument
+
+        Parameters
+        ----------
+        changes:
+            Changes to merge into the actual changeset
+        on_conflict:
+            What to do on a merge conflict
+        """
+        _args = [
+            Arg("changes", changes),
+            Arg("onConflict", on_conflict, ChangesetMergeConflict.FAIL),
+        ]
+        _ctx = self._select("withChangeset", _args)
+        return Changeset(_ctx)
+
+    def with_changesets(
+        self,
+        changes: list["Changeset"],
+        *,
+        on_conflict: ChangesetMergeConflict | None = ChangesetMergeConflict.FAIL,
+    ) -> Self:
+        """Add changes from multiple changesets
+
+        By default the operation will fail in case of conflicts, for instance
+        a file modified in multiple changesets. The behavior can be adjusted
+        using onConflict argument.
+
+        This is more efficient than calling withChangeset repeatedly as it
+        performs a single n-way merge.
+
+        Parameters
+        ----------
+        changes:
+            Array of changesets to merge into the actual changeset
+        on_conflict:
+            What to do on a merge conflict
+        """
+        _args = [
+            Arg("changes", changes),
+            Arg("onConflict", on_conflict, ChangesetMergeConflict.FAIL),
+        ]
+        _ctx = self._select("withChangesets", _args)
+        return Changeset(_ctx)
+
+    def with_(self, cb: Callable[["Changeset"], "Changeset"]) -> "Changeset":
+        """Call the provided callable with current Changeset.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -13206,6 +13284,7 @@ __all__ = [
     "CacheVolumeID",
     "Changeset",
     "ChangesetID",
+    "ChangesetMergeConflict",
     "Check",
     "CheckGroup",
     "CheckGroupID",

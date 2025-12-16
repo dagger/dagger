@@ -2356,6 +2356,18 @@ pub struct Changeset {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ChangesetWithChangesetOpts {
+    /// What to do on a merge conflict
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<ChangesetMergeConflict>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ChangesetWithChangesetsOpts {
+    /// What to do on a merge conflict
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<ChangesetMergeConflict>,
+}
 impl Changeset {
     /// Files and directories that were added in the newer directory.
     pub async fn added_paths(&self) -> Result<Vec<String>, DaggerError> {
@@ -2432,6 +2444,98 @@ impl Changeset {
     pub async fn sync(&self) -> Result<ChangesetId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Add changes to an existing changeset
+    /// By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Changes to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changeset(&self, changes: impl IntoID<ChangesetId>) -> Changeset {
+        let mut query = self.selection.select("withChangeset");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add changes to an existing changeset
+    /// By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Changes to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changeset_opts(
+        &self,
+        changes: impl IntoID<ChangesetId>,
+        opts: ChangesetWithChangesetOpts,
+    ) -> Changeset {
+        let mut query = self.selection.select("withChangeset");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add changes from multiple changesets
+    /// By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
+    /// This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Array of changesets to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changesets(&self, changes: Vec<ChangesetId>) -> Changeset {
+        let mut query = self.selection.select("withChangesets");
+        query = query.arg("changes", changes);
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add changes from multiple changesets
+    /// By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
+    /// This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Array of changesets to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changesets_opts(
+        &self,
+        changes: Vec<ChangesetId>,
+        opts: ChangesetWithChangesetsOpts,
+    ) -> Changeset {
+        let mut query = self.selection.select("withChangesets");
+        query = query.arg("changes", changes);
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 #[derive(Clone)]
@@ -13641,6 +13745,17 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ChangesetMergeConflict {
+    #[serde(rename = "FAIL")]
+    Fail,
+    #[serde(rename = "PREFER_OURS")]
+    PreferOurs,
+    #[serde(rename = "PREFER_THEIRS")]
+    PreferTheirs,
+    #[serde(rename = "SKIP")]
+    Skip,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {

@@ -923,6 +923,14 @@ type Changeset struct {
 	isEmpty *bool
 	sync    *ChangesetID
 }
+type WithChangesetFunc func(r *Changeset) *Changeset
+
+// With calls the provided function with current Changeset.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Changeset) With(f WithChangesetFunc) *Changeset {
+	return f(r)
+}
 
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
 	return &Changeset{
@@ -1074,6 +1082,61 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 	return &Changeset{
 		query: q.Root().Select("loadChangesetFromID").Arg("id", id),
 	}, nil
+}
+
+// ChangesetWithChangesetOpts contains options for Changeset.WithChangeset
+type ChangesetWithChangesetOpts struct {
+	// What to do on a merge conflict
+	//
+	// Default: FAIL
+	OnConflict ChangesetMergeConflict
+}
+
+// Add changes to an existing changeset
+//
+// By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+func (r *Changeset) WithChangeset(changes *Changeset, opts ...ChangesetWithChangesetOpts) *Changeset {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChangeset")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// ChangesetWithChangesetsOpts contains options for Changeset.WithChangesets
+type ChangesetWithChangesetsOpts struct {
+	// What to do on a merge conflict
+	//
+	// Default: FAIL
+	OnConflict ChangesetMergeConflict
+}
+
+// Add changes from multiple changesets
+//
+// By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
+//
+// This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
+func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithChangesetsOpts) *Changeset {
+	q := r.query.Select("withChangesets")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 type Check struct {
@@ -13376,6 +13439,77 @@ const (
 
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+)
+
+// Mediatypes to use in published or exported image metadata.
+type ChangesetMergeConflict string
+
+func (ChangesetMergeConflict) IsEnum() {}
+
+func (v ChangesetMergeConflict) Name() string {
+	switch v {
+	case ChangesetMergeConflictFail:
+		return "FAIL"
+	case ChangesetMergeConflictSkip:
+		return "SKIP"
+	case ChangesetMergeConflictPreferOurs:
+		return "PREFER_OURS"
+	case ChangesetMergeConflictPreferTheirs:
+		return "PREFER_THEIRS"
+	default:
+		return ""
+	}
+}
+
+func (v ChangesetMergeConflict) Value() string {
+	return string(v)
+}
+
+func (v *ChangesetMergeConflict) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ChangesetMergeConflict) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAIL":
+		*v = ChangesetMergeConflictFail
+	case "PREFER_OURS":
+		*v = ChangesetMergeConflictPreferOurs
+	case "PREFER_THEIRS":
+		*v = ChangesetMergeConflictPreferTheirs
+	case "SKIP":
+		*v = ChangesetMergeConflictSkip
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A conflict causes the merge operation to fail
+	ChangesetMergeConflictFail ChangesetMergeConflict = "FAIL"
+
+	// A conflict is skipped, the merge operation continues
+	ChangesetMergeConflictSkip ChangesetMergeConflict = "SKIP"
+
+	// The conflict is resolved by applying the version of the calling changeset
+	ChangesetMergeConflictPreferOurs ChangesetMergeConflict = "PREFER_OURS"
+
+	// The conflict is resolved by applying the version of the other changeset
+	ChangesetMergeConflictPreferTheirs ChangesetMergeConflict = "PREFER_THEIRS"
 )
 
 // File type.

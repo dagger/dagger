@@ -111,11 +111,91 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+export type ChangesetWithChangesetOpts = {
+  /**
+   * What to do on a merge conflict
+   */
+  onConflict?: ChangesetMergeConflict
+}
+
+export type ChangesetWithChangesetsOpts = {
+  /**
+   * What to do on a merge conflict
+   */
+  onConflict?: ChangesetMergeConflict
+}
+
 /**
  * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
  */
 export type ChangesetID = string & { __ChangesetID: never }
 
+/**
+ * Mediatypes to use in published or exported image metadata.
+ */
+export enum ChangesetMergeConflict {
+  /**
+   * A conflict causes the merge operation to fail
+   */
+  Fail = "FAIL",
+
+  /**
+   * The conflict is resolved by applying the version of the calling changeset
+   */
+  PreferOurs = "PREFER_OURS",
+
+  /**
+   * The conflict is resolved by applying the version of the other changeset
+   */
+  PreferTheirs = "PREFER_THEIRS",
+
+  /**
+   * A conflict is skipped, the merge operation continues
+   */
+  Skip = "SKIP",
+}
+
+/**
+ * Utility function to convert a ChangesetMergeConflict value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ChangesetMergeConflictValueToName(
+  value: ChangesetMergeConflict,
+): string {
+  switch (value) {
+    case ChangesetMergeConflict.Fail:
+      return "FAIL"
+    case ChangesetMergeConflict.PreferOurs:
+      return "PREFER_OURS"
+    case ChangesetMergeConflict.PreferTheirs:
+      return "PREFER_THEIRS"
+    case ChangesetMergeConflict.Skip:
+      return "SKIP"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ChangesetMergeConflict name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ChangesetMergeConflictNameToValue(
+  name: string,
+): ChangesetMergeConflict {
+  switch (name) {
+    case "FAIL":
+      return ChangesetMergeConflict.Fail
+    case "PREFER_OURS":
+      return ChangesetMergeConflict.PreferOurs
+    case "PREFER_THEIRS":
+      return ChangesetMergeConflict.PreferTheirs
+    case "SKIP":
+      return ChangesetMergeConflict.Skip
+    default:
+      return name as ChangesetMergeConflict
+  }
+}
 /**
  * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
  */
@@ -3076,6 +3156,69 @@ export class Changeset extends BaseClient {
     const response: Awaited<ChangesetID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadChangesetFromID(response)
+  }
+
+  /**
+   * Add changes to an existing changeset
+   *
+   * By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+   * @param changes Changes to merge into the actual changeset
+   * @param opts.onConflict What to do on a merge conflict
+   */
+  withChangeset = (
+    changes: Changeset,
+    opts?: ChangesetWithChangesetOpts,
+  ): Changeset => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("withChangeset", {
+      changes,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Add changes from multiple changesets
+   *
+   * By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
+   *
+   * This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
+   * @param changes Array of changesets to merge into the actual changeset
+   * @param opts.onConflict What to do on a merge conflict
+   */
+  withChangesets = (
+    changes: Changeset[],
+    opts?: ChangesetWithChangesetsOpts,
+  ): Changeset => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("withChangesets", {
+      changes,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Call the provided function with current Changeset.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Changeset) => Changeset) => {
+    return arg(this)
   }
 }
 

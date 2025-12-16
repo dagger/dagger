@@ -127,6 +127,7 @@
               <li><a href="#definition-CacheVolumeID">CacheVolumeID</a></li>
               <li><a href="#definition-Changeset">Changeset</a></li>
               <li><a href="#definition-ChangesetID">ChangesetID</a></li>
+              <li><a href="#definition-ChangesetMergeConflict">ChangesetMergeConflict</a></li>
               <li><a href="#definition-Check">Check</a></li>
               <li><a href="#definition-CheckGroup">CheckGroup</a></li>
               <li><a href="#definition-CheckGroupID">CheckGroupID</a></li>
@@ -5143,6 +5144,55 @@
                         <td data-property-name=""><a class="property-name" id="Changeset-sync" href="#Changeset-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span> </td>
                         <td> Force evaluation in the engine. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Changeset-withChangeset" href="#Changeset-withChangeset"><code>withChangeset</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td>
+                          <p>Add changes to an existing changeset</p>
+                          <p>By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span></h6>
+                                <p>Changes to merge into the actual changeset</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>onConflict</code></span> - <span class="property-type"><a href="#definition-ChangesetMergeConflict"><code>ChangesetMergeConflict</code></a></span></h6>
+                                <p>What to do on a merge conflict</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Changeset-withChangesets" href="#Changeset-withChangesets"><code>withChangesets</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td>
+                          <p>Add changes from multiple changesets</p>
+                          <p>By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.</p>
+                          <p>This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>[ChangesetID!]!</code></a></span></h6>
+                                <p>Array of changesets to merge into the actual changeset</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>onConflict</code></span> - <span class="property-type"><a href="#definition-ChangesetMergeConflict"><code>ChangesetMergeConflict</code></a></span></h6>
+                                <p>What to do on a merge conflict</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -5159,6 +5209,64 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ChangesetMergeConflict" class="definition definition-enum" data-traverse-target="definition-ChangesetMergeConflict">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ChangesetMergeConflict</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Mediatypes to use in published or exported image metadata.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>FAIL</code></p>
+                        </td>
+                        <td> A conflict causes the merge operation to fail </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SKIP</code></p>
+                        </td>
+                        <td> A conflict is skipped, the merge operation continues </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>PREFER_OURS</code></p>
+                        </td>
+                        <td> The conflict is resolved by applying the version of the calling changeset </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>PREFER_THEIRS</code></p>
+                        </td>
+                        <td> The conflict is resolved by applying the version of the other changeset </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"FAIL"</span>
+</code></pre>
                 </div>
               </div>
             </div>
