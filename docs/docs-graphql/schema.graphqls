@@ -235,12 +235,46 @@ type Changeset {
 
   """Force evaluation in the engine."""
   sync: ChangesetID!
+
+  """
+  Add changes to an existing changeset
+
+  By default the opperation will fail in case of conflicts, for instance a file
+  modified in both changesets. The behavior can be adjusted using onConflict
+  argument
+  """
+  withChangeset(
+    """Changes to merge into the actual changeset"""
+    changes: ChangesetID!
+
+    """What to do on a merge conflict"""
+    onConflict: ChangesetMergeConflict = FAIL
+  ): Changeset!
 }
 
 """
 The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
 """
 scalar ChangesetID
+
+"""Mediatypes to use in published or exported image metadata."""
+enum ChangesetMergeConflict {
+  """A conflict causes the merge operation to fail"""
+  FAIL
+
+  """A conflict is skipped, the merge operation continues"""
+  SKIP
+
+  """
+  The conflict is resolved by applying the version of the calling changeset
+  """
+  PREFER_SELF
+
+  """
+  The conflict is resolved by applying the version of the other changeset
+  """
+  PREFER_OTHER
+}
 
 type Check {
   """Whether the check completed"""
