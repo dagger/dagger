@@ -56,10 +56,15 @@ func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*par
 		goFuncTypes = append(goFuncTypes, goFuncType)
 	}
 	// verify the DaggerObject interface methods are all there
+	var missingMethods []string
 	for methodObj, found := range daggerObjectIfaceMethods {
 		if !found {
-			return nil, fmt.Errorf("missing method %s from DaggerObject interface, which must be embedded in interfaces used in Functions and Objects", methodObj.Name())
+			missingMethods = append(missingMethods, methodObj.Name())
 		}
+	}
+	if len(missingMethods) > 0 {
+		sort.Strings(missingMethods)
+		return nil, fmt.Errorf("missing methods %v from DaggerObject interface, which must be embedded in interfaces used in Functions and Objects", missingMethods)
 	}
 
 	sort.Slice(goFuncTypes, func(i, j int) bool {
