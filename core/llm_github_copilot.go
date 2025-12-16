@@ -105,10 +105,25 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 		return nil, fmt.Errorf("failed to get outputTokens gauge: %w", err)
 	}
 
+	// Ensure there is at least one message in history
+	if len(history) == 0 {
+		return nil, fmt.Errorf("prompt/chat history cannot be empty - run with-prompt to add a prompt/message")
+	}
+
+	// Get the last message as the prompt
+	prompt := history[len(history)-1]
+
+	// Currently, GitHub Copilot CLI only supports single prompt input
+	// We will only send the last user message as the prompt
+	// Future versions may support full chat history and tool calls
+	if prompt.Role != "user" {
+		return nil, fmt.Errorf("the last message in history must be from the user")
+	}
+
 	var copilot = c.client.WithExec([]string{
 		"copilot",
 		"--model", copilotModel,
-		"--prompt-", "hi",
+		"--prompt", prompt.Content,
 		"--stream", "off",
 	})
 
