@@ -32,10 +32,10 @@
     {
       "name": "go",
       "source": "toolchains/go",
-      "arguments": [
+      "customizations": [
         {
-          "name": "source",
-          "argument": "",
+          "name": "",
+          "argument": "source",
           "ignore": [
             "bin",
             ".git",
@@ -96,13 +96,13 @@
     {
       "name": "security",
       "source": "toolchains/security",
-      "arguments": [
+      "customizations": [
         {
           "function": [
             "scanSource"
           ],
-          "name": "source",
-          "argument": "",
+          "name": "",
+          "argument": "source",
           "ignore": [
             "bin",
             ".git",
