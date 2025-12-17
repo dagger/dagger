@@ -599,23 +599,11 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	if args.InDagOp() {
-		f, err := parent.Self().File(ctx, args.Path)
-		if err != nil {
-			return inst, err
-		}
-		ctx = dagql.ContextWithID(ctx, dagql.CurrentID(ctx))
-		return dagql.NewObjectResultForCurrentID(ctx, srv, f)
-	}
-
-	filename := path.Join(parent.Self().Dir, args.Path)
-
-	file, err := DagOpFile(ctx, srv, parent.Self(), args, s.file, WithStaticPath[*core.Directory, dirFileArgs](filename))
+	f, err := parent.Self().FileLLB(ctx, args.Path)
 	if err != nil {
 		return inst, err
 	}
-
-	fileResult, err := dagql.NewObjectResultForCurrentID(ctx, srv, file)
+	fileResult, err := dagql.NewObjectResultForCurrentID(ctx, srv, f)
 	if err != nil {
 		return inst, err
 	}
@@ -633,6 +621,7 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
+	filename := path.Join(parent.Self().Dir, args.Path)
 	dgst = hashutil.HashStrings(
 		filename,
 		string(dgst),

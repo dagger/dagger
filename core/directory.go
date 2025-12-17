@@ -221,8 +221,8 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 	return digest.String(), nil
 }
 
-func (dir *Directory) StatLLB(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
-	src = path.Join(dir.Dir, src)
+func (dir *Directory) StatLLB(ctx context.Context, bk *buildkit.Client, targetPath string) (*fstypes.Stat, error) {
+	src := path.Join(dir.Dir, targetPath)
 
 	res, err := bk.Solve(ctx, bkgw.SolveRequest{
 		Definition: dir.LLB,
@@ -245,7 +245,7 @@ func (dir *Directory) StatLLB(ctx context.Context, bk *buildkit.Client, src stri
 			}, nil
 		}
 
-		return nil, fmt.Errorf("%s: %w", src, syscall.ENOENT)
+		return nil, fmt.Errorf("%s: %w", targetPath, syscall.ENOENT)
 	}
 
 	st, err := ref.StatFile(ctx, bkgw.StatRequest{
