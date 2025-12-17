@@ -68,7 +68,12 @@ func (ws *TestWorkspace) Tests(ctx context.Context) ([]*TestDirectory, error) {
 					Path:      dir,
 				}
 			}
-			dirs[dir].TestNames = append(dirs[dir].TestNames, testName)
+			dirs[dir].Tests = append(dirs[dir].Tests, &Test{
+				Toolchain: ws.Toolchain,
+				Root:      ws.Root,
+				Workdir:   dir,
+				Name:      testName,
+			})
 		}
 		return nil
 	}).Run(ctx)
@@ -101,27 +106,18 @@ func extractTestName(line string) string {
 type TestDirectory struct {
 	Workspace *TestWorkspace // +private
 	Path      string
-	TestNames []string // +private
+	Tests     []*Test
 }
 
 func (dir *TestDirectory) Name() string {
 	return dir.Path
 }
 
-func (dir *TestDirectory) Tests() []*Test {
-	var tests []*Test
-	for _, name := range dir.TestNames {
-		tests = append(tests, &Test{
-			Dir:  dir,
-			Name: name,
-		})
-	}
-	return tests
-}
-
 type Test struct {
-	Dir  *TestDirectory // +private
-	Name string
+	Toolchain *EngineDev        // +private
+	Root      *dagger.Directory // +private
+	Workdir   string            // +private
+	Name      string
 }
 
 // +check
@@ -132,16 +128,16 @@ func (test *Test) Run(ctx context.Context) error {
 	var testContainer *dagger.Container
 	if err := parallel.New().WithJob("build test container", func(ctx context.Context) error {
 		var err error
-		testContainer, _, err = test.Dir.Workspace.Toolchain.testContainer(ctx)
+		testContainer, _, err = test.Toolchain.testContainer(ctx)
 		return err
 	}).Run(ctx); err != nil {
 		return err
 	}
 	_, err := dag.Go(dagger.GoOpts{
-		Source: test.Dir.Workspace.Root,
+		Source: test.Root,
 		Base:   testContainer,
 	}).Env().
-		WithWorkdir(test.Dir.Path).
+		WithWorkdir(test.Workdir).
 		WithExec([]string{"go", "test", "-run", test.Name}).
 		Sync(ctx)
 	return err
