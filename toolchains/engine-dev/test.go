@@ -28,6 +28,42 @@ type TestWorkspace struct {
 	Toolchain *EngineDev // +private
 }
 
+func (dev *EngineDev) TestNames(ctx context.Context) ([]string, error) {
+	var testnames []string
+	results, err := dev.Source.Search(
+		ctx,
+		`^func (Test\w+)\(`,
+		dagger.DirectorySearchOpts{
+			Globs: []string{"**/*_test.go"},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	for _, result := range results {
+		filePath, err := result.FilePath(ctx)
+		if err != nil {
+			return nil, err
+		}
+		matchedLine, err := result.MatchedLines(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Extract the test name from the matched line
+		testName := extractTestName(matchedLine)
+		if testName == "" {
+			continue
+		}
+		// Use directory path as the package identifier
+		dir := path.Clean(filepath.Dir(filePath))
+		if dir == "" {
+			dir = "."
+		}
+		testnames = append(testnames, dir+"#"+testName)
+	}
+	return testnames, nil
+}
+
 func (ws *TestWorkspace) Tests(ctx context.Context) ([]*TestDirectory, error) {
 	dirs := make(map[string]*TestDirectory)
 	err := parallel.New().WithJob("scan workspace for go tests", func(ctx context.Context) error {
