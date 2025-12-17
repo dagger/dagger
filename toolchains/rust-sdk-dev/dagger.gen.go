@@ -206,6 +206,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "RustSdkDev":
 		switch fnName {
+		case "Bump":
+			var parent RustSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*RustSdkDev).Bump(&parent, ctx, version)
+		case "CargoCheck":
+			var parent RustSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*RustSdkDev).CargoCheck(&parent, ctx)
+		case "CargoFmt":
+			var parent RustSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*RustSdkDev).CargoFmt(&parent, ctx)
+		case "Changes":
+			var parent RustSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*RustSdkDev).Changes(&parent), nil
 		case "DevContainer":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -220,34 +255,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*RustSdkDev).DevContainer(&parent, runInstall), nil
-		case "Source":
-			var parent RustSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustSdkDev).Source(&parent), nil
-		case "CargoFmt":
-			var parent RustSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*RustSdkDev).CargoFmt(&parent, ctx)
-		case "CargoCheck":
-			var parent RustSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*RustSdkDev).CargoCheck(&parent, ctx)
-		case "Test":
-			var parent RustSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*RustSdkDev).Test(&parent, ctx)
 		case "Generate":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -255,34 +262,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*RustSdkDev).Generate(&parent), nil
-		case "Changes":
-			var parent RustSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustSdkDev).Changes(&parent), nil
-		case "WithGeneratedClient":
-			var parent RustSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustSdkDev).WithGeneratedClient(&parent), nil
-		case "ReleaseDryRun":
-			var parent RustSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var sourceTag string
-			if inputArgs["sourceTag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["sourceTag"]), &sourceTag)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourceTag", err))
-				}
-			}
-			return nil, (*RustSdkDev).ReleaseDryRun(&parent, ctx, sourceTag)
 		case "Release":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -304,20 +283,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*RustSdkDev).Release(&parent, ctx, sourceTag, cargoRegistryToken)
-		case "Bump":
+		case "ReleaseDryRun":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+			var sourceTag string
+			if inputArgs["sourceTag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["sourceTag"]), &sourceTag)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourceTag", err))
 				}
 			}
-			return (*RustSdkDev).Bump(&parent, ctx, version)
+			return nil, (*RustSdkDev).ReleaseDryRun(&parent, ctx, sourceTag)
+		case "Source":
+			var parent RustSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*RustSdkDev).Source(&parent), nil
+		case "Test":
+			var parent RustSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*RustSdkDev).Test(&parent, ctx)
+		case "WithGeneratedClient":
+			var parent RustSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*RustSdkDev).WithGeneratedClient(&parent), nil
 		case "":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)

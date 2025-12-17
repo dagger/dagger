@@ -188,13 +188,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Examples":
 		switch fnName {
-		case "GhaSecrets":
-			var parent Examples
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Examples).GhaSecrets(&parent), nil
 		case "GhaConcurrency":
 			var parent Examples
 			err = json.Unmarshal(parentJSON, &parent)
@@ -202,13 +195,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Examples).GhaConcurrency(&parent), nil
-		case "GhaGithubContext":
-			var parent Examples
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Examples).GhaGithubContext(&parent), nil
 		case "GhaCustomModule":
 			var parent Examples
 			err = json.Unmarshal(parentJSON, &parent)
@@ -216,13 +202,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Examples).GhaCustomModule(&parent), nil
-		case "GhaOnPush":
+		case "GhaGithubContext":
 			var parent Examples
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Examples).GhaOnPush(&parent), nil
+			return (*Examples).GhaGithubContext(&parent), nil
 		case "GhaOnPullRequest":
 			var parent Examples
 			err = json.Unmarshal(parentJSON, &parent)
@@ -230,6 +216,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Examples).GhaOnPullRequest(&parent), nil
+		case "GhaOnPush":
+			var parent Examples
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Examples).GhaOnPush(&parent), nil
+		case "GhaSecrets":
+			var parent Examples
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Examples).GhaSecrets(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

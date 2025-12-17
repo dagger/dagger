@@ -165,9 +165,6 @@ type CheckGroupID string
 // The `CheckID` scalar type represents an identifier for an object of type Check.
 type CheckID string
 
-// The `CiID` scalar type represents an identifier for an object of type Ci.
-type CiID string
-
 // The `CliID` scalar type represents an identifier for an object of type Cli.
 type CliID string
 
@@ -185,9 +182,6 @@ type DirectoryID string
 
 // The `DocsID` scalar type represents an identifier for an object of type Docs.
 type DocsID string
-
-// The `ElixirSdkID` scalar type represents an identifier for an object of type ElixirSdk.
-type ElixirSDKID string
 
 // The `EngineDevID` scalar type represents an identifier for an object of type EngineDev.
 type EngineDevID string
@@ -243,20 +237,11 @@ type GitRefID string
 // The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
 type GitRepositoryID string
 
-// The `GoID` scalar type represents an identifier for an object of type Go.
-type GoID string
-
-// The `GoSdkID` scalar type represents an identifier for an object of type GoSdk.
-type GoSDKID string
-
 // The `HelmID` scalar type represents an identifier for an object of type Helm.
 type HelmID string
 
 // The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
 type InputTypeDefID string
-
-// The `InstallersID` scalar type represents an identifier for an object of type Installers.
-type InstallersID string
 
 // The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
 type InterfaceTypeDefID string
@@ -266,9 +251,6 @@ type JSON string
 
 // The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
 type JSONValueID string
-
-// The `JavaSdkID` scalar type represents an identifier for an object of type JavaSdk.
-type JavaSDKID string
 
 // The `LLMID` scalar type represents an identifier for an object of type LLM.
 type LLMID string
@@ -294,9 +276,6 @@ type ModuleSourceID string
 // The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
 type ObjectTypeDefID string
 
-// The `PhpSdkID` scalar type represents an identifier for an object of type PhpSdk.
-type PhpSDKID string
-
 // The platform config OS and architecture in a Container.
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
@@ -304,30 +283,6 @@ type Platform string
 
 // The `PortID` scalar type represents an identifier for an object of type Port.
 type PortID string
-
-// The `PythonSdkDocsID` scalar type represents an identifier for an object of type PythonSdkDocs.
-type PythonSDKDocsID string
-
-// The `PythonSdkID` scalar type represents an identifier for an object of type PythonSdk.
-type PythonSDKID string
-
-// The `PythonSdkTestSuiteID` scalar type represents an identifier for an object of type PythonSdkTestSuite.
-type PythonSDKTestSuiteID string
-
-// The `ReleaseID` scalar type represents an identifier for an object of type Release.
-type ReleaseID string
-
-// The `ReleaseReportArtifactID` scalar type represents an identifier for an object of type ReleaseReportArtifact.
-type ReleaseReportArtifactID string
-
-// The `ReleaseReportFollowUpID` scalar type represents an identifier for an object of type ReleaseReportFollowUp.
-type ReleaseReportFollowUpID string
-
-// The `ReleaseReportID` scalar type represents an identifier for an object of type ReleaseReport.
-type ReleaseReportID string
-
-// The `RustSdkID` scalar type represents an identifier for an object of type RustSdk.
-type RustSDKID string
 
 // The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
 type SDKConfigID string
@@ -347,9 +302,6 @@ type SearchSubmatchID string
 // The `SecretID` scalar type represents an identifier for an object of type Secret.
 type SecretID string
 
-// The `SecurityID` scalar type represents an identifier for an object of type Security.
-type SecurityID string
-
 // The `ServiceID` scalar type represents an identifier for an object of type Service.
 type ServiceID string
 
@@ -359,17 +311,14 @@ type SocketID string
 // The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 type SourceMapID string
 
+// The `StatID` scalar type represents an identifier for an object of type Stat.
+type StatID string
+
 // The `TerminalID` scalar type represents an identifier for an object of type Terminal.
 type TerminalID string
 
-// The `TestSplitID` scalar type represents an identifier for an object of type TestSplit.
-type TestSplitID string
-
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
-
-// The `TypescriptSdkID` scalar type represents an identifier for an object of type TypescriptSdk.
-type TypescriptSDKID string
 
 // The absence of a value.
 //
@@ -683,15 +632,6 @@ func (r *Binding) AsCheckGroup() *CheckGroup {
 	}
 }
 
-// Retrieve the binding value, as type Ci
-func (r *Binding) AsCi() *Ci {
-	q := r.query.Select("asCi")
-
-	return &Ci{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Cli
 func (r *Binding) AsCli() *Cli {
 	q := r.query.Select("asCli")
@@ -733,15 +673,6 @@ func (r *Binding) AsDocs() *Docs {
 	q := r.query.Select("asDocs")
 
 	return &Docs{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type ElixirSdk
-func (r *Binding) AsElixirSDK() *ElixirSDK {
-	q := r.query.Select("asElixirSdk")
-
-	return &ElixirSDK{
 		query: q,
 	}
 }
@@ -809,24 +740,6 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	}
 }
 
-// Retrieve the binding value, as type Go
-func (r *Binding) AsGo() *Go {
-	q := r.query.Select("asGo")
-
-	return &Go{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type GoSdk
-func (r *Binding) AsGoSDK() *GoSDK {
-	q := r.query.Select("asGoSdk")
-
-	return &GoSDK{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Helm
 func (r *Binding) AsHelm() *Helm {
 	q := r.query.Select("asHelm")
@@ -836,29 +749,11 @@ func (r *Binding) AsHelm() *Helm {
 	}
 }
 
-// Retrieve the binding value, as type Installers
-func (r *Binding) AsInstallers() *Installers {
-	q := r.query.Select("asInstallers")
-
-	return &Installers{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type JSONValue
 func (r *Binding) AsJSONValue() *JSONValue {
 	q := r.query.Select("asJSONValue")
 
 	return &JSONValue{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type JavaSdk
-func (r *Binding) AsJavaSDK() *JavaSDK {
-	q := r.query.Select("asJavaSdk")
-
-	return &JavaSDK{
 		query: q,
 	}
 }
@@ -886,87 +781,6 @@ func (r *Binding) AsModuleSource() *ModuleSource {
 	q := r.query.Select("asModuleSource")
 
 	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type PhpSdk
-func (r *Binding) AsPhpSDK() *PhpSDK {
-	q := r.query.Select("asPhpSdk")
-
-	return &PhpSDK{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type PythonSdk
-func (r *Binding) AsPythonSDK() *PythonSDK {
-	q := r.query.Select("asPythonSdk")
-
-	return &PythonSDK{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type PythonSdkDocs
-func (r *Binding) AsPythonSDKDocs() *PythonSDKDocs {
-	q := r.query.Select("asPythonSdkDocs")
-
-	return &PythonSDKDocs{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type PythonSdkTestSuite
-func (r *Binding) AsPythonSDKTestSuite() *PythonSDKTestSuite {
-	q := r.query.Select("asPythonSdkTestSuite")
-
-	return &PythonSDKTestSuite{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Release
-func (r *Binding) AsRelease() *Release {
-	q := r.query.Select("asRelease")
-
-	return &Release{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type ReleaseReport
-func (r *Binding) AsReleaseReport() *ReleaseReport {
-	q := r.query.Select("asReleaseReport")
-
-	return &ReleaseReport{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type ReleaseReportArtifact
-func (r *Binding) AsReleaseReportArtifact() *ReleaseReportArtifact {
-	q := r.query.Select("asReleaseReportArtifact")
-
-	return &ReleaseReportArtifact{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type ReleaseReportFollowUp
-func (r *Binding) AsReleaseReportFollowUp() *ReleaseReportFollowUp {
-	q := r.query.Select("asReleaseReportFollowUp")
-
-	return &ReleaseReportFollowUp{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type RustSdk
-func (r *Binding) AsRustSDK() *RustSDK {
-	q := r.query.Select("asRustSdk")
-
-	return &RustSDK{
 		query: q,
 	}
 }
@@ -1007,15 +821,6 @@ func (r *Binding) AsSecret() *Secret {
 	}
 }
 
-// Retrieve the binding value, as type Security
-func (r *Binding) AsSecurity() *Security {
-	q := r.query.Select("asSecurity")
-
-	return &Security{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Service
 func (r *Binding) AsService() *Service {
 	q := r.query.Select("asService")
@@ -1034,6 +839,15 @@ func (r *Binding) AsSocket() *Socket {
 	}
 }
 
+// Retrieve the binding value, as type Stat
+func (r *Binding) AsStat() *Stat {
+	q := r.query.Select("asStat")
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // Returns the binding's string value
 func (r *Binding) AsString(ctx context.Context) (string, error) {
 	if r.asString != nil {
@@ -1045,24 +859,6 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Retrieve the binding value, as type TestSplit
-func (r *Binding) AsTestSplit() *TestSplit {
-	q := r.query.Select("asTestSplit")
-
-	return &TestSplit{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type TypescriptSdk
-func (r *Binding) AsTypescriptSDK() *TypescriptSDK {
-	q := r.query.Select("asTypescriptSdk")
-
-	return &TypescriptSDK{
-		query: q,
-	}
 }
 
 // Returns the digest of the binding value
@@ -1756,91 +1552,6 @@ func (r *CheckGroup) Run() *CheckGroup {
 	return &CheckGroup{
 		query: q,
 	}
-}
-
-type Ci struct {
-	query *querybuilder.Selection
-
-	bootstrap *Void
-	id        *CiID
-}
-
-func (r *Ci) WithGraphQLQuery(q *querybuilder.Selection) *Ci {
-	return &Ci{
-		query: q,
-	}
-}
-
-// CiBootstrapOpts contains options for Ci.Bootstrap
-type CiBootstrapOpts struct {
-	Repo *GitRepository
-}
-
-// Build dagger from source, and check that it can bootstrap its own CI
-//
-// Note: this doesn't actually call all CI checks: only a small subset, selected for maximum coverage of Dagger features with limited compute expenditure. The actual checks being performed is an implementation detail, and should NOT be relied on. In other words, don't skip running <foo> just because it happens to be run here!
-func (r *Ci) Bootstrap(ctx context.Context, opts ...CiBootstrapOpts) error {
-	if r.bootstrap != nil {
-		return nil
-	}
-	q := r.query.Select("bootstrap")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// A unique identifier for this Ci.
-func (r *Ci) ID(ctx context.Context) (CiID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response CiID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Ci) XXX_GraphQLType() string {
-	return "Ci"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Ci) XXX_GraphQLIDType() string {
-	return "CiID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Ci) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Ci) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *Ci) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadCiFromID(CiID(id))
-	return nil
 }
 
 type Cli struct { // cli (../../../toolchains/cli-dev/main.go:73:6)
@@ -2862,6 +2573,28 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
+// ContainerStatOpts contains options for Container.Stat
+type ContainerStatOpts struct {
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Return file status
+func (r *Container) Stat(path string, opts ...ContainerStatOpts) *Stat {
+	q := r.query.Select("stat")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // The buffered standard error stream of the last executed command
 //
 // Returns an error if no command was executed
@@ -3142,6 +2875,17 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 		}
 	}
 	q = q.Arg("args", args)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Export environment variables from an env-file to the container.
+func (r *Container) WithEnvFileVariables(source *EnvFile) *Container {
+	assertNotNil("source", source)
+	q := r.query.Select("withEnvFileVariables")
+	q = q.Arg("source", source)
 
 	return &Container{
 		query: q,
@@ -4703,6 +4447,28 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 	return convert(response), nil
 }
 
+// DirectoryStatOpts contains options for Directory.Stat
+type DirectoryStatOpts struct {
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Return file status
+func (r *Directory) Stat(path string, opts ...DirectoryStatOpts) *Stat {
+	q := r.query.Select("stat")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
@@ -5181,227 +4947,6 @@ func (r *Docs) Site() *Directory { // docs (../../../toolchains/docs-dev/main.go
 
 func (r *Docs) Source() *Directory { // docs (../../../toolchains/docs-dev/main.go:37:2)
 	q := r.query.Select("source")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-type ElixirSDK struct {
-	query *querybuilder.Selection
-
-	baseImage     *string
-	codegenTest   *Void
-	id            *ElixirSDKID
-	lint          *Void
-	publish       *Void
-	releaseDryRun *Void
-	sdkTest       *Void
-	sourcePath    *string
-	test          *Void
-}
-
-func (r *ElixirSDK) WithGraphQLQuery(q *querybuilder.Selection) *ElixirSDK {
-	return &ElixirSDK{
-		query: q,
-	}
-}
-
-func (r *ElixirSDK) BaseImage(ctx context.Context) (string, error) {
-	if r.baseImage != nil {
-		return *r.baseImage, nil
-	}
-	q := r.query.Select("baseImage")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Bump the Elixir SDK's Engine dependency
-func (r *ElixirSDK) Bump(version string) *Changeset {
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Run dagger_codegen tests
-func (r *ElixirSDK) CodegenTest(ctx context.Context) error {
-	if r.codegenTest != nil {
-		return nil
-	}
-	q := r.query.Select("codegenTest")
-
-	return q.Execute(ctx)
-}
-
-func (r *ElixirSDK) DevContainer() *Container {
-	q := r.query.Select("devContainer")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Regenerate the Elixir SDK API
-func (r *ElixirSDK) Generate(introspectionJson *File) *Changeset {
-	assertNotNil("introspectionJson", introspectionJson)
-	q := r.query.Select("generate")
-	q = q.Arg("introspectionJson", introspectionJson)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// A unique identifier for this ElixirSdk.
-func (r *ElixirSDK) ID(ctx context.Context) (ElixirSDKID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ElixirSDKID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ElixirSDK) XXX_GraphQLType() string {
-	return "ElixirSdk"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ElixirSDK) XXX_GraphQLIDType() string {
-	return "ElixirSDKID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ElixirSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ElixirSDK) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *ElixirSDK) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadElixirSDKFromID(ElixirSDKID(id))
-	return nil
-}
-
-// Lint the SDK
-func (r *ElixirSDK) Lint(ctx context.Context) error {
-	if r.lint != nil {
-		return nil
-	}
-	q := r.query.Select("lint")
-
-	return q.Execute(ctx)
-}
-
-// ElixirSDKPublishOpts contains options for ElixirSDK.Publish
-type ElixirSDKPublishOpts struct {
-	DryRun bool
-}
-
-// Publish the Elixir SDK
-func (r *ElixirSDK) Publish(ctx context.Context, tag string, hexApiKey *Secret, opts ...ElixirSDKPublishOpts) error {
-	assertNotNil("hexApiKey", hexApiKey)
-	if r.publish != nil {
-		return nil
-	}
-	q := r.query.Select("publish")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `dryRun` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DryRun) {
-			q = q.Arg("dryRun", opts[i].DryRun)
-		}
-	}
-	q = q.Arg("tag", tag)
-	q = q.Arg("hexApiKey", hexApiKey)
-
-	return q.Execute(ctx)
-}
-
-// Test the publishing process
-func (r *ElixirSDK) ReleaseDryRun(ctx context.Context) error {
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-
-	return q.Execute(ctx)
-}
-
-// Run the SDK tests
-func (r *ElixirSDK) SDKTest(ctx context.Context) error {
-	if r.sdkTest != nil {
-		return nil
-	}
-	q := r.query.Select("sdkTest")
-
-	return q.Execute(ctx)
-}
-
-func (r *ElixirSDK) Source() *Directory {
-	q := r.query.Select("source")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-func (r *ElixirSDK) SourcePath(ctx context.Context) (string, error) {
-	if r.sourcePath != nil {
-		return *r.sourcePath, nil
-	}
-	q := r.query.Select("sourcePath")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Sync Elixir image to keep both dev and runtime modules consistent
-func (r *ElixirSDK) SyncImage() *File {
-	q := r.query.Select("syncImage")
-
-	return &File{
-		query: q,
-	}
-}
-
-// Test the SDK
-func (r *ElixirSDK) Test(ctx context.Context) error {
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
-}
-
-func (r *ElixirSDK) Workspace() *Directory {
-	q := r.query.Select("workspace")
 
 	return &Directory{
 		query: q,
@@ -7097,30 +6642,6 @@ func (r *Env) WithCheckOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type Ci in the environment
-func (r *Env) WithCiInput(name string, value *Ci, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withCiInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Ci output to be assigned in the environment
-func (r *Env) WithCiOutput(name string, description string) *Env {
-	q := r.query.Select("withCiOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // Create or update a binding of type Cli in the environment
 func (r *Env) WithCliInput(name string, value *Cli, description string) *Env {
 	assertNotNil("value", value)
@@ -7244,30 +6765,6 @@ func (r *Env) WithDocsInput(name string, value *Docs, description string) *Env {
 // Declare a desired Docs output to be assigned in the environment
 func (r *Env) WithDocsOutput(name string, description string) *Env {
 	q := r.query.Select("withDocsOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type ElixirSdk in the environment
-func (r *Env) WithElixirSDKInput(name string, value *ElixirSDK, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withElixirSdkInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ElixirSdk output to be assigned in the environment
-func (r *Env) WithElixirSDKOutput(name string, description string) *Env {
-	q := r.query.Select("withElixirSdkOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -7444,54 +6941,6 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type Go in the environment
-func (r *Env) WithGoInput(name string, value *Go, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withGoInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Go output to be assigned in the environment
-func (r *Env) WithGoOutput(name string, description string) *Env {
-	q := r.query.Select("withGoOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type GoSdk in the environment
-func (r *Env) WithGoSDKInput(name string, value *GoSDK, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withGoSdkInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired GoSdk output to be assigned in the environment
-func (r *Env) WithGoSDKOutput(name string, description string) *Env {
-	q := r.query.Select("withGoSdkOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // Create or update a binding of type Helm in the environment
 func (r *Env) WithHelmInput(name string, value *Helm, description string) *Env {
 	assertNotNil("value", value)
@@ -7516,30 +6965,6 @@ func (r *Env) WithHelmOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type Installers in the environment
-func (r *Env) WithInstallersInput(name string, value *Installers, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withInstallersInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Installers output to be assigned in the environment
-func (r *Env) WithInstallersOutput(name string, description string) *Env {
-	q := r.query.Select("withInstallersOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // Create or update a binding of type JSONValue in the environment
 func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
 	assertNotNil("value", value)
@@ -7556,30 +6981,6 @@ func (r *Env) WithJSONValueInput(name string, value *JSONValue, description stri
 // Declare a desired JSONValue output to be assigned in the environment
 func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	q := r.query.Select("withJSONValueOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type JavaSdk in the environment
-func (r *Env) WithJavaSDKInput(name string, value *JavaSDK, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withJavaSdkInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired JavaSdk output to be assigned in the environment
-func (r *Env) WithJavaSDKOutput(name string, description string) *Env {
-	q := r.query.Select("withJavaSdkOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -7665,222 +7066,6 @@ func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, descriptio
 // Declare a desired ModuleSource output to be assigned in the environment
 func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 	q := r.query.Select("withModuleSourceOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type PhpSdk in the environment
-func (r *Env) WithPhpSDKInput(name string, value *PhpSDK, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withPhpSdkInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired PhpSdk output to be assigned in the environment
-func (r *Env) WithPhpSDKOutput(name string, description string) *Env {
-	q := r.query.Select("withPhpSdkOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type PythonSdkDocs in the environment
-func (r *Env) WithPythonSDKDocsInput(name string, value *PythonSDKDocs, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withPythonSdkDocsInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired PythonSdkDocs output to be assigned in the environment
-func (r *Env) WithPythonSDKDocsOutput(name string, description string) *Env {
-	q := r.query.Select("withPythonSdkDocsOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type PythonSdk in the environment
-func (r *Env) WithPythonSDKInput(name string, value *PythonSDK, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withPythonSdkInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired PythonSdk output to be assigned in the environment
-func (r *Env) WithPythonSDKOutput(name string, description string) *Env {
-	q := r.query.Select("withPythonSdkOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type PythonSdkTestSuite in the environment
-func (r *Env) WithPythonSDKTestSuiteInput(name string, value *PythonSDKTestSuite, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withPythonSdkTestSuiteInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired PythonSdkTestSuite output to be assigned in the environment
-func (r *Env) WithPythonSDKTestSuiteOutput(name string, description string) *Env {
-	q := r.query.Select("withPythonSdkTestSuiteOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Release in the environment
-func (r *Env) WithReleaseInput(name string, value *Release, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withReleaseInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Release output to be assigned in the environment
-func (r *Env) WithReleaseOutput(name string, description string) *Env {
-	q := r.query.Select("withReleaseOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type ReleaseReportArtifact in the environment
-func (r *Env) WithReleaseReportArtifactInput(name string, value *ReleaseReportArtifact, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withReleaseReportArtifactInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ReleaseReportArtifact output to be assigned in the environment
-func (r *Env) WithReleaseReportArtifactOutput(name string, description string) *Env {
-	q := r.query.Select("withReleaseReportArtifactOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type ReleaseReportFollowUp in the environment
-func (r *Env) WithReleaseReportFollowUpInput(name string, value *ReleaseReportFollowUp, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withReleaseReportFollowUpInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ReleaseReportFollowUp output to be assigned in the environment
-func (r *Env) WithReleaseReportFollowUpOutput(name string, description string) *Env {
-	q := r.query.Select("withReleaseReportFollowUpOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type ReleaseReport in the environment
-func (r *Env) WithReleaseReportInput(name string, value *ReleaseReport, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withReleaseReportInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ReleaseReport output to be assigned in the environment
-func (r *Env) WithReleaseReportOutput(name string, description string) *Env {
-	q := r.query.Select("withReleaseReportOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type RustSdk in the environment
-func (r *Env) WithRustSDKInput(name string, value *RustSDK, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withRustSdkInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired RustSdk output to be assigned in the environment
-func (r *Env) WithRustSDKOutput(name string, description string) *Env {
-	q := r.query.Select("withRustSdkOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -7985,30 +7170,6 @@ func (r *Env) WithSecretOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type Security in the environment
-func (r *Env) WithSecurityInput(name string, value *Security, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withSecurityInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Security output to be assigned in the environment
-func (r *Env) WithSecurityOutput(name string, description string) *Env {
-	q := r.query.Select("withSecurityOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // Create or update a binding of type Service in the environment
 func (r *Env) WithServiceInput(name string, value *Service, description string) *Env {
 	assertNotNil("value", value)
@@ -8057,6 +7218,30 @@ func (r *Env) WithSocketOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type Stat in the environment
+func (r *Env) WithStatInput(name string, value *Stat, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withStatInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Stat output to be assigned in the environment
+func (r *Env) WithStatOutput(name string, description string) *Env {
+	q := r.query.Select("withStatOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Provides a string input binding to the environment
 func (r *Env) WithStringInput(name string, value string, description string) *Env {
 	q := r.query.Select("withStringInput")
@@ -8072,54 +7257,6 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 // Declares a desired string output binding
 func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type TestSplit in the environment
-func (r *Env) WithTestSplitInput(name string, value *TestSplit, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withTestSplitInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired TestSplit output to be assigned in the environment
-func (r *Env) WithTestSplitOutput(name string, description string) *Env {
-	q := r.query.Select("withTestSplitOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type TypescriptSdk in the environment
-func (r *Env) WithTypescriptSDKInput(name string, value *TypescriptSDK, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withTypescriptSdkInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired TypescriptSdk output to be assigned in the environment
-func (r *Env) WithTypescriptSDKOutput(name string, description string) *Env {
-	q := r.query.Select("withTypescriptSdkOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -8832,6 +7969,15 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 }
 
+// Parse the file contents as JSON.
+func (r *File) AsJSON() *JSONValue {
+	q := r.query.Select("asJSON")
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
 // Change the owner of the file recursively.
 func (r *File) Chown(owner string) *File {
 	q := r.query.Select("chown")
@@ -9099,6 +8245,15 @@ func (r *File) Size(ctx context.Context) (int, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Return file status
+func (r *File) Stat() *Stat {
+	q := r.query.Select("stat")
+
+	return &Stat{
+		query: q,
+	}
 }
 
 // Force evaluation in the engine.
@@ -10321,813 +9476,6 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// A Go project
-type Go struct { // go (../../../modules/go/main.go:119:6)
-	query *querybuilder.Selection
-
-	cgo        *bool
-	checkTidy  *Void
-	id         *GoID
-	lint       *Void
-	lintModule *Void
-	race       *bool
-	test       *Void
-	tests      *string
-	version    *string
-}
-type WithGoFunc func(r *Go) *Go
-
-// With calls the provided function with current Go.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Go) With(f WithGoFunc) *Go {
-	return f(r)
-}
-
-func (r *Go) WithGraphQLQuery(q *querybuilder.Selection) *Go {
-	return &Go{
-		query: q,
-	}
-}
-
-// Base container from which to run all operations
-func (r *Go) Base() *Container { // go (../../../modules/go/main.go:133:2)
-	q := r.query.Select("base")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// GoBinaryOpts contains options for Go.Binary
-type GoBinaryOpts struct {
-	//
-	// Disable symbol table
-	//
-	NoSymbols bool // go (../../../modules/go/main.go:301:2)
-	//
-	// Disable DWARF generation
-	//
-	NoDwarf bool // go (../../../modules/go/main.go:304:2)
-	//
-	// Target build platform
-	//
-	Platform Platform // go (../../../modules/go/main.go:307:2)
-}
-
-// Build a single main package, and return the compiled binary
-func (r *Go) Binary(pkg string, opts ...GoBinaryOpts) *File { // go (../../../modules/go/main.go:295:1)
-	q := r.query.Select("binary")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `noSymbols` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoSymbols) {
-			q = q.Arg("noSymbols", opts[i].NoSymbols)
-		}
-		// `noDwarf` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoDwarf) {
-			q = q.Arg("noDwarf", opts[i].NoDwarf)
-		}
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
-		}
-	}
-	q = q.Arg("pkg", pkg)
-
-	return &File{
-		query: q,
-	}
-}
-
-// GoBuildOpts contains options for Go.Build
-type GoBuildOpts struct {
-	//
-	// Which targets to build (default all main packages)
-	//
-	//
-	// Default: ["./..."]
-	Pkgs []string // go (../../../modules/go/main.go:243:2)
-	//
-	// Disable symbol table
-	//
-	NoSymbols bool // go (../../../modules/go/main.go:246:2)
-	//
-	// Disable DWARF generation
-	//
-	NoDwarf bool // go (../../../modules/go/main.go:249:2)
-	//
-	// Target build platform
-	//
-	Platform Platform // go (../../../modules/go/main.go:252:2)
-	//
-	// Output directory
-	//
-	//
-	// Default: "./bin/"
-	Output string // go (../../../modules/go/main.go:256:2)
-}
-
-// Build the given main packages, and return the build directory
-func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../modules/go/main.go:238:1)
-	q := r.query.Select("build")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `pkgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
-			q = q.Arg("pkgs", opts[i].Pkgs)
-		}
-		// `noSymbols` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoSymbols) {
-			q = q.Arg("noSymbols", opts[i].NoSymbols)
-		}
-		// `noDwarf` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoDwarf) {
-			q = q.Arg("noDwarf", opts[i].NoDwarf)
-		}
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
-		}
-		// `output` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Output) {
-			q = q.Arg("output", opts[i].Output)
-		}
-	}
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Go build cache
-func (r *Go) BuildCache() *CacheVolume { // go (../../../modules/go/main.go:130:2)
-	q := r.query.Select("buildCache")
-
-	return &CacheVolume{
-		query: q,
-	}
-}
-
-// Enable CGO
-func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../modules/go/main.go:142:2)
-	if r.cgo != nil {
-		return *r.cgo, nil
-	}
-	q := r.query.Select("cgo")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// GoCheckTidyOpts contains options for Go.CheckTidy
-type GoCheckTidyOpts struct {
-	Include []string // go (../../../modules/go/main.go:526:2)
-
-	Exclude []string // go (../../../modules/go/main.go:527:2)
-}
-
-// Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../modules/go/main.go:524:1)
-	if r.checkTidy != nil {
-		return nil
-	}
-	q := r.query.Select("checkTidy")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// Download dependencies into the module cache
-func (r *Go) Download() *Go { // go (../../../modules/go/main.go:162:1)
-	q := r.query.Select("download")
-
-	return &Go{
-		query: q,
-	}
-}
-
-// GoEnvOpts contains options for Go.Env
-type GoEnvOpts struct {
-	Platform Platform // go (../../../modules/go/main.go:183:2)
-}
-
-// Prepare a build environment for the given Go source code:
-//   - Build a base container with Go tooling installed and configured
-//   - Apply configuration
-//   - Mount the source code
-func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../modules/go/main.go:181:1)
-	q := r.query.Select("env")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
-		}
-	}
-
-	return &Container{
-		query: q,
-	}
-}
-
-func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../modules/go/main.go:152:2)
-	q := r.query.Select("exclude")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Enable go experiments
-func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../../modules/go/main.go:148:2)
-	q := r.query.Select("experiment")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this Go.
-func (r *Go) ID(ctx context.Context) (GoID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response GoID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Go) XXX_GraphQLType() string {
-	return "Go"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Go) XXX_GraphQLIDType() string {
-	return "GoID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Go) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Go) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *Go) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadGoFromID(GoID(id))
-	return nil
-}
-
-func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../modules/go/main.go:150:2)
-	q := r.query.Select("include")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Pass arguments to 'go build -ldflags”
-func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../modules/go/main.go:136:2)
-	q := r.query.Select("ldflags")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// GoLintOpts contains options for Go.Lint
-type GoLintOpts struct {
-	Include []string // go (../../../modules/go/main.go:593:2)
-
-	Exclude []string // go (../../../modules/go/main.go:594:2)
-}
-
-// Lint the project
-func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../modules/go/main.go:591:1)
-	if r.lint != nil {
-		return nil
-	}
-	q := r.query.Select("lint")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-func (r *Go) LintModule(ctx context.Context, mod string) error { // go (../../../modules/go/main.go:619:1)
-	if r.lintModule != nil {
-		return nil
-	}
-	q := r.query.Select("lintModule")
-	q = q.Arg("mod", mod)
-
-	return q.Execute(ctx)
-}
-
-// GoListPackagesOpts contains options for Go.ListPackages
-type GoListPackagesOpts struct {
-	//
-	// Filter by name or pattern. Example './foo/...'
-	//
-	//
-	// Default: ["./..."]
-	Pkgs []string // go (../../../modules/go/main.go:391:2)
-	//
-	// Only list main packages
-	//
-	OnlyMain bool // go (../../../modules/go/main.go:394:2)
-}
-
-// List packages matching the specified criteria
-func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]string, error) { // go (../../../modules/go/main.go:386:1)
-	q := r.query.Select("listPackages")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `pkgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
-			q = q.Arg("pkgs", opts[i].Pkgs)
-		}
-		// `onlyMain` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnlyMain) {
-			q = q.Arg("onlyMain", opts[i].OnlyMain)
-		}
-	}
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Go module cache
-func (r *Go) ModuleCache() *CacheVolume { // go (../../../modules/go/main.go:127:2)
-	q := r.query.Select("moduleCache")
-
-	return &CacheVolume{
-		query: q,
-	}
-}
-
-// GoModulesOpts contains options for Go.Modules
-type GoModulesOpts struct {
-	Include []string // go (../../../modules/go/main.go:462:2)
-
-	Exclude []string // go (../../../modules/go/main.go:463:2)
-}
-
-// Scan the source for go modules, and return their paths
-func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, error) { // go (../../../modules/go/main.go:460:1)
-	q := r.query.Select("modules")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-	}
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Enable race detector
-func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../modules/go/main.go:145:2)
-	if r.race != nil {
-		return *r.race, nil
-	}
-	q := r.query.Select("race")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Project source directory
-func (r *Go) Source() *Directory { // go (../../../modules/go/main.go:124:2)
-	q := r.query.Select("source")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// GoTestOpts contains options for Go.Test
-type GoTestOpts struct {
-	//
-	// Only run these tests
-	//
-	Run string // go (../../../modules/go/main.go:337:2)
-	//
-	// Skip these tests
-	//
-	Skip string // go (../../../modules/go/main.go:340:2)
-	//
-	// Abort test run on first failure
-	//
-	Failfast bool // go (../../../modules/go/main.go:343:2)
-	//
-	// How many tests to run in parallel - defaults to the number of CPUs
-	//
-	Parallel int // go (../../../modules/go/main.go:347:2)
-	//
-	// How long before timing out the test run
-	//
-	//
-	// Default: "30m"
-	Timeout string // go (../../../modules/go/main.go:351:2)
-
-	// Default: 1
-	Count int // go (../../../modules/go/main.go:354:2)
-	//
-	// Which packages to test
-	//
-	//
-	// Default: ["./..."]
-	Pkgs []string // go (../../../modules/go/main.go:358:2)
-}
-
-// Run tests for the given packages
-func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../../modules/go/main.go:333:1)
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `parallel` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Parallel) {
-			q = q.Arg("parallel", opts[i].Parallel)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `pkgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
-			q = q.Arg("pkgs", opts[i].Pkgs)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// GoTestsOpts contains options for Go.Tests
-type GoTestsOpts struct {
-	//
-	// Packages to list tests from (default all packages)
-	//
-	//
-	// Default: ["./..."]
-	Pkgs []string // go (../../../modules/go/main.go:228:2)
-}
-
-// List tests
-func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { // go (../../../modules/go/main.go:223:1)
-	if r.tests != nil {
-		return *r.tests, nil
-	}
-	q := r.query.Select("tests")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `pkgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
-			q = q.Arg("pkgs", opts[i].Pkgs)
-		}
-	}
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// GoTidyOpts contains options for Go.Tidy
-type GoTidyOpts struct {
-	Include []string // go (../../../modules/go/main.go:485:2)
-
-	Exclude []string // go (../../../modules/go/main.go:486:2)
-}
-
-func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../modules/go/main.go:483:1)
-	q := r.query.Select("tidy")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-	}
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-func (r *Go) TidyModule(mod string) *Changeset { // go (../../../modules/go/main.go:472:1)
-	q := r.query.Select("tidyModule")
-	q = q.Arg("mod", mod)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Add string value definition of the form importpath.name=value
-func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../modules/go/main.go:139:2)
-	q := r.query.Select("values")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Go version
-func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../modules/go/main.go:121:2)
-	if r.version != nil {
-		return *r.version, nil
-	}
-	q := r.query.Select("version")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-type GoSDK struct {
-	query *querybuilder.Selection
-
-	id            *GoSDKID
-	release       *Void
-	releaseDryRun *Void
-	sourcePath    *string
-	test          *Void
-}
-
-func (r *GoSDK) WithGraphQLQuery(q *querybuilder.Selection) *GoSDK {
-	return &GoSDK{
-		query: q,
-	}
-}
-
-// Bump the Go SDK's Engine dependency
-func (r *GoSDK) Bump(version string) *Changeset {
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Build a container to run the go toolchain
-func (r *GoSDK) DevContainer() *Container {
-	q := r.query.Select("devContainer")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Regenerate the Go SDK API
-func (r *GoSDK) Generate() *Changeset {
-	q := r.query.Select("generate")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// A unique identifier for this GoSdk.
-func (r *GoSDK) ID(ctx context.Context) (GoSDKID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response GoSDKID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *GoSDK) XXX_GraphQLType() string {
-	return "GoSdk"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *GoSDK) XXX_GraphQLIDType() string {
-	return "GoSDKID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *GoSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *GoSDK) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *GoSDK) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadGoSDKFromID(GoSDKID(id))
-	return nil
-}
-
-// GoSDKReleaseOpts contains options for GoSDK.Release
-type GoSDKReleaseOpts struct {
-	SourceRepo *GitRepository
-
-	DestRemote string
-
-	GithubToken *Secret
-
-	Callback *File
-}
-
-// Publish the Go SDK
-func (r *GoSDK) Release(ctx context.Context, sourceTag string, opts ...GoSDKReleaseOpts) error {
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceRepo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceRepo) {
-			q = q.Arg("sourceRepo", opts[i].SourceRepo)
-		}
-		// `destRemote` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DestRemote) {
-			q = q.Arg("destRemote", opts[i].DestRemote)
-		}
-		// `githubToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
-			q = q.Arg("githubToken", opts[i].GithubToken)
-		}
-		// `callback` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Callback) {
-			q = q.Arg("callback", opts[i].Callback)
-		}
-	}
-	q = q.Arg("sourceTag", sourceTag)
-
-	return q.Execute(ctx)
-}
-
-// GoSDKReleaseDryRunOpts contains options for GoSDK.ReleaseDryRun
-type GoSDKReleaseDryRunOpts struct {
-	SourceRepo *GitRepository
-
-	SourceTag string
-
-	DestRemote string
-
-	Callback *File
-}
-
-// Check that releasing works, without actually releasing
-func (r *GoSDK) ReleaseDryRun(ctx context.Context, opts ...GoSDKReleaseDryRunOpts) error {
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceRepo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceRepo) {
-			q = q.Arg("sourceRepo", opts[i].SourceRepo)
-		}
-		// `sourceTag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceTag) {
-			q = q.Arg("sourceTag", opts[i].SourceTag)
-		}
-		// `destRemote` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DestRemote) {
-			q = q.Arg("destRemote", opts[i].DestRemote)
-		}
-		// `callback` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Callback) {
-			q = q.Arg("callback", opts[i].Callback)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-func (r *GoSDK) Source() *Directory {
-	q := r.query.Select("source")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Path of the Go SDK source within the workspace
-func (r *GoSDK) SourcePath(ctx context.Context) (string, error) {
-	if r.sourcePath != nil {
-		return *r.sourcePath, nil
-	}
-	q := r.query.Select("sourcePath")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Test the Go SDK
-func (r *GoSDK) Test(ctx context.Context) error {
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
-}
-
-// Workspace with all the files needed to develop the SDK
-func (r *GoSDK) Workspace() *Directory {
-	q := r.query.Select("workspace")
-
-	return &Directory{
-		query: q,
-	}
-}
-
 type Helm struct { // helm (../../../toolchains/helm-dev/main.go:27:6)
 	query *querybuilder.Selection
 
@@ -11372,134 +9720,6 @@ func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// A toolchain to test Dagger installers
-type Installers struct { // installers (../../../toolchains/installers/main.go:17:6)
-	query *querybuilder.Selection
-
-	id                   *InstallersID
-	lintBashScript       *Void
-	lintPowershellScript *Void
-	testBashScript       *Void
-}
-
-func (r *Installers) WithGraphQLQuery(q *querybuilder.Selection) *Installers {
-	return &Installers{
-		query: q,
-	}
-}
-
-// A unique identifier for this Installers.
-func (r *Installers) ID(ctx context.Context) (InstallersID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response InstallersID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Installers) XXX_GraphQLType() string {
-	return "Installers"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Installers) XXX_GraphQLIDType() string {
-	return "InstallersID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Installers) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Installers) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *Installers) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadInstallersFromID(InstallersID(id))
-	return nil
-}
-
-// InstallersLintBashScriptOpts contains options for Installers.LintBashScript
-type InstallersLintBashScriptOpts struct {
-	InstallShellScript *File // installers (../../../toolchains/installers/main.go:24:2)
-}
-
-// Lint install bash script
-func (r *Installers) LintBashScript(ctx context.Context, opts ...InstallersLintBashScriptOpts) error { // installers (../../../toolchains/installers/main.go:21:1)
-	if r.lintBashScript != nil {
-		return nil
-	}
-	q := r.query.Select("lintBashScript")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `installShellScript` optional argument
-		if !querybuilder.IsZeroValue(opts[i].InstallShellScript) {
-			q = q.Arg("installShellScript", opts[i].InstallShellScript)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// InstallersLintPowershellScriptOpts contains options for Installers.LintPowershellScript
-type InstallersLintPowershellScriptOpts struct {
-	PowershellScript *File // installers (../../../toolchains/installers/main.go:36:2)
-}
-
-// LintPowershell scripts files
-func (r *Installers) LintPowershellScript(ctx context.Context, opts ...InstallersLintPowershellScriptOpts) error { // installers (../../../toolchains/installers/main.go:33:1)
-	if r.lintPowershellScript != nil {
-		return nil
-	}
-	q := r.query.Select("lintPowershellScript")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `powershellScript` optional argument
-		if !querybuilder.IsZeroValue(opts[i].PowershellScript) {
-			q = q.Arg("powershellScript", opts[i].PowershellScript)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// InstallersTestBashScriptOpts contains options for Installers.TestBashScript
-type InstallersTestBashScriptOpts struct {
-	InstallShellScript *File // installers (../../../toolchains/installers/main.go:53:2)
-}
-
-// Test install bash script
-func (r *Installers) TestBashScript(ctx context.Context, opts ...InstallersTestBashScriptOpts) error { // installers (../../../toolchains/installers/main.go:50:1)
-	if r.testBashScript != nil {
-		return nil
-	}
-	q := r.query.Select("testBashScript")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `installShellScript` optional argument
-		if !querybuilder.IsZeroValue(opts[i].InstallShellScript) {
-			q = q.Arg("installShellScript", opts[i].InstallShellScript)
-		}
-	}
-
-	return q.Execute(ctx)
 }
 
 // A definition of a custom interface defined in a Module.
@@ -11894,208 +10114,6 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 	q = q.Arg("value", value)
 
 	return &JSONValue{
-		query: q,
-	}
-}
-
-type JavaSDK struct {
-	query *querybuilder.Selection
-
-	checkDeps     *Void
-	id            *JavaSDKID
-	lint          *Void
-	name          *string
-	release       *Void
-	releaseDryRun *Void
-	sourcePath    *string
-	test          *Void
-}
-
-func (r *JavaSDK) WithGraphQLQuery(q *querybuilder.Selection) *JavaSDK {
-	return &JavaSDK{
-		query: q,
-	}
-}
-
-// Bump the Java SDK's Engine dependency
-func (r *JavaSDK) Bump(version string) *Changeset {
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Bump dependencies in the Java SDK
-func (r *JavaSDK) BumpDeps() *Changeset {
-	q := r.query.Select("bumpDeps")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Check dependencies in the Java SDK
-func (r *JavaSDK) CheckDeps(ctx context.Context) error {
-	if r.checkDeps != nil {
-		return nil
-	}
-	q := r.query.Select("checkDeps")
-
-	return q.Execute(ctx)
-}
-
-// Format the Java SDK
-func (r *JavaSDK) Fmt() *Changeset {
-	q := r.query.Select("fmt")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// A unique identifier for this JavaSdk.
-func (r *JavaSDK) ID(ctx context.Context) (JavaSDKID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response JavaSDKID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *JavaSDK) XXX_GraphQLType() string {
-	return "JavaSdk"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *JavaSDK) XXX_GraphQLIDType() string {
-	return "JavaSDKID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *JavaSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *JavaSDK) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *JavaSDK) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadJavaSDKFromID(JavaSDKID(id))
-	return nil
-}
-
-// Lint the Java SDK
-func (r *JavaSDK) Lint(ctx context.Context) error {
-	if r.lint != nil {
-		return nil
-	}
-	q := r.query.Select("lint")
-
-	return q.Execute(ctx)
-}
-
-func (r *JavaSDK) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Publish the Java SDK
-//
-// Java release not yet available, call dry run release
-func (r *JavaSDK) Release(ctx context.Context, sourceTag string) error {
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	q = q.Arg("sourceTag", sourceTag)
-
-	return q.Execute(ctx)
-}
-
-// JavaSDKReleaseDryRunOpts contains options for JavaSDK.ReleaseDryRun
-type JavaSDKReleaseDryRunOpts struct {
-	SourceTag string
-}
-
-// Check that releasing works, without actually releasing
-func (r *JavaSDK) ReleaseDryRun(ctx context.Context, opts ...JavaSDKReleaseDryRunOpts) error {
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceTag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceTag) {
-			q = q.Arg("sourceTag", opts[i].SourceTag)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-func (r *JavaSDK) Source() *Directory {
-	q := r.query.Select("source")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// The path of the SDK in the workspace
-func (r *JavaSDK) SourcePath(ctx context.Context) (string, error) {
-	if r.sourcePath != nil {
-		return *r.sourcePath, nil
-	}
-	q := r.query.Select("sourcePath")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Test the Java SDK
-func (r *JavaSDK) Test(ctx context.Context) error {
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
-}
-
-// Workspace with all the files needed to develop the SDK.
-func (r *JavaSDK) Workspace() *Directory {
-	q := r.query.Select("workspace")
-
-	return &Directory{
 		query: q,
 	}
 }
@@ -14135,303 +12153,6 @@ func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-type PhpSDK struct { // php-sdk (../../../toolchains/php-sdk-dev/main.go:24:6)
-	query *querybuilder.Selection
-
-	id             *PhpSDKID
-	phpCodeSniffer *Void
-	phpStan        *Void
-	release        *Void
-	releaseDryRun  *Void
-	test           *Void
-	versionFromTag *string
-}
-type WithPhpSDKFunc func(r *PhpSDK) *PhpSDK
-
-// With calls the provided function with current PhpSDK.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *PhpSDK) With(f WithPhpSDKFunc) *PhpSDK {
-	return f(r)
-}
-
-func (r *PhpSDK) WithGraphQLQuery(q *querybuilder.Selection) *PhpSDK {
-	return &PhpSDK{
-		query: q,
-	}
-}
-
-func (r *PhpSDK) BaseContainer() *Container { // php-sdk (../../../toolchains/php-sdk-dev/main.go:52:1)
-	q := r.query.Select("baseContainer")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Bump the PHP SDK's Engine dependency
-func (r *PhpSDK) Bump(version string) *Changeset { // php-sdk (../../../toolchains/php-sdk-dev/main.go:263:1)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-func (r *PhpSDK) Changes() *Changeset { // php-sdk (../../../toolchains/php-sdk-dev/main.go:149:1)
-	q := r.query.Select("changes")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// PhpSDKDevContainerOpts contains options for PhpSDK.DevContainer
-type PhpSDKDevContainerOpts struct {
-	//
-	// Run composer install before returning the container
-	//
-	RunInstall bool // php-sdk (../../../toolchains/php-sdk-dev/main.go:80:2)
-}
-
-// Returns the PHP SDK workspace mounted in a dev container,
-// and working directory set to the SDK source
-func (r *PhpSDK) DevContainer(opts ...PhpSDKDevContainerOpts) *Container { // php-sdk (../../../toolchains/php-sdk-dev/main.go:77:1)
-	q := r.query.Select("devContainer")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `runInstall` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RunInstall) {
-			q = q.Arg("runInstall", opts[i].RunInstall)
-		}
-	}
-
-	return &Container{
-		query: q,
-	}
-}
-
-// DoctumConfig returns the doctum configuration file
-func (r *PhpSDK) DoctumConfig() *File { // php-sdk (../../../toolchains/php-sdk-dev/main.go:103:1)
-	q := r.query.Select("doctumConfig")
-
-	return &File{
-		query: q,
-	}
-}
-
-// Regenerate the PHP SDK API
-func (r *PhpSDK) Generate() *Changeset { // php-sdk (../../../toolchains/php-sdk-dev/main.go:138:1)
-	q := r.query.Select("generate")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// A unique identifier for this PhpSdk.
-func (r *PhpSDK) ID(ctx context.Context) (PhpSDKID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response PhpSDKID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *PhpSDK) XXX_GraphQLType() string {
-	return "PhpSdk"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *PhpSDK) XXX_GraphQLIDType() string {
-	return "PhpSDKID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *PhpSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *PhpSDK) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *PhpSDK) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadPhpSDKFromID(PhpSDKID(id))
-	return nil
-}
-
-// Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
-func (r *PhpSDK) PhpCodeSniffer(ctx context.Context) error { // php-sdk (../../../toolchains/php-sdk-dev/main.go:109:1)
-	if r.phpCodeSniffer != nil {
-		return nil
-	}
-	q := r.query.Select("phpCodeSniffer")
-
-	return q.Execute(ctx)
-}
-
-// Analyze the PHP code with PHPStan (https://phpstan.org)
-func (r *PhpSDK) PhpStan(ctx context.Context) error { // php-sdk (../../../toolchains/php-sdk-dev/main.go:119:1)
-	if r.phpStan != nil {
-		return nil
-	}
-	q := r.query.Select("phpStan")
-
-	return q.Execute(ctx)
-}
-
-// PhpSDKReleaseOpts contains options for PhpSDK.Release
-type PhpSDKReleaseOpts struct {
-	//
-	// The source git repository to release
-	//
-	SourceRepo *GitRepository // php-sdk (../../../toolchains/php-sdk-dev/main.go:238:2)
-
-	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	Dest string // php-sdk (../../../toolchains/php-sdk-dev/main.go:245:2)
-
-	GithubToken *Secret // php-sdk (../../../toolchains/php-sdk-dev/main.go:247:2)
-}
-
-// Publish the PHP SDK
-func (r *PhpSDK) Release(ctx context.Context, sourceTag string, opts ...PhpSDKReleaseOpts) error { // php-sdk (../../../toolchains/php-sdk-dev/main.go:233:1)
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceRepo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceRepo) {
-			q = q.Arg("sourceRepo", opts[i].SourceRepo)
-		}
-		// `dest` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Dest) {
-			q = q.Arg("dest", opts[i].Dest)
-		}
-		// `githubToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
-			q = q.Arg("githubToken", opts[i].GithubToken)
-		}
-	}
-	q = q.Arg("sourceTag", sourceTag)
-
-	return q.Execute(ctx)
-}
-
-// PhpSDKReleaseDryRunOpts contains options for PhpSDK.ReleaseDryRun
-type PhpSDKReleaseDryRunOpts struct {
-	//
-	// Source git repository to fake-release
-	//
-	SourceRepo *GitRepository // php-sdk (../../../toolchains/php-sdk-dev/main.go:206:2)
-	//
-	// Source git tag to fake-release
-	//
-	//
-	// Default: "HEAD"
-	SourceTag string // php-sdk (../../../toolchains/php-sdk-dev/main.go:209:2)
-	//
-	// Target git remote to fake-release *to*
-	//
-	//
-	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	DestRemote string // php-sdk (../../../toolchains/php-sdk-dev/main.go:212:2)
-}
-
-// Test the publishing process
-func (r *PhpSDK) ReleaseDryRun(ctx context.Context, opts ...PhpSDKReleaseDryRunOpts) error { // php-sdk (../../../toolchains/php-sdk-dev/main.go:202:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceRepo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceRepo) {
-			q = q.Arg("sourceRepo", opts[i].SourceRepo)
-		}
-		// `sourceTag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceTag) {
-			q = q.Arg("sourceTag", opts[i].SourceTag)
-		}
-		// `destRemote` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DestRemote) {
-			q = q.Arg("destRemote", opts[i].DestRemote)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// Source returns the source directory for the PHP SDK
-func (r *PhpSDK) Source() *Directory { // php-sdk (../../../toolchains/php-sdk-dev/main.go:98:1)
-	q := r.query.Select("source")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Test the PHP SDK with PHPUnit (https://phpunit.de/)
-func (r *PhpSDK) Test(ctx context.Context) error { // php-sdk (../../../toolchains/php-sdk-dev/main.go:130:1)
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
-}
-
-// Get v1.2.3 from sdk/php/v1.2.3
-func (r *PhpSDK) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-sdk (../../../toolchains/php-sdk-dev/main.go:227:1)
-	if r.versionFromTag != nil {
-		return *r.versionFromTag, nil
-	}
-	q := r.query.Select("versionFromTag")
-	q = q.Arg("tag", tag)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *PhpSDK) WithGeneratedClient() *PhpSDK { // php-sdk (../../../toolchains/php-sdk-dev/main.go:153:1)
-	q := r.query.Select("withGeneratedClient")
-
-	return &PhpSDK{
-		query: q,
-	}
-}
-
-// Generate reference docs from the generated client
-// NOTE: it's the caller's responsibility to ensure the generated client is up-to-date
-// (see WithGeneratedClient)
-func (r *PhpSDK) WithGeneratedDocs() *PhpSDK { // php-sdk (../../../toolchains/php-sdk-dev/main.go:173:1)
-	q := r.query.Select("withGeneratedDocs")
-
-	return &PhpSDK{
-		query: q,
-	}
-}
-
 // A port exposed by a container.
 type Port struct {
 	query *querybuilder.Selection
@@ -14550,618 +12271,6 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx)
 }
 
-// A toolchain to develop the Dagger Python SDK
-type PythonSDK struct { // python-sdk (../../../toolchains/python-sdk-dev/main.go:16:6)
-	query *querybuilder.Selection
-
-	id               *PythonSDKID
-	lint             *Void
-	lintDocsSnippets *Void
-	release          *Void
-	releaseDryRun    *Void
-	sourcePath       *string
-	test             *Void
-	typecheck        *Void
-}
-type WithPythonSDKFunc func(r *PythonSDK) *PythonSDK
-
-// With calls the provided function with current PythonSDK.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *PythonSDK) With(f WithPythonSDKFunc) *PythonSDK {
-	return f(r)
-}
-
-func (r *PythonSDK) WithGraphQLQuery(q *querybuilder.Selection) *PythonSDK {
-	return &PythonSDK{
-		query: q,
-	}
-}
-
-// PythonSDKBuildOpts contains options for PythonSDK.Build
-type PythonSDKBuildOpts struct {
-	//
-	// The version for the distribution package
-	//
-	//
-	// Default: "0.0.0"
-	Version string // python-sdk (../../../toolchains/python-sdk-dev/main.go:279:2)
-}
-
-// Build the Python SDK client library package for distribution
-func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk (../../../toolchains/python-sdk-dev/main.go:276:1)
-	q := r.query.Select("build")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-	}
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Bump the Python SDK's Engine dependency
-func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../../toolchains/python-sdk-dev/main.go:264:1)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Python container to develop Python SDK
-func (r *PythonSDK) DevContainer() *Container { // python-sdk (../../../toolchains/python-sdk-dev/main.go:18:2)
-	q := r.query.Select("devContainer")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Preview the reference documentation
-func (r *PythonSDK) Docs() *PythonSDKDocs { // python-sdk (../../../toolchains/python-sdk-dev/main.go:317:1)
-	q := r.query.Select("docs")
-
-	return &PythonSDKDocs{
-		query: q,
-	}
-}
-
-// PythonSDKFormatOpts contains options for PythonSDK.Format
-type PythonSDKFormatOpts struct {
-	//
-	// List of files or directories to check
-	//
-	Paths []string // python-sdk (../../../toolchains/python-sdk-dev/main.go:109:2)
-}
-
-// Format source files
-func (r *PythonSDK) Format(opts ...PythonSDKFormatOpts) *Changeset { // python-sdk (../../../toolchains/python-sdk-dev/main.go:106:1)
-	q := r.query.Select("format")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `paths` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Paths) {
-			q = q.Arg("paths", opts[i].Paths)
-		}
-	}
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Regenerate the core Python client library
-func (r *PythonSDK) Generate() *Changeset { // python-sdk (../../../toolchains/python-sdk-dev/main.go:171:1)
-	q := r.query.Select("generate")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// A unique identifier for this PythonSdk.
-func (r *PythonSDK) ID(ctx context.Context) (PythonSDKID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response PythonSDKID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *PythonSDK) XXX_GraphQLType() string {
-	return "PythonSdk"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *PythonSDK) XXX_GraphQLIDType() string {
-	return "PythonSDKID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *PythonSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *PythonSDK) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *PythonSDK) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadPythonSDKFromID(PythonSDKID(id))
-	return nil
-}
-
-// PythonSDKLintOpts contains options for PythonSDK.Lint
-type PythonSDKLintOpts struct {
-	//
-	// List of files or directories to check
-	//
-	Paths []string // python-sdk (../../../toolchains/python-sdk-dev/main.go:95:2)
-}
-
-// Check for linting errors
-func (r *PythonSDK) Lint(ctx context.Context, opts ...PythonSDKLintOpts) error { // python-sdk (../../../toolchains/python-sdk-dev/main.go:91:1)
-	if r.lint != nil {
-		return nil
-	}
-	q := r.query.Select("lint")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `paths` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Paths) {
-			q = q.Arg("paths", opts[i].Paths)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// PythonSDKLintDocsSnippetsOpts contains options for PythonSDK.LintDocsSnippets
-type PythonSDKLintDocsSnippetsOpts struct {
-	Workspace *Directory // python-sdk (../../../toolchains/python-sdk-dev/main.go:83:2)
-}
-
-// Lint the Python snippets in the documentation
-func (r *PythonSDK) LintDocsSnippets(ctx context.Context, opts ...PythonSDKLintDocsSnippetsOpts) error { // python-sdk (../../../toolchains/python-sdk-dev/main.go:75:1)
-	if r.lintDocsSnippets != nil {
-		return nil
-	}
-	q := r.query.Select("lintDocsSnippets")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// PythonSDKPublishOpts contains options for PythonSDK.Publish
-type PythonSDKPublishOpts struct {
-	//
-	// The version for the distribution package to publish
-	//
-	//
-	// Default: "0.0.0"
-	Version string // python-sdk (../../../toolchains/python-sdk-dev/main.go:293:2)
-	//
-	// The URL of the upload endpoint (empty means PyPI)
-	//
-	URL string // python-sdk (../../../toolchains/python-sdk-dev/main.go:296:2)
-}
-
-// Publish Python SDK client library to PyPI
-func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Container { // python-sdk (../../../toolchains/python-sdk-dev/main.go:288:1)
-	assertNotNil("token", token)
-	q := r.query.Select("publish")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-		// `url` optional argument
-		if !querybuilder.IsZeroValue(opts[i].URL) {
-			q = q.Arg("url", opts[i].URL)
-		}
-	}
-	q = q.Arg("token", token)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// PythonSDKReleaseOpts contains options for PythonSDK.Release
-type PythonSDKReleaseOpts struct {
-	DryRun bool // python-sdk (../../../toolchains/python-sdk-dev/main.go:235:2)
-
-	PypiRepo string // python-sdk (../../../toolchains/python-sdk-dev/main.go:238:2)
-
-	PypiToken *Secret // python-sdk (../../../toolchains/python-sdk-dev/main.go:241:2)
-}
-
-// Release the Python SDK
-func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...PythonSDKReleaseOpts) error { // python-sdk (../../../toolchains/python-sdk-dev/main.go:228:1)
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `dryRun` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DryRun) {
-			q = q.Arg("dryRun", opts[i].DryRun)
-		}
-		// `pypiRepo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].PypiRepo) {
-			q = q.Arg("pypiRepo", opts[i].PypiRepo)
-		}
-		// `pypiToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].PypiToken) {
-			q = q.Arg("pypiToken", opts[i].PypiToken)
-		}
-	}
-	q = q.Arg("sourceTag", sourceTag)
-
-	return q.Execute(ctx)
-}
-
-// Test the publishing process
-func (r *PythonSDK) ReleaseDryRun(ctx context.Context) error { // python-sdk (../../../toolchains/python-sdk-dev/main.go:217:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-
-	return q.Execute(ctx)
-}
-
-func (r *PythonSDK) SourcePath(ctx context.Context) (string, error) { // python-sdk (../../../toolchains/python-sdk-dev/main.go:20:2)
-	if r.sourcePath != nil {
-		return *r.sourcePath, nil
-	}
-	q := r.query.Select("sourcePath")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Supported Python versions
-func (r *PythonSDK) SupportedVersions(ctx context.Context) ([]string, error) { // python-sdk (../../../toolchains/python-sdk-dev/main.go:22:2)
-	q := r.query.Select("supportedVersions")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Test the Python SDK
-func (r *PythonSDK) Test(ctx context.Context) error { // python-sdk (../../../toolchains/python-sdk-dev/main.go:140:1)
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
-}
-
-// PythonSDKTestPublishOpts contains options for PythonSDK.TestPublish
-type PythonSDKTestPublishOpts struct {
-	//
-	// The version for the distribution package to publish
-	//
-	//
-	// Default: "0.0.0"
-	Version string // python-sdk (../../../toolchains/python-sdk-dev/main.go:311:2)
-}
-
-// Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonSDK) TestPublish(token *Secret, opts ...PythonSDKTestPublishOpts) *Container { // python-sdk (../../../toolchains/python-sdk-dev/main.go:306:1)
-	assertNotNil("token", token)
-	q := r.query.Select("testPublish")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-	}
-	q = q.Arg("token", token)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// PythonSDKTestSuiteOpts contains options for PythonSDK.TestSuite
-type PythonSDKTestSuiteOpts struct {
-	//
-	// Python version
-	//
-	Version string // python-sdk (../../../toolchains/python-sdk-dev/main.go:158:2)
-}
-
-// TestSuite to run unit and other tests
-func (r *PythonSDK) TestSuite(disableNestedExec bool, opts ...PythonSDKTestSuiteOpts) *PythonSDKTestSuite { // python-sdk (../../../toolchains/python-sdk-dev/main.go:155:1)
-	q := r.query.Select("testSuite")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-	}
-	q = q.Arg("disableNestedExec", disableNestedExec)
-
-	return &PythonSDKTestSuite{
-		query: q,
-	}
-}
-
-// Run the type checker (mypy)
-// FIXME: this is not included as an automated check. Should it?
-func (r *PythonSDK) Typecheck(ctx context.Context) error { // python-sdk (../../../toolchains/python-sdk-dev/main.go:121:1)
-	if r.typecheck != nil {
-		return nil
-	}
-	q := r.query.Select("typecheck")
-
-	return q.Execute(ctx)
-}
-
-// Mount a directory on the base container
-func (r *PythonSDK) WithDirectory(source *Directory) *PythonSDK { // python-sdk (../../../toolchains/python-sdk-dev/main.go:130:1)
-	assertNotNil("source", source)
-	q := r.query.Select("withDirectory")
-	q = q.Arg("source", source)
-
-	return &PythonSDK{
-		query: q,
-	}
-}
-
-func (r *PythonSDK) Workspace() *Directory { // python-sdk (../../../toolchains/python-sdk-dev/main.go:19:2)
-	q := r.query.Select("workspace")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-type PythonSDKDocs struct { // python-sdk (../../../toolchains/python-sdk-dev/docs.go:9:6)
-	query *querybuilder.Selection
-
-	id *PythonSDKDocsID
-}
-
-func (r *PythonSDKDocs) WithGraphQLQuery(q *querybuilder.Selection) *PythonSDKDocs {
-	return &PythonSDKDocs{
-		query: q,
-	}
-}
-
-// Build the documentation
-func (r *PythonSDKDocs) Build() *Directory { // python-sdk (../../../toolchains/python-sdk-dev/docs.go:15:1)
-	q := r.query.Select("build")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// A unique identifier for this PythonSdkDocs.
-func (r *PythonSDKDocs) ID(ctx context.Context) (PythonSDKDocsID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response PythonSDKDocsID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *PythonSDKDocs) XXX_GraphQLType() string {
-	return "PythonSdkDocs"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *PythonSDKDocs) XXX_GraphQLIDType() string {
-	return "PythonSDKDocsID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *PythonSDKDocs) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *PythonSDKDocs) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *PythonSDKDocs) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadPythonSDKDocsFromID(PythonSDKDocsID(id))
-	return nil
-}
-
-// PythonSDKDocsPreviewOpts contains options for PythonSDKDocs.Preview
-type PythonSDKDocsPreviewOpts struct {
-	//
-	// The port to bind the web preview for the built docs
-	//
-	//
-	// Default: 8000
-	Bind int // python-sdk (../../../toolchains/python-sdk-dev/docs.go:28:2)
-}
-
-// Build and preview the documentation in the browser
-func (r *PythonSDKDocs) Preview(opts ...PythonSDKDocsPreviewOpts) *Service { // python-sdk (../../../toolchains/python-sdk-dev/docs.go:25:1)
-	q := r.query.Select("preview")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `bind` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Bind) {
-			q = q.Arg("bind", opts[i].Bind)
-		}
-	}
-
-	return &Service{
-		query: q,
-	}
-}
-
-// Run the test suite.
-type PythonSDKTestSuite struct { // python-sdk (../../../toolchains/python-sdk-dev/test.go:12:6)
-	query *querybuilder.Selection
-
-	id *PythonSDKTestSuiteID
-}
-
-func (r *PythonSDKTestSuite) WithGraphQLQuery(q *querybuilder.Selection) *PythonSDKTestSuite {
-	return &PythonSDKTestSuite{
-		query: q,
-	}
-}
-
-// Run python tests.
-func (r *PythonSDKTestSuite) Default() *Container { // python-sdk (../../../toolchains/python-sdk-dev/test.go:40:1)
-	q := r.query.Select("default")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// A unique identifier for this PythonSdkTestSuite.
-func (r *PythonSDKTestSuite) ID(ctx context.Context) (PythonSDKTestSuiteID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response PythonSDKTestSuiteID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *PythonSDKTestSuite) XXX_GraphQLType() string {
-	return "PythonSdkTestSuite"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *PythonSDKTestSuite) XXX_GraphQLIDType() string {
-	return "PythonSDKTestSuiteID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *PythonSDKTestSuite) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *PythonSDKTestSuite) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *PythonSDKTestSuite) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadPythonSDKTestSuiteFromID(PythonSDKTestSuiteID(id))
-	return nil
-}
-
-// PythonSDKTestSuiteProvisionOpts contains options for PythonSDKTestSuite.Provision
-type PythonSDKTestSuiteProvisionOpts struct {
-	//
-	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
-	//
-	RunnerHost string // python-sdk (../../../toolchains/python-sdk-dev/test.go:59:2)
-}
-
-// Test provisioning.
-//
-// This publishes a cli binary in an ephemeral http server and checks
-// if the SDK can download, extract and run it.
-func (r *PythonSDKTestSuite) Provision(cliBin *File, opts ...PythonSDKTestSuiteProvisionOpts) *Container { // python-sdk (../../../toolchains/python-sdk-dev/test.go:53:1)
-	assertNotNil("cliBin", cliBin)
-	q := r.query.Select("provision")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `runnerHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RunnerHost) {
-			q = q.Arg("runnerHost", opts[i].RunnerHost)
-		}
-	}
-	q = q.Arg("cliBin", cliBin)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Run the pytest command.
-func (r *PythonSDKTestSuite) Run(args []string) *Container { // python-sdk (../../../toolchains/python-sdk-dev/test.go:25:1)
-	q := r.query.Select("run")
-	q = q.Arg("args", args)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Run unit tests.
-func (r *PythonSDKTestSuite) Unit() *Container { // python-sdk (../../../toolchains/python-sdk-dev/test.go:45:1)
-	q := r.query.Select("unit")
-
-	return &Container{
-		query: q,
-	}
-}
-
 func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	return &Client{
 		query:  q,
@@ -15204,14 +12313,6 @@ func (r *Client) Changelog(opts ...ChangelogOpts) *Changelog {
 	}
 
 	return &Changelog{
-		query: q,
-	}
-}
-
-func (r *Client) Ci() *Ci {
-	q := r.query.Select("ci")
-
-	return &Ci{
 		query: q,
 	}
 }
@@ -15389,37 +12490,6 @@ func (r *Client) Docs(opts ...DocsOpts) *Docs { // docs (../../../toolchains/doc
 	}
 
 	return &Docs{
-		query: q,
-	}
-}
-
-// ElixirSDKOpts contains options for Client.ElixirSDK
-type ElixirSDKOpts struct {
-	BaseImage string
-
-	Workspace *Directory
-
-	SourcePath string
-}
-
-func (r *Client) ElixirSDK(opts ...ElixirSDKOpts) *ElixirSDK {
-	q := r.query.Select("elixirSdk")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `baseImage` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BaseImage) {
-			q = q.Arg("baseImage", opts[i].BaseImage)
-		}
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-		// `sourcePath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
-			q = q.Arg("sourcePath", opts[i].SourcePath)
-		}
-	}
-
-	return &ElixirSDK{
 		query: q,
 	}
 }
@@ -15633,129 +12703,6 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	}
 }
 
-// GoOpts contains options for Client.Go
-type GoOpts struct {
-	//
-	// Project source directory
-	//
-	Source *Directory // go (../../../modules/go/main.go:27:2)
-	//
-	// Go version
-	//
-	//
-	// Default: "1.25.3"
-	Version string // go (../../../modules/go/main.go:31:2)
-	//
-	// Use a custom module cache
-	//
-	ModuleCache *CacheVolume // go (../../../modules/go/main.go:34:2)
-	//
-	// Use a custom build cache
-	//
-	BuildCache *CacheVolume // go (../../../modules/go/main.go:38:2)
-	//
-	// Use a custom base container.
-	// The container must have Go installed.
-	//
-	Base *Container // go (../../../modules/go/main.go:43:2)
-	//
-	// Pass arguments to 'go build -ldflags''
-	//
-	Ldflags []string // go (../../../modules/go/main.go:47:2)
-	//
-	// Add string value definition of the form importpath.name=value
-	// Example: "github.com/my/module.Foo=bar"
-	//
-	Values []string // go (../../../modules/go/main.go:52:2)
-	//
-	// Enable CGO
-	//
-	Cgo bool // go (../../../modules/go/main.go:56:2)
-	//
-	// Enable race detector. Implies cgo=true
-	//
-	Race bool // go (../../../modules/go/main.go:60:2)
-	//
-	// Enable go experiments https://pkg.go.dev/internal/goexperiment
-	//
-	Experiment []string // go (../../../modules/go/main.go:64:2)
-}
-
-func (r *Client) Go(opts ...GoOpts) *Go { // go (../../../modules/go/main.go:24:1)
-	q := r.query.Select("go")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-		// `moduleCache` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ModuleCache) {
-			q = q.Arg("moduleCache", opts[i].ModuleCache)
-		}
-		// `buildCache` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BuildCache) {
-			q = q.Arg("buildCache", opts[i].BuildCache)
-		}
-		// `base` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Base) {
-			q = q.Arg("base", opts[i].Base)
-		}
-		// `ldflags` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ldflags) {
-			q = q.Arg("ldflags", opts[i].Ldflags)
-		}
-		// `values` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Values) {
-			q = q.Arg("values", opts[i].Values)
-		}
-		// `cgo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Cgo) {
-			q = q.Arg("cgo", opts[i].Cgo)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `experiment` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Experiment) {
-			q = q.Arg("experiment", opts[i].Experiment)
-		}
-	}
-
-	return &Go{
-		query: q,
-	}
-}
-
-// GoSDKOpts contains options for Client.GoSDK
-type GoSDKOpts struct {
-	Workspace *Directory
-
-	SourcePath string
-}
-
-func (r *Client) GoSDK(opts ...GoSDKOpts) *GoSDK {
-	q := r.query.Select("goSdk")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-		// `sourcePath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
-			q = q.Arg("sourcePath", opts[i].SourcePath)
-		}
-	}
-
-	return &GoSDK{
-		query: q,
-	}
-}
-
 // HelmOpts contains options for Client.Helm
 type HelmOpts struct {
 	//
@@ -15814,39 +12761,6 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q = q.Arg("url", url)
 
 	return &File{
-		query: q,
-	}
-}
-
-func (r *Client) Installers() *Installers { // installers (../../../toolchains/installers/main.go:17:6)
-	q := r.query.Select("installers")
-
-	return &Installers{
-		query: q,
-	}
-}
-
-// JavaSDKOpts contains options for Client.JavaSDK
-type JavaSDKOpts struct {
-	Workspace *Directory
-
-	SourcePath string
-}
-
-func (r *Client) JavaSDK(opts ...JavaSDKOpts) *JavaSDK {
-	q := r.query.Select("javaSdk")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-		// `sourcePath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
-			q = q.Arg("sourcePath", opts[i].SourcePath)
-		}
-	}
-
-	return &JavaSDK{
 		query: q,
 	}
 }
@@ -15959,16 +12873,6 @@ func (r *Client) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 	}
 }
 
-// Load a Ci from its ID.
-func (r *Client) LoadCiFromID(id CiID) *Ci {
-	q := r.query.Select("loadCiFromID")
-	q = q.Arg("id", id)
-
-	return &Ci{
-		query: q,
-	}
-}
-
 // Load a Cli from its ID.
 func (r *Client) LoadCliFromID(id CliID) *Cli {
 	q := r.query.Select("loadCliFromID")
@@ -16025,16 +12929,6 @@ func (r *Client) LoadDocsFromID(id DocsID) *Docs {
 	q = q.Arg("id", id)
 
 	return &Docs{
-		query: q,
-	}
-}
-
-// Load a ElixirSdk from its ID.
-func (r *Client) LoadElixirSDKFromID(id ElixirSDKID) *ElixirSDK {
-	q := r.query.Select("loadElixirSdkFromID")
-	q = q.Arg("id", id)
-
-	return &ElixirSDK{
 		query: q,
 	}
 }
@@ -16219,26 +13113,6 @@ func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	}
 }
 
-// Load a Go from its ID.
-func (r *Client) LoadGoFromID(id GoID) *Go {
-	q := r.query.Select("loadGoFromID")
-	q = q.Arg("id", id)
-
-	return &Go{
-		query: q,
-	}
-}
-
-// Load a GoSdk from its ID.
-func (r *Client) LoadGoSDKFromID(id GoSDKID) *GoSDK {
-	q := r.query.Select("loadGoSdkFromID")
-	q = q.Arg("id", id)
-
-	return &GoSDK{
-		query: q,
-	}
-}
-
 // Load a Helm from its ID.
 func (r *Client) LoadHelmFromID(id HelmID) *Helm {
 	q := r.query.Select("loadHelmFromID")
@@ -16259,16 +13133,6 @@ func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
 	}
 }
 
-// Load a Installers from its ID.
-func (r *Client) LoadInstallersFromID(id InstallersID) *Installers {
-	q := r.query.Select("loadInstallersFromID")
-	q = q.Arg("id", id)
-
-	return &Installers{
-		query: q,
-	}
-}
-
 // Load a InterfaceTypeDef from its ID.
 func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
 	q := r.query.Select("loadInterfaceTypeDefFromID")
@@ -16285,16 +13149,6 @@ func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
 	q = q.Arg("id", id)
 
 	return &JSONValue{
-		query: q,
-	}
-}
-
-// Load a JavaSdk from its ID.
-func (r *Client) LoadJavaSDKFromID(id JavaSDKID) *JavaSDK {
-	q := r.query.Select("loadJavaSdkFromID")
-	q = q.Arg("id", id)
-
-	return &JavaSDK{
 		query: q,
 	}
 }
@@ -16379,102 +13233,12 @@ func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 	}
 }
 
-// Load a PhpSdk from its ID.
-func (r *Client) LoadPhpSDKFromID(id PhpSDKID) *PhpSDK {
-	q := r.query.Select("loadPhpSdkFromID")
-	q = q.Arg("id", id)
-
-	return &PhpSDK{
-		query: q,
-	}
-}
-
 // Load a Port from its ID.
 func (r *Client) LoadPortFromID(id PortID) *Port {
 	q := r.query.Select("loadPortFromID")
 	q = q.Arg("id", id)
 
 	return &Port{
-		query: q,
-	}
-}
-
-// Load a PythonSdkDocs from its ID.
-func (r *Client) LoadPythonSDKDocsFromID(id PythonSDKDocsID) *PythonSDKDocs {
-	q := r.query.Select("loadPythonSdkDocsFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDKDocs{
-		query: q,
-	}
-}
-
-// Load a PythonSdk from its ID.
-func (r *Client) LoadPythonSDKFromID(id PythonSDKID) *PythonSDK {
-	q := r.query.Select("loadPythonSdkFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDK{
-		query: q,
-	}
-}
-
-// Load a PythonSdkTestSuite from its ID.
-func (r *Client) LoadPythonSDKTestSuiteFromID(id PythonSDKTestSuiteID) *PythonSDKTestSuite {
-	q := r.query.Select("loadPythonSdkTestSuiteFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDKTestSuite{
-		query: q,
-	}
-}
-
-// Load a Release from its ID.
-func (r *Client) LoadReleaseFromID(id ReleaseID) *Release {
-	q := r.query.Select("loadReleaseFromID")
-	q = q.Arg("id", id)
-
-	return &Release{
-		query: q,
-	}
-}
-
-// Load a ReleaseReportArtifact from its ID.
-func (r *Client) LoadReleaseReportArtifactFromID(id ReleaseReportArtifactID) *ReleaseReportArtifact {
-	q := r.query.Select("loadReleaseReportArtifactFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReportArtifact{
-		query: q,
-	}
-}
-
-// Load a ReleaseReportFollowUp from its ID.
-func (r *Client) LoadReleaseReportFollowUpFromID(id ReleaseReportFollowUpID) *ReleaseReportFollowUp {
-	q := r.query.Select("loadReleaseReportFollowUpFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReportFollowUp{
-		query: q,
-	}
-}
-
-// Load a ReleaseReport from its ID.
-func (r *Client) LoadReleaseReportFromID(id ReleaseReportID) *ReleaseReport {
-	q := r.query.Select("loadReleaseReportFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReport{
-		query: q,
-	}
-}
-
-// Load a RustSdk from its ID.
-func (r *Client) LoadRustSDKFromID(id RustSDKID) *RustSDK {
-	q := r.query.Select("loadRustSdkFromID")
-	q = q.Arg("id", id)
-
-	return &RustSDK{
 		query: q,
 	}
 }
@@ -16539,16 +13303,6 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	}
 }
 
-// Load a Security from its ID.
-func (r *Client) LoadSecurityFromID(id SecurityID) *Security {
-	q := r.query.Select("loadSecurityFromID")
-	q = q.Arg("id", id)
-
-	return &Security{
-		query: q,
-	}
-}
-
 // Load a Service from its ID.
 func (r *Client) LoadServiceFromID(id ServiceID) *Service {
 	q := r.query.Select("loadServiceFromID")
@@ -16579,6 +13333,16 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	}
 }
 
+// Load a Stat from its ID.
+func (r *Client) LoadStatFromID(id StatID) *Stat {
+	q := r.query.Select("loadStatFromID")
+	q = q.Arg("id", id)
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // Load a Terminal from its ID.
 func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
 	q := r.query.Select("loadTerminalFromID")
@@ -16589,32 +13353,12 @@ func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
 	}
 }
 
-// Load a TestSplit from its ID.
-func (r *Client) LoadTestSplitFromID(id TestSplitID) *TestSplit {
-	q := r.query.Select("loadTestSplitFromID")
-	q = q.Arg("id", id)
-
-	return &TestSplit{
-		query: q,
-	}
-}
-
 // Load a TypeDef from its ID.
 func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.query.Select("loadTypeDefFromID")
 	q = q.Arg("id", id)
 
 	return &TypeDef{
-		query: q,
-	}
-}
-
-// Load a TypescriptSdk from its ID.
-func (r *Client) LoadTypescriptSDKFromID(id TypescriptSDKID) *TypescriptSDK {
-	q := r.query.Select("loadTypescriptSdkFromID")
-	q = q.Arg("id", id)
-
-	return &TypescriptSDK{
 		query: q,
 	}
 }
@@ -16668,118 +13412,6 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	}
 }
 
-// PhpSDKOpts contains options for Client.PhpSDK
-type PhpSDKOpts struct {
-	//
-	// A directory with all the files needed to develop the SDK
-	//
-	Workspace *Directory // php-sdk (../../../toolchains/php-sdk-dev/main.go:36:2)
-	//
-	// The path of the SDK source in the workspace
-	//
-	//
-	// Default: "sdk/php"
-	SourcePath string // php-sdk (../../../toolchains/php-sdk-dev/main.go:39:2)
-	//
-	// The path of the doctum config in the workspace
-	//
-	//
-	// Default: "docs/doctum-config.php"
-	DoctumConfigPath string // php-sdk (../../../toolchains/php-sdk-dev/main.go:42:2)
-}
-
-// Develop the Dagger PHP SDK (experimental)
-func (r *Client) PhpSDK(opts ...PhpSDKOpts) *PhpSDK { // php-sdk (../../../toolchains/php-sdk-dev/main.go:32:1)
-	q := r.query.Select("phpSdk")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-		// `sourcePath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
-			q = q.Arg("sourcePath", opts[i].SourcePath)
-		}
-		// `doctumConfigPath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DoctumConfigPath) {
-			q = q.Arg("doctumConfigPath", opts[i].DoctumConfigPath)
-		}
-	}
-
-	return &PhpSDK{
-		query: q,
-	}
-}
-
-// PythonSDKOpts contains options for Client.PythonSDK
-type PythonSDKOpts struct {
-	//
-	// A workspace containing the SDK source code and other relevant files
-	//
-	Workspace *Directory // python-sdk (../../../toolchains/python-sdk-dev/main.go:46:2)
-
-	// Default: "sdk/python"
-	SourcePath string // python-sdk (../../../toolchains/python-sdk-dev/main.go:49:2)
-}
-
-func (r *Client) PythonSDK(opts ...PythonSDKOpts) *PythonSDK { // python-sdk (../../../toolchains/python-sdk-dev/main.go:25:1)
-	q := r.query.Select("pythonSdk")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-		// `sourcePath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
-			q = q.Arg("sourcePath", opts[i].SourcePath)
-		}
-	}
-
-	return &PythonSDK{
-		query: q,
-	}
-}
-
-func (r *Client) Release() *Release { // release (../../../toolchains/release/main.go:21:6)
-	q := r.query.Select("release")
-
-	return &Release{
-		query: q,
-	}
-}
-
-// RustSDKOpts contains options for Client.RustSDK
-type RustSDKOpts struct {
-	//
-	// A directory with all the files needed to develop the SDK
-	//
-	Workspace *Directory // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:42:2)
-	//
-	// The path of the SDK source in the workspace
-	//
-	//
-	// Default: "sdk/rust"
-	SourcePath string // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:45:2)
-}
-
-func (r *Client) RustSDK(opts ...RustSDKOpts) *RustSDK { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:38:1)
-	q := r.query.Select("rustSdk")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-		// `sourcePath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
-			q = q.Arg("sourcePath", opts[i].SourcePath)
-		}
-	}
-
-	return &RustSDK{
-		query: q,
-	}
-}
-
 func (r *Client) Sdks() *Sdks { // sdks (../../../toolchains/all-sdks/main.go:13:6)
 	q := r.query.Select("sdks")
 
@@ -16814,14 +13446,6 @@ func (r *Client) Secret(uri string, opts ...SecretOpts) *Secret {
 	}
 }
 
-func (r *Client) Security() *Security {
-	q := r.query.Select("security")
-
-	return &Security{
-		query: q,
-	}
-}
-
 // Sets a secret given a user defined name to its plaintext and returns the secret.
 //
 // The plaintext value is limited to a size of 128000 bytes.
@@ -16847,62 +13471,11 @@ func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
-func (r *Client) TestSplit() *TestSplit {
-	q := r.query.Select("testSplit")
-
-	return &TestSplit{
-		query: q,
-	}
-}
-
 // Create a new TypeDef.
 func (r *Client) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
-		query: q,
-	}
-}
-
-// TypescriptSDKOpts contains options for Client.TypescriptSDK
-type TypescriptSDKOpts struct {
-	NodeVersionPrevLts string
-
-	NodeVersionLts string
-
-	BunVersion string
-
-	Workspace *Directory
-
-	SourcePath string
-}
-
-func (r *Client) TypescriptSDK(opts ...TypescriptSDKOpts) *TypescriptSDK {
-	q := r.query.Select("typescriptSdk")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `nodeVersionPrevLts` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NodeVersionPrevLts) {
-			q = q.Arg("nodeVersionPrevLts", opts[i].NodeVersionPrevLts)
-		}
-		// `nodeVersionLts` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NodeVersionLts) {
-			q = q.Arg("nodeVersionLts", opts[i].NodeVersionLts)
-		}
-		// `bunVersion` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BunVersion) {
-			q = q.Arg("bunVersion", opts[i].BunVersion)
-		}
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-		// `sourcePath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
-			q = q.Arg("sourcePath", opts[i].SourcePath)
-		}
-	}
-
-	return &TypescriptSDK{
 		query: q,
 	}
 }
@@ -16915,930 +13488,6 @@ func (r *Client) Version(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-type Release struct { // release (../../../toolchains/release/main.go:21:6)
-	query *querybuilder.Selection
-
-	id     *ReleaseID
-	notify *Void
-}
-
-func (r *Release) WithGraphQLQuery(q *querybuilder.Selection) *Release {
-	return &Release{
-		query: q,
-	}
-}
-
-// Change the required dagger engine version across all components
-func (r *Release) Bump(engineVersion string) *Changeset { // release (../../../toolchains/release/bump.go:11:1)
-	q := r.query.Select("bump")
-	q = q.Arg("engineVersion", engineVersion)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// ReleaseGetMaintainersOpts contains options for Release.GetMaintainers
-type ReleaseGetMaintainersOpts struct {
-	GithubToken *Secret // release (../../../toolchains/release/changie.go:28:2)
-}
-
-func (r *Release) GetMaintainers(ctx context.Context, githubOrgName string, opts ...ReleaseGetMaintainersOpts) ([]string, error) { // release (../../../toolchains/release/changie.go:24:1)
-	q := r.query.Select("getMaintainers")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `githubToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
-			q = q.Arg("githubToken", opts[i].GithubToken)
-		}
-	}
-	q = q.Arg("githubOrgName", githubOrgName)
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this Release.
-func (r *Release) ID(ctx context.Context) (ReleaseID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ReleaseID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Release) XXX_GraphQLType() string {
-	return "Release"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Release) XXX_GraphQLIDType() string {
-	return "ReleaseID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Release) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Release) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *Release) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadReleaseFromID(ReleaseID(id))
-	return nil
-}
-
-// ReleaseNotifyOpts contains options for Release.Notify
-type ReleaseNotifyOpts struct {
-	//
-	// Discord webhook
-	//
-	DiscordWebhook *Secret // release (../../../toolchains/release/main.go:436:2)
-	//
-	// Whether to perform a dry run without creating the release
-	//
-	DryRun bool // release (../../../toolchains/release/main.go:440:2)
-}
-
-func (r *Release) Notify(ctx context.Context, repository string, target string, name string, opts ...ReleaseNotifyOpts) error { // release (../../../toolchains/release/main.go:425:1)
-	if r.notify != nil {
-		return nil
-	}
-	q := r.query.Select("notify")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `discordWebhook` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DiscordWebhook) {
-			q = q.Arg("discordWebhook", opts[i].DiscordWebhook)
-		}
-		// `dryRun` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DryRun) {
-			q = q.Arg("dryRun", opts[i].DryRun)
-		}
-	}
-	q = q.Arg("repository", repository)
-	q = q.Arg("target", target)
-	q = q.Arg("name", name)
-
-	return q.Execute(ctx)
-}
-
-// ReleasePublishOpts contains options for Release.Publish
-type ReleasePublishOpts struct {
-	DryRun bool // release (../../../toolchains/release/main.go:108:2)
-
-	RegistryImage string // release (../../../toolchains/release/main.go:110:2)
-
-	RegistryUsername string // release (../../../toolchains/release/main.go:111:2)
-
-	RegistryPassword *Secret // release (../../../toolchains/release/main.go:112:2)
-
-	GoreleaserKey *Secret // release (../../../toolchains/release/main.go:114:2)
-
-	GithubToken *Secret // release (../../../toolchains/release/main.go:116:2)
-
-	GithubOrgName string // release (../../../toolchains/release/main.go:117:2)
-
-	NetlifyToken *Secret // release (../../../toolchains/release/main.go:119:2)
-
-	PypiToken *Secret // release (../../../toolchains/release/main.go:120:2)
-
-	PypiRepo string // release (../../../toolchains/release/main.go:121:2)
-
-	NpmToken *Secret // release (../../../toolchains/release/main.go:122:2)
-
-	HexApikey *Secret // release (../../../toolchains/release/main.go:123:2)
-
-	CargoRegistryToken *Secret // release (../../../toolchains/release/main.go:124:2)
-
-	AwsAccessKeyID *Secret // release (../../../toolchains/release/main.go:126:2)
-
-	AwsSecretAccessKey *Secret // release (../../../toolchains/release/main.go:127:2)
-
-	AwsRegion string // release (../../../toolchains/release/main.go:128:2)
-
-	AwsBucket string // release (../../../toolchains/release/main.go:129:2)
-
-	AwsCloudfrontDistribution string // release (../../../toolchains/release/main.go:130:2)
-
-	ArtefactsFqdn string // release (../../../toolchains/release/main.go:131:2)
-
-	DiscordWebhook *Secret // release (../../../toolchains/release/main.go:133:2)
-}
-
-func (r *Release) Publish(tag string, commit string, opts ...ReleasePublishOpts) *ReleaseReport { // release (../../../toolchains/release/main.go:103:1)
-	q := r.query.Select("publish")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `dryRun` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DryRun) {
-			q = q.Arg("dryRun", opts[i].DryRun)
-		}
-		// `registryImage` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RegistryImage) {
-			q = q.Arg("registryImage", opts[i].RegistryImage)
-		}
-		// `registryUsername` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RegistryUsername) {
-			q = q.Arg("registryUsername", opts[i].RegistryUsername)
-		}
-		// `registryPassword` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RegistryPassword) {
-			q = q.Arg("registryPassword", opts[i].RegistryPassword)
-		}
-		// `goreleaserKey` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GoreleaserKey) {
-			q = q.Arg("goreleaserKey", opts[i].GoreleaserKey)
-		}
-		// `githubToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
-			q = q.Arg("githubToken", opts[i].GithubToken)
-		}
-		// `githubOrgName` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubOrgName) {
-			q = q.Arg("githubOrgName", opts[i].GithubOrgName)
-		}
-		// `netlifyToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NetlifyToken) {
-			q = q.Arg("netlifyToken", opts[i].NetlifyToken)
-		}
-		// `pypiToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].PypiToken) {
-			q = q.Arg("pypiToken", opts[i].PypiToken)
-		}
-		// `pypiRepo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].PypiRepo) {
-			q = q.Arg("pypiRepo", opts[i].PypiRepo)
-		}
-		// `npmToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NpmToken) {
-			q = q.Arg("npmToken", opts[i].NpmToken)
-		}
-		// `hexApikey` optional argument
-		if !querybuilder.IsZeroValue(opts[i].HexApikey) {
-			q = q.Arg("hexApikey", opts[i].HexApikey)
-		}
-		// `cargoRegistryToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].CargoRegistryToken) {
-			q = q.Arg("cargoRegistryToken", opts[i].CargoRegistryToken)
-		}
-		// `awsAccessKeyId` optional argument
-		if !querybuilder.IsZeroValue(opts[i].AwsAccessKeyID) {
-			q = q.Arg("awsAccessKeyId", opts[i].AwsAccessKeyID)
-		}
-		// `awsSecretAccessKey` optional argument
-		if !querybuilder.IsZeroValue(opts[i].AwsSecretAccessKey) {
-			q = q.Arg("awsSecretAccessKey", opts[i].AwsSecretAccessKey)
-		}
-		// `awsRegion` optional argument
-		if !querybuilder.IsZeroValue(opts[i].AwsRegion) {
-			q = q.Arg("awsRegion", opts[i].AwsRegion)
-		}
-		// `awsBucket` optional argument
-		if !querybuilder.IsZeroValue(opts[i].AwsBucket) {
-			q = q.Arg("awsBucket", opts[i].AwsBucket)
-		}
-		// `awsCloudfrontDistribution` optional argument
-		if !querybuilder.IsZeroValue(opts[i].AwsCloudfrontDistribution) {
-			q = q.Arg("awsCloudfrontDistribution", opts[i].AwsCloudfrontDistribution)
-		}
-		// `artefactsFqdn` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ArtefactsFqdn) {
-			q = q.Arg("artefactsFqdn", opts[i].ArtefactsFqdn)
-		}
-		// `discordWebhook` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DiscordWebhook) {
-			q = q.Arg("discordWebhook", opts[i].DiscordWebhook)
-		}
-	}
-	q = q.Arg("tag", tag)
-	q = q.Arg("commit", commit)
-
-	return &ReleaseReport{
-		query: q,
-	}
-}
-
-type ReleaseReport struct { // release (../../../toolchains/release/main.go:23:6)
-	query *querybuilder.Selection
-
-	commit   *string
-	date     *string
-	id       *ReleaseReportID
-	markdown *string
-	ref      *string
-	version  *string
-}
-
-func (r *ReleaseReport) WithGraphQLQuery(q *querybuilder.Selection) *ReleaseReport {
-	return &ReleaseReport{
-		query: q,
-	}
-}
-
-func (r *ReleaseReport) Artifacts(ctx context.Context) ([]ReleaseReportArtifact, error) { // release (../../../toolchains/release/main.go:30:2)
-	q := r.query.Select("artifacts")
-
-	q = q.Select("id")
-
-	type artifacts struct {
-		Id ReleaseReportArtifactID
-	}
-
-	convert := func(fields []artifacts) []ReleaseReportArtifact {
-		out := []ReleaseReportArtifact{}
-
-		for i := range fields {
-			val := ReleaseReportArtifact{id: &fields[i].Id}
-			val.query = q.Root().Select("loadReleaseReportArtifactFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []artifacts
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-func (r *ReleaseReport) Commit(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:25:2)
-	if r.commit != nil {
-		return *r.commit, nil
-	}
-	q := r.query.Select("commit")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *ReleaseReport) Date(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:28:2)
-	if r.date != nil {
-		return *r.date, nil
-	}
-	q := r.query.Select("date")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *ReleaseReport) Errors(ctx context.Context) ([]Error, error) { // release (../../../toolchains/release/main.go:33:2)
-	q := r.query.Select("errors")
-
-	q = q.Select("id")
-
-	type errors struct {
-		Id ErrorID
-	}
-
-	convert := func(fields []errors) []Error {
-		out := []Error{}
-
-		for i := range fields {
-			val := Error{id: &fields[i].Id}
-			val.query = q.Root().Select("loadErrorFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []errors
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-func (r *ReleaseReport) FollowUps(ctx context.Context) ([]ReleaseReportFollowUp, error) { // release (../../../toolchains/release/main.go:31:2)
-	q := r.query.Select("followUps")
-
-	q = q.Select("id")
-
-	type followUps struct {
-		Id ReleaseReportFollowUpID
-	}
-
-	convert := func(fields []followUps) []ReleaseReportFollowUp {
-		out := []ReleaseReportFollowUp{}
-
-		for i := range fields {
-			val := ReleaseReportFollowUp{id: &fields[i].Id}
-			val.query = q.Root().Select("loadReleaseReportFollowUpFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []followUps
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this ReleaseReport.
-func (r *ReleaseReport) ID(ctx context.Context) (ReleaseReportID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ReleaseReportID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ReleaseReport) XXX_GraphQLType() string {
-	return "ReleaseReport"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ReleaseReport) XXX_GraphQLIDType() string {
-	return "ReleaseReportID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ReleaseReport) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ReleaseReport) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *ReleaseReport) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadReleaseReportFromID(ReleaseReportID(id))
-	return nil
-}
-
-func (r *ReleaseReport) Markdown(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:54:1)
-	if r.markdown != nil {
-		return *r.markdown, nil
-	}
-	q := r.query.Select("markdown")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *ReleaseReport) Ref(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:24:2)
-	if r.ref != nil {
-		return *r.ref, nil
-	}
-	q := r.query.Select("ref")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *ReleaseReport) Version(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:26:2)
-	if r.version != nil {
-		return *r.version, nil
-	}
-	q := r.query.Select("version")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-type ReleaseReportArtifact struct { // release (../../../toolchains/release/main.go:36:6)
-	query *querybuilder.Selection
-
-	id   *ReleaseReportArtifactID
-	link *string
-	name *string
-	tag  *string
-}
-
-func (r *ReleaseReportArtifact) WithGraphQLQuery(q *querybuilder.Selection) *ReleaseReportArtifact {
-	return &ReleaseReportArtifact{
-		query: q,
-	}
-}
-
-func (r *ReleaseReportArtifact) Errors(ctx context.Context) ([]Error, error) { // release (../../../toolchains/release/main.go:41:2)
-	q := r.query.Select("errors")
-
-	q = q.Select("id")
-
-	type errors struct {
-		Id ErrorID
-	}
-
-	convert := func(fields []errors) []Error {
-		out := []Error{}
-
-		for i := range fields {
-			val := Error{id: &fields[i].Id}
-			val.query = q.Root().Select("loadErrorFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []errors
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this ReleaseReportArtifact.
-func (r *ReleaseReportArtifact) ID(ctx context.Context) (ReleaseReportArtifactID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ReleaseReportArtifactID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ReleaseReportArtifact) XXX_GraphQLType() string {
-	return "ReleaseReportArtifact"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ReleaseReportArtifact) XXX_GraphQLIDType() string {
-	return "ReleaseReportArtifactID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ReleaseReportArtifact) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ReleaseReportArtifact) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *ReleaseReportArtifact) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadReleaseReportArtifactFromID(ReleaseReportArtifactID(id))
-	return nil
-}
-
-func (r *ReleaseReportArtifact) Link(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:39:2)
-	if r.link != nil {
-		return *r.link, nil
-	}
-	q := r.query.Select("link")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *ReleaseReportArtifact) Name(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:37:2)
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *ReleaseReportArtifact) Tag(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:38:2)
-	if r.tag != nil {
-		return *r.tag, nil
-	}
-	q := r.query.Select("tag")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-type ReleaseReportFollowUp struct { // release (../../../toolchains/release/main.go:46:6)
-	query *querybuilder.Selection
-
-	id   *ReleaseReportFollowUpID
-	link *string
-	name *string
-}
-
-func (r *ReleaseReportFollowUp) WithGraphQLQuery(q *querybuilder.Selection) *ReleaseReportFollowUp {
-	return &ReleaseReportFollowUp{
-		query: q,
-	}
-}
-
-// A unique identifier for this ReleaseReportFollowUp.
-func (r *ReleaseReportFollowUp) ID(ctx context.Context) (ReleaseReportFollowUpID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ReleaseReportFollowUpID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ReleaseReportFollowUp) XXX_GraphQLType() string {
-	return "ReleaseReportFollowUp"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ReleaseReportFollowUp) XXX_GraphQLIDType() string {
-	return "ReleaseReportFollowUpID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ReleaseReportFollowUp) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ReleaseReportFollowUp) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *ReleaseReportFollowUp) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadReleaseReportFollowUpFromID(ReleaseReportFollowUpID(id))
-	return nil
-}
-
-func (r *ReleaseReportFollowUp) Link(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:48:2)
-	if r.link != nil {
-		return *r.link, nil
-	}
-	q := r.query.Select("link")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *ReleaseReportFollowUp) Name(ctx context.Context) (string, error) { // release (../../../toolchains/release/main.go:47:2)
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Develop the Dagger Rust SDK (experimental)
-type RustSDK struct { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:31:6)
-	query *querybuilder.Selection
-
-	cargoCheck    *Void
-	cargoFmt      *Void
-	id            *RustSDKID
-	release       *Void
-	releaseDryRun *Void
-	test          *Void
-}
-type WithRustSDKFunc func(r *RustSDK) *RustSDK
-
-// With calls the provided function with current RustSDK.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *RustSDK) With(f WithRustSDKFunc) *RustSDK {
-	return f(r)
-}
-
-func (r *RustSDK) WithGraphQLQuery(q *querybuilder.Selection) *RustSDK {
-	return &RustSDK{
-		query: q,
-	}
-}
-
-func (r *RustSDK) BaseContainer() *Container { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:35:2)
-	q := r.query.Select("baseContainer")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Bump the Rust SDK's engine dependency version.
-func (r *RustSDK) Bump(version string) *Changeset { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:274:1)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Run cargo check on the Rust SDK
-func (r *RustSDK) CargoCheck(ctx context.Context) error { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:127:1)
-	if r.cargoCheck != nil {
-		return nil
-	}
-	q := r.query.Select("cargoCheck")
-
-	return q.Execute(ctx)
-}
-
-// Run cargo fmt on the Rust SDK
-func (r *RustSDK) CargoFmt(ctx context.Context) error { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:117:1)
-	if r.cargoFmt != nil {
-		return nil
-	}
-	q := r.query.Select("cargoFmt")
-
-	return q.Execute(ctx)
-}
-
-func (r *RustSDK) Changes() *Changeset { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:151:1)
-	q := r.query.Select("changes")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// RustSDKDevContainerOpts contains options for RustSDK.DevContainer
-type RustSDKDevContainerOpts struct {
-	//
-	// Install workspace dependencies and any tools required
-	// to develop the Rust SDK.
-	//
-	RunInstall bool // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:71:2)
-}
-
-// Return the Rust SDK workspace mounted in a dev container,
-// and working directory set to the SDK source.
-func (r *RustSDK) DevContainer(opts ...RustSDKDevContainerOpts) *Container { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:67:1)
-	q := r.query.Select("devContainer")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `runInstall` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RunInstall) {
-			q = q.Arg("runInstall", opts[i].RunInstall)
-		}
-	}
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Regenerate the Rust SDK API client.
-func (r *RustSDK) Generate() *Changeset { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:147:1)
-	q := r.query.Select("generate")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// A unique identifier for this RustSdk.
-func (r *RustSDK) ID(ctx context.Context) (RustSDKID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response RustSDKID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *RustSDK) XXX_GraphQLType() string {
-	return "RustSdk"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *RustSDK) XXX_GraphQLIDType() string {
-	return "RustSDKID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *RustSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *RustSDK) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *RustSDK) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadRustSDKFromID(RustSDKID(id))
-	return nil
-}
-
-// Release the Rust SDK
-func (r *RustSDK) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret) error { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:243:1)
-	assertNotNil("cargoRegistryToken", cargoRegistryToken)
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	q = q.Arg("sourceTag", sourceTag)
-	q = q.Arg("cargoRegistryToken", cargoRegistryToken)
-
-	return q.Execute(ctx)
-}
-
-// RustSDKReleaseDryRunOpts contains options for RustSDK.ReleaseDryRun
-type RustSDKReleaseDryRunOpts struct {
-	//
-	// Source git tag to fake-release
-	//
-	//
-	// Default: "HEAD"
-	SourceTag string // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:180:2)
-}
-
-// Test the publishing process
-func (r *RustSDK) ReleaseDryRun(ctx context.Context, opts ...RustSDKReleaseDryRunOpts) error { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:175:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceTag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceTag) {
-			q = q.Arg("sourceTag", opts[i].SourceTag)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// Source returns the source directory for the Rust SDK.
-func (r *RustSDK) Source() *Directory { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:111:1)
-	q := r.query.Select("source")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Test the Rust SDK
-func (r *RustSDK) Test(ctx context.Context) error { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:137:1)
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
-}
-
-func (r *RustSDK) WithGeneratedClient() *RustSDK { // rust-sdk (../../../toolchains/rust-sdk-dev/main.go:155:1)
-	q := r.query.Select("withGeneratedClient")
-
-	return &RustSDK{
-		query: q,
-	}
 }
 
 // The SDK config of the module.
@@ -18482,111 +14131,6 @@ func (r *Secret) URI(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-type Security struct {
-	query *querybuilder.Selection
-
-	id                  *SecurityID
-	scanEngineContainer *Void
-	scanSource          *Void
-}
-
-func (r *Security) WithGraphQLQuery(q *querybuilder.Selection) *Security {
-	return &Security{
-		query: q,
-	}
-}
-
-// A unique identifier for this Security.
-func (r *Security) ID(ctx context.Context) (SecurityID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response SecurityID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Security) XXX_GraphQLType() string {
-	return "Security"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Security) XXX_GraphQLIDType() string {
-	return "SecurityID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Security) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Security) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *Security) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadSecurityFromID(SecurityID(id))
-	return nil
-}
-
-// SecurityScanEngineContainerOpts contains options for Security.ScanEngineContainer
-type SecurityScanEngineContainerOpts struct {
-	Target *Container
-}
-
-// Build the engine container, and scan it for vulnerabilities
-func (r *Security) ScanEngineContainer(ctx context.Context, opts ...SecurityScanEngineContainerOpts) error {
-	if r.scanEngineContainer != nil {
-		return nil
-	}
-	q := r.query.Select("scanEngineContainer")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `target` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Target) {
-			q = q.Arg("target", opts[i].Target)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// SecurityScanSourceOpts contains options for Security.ScanSource
-type SecurityScanSourceOpts struct {
-	Source *Directory
-}
-
-// Scan the source repository for security vulnerabilities
-func (r *Security) ScanSource(ctx context.Context, opts ...SecurityScanSourceOpts) error {
-	if r.scanSource != nil {
-		return nil
-	}
-	q := r.query.Select("scanSource")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
 // A content-addressed service providing TCP connectivity.
 type Service struct {
 	query *querybuilder.Selection
@@ -19050,6 +14594,124 @@ func (r *SourceMap) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// A file or directory status object.
+type Stat struct {
+	query *querybuilder.Selection
+
+	fileType    *FileType
+	id          *StatID
+	name        *string
+	permissions *int
+	size        *int
+}
+
+func (r *Stat) WithGraphQLQuery(q *querybuilder.Selection) *Stat {
+	return &Stat{
+		query: q,
+	}
+}
+
+// file type
+func (r *Stat) FileType(ctx context.Context) (FileType, error) {
+	if r.fileType != nil {
+		return *r.fileType, nil
+	}
+	q := r.query.Select("fileType")
+
+	var response FileType
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Stat.
+func (r *Stat) ID(ctx context.Context) (StatID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response StatID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Stat) XXX_GraphQLType() string {
+	return "Stat"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Stat) XXX_GraphQLIDType() string {
+	return "StatID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Stat) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Stat) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Stat) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadStatFromID(StatID(id))
+	return nil
+}
+
+// file name
+func (r *Stat) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// permission bits
+func (r *Stat) Permissions(ctx context.Context) (int, error) {
+	if r.permissions != nil {
+		return *r.permissions, nil
+	}
+	q := r.query.Select("permissions")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// file size
+func (r *Stat) Size(ctx context.Context) (int, error) {
+	if r.size != nil {
+		return *r.size, nil
+	}
+	q := r.query.Select("size")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // An interactive terminal that clients can connect to.
 type Terminal struct {
 	query *querybuilder.Selection
@@ -19126,177 +14788,6 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 	return &Terminal{
 		query: q.Root().Select("loadTerminalFromID").Arg("id", id),
 	}, nil
-}
-
-type TestSplit struct {
-	query *querybuilder.Selection
-
-	id                  *TestSplitID
-	testBase            *Void
-	testCallAndShell    *Void
-	testCgroups         *Void
-	testCliEngine       *Void
-	testClientGenerator *Void
-	testContainer       *Void
-	testInterface       *Void
-	testLlm             *Void
-	testModuleRuntimes  *Void
-	testModules         *Void
-}
-
-func (r *TestSplit) WithGraphQLQuery(q *querybuilder.Selection) *TestSplit {
-	return &TestSplit{
-		query: q,
-	}
-}
-
-// A unique identifier for this TestSplit.
-func (r *TestSplit) ID(ctx context.Context) (TestSplitID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response TestSplitID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *TestSplit) XXX_GraphQLType() string {
-	return "TestSplit"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *TestSplit) XXX_GraphQLIDType() string {
-	return "TestSplitID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *TestSplit) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *TestSplit) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *TestSplit) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadTestSplitFromID(TestSplitID(id))
-	return nil
-}
-
-// Test Base
-func (r *TestSplit) TestBase(ctx context.Context) error {
-	if r.testBase != nil {
-		return nil
-	}
-	q := r.query.Select("testBase")
-
-	return q.Execute(ctx)
-}
-
-// Test Call and Shell
-func (r *TestSplit) TestCallAndShell(ctx context.Context) error {
-	if r.testCallAndShell != nil {
-		return nil
-	}
-	q := r.query.Select("testCallAndShell")
-
-	return q.Execute(ctx)
-}
-
-// Test Cgroups
-func (r *TestSplit) TestCgroups(ctx context.Context) error {
-	if r.testCgroups != nil {
-		return nil
-	}
-	q := r.query.Select("testCgroups")
-
-	return q.Execute(ctx)
-}
-
-// Test CLI Engine
-func (r *TestSplit) TestCliEngine(ctx context.Context) error {
-	if r.testCliEngine != nil {
-		return nil
-	}
-	q := r.query.Select("testCliEngine")
-
-	return q.Execute(ctx)
-}
-
-// Test Client Generator
-func (r *TestSplit) TestClientGenerator(ctx context.Context) error {
-	if r.testClientGenerator != nil {
-		return nil
-	}
-	q := r.query.Select("testClientGenerator")
-
-	return q.Execute(ctx)
-}
-
-// Test Container
-func (r *TestSplit) TestContainer(ctx context.Context) error {
-	if r.testContainer != nil {
-		return nil
-	}
-	q := r.query.Select("testContainer")
-
-	return q.Execute(ctx)
-}
-
-// Test Interface
-func (r *TestSplit) TestInterface(ctx context.Context) error {
-	if r.testInterface != nil {
-		return nil
-	}
-	q := r.query.Select("testInterface")
-
-	return q.Execute(ctx)
-}
-
-// Test LLM
-func (r *TestSplit) TestLLM(ctx context.Context) error {
-	if r.testLlm != nil {
-		return nil
-	}
-	q := r.query.Select("testLlm")
-
-	return q.Execute(ctx)
-}
-
-// Test Module Runtimes
-func (r *TestSplit) TestModuleRuntimes(ctx context.Context) error {
-	if r.testModuleRuntimes != nil {
-		return nil
-	}
-	q := r.query.Select("testModuleRuntimes")
-
-	return q.Execute(ctx)
-}
-
-// Test Modules
-func (r *TestSplit) TestModules(ctx context.Context) error {
-	if r.testModules != nil {
-		return nil
-	}
-	q := r.query.Select("testModules")
-
-	return q.Execute(ctx)
 }
 
 // A definition of a parameter or return type in a Module.
@@ -19729,334 +15220,6 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	}
 }
 
-type TypescriptSDK struct {
-	query *querybuilder.Selection
-
-	bunVersion         *string
-	id                 *TypescriptSDKID
-	isSemver           *bool
-	lintDocsSnippets   *Void
-	lintTypescript     *Void
-	nodeVersionLts     *string
-	nodeVersionPrevLts *string
-	release            *Void
-	releaseDryRun      *Void
-	sourcePath         *string
-	testBunjs          *Void
-	testNodejs         *Void
-	testNodejsLts      *Void
-	testNodejsPrevLts  *Void
-}
-
-func (r *TypescriptSDK) WithGraphQLQuery(q *querybuilder.Selection) *TypescriptSDK {
-	return &TypescriptSDK{
-		query: q,
-	}
-}
-
-func (r *TypescriptSDK) Binary() *File {
-	q := r.query.Select("binary")
-
-	return &File{
-		query: q,
-	}
-}
-
-// Bump the Typescript SDK's engine dependency
-func (r *TypescriptSDK) Bump(version string) *Changeset {
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-func (r *TypescriptSDK) BunVersion(ctx context.Context) (string, error) {
-	if r.bunVersion != nil {
-		return *r.bunVersion, nil
-	}
-	q := r.query.Select("bunVersion")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *TypescriptSDK) BunjsDevContainer() *Container {
-	q := r.query.Select("bunjsDevContainer")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Generate the Typescript client library
-func (r *TypescriptSDK) Generate() *Changeset {
-	q := r.query.Select("generate")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// A unique identifier for this TypescriptSdk.
-func (r *TypescriptSDK) ID(ctx context.Context) (TypescriptSDKID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response TypescriptSDKID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *TypescriptSDK) XXX_GraphQLType() string {
-	return "TypescriptSdk"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *TypescriptSDK) XXX_GraphQLIDType() string {
-	return "TypescriptSDKID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *TypescriptSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *TypescriptSDK) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *TypescriptSDK) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadTypescriptSDKFromID(TypescriptSDKID(id))
-	return nil
-}
-
-func (r *TypescriptSDK) IsSemver(ctx context.Context, version string) (bool, error) {
-	if r.isSemver != nil {
-		return *r.isSemver, nil
-	}
-	q := r.query.Select("isSemver")
-	q = q.Arg("version", version)
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// TypescriptSDKLintDocsSnippetsOpts contains options for TypescriptSDK.LintDocsSnippets
-type TypescriptSDKLintDocsSnippetsOpts struct {
-	DocsWorkspace *Directory
-}
-
-// Check the formatting of Typescript docs snippets
-func (r *TypescriptSDK) LintDocsSnippets(ctx context.Context, opts ...TypescriptSDKLintDocsSnippetsOpts) error {
-	if r.lintDocsSnippets != nil {
-		return nil
-	}
-	q := r.query.Select("lintDocsSnippets")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `docsWorkspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DocsWorkspace) {
-			q = q.Arg("docsWorkspace", opts[i].DocsWorkspace)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// Check the formatting of the SDK
-func (r *TypescriptSDK) LintTypescript(ctx context.Context) error {
-	if r.lintTypescript != nil {
-		return nil
-	}
-	q := r.query.Select("lintTypescript")
-
-	return q.Execute(ctx)
-}
-
-func (r *TypescriptSDK) NodeVersionLts(ctx context.Context) (string, error) {
-	if r.nodeVersionLts != nil {
-		return *r.nodeVersionLts, nil
-	}
-	q := r.query.Select("nodeVersionLts")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *TypescriptSDK) NodeVersionPrevLts(ctx context.Context) (string, error) {
-	if r.nodeVersionPrevLts != nil {
-		return *r.nodeVersionPrevLts, nil
-	}
-	q := r.query.Select("nodeVersionPrevLts")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// TypescriptSDKNodejsBaseOpts contains options for TypescriptSDK.NodejsBase
-type TypescriptSDKNodejsBaseOpts struct {
-	NodeVersion string
-}
-
-func (r *TypescriptSDK) NodejsBase(opts ...TypescriptSDKNodejsBaseOpts) *Container {
-	q := r.query.Select("nodejsBase")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `nodeVersion` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NodeVersion) {
-			q = q.Arg("nodeVersion", opts[i].NodeVersion)
-		}
-	}
-
-	return &Container{
-		query: q,
-	}
-}
-
-// TypescriptSDKNodejsDevContainerOpts contains options for TypescriptSDK.NodejsDevContainer
-type TypescriptSDKNodejsDevContainerOpts struct {
-	NodeVersion string
-}
-
-func (r *TypescriptSDK) NodejsDevContainer(opts ...TypescriptSDKNodejsDevContainerOpts) *Container {
-	q := r.query.Select("nodejsDevContainer")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `nodeVersion` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NodeVersion) {
-			q = q.Arg("nodeVersion", opts[i].NodeVersion)
-		}
-	}
-
-	return &Container{
-		query: q,
-	}
-}
-
-// TypescriptSDKReleaseOpts contains options for TypescriptSDK.Release
-type TypescriptSDKReleaseOpts struct {
-	DryRun bool
-}
-
-func (r *TypescriptSDK) Release(ctx context.Context, sourceTag string, npmToken *Secret, opts ...TypescriptSDKReleaseOpts) error {
-	assertNotNil("npmToken", npmToken)
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `dryRun` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DryRun) {
-			q = q.Arg("dryRun", opts[i].DryRun)
-		}
-	}
-	q = q.Arg("sourceTag", sourceTag)
-	q = q.Arg("npmToken", npmToken)
-
-	return q.Execute(ctx)
-}
-
-func (r *TypescriptSDK) ReleaseDryRun(ctx context.Context) error {
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-
-	return q.Execute(ctx)
-}
-
-func (r *TypescriptSDK) Source() *Directory {
-	q := r.query.Select("source")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-func (r *TypescriptSDK) SourcePath(ctx context.Context) (string, error) {
-	if r.sourcePath != nil {
-		return *r.sourcePath, nil
-	}
-	q := r.query.Select("sourcePath")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Test the SDK with BunJS
-func (r *TypescriptSDK) TestBunjs(ctx context.Context) error {
-	if r.testBunjs != nil {
-		return nil
-	}
-	q := r.query.Select("testBunjs")
-
-	return q.Execute(ctx)
-}
-
-// Test the SDK with the given version of NodeJS
-func (r *TypescriptSDK) TestNodejs(ctx context.Context, nodeVersion string) error {
-	if r.testNodejs != nil {
-		return nil
-	}
-	q := r.query.Select("testNodejs")
-	q = q.Arg("nodeVersion", nodeVersion)
-
-	return q.Execute(ctx)
-}
-
-// Test the SDK with LTS version of Node
-func (r *TypescriptSDK) TestNodejsLts(ctx context.Context) error {
-	if r.testNodejsLts != nil {
-		return nil
-	}
-	q := r.query.Select("testNodejsLts")
-
-	return q.Execute(ctx)
-}
-
-// Test the SDK with previous LTS version of Node
-func (r *TypescriptSDK) TestNodejsPrevLts(ctx context.Context) error {
-	if r.testNodejsPrevLts != nil {
-		return nil
-	}
-	q := r.query.Select("testNodejsPrevLts")
-
-	return q.Execute(ctx)
-}
-
-func (r *TypescriptSDK) Workspace() *Directory {
-	q := r.query.Select("workspace")
-
-	return &Directory{
-		query: q,
-	}
-}
-
 // Sharing mode of the cache volume.
 type CacheSharingMode string
 
@@ -20183,6 +15346,89 @@ const (
 
 	// Tests path is a symlink
 	ExistsTypeSymlinkType ExistsType = "SYMLINK_TYPE"
+)
+
+// File type.
+type FileType string
+
+func (FileType) IsEnum() {}
+
+func (v FileType) Name() string {
+	switch v {
+	case FileTypeUnknown:
+		return "UNKNOWN"
+	case FileTypeRegular:
+		return "REGULAR"
+	case FileTypeDirectory:
+		return "DIRECTORY"
+	case FileTypeSymlink:
+		return "SYMLINK"
+	default:
+		return ""
+	}
+}
+
+func (v FileType) Value() string {
+	return string(v)
+}
+
+func (v *FileType) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *FileType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "DIRECTORY":
+		*v = FileTypeDirectory
+	case "DIRECTORY_TYPE":
+		*v = FileTypeDirectoryType
+	case "REGULAR":
+		*v = FileTypeRegular
+	case "REGULAR_TYPE":
+		*v = FileTypeRegularType
+	case "SYMLINK":
+		*v = FileTypeSymlink
+	case "SYMLINK_TYPE":
+		*v = FileTypeSymlinkType
+	case "UNKNOWN":
+		*v = FileTypeUnknown
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// unknown file type
+	FileTypeUnknown FileType = "UNKNOWN"
+
+	// regular file type
+	FileTypeRegular FileType = "REGULAR"
+	// regular file type
+	FileTypeRegularType FileType = FileTypeRegular
+
+	// directory file type
+	FileTypeDirectory FileType = "DIRECTORY"
+	// directory file type
+	FileTypeDirectoryType FileType = FileTypeDirectory
+
+	// symlink file type
+	FileTypeSymlink FileType = "SYMLINK"
+	// symlink file type
+	FileTypeSymlinkType FileType = FileTypeSymlink
 )
 
 // The behavior configured for function result caching.

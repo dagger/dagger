@@ -186,6 +186,9 @@ type DocsDevID string
 // The `DotnetSdkDevID` scalar type represents an identifier for an object of type DotnetSdkDev.
 type DotnetSDKDevID string
 
+// The `ElixirSdkDevID` scalar type represents an identifier for an object of type ElixirSdkDev.
+type ElixirSDKDevID string
+
 // The `EngineDevID` scalar type represents an identifier for an object of type EngineDev.
 type EngineDevID string
 
@@ -349,6 +352,9 @@ type SocketID string
 
 // The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 type SourceMapID string
+
+// The `StatID` scalar type represents an identifier for an object of type Stat.
+type StatID string
 
 // The `TerminalID` scalar type represents an identifier for an object of type Terminal.
 type TerminalID string
@@ -725,6 +731,15 @@ func (r *Binding) AsDotnetSDKDev() *DotnetSDKDev {
 	}
 }
 
+// Retrieve the binding value, as type ElixirSdkDev
+func (r *Binding) AsElixirSDKDev() *ElixirSDKDev {
+	q := r.query.Select("asElixirSdkDev")
+
+	return &ElixirSDKDev{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type EngineDev
 func (r *Binding) AsEngineDev() *EngineDev {
 	q := r.query.Select("asEngineDev")
@@ -991,6 +1006,15 @@ func (r *Binding) AsSocket() *Socket {
 	q := r.query.Select("asSocket")
 
 	return &Socket{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Stat
+func (r *Binding) AsStat() *Stat {
+	q := r.query.Select("asStat")
+
+	return &Stat{
 		query: q,
 	}
 }
@@ -2729,6 +2753,28 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
+// ContainerStatOpts contains options for Container.Stat
+type ContainerStatOpts struct {
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Return file status
+func (r *Container) Stat(path string, opts ...ContainerStatOpts) *Stat {
+	q := r.query.Select("stat")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // The buffered standard error stream of the last executed command
 //
 // Returns an error if no command was executed
@@ -3009,6 +3055,17 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 		}
 	}
 	q = q.Arg("args", args)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Export environment variables from an env-file to the container.
+func (r *Container) WithEnvFileVariables(source *EnvFile) *Container {
+	assertNotNil("source", source)
+	q := r.query.Select("withEnvFileVariables")
+	q = q.Arg("source", source)
 
 	return &Container{
 		query: q,
@@ -4570,6 +4627,28 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 	return convert(response), nil
 }
 
+// DirectoryStatOpts contains options for Directory.Stat
+type DirectoryStatOpts struct {
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Return file status
+func (r *Directory) Stat(path string, opts ...DirectoryStatOpts) *Stat {
+	q := r.query.Select("stat")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
@@ -5220,6 +5299,227 @@ func (r *DotnetSDKDev) WithInstall() *DotnetSDKDev {
 
 // A directory with all the files needed to develop the SDK.
 func (r *DotnetSDKDev) Workspace() *Directory {
+	q := r.query.Select("workspace")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+type ElixirSDKDev struct {
+	query *querybuilder.Selection
+
+	baseImage     *string
+	codegenTest   *Void
+	id            *ElixirSDKDevID
+	lint          *Void
+	publish       *Void
+	releaseDryRun *Void
+	sdkTest       *Void
+	sourcePath    *string
+	test          *Void
+}
+
+func (r *ElixirSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *ElixirSDKDev {
+	return &ElixirSDKDev{
+		query: q,
+	}
+}
+
+func (r *ElixirSDKDev) BaseImage(ctx context.Context) (string, error) {
+	if r.baseImage != nil {
+		return *r.baseImage, nil
+	}
+	q := r.query.Select("baseImage")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Bump the Elixir SDK's Engine dependency
+func (r *ElixirSDKDev) Bump(version string) *Changeset {
+	q := r.query.Select("bump")
+	q = q.Arg("version", version)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Run dagger_codegen tests
+func (r *ElixirSDKDev) CodegenTest(ctx context.Context) error {
+	if r.codegenTest != nil {
+		return nil
+	}
+	q := r.query.Select("codegenTest")
+
+	return q.Execute(ctx)
+}
+
+func (r *ElixirSDKDev) DevContainer() *Container {
+	q := r.query.Select("devContainer")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Regenerate the Elixir SDK API
+func (r *ElixirSDKDev) Generate(introspectionJson *File) *Changeset {
+	assertNotNil("introspectionJson", introspectionJson)
+	q := r.query.Select("generate")
+	q = q.Arg("introspectionJson", introspectionJson)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// A unique identifier for this ElixirSdkDev.
+func (r *ElixirSDKDev) ID(ctx context.Context) (ElixirSDKDevID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ElixirSDKDevID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ElixirSDKDev) XXX_GraphQLType() string {
+	return "ElixirSdkDev"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ElixirSDKDev) XXX_GraphQLIDType() string {
+	return "ElixirSDKDevID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ElixirSDKDev) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ElixirSDKDev) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *ElixirSDKDev) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadElixirSDKDevFromID(ElixirSDKDevID(id))
+	return nil
+}
+
+// Lint the SDK
+func (r *ElixirSDKDev) Lint(ctx context.Context) error {
+	if r.lint != nil {
+		return nil
+	}
+	q := r.query.Select("lint")
+
+	return q.Execute(ctx)
+}
+
+// ElixirSDKDevPublishOpts contains options for ElixirSDKDev.Publish
+type ElixirSDKDevPublishOpts struct {
+	DryRun bool
+}
+
+// Publish the Elixir SDK
+func (r *ElixirSDKDev) Publish(ctx context.Context, tag string, hexApiKey *Secret, opts ...ElixirSDKDevPublishOpts) error {
+	assertNotNil("hexApiKey", hexApiKey)
+	if r.publish != nil {
+		return nil
+	}
+	q := r.query.Select("publish")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `dryRun` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DryRun) {
+			q = q.Arg("dryRun", opts[i].DryRun)
+		}
+	}
+	q = q.Arg("tag", tag)
+	q = q.Arg("hexApiKey", hexApiKey)
+
+	return q.Execute(ctx)
+}
+
+// Test the publishing process
+func (r *ElixirSDKDev) ReleaseDryRun(ctx context.Context) error {
+	if r.releaseDryRun != nil {
+		return nil
+	}
+	q := r.query.Select("releaseDryRun")
+
+	return q.Execute(ctx)
+}
+
+// Run the SDK tests
+func (r *ElixirSDKDev) SDKTest(ctx context.Context) error {
+	if r.sdkTest != nil {
+		return nil
+	}
+	q := r.query.Select("sdkTest")
+
+	return q.Execute(ctx)
+}
+
+func (r *ElixirSDKDev) Source() *Directory {
+	q := r.query.Select("source")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+func (r *ElixirSDKDev) SourcePath(ctx context.Context) (string, error) {
+	if r.sourcePath != nil {
+		return *r.sourcePath, nil
+	}
+	q := r.query.Select("sourcePath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Sync Elixir image to keep both dev and runtime modules consistent
+func (r *ElixirSDKDev) SyncImage() *File {
+	q := r.query.Select("syncImage")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Test the SDK
+func (r *ElixirSDKDev) Test(ctx context.Context) error {
+	if r.test != nil {
+		return nil
+	}
+	q := r.query.Select("test")
+
+	return q.Execute(ctx)
+}
+
+func (r *ElixirSDKDev) Workspace() *Directory {
 	q := r.query.Select("workspace")
 
 	return &Directory{
@@ -7071,6 +7371,30 @@ func (r *Env) WithDotnetSDKDevOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type ElixirSdkDev in the environment
+func (r *Env) WithElixirSDKDevInput(name string, value *ElixirSDKDev, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withElixirSdkDevInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ElixirSdkDev output to be assigned in the environment
+func (r *Env) WithElixirSDKDevOutput(name string, description string) *Env {
+	q := r.query.Select("withElixirSdkDevOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type EngineDev in the environment
 func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env {
 	assertNotNil("value", value)
@@ -7796,6 +8120,30 @@ func (r *Env) WithSocketInput(name string, value *Socket, description string) *E
 // Declare a desired Socket output to be assigned in the environment
 func (r *Env) WithSocketOutput(name string, description string) *Env {
 	q := r.query.Select("withSocketOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Stat in the environment
+func (r *Env) WithStatInput(name string, value *Stat, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withStatInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Stat output to be assigned in the environment
+func (r *Env) WithStatOutput(name string, description string) *Env {
+	q := r.query.Select("withStatOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -8555,6 +8903,15 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 }
 
+// Parse the file contents as JSON.
+func (r *File) AsJSON() *JSONValue {
+	q := r.query.Select("asJSON")
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
 // Change the owner of the file recursively.
 func (r *File) Chown(owner string) *File {
 	q := r.query.Select("chown")
@@ -8822,6 +9179,15 @@ func (r *File) Size(ctx context.Context) (int, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Return file status
+func (r *File) Stat() *Stat {
+	q := r.query.Select("stat")
+
+	return &Stat{
+		query: q,
+	}
 }
 
 // Force evaluation in the engine.
@@ -15304,6 +15670,37 @@ func (r *Client) DotnetSDKDev(opts ...DotnetSDKDevOpts) *DotnetSDKDev {
 	}
 }
 
+// ElixirSDKDevOpts contains options for Client.ElixirSDKDev
+type ElixirSDKDevOpts struct {
+	BaseImage string
+
+	Workspace *Directory
+
+	SourcePath string
+}
+
+func (r *Client) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev {
+	q := r.query.Select("elixirSdkDev")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `baseImage` optional argument
+		if !querybuilder.IsZeroValue(opts[i].BaseImage) {
+			q = q.Arg("baseImage", opts[i].BaseImage)
+		}
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
+		}
+		// `sourcePath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
+			q = q.Arg("sourcePath", opts[i].SourcePath)
+		}
+	}
+
+	return &ElixirSDKDev{
+		query: q,
+	}
+}
+
 // EngineDevOpts contains options for Client.EngineDev
 type EngineDevOpts struct {
 	Source *Directory // engine-dev (../../../../toolchains/engine-dev/main.go:41:2)
@@ -15812,6 +16209,16 @@ func (r *Client) LoadDotnetSDKDevFromID(id DotnetSDKDevID) *DotnetSDKDev {
 	q = q.Arg("id", id)
 
 	return &DotnetSDKDev{
+		query: q,
+	}
+}
+
+// Load a ElixirSdkDev from its ID.
+func (r *Client) LoadElixirSDKDevFromID(id ElixirSDKDevID) *ElixirSDKDev {
+	q := r.query.Select("loadElixirSdkDevFromID")
+	q = q.Arg("id", id)
+
+	return &ElixirSDKDev{
 		query: q,
 	}
 }
@@ -16332,6 +16739,16 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	q = q.Arg("id", id)
 
 	return &SourceMap{
+		query: q,
+	}
+}
+
+// Load a Stat from its ID.
+func (r *Client) LoadStatFromID(id StatID) *Stat {
+	q := r.query.Select("loadStatFromID")
+	q = q.Arg("id", id)
+
+	return &Stat{
 		query: q,
 	}
 }
@@ -17973,6 +18390,124 @@ func (r *SourceMap) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// A file or directory status object.
+type Stat struct {
+	query *querybuilder.Selection
+
+	fileType    *FileType
+	id          *StatID
+	name        *string
+	permissions *int
+	size        *int
+}
+
+func (r *Stat) WithGraphQLQuery(q *querybuilder.Selection) *Stat {
+	return &Stat{
+		query: q,
+	}
+}
+
+// file type
+func (r *Stat) FileType(ctx context.Context) (FileType, error) {
+	if r.fileType != nil {
+		return *r.fileType, nil
+	}
+	q := r.query.Select("fileType")
+
+	var response FileType
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Stat.
+func (r *Stat) ID(ctx context.Context) (StatID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response StatID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Stat) XXX_GraphQLType() string {
+	return "Stat"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Stat) XXX_GraphQLIDType() string {
+	return "StatID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Stat) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Stat) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Stat) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadStatFromID(StatID(id))
+	return nil
+}
+
+// file name
+func (r *Stat) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// permission bits
+func (r *Stat) Permissions(ctx context.Context) (int, error) {
+	if r.permissions != nil {
+		return *r.permissions, nil
+	}
+	q := r.query.Select("permissions")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// file size
+func (r *Stat) Size(ctx context.Context) (int, error) {
+	if r.size != nil {
+		return *r.size, nil
+	}
+	q := r.query.Select("size")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // An interactive terminal that clients can connect to.
 type Terminal struct {
 	query *querybuilder.Selection
@@ -18935,6 +19470,89 @@ const (
 
 	// Tests path is a symlink
 	ExistsTypeSymlinkType ExistsType = "SYMLINK_TYPE"
+)
+
+// File type.
+type FileType string
+
+func (FileType) IsEnum() {}
+
+func (v FileType) Name() string {
+	switch v {
+	case FileTypeUnknown:
+		return "UNKNOWN"
+	case FileTypeRegular:
+		return "REGULAR"
+	case FileTypeDirectory:
+		return "DIRECTORY"
+	case FileTypeSymlink:
+		return "SYMLINK"
+	default:
+		return ""
+	}
+}
+
+func (v FileType) Value() string {
+	return string(v)
+}
+
+func (v *FileType) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *FileType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "DIRECTORY":
+		*v = FileTypeDirectory
+	case "DIRECTORY_TYPE":
+		*v = FileTypeDirectoryType
+	case "REGULAR":
+		*v = FileTypeRegular
+	case "REGULAR_TYPE":
+		*v = FileTypeRegularType
+	case "SYMLINK":
+		*v = FileTypeSymlink
+	case "SYMLINK_TYPE":
+		*v = FileTypeSymlinkType
+	case "UNKNOWN":
+		*v = FileTypeUnknown
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// unknown file type
+	FileTypeUnknown FileType = "UNKNOWN"
+
+	// regular file type
+	FileTypeRegular FileType = "REGULAR"
+	// regular file type
+	FileTypeRegularType FileType = FileTypeRegular
+
+	// directory file type
+	FileTypeDirectory FileType = "DIRECTORY"
+	// directory file type
+	FileTypeDirectoryType FileType = FileTypeDirectory
+
+	// symlink file type
+	FileTypeSymlink FileType = "SYMLINK"
+	// symlink file type
+	FileTypeSymlinkType FileType = FileTypeSymlink
 )
 
 // The behavior configured for function result caching.

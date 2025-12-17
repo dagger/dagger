@@ -221,34 +221,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "Hello":
 		switch fnName {
-		case "Message":
-			var parent Hello
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Hello).Message(&parent), nil
-		case "ConfigurableMessage":
-			var parent Hello
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var message string
-			if inputArgs["message"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["message"]), &message)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg message", err))
-				}
-			}
-			return (*Hello).ConfigurableMessage(&parent, message), nil
-		case "BlueprintConfig":
-			var parent Hello
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Hello).BlueprintConfig(&parent, ctx)
 		case "AppConfig":
 			var parent Hello
 			err = json.Unmarshal(parentJSON, &parent)
@@ -263,6 +235,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Hello).AppConfig(&parent, ctx, config)
+		case "BlueprintConfig":
+			var parent Hello
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Hello).BlueprintConfig(&parent, ctx)
+		case "ConfigurableMessage":
+			var parent Hello
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var message string
+			if inputArgs["message"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["message"]), &message)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg message", err))
+				}
+			}
+			return (*Hello).ConfigurableMessage(&parent, message), nil
 		case "Greet":
 			var parent Hello
 			err = json.Unmarshal(parentJSON, &parent)
@@ -270,6 +263,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Hello).Greet(&parent), nil
+		case "Message":
+			var parent Hello
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Hello).Message(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

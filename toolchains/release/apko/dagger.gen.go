@@ -262,76 +262,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Apko":
 		switch fnName {
-		case "WithCache":
+		case "Alpine":
 			var parent Apko
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var cache *dagger.CacheVolume
-			if inputArgs["cache"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["cache"]), &cache)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cache", err))
-				}
-			}
-			var source *dagger.Directory
-			if inputArgs["source"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
-				}
-			}
-			var sharing dagger.CacheSharingMode
-			if inputArgs["sharing"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["sharing"]), &sharing)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sharing", err))
-				}
-			}
-			return (*Apko).WithCache(&parent, cache, source, sharing), nil
-		case "WithRegistryAuth":
-			var parent Apko
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var address string
-			if inputArgs["address"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["address"]), &address)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg address", err))
-				}
-			}
-			var username string
-			if inputArgs["username"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["username"]), &username)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg username", err))
-				}
-			}
-			var secret *dagger.Secret
-			if inputArgs["secret"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["secret"]), &secret)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg secret", err))
-				}
-			}
-			return (*Apko).WithRegistryAuth(&parent, address, username, secret), nil
-		case "WithoutRegistryAuth":
-			var parent Apko
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var address string
-			if inputArgs["address"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["address"]), &address)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg address", err))
-				}
-			}
-			return (*Apko).WithoutRegistryAuth(&parent, address), nil
+			return (*Apko).Alpine(&parent), nil
 		case "Build":
 			var parent Apko
 			err = json.Unmarshal(parentJSON, &parent)
@@ -416,6 +353,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Apko).Build(&parent, config, tag, lockfile, annotations, arch, buildDate, keyringAppend, offline, packageAppend, repositoryAppend, vcs), nil
+		case "Config":
+			var parent Apko
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var file *dagger.File
+			if inputArgs["file"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg file", err))
+				}
+			}
+			return (*Apko).Config(&parent, file), nil
+		case "Preset":
+			var parent Apko
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			return (*Apko).Preset(&parent, name), nil
 		case "Publish":
 			var parent Apko
 			err = json.Unmarshal(parentJSON, &parent)
@@ -493,6 +458,76 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*Apko).Publish(&parent, ctx, config, tag, annotations, arch, buildDate, keyringAppend, offline, packageAppend, repositoryAppend, vcs)
+		case "WithCache":
+			var parent Apko
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var cache *dagger.CacheVolume
+			if inputArgs["cache"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cache"]), &cache)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cache", err))
+				}
+			}
+			var source *dagger.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var sharing dagger.CacheSharingMode
+			if inputArgs["sharing"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["sharing"]), &sharing)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sharing", err))
+				}
+			}
+			return (*Apko).WithCache(&parent, cache, source, sharing), nil
+		case "WithRegistryAuth":
+			var parent Apko
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var address string
+			if inputArgs["address"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["address"]), &address)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg address", err))
+				}
+			}
+			var username string
+			if inputArgs["username"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["username"]), &username)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg username", err))
+				}
+			}
+			var secret *dagger.Secret
+			if inputArgs["secret"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["secret"]), &secret)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg secret", err))
+				}
+			}
+			return (*Apko).WithRegistryAuth(&parent, address, username, secret), nil
+		case "WithoutRegistryAuth":
+			var parent Apko
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var address string
+			if inputArgs["address"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["address"]), &address)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg address", err))
+				}
+			}
+			return (*Apko).WithoutRegistryAuth(&parent, address), nil
 		case "Wolfi":
 			var parent Apko
 			err = json.Unmarshal(parentJSON, &parent)
@@ -500,41 +535,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Apko).Wolfi(&parent), nil
-		case "Alpine":
-			var parent Apko
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Apko).Alpine(&parent), nil
-		case "Preset":
-			var parent Apko
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			return (*Apko).Preset(&parent, name), nil
-		case "Config":
-			var parent Apko
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var file *dagger.File
-			if inputArgs["file"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg file", err))
-				}
-			}
-			return (*Apko).Config(&parent, file), nil
 		case "":
 			var parent Apko
 			err = json.Unmarshal(parentJSON, &parent)
@@ -573,34 +573,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "Config":
 		switch fnName {
-		case "WithRepository":
+		case "Build":
 			var parent Config
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var url string
-			if inputArgs["url"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["url"]), &url)
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg url", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
 				}
 			}
-			return (*Config).WithRepository(&parent, url), nil
-		case "WithKeyring":
+			return (*Config).Build(&parent, tag), nil
+		case "Container":
 			var parent Config
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var url string
-			if inputArgs["url"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["url"]), &url)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg url", err))
-				}
-			}
-			return (*Config).WithKeyring(&parent, url), nil
+			return (*Config).Container(&parent), nil
 		case "WithArch":
 			var parent Config
 			err = json.Unmarshal(parentJSON, &parent)
@@ -615,6 +608,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Config).WithArch(&parent, arch), nil
+		case "WithKeyring":
+			var parent Config
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var url string
+			if inputArgs["url"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["url"]), &url)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg url", err))
+				}
+			}
+			return (*Config).WithKeyring(&parent, url), nil
 		case "WithPackage":
 			var parent Config
 			err = json.Unmarshal(parentJSON, &parent)
@@ -643,27 +650,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Config).WithPackages(&parent, pkgs), nil
-		case "Build":
+		case "WithRepository":
 			var parent Config
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var tag string
-			if inputArgs["tag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+			var url string
+			if inputArgs["url"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["url"]), &url)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg url", err))
 				}
 			}
-			return (*Config).Build(&parent, tag), nil
-		case "Container":
-			var parent Config
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Config).Container(&parent), nil
+			return (*Config).WithRepository(&parent, url), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

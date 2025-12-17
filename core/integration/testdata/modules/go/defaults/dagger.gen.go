@@ -210,20 +210,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Defaults":
 		switch fnName {
-		case "Message":
+		case "Capitalize":
 			var parent Defaults
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+			var s string
+			if inputArgs["s"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["s"]), &s)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg s", err))
 				}
 			}
-			return (*Defaults).Message(&parent, ctx, name)
+			return (*Defaults).Capitalize(&parent, s), nil
 		case "Ls":
 			var parent Defaults
 			err = json.Unmarshal(parentJSON, &parent)
@@ -252,20 +252,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Defaults).LsText(&parent, ctx, dir)
-		case "Capitalize":
+		case "Message":
 			var parent Defaults
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var s string
-			if inputArgs["s"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["s"]), &s)
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg s", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
 				}
 			}
-			return (*Defaults).Capitalize(&parent, s), nil
+			return (*Defaults).Message(&parent, ctx, name)
 		case "":
 			var parent Defaults
 			err = json.Unmarshal(parentJSON, &parent)

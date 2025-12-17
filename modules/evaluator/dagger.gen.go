@@ -425,13 +425,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "EvalsAcrossModels":
 		switch fnName {
-		case "Check":
-			var parent EvalsAcrossModels
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*EvalsAcrossModels).Check(&parent)
 		case "AnalyzeAndGenerateSystemPrompt":
 			var parent EvalsAcrossModels
 			err = json.Unmarshal(parentJSON, &parent)
@@ -453,46 +446,88 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*EvalsAcrossModels).CSV(&parent, noHeader), nil
+		case "Check":
+			var parent EvalsAcrossModels
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*EvalsAcrossModels).Check(&parent)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
 	case "Evaluator":
 		switch fnName {
-		case "WithSystemPrompt":
+		case "Compare":
 			var parent Evaluator
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var prompt string
-			if inputArgs["prompt"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["prompt"]), &prompt)
+			var before *dagger.File
+			if inputArgs["before"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["before"]), &before)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg prompt", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg before", err))
 				}
 			}
-			return (*Evaluator).WithSystemPrompt(&parent, prompt), nil
-		case "WithSystemPromptFile":
-			var parent Evaluator
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var file *dagger.File
-			if inputArgs["file"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
+			var after *dagger.File
+			if inputArgs["after"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["after"]), &after)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg file", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg after", err))
 				}
 			}
-			return (*Evaluator).WithSystemPromptFile(&parent, file), nil
-		case "WithoutDefaultSystemPrompt":
+			return (*Evaluator).Compare(&parent, ctx, before, after)
+		case "EvalsAcrossModels":
 			var parent Evaluator
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Evaluator).WithoutDefaultSystemPrompt(&parent), nil
+			var evals []string
+			if inputArgs["evals"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["evals"]), &evals)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg evals", err))
+				}
+			}
+			var models []string
+			if inputArgs["models"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["models"]), &models)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg models", err))
+				}
+			}
+			var attempts int
+			if inputArgs["attempts"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["attempts"]), &attempts)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg attempts", err))
+				}
+			}
+			return (*Evaluator).EvalsAcrossModels(&parent, ctx, evals, models, attempts)
+		case "Explore":
+			var parent Evaluator
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Evaluator).Explore(&parent, ctx)
+		case "GenerateSystemPrompt":
+			var parent Evaluator
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Evaluator).GenerateSystemPrompt(&parent, ctx)
+		case "Iterate":
+			var parent Evaluator
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Evaluator).Iterate(&parent, ctx)
 		case "WithDocs":
 			var parent Evaluator
 			err = json.Unmarshal(parentJSON, &parent)
@@ -549,76 +584,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Evaluator).WithEvals(&parent, ctx, convertSlice(evals, (*evalImpl).toIface))
-		case "EvalsAcrossModels":
+		case "WithSystemPrompt":
 			var parent Evaluator
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var evals []string
-			if inputArgs["evals"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["evals"]), &evals)
+			var prompt string
+			if inputArgs["prompt"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["prompt"]), &prompt)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg evals", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg prompt", err))
 				}
 			}
-			var models []string
-			if inputArgs["models"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["models"]), &models)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg models", err))
-				}
-			}
-			var attempts int
-			if inputArgs["attempts"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["attempts"]), &attempts)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg attempts", err))
-				}
-			}
-			return (*Evaluator).EvalsAcrossModels(&parent, ctx, evals, models, attempts)
-		case "Explore":
+			return (*Evaluator).WithSystemPrompt(&parent, prompt), nil
+		case "WithSystemPromptFile":
 			var parent Evaluator
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Evaluator).Explore(&parent, ctx)
-		case "GenerateSystemPrompt":
-			var parent Evaluator
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Evaluator).GenerateSystemPrompt(&parent, ctx)
-		case "Iterate":
-			var parent Evaluator
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Evaluator).Iterate(&parent, ctx)
-		case "Compare":
-			var parent Evaluator
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var before *dagger.File
-			if inputArgs["before"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["before"]), &before)
+			var file *dagger.File
+			if inputArgs["file"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg before", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg file", err))
 				}
 			}
-			var after *dagger.File
-			if inputArgs["after"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["after"]), &after)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg after", err))
-				}
+			return (*Evaluator).WithSystemPromptFile(&parent, file), nil
+		case "WithoutDefaultSystemPrompt":
+			var parent Evaluator
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Evaluator).Compare(&parent, ctx, before, after)
+			return (*Evaluator).WithoutDefaultSystemPrompt(&parent), nil
 		case "":
 			var parent Evaluator
 			err = json.Unmarshal(parentJSON, &parent)

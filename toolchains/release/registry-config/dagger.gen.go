@@ -234,48 +234,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "RegistryConfig":
 		switch fnName {
-		case "WithRegistryAuth":
-			var parent RegistryConfig
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var address string
-			if inputArgs["address"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["address"]), &address)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg address", err))
-				}
-			}
-			var username string
-			if inputArgs["username"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["username"]), &username)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg username", err))
-				}
-			}
-			var secret *dagger.Secret
-			if inputArgs["secret"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["secret"]), &secret)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg secret", err))
-				}
-			}
-			return (*RegistryConfig).WithRegistryAuth(&parent, address, username, secret), nil
-		case "WithoutRegistryAuth":
-			var parent RegistryConfig
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var address string
-			if inputArgs["address"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["address"]), &address)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg address", err))
-				}
-			}
-			return (*RegistryConfig).WithoutRegistryAuth(&parent, address), nil
 		case "Secret":
 			var parent RegistryConfig
 			err = json.Unmarshal(parentJSON, &parent)
@@ -332,6 +290,48 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*RegistryConfig).SecretMount(&parent, path, secretName, skipOnEmpty, owner, mode), nil
+		case "WithRegistryAuth":
+			var parent RegistryConfig
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var address string
+			if inputArgs["address"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["address"]), &address)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg address", err))
+				}
+			}
+			var username string
+			if inputArgs["username"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["username"]), &username)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg username", err))
+				}
+			}
+			var secret *dagger.Secret
+			if inputArgs["secret"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["secret"]), &secret)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg secret", err))
+				}
+			}
+			return (*RegistryConfig).WithRegistryAuth(&parent, address, username, secret), nil
+		case "WithoutRegistryAuth":
+			var parent RegistryConfig
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var address string
+			if inputArgs["address"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["address"]), &address)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg address", err))
+				}
+			}
+			return (*RegistryConfig).WithoutRegistryAuth(&parent, address), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

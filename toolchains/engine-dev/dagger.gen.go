@@ -242,454 +242,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "EngineDev":
 		switch fnName {
-		case "Tests":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*EngineDev).Tests(&parent, ctx)
-		case "Test":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var run string
-			if inputArgs["run"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
-				}
-			}
-			var skip string
-			if inputArgs["skip"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
-				}
-			}
-			var pkg string
-			if inputArgs["pkg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
-				}
-			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
-				}
-			}
-			var parallel int
-			if inputArgs["parallel"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["parallel"]), &parallel)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg parallel", err))
-				}
-			}
-			var timeout string
-			if inputArgs["timeout"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
-				}
-			}
-			var race bool
-			if inputArgs["race"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
-				}
-			}
-			var count int
-			if inputArgs["count"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
-				}
-			}
-			var envFile *dagger.Secret
-			if inputArgs["envFile"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["envFile"]), &envFile)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg envFile", err))
-				}
-			}
-			var testVerbose bool
-			if inputArgs["testVerbose"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
-				}
-			}
-			var update bool
-			if inputArgs["update"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["update"]), &update)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg update", err))
-				}
-			}
-			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update)
-		case "TestTelemetry":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var run string
-			if inputArgs["run"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
-				}
-			}
-			var skip string
-			if inputArgs["skip"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
-				}
-			}
-			var update bool
-			if inputArgs["update"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["update"]), &update)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg update", err))
-				}
-			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
-				}
-			}
-			var parallel int
-			if inputArgs["parallel"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["parallel"]), &parallel)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg parallel", err))
-				}
-			}
-			var timeout string
-			if inputArgs["timeout"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
-				}
-			}
-			var race bool
-			if inputArgs["race"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
-				}
-			}
-			var count int
-			if inputArgs["count"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
-				}
-			}
-			var envFile *dagger.Secret
-			if inputArgs["envFile"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["envFile"]), &envFile)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg envFile", err))
-				}
-			}
-			var testVerbose bool
-			if inputArgs["testVerbose"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
-				}
-			}
-			return (*EngineDev).TestTelemetry(&parent, ctx, run, skip, update, failfast, parallel, timeout, race, count, envFile, testVerbose)
-		case "NetworkCidr":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*EngineDev).NetworkCidr(&parent), nil
-		case "IncrementSubnet":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*EngineDev).IncrementSubnet(&parent), nil
-		case "WithBuildkitConfig":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var key string
-			if inputArgs["key"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
-				}
-			}
-			var value string
-			if inputArgs["value"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
-				}
-			}
-			return (*EngineDev).WithBuildkitConfig(&parent, key, value), nil
-		case "WithRace":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*EngineDev).WithRace(&parent), nil
-		case "WithLogLevel":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var level string
-			if inputArgs["level"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["level"]), &level)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg level", err))
-				}
-			}
-			return (*EngineDev).WithLogLevel(&parent, level), nil
-		case "Playground":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var base *dagger.Container
-			if inputArgs["base"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg base", err))
-				}
-			}
-			var gpuSupport bool
-			if inputArgs["gpuSupport"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
-				}
-			}
-			var sharedCache bool
-			if inputArgs["sharedCache"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["sharedCache"]), &sharedCache)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sharedCache", err))
-				}
-			}
-			var metrics bool
-			if inputArgs["metrics"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["metrics"]), &metrics)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg metrics", err))
-				}
-			}
-			return (*EngineDev).Playground(&parent, ctx, base, gpuSupport, sharedCache, metrics)
-		case "Container":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var platform dagger.Platform
-			if inputArgs["platform"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
-				}
-			}
-			var gpuSupport bool
-			if inputArgs["gpuSupport"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
-				}
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			var tag string
-			if inputArgs["tag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
-				}
-			}
-			return (*EngineDev).Container(&parent, ctx, platform, gpuSupport, version, tag)
-		case "Service":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			var gpuSupport bool
-			if inputArgs["gpuSupport"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
-				}
-			}
-			var sharedCache bool
-			if inputArgs["sharedCache"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["sharedCache"]), &sharedCache)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sharedCache", err))
-				}
-			}
-			var metrics bool
-			if inputArgs["metrics"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["metrics"]), &metrics)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg metrics", err))
-				}
-			}
-			return (*EngineDev).Service(&parent, ctx, name, gpuSupport, sharedCache, metrics)
-		case "InstallClient":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var client *dagger.Container
-			if inputArgs["client"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["client"]), &client)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg client", err))
-				}
-			}
-			var service *dagger.Service
-			if inputArgs["service"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["service"]), &service)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg service", err))
-				}
-			}
-			return (*EngineDev).InstallClient(&parent, ctx, client, service)
-		case "IntrospectionJSON":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*EngineDev).IntrospectionJSON(&parent, ctx)
-		case "GraphqlSchema":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*EngineDev).GraphqlSchema(&parent, ctx, version)
-		case "IntrospectionTool":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*EngineDev).IntrospectionTool(&parent), nil
-		case "ConfigSchema":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var filename string
-			if inputArgs["filename"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["filename"]), &filename)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg filename", err))
-				}
-			}
-			return (*EngineDev).ConfigSchema(&parent, filename), nil
-		case "Generate":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*EngineDev).Generate(&parent, ctx)
-		case "ReleaseDryRun":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*EngineDev).ReleaseDryRun(&parent, ctx)
-		case "Publish":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var image string
-			if inputArgs["image"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["image"]), &image)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg image", err))
-				}
-			}
-			var tag []string
-			if inputArgs["tag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
-				}
-			}
-			var dryRun bool
-			if inputArgs["dryRun"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
-				}
-			}
-			var registryUsername *string
-			if inputArgs["registryUsername"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["registryUsername"]), &registryUsername)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registryUsername", err))
-				}
-			}
-			var registryPassword *dagger.Secret
-			if inputArgs["registryPassword"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["registryPassword"]), &registryPassword)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registryPassword", err))
-				}
-			}
-			return nil, (*EngineDev).Publish(&parent, ctx, image, tag, dryRun, registryUsername, registryPassword)
 		case "Benchmark":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -865,6 +417,118 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*EngineDev).BenchmarkDump(&parent, ctx, run, skip, pkg, failfast, timeout, race, count, testVerbose, route, noFinal, delay, interval)
+		case "ConfigSchema":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var filename string
+			if inputArgs["filename"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["filename"]), &filename)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg filename", err))
+				}
+			}
+			return (*EngineDev).ConfigSchema(&parent, filename), nil
+		case "Container":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var platform dagger.Platform
+			if inputArgs["platform"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
+				}
+			}
+			var gpuSupport bool
+			if inputArgs["gpuSupport"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
+				}
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			return (*EngineDev).Container(&parent, ctx, platform, gpuSupport, version, tag)
+		case "Generate":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).Generate(&parent, ctx)
+		case "GraphqlSchema":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*EngineDev).GraphqlSchema(&parent, ctx, version)
+		case "IncrementSubnet":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).IncrementSubnet(&parent), nil
+		case "InstallClient":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var client *dagger.Container
+			if inputArgs["client"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["client"]), &client)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg client", err))
+				}
+			}
+			var service *dagger.Service
+			if inputArgs["service"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["service"]), &service)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg service", err))
+				}
+			}
+			return (*EngineDev).InstallClient(&parent, ctx, client, service)
+		case "IntrospectionJSON":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).IntrospectionJSON(&parent, ctx)
+		case "IntrospectionTool":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).IntrospectionTool(&parent), nil
 		case "LoadToDocker":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -900,6 +564,216 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*EngineDev).LoadToDocker(&parent, ctx, docker, name, platform, gpuSupport)
+		case "NetworkCidr":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).NetworkCidr(&parent), nil
+		case "Playground":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var base *dagger.Container
+			if inputArgs["base"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg base", err))
+				}
+			}
+			var gpuSupport bool
+			if inputArgs["gpuSupport"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
+				}
+			}
+			var sharedCache bool
+			if inputArgs["sharedCache"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["sharedCache"]), &sharedCache)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sharedCache", err))
+				}
+			}
+			var metrics bool
+			if inputArgs["metrics"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["metrics"]), &metrics)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg metrics", err))
+				}
+			}
+			return (*EngineDev).Playground(&parent, ctx, base, gpuSupport, sharedCache, metrics)
+		case "Publish":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var image string
+			if inputArgs["image"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["image"]), &image)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg image", err))
+				}
+			}
+			var tag []string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			var dryRun bool
+			if inputArgs["dryRun"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
+				}
+			}
+			var registryUsername *string
+			if inputArgs["registryUsername"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["registryUsername"]), &registryUsername)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registryUsername", err))
+				}
+			}
+			var registryPassword *dagger.Secret
+			if inputArgs["registryPassword"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["registryPassword"]), &registryPassword)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registryPassword", err))
+				}
+			}
+			return nil, (*EngineDev).Publish(&parent, ctx, image, tag, dryRun, registryUsername, registryPassword)
+		case "ReleaseDryRun":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*EngineDev).ReleaseDryRun(&parent, ctx)
+		case "Service":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			var gpuSupport bool
+			if inputArgs["gpuSupport"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
+				}
+			}
+			var sharedCache bool
+			if inputArgs["sharedCache"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["sharedCache"]), &sharedCache)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sharedCache", err))
+				}
+			}
+			var metrics bool
+			if inputArgs["metrics"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["metrics"]), &metrics)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg metrics", err))
+				}
+			}
+			return (*EngineDev).Service(&parent, ctx, name, gpuSupport, sharedCache, metrics)
+		case "Test":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var run string
+			if inputArgs["run"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
+				}
+			}
+			var skip string
+			if inputArgs["skip"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
+				}
+			}
+			var pkg string
+			if inputArgs["pkg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
+				}
+			}
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+				}
+			}
+			var parallel int
+			if inputArgs["parallel"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["parallel"]), &parallel)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg parallel", err))
+				}
+			}
+			var timeout string
+			if inputArgs["timeout"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
+				}
+			}
+			var race bool
+			if inputArgs["race"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
+				}
+			}
+			var count int
+			if inputArgs["count"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
+				}
+			}
+			var envFile *dagger.Secret
+			if inputArgs["envFile"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["envFile"]), &envFile)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg envFile", err))
+				}
+			}
+			var testVerbose bool
+			if inputArgs["testVerbose"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
+				}
+			}
+			var update bool
+			if inputArgs["update"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["update"]), &update)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg update", err))
+				}
+			}
+			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update)
 		case "TestDump":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -998,6 +872,132 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*EngineDev).TestDump(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, testVerbose, route, noFinal, delay, interval)
+		case "TestTelemetry":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var run string
+			if inputArgs["run"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
+				}
+			}
+			var skip string
+			if inputArgs["skip"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
+				}
+			}
+			var update bool
+			if inputArgs["update"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["update"]), &update)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg update", err))
+				}
+			}
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+				}
+			}
+			var parallel int
+			if inputArgs["parallel"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["parallel"]), &parallel)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg parallel", err))
+				}
+			}
+			var timeout string
+			if inputArgs["timeout"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
+				}
+			}
+			var race bool
+			if inputArgs["race"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
+				}
+			}
+			var count int
+			if inputArgs["count"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
+				}
+			}
+			var envFile *dagger.Secret
+			if inputArgs["envFile"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["envFile"]), &envFile)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg envFile", err))
+				}
+			}
+			var testVerbose bool
+			if inputArgs["testVerbose"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
+				}
+			}
+			return (*EngineDev).TestTelemetry(&parent, ctx, run, skip, update, failfast, parallel, timeout, race, count, envFile, testVerbose)
+		case "Tests":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).Tests(&parent, ctx)
+		case "WithBuildkitConfig":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var key string
+			if inputArgs["key"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
+				}
+			}
+			var value string
+			if inputArgs["value"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
+				}
+			}
+			return (*EngineDev).WithBuildkitConfig(&parent, key, value), nil
+		case "WithLogLevel":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var level string
+			if inputArgs["level"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["level"]), &level)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg level", err))
+				}
+			}
+			return (*EngineDev).WithLogLevel(&parent, level), nil
+		case "WithRace":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).WithRace(&parent), nil
 		case "":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

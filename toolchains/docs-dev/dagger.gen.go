@@ -198,48 +198,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "DocsDev":
 		switch fnName {
-		case "Site":
-			var parent DocsDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*DocsDev).Site(&parent), nil
-		case "Server":
-			var parent DocsDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*DocsDev).Server(&parent), nil
-		case "LintMarkdown":
-			var parent DocsDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var markdownFiles *dagger.Directory
-			if inputArgs["markdownFiles"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["markdownFiles"]), &markdownFiles)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg markdownFiles", err))
-				}
-			}
-			return nil, (*DocsDev).LintMarkdown(&parent, ctx, markdownFiles)
-		case "Generate":
-			var parent DocsDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*DocsDev).Generate(&parent, version)
 		case "Bump":
 			var parent DocsDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -275,6 +233,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*DocsDev).Deploy(&parent, ctx, message, netlifyToken)
+		case "Generate":
+			var parent DocsDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*DocsDev).Generate(&parent, version)
+		case "LintMarkdown":
+			var parent DocsDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var markdownFiles *dagger.Directory
+			if inputArgs["markdownFiles"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["markdownFiles"]), &markdownFiles)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg markdownFiles", err))
+				}
+			}
+			return nil, (*DocsDev).LintMarkdown(&parent, ctx, markdownFiles)
 		case "Publish":
 			var parent DocsDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -296,6 +282,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*DocsDev).Publish(&parent, ctx, netlifyToken, deployment)
+		case "Server":
+			var parent DocsDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*DocsDev).Server(&parent), nil
+		case "Site":
+			var parent DocsDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*DocsDev).Site(&parent), nil
 		case "":
 			var parent DocsDev
 			err = json.Unmarshal(parentJSON, &parent)

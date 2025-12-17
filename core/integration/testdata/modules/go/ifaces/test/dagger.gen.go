@@ -688,181 +688,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Test":
 		switch fnName {
-		case "Void":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return nil, (*Test).Void(&parent, ctx, ifaceArg.toIface())
-		case "Str":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).Str(&parent, ctx, ifaceArg.toIface())
-		case "WithStr":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var strArg string
-			if inputArgs["strArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["strArg"]), &strArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strArg", err))
-				}
-			}
-			return (*Test).WithStr(&parent, ctx, ifaceArg.toIface(), strArg), nil
-		case "WithOptionalPragmaStr":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var strArg string
-			if inputArgs["strArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["strArg"]), &strArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strArg", err))
-				}
-			}
-			return (*Test).WithOptionalPragmaStr(&parent, ctx, ifaceArg.toIface(), strArg), nil
-		case "StrList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).StrList(&parent, ctx, ifaceArg.toIface())
-		case "WithStrList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var strList []string
-			if inputArgs["strList"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["strList"]), &strList)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strList", err))
-				}
-			}
-			return (*Test).WithStrList(&parent, ctx, ifaceArg.toIface(), strList), nil
-		case "Int":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).Int(&parent, ctx, ifaceArg.toIface())
-		case "WithInt":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var intArg int
-			if inputArgs["intArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["intArg"]), &intArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg intArg", err))
-				}
-			}
-			return (*Test).WithInt(&parent, ctx, ifaceArg.toIface(), intArg), nil
-		case "IntList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).IntList(&parent, ctx, ifaceArg.toIface())
-		case "WithIntList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var intList []int
-			if inputArgs["intList"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["intList"]), &intList)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg intList", err))
-				}
-			}
-			return (*Test).WithIntList(&parent, ctx, ifaceArg.toIface(), intList), nil
 		case "Bool":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
@@ -877,27 +702,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Test).Bool(&parent, ctx, ifaceArg.toIface())
-		case "WithBool":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var boolArg bool
-			if inputArgs["boolArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["boolArg"]), &boolArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg boolArg", err))
-				}
-			}
-			return (*Test).WithBool(&parent, ctx, ifaceArg.toIface(), boolArg), nil
 		case "BoolList":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
@@ -912,230 +716,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Test).BoolList(&parent, ctx, ifaceArg.toIface())
-		case "WithBoolList":
+		case "DepIfaceStr":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var boolList []bool
-			if inputArgs["boolList"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["boolList"]), &boolList)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg boolList", err))
-				}
-			}
-			return (*Test).WithBoolList(&parent, ctx, ifaceArg.toIface(), boolList), nil
-		case "Obj":
+			return (*Test).DepIfaceStr(&parent, ctx)
+		case "DepWithIface":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+			var iface *customIfaceImpl
+			if inputArgs["iface"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["iface"]), &iface)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg iface", err))
 				}
 			}
-			return (*Test).Obj(&parent, ifaceArg.toIface()), nil
-		case "WithObj":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var objArg *dagger.Directory
-			if inputArgs["objArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["objArg"]), &objArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg objArg", err))
-				}
-			}
-			return (*Test).WithObj(&parent, ifaceArg.toIface(), objArg), nil
-		case "WithOptionalPragmaObj":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var objArg *dagger.Directory
-			if inputArgs["objArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["objArg"]), &objArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg objArg", err))
-				}
-			}
-			return (*Test).WithOptionalPragmaObj(&parent, ifaceArg.toIface(), objArg), nil
-		case "ObjList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).ObjList(&parent, ctx, ifaceArg.toIface())
-		case "WithObjList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var objList []*dagger.Directory
-			if inputArgs["objList"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["objList"]), &objList)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg objList", err))
-				}
-			}
-			return (*Test).WithObjList(&parent, ctx, ifaceArg.toIface(), objList), nil
-		case "SelfIface":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).SelfIface(&parent, ifaceArg.toIface()), nil
-		case "SelfIfaceList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).SelfIfaceList(&parent, ctx, ifaceArg.toIface())
-		case "OtherIface":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).OtherIface(&parent, ifaceArg.toIface()), nil
-		case "StaticOtherIfaceList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).StaticOtherIfaceList(&parent, ctx, ifaceArg.toIface())
-		case "WithOtherIface":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var other *otherIfaceImpl
-			if inputArgs["other"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["other"]), &other)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg other", err))
-				}
-			}
-			return (*Test).WithOtherIface(&parent, ctx, ifaceArg.toIface(), other.toIface()), nil
-		case "DynamicOtherIfaceList":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			return (*Test).DynamicOtherIfaceList(&parent, ctx, ifaceArg.toIface())
-		case "WithOtherIfaceByIface":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var ifaceArg *customIfaceImpl
-			if inputArgs["ifaceArg"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
-				}
-			}
-			var other *otherIfaceImpl
-			if inputArgs["other"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["other"]), &other)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg other", err))
-				}
-			}
-			return (*Test).WithOtherIfaceByIface(&parent, ctx, ifaceArg.toIface(), other.toIface()), nil
+			return (*Test).DepWithIface(&parent, ctx, iface.toIface())
 		case "DynamicOtherIfaceByIfaceList":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
@@ -1150,6 +751,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Test).DynamicOtherIfaceByIfaceList(&parent, ctx, ifaceArg.toIface())
+		case "DynamicOtherIfaceList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			return (*Test).DynamicOtherIfaceList(&parent, ctx, ifaceArg.toIface())
 		case "IfaceListArgs":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
@@ -1171,97 +786,76 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Test).IfaceListArgs(&parent, ctx, convertSlice(ifaces, (*customIfaceImpl).toIface), convertSlice(otherIfaces, (*otherIfaceImpl).toIface))
-		case "WithIface":
+		case "Int":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var iface *customIfaceImpl
-			if inputArgs["iface"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["iface"]), &iface)
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg iface", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
 				}
 			}
-			return (*Test).WithIface(&parent, iface.toIface()), nil
-		case "DepWithIface":
+			return (*Test).Int(&parent, ctx, ifaceArg.toIface())
+		case "IntList":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var iface *customIfaceImpl
-			if inputArgs["iface"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["iface"]), &iface)
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg iface", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
 				}
 			}
-			return (*Test).DepWithIface(&parent, ctx, iface.toIface())
-		case "DepIfaceStr":
+			return (*Test).IntList(&parent, ctx, ifaceArg.toIface())
+		case "Obj":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Test).DepIfaceStr(&parent, ctx)
-		case "WithOptionalPragmaIface":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var iface *customIfaceImpl
-			if inputArgs["iface"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["iface"]), &iface)
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg iface", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
 				}
 			}
-			return (*Test).WithOptionalPragmaIface(&parent, iface.toIface()), nil
-		case "WithIfaceList":
+			return (*Test).Obj(&parent, ifaceArg.toIface()), nil
+		case "ObjList":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var ifaces []*customIfaceImpl
-			if inputArgs["ifaces"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaces"]), &ifaces)
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaces", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
 				}
 			}
-			return (*Test).WithIfaceList(&parent, convertSlice(ifaces, (*customIfaceImpl).toIface)), nil
-		case "WithOtherIfaceList":
+			return (*Test).ObjList(&parent, ctx, ifaceArg.toIface())
+		case "OtherIface":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var ifaces []*otherIfaceImpl
-			if inputArgs["ifaces"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["ifaces"]), &ifaces)
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaces", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
 				}
 			}
-			return (*Test).WithOtherIfaceList(&parent, convertSlice(ifaces, (*otherIfaceImpl).toIface)), nil
-		case "WithPrivateIface":
-			var parent Test
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var iface *customIfaceImpl
-			if inputArgs["iface"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["iface"]), &iface)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg iface", err))
-				}
-			}
-			return (*Test).WithPrivateIface(&parent, iface.toIface()), nil
+			return (*Test).OtherIface(&parent, ifaceArg.toIface()), nil
 		case "ParentIfaceFields":
 			var parent Test
 			err = json.Unmarshal(parentJSON, &parent)
@@ -1290,6 +884,412 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Test).ReturnCustomObj(&parent, convertSlice(ifaces, (*customIfaceImpl).toIface), convertSlice(otherIfaces, (*otherIfaceImpl).toIface)), nil
+		case "SelfIface":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			return (*Test).SelfIface(&parent, ifaceArg.toIface()), nil
+		case "SelfIfaceList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			return (*Test).SelfIfaceList(&parent, ctx, ifaceArg.toIface())
+		case "StaticOtherIfaceList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			return (*Test).StaticOtherIfaceList(&parent, ctx, ifaceArg.toIface())
+		case "Str":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			return (*Test).Str(&parent, ctx, ifaceArg.toIface())
+		case "StrList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			return (*Test).StrList(&parent, ctx, ifaceArg.toIface())
+		case "Void":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			return nil, (*Test).Void(&parent, ctx, ifaceArg.toIface())
+		case "WithBool":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var boolArg bool
+			if inputArgs["boolArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["boolArg"]), &boolArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg boolArg", err))
+				}
+			}
+			return (*Test).WithBool(&parent, ctx, ifaceArg.toIface(), boolArg), nil
+		case "WithBoolList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var boolList []bool
+			if inputArgs["boolList"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["boolList"]), &boolList)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg boolList", err))
+				}
+			}
+			return (*Test).WithBoolList(&parent, ctx, ifaceArg.toIface(), boolList), nil
+		case "WithIface":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var iface *customIfaceImpl
+			if inputArgs["iface"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["iface"]), &iface)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg iface", err))
+				}
+			}
+			return (*Test).WithIface(&parent, iface.toIface()), nil
+		case "WithIfaceList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaces []*customIfaceImpl
+			if inputArgs["ifaces"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaces"]), &ifaces)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaces", err))
+				}
+			}
+			return (*Test).WithIfaceList(&parent, convertSlice(ifaces, (*customIfaceImpl).toIface)), nil
+		case "WithInt":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var intArg int
+			if inputArgs["intArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["intArg"]), &intArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg intArg", err))
+				}
+			}
+			return (*Test).WithInt(&parent, ctx, ifaceArg.toIface(), intArg), nil
+		case "WithIntList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var intList []int
+			if inputArgs["intList"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["intList"]), &intList)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg intList", err))
+				}
+			}
+			return (*Test).WithIntList(&parent, ctx, ifaceArg.toIface(), intList), nil
+		case "WithObj":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var objArg *dagger.Directory
+			if inputArgs["objArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["objArg"]), &objArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg objArg", err))
+				}
+			}
+			return (*Test).WithObj(&parent, ifaceArg.toIface(), objArg), nil
+		case "WithObjList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var objList []*dagger.Directory
+			if inputArgs["objList"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["objList"]), &objList)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg objList", err))
+				}
+			}
+			return (*Test).WithObjList(&parent, ctx, ifaceArg.toIface(), objList), nil
+		case "WithOptionalPragmaIface":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var iface *customIfaceImpl
+			if inputArgs["iface"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["iface"]), &iface)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg iface", err))
+				}
+			}
+			return (*Test).WithOptionalPragmaIface(&parent, iface.toIface()), nil
+		case "WithOptionalPragmaObj":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var objArg *dagger.Directory
+			if inputArgs["objArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["objArg"]), &objArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg objArg", err))
+				}
+			}
+			return (*Test).WithOptionalPragmaObj(&parent, ifaceArg.toIface(), objArg), nil
+		case "WithOptionalPragmaStr":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var strArg string
+			if inputArgs["strArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["strArg"]), &strArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strArg", err))
+				}
+			}
+			return (*Test).WithOptionalPragmaStr(&parent, ctx, ifaceArg.toIface(), strArg), nil
+		case "WithOtherIface":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var other *otherIfaceImpl
+			if inputArgs["other"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["other"]), &other)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg other", err))
+				}
+			}
+			return (*Test).WithOtherIface(&parent, ctx, ifaceArg.toIface(), other.toIface()), nil
+		case "WithOtherIfaceByIface":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var other *otherIfaceImpl
+			if inputArgs["other"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["other"]), &other)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg other", err))
+				}
+			}
+			return (*Test).WithOtherIfaceByIface(&parent, ctx, ifaceArg.toIface(), other.toIface()), nil
+		case "WithOtherIfaceList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaces []*otherIfaceImpl
+			if inputArgs["ifaces"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaces"]), &ifaces)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaces", err))
+				}
+			}
+			return (*Test).WithOtherIfaceList(&parent, convertSlice(ifaces, (*otherIfaceImpl).toIface)), nil
+		case "WithPrivateIface":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var iface *customIfaceImpl
+			if inputArgs["iface"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["iface"]), &iface)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg iface", err))
+				}
+			}
+			return (*Test).WithPrivateIface(&parent, iface.toIface()), nil
+		case "WithStr":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var strArg string
+			if inputArgs["strArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["strArg"]), &strArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strArg", err))
+				}
+			}
+			return (*Test).WithStr(&parent, ctx, ifaceArg.toIface(), strArg), nil
+		case "WithStrList":
+			var parent Test
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ifaceArg *customIfaceImpl
+			if inputArgs["ifaceArg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ifaceArg"]), &ifaceArg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ifaceArg", err))
+				}
+			}
+			var strList []string
+			if inputArgs["strList"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["strList"]), &strList)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg strList", err))
+				}
+			}
+			return (*Test).WithStrList(&parent, ctx, ifaceArg.toIface(), strList), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

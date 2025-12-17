@@ -305,6 +305,9 @@ type SocketID string
 // The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 type SourceMapID string
 
+// The `StatID` scalar type represents an identifier for an object of type Stat.
+type StatID string
+
 // The `TerminalID` scalar type represents an identifier for an object of type Terminal.
 type TerminalID string
 
@@ -808,6 +811,15 @@ func (r *Binding) AsSocket() *Socket {
 	q := r.query.Select("asSocket")
 
 	return &Socket{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Stat
+func (r *Binding) AsStat() *Stat {
+	q := r.query.Select("asStat")
+
+	return &Stat{
 		query: q,
 	}
 }
@@ -2206,6 +2218,28 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
+// ContainerStatOpts contains options for Container.Stat
+type ContainerStatOpts struct {
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Return file status
+func (r *Container) Stat(path string, opts ...ContainerStatOpts) *Stat {
+	q := r.query.Select("stat")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Stat{
+		query: q,
+	}
+}
+
 // The buffered standard error stream of the last executed command
 //
 // Returns an error if no command was executed
@@ -2486,6 +2520,17 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 		}
 	}
 	q = q.Arg("args", args)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Export environment variables from an env-file to the container.
+func (r *Container) WithEnvFileVariables(source *EnvFile) *Container {
+	assertNotNil("source", source)
+	q := r.query.Select("withEnvFileVariables")
+	q = q.Arg("source", source)
 
 	return &Container{
 		query: q,
@@ -4295,6 +4340,28 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 	}
 
 	return convert(response), nil
+}
+
+// DirectoryStatOpts contains options for Directory.Stat
+type DirectoryStatOpts struct {
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Return file status
+func (r *Directory) Stat(path string, opts ...DirectoryStatOpts) *Stat {
+	q := r.query.Select("stat")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Stat{
+		query: q,
+	}
 }
 
 // Force evaluation in the engine.
@@ -6974,6 +7041,30 @@ func (r *Env) WithSocketOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type Stat in the environment
+func (r *Env) WithStatInput(name string, value *Stat, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withStatInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Stat output to be assigned in the environment
+func (r *Env) WithStatOutput(name string, description string) *Env {
+	q := r.query.Select("withStatOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Provides a string input binding to the environment
 func (r *Env) WithStringInput(name string, value string, description string) *Env {
 	q := r.query.Select("withStringInput")
@@ -7701,6 +7792,15 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 }
 
+// Parse the file contents as JSON.
+func (r *File) AsJSON() *JSONValue {
+	q := r.query.Select("asJSON")
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
 // Change the owner of the file recursively.
 func (r *File) Chown(owner string) *File {
 	q := r.query.Select("chown")
@@ -7968,6 +8068,15 @@ func (r *File) Size(ctx context.Context) (int, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Return file status
+func (r *File) Stat() *Stat {
+	q := r.query.Select("stat")
+
+	return &Stat{
+		query: q,
+	}
 }
 
 // Force evaluation in the engine.
@@ -9191,7 +9300,7 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 }
 
 // A Go project
-type Go struct { // go (../../../../modules/go/main.go:119:6)
+type Go struct { // go (../../../../toolchains/go/main.go:119:6)
 	query *querybuilder.Selection
 
 	cgo        *bool
@@ -9220,7 +9329,7 @@ func (r *Go) WithGraphQLQuery(q *querybuilder.Selection) *Go {
 }
 
 // Base container from which to run all operations
-func (r *Go) Base() *Container { // go (../../../../modules/go/main.go:133:2)
+func (r *Go) Base() *Container { // go (../../../../toolchains/go/main.go:133:2)
 	q := r.query.Select("base")
 
 	return &Container{
@@ -9233,19 +9342,19 @@ type GoBinaryOpts struct {
 	//
 	// Disable symbol table
 	//
-	NoSymbols bool // go (../../../../modules/go/main.go:301:2)
+	NoSymbols bool // go (../../../../toolchains/go/main.go:301:2)
 	//
 	// Disable DWARF generation
 	//
-	NoDwarf bool // go (../../../../modules/go/main.go:304:2)
+	NoDwarf bool // go (../../../../toolchains/go/main.go:304:2)
 	//
 	// Target build platform
 	//
-	Platform Platform // go (../../../../modules/go/main.go:307:2)
+	Platform Platform // go (../../../../toolchains/go/main.go:307:2)
 }
 
 // Build a single main package, and return the compiled binary
-func (r *Go) Binary(pkg string, opts ...GoBinaryOpts) *File { // go (../../../../modules/go/main.go:295:1)
+func (r *Go) Binary(pkg string, opts ...GoBinaryOpts) *File { // go (../../../../toolchains/go/main.go:295:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noSymbols` optional argument
@@ -9275,29 +9384,29 @@ type GoBuildOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../modules/go/main.go:243:2)
+	Pkgs []string // go (../../../../toolchains/go/main.go:243:2)
 	//
 	// Disable symbol table
 	//
-	NoSymbols bool // go (../../../../modules/go/main.go:246:2)
+	NoSymbols bool // go (../../../../toolchains/go/main.go:246:2)
 	//
 	// Disable DWARF generation
 	//
-	NoDwarf bool // go (../../../../modules/go/main.go:249:2)
+	NoDwarf bool // go (../../../../toolchains/go/main.go:249:2)
 	//
 	// Target build platform
 	//
-	Platform Platform // go (../../../../modules/go/main.go:252:2)
+	Platform Platform // go (../../../../toolchains/go/main.go:252:2)
 	//
 	// Output directory
 	//
 	//
 	// Default: "./bin/"
-	Output string // go (../../../../modules/go/main.go:256:2)
+	Output string // go (../../../../toolchains/go/main.go:256:2)
 }
 
 // Build the given main packages, and return the build directory
-func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../modules/go/main.go:238:1)
+func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../toolchains/go/main.go:238:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `pkgs` optional argument
@@ -9328,7 +9437,7 @@ func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../modules/
 }
 
 // Go build cache
-func (r *Go) BuildCache() *CacheVolume { // go (../../../../modules/go/main.go:130:2)
+func (r *Go) BuildCache() *CacheVolume { // go (../../../../toolchains/go/main.go:130:2)
 	q := r.query.Select("buildCache")
 
 	return &CacheVolume{
@@ -9337,7 +9446,7 @@ func (r *Go) BuildCache() *CacheVolume { // go (../../../../modules/go/main.go:1
 }
 
 // Enable CGO
-func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../modules/go/main.go:142:2)
+func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../toolchains/go/main.go:142:2)
 	if r.cgo != nil {
 		return *r.cgo, nil
 	}
@@ -9351,13 +9460,13 @@ func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../modules
 
 // GoCheckTidyOpts contains options for Go.CheckTidy
 type GoCheckTidyOpts struct {
-	Include []string // go (../../../../modules/go/main.go:526:2)
+	Include []string // go (../../../../toolchains/go/main.go:526:2)
 
-	Exclude []string // go (../../../../modules/go/main.go:527:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:527:2)
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../modules/go/main.go:524:1)
+func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:524:1)
 	if r.checkTidy != nil {
 		return nil
 	}
@@ -9377,7 +9486,7 @@ func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // 
 }
 
 // Download dependencies into the module cache
-func (r *Go) Download() *Go { // go (../../../../modules/go/main.go:162:1)
+func (r *Go) Download() *Go { // go (../../../../toolchains/go/main.go:162:1)
 	q := r.query.Select("download")
 
 	return &Go{
@@ -9387,14 +9496,14 @@ func (r *Go) Download() *Go { // go (../../../../modules/go/main.go:162:1)
 
 // GoEnvOpts contains options for Go.Env
 type GoEnvOpts struct {
-	Platform Platform // go (../../../../modules/go/main.go:183:2)
+	Platform Platform // go (../../../../toolchains/go/main.go:183:2)
 }
 
 // Prepare a build environment for the given Go source code:
 //   - Build a base container with Go tooling installed and configured
 //   - Apply configuration
 //   - Mount the source code
-func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../modules/go/main.go:181:1)
+func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../toolchains/go/main.go:181:1)
 	q := r.query.Select("env")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -9408,7 +9517,7 @@ func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../modules/go/m
 	}
 }
 
-func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../../modules/go/main.go:152:2)
+func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:152:2)
 	q := r.query.Select("exclude")
 
 	var response []string
@@ -9418,13 +9527,49 @@ func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../..
 }
 
 // Enable go experiments
-func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../../../modules/go/main.go:148:2)
+func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:148:2)
 	q := r.query.Select("experiment")
 
 	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// GoGenerateOpts contains options for Go.Generate
+type GoGenerateOpts struct {
+	Include []string // go (../../../../toolchains/go/main.go:651:2)
+
+	Exclude []string // go (../../../../toolchains/go/main.go:652:2)
+}
+
+// Generate the Dagger runtime for all Go modules
+func (r *Go) Generate(opts ...GoGenerateOpts) *Changeset { // go (../../../../toolchains/go/main.go:649:1)
+	q := r.query.Select("generate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Generate the Dagger runtime for a Go module
+func (r *Go) GenerateDaggerRuntime(start string) *Changeset { // go (../../../../toolchains/go/main.go:673:1)
+	q := r.query.Select("generateDaggerRuntime")
+	q = q.Arg("start", start)
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // A unique identifier for this Go.
@@ -9476,7 +9621,7 @@ func (r *Go) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../../modules/go/main.go:150:2)
+func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:150:2)
 	q := r.query.Select("include")
 
 	var response []string
@@ -9486,7 +9631,7 @@ func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../..
 }
 
 // Pass arguments to 'go build -ldflags”
-func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../../modules/go/main.go:136:2)
+func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:136:2)
 	q := r.query.Select("ldflags")
 
 	var response []string
@@ -9497,13 +9642,13 @@ func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../..
 
 // GoLintOpts contains options for Go.Lint
 type GoLintOpts struct {
-	Include []string // go (../../../../modules/go/main.go:593:2)
+	Include []string // go (../../../../toolchains/go/main.go:593:2)
 
-	Exclude []string // go (../../../../modules/go/main.go:594:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:594:2)
 }
 
 // Lint the project
-func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../modules/go/main.go:591:1)
+func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../toolchains/go/main.go:591:1)
 	if r.lint != nil {
 		return nil
 	}
@@ -9522,7 +9667,7 @@ func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../
 	return q.Execute(ctx)
 }
 
-func (r *Go) LintModule(ctx context.Context, mod string) error { // go (../../../../modules/go/main.go:619:1)
+func (r *Go) LintModule(ctx context.Context, mod string) error { // go (../../../../toolchains/go/main.go:619:1)
 	if r.lintModule != nil {
 		return nil
 	}
@@ -9539,15 +9684,15 @@ type GoListPackagesOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../modules/go/main.go:391:2)
+	Pkgs []string // go (../../../../toolchains/go/main.go:391:2)
 	//
 	// Only list main packages
 	//
-	OnlyMain bool // go (../../../../modules/go/main.go:394:2)
+	OnlyMain bool // go (../../../../toolchains/go/main.go:394:2)
 }
 
 // List packages matching the specified criteria
-func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]string, error) { // go (../../../../modules/go/main.go:386:1)
+func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]string, error) { // go (../../../../toolchains/go/main.go:386:1)
 	q := r.query.Select("listPackages")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `pkgs` optional argument
@@ -9567,7 +9712,7 @@ func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]st
 }
 
 // Go module cache
-func (r *Go) ModuleCache() *CacheVolume { // go (../../../../modules/go/main.go:127:2)
+func (r *Go) ModuleCache() *CacheVolume { // go (../../../../toolchains/go/main.go:127:2)
 	q := r.query.Select("moduleCache")
 
 	return &CacheVolume{
@@ -9577,13 +9722,13 @@ func (r *Go) ModuleCache() *CacheVolume { // go (../../../../modules/go/main.go:
 
 // GoModulesOpts contains options for Go.Modules
 type GoModulesOpts struct {
-	Include []string // go (../../../../modules/go/main.go:462:2)
+	Include []string // go (../../../../toolchains/go/main.go:462:2)
 
-	Exclude []string // go (../../../../modules/go/main.go:463:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:463:2)
 }
 
 // Scan the source for go modules, and return their paths
-func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, error) { // go (../../../../modules/go/main.go:460:1)
+func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, error) { // go (../../../../toolchains/go/main.go:460:1)
 	q := r.query.Select("modules")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -9603,7 +9748,7 @@ func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, erro
 }
 
 // Enable race detector
-func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../modules/go/main.go:145:2)
+func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../toolchains/go/main.go:145:2)
 	if r.race != nil {
 		return *r.race, nil
 	}
@@ -9616,7 +9761,7 @@ func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../module
 }
 
 // Project source directory
-func (r *Go) Source() *Directory { // go (../../../../modules/go/main.go:124:2)
+func (r *Go) Source() *Directory { // go (../../../../toolchains/go/main.go:124:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -9629,38 +9774,38 @@ type GoTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // go (../../../../modules/go/main.go:337:2)
+	Run string // go (../../../../toolchains/go/main.go:337:2)
 	//
 	// Skip these tests
 	//
-	Skip string // go (../../../../modules/go/main.go:340:2)
+	Skip string // go (../../../../toolchains/go/main.go:340:2)
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // go (../../../../modules/go/main.go:343:2)
+	Failfast bool // go (../../../../toolchains/go/main.go:343:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // go (../../../../modules/go/main.go:347:2)
+	Parallel int // go (../../../../toolchains/go/main.go:347:2)
 	//
 	// How long before timing out the test run
 	//
 	//
 	// Default: "30m"
-	Timeout string // go (../../../../modules/go/main.go:351:2)
+	Timeout string // go (../../../../toolchains/go/main.go:351:2)
 
 	// Default: 1
-	Count int // go (../../../../modules/go/main.go:354:2)
+	Count int // go (../../../../toolchains/go/main.go:354:2)
 	//
 	// Which packages to test
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../modules/go/main.go:358:2)
+	Pkgs []string // go (../../../../toolchains/go/main.go:358:2)
 }
 
 // Run tests for the given packages
-func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../../../modules/go/main.go:333:1)
+func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../../../toolchains/go/main.go:333:1)
 	if r.test != nil {
 		return nil
 	}
@@ -9706,11 +9851,11 @@ type GoTestsOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../modules/go/main.go:228:2)
+	Pkgs []string // go (../../../../toolchains/go/main.go:228:2)
 }
 
 // List tests
-func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { // go (../../../../modules/go/main.go:223:1)
+func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { // go (../../../../toolchains/go/main.go:223:1)
 	if r.tests != nil {
 		return *r.tests, nil
 	}
@@ -9730,12 +9875,12 @@ func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { /
 
 // GoTidyOpts contains options for Go.Tidy
 type GoTidyOpts struct {
-	Include []string // go (../../../../modules/go/main.go:485:2)
+	Include []string // go (../../../../toolchains/go/main.go:485:2)
 
-	Exclude []string // go (../../../../modules/go/main.go:486:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:486:2)
 }
 
-func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../modules/go/main.go:483:1)
+func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../toolchains/go/main.go:483:1)
 	q := r.query.Select("tidy")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -9753,7 +9898,7 @@ func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../modules/go
 	}
 }
 
-func (r *Go) TidyModule(mod string) *Changeset { // go (../../../../modules/go/main.go:472:1)
+func (r *Go) TidyModule(mod string) *Changeset { // go (../../../../toolchains/go/main.go:472:1)
 	q := r.query.Select("tidyModule")
 	q = q.Arg("mod", mod)
 
@@ -9763,7 +9908,7 @@ func (r *Go) TidyModule(mod string) *Changeset { // go (../../../../modules/go/m
 }
 
 // Add string value definition of the form importpath.name=value
-func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../modules/go/main.go:139:2)
+func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:139:2)
 	q := r.query.Select("values")
 
 	var response []string
@@ -9773,7 +9918,7 @@ func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../
 }
 
 // Go version
-func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../../modules/go/main.go:121:2)
+func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../../toolchains/go/main.go:121:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -12893,50 +13038,50 @@ type GoOpts struct {
 	//
 	// Project source directory
 	//
-	Source *Directory // go (../../../../modules/go/main.go:27:2)
+	Source *Directory // go (../../../../toolchains/go/main.go:27:2)
 	//
 	// Go version
 	//
 	//
-	// Default: "1.25.3"
-	Version string // go (../../../../modules/go/main.go:31:2)
+	// Default: "1.25.5"
+	Version string // go (../../../../toolchains/go/main.go:31:2)
 	//
 	// Use a custom module cache
 	//
-	ModuleCache *CacheVolume // go (../../../../modules/go/main.go:34:2)
+	ModuleCache *CacheVolume // go (../../../../toolchains/go/main.go:34:2)
 	//
 	// Use a custom build cache
 	//
-	BuildCache *CacheVolume // go (../../../../modules/go/main.go:38:2)
+	BuildCache *CacheVolume // go (../../../../toolchains/go/main.go:38:2)
 	//
 	// Use a custom base container.
 	// The container must have Go installed.
 	//
-	Base *Container // go (../../../../modules/go/main.go:43:2)
+	Base *Container // go (../../../../toolchains/go/main.go:43:2)
 	//
 	// Pass arguments to 'go build -ldflags''
 	//
-	Ldflags []string // go (../../../../modules/go/main.go:47:2)
+	Ldflags []string // go (../../../../toolchains/go/main.go:47:2)
 	//
 	// Add string value definition of the form importpath.name=value
 	// Example: "github.com/my/module.Foo=bar"
 	//
-	Values []string // go (../../../../modules/go/main.go:52:2)
+	Values []string // go (../../../../toolchains/go/main.go:52:2)
 	//
 	// Enable CGO
 	//
-	Cgo bool // go (../../../../modules/go/main.go:56:2)
+	Cgo bool // go (../../../../toolchains/go/main.go:56:2)
 	//
 	// Enable race detector. Implies cgo=true
 	//
-	Race bool // go (../../../../modules/go/main.go:60:2)
+	Race bool // go (../../../../toolchains/go/main.go:60:2)
 	//
 	// Enable go experiments https://pkg.go.dev/internal/goexperiment
 	//
-	Experiment []string // go (../../../../modules/go/main.go:64:2)
+	Experiment []string // go (../../../../toolchains/go/main.go:64:2)
 }
 
-func (r *Client) Go(opts ...GoOpts) *Go { // go (../../../../modules/go/main.go:24:1)
+func (r *Client) Go(opts ...GoOpts) *Go { // go (../../../../toolchains/go/main.go:24:1)
 	q := r.query.Select("go")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
@@ -13570,6 +13715,16 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	q = q.Arg("id", id)
 
 	return &SourceMap{
+		query: q,
+	}
+}
+
+// Load a Stat from its ID.
+func (r *Client) LoadStatFromID(id StatID) *Stat {
+	q := r.query.Select("loadStatFromID")
+	q = q.Arg("id", id)
+
+	return &Stat{
 		query: q,
 	}
 }
@@ -14727,6 +14882,124 @@ func (r *SourceMap) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// A file or directory status object.
+type Stat struct {
+	query *querybuilder.Selection
+
+	fileType    *FileType
+	id          *StatID
+	name        *string
+	permissions *int
+	size        *int
+}
+
+func (r *Stat) WithGraphQLQuery(q *querybuilder.Selection) *Stat {
+	return &Stat{
+		query: q,
+	}
+}
+
+// file type
+func (r *Stat) FileType(ctx context.Context) (FileType, error) {
+	if r.fileType != nil {
+		return *r.fileType, nil
+	}
+	q := r.query.Select("fileType")
+
+	var response FileType
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Stat.
+func (r *Stat) ID(ctx context.Context) (StatID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response StatID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Stat) XXX_GraphQLType() string {
+	return "Stat"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Stat) XXX_GraphQLIDType() string {
+	return "StatID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Stat) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Stat) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Stat) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadStatFromID(StatID(id))
+	return nil
+}
+
+// file name
+func (r *Stat) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// permission bits
+func (r *Stat) Permissions(ctx context.Context) (int, error) {
+	if r.permissions != nil {
+		return *r.permissions, nil
+	}
+	q := r.query.Select("permissions")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// file size
+func (r *Stat) Size(ctx context.Context) (int, error) {
+	if r.size != nil {
+		return *r.size, nil
+	}
+	q := r.query.Select("size")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // An interactive terminal that clients can connect to.
 type Terminal struct {
 	query *querybuilder.Selection
@@ -15361,6 +15634,89 @@ const (
 
 	// Tests path is a symlink
 	ExistsTypeSymlinkType ExistsType = "SYMLINK_TYPE"
+)
+
+// File type.
+type FileType string
+
+func (FileType) IsEnum() {}
+
+func (v FileType) Name() string {
+	switch v {
+	case FileTypeUnknown:
+		return "UNKNOWN"
+	case FileTypeRegular:
+		return "REGULAR"
+	case FileTypeDirectory:
+		return "DIRECTORY"
+	case FileTypeSymlink:
+		return "SYMLINK"
+	default:
+		return ""
+	}
+}
+
+func (v FileType) Value() string {
+	return string(v)
+}
+
+func (v *FileType) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *FileType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "DIRECTORY":
+		*v = FileTypeDirectory
+	case "DIRECTORY_TYPE":
+		*v = FileTypeDirectoryType
+	case "REGULAR":
+		*v = FileTypeRegular
+	case "REGULAR_TYPE":
+		*v = FileTypeRegularType
+	case "SYMLINK":
+		*v = FileTypeSymlink
+	case "SYMLINK_TYPE":
+		*v = FileTypeSymlinkType
+	case "UNKNOWN":
+		*v = FileTypeUnknown
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// unknown file type
+	FileTypeUnknown FileType = "UNKNOWN"
+
+	// regular file type
+	FileTypeRegular FileType = "REGULAR"
+	// regular file type
+	FileTypeRegularType FileType = FileTypeRegular
+
+	// directory file type
+	FileTypeDirectory FileType = "DIRECTORY"
+	// directory file type
+	FileTypeDirectoryType FileType = FileTypeDirectory
+
+	// symlink file type
+	FileTypeSymlink FileType = "SYMLINK"
+	// symlink file type
+	FileTypeSymlinkType FileType = FileTypeSymlink
 )
 
 // The behavior configured for function result caching.

@@ -292,6 +292,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Release":
 		switch fnName {
+		case "Bump":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var engineVersion string
+			if inputArgs["engineVersion"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["engineVersion"]), &engineVersion)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg engineVersion", err))
+				}
+			}
+			return (*Release).Bump(&parent, ctx, engineVersion)
 		case "GetMaintainers":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -313,6 +327,48 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).GetMaintainers(&parent, ctx, githubOrgName, githubToken)
+		case "Notify":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var repository string
+			if inputArgs["repository"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["repository"]), &repository)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repository", err))
+				}
+			}
+			var target string
+			if inputArgs["target"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["target"]), &target)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg target", err))
+				}
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			var discordWebhook *dagger.Secret
+			if inputArgs["discordWebhook"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["discordWebhook"]), &discordWebhook)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg discordWebhook", err))
+				}
+			}
+			var dryRun bool
+			if inputArgs["dryRun"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
+				}
+			}
+			return nil, (*Release).Notify(&parent, ctx, repository, target, name, discordWebhook, dryRun)
 		case "Publish":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -474,62 +530,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, goreleaserKey, githubToken, githubOrgName, netlifyToken, pypiToken, pypiRepo, npmToken, hexApikey, cargoRegistryToken, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, artefactsFqdn, discordWebhook)
-		case "Notify":
-			var parent Release
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var repository string
-			if inputArgs["repository"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["repository"]), &repository)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repository", err))
-				}
-			}
-			var target string
-			if inputArgs["target"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["target"]), &target)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg target", err))
-				}
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			var discordWebhook *dagger.Secret
-			if inputArgs["discordWebhook"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["discordWebhook"]), &discordWebhook)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg discordWebhook", err))
-				}
-			}
-			var dryRun bool
-			if inputArgs["dryRun"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
-				}
-			}
-			return nil, (*Release).Notify(&parent, ctx, repository, target, name, discordWebhook, dryRun)
-		case "Bump":
-			var parent Release
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var engineVersion string
-			if inputArgs["engineVersion"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["engineVersion"]), &engineVersion)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg engineVersion", err))
-				}
-			}
-			return (*Release).Bump(&parent, ctx, engineVersion)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

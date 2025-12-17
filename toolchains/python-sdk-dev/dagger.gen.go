@@ -87,6 +87,26 @@ func (r *PythonSdkDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+func (r Docs) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Container *dagger.Container
+	}
+	concrete.Container = r.Container
+	return json.Marshal(&concrete)
+}
+
+func (r *Docs) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Container *dagger.Container
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Container = concrete.Container
+	return nil
+}
+
 func (r TestSuite) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Container         *dagger.Container
@@ -112,26 +132,6 @@ func (r *TestSuite) UnmarshalJSON(bs []byte) error {
 	r.Container = concrete.Container
 	r.Version = concrete.Version
 	r.DisableNestedExec = concrete.DisableNestedExec
-	return nil
-}
-
-func (r Docs) MarshalJSON() ([]byte, error) {
-	var concrete struct {
-		Container *dagger.Container
-	}
-	concrete.Container = r.Container
-	return json.Marshal(&concrete)
-}
-
-func (r *Docs) UnmarshalJSON(bs []byte) error {
-	var concrete struct {
-		Container *dagger.Container
-	}
-	err := json.Unmarshal(bs, &concrete)
-	if err != nil {
-		return err
-	}
-	r.Container = concrete.Container
 	return nil
 }
 
@@ -280,34 +280,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "PythonSdkDev":
 		switch fnName {
-		case "LintDocsSnippets":
+		case "Build":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var workspace *dagger.Directory
-			if inputArgs["workspace"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["workspace"]), &workspace)
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg workspace", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return nil, (*PythonSdkDev).LintDocsSnippets(&parent, ctx, workspace)
-		case "Lint":
+			return (*PythonSdkDev).Build(&parent, version), nil
+		case "Bump":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var paths []string
-			if inputArgs["paths"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["paths"]), &paths)
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg paths", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return nil, (*PythonSdkDev).Lint(&parent, ctx, paths)
+			return (*PythonSdkDev).Bump(&parent, ctx, version)
+		case "Docs":
+			var parent PythonSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PythonSdkDev).Docs(&parent), nil
 		case "Format":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -322,39 +329,53 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*PythonSdkDev).Format(&parent, paths), nil
-		case "Typecheck":
+		case "Generate":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*PythonSdkDev).Typecheck(&parent, ctx)
-		case "WithDirectory":
+			return (*PythonSdkDev).Generate(&parent, ctx)
+		case "Lint":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var source *dagger.Directory
-			if inputArgs["source"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+			var paths []string
+			if inputArgs["paths"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["paths"]), &paths)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg paths", err))
 				}
 			}
-			return (*PythonSdkDev).WithDirectory(&parent, source), nil
-		case "Test":
+			return nil, (*PythonSdkDev).Lint(&parent, ctx, paths)
+		case "LintDocsSnippets":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*PythonSdkDev).Test(&parent, ctx)
-		case "TestSuite":
+			var workspace *dagger.Directory
+			if inputArgs["workspace"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["workspace"]), &workspace)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg workspace", err))
+				}
+			}
+			return nil, (*PythonSdkDev).LintDocsSnippets(&parent, ctx, workspace)
+		case "Publish":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var token *dagger.Secret
+			if inputArgs["token"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["token"]), &token)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg token", err))
+				}
 			}
 			var version string
 			if inputArgs["version"] != nil {
@@ -363,28 +384,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			var disableNestedExec bool
-			if inputArgs["disableNestedExec"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["disableNestedExec"]), &disableNestedExec)
+			var url string
+			if inputArgs["url"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["url"]), &url)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg disableNestedExec", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg url", err))
 				}
 			}
-			return (*PythonSdkDev).TestSuite(&parent, version, disableNestedExec), nil
-		case "Generate":
-			var parent PythonSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PythonSdkDev).Generate(&parent, ctx)
-		case "ReleaseDryRun":
-			var parent PythonSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*PythonSdkDev).ReleaseDryRun(&parent, ctx)
+			return (*PythonSdkDev).Publish(&parent, token, version, url), nil
 		case "Release":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -420,62 +427,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*PythonSdkDev).Release(&parent, ctx, sourceTag, dryRun, pypiRepo, pypiToken)
-		case "Bump":
+		case "ReleaseDryRun":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*PythonSdkDev).Bump(&parent, ctx, version)
-		case "Build":
+			return nil, (*PythonSdkDev).ReleaseDryRun(&parent, ctx)
+		case "Test":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*PythonSdkDev).Build(&parent, version), nil
-		case "Publish":
-			var parent PythonSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var token *dagger.Secret
-			if inputArgs["token"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["token"]), &token)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg token", err))
-				}
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			var url string
-			if inputArgs["url"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["url"]), &url)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg url", err))
-				}
-			}
-			return (*PythonSdkDev).Publish(&parent, token, version, url), nil
+			return nil, (*PythonSdkDev).Test(&parent, ctx)
 		case "TestPublish":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -497,13 +462,48 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*PythonSdkDev).TestPublish(&parent, token, version), nil
-		case "Docs":
+		case "TestSuite":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*PythonSdkDev).Docs(&parent), nil
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			var disableNestedExec bool
+			if inputArgs["disableNestedExec"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["disableNestedExec"]), &disableNestedExec)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg disableNestedExec", err))
+				}
+			}
+			return (*PythonSdkDev).TestSuite(&parent, version, disableNestedExec), nil
+		case "Typecheck":
+			var parent PythonSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*PythonSdkDev).Typecheck(&parent, ctx)
+		case "WithDirectory":
+			var parent PythonSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *dagger.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			return (*PythonSdkDev).WithDirectory(&parent, source), nil
 		case "":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -530,20 +530,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "TestSuite":
 		switch fnName {
-		case "Run":
-			var parent TestSuite
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var args []string
-			if inputArgs["args"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["args"]), &args)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg args", err))
-				}
-			}
-			return (*TestSuite).Run(&parent, args), nil
 		case "Default":
 			var parent TestSuite
 			err = json.Unmarshal(parentJSON, &parent)
@@ -551,13 +537,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*TestSuite).Default(&parent), nil
-		case "Unit":
-			var parent TestSuite
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*TestSuite).Unit(&parent), nil
 		case "Provision":
 			var parent TestSuite
 			err = json.Unmarshal(parentJSON, &parent)
@@ -579,6 +558,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*TestSuite).Provision(&parent, ctx, cliBin, runnerHost)
+		case "Run":
+			var parent TestSuite
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var args []string
+			if inputArgs["args"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["args"]), &args)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg args", err))
+				}
+			}
+			return (*TestSuite).Run(&parent, args), nil
+		case "Unit":
+			var parent TestSuite
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*TestSuite).Unit(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

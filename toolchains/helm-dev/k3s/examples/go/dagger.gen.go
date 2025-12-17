@@ -195,13 +195,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Examples).K3S(&parent, ctx)
-		case "K3SServer":
-			var parent Examples
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Examples).K3SServer(&parent, ctx)
 		case "K3SKubectl":
 			var parent Examples
 			err = json.Unmarshal(parentJSON, &parent)
@@ -216,6 +209,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Examples).K3SKubectl(&parent, args), nil
+		case "K3SServer":
+			var parent Examples
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Examples).K3SServer(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

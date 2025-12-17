@@ -344,55 +344,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Gh":
 		switch fnName {
-		case "Repo":
-			var parent Gh
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Gh).Repo(&parent), nil
-		case "WithToken":
-			var parent Gh
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var token *dagger.Secret
-			if inputArgs["token"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["token"]), &token)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg token", err))
-				}
-			}
-			return (*Gh).WithToken(&parent, token), nil
-		case "WithRepo":
-			var parent Gh
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var repo string
-			if inputArgs["repo"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
-				}
-			}
-			return (*Gh).WithRepo(&parent, repo)
-		case "WithSource":
-			var parent Gh
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var source *dagger.Directory
-			if inputArgs["source"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
-				}
-			}
-			return (*Gh).WithSource(&parent, source), nil
 		case "Clone":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)
@@ -407,34 +358,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Gh).Clone(&parent, repo)
-		case "Run":
-			var parent Gh
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var cmd string
-			if inputArgs["cmd"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["cmd"]), &cmd)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cmd", err))
-				}
-			}
-			var token *dagger.Secret
-			if inputArgs["token"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["token"]), &token)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg token", err))
-				}
-			}
-			var repo string
-			if inputArgs["repo"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
-				}
-			}
-			return (*Gh).Run(&parent, cmd, token, repo), nil
 		case "Exec":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)
@@ -463,20 +386,55 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Gh).Exec(&parent, args, token, repo), nil
-		case "WithGitExec":
+		case "PullRequest":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var args []string
-			if inputArgs["args"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["args"]), &args)
+			return (*Gh).PullRequest(&parent), nil
+		case "Release":
+			var parent Gh
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Gh).Release(&parent), nil
+		case "Repo":
+			var parent Gh
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Gh).Repo(&parent), nil
+		case "Run":
+			var parent Gh
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var cmd string
+			if inputArgs["cmd"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cmd"]), &cmd)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg args", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cmd", err))
 				}
 			}
-			return (*Gh).WithGitExec(&parent, args)
+			var token *dagger.Secret
+			if inputArgs["token"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["token"]), &token)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg token", err))
+				}
+			}
+			var repo string
+			if inputArgs["repo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
+				}
+			}
+			return (*Gh).Run(&parent, cmd, token, repo), nil
 		case "Terminal":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)
@@ -498,20 +456,62 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Gh).Terminal(&parent, token, repo), nil
-		case "PullRequest":
+		case "WithGitExec":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Gh).PullRequest(&parent), nil
-		case "Release":
+			var args []string
+			if inputArgs["args"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["args"]), &args)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg args", err))
+				}
+			}
+			return (*Gh).WithGitExec(&parent, args)
+		case "WithRepo":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Gh).Release(&parent), nil
+			var repo string
+			if inputArgs["repo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
+				}
+			}
+			return (*Gh).WithRepo(&parent, repo)
+		case "WithSource":
+			var parent Gh
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *dagger.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			return (*Gh).WithSource(&parent, source), nil
+		case "WithToken":
+			var parent Gh
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var token *dagger.Secret
+			if inputArgs["token"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["token"]), &token)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg token", err))
+				}
+			}
+			return (*Gh).WithToken(&parent, token), nil
 		case "":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)

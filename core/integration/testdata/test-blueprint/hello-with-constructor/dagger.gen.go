@@ -194,13 +194,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Hello":
 		switch fnName {
-		case "Message":
-			var parent Hello
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Hello).Message(&parent), nil
 		case "BlueprintConfig":
 			var parent Hello
 			err = json.Unmarshal(parentJSON, &parent)
@@ -215,6 +208,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Hello).FieldConfig(&parent, ctx)
+		case "Message":
+			var parent Hello
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Hello).Message(&parent), nil
 		case "":
 			var parent Hello
 			err = json.Unmarshal(parentJSON, &parent)
