@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -49,7 +50,15 @@ func generateCode(
 	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg, pkg, fset, pass)
 	tmpls := templates.Templates(funcs)
 
-	for k, tmpl := range tmpls {
+	// Sort template keys for deterministic processing
+	keys := make([]string, 0, len(tmpls))
+	for k := range tmpls {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		tmpl := tmpls[k]
 		dt, err := renderFile(cfg.OutputDir, schema, schemaVersion, pkgInfo, tmpl)
 		if err != nil {
 			return err
