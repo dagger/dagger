@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "go",
-      "source": "../../modules/go"
+      "source": "../../toolchains/go"
     }
   ],
   "source": ".dagger"

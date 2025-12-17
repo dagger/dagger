@@ -12,7 +12,7 @@
     },
     {
       "name": "go",
-      "source": "../go"
+      "source": "../../toolchains/go"
     }
   ]
 }
