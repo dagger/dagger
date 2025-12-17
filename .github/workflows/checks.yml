@@ -4,12 +4,13 @@ name: Checks
     branches:
       - main
       - releases/**
-  pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
+  # commeting to enable native-ci
+  #pull_request:
+  #types:
+  #- opened
+  #- reopened
+  #- synchronize
+  #- ready_for_review
   workflow_dispatch: {}
 permissions:
   contents: read
