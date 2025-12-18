@@ -986,7 +986,15 @@ func (c *Client) shutdownServer() error {
 	// canceled
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	timeout := 10 * time.Second
+	if timeoutStr, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"); ok {
+		if interval, err := time.ParseDuration(timeoutStr); err == nil {
+			timeout = interval
+		} else {
+			slog.Warn("invalid _EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT value, using default 10 seconds", "error", err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.ShutdownEndpoint, nil)
