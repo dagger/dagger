@@ -207,7 +207,7 @@ func (e *imageExporterInstance) Attrs() map[string]string {
 }
 
 func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source, inlineCache exptypes.InlineCache, sessionID string) (_ map[string]string, descref exporter.DescriptorReference, err error) {
-	fmt.Printf("ACB in containerimage/imageExporterInstance.Export\n")
+	fmt.Printf("ACB in containerimage/imageExporterInstance.Export comp opts %+v\n", e.opts.RefCfg.Compression)
 	src = src.Clone()
 	if src.Metadata == nil {
 		src.Metadata = make(map[string][]byte)
@@ -231,6 +231,7 @@ func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source
 		}
 	}()
 
+	fmt.Printf("ACB calling ImageWriter.Commit\n")
 	desc, err := e.opt.ImageWriter.Commit(ctx, src, sessionID, inlineCache, &opts)
 	if err != nil {
 		return nil, nil, err
@@ -240,6 +241,7 @@ func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source
 			descref = NewDescriptorReference(*desc, done)
 		}
 	}()
+	fmt.Printf("ACB Export called Commit and got back %+v\n", desc)
 
 	resp := make(map[string]string)
 
@@ -364,6 +366,7 @@ func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source
 }
 
 func (e *imageExporterInstance) pushImage(ctx context.Context, src *exporter.Source, sessionID string, targetName string, dgst digest.Digest) error {
+	fmt.Printf("ACB pushImage called on %s -> %s comp opts are %+v\n", targetName, dgst, e.opts.RefCfg.Compression)
 	var refs []cache.ImmutableRef
 	if src.Ref != nil {
 		refs = append(refs, src.Ref)
@@ -378,12 +381,18 @@ func (e *imageExporterInstance) pushImage(ctx context.Context, src *exporter.Sou
 	annotations := map[digest.Digest]map[string]string{}
 	mprovider := contentutil.NewMultiProvider(e.opt.ImageWriter.ContentStore())
 	for _, ref := range refs {
+		fmt.Printf("ACB pushImage calling GetRemotes on %s with comp %+v\n", ref.ID(), e.opts.RefCfg.Compression)
 		remotes, err := ref.GetRemotes(ctx, false, e.opts.RefCfg, false, session.NewGroup(sessionID))
 		if err != nil {
 			return err
 		}
+		fmt.Printf("ACB GetRemotes returned %d items\n", len(remotes))
+		for i, r := range remotes {
+			fmt.Printf("ACB remote %d comp %+v\n", i, r.Descriptors)
+		}
 		remote := remotes[0]
 		for _, desc := range remote.Descriptors {
+			fmt.Printf("ACB mprovider add %s type %s\n", desc.Digest.String(), desc.MediaType)
 			mprovider.Add(desc.Digest, remote.Provider)
 			addAnnotations(annotations, desc)
 		}

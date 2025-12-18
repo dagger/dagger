@@ -265,6 +265,7 @@ func computeBlobChain(ctx context.Context, sr *immutableRef, createIfNeeded bool
 			}
 
 			if comp.Force {
+				fmt.Printf("ACB computeBlobChain calling ensureCompression\n")
 				if err := ensureCompression(ctx, sr, comp, s); err != nil {
 					return errors.Wrapf(err, "failed to ensure compression type of %q", comp.Type)
 				}
@@ -449,6 +450,7 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 		}()
 
 		// Resolve converters
+		fmt.Printf("ACB ensureCompression calling converter\n")
 		layerConvertFunc, err := converter.New(ctx, ref.cm.ContentStore, desc, comp)
 		if err != nil {
 			return nil, err
@@ -457,8 +459,10 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 				return nil, err
 			} else if isLazy {
 				// This ref can be used as the specified compressionType. Keep it lazy.
+				fmt.Printf("ACB returning lazy with layerConvertFunc==nil\n")
 				return l, nil
 			}
+			fmt.Printf("ACB linkBlob called here1 %v -> %+v\n", ref.ID(), desc)
 			if err := ref.linkBlob(ctx, desc); err != nil {
 				return nil, err
 			}
@@ -467,6 +471,7 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 
 		// First, lookup local content store
 		if _, err := ref.getBlobWithCompression(ctx, comp.Type); err == nil {
+			fmt.Printf("ACB getBlobWithCompression got the correct type\n")
 			return l, nil // found the compression variant. no need to convert.
 		}
 
@@ -485,6 +490,7 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 		}
 
 		// Start to track converted layer
+		fmt.Printf("ACB linkBlob called here2 %v -> %+v\n", ref.ID(), newDesc)
 		if err := ref.linkBlob(ctx, *newDesc); err != nil {
 			return nil, errors.Wrapf(err, "failed to add compression blob")
 		}

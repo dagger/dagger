@@ -2120,6 +2120,7 @@ func (container *Container) PublishDagOp(
 
 	imageDigest, found := resp[exptypes.ExporterImageDigestKey]
 	if found {
+		fmt.Printf("ACB parsing digest %s\n", imageDigest)
 		dig, err := digest.Parse(imageDigest)
 		if err != nil {
 			return "", fmt.Errorf("parse digest: %w", err)
@@ -2130,9 +2131,11 @@ func (container *Container) PublishDagOp(
 			return "", fmt.Errorf("with digest: %w", err)
 		}
 
+		fmt.Printf("ACB PublishDagOp returning here1 %s\n", withDig.String())
 		return withDig.String(), nil
 	}
 
+	fmt.Printf("ACB PublishDagOp returning here2 %s\n", ref)
 	return ref, nil
 }
 
@@ -2249,6 +2252,17 @@ func (container *Container) Export(
 	return &desc, nil
 }
 
+func useOCIMediaTypes(mediaTypes ImageMediaTypes) bool {
+	if mediaTypes == "" {
+		// Modern registry implementations support oci types and docker daemons
+		// have been capable of pulling them since 2018:
+		// https://github.com/moby/moby/pull/37359
+		// So they are a safe default.
+		mediaTypes = OCIMediaTypes
+	}
+	return mediaTypes == OCIMediaTypes
+}
+
 func (container *Container) ExportDagOp(ctx context.Context, opts ExportOpts) (*specs.Descriptor, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -2285,7 +2299,7 @@ func (container *Container) ExportDagOp(ctx context.Context, opts ExportOpts) (*
 
 	}
 
-	resp, err := bk.ExportContainerImageDagOp(ctx, opts.Dest, inputByPlatform)
+	resp, err := bk.ExportContainerImageDagOp(ctx, opts.Dest, inputByPlatform, string(opts.ForcedCompression), opts.Tar, opts.LeaseID, useOCIMediaTypes(opts.MediaTypes))
 	if err != nil {
 		return nil, err
 	}

@@ -62,6 +62,7 @@ type ImageWriter struct {
 }
 
 func (ic *ImageWriter) Commit(ctx context.Context, inp *exporter.Source, sessionID string, inlineCache exptypes.InlineCache, opts *ImageCommitOpts) (*ocispecs.Descriptor, error) {
+	fmt.Printf("ACB ImageWriter.Commit called with comp %+v\n", opts.RefCfg.Compression)
 	if _, ok := inp.Metadata[exptypes.ExporterPlatformsKey]; len(inp.Refs) > 0 && !ok {
 		return nil, errors.Errorf("unable to export multiple refs, missing platforms mapping")
 	}
@@ -267,6 +268,7 @@ func (ic *ImageWriter) Commit(ctx context.Context, inp *exporter.Source, session
 		}
 		dp := p.Platform
 		desc.Platform = &dp
+		fmt.Printf("ACB adding distribution manifest %+v\n", *desc)
 		idx.Manifests = append(idx.Manifests, *desc)
 
 		labels[fmt.Sprintf("containerd.io/gc.ref.content.%d", i)] = desc.Digest.String()
@@ -345,10 +347,12 @@ func (ic *ImageWriter) Commit(ctx context.Context, inp *exporter.Source, session
 	}
 	idxDone(nil)
 
+	fmt.Printf("ACB commit returning %+v\n", idxDesc)
 	return &idxDesc, nil
 }
 
 func (ic *ImageWriter) exportLayers(ctx context.Context, refCfg cacheconfig.RefConfig, s session.Group, refs ...cache.ImmutableRef) ([]solver.Remote, error) {
+	fmt.Printf("ACB exportLayers called with comp %+v\n", refCfg.Compression)
 	attr := []attribute.KeyValue{
 		attribute.String("exportLayers.compressionType", refCfg.Compression.Type.String()),
 		attribute.Bool("exportLayers.forceCompression", refCfg.Compression.Force),
@@ -443,6 +447,7 @@ func (ic *ImageWriter) rewriteRemoteWithEpoch(ctx context.Context, opts *ImageCo
 				bklog.G(ctx).WithError(err).Warnf("failed to rewrite layer %d/%d to match source-date-epoch %d (%s)",
 					i+1, len(remoteDescriptors), opts.Epoch.Unix(), opts.Epoch.String())
 			} else if rewrittenDesc != nil {
+				fmt.Printf("ACB rewritten %v to %+v\n", desc, rewrittenDesc)
 				remoteDescriptors[i] = *rewrittenDesc
 			}
 			return nil

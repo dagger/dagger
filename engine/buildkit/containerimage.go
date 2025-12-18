@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strconv"
+	"strings"
 
 	"github.com/containerd/platforms"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
@@ -175,6 +177,10 @@ func (c *Client) ExportContainerImageDagOp(
 	ctx context.Context,
 	destPath string,
 	inputByPlatform map[string]ContainerExportDagOp,
+	forceCompression string,
+	tarExport bool,
+	leaseID string, // only required when tarExport is false
+	useOCIMediaTypes bool,
 ) (map[string]string, error) {
 	ctx = buildkitTelemetryProvider(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -205,7 +211,24 @@ func (c *Client) ExportContainerImageDagOp(
 		return nil, err
 	}
 
-	opts := map[string]string{}
+	opts := map[string]string{
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(useOCIMediaTypes),
+	}
+
+	opts["tar"] = strconv.FormatBool(tarExport)
+	if !tarExport {
+		if leaseID == "" {
+			return nil, fmt.Errorf("missing leaseID")
+		}
+		opts["store"] = "export"
+		opts["lease"] = leaseID
+	}
+
+	if forceCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(forceCompression)
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
 	expResult, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve exporter: %w", err)

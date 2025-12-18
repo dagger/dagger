@@ -33,7 +33,7 @@ func New(ctx context.Context, cs content.Store, desc ocispecs.Descriptor, comp c
 // NewWithRewriteTimestamp returns converter function according to the specified compression type and the epoch.
 // If no conversion is needed, this returns nil without error.
 func NewWithRewriteTimestamp(ctx context.Context, cs content.Store, desc ocispecs.Descriptor, comp compression.Config, rewriteTimestamp *time.Time, immDiffIDs map[digest.Digest]struct{}) (converter.ConvertFunc, error) {
-	fmt.Printf("ACB NewWithRewriteTimestamp called\n")
+	fmt.Printf("ACB NewWithRewriteTimestamp called comp=%+v desc=%+v\n", comp, desc)
 	needs, err := comp.Type.NeedsConversion(ctx, cs, desc)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to determine conversion needs")
@@ -42,6 +42,7 @@ func NewWithRewriteTimestamp(ctx context.Context, cs content.Store, desc ocispec
 		needs = desc.Annotations[labelRewrittenTimestamp] != fmt.Sprintf("%d", rewriteTimestamp.UTC().Unix())
 	}
 	if !needs {
+		fmt.Printf("ACB NewWithRewriteTimestamp doesn't need a conversion; comp=%+v, desc=%+v\n", comp, desc)
 		// No conversion. No need to return an error here.
 		return nil, nil
 	}
@@ -50,6 +51,7 @@ func NewWithRewriteTimestamp(ctx context.Context, cs content.Store, desc ocispec
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("ACB NewWithRewriteTimestamp convert from=%+v comp=%+v\n", from, comp)
 
 	c := conversion{target: comp}
 	c.compress, c.finalize = comp.Type.Compress(ctx, comp)

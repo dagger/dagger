@@ -23,16 +23,21 @@ func (c zstdType) Decompress(ctx context.Context, cs content.Store, desc ocispec
 }
 
 func (c zstdType) NeedsConversion(ctx context.Context, cs content.Store, desc ocispecs.Descriptor) (bool, error) {
+	fmt.Printf("ACB zstdType.NeedsConversion called\n")
 	if !images.IsLayerType(desc.MediaType) {
+		fmt.Printf("ACB NeedsConversion false1\n")
 		return false, nil
 	}
 	ct, err := FromMediaType(desc.MediaType)
 	if err != nil {
+		fmt.Printf("ACB NeedsConversion false2 and err %v\n", err)
 		return false, err
 	}
 	if ct == Zstd {
+		fmt.Printf("ACB NeedsConversion false3\n")
 		return false, nil
 	}
+	fmt.Printf("ACB NeedsConversion true\n")
 	return true, nil
 }
 
