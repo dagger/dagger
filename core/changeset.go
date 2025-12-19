@@ -150,6 +150,26 @@ func (ch *Changeset) PBDefinitions(ctx context.Context) ([]*pb.Definition, error
 
 const ChangesetPatchFilename = "diff.patch"
 
+func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
+	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
+		return true, nil
+	}
+
+	var isEmpty bool
+	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+		identical, err := directoriesAreIdentical(ctx, beforeDir, afterDir)
+		if err != nil {
+			return err
+		}
+		isEmpty = identical
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return isEmpty, nil
+}
+
 func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
 	if err != nil {
@@ -221,55 +241,18 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer patchFile.Close()
 
-				paths, err := compareDirectories(ctx, beforeDir, afterDir)
-				if err != nil {
-					return err
-				}
-
-				// TODO: once there's an Alpine with git 2.51, we can just pass the
-				// paths to git diff --no-index a b -- <all paths>
-				diff := func(a, b string) error {
-					var path1, path2 string
-					if a == "" {
-						path1 = "/dev/null"
-					} else {
-						path1 = filepath.Join("a", a)
-					}
-					if b == "" {
-						path2 = "/dev/null"
-					} else {
-						path2 = filepath.Join("b", b)
-					}
-					cmd := exec.Command("git", "diff", "--no-prefix", "--no-index", path1, path2)
-					cmd.Dir = root
-					cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
-					cmd.Stderr = stdio.Stderr
-					if err := cmd.Run(); err != nil {
-						var exitErr *exec.ExitError
-						// Check if it's exit code 1, which is expected for git diff when files differ
-						if errors.As(err, &exitErr) && exitErr.ExitCode() != 1 {
-							// NB: we could technically populate a buildkit.ExecError here, but that
-							// feels like it leaks implementation details; "exit status 128" isn't
-							// exactly clear
-							return fmt.Errorf("failed to generate patch: %w", err)
-						}
-					}
-					return nil
-				}
-
-				for _, modified := range paths.Modified {
-					if err := diff(modified, modified); err != nil {
-						return err
-					}
-				}
-				for _, added := range paths.Added {
-					if err := diff("", added); err != nil {
-						return err
-					}
-				}
-				for _, removed := range paths.Removed {
-					if err := diff(removed, ""); err != nil {
-						return err
+				cmd := exec.Command("git", "diff", "--no-prefix", "--no-index", "a", "b")
+				cmd.Dir = root
+				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
+				cmd.Stderr = stdio.Stderr
+				if err := cmd.Run(); err != nil {
+					var exitErr *exec.ExitError
+					// Check if it's exit code 1, which is expected for git diff when files differ
+					if errors.As(err, &exitErr) && exitErr.ExitCode() != 1 {
+						// NB: we could technically populate a buildkit.ExecError here, but that
+						// feels like it leaks implementation details; "exit status 128" isn't
+						// exactly clear
+						return fmt.Errorf("failed to generate patch: %w", err)
 					}
 				}
 				return nil
