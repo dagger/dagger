@@ -505,6 +505,10 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			// If we've already shown the root cause error for the command, we can
 			// skip displaying the primary output and error, since it's just a poorer
 			// representation of the same error (`Error: input: ...`)
+			var exitErr ExitError
+			if errors.As(fe.err, &exitErr) {
+				return exitErr
+			}
 			return ExitError{Code: 1, Original: fe.err}
 		}
 	}

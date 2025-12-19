@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
@@ -1041,6 +1042,17 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 		require.Equal(t, 5, execErr.ExitCode)
 		require.Contains(t, execErr.Stdout, "foo")
 		require.NotContains(t, execErr.Stdout, "ok")
+	})
+
+	t.Run("specific code with tty", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "-M", "-c", ".exit 5")
+		err := cmd.Run()
+
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr)
+		require.Equal(t, 5, exitErr.ExitCode())
 	})
 
 	t.Run("no args", func(ctx context.Context, t *testctx.T) {
