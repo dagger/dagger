@@ -413,19 +413,19 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		return "", nil
 	}
 	if strings.Count(rawPatch, "\n") > 100 {
-		// Summarization is best-effort; if anything fails, fall back to raw patch
+		// If the patch is too large, show a summary instead
 		var addedPaths, removedPaths []string
 		if err := srv.Select(ctx, changes, &addedPaths, dagql.Selector{
 			View:  srv.View,
 			Field: "addedPaths",
 		}); err != nil {
-			return rawPatch, nil
+			return fmt.Sprintf("WARNING: failed to fetch added paths: %s", err), nil
 		}
 		if err := srv.Select(ctx, changes, &removedPaths, dagql.Selector{
 			View:  srv.View,
 			Field: "removedPaths",
 		}); err != nil {
-			return rawPatch, nil
+			return fmt.Sprintf("WARNING: failed to fetch removed paths: %s", err), nil
 		}
 		addedDirectories := slices.DeleteFunc(addedPaths, func(s string) bool {
 			return !strings.HasSuffix(s, "/")
@@ -435,7 +435,7 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		})
 		patch, err := diffparser.Parse(rawPatch)
 		if err != nil {
-			return rawPatch, nil
+			return "", fmt.Errorf("parse patch: %w", err)
 		}
 		preview := &idtui.PatchPreview{
 			Patch:       patch,
@@ -445,7 +445,7 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		var res strings.Builder
 		llmOut := termenv.NewOutput(&res, termenv.WithProfile(termenv.Ascii))
 		if err := preview.Summarize(llmOut, 80); err != nil {
-			return rawPatch, nil
+			return fmt.Sprintf("WARNING: failed to render patch summary: %s", err), nil
 		}
 		return res.String(), nil
 	}
