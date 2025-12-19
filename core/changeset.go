@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"syscall"
 
 	"dagger.io/dagger/telemetry"
@@ -61,11 +62,10 @@ func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) 
 		}
 		addedDirs, removedDirs := diffStringSlices(beforeDirs, afterDirs)
 
-		allRemoved := append([]string{}, fileChanges.Removed...)
-		allRemoved = append(allRemoved, removedDirs...)
+		allRemoved := slices.Concat(fileChanges.Removed, removedDirs)
 
 		result = &ChangesetPaths{
-			Added:      append(append([]string{}, fileChanges.Added...), addedDirs...),
+			Added:      slices.Concat(fileChanges.Added, addedDirs),
 			Modified:   fileChanges.Modified,
 			Removed:    collapseChildPaths(allRemoved),
 			AllRemoved: allRemoved,
