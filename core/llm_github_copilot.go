@@ -63,10 +63,14 @@ func GhcpClientContainer(
 	token string,
 	cliVersion string,
 ) *dagger.Container {
+	// Use a cache volume to persist the copilot session state across calls
+	ghcpSessionCache := dag.CacheVolume("copilot-session-" + token[:8]) // Use token prefix as cache key
+
 	return dag.Container().
 		From("node:24-bookworm-slim").
 		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("@github/copilot@%s", cliVersion)}).
 		WithEnvVariable("GITHUB_TOKEN", token).
+		WithMountedCache("/root/.copilot", ghcpSessionCache). // Mount cache at copilot config directory
 		WithWorkdir("/workspace")
 }
 
@@ -124,6 +128,7 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 		"--model", copilotModel,
 		"--prompt", prompt.Content,
 		"--stream", "off",
+		"--continue",
 	})
 
 	// We aren't implement tool calls for GHCP at the moment
