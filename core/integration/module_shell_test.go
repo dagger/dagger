@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
@@ -1047,8 +1048,18 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 	t.Run("specific code with tty", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 
+		console, err := newTUIConsole(t, 60*time.Second)
+
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
 		cmd := hostDaggerCommand(ctx, t, modDir, "-M", "-c", ".exit 5")
-		err := cmd.Run()
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		err = cmd.Run()
 
 		var exitErr *exec.ExitError
 		require.ErrorAs(t, err, &exitErr)
