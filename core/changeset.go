@@ -148,6 +148,88 @@ removed:
 	return nil
 }
 
+type ChangesetPaths struct {
+	Added      []string
+	Modified   []string
+	Removed    []string
+	AllRemoved []string
+}
+
+// ComputePaths computes the added, modified, and removed paths using git diff.
+// This must be called from a dagql resolver context where buildkit session is available.
+func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
+	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
+		return &ChangesetPaths{}, nil
+	}
+
+	var result *ChangesetPaths
+	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+		fileChanges, err := compareDirectories(ctx, beforeDir, afterDir)
+		if err != nil {
+			return err
+		}
+
+		beforeDirs, err := listSubdirectories(beforeDir)
+		if err != nil {
+			return fmt.Errorf("list before directories: %w", err)
+		}
+		afterDirs, err := listSubdirectories(afterDir)
+		if err != nil {
+			return fmt.Errorf("list after directories: %w", err)
+		}
+		addedDirs, removedDirs := diffStringSlices(beforeDirs, afterDirs)
+
+		allRemoved := append([]string{}, fileChanges.Removed...)
+		allRemoved = append(allRemoved, removedDirs...)
+
+		result = &ChangesetPaths{
+			Added:      append(append([]string{}, fileChanges.Added...), addedDirs...),
+			Modified:   fileChanges.Modified,
+			Removed:    collapseChildPaths(allRemoved),
+			AllRemoved: allRemoved,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// withMountedDirs mounts the before and after directories and calls fn with their paths.
+func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, afterDir string) error) error {
+	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
+	if err != nil {
+		return fmt.Errorf("evaluate before: %w", err)
+	}
+
+	afterRef, err := getRefOrEvaluate(ctx, ch.After.Self())
+	if err != nil {
+		return fmt.Errorf("evaluate after: %w", err)
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return fmt.Errorf("no buildkit session group in context")
+	}
+
+	return MountRef(ctx, beforeRef, bkSessionGroup, func(beforeMount string, _ *mount.Mount) error {
+		beforeDir, err := containerdfs.RootPath(beforeMount, ch.Before.Self().Dir)
+		if err != nil {
+			return err
+		}
+
+		return MountRef(ctx, afterRef, bkSessionGroup, func(afterMount string, _ *mount.Mount) error {
+			afterDir, err := containerdfs.RootPath(afterMount, ch.After.Self().Dir)
+			if err != nil {
+				return err
+			}
+
+			return fn(beforeDir, afterDir)
+		}, mountRefAsReadOnly)
+	}, mountRefAsReadOnly)
+}
+
 type Changeset struct {
 	Before dagql.ObjectResult[*Directory] `field:"true" doc:"The older/lower snapshot to compare against."`
 	After  dagql.ObjectResult[*Directory] `field:"true" doc:"The newer/upper snapshot."`
