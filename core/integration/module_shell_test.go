@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
@@ -1041,6 +1043,27 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 		require.Equal(t, 5, execErr.ExitCode)
 		require.Contains(t, execErr.Stdout, "foo")
 		require.NotContains(t, execErr.Stdout, "ok")
+	})
+
+	t.Run("specific code with tty", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+
+		console, err := newTUIConsole(t, 60*time.Second)
+
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "-M", "-c", ".exit 5")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		err = cmd.Run()
+
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr)
+		require.Equal(t, 5, exitErr.ExitCode())
 	})
 
 	t.Run("no args", func(ctx context.Context, t *testctx.T) {
