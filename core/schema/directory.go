@@ -305,7 +305,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("addedPaths", DagOpWrapper(srv, s.changesetAddedPaths)).
 			Doc(`Files and directories that were added in the newer directory.`),
 		dagql.NodeFunc("modifiedPaths", DagOpWrapper(srv, s.changesetModifiedPaths)).
-			Doc(`Files that existed before and were updated in the newer directory.`),
+			Doc(`Files and directories that existed before and were updated in the newer directory.`),
 		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesetRemovedPaths)).
 			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
 	}.Install(srv)
