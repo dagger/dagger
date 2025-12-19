@@ -302,6 +302,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("isEmpty", s.changesetEmpty).
 			Doc(`Returns true if the changeset is empty (i.e. there are no changes).`),
+		dagql.NodeFunc("addedPaths", DagOpWrapper(srv, s.changesetAddedPaths)).
+			Doc(`Files and directories that were added in the newer directory.`),
+		dagql.NodeFunc("modifiedPaths", DagOpWrapper(srv, s.changesetModifiedPaths)).
+			Doc(`Files that existed before and were updated in the newer directory.`),
+		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesetRemovedPaths)).
+			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
 	}.Install(srv)
 }
 
@@ -1034,6 +1040,34 @@ func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.Objec
 	}
 
 	return size == 0, nil
+}
+
+type changesetPathsArgs struct {
+	DagOpInternalArgs
+}
+
+func (s *directorySchema) changesetAddedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetPathsArgs) (dagql.Array[dagql.String], error) {
+	paths, err := parent.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(paths.Added...), nil
+}
+
+func (s *directorySchema) changesetModifiedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetPathsArgs) (dagql.Array[dagql.String], error) {
+	paths, err := parent.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(paths.Modified...), nil
+}
+
+func (s *directorySchema) changesetRemovedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetPathsArgs) (dagql.Array[dagql.String], error) {
+	paths, err := parent.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(paths.Removed...), nil
 }
 
 type dirExportArgs struct {

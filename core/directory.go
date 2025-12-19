@@ -1480,14 +1480,18 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Dir
 	}
 	dir.Result = ref
 
-	// Remove all the paths in Changes.removedPaths using Without
-	if len(changes.RemovedPaths) > 0 {
+	paths, err := changes.ComputePaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compute paths: %w", err)
+	}
+
+	if len(paths.Removed) > 0 {
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get dagql server: %w", err)
 		}
 
-		dir, _, err = dir.Without(ctx, srv, changes.RemovedPaths...)
+		dir, _, err = dir.Without(ctx, srv, paths.Removed...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to remove paths: %w", err)
 		}
