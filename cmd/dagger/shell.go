@@ -51,14 +51,11 @@ var shellCmd = &cobra.Command{
 			handler := newShellCallHandler(dag, Frontend)
 
 			err := handler.RunAll(ctx, args)
-			if err == nil {
-				return nil
-			}
 
 			// Wrap exit status in ExitError so the TUI preserves the exit code
 			// and doesn't print a redundant error message.
 			var es interp.ExitStatus
-			if errors.As(err, &es) {
+			if handler.tty && errors.As(err, &es) {
 				return idtui.ExitError{Code: int(es), Original: err}
 			}
 
