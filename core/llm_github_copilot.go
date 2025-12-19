@@ -111,11 +111,9 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 	}
 
 	// Get the last message as the prompt
+	// This is presumed to be the user prompt at the moment
+	// Since GitHub Copilot CLI currently only supports single prompt input when running from a command line (--prompt)
 	prompt := history[len(history)-1]
-
-	// Currently, GitHub Copilot CLI only supports single prompt input
-	// We will only send the last user message as the prompt
-	// Future versions may support full chat history and tool calls
 	if prompt.Role != "user" {
 		return nil, fmt.Errorf("the last message in history must be from the user")
 	}
@@ -125,8 +123,14 @@ func (c *GhcpClient) SendQuery(ctx context.Context, history []*ModelMessage, too
 		"--model", copilotModel,
 		"--prompt", prompt.Content,
 		"--stream", "off",
+		"--resume",
 	})
 
+	// Reassign the executed GHCP CLI container instance with the exec command back to the GHCPClient instance
+	// so that we can access the stdout and stderr later or chain more exec commands if needed and retain history within the container
+	c.client = copilot
+
+	// We aren't implement tool calls for GHCP at the moment
 	var toolCalls []LLMToolCall
 
 	content, err := copilot.Stdout(ctx)
