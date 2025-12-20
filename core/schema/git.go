@@ -1395,7 +1395,20 @@ func (s *gitSchema) fetchRef(
 		}
 	}
 
-	return dagql.NewString(cmp.Or(gitRef.Ref.Name, gitRef.Ref.SHA)), nil
+	refName := cmp.Or(gitRef.Ref.Name, gitRef.Ref.SHA)
+	if !strings.HasPrefix(refName, "refs/") && !gitutil.IsCommitSHA(refName) {
+		remote, err := repo.Backend.Remote(ctx)
+		if err != nil {
+			return "", err
+		}
+		resolvedRef, err := remote.Lookup(refName)
+		if err != nil {
+			return "", err
+		}
+		refName = resolvedRef.Name
+	}
+
+	return dagql.NewString(refName), nil
 }
 
 type mergeBaseArgs struct {
