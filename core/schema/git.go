@@ -131,7 +131,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
-		dagql.NodeFunc("tree", s.tree).
+		dagql.NodeFuncWithCacheKey("tree", s.tree, dagql.CachePerClient).
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			Args(
@@ -146,9 +146,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					View(BeforeVersion("v0.12.0")).
 					Doc("This option should be passed to `git` instead.").Deprecated(),
 			),
-		dagql.NodeFunc("commit", s.fetchCommit).
+		dagql.NodeFuncWithCacheKey("commit", s.fetchCommit, dagql.CachePerClient).
 			Doc(`The resolved commit id at this ref.`),
-		dagql.NodeFunc("ref", s.fetchRef).
+		dagql.NodeFuncWithCacheKey("ref", s.fetchRef, dagql.CachePerClient).
 			Doc(`The resolved ref name at this ref.`),
 		dagql.NodeFunc("commonAncestor", s.commonAncestor).
 			Doc(`Find the best common ancestor between this ref and another ref.`).
