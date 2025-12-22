@@ -204,6 +204,9 @@ func (b *BunRuntime) withInstalledDependencies() *BunRuntime {
 	}
 
 	b.ctr = b.ctr.
+		WithMountedDirectory(".", b.cfg.source.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{"bun.lock"},
+		})).
 		WithExec([]string{"bun", "install", "--no-verify", "--omit=dev", "--omit=peer", "--omit=optional"})
 
 	return b

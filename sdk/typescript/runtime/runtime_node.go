@@ -261,6 +261,9 @@ func (y *YarnPkgManager) withInstalledDependencies() *NodeRuntime {
 		}
 	}
 	y.NodeRuntime.ctr = y.NodeRuntime.ctr.
+		WithMountedDirectory(".", y.cfg.source.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{y.lockFileName()},
+		})).
 		WithExec([]string{"yarn", "install", "--prod"})
 
 	return y.NodeRuntime
@@ -319,6 +322,9 @@ func (n *NpmPkgManager) withInstalledDependencies() *NodeRuntime {
 
 	// We need to install the dependencies with the package manager
 	n.NodeRuntime.ctr = n.NodeRuntime.ctr.
+		WithMountedDirectory(".", n.cfg.source.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{n.lockFileName()},
+		})).
 		WithExec([]string{"npm", "install", "--omit=dev"})
 
 	return n.NodeRuntime
@@ -375,6 +381,9 @@ func (p *PnpmPkgManager) withInstalledDependencies() *NodeRuntime {
 	}
 
 	p.NodeRuntime.ctr = p.NodeRuntime.ctr.
+		WithMountedDirectory(".", p.cfg.source.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{p.lockFileName()},
+		})).
 		WithExec([]string{"pnpm", "install", "--shamefully-hoist=true", "--prod"})
 
 	return p.NodeRuntime
