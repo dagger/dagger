@@ -205,7 +205,7 @@ func (b *BunRuntime) withInstalledDependencies() *BunRuntime {
 
 	b.ctr = b.ctr.
 		WithDirectory(".", b.cfg.source, dagger.ContainerWithDirectoryOpts{
-			Include: []string{"bun.lock"},
+			Include: []string{"bun.lock", "bunfig.toml"},
 		}).
 		WithExec([]string{"bun", "install", "--no-verify", "--omit=dev", "--omit=peer", "--omit=optional"})
 
@@ -215,7 +215,7 @@ func (b *BunRuntime) withInstalledDependencies() *BunRuntime {
 func (b *BunRuntime) GenerateLockfile() *dagger.File {
 	return b.ctr.
 		WithDirectory(".", b.cfg.source, dagger.ContainerWithDirectoryOpts{
-			Include: []string{"bun.lock"},
+			Include: []string{"bun.lock", "bunfig.toml"},
 		}).
 		WithExec([]string{"bun", "install", "--lockfile-only"}).
 		File("bun.lock")
