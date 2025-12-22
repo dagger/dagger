@@ -261,9 +261,9 @@ func (y *YarnPkgManager) withInstalledDependencies() *NodeRuntime {
 		}
 	}
 	y.NodeRuntime.ctr = y.NodeRuntime.ctr.
-		WithMountedDirectory(".", y.cfg.source.Filter(dagger.DirectoryFilterOpts{
-			Include: []string{y.lockFileName()},
-		})).
+		WithDirectory(".", y.cfg.source, dagger.ContainerWithDirectoryOpts{
+			Include: []string{y.lockFileName(), ".npmrc"},
+		}).
 		WithExec([]string{"yarn", "install", "--prod"})
 
 	return y.NodeRuntime
@@ -272,7 +272,7 @@ func (y *YarnPkgManager) withInstalledDependencies() *NodeRuntime {
 func (y *YarnPkgManager) generateLockFile() *dagger.File {
 	return y.NodeRuntime.ctr.
 		WithDirectory(".", y.cfg.source, dagger.ContainerWithDirectoryOpts{
-			Include: []string{y.lockFileName()},
+			Include: []string{y.lockFileName(), ".npmrc"},
 		}).
 		WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}).
 		File(y.lockFileName())
@@ -322,9 +322,9 @@ func (n *NpmPkgManager) withInstalledDependencies() *NodeRuntime {
 
 	// We need to install the dependencies with the package manager
 	n.NodeRuntime.ctr = n.NodeRuntime.ctr.
-		WithMountedDirectory(".", n.cfg.source.Filter(dagger.DirectoryFilterOpts{
-			Include: []string{n.lockFileName()},
-		})).
+		WithDirectory(".", n.cfg.source, dagger.ContainerWithDirectoryOpts{
+			Include: []string{n.lockFileName(), ".npmrc"},
+		}).
 		WithExec([]string{"npm", "install", "--omit=dev"})
 
 	return n.NodeRuntime
@@ -333,7 +333,7 @@ func (n *NpmPkgManager) withInstalledDependencies() *NodeRuntime {
 func (n *NpmPkgManager) generateLockFile() *dagger.File {
 	return n.NodeRuntime.ctr.
 		WithDirectory(".", n.cfg.source, dagger.ContainerWithDirectoryOpts{
-			Include: []string{n.lockFileName()},
+			Include: []string{n.lockFileName(), ".npmrc"},
 		}).
 		WithExec([]string{"npm", "install", "--package-lock-only"}).
 		File(n.lockFileName())
@@ -381,9 +381,9 @@ func (p *PnpmPkgManager) withInstalledDependencies() *NodeRuntime {
 	}
 
 	p.NodeRuntime.ctr = p.NodeRuntime.ctr.
-		WithMountedDirectory(".", p.cfg.source.Filter(dagger.DirectoryFilterOpts{
-			Include: []string{p.lockFileName()},
-		})).
+		WithDirectory(".", p.cfg.source, dagger.ContainerWithDirectoryOpts{
+			Include: []string{p.lockFileName(), ".npmrc"},
+		}).
 		WithExec([]string{"pnpm", "install", "--shamefully-hoist=true", "--prod"})
 
 	return p.NodeRuntime
@@ -392,7 +392,7 @@ func (p *PnpmPkgManager) withInstalledDependencies() *NodeRuntime {
 func (p *PnpmPkgManager) generateLockFile() *dagger.File {
 	return p.NodeRuntime.ctr.
 		WithDirectory(".", p.cfg.source, dagger.ContainerWithDirectoryOpts{
-			Include: []string{p.lockFileName()},
+			Include: []string{p.lockFileName(), ".npmrc"},
 		}).
 		WithExec([]string{"pnpm", "install", "--lockfile-only"}).
 		File(p.lockFileName())
