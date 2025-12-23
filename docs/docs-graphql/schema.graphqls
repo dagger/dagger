@@ -266,6 +266,9 @@ type Check {
 
   """Execute the check"""
   run: Check!
+
+  """The module source where the check is defined (i.e., toolchains)"""
+  source: ModuleSource!
 }
 
 type CheckGroup {

@@ -1707,6 +1707,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Check::source",
+			"p": "Dagger/Check.html#method_source",
+			"d": "<p>The module source where the check is defined (i.e., toolchains)</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CheckGroup::id",
 			"p": "Dagger/CheckGroup.html#method_id",
 			"d": "<p>A unique identifier for this CheckGroup.</p>"
