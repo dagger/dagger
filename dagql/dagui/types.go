@@ -108,7 +108,7 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	return view
 }
 
-func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) {
+func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) { //nolint:gocyclo
 	var lastTree *TraceTree
 	var lastCall *TraceTree
 	seen := make(map[SpanID]bool)
@@ -182,8 +182,10 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 		}
 		if lastCall != nil {
 			if base := span.Base(); base != nil {
-				tree.Chained = base.Digest == lastCall.Span.CallDigest ||
-					base.Digest == lastCall.Span.Output
+				tree.Chained =
+					lastCall.Parent == tree.Parent &&
+						(base.Digest == lastCall.Span.CallDigest ||
+							base.Digest == lastCall.Span.Output)
 				lastCall.Final = !tree.Chained
 			}
 		}
