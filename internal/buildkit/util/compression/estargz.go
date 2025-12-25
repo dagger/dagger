@@ -124,6 +124,7 @@ func (c estargzType) Decompress(ctx context.Context, cs content.Store, desc ocis
 }
 
 func (c estargzType) NeedsConversion(ctx context.Context, cs content.Store, desc ocispecs.Descriptor) (bool, error) {
+	fmt.Printf("ACB estargzType.NeedsConversion called\n")
 	esgz, err := c.Is(ctx, cs, desc.Digest)
 	if err != nil {
 		return false, err

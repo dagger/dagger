@@ -140,6 +140,7 @@ func Push(ctx context.Context, sm *session.Manager, sid string, provider content
 
 	mfstDone := progress.OneOff(ctx, fmt.Sprintf("pushing manifest for %s", ref))
 	for i := len(manifestStack) - 1; i >= 0; i-- {
+		fmt.Printf("ACB pushing manifest %d: %+v\n", i, manifestStack[i])
 		if _, err := pushHandler(ctx, manifestStack[i]); err != nil {
 			return mfstDone(err)
 		}

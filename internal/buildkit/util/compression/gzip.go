@@ -3,6 +3,7 @@ package compression
 import (
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -21,6 +22,7 @@ func (c gzipType) Decompress(ctx context.Context, cs content.Store, desc ocispec
 }
 
 func (c gzipType) NeedsConversion(ctx context.Context, cs content.Store, desc ocispecs.Descriptor) (bool, error) {
+	fmt.Printf("ACB gzipType.NeedsConversion called\n")
 	esgz, err := EStargz.Is(ctx, cs, desc.Digest)
 	if err != nil {
 		return false, err
