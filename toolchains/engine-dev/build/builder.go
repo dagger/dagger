@@ -107,6 +107,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	pkgs := []string{
 		"ca-certificates",
+		"mount", "umount", "posix-libc-utils", "coreutils",
 		// for git
 		"git", "openssh-client",
 		// for decompression
