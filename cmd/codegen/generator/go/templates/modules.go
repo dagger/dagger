@@ -36,6 +36,10 @@ func (funcs goTemplateFuncs) isStandaloneClient() bool {
 	return funcs.cfg.ClientConfig != nil
 }
 
+func (funcs goTemplateFuncs) isPortableDaggerAPI() bool {
+	return funcs.cfg.IsPortableDaggerAPI()
+}
+
 func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependency {
 	return funcs.cfg.ClientConfig.ModuleDependencies
 }
