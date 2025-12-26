@@ -3,6 +3,7 @@ package snapshot
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
@@ -54,6 +55,24 @@ func (lm *localMounter) Mount() (string, error) {
 		}
 	}
 
+	if len(lm.mounts) == 1 && (lm.mounts[0].Type == "overlay") {
+		var hasVolatile bool
+		var workDir string
+		for _, opt := range lm.mounts[0].Options {
+			if opt == "volatile" {
+				hasVolatile = true
+				continue
+			}
+			if strings.HasPrefix(opt, "workdir=") {
+				workDir = strings.TrimPrefix(opt, "workdir=")
+				continue
+			}
+		}
+		if hasVolatile && workDir != "" {
+			lm.overlayIncompatDir = filepath.Join(workDir, "work/incompat")
+		}
+	}
+
 	dest, err := os.MkdirTemp("", "buildkit-mount")
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create temp dir")
@@ -86,6 +105,11 @@ func (lm *localMounter) Unmount() error {
 		}
 		os.RemoveAll(lm.tmpDir)
 		lm.target = ""
+
+		if lm.overlayIncompatDir != "" {
+			os.RemoveAll(lm.overlayIncompatDir)
+			lm.overlayIncompatDir = ""
+		}
 	}
 
 	if lm.release != nil {
