@@ -30,6 +30,7 @@ func NewBunRuntime(
 		WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModeShared,
 		}).
+		WithEnvVariable("NODE_USE_SYSTEM_CA", "1").
 		WithWorkdir(cfg.modulePath())
 
 	return &BunRuntime{
