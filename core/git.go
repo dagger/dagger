@@ -20,11 +20,13 @@ import (
 )
 
 type GitRepository struct {
-	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
 	Backend GitRepositoryBackend
 	Remote  *gitutil.Remote
 
 	DiscardGitDir bool
+
+	// Internal per-repo pinned HEAD (ref/commit)
+	PinnedHead *gitutil.Ref `internal:"true"`
 }
 
 type GitRepositoryBackend interface {
@@ -59,21 +61,9 @@ type GitRefBackend interface {
 }
 
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
-	repo := &GitRepository{
+	return &GitRepository{
 		Backend: backend,
-	}
-
-	remote, err := backend.Remote(ctx)
-	if err != nil {
-		return nil, err
-	}
-	repo.Remote = remote
-
-	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
-		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
-	}
-
-	return repo, nil
+	}, nil
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -103,6 +93,9 @@ func (*GitRef) TypeDescription() string {
 }
 
 func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	if ref.Backend == nil {
+		return nil, nil
+	}
 	return ref.Backend.PBDefinitions(ctx)
 }
 
