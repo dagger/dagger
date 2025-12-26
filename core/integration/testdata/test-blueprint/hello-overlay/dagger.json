@@ -1,0 +1,14 @@
+{
+  "name": "hello-overlay",
+  "engineVersion": "v0.19.4",
+  "sdk": {
+    "source": "go"
+  },
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "hello",
+      "source": "../hello"
+    }
+  ]
+}

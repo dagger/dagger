@@ -193,6 +193,83 @@ func (modCfg *ModuleConfig) DependencyByName(name string) (*ModuleConfigDependen
 	return nil, false
 }
 
+// ValidateOverlays validates that all overlay references in toolchains point to existing toolchains.
+// Returns an error if any overlay references a non-existent toolchain or creates a circular dependency.
+func (modCfg *ModuleConfig) ValidateOverlays() error {
+	if modCfg.Toolchains == nil {
+		return nil
+	}
+
+	// Build a map of all toolchain names for quick lookup
+	toolchainNames := make(map[string]bool)
+	for _, tc := range modCfg.Toolchains {
+		toolchainNames[tc.Name] = true
+	}
+
+	// Check each toolchain's overlay reference
+	for _, tc := range modCfg.Toolchains {
+		if tc.OverlayFor == "" {
+			continue // Not an overlay, skip
+		}
+
+		// Check if the target toolchain exists
+		if !toolchainNames[tc.OverlayFor] {
+			return fmt.Errorf("toolchain %q has overlayFor=%q, but no toolchain named %q exists", tc.Name, tc.OverlayFor, tc.OverlayFor)
+		}
+
+		// Check for self-reference
+		if tc.OverlayFor == tc.Name {
+			return fmt.Errorf("toolchain %q cannot overlay itself", tc.Name)
+		}
+	}
+
+	// Check for circular overlay dependencies
+	if err := modCfg.checkOverlayCircularDependencies(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkOverlayCircularDependencies detects circular overlay chains (A overlays B, B overlays A)
+func (modCfg *ModuleConfig) checkOverlayCircularDependencies() error {
+	// Build overlay graph: name -> overlayFor
+	overlayGraph := make(map[string]string)
+	for _, tc := range modCfg.Toolchains {
+		if tc.OverlayFor != "" {
+			overlayGraph[tc.Name] = tc.OverlayFor
+		}
+	}
+
+	// For each overlay, follow the chain and detect cycles
+	visited := make(map[string]bool)
+	for start := range overlayGraph {
+		// Clear visited set for each starting point
+		for k := range visited {
+			delete(visited, k)
+		}
+
+		current := start
+		for {
+			if visited[current] {
+				// Found a cycle
+				return fmt.Errorf("circular overlay dependency detected involving toolchain %q", current)
+			}
+			visited[current] = true
+
+			// Move to the next node in the chain
+			next, exists := overlayGraph[current]
+			if !exists {
+				// End of chain, no cycle
+				break
+			}
+			current = next
+		}
+	}
+
+	return nil
+}
+
 type ModuleConfigDependency struct {
 	// The name to use for this dependency. By default, the same as the dependency module's name,
 	// but can also be overridden to use a different name.
@@ -203,6 +280,12 @@ type ModuleConfigDependency struct {
 
 	// The pinned version of the module dependency.
 	Pin string `json:"pin,omitempty"`
+
+	// OverlayFor specifies the name of another toolchain that this toolchain overlays.
+	// When set, this toolchain acts as middleware, wrapping the target toolchain's
+	// fields and functions. This allows customizing toolchain behavior without modifying
+	// the base toolchain module.
+	OverlayFor string `json:"overlayFor,omitempty"`
 
 	// Deprecated: Include in config struct for dagger develop compat for 1 release.
 	Arguments []*ModuleConfigArgument `json:"arguments,omitempty"`
