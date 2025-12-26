@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -364,4 +365,363 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	}
 
 	return bk.LocalDirExport(ctx, root, destPath, true, ch.RemovedPaths)
+}
+
+type ChangeType int
+
+const (
+	ChangeTypeAdded ChangeType = iota
+	ChangeTypeModified
+	ChangeTypeRemoved
+)
+
+type Conflict struct {
+	Path  string
+	Self  ChangeType
+	Other ChangeType
+	Err   error
+}
+
+var (
+	ErrAddedTwice      = errors.New("path added in both changesets")
+	ErrModifiedTwice   = errors.New("path modified in both changesets")
+	ErrModifiedRemoved = errors.New("path modified in one changeset and removed in the other")
+)
+
+type Conflicts []Conflict
+
+func (conflicts Conflicts) Error() (err error) {
+	for _, c := range conflicts {
+		err = errors.Join(err, fmt.Errorf("conflict between changesets at path %q: %w", c.Path, c.Err))
+	}
+	return err
+}
+
+func (conflicts Conflicts) IsEmpty() bool {
+	return len(conflicts) == 0
+}
+
+func (ch *Changeset) CheckConflicts(other *Changeset) Conflicts {
+	var conflicts Conflicts
+	for _, addedPath := range ch.AddedPaths {
+		if slices.Contains(other.AddedPaths, addedPath) {
+			conflicts = append(conflicts, Conflict{
+				Path:  addedPath,
+				Self:  ChangeTypeAdded,
+				Other: ChangeTypeAdded,
+				Err:   ErrAddedTwice,
+			})
+			continue
+		}
+	}
+	for _, modifiedPath := range ch.ModifiedPaths {
+		if slices.Contains(other.ModifiedPaths, modifiedPath) {
+			conflicts = append(conflicts, Conflict{
+				Path:  modifiedPath,
+				Self:  ChangeTypeModified,
+				Other: ChangeTypeModified,
+				Err:   ErrModifiedTwice,
+			})
+			continue
+		}
+		if slices.Contains(other.RemovedPaths, modifiedPath) {
+			conflicts = append(conflicts, Conflict{
+				Path:  modifiedPath,
+				Self:  ChangeTypeModified,
+				Other: ChangeTypeRemoved,
+				Err:   ErrModifiedRemoved,
+			})
+			continue
+		}
+	}
+	for _, removedPath := range ch.RemovedPaths {
+		if slices.Contains(other.ModifiedPaths, removedPath) {
+			conflicts = append(conflicts, Conflict{
+				Path:  removedPath,
+				Self:  ChangeTypeRemoved,
+				Other: ChangeTypeModified,
+				Err:   ErrModifiedRemoved,
+			})
+			continue
+		}
+	}
+	return conflicts
+}
+
+func fileAt(
+	ctx context.Context,
+	srv *dagql.Server,
+	dir dagql.ObjectResult[*Directory],
+	path string,
+) (dagql.ObjectResult[*File], error) {
+	var file dagql.ObjectResult[*File]
+	err := srv.Select(ctx, &dir, &file,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		})
+	return file, err
+}
+
+func withoutFile(path string) dagql.Selector {
+	return dagql.Selector{
+		Field: "withoutFile",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(path)},
+		},
+	}
+}
+
+func withFile(path string, file dagql.ObjectResult[*File]) dagql.Selector {
+	return dagql.Selector{
+		Field: "withFile",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(path)},
+			{Name: "source", Value: dagql.NewID[*File](file.ID())},
+		},
+	}
+}
+
+func withFileFromBefore(
+	ctx context.Context,
+	srv *dagql.Server,
+	changeset *Changeset,
+	path string,
+) (sel dagql.Selector, err error) {
+	file, err := fileAt(ctx, srv, changeset.Before, path)
+	if err != nil {
+		return sel, err
+	}
+	return withFile(path, file), nil
+}
+
+func withFileFromAfter(
+	ctx context.Context,
+	srv *dagql.Server,
+	changeset *Changeset,
+	path string,
+) (sel dagql.Selector, err error) {
+	file, err := fileAt(ctx, srv, changeset.After, path)
+	if err != nil {
+		return sel, err
+	}
+	return withFile(path, file), nil
+}
+
+type WithChangesetMergeConflict int
+
+const (
+	FailOnConflict WithChangesetMergeConflict = iota
+	SkipOnConflict
+	PreferSelfOnConflict
+	PreferOtherOnConflict
+)
+
+func (ch *Changeset) WithChangeset(ctx context.Context, other *Changeset, onConflictStrategy WithChangesetMergeConflict) (res *Changeset, _ error) { //nolint:gocyclo
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	conflicts := ch.CheckConflicts(other)
+	hasConflicts := !conflicts.IsEmpty()
+	if hasConflicts {
+		if onConflictStrategy == FailOnConflict {
+			return res, conflicts.Error()
+		}
+		parentAfterSelector := []dagql.Selector{}
+		additionalAfterSelector := []dagql.Selector{}
+		// When SkipOnConflict all conflicts will be skipped
+		// this means the initial state of the file will be kept in the "after" directory
+		// so that the diff will not see any difference
+		// - if file has been added, remove it from the "after" directory
+		// - if file has been modified or removed, copy the file from "before" to "after" to keep its initial state
+		// In case of PreferSelf or PreferOther this is applied to only one part (parent or additional changes)
+		// that way one of the two will not see a change while the other will see it.
+		// hence the change will be applied only once.
+		for _, c := range conflicts {
+			if c.Self == ChangeTypeAdded &&
+				c.Other == ChangeTypeAdded {
+				switch onConflictStrategy {
+				// on skip, just remove the file from the "after" directories
+				case SkipOnConflict:
+					parentAfterSelector = append(parentAfterSelector, withoutFile(c.Path))
+					additionalAfterSelector = append(additionalAfterSelector, withoutFile(c.Path))
+				// if we prefer self, keep it and put the file on the "after" of additional changes
+				case PreferSelfOnConflict:
+					if sel, err := withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
+						return res, err
+					} else {
+						additionalAfterSelector = append(additionalAfterSelector, sel)
+					}
+				// if we prefer other, keep it and put the file on the "after" of parent changes
+				case PreferOtherOnConflict:
+					if sel, err := withFileFromAfter(ctx, srv, other, c.Path); err != nil {
+						return res, err
+					} else {
+						parentAfterSelector = append(parentAfterSelector, sel)
+					}
+				}
+			} else if c.Self == ChangeTypeModified &&
+				c.Other == ChangeTypeModified {
+				switch onConflictStrategy {
+				// on skip, use the "before" file everywhere
+				case SkipOnConflict:
+					if sel, err := withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
+						return res, err
+					} else {
+						parentAfterSelector = append(parentAfterSelector, sel)
+					}
+					if sel, err := withFileFromBefore(ctx, srv, other, c.Path); err != nil {
+						return res, err
+					} else {
+						additionalAfterSelector = append(additionalAfterSelector, sel)
+					}
+				// if we prefer self, keep it and put the file on the "after" of additional changes
+				case PreferSelfOnConflict:
+					if sel, err := withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
+						return res, err
+					} else {
+						additionalAfterSelector = append(additionalAfterSelector, sel)
+					}
+				// if we prefer other, keep it and put the file on the "after" of parent changes
+				case PreferOtherOnConflict:
+					if sel, err := withFileFromAfter(ctx, srv, other, c.Path); err != nil {
+						return res, err
+					} else {
+						parentAfterSelector = append(parentAfterSelector, sel)
+					}
+				}
+			} else if c.Self == ChangeTypeModified &&
+				c.Other == ChangeTypeRemoved {
+				switch onConflictStrategy {
+				// on skip, use the "before" file everywhere
+				case SkipOnConflict:
+					if sel, err := withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
+						return res, err
+					} else {
+						parentAfterSelector = append(parentAfterSelector, sel)
+					}
+					if sel, err := withFileFromBefore(ctx, srv, other, c.Path); err != nil {
+						return res, err
+					} else {
+						additionalAfterSelector = append(additionalAfterSelector, sel)
+					}
+				// if we prefer self, use the "after" from parent changes on additional changes
+				case PreferSelfOnConflict:
+					if sel, err := withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
+						return res, err
+					} else {
+						additionalAfterSelector = append(additionalAfterSelector, sel)
+					}
+				// if we prefer other, remove the file from "after" of parent changes
+				case PreferOtherOnConflict:
+					parentAfterSelector = append(parentAfterSelector, withoutFile(c.Path))
+				}
+			} else if c.Self == ChangeTypeRemoved &&
+				c.Other == ChangeTypeModified {
+				switch onConflictStrategy {
+				// on skip, use the "before" file everywhere
+				case SkipOnConflict:
+					if sel, err := withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
+						return res, err
+					} else {
+						parentAfterSelector = append(parentAfterSelector, sel)
+					}
+					if sel, err := withFileFromBefore(ctx, srv, other, c.Path); err != nil {
+						return res, err
+					} else {
+						additionalAfterSelector = append(additionalAfterSelector, sel)
+					}
+				// if we prefer self, remove the file from "after" of additional changes
+				case PreferSelfOnConflict:
+					additionalAfterSelector = append(additionalAfterSelector, withoutFile(c.Path))
+				// if we prefer other, use the file from "after" of additional changes
+				case PreferOtherOnConflict:
+					if sel, err := withFileFromAfter(ctx, srv, other, c.Path); err != nil {
+						return res, err
+					} else {
+						parentAfterSelector = append(parentAfterSelector, sel)
+					}
+				}
+			}
+		}
+
+		if err := srv.Select(ctx, &ch.After, &ch,
+			append(parentAfterSelector, dagql.Selector{
+				Field: "changes",
+				Args: []dagql.NamedInput{
+					{Name: "from", Value: dagql.NewID[*Directory](ch.Before.ID())},
+				},
+			})...,
+		); err != nil {
+			return res, err
+		}
+
+		if err := srv.Select(ctx, &other.After, &other,
+			append(additionalAfterSelector, dagql.Selector{
+				Field: "changes",
+				Args: []dagql.NamedInput{
+					{Name: "from", Value: dagql.NewID[*Directory](other.Before.ID())},
+				},
+			})...,
+		); err != nil {
+			return res, err
+		}
+	}
+
+	// Now all possible conflicts have been resolved according to the strategy,
+	// merge the two resulting changesets in one:
+	// - before state is the combination of the two before directories from both changesets
+	var before dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &before,
+		dagql.Selector{
+			Field: "directory",
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("")},
+				{Name: "source", Value: dagql.NewID[*Directory](ch.Before.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("")},
+				{Name: "source", Value: dagql.NewID[*Directory](other.Before.ID())},
+			},
+		}); err != nil {
+		return res, err
+	}
+
+	// - after state is the before state (combination of both) on which we are applying both set of changes
+	parent, err := dagql.NewResultForCurrentID(ctx, ch)
+	if err != nil {
+		return res, err
+	}
+	changes, err := dagql.NewResultForCurrentID(ctx, other)
+	if err != nil {
+		return res, err
+	}
+	var after dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, before, &after,
+		dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*Changeset](parent.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*Changeset](changes.ID())},
+			},
+		}); err != nil {
+		return res, err
+	}
+
+	return NewChangeset(ctx, before, after)
 }
