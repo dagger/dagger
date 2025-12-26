@@ -300,8 +300,14 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
 			),
-		dagql.NodeFunc("isEmpty", s.changesetEmpty).
+		dagql.NodeFunc("isEmpty", DagOpWrapper(srv, s.changesetEmpty)).
 			Doc(`Returns true if the changeset is empty (i.e. there are no changes).`),
+		dagql.NodeFunc("addedPaths", DagOpWrapper(srv, s.changesetAddedPaths)).
+			Doc(`Files and directories that were added in the newer directory.`),
+		dagql.NodeFunc("modifiedPaths", DagOpWrapper(srv, s.changesetModifiedPaths)).
+			Doc(`Files and directories that existed before and were updated in the newer directory.`),
+		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesetRemovedPaths)).
+			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
 	}.Install(srv)
 }
 
@@ -1015,25 +1021,42 @@ func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.Obje
 	return dagql.String(stat.Path), err
 }
 
-func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct{}) (dagql.Boolean, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
+func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct {
+	DagOpInternalArgs
+}) (dagql.Boolean, error) {
+	isEmpty, err := parent.Self().IsEmpty(ctx)
 	if err != nil {
 		return false, err
 	}
+	return dagql.Boolean(isEmpty), nil
+}
 
-	var size dagql.Int
-	if err := srv.Select(ctx, parent, &size,
-		dagql.Selector{
-			Field: "asPatch",
-		},
-		dagql.Selector{
-			Field: "size",
-		},
-	); err != nil {
-		return false, err
+type changesetPathsArgs struct {
+	DagOpInternalArgs
+}
+
+func (s *directorySchema) changesetAddedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetPathsArgs) (dagql.Array[dagql.String], error) {
+	paths, err := parent.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, err
 	}
+	return dagql.NewStringArray(paths.Added...), nil
+}
 
-	return size == 0, nil
+func (s *directorySchema) changesetModifiedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetPathsArgs) (dagql.Array[dagql.String], error) {
+	paths, err := parent.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(paths.Modified...), nil
+}
+
+func (s *directorySchema) changesetRemovedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetPathsArgs) (dagql.Array[dagql.String], error) {
+	paths, err := parent.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(paths.Removed...), nil
 }
 
 type dirExportArgs struct {
