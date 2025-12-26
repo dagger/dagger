@@ -28,6 +28,7 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 		{sdk: "go", path: "./testdata/modules/go/ifaces"},
 		{sdk: "typescript", path: "./testdata/modules/typescript/ifaces"},
 		{sdk: "python", path: "./testdata/modules/python/ifaces"},
+		{sdk: "csharp", path: "./testdata/modules/csharp/ifaces"},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
@@ -195,6 +196,35 @@ class Test:
     @dagger.function 
     def get_duck(self) -> Duck:
         return dag.mallard() 
+`,
+		},
+		{
+			sdk: "csharp",
+			depSource: `using Dagger;
+
+[Object]
+public class Mallard
+{
+    [Function]
+    public string Quack() => "mallard quack";
+}
+`,
+			testSource: `using System.Threading.Tasks;
+using Dagger;
+
+[Interface]
+public interface IDuck
+{
+    [Function]
+    Task<string> Quack();
+}
+
+[Object]
+public class Test
+{
+    [Function]
+    public IDuck GetDuck() => Dag.Mallard();
+}
 `,
 		},
 	}
