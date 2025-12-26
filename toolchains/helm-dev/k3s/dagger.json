@@ -1,8 +1,11 @@
 {
   "name": "k3s",
-  "engineVersion": "v0.19.8",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
+  },
+  "codegen": {
+    "automaticGitignore": false
   },
   "disableDefaultFunctionCaching": true
 }

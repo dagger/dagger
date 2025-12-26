@@ -1,6 +1,6 @@
 {
   "name": "examples",
-  "engineVersion": "v0.19.8",
+  "engineVersion": "v0.19.7",
   "sdk": {
     "source": "go"
   },
@@ -16,5 +16,8 @@
       "pin": "4a76c3f8c6d9715e34f8be5f795bb95362171ee5"
     }
   ],
+  "codegen": {
+    "automaticGitignore": false
+  },
   "disableDefaultFunctionCaching": true
 }
