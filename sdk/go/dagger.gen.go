@@ -2272,7 +2272,7 @@ func (r *Container) User(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Retrieves this container plus the given OCI anotation.
+// Retrieves this container plus the given OCI annotation.
 func (r *Container) WithAnnotation(name string, value string) *Container {
 	q := r.query.Select("withAnnotation")
 	q = q.Arg("name", name)

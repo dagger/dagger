@@ -496,7 +496,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this container plus the given OCI anotation.
+     * Retrieves this container plus the given OCI annotation.
      */
     public function withAnnotation(string $name, string $value): Container
     {
