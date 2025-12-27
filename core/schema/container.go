@@ -539,7 +539,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.Func("withAnnotation", s.withAnnotation).
-			Doc(`Retrieves this container plus the given OCI anotation.`).
+			Doc(`Retrieves this container plus the given OCI annotation.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the annotation.`),
 				dagql.Arg("value").Doc(`The value of the annotation.`),

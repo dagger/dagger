@@ -3617,7 +3617,7 @@ impl Container {
         let query = self.selection.select("user");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieves this container plus the given OCI anotation.
+    /// Retrieves this container plus the given OCI annotation.
     ///
     /// # Arguments
     ///

@@ -2349,7 +2349,7 @@ class Container(Type):
         return await _ctx.execute(str)
 
     def with_annotation(self, name: str, value: str) -> Self:
-        """Retrieves this container plus the given OCI anotation.
+        """Retrieves this container plus the given OCI annotation.
 
         Parameters
         ----------
