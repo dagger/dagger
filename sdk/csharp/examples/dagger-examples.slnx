@@ -1,0 +1,22 @@
+<!-- This is useful to open for Intellisense in VSCode / Visual Studio / Rider -->
+<Solution>
+  <!-- independant modules -->
+  <Project Path="./interface-example/InterfaceExample.csproj" />
+  <Folder Name="/experimental-example/">
+    <Project Path="experimental-example/ExperimentalExample.csproj" />
+  </Folder>
+  <Folder Name="/factory-example/">
+    <Project Path="factory-example/FactoryExample.csproj" />
+  </Folder>
+  <Project Path="./attributes-example/AttributesExample.csproj" />
+  <Project Path="./constructor-example/ConstructorExample.csproj" />
+  <Project Path="./multi-file-example/MultiFileExample.csproj" />
+  <Project Path="./processor-impl/ProcessorImpl.csproj" />
+  <Project Path="./defaults-example/DefaultsExample.csproj" />
+
+  <!-- consuming module of dependency modules -->
+  <Project Path="./consumer-example/ConsumerExample.csproj" />
+
+  <!-- standalone client -->
+  <Project Path="./standalone-client/StandaloneClient.csproj" />
+</Solution>

@@ -1,0 +1,7 @@
+{
+  "name": "csharp-sdk",
+  "engineVersion": "v0.19.8",
+  "sdk": {
+    "source": "go"
+  }
+}

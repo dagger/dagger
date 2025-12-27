@@ -1,0 +1,52 @@
+<!--
+  This .csproj file is for building the SDK itself and NuGet package distribution.
+  
+  IMPORTANT: This file is NOT included in the vendored SDK that gets copied to user modules.
+  
+  Vendored SDK (copied to user's sdk/ folder) includes:
+  - Dagger.SDK.props    - MSBuild properties imported BEFORE user settings
+  - Dagger.SDK.targets  - MSBuild targets imported AFTER user settings (handles compilation)
+  - *.cs source files   - All SDK source code including generated Dagger.SDK.g.cs
+  
+  User modules import the MSBuild files, not this project file:
+    <Import Project="sdk/Dagger.SDK.props" />
+    <Import Project="sdk/Dagger.SDK.targets" />
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <RootNamespace>Dagger</RootNamespace>
+    <NoWarn>$(NoWarn);NU1510</NoWarn>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>DaggerIO</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Dagger</Authors>
+    <Company>Dagger</Company>
+    <Description>Official Dagger SDK for .NET - An open-source runtime for composable workflows. Great for AI agents and CI/CD</Description>
+    <PackageTags>dagger;ci;cd;devops;containers;docker;build;pipeline</PackageTags>
+    <PackageProjectUrl>https://dagger.io</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/dagger/dagger</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry" Version="1.14.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.14.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
+  </ItemGroup>
+</Project>
