@@ -111,6 +111,19 @@ defmodule DeprecatedDirective do
   defn deprecated_by_docstr() :: Dagger.Void.t() do
     :ok
   end
+
+  defn deprecated_args(
+         foo: {
+           String.t(),
+           deprecated: "deprecated argument"
+         },
+         bar: {
+           String.t(),
+           deprecated: nil
+         }
+       ) :: String.t() do
+    foo <> bar
+  end
 end
 
 defmodule CacheAttribute do
