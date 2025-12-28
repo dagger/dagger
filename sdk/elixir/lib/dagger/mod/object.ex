@@ -59,6 +59,29 @@ defmodule Dagger.Mod.Object do
   alias Dagger.Mod.Object.Meta
 
   @doc """
+  Get function deprecation reason if deprecated from docs or attribute
+
+  Return `{:deprecated, reason}` or `nil` if the function did not specify `@deprecated reason` attributes or `@doc deprecated: "reason" docstring`
+  """
+  def get_function_deprecated(module, func_name) do
+    func_name |> IO.inspect(label: "func_name")
+
+    fun = fn
+      {{:function, ^func_name, _}, _, _, _, _} -> true
+      _ -> false
+    end
+
+    with {_, func_docs} <- fetch_docs(module),
+         {{:function, ^func_name, _}, _, _, _, metadatas} <- Enum.find(func_docs, fun),
+         %{deprecated: reason} <- metadatas do
+      reason
+    else
+      _ ->
+        nil
+    end
+  end
+
+  @doc """
   Get module documentation.
 
   Returns module doc string or `nil` if the given module didn't have a documentation.

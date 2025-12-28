@@ -99,6 +99,20 @@ defmodule ArgOptions do
   end
 end
 
+defmodule DeprecatedDirective do
+  use Dagger.Mod.Object, name: "DeprecatedDirective"
+
+  @deprecated "deprecation reason"
+  defn deprecated_by_attr() :: Dagger.Void.t() do
+    :ok
+  end
+
+  @doc deprecated: "docstring deprecation reason"
+  defn deprecated_by_docstr() :: Dagger.Void.t() do
+    :ok
+  end
+end
+
 defmodule CacheAttribute do
   @moduledoc false
   use Dagger.Mod.Object, name: "CacheAttribute"
