@@ -281,6 +281,23 @@ defmodule Dagger.Mod.ModuleTest do
     end
   end
 
+  @tag run: true
+  test "deprecated directive", %{dag: dag} do
+    assert {:ok, [deprecated_by_attr, deprecated_by_docstr]} =
+             root_object(dag, DeprecatedDirective)
+             |> Dagger.ObjectTypeDef.functions()
+
+    assert {:ok, "deprecatedByAttr"} = Dagger.Function.name(deprecated_by_attr)
+
+    assert {:ok, "deprecation reason"} =
+             Dagger.Function.deprecated(deprecated_by_attr)
+
+    assert {:ok, "deprecatedByDocstr"} = Dagger.Function.name(deprecated_by_docstr)
+
+    assert {:ok, "docstring deprecation reason"} =
+             Dagger.Function.deprecated(deprecated_by_docstr)
+  end
+
   defp root_object(dag, module) do
     module = Module.define(dag, module)
     {:ok, [root_object]} = Dagger.Module.objects(module)
