@@ -64,8 +64,6 @@ defmodule Dagger.Mod.Object do
   Return `{:deprecated, reason}` or `nil` if the function did not specify `@deprecated reason` attributes or `@doc deprecated: "reason" docstring`
   """
   def get_function_deprecated(module, func_name) do
-    func_name |> IO.inspect(label: "func_name")
-
     fun = fn
       {{:function, ^func_name, _}, _, _, _, _} -> true
       _ -> false
