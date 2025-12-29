@@ -4,7 +4,7 @@ defmodule Dagger.Mod.Object.FieldDef do
   # A field definition for declaring a field in the object.
 
   @enforce_keys [:type, :doc]
-  defstruct @enforce_keys
+  defstruct @enforce_keys ++ [:deprecated]
 
   @doc """
   Define a Dagger Field from `field_def`.
@@ -20,6 +20,7 @@ defmodule Dagger.Mod.Object.FieldDef do
 
   defp to_field_opts(field_def) do
     opts = []
+    opts = Keyword.put(opts, :deprecated, field_def.deprecated)
 
     if field_def.doc do
       [{:description, field_def.doc} | opts]

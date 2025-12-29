@@ -103,6 +103,11 @@ defmodule DeprecatedDirective do
   @moduledoc deprecated: "module deprecation reason"
   use Dagger.Mod.Object, name: "DeprecatedDirective"
 
+  object do
+    field(:f1, String.t(), deprecated: "deprecated field")
+    field(:f2, String.t(), deprecated: nil)
+  end
+
   @deprecated "deprecation reason"
   defn deprecated_by_attr() :: Dagger.Void.t() do
     :ok
