@@ -38,7 +38,7 @@ defmodule Dagger.Mod.Object.FunctionDef do
 
   defp maybe_with_deprecated(function, nil), do: function
 
-  defp maybe_with_deprecated(function, reason),
+  defp maybe_with_deprecated(function, {:deprecated, reason}),
     do: Dagger.Function.with_deprecated(function, reason: reason)
 
   defp maybe_with_cache_policy(function, nil), do: function

@@ -433,16 +433,24 @@ defmodule Dagger.Mod.ObjectTest do
 
   describe "Deprecation level" do
     test "function argument deprecation" do
-      assert DeprecatedDirective.__object__(:functions)[:deprecated_arg] ==
+      assert DeprecatedDirective.__object__(:functions)[:deprecated_args] ==
                %Dagger.Mod.Object.FunctionDef{
                  self: false,
                  args: [
-                   value: [
+                   foo: [
                      {:ignore, nil},
                      {:doc, nil},
                      {:default, nil},
                      {:default_path, nil},
                      {:deprecated, "deprecated argument"},
+                     {:type, :string}
+                   ],
+                   bar: [
+                     {:ignore, nil},
+                     {:doc, nil},
+                     {:default, nil},
+                     {:default_path, nil},
+                     {:deprecated, nil},
                      {:type, :string}
                    ]
                  ],

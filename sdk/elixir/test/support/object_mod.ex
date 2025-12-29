@@ -100,6 +100,7 @@ defmodule ArgOptions do
 end
 
 defmodule DeprecatedDirective do
+  @moduledoc deprecated: "module deprecation reason"
   use Dagger.Mod.Object, name: "DeprecatedDirective"
 
   @deprecated "deprecation reason"
