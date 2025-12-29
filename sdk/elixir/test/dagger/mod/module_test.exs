@@ -307,6 +307,13 @@ defmodule Dagger.Mod.ModuleTest do
 
     assert {:ok, nil} =
              Dagger.FunctionArg.deprecated(bar)
+
+    assert {:ok, [f1, f2]} = Dagger.ObjectTypeDef.fields(root)
+    assert {:ok, "f1"} = Dagger.FieldTypeDef.name(f1)
+    assert {:ok, "deprecated field"} = Dagger.FieldTypeDef.deprecated(f1)
+
+    assert {:ok, "f2"} = Dagger.FieldTypeDef.name(f2)
+    assert {:ok, nil} = Dagger.FieldTypeDef.deprecated(f2)
   end
 
   defp root_object(dag, module) do

@@ -432,6 +432,13 @@ defmodule Dagger.Mod.ObjectTest do
   end
 
   describe "Deprecation level" do
+    test "field deprecation" do
+      assert DeprecatedDirective.__object__(:fields) == [
+               f1: %FieldDef{type: :string, doc: nil, deprecated: "deprecated field"},
+               f2: %FieldDef{type: :string, doc: nil, deprecated: nil}
+             ]
+    end
+
     test "function argument deprecation" do
       assert DeprecatedDirective.__object__(:functions)[:deprecated_args] ==
                %Dagger.Mod.Object.FunctionDef{

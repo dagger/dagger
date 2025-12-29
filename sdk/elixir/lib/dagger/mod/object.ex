@@ -310,7 +310,12 @@ defmodule Dagger.Mod.Object do
     type = compile_typespec!(type)
     optional? = match?({:optional, _}, type)
     doc = opts[:doc]
-    field = Macro.escape({name, %Dagger.Mod.Object.FieldDef{type: type, doc: doc}})
+    deprecated = opts[:deprecated]
+
+    field =
+      Macro.escape(
+        {name, %Dagger.Mod.Object.FieldDef{type: type, doc: doc, deprecated: deprecated}}
+      )
 
     quote do
       @field unquote(field)
