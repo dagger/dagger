@@ -3,9 +3,12 @@ package server
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync"
 	"time"
 
 	snapshotsapi "github.com/containerd/containerd/api/services/snapshots/v1"
+	"github.com/containerd/containerd/v2/core/mount"
 	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
 	snproxy "github.com/containerd/containerd/v2/core/snapshots/proxy"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
@@ -15,6 +18,7 @@ import (
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay"
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay/overlayutils"
 	fuseoverlayfs "github.com/containerd/fuse-overlayfs-snapshotter/v2"
+	"github.com/dagger/dagger/engine/slog"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -75,7 +79,14 @@ func newSnapshotter(
 	case "native":
 		sn, snErr = native.NewSnapshotter(rootDir)
 	case "overlayfs": // not "overlay", for consistency with containerd snapshotter plugin ID.
-		sn, snErr = overlay.NewSnapshotter(rootDir, overlay.AsynchronousRemove, overlay.WithMetaStore(mdStore))
+		opts := []overlay.Opt{
+			overlay.AsynchronousRemove,
+			overlay.WithMetaStore(mdStore),
+		}
+		if overlayVolatileSupported(rootDir) {
+			opts = append(opts, overlay.WithMountOptions([]string{"volatile"}))
+		}
+		sn, snErr = overlay.NewSnapshotter(rootDir, opts...)
 	case "fuse-overlayfs":
 		// no Opt (AsynchronousRemove is untested for fuse-overlayfs)
 		sn, snErr = fuseoverlayfs.NewSnapshotter(rootDir)
@@ -87,4 +98,63 @@ func newSnapshotter(
 	}
 
 	return sn, name, nil
+}
+
+var overlayVolatileOnce sync.Once
+var overlayVolatileOK bool
+
+func overlayVolatileSupported(rootDir string) bool {
+	overlayVolatileOnce.Do(func() {
+		ok, err := checkOverlayVolatile(rootDir)
+		if err != nil {
+			slog.Debug("overlayfs volatile option unavailable, skipping", "err", err)
+		}
+		overlayVolatileOK = ok
+	})
+	return overlayVolatileOK
+}
+
+func checkOverlayVolatile(rootDir string) (bool, error) {
+	if err := os.MkdirAll(rootDir, 0700); err != nil {
+		return false, err
+	}
+	td, err := os.MkdirTemp(rootDir, "overlay-volatile-check-")
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(td)
+
+	for _, dir := range []string{"lower1", "lower2", "upper", "work", "merged"} {
+		if err := os.Mkdir(filepath.Join(td, dir), 0755); err != nil {
+			return false, err
+		}
+	}
+
+	upper := filepath.Join(td, "upper")
+	work := filepath.Join(td, "work")
+	lowers := fmt.Sprintf("%s:%s", filepath.Join(td, "lower2"), filepath.Join(td, "lower1"))
+	options := []string{
+		fmt.Sprintf("lowerdir=%s", lowers),
+		fmt.Sprintf("upperdir=%s", upper),
+		fmt.Sprintf("workdir=%s", work),
+		"volatile",
+	}
+
+	if userxattr, err := overlayutils.NeedsUserXAttr(rootDir); err == nil && userxattr {
+		options = append(options, "userxattr")
+	}
+
+	m := mount.Mount{
+		Type:    "overlay",
+		Source:  "overlay",
+		Options: options,
+	}
+	dest := filepath.Join(td, "merged")
+	if err := m.Mount(dest); err != nil {
+		return false, err
+	}
+	if err := mount.UnmountAll(dest, 0); err != nil {
+		slog.Debug("failed to unmount overlayfs volatile check", "err", err)
+	}
+	return true, nil
 }

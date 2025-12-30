@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
@@ -54,6 +55,8 @@ func (lm *localMounter) Mount() (string, error) {
 		}
 	}
 
+	lm.overlayIncompatDirs = overlay.VolatileIncompatDirs(lm.mounts)
+
 	dest, err := os.MkdirTemp("", "buildkit-mount")
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create temp dir")
@@ -86,6 +89,11 @@ func (lm *localMounter) Unmount() error {
 		}
 		os.RemoveAll(lm.tmpDir)
 		lm.target = ""
+
+		for _, dir := range lm.overlayIncompatDirs {
+			os.RemoveAll(dir)
+		}
+		lm.overlayIncompatDirs = nil
 	}
 
 	if lm.release != nil {
