@@ -3,11 +3,13 @@ package cache
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -43,6 +45,150 @@ import (
 )
 
 var additionalAnnotations = append(compression.EStargzAnnotations, labels.LabelUncompressed)
+
+const (
+	// maxDiskUsageDepth is the maximum directory depth we'll traverse when calculating disk usage.
+	// This prevents issues with infinitely nested or circular directory structures.
+	maxDiskUsageDepth = 1024
+)
+
+// safeDiskUsage calculates disk usage for a directory with protection against
+// deeply nested or circular directory structures.
+func safeDiskUsage(ctx context.Context, root string) (int64, error) {
+	var (
+		totalSize int64
+		visited   = make(map[uint64]bool) // Track visited inodes to detect circular references
+	)
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// Check if this is a "file name too long" error
+			if isFileNameTooLongError(err) {
+				bklog.G(ctx).Warnf("skipping path due to deeply nested directory structure: %s", path)
+				return filepath.SkipDir
+			}
+			// Ignore other stat errors and continue walking
+			return nil
+		}
+
+		// Check depth to prevent infinite recursion
+		depth := strings.Count(strings.TrimPrefix(path, root), string(filepath.Separator))
+		if depth > maxDiskUsageDepth {
+			bklog.G(ctx).Warnf("max depth (%d) exceeded at path: %s", maxDiskUsageDepth, path)
+			return filepath.SkipDir
+		}
+
+		// Get file info to check for circular references
+		info, err := d.Info()
+		if err != nil {
+			return nil // Skip entries we can't stat
+		}
+
+		// Check for circular references using inode number
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			if visited[stat.Ino] {
+				// We've seen this inode before - circular reference detected
+				bklog.G(ctx).Warnf("circular reference detected at path: %s (inode: %d)", path, stat.Ino)
+				return filepath.SkipDir
+			}
+			visited[stat.Ino] = true
+		}
+
+		if !d.IsDir() {
+			totalSize += info.Size()
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return totalSize, nil
+}
+
+// isFileNameTooLongError checks if an error is due to a file name being too long
+func isFileNameTooLongError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for ENAMETOOLONG error
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return true
+	}
+	// Also check the error message as a fallback
+	return strings.Contains(err.Error(), "file name too long")
+}
+
+// safeSnapshotUsage attempts to calculate disk usage for a snapshot using safe filesystem walking.
+// This is used as a fallback when the regular Usage() call fails due to deeply nested directories.
+func (cr *cacheRecord) safeSnapshotUsage(ctx context.Context, driverID string) (int64, error) {
+	// Get the mountable for this snapshot
+	mountable, err := cr.cm.Snapshotter.Mounts(ctx, driverID)
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed to get mounts for %s", driverID)
+	}
+
+	// Mount to get the actual mount information
+	mounts, release, err := mountable.Mount()
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed to mount %s", driverID)
+	}
+	if release != nil {
+		defer release()
+	}
+
+	var totalSize int64
+	visited := make(map[string]bool)
+
+	// For overlayfs, we need to check upperdir and lowerdirs
+	for _, mnt := range mounts {
+		if overlay.IsOverlayMountType(mnt) {
+			for _, opt := range mnt.Options {
+				// Parse upperdir and lowerdir from overlay mount options
+				if strings.HasPrefix(opt, "upperdir=") {
+					dir := strings.TrimPrefix(opt, "upperdir=")
+					if !visited[dir] {
+						visited[dir] = true
+						size, err := safeDiskUsage(ctx, dir)
+						if err != nil {
+							bklog.G(ctx).Warnf("failed to calculate size for upperdir %s: %v", dir, err)
+						} else {
+							totalSize += size
+						}
+					}
+				} else if strings.HasPrefix(opt, "lowerdir=") {
+					dirs := strings.Split(strings.TrimPrefix(opt, "lowerdir="), ":")
+					for _, dir := range dirs {
+						if !visited[dir] {
+							visited[dir] = true
+							size, err := safeDiskUsage(ctx, dir)
+							if err != nil {
+								bklog.G(ctx).Warnf("failed to calculate size for lowerdir %s: %v", dir, err)
+							} else {
+								totalSize += size
+							}
+						}
+					}
+				}
+			}
+		} else if mnt.Source != "" {
+			// For non-overlay mounts, use the source directly
+			if !visited[mnt.Source] {
+				visited[mnt.Source] = true
+				size, err := safeDiskUsage(ctx, mnt.Source)
+				if err != nil {
+					bklog.G(ctx).Warnf("failed to calculate size for mount source %s: %v", mnt.Source, err)
+				} else {
+					totalSize += size
+				}
+			}
+		}
+	}
+
+	return totalSize, nil
+}
 
 // Ref is a reference to cacheable objects.
 type Ref interface {
@@ -366,7 +512,19 @@ func (cr *cacheRecord) size(ctx context.Context) (int64, error) {
 					return 0, nil
 				}
 				if !errors.Is(err, cerrdefs.ErrNotFound) {
-					return s, errors.Wrapf(err, "failed to get usage for %s", cr.ID())
+					// Check if this is a "file name too long" error from deeply nested directories
+					if isFileNameTooLongError(err) {
+						bklog.G(ctx).Warnf("detected deeply nested directory structure in snapshot %s, using safe disk usage calculation", cr.ID())
+						safeSize, safeErr := cr.safeSnapshotUsage(ctx, driverID)
+						if safeErr != nil {
+							bklog.G(ctx).Errorf("safe disk usage calculation also failed for %s: %v", cr.ID(), safeErr)
+							return s, errors.Wrapf(err, "failed to get usage for %s (safe calculation also failed)", cr.ID())
+						}
+						usage.Size = safeSize
+						bklog.G(ctx).Infof("calculated safe disk usage for %s: %d bytes", cr.ID(), safeSize)
+					} else {
+						return s, errors.Wrapf(err, "failed to get usage for %s", cr.ID())
+					}
 				}
 			}
 		}
