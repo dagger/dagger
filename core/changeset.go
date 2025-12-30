@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sync"
 	"syscall"
 
 	"dagger.io/dagger/telemetry"
@@ -26,8 +27,9 @@ import (
 
 func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, error) {
 	return &Changeset{
-		Before: before,
-		After:  after,
+		Before:    before,
+		After:     after,
+		pathsOnce: &sync.Once{},
 	}, nil
 }
 
@@ -41,6 +43,13 @@ type ChangesetPaths struct {
 // ComputePaths computes the added, modified, and removed paths using git diff.
 // This must be called from a dagql resolver context where buildkit session is available.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
+	ch.pathsOnce.Do(func() {
+		ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
+	})
+	return ch.cachedPaths, ch.pathsErr
+}
+
+func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, error) {
 	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
 		return &ChangesetPaths{}, nil
 	}
@@ -115,6 +124,10 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 type Changeset struct {
 	Before dagql.ObjectResult[*Directory] `field:"true" doc:"The older/lower snapshot to compare against."`
 	After  dagql.ObjectResult[*Directory] `field:"true" doc:"The newer/upper snapshot."`
+
+	pathsOnce   *sync.Once
+	cachedPaths *ChangesetPaths
+	pathsErr    error
 }
 
 func (*Changeset) Type() *ast.Type {
