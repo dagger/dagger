@@ -386,6 +386,12 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 		// parent failed, since some happy paths might involve _expected_ failures
 		snapshot.Encapsulated = true
 
+	case "http.method":
+		// encapsulate HTTP client spans by default; routine operations like
+		// registry cache checks may return 404s which are expected failures
+		// and should not be shown as alarming errors to users
+		snapshot.Encapsulated = true
+
 	default:
 		if snapshot.ExtraAttributes == nil {
 			snapshot.ExtraAttributes = make(map[string]json.RawMessage)
