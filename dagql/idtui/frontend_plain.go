@@ -281,6 +281,24 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 	}
 
 	for _, span := range spans {
+		id := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
+		dbSpan := fe.db.Spans.Map[id]
+		if dbSpan == nil {
+			continue
+		}
+
+		var skip bool
+		for p := range dbSpan.Parents {
+			if !fe.Opts().ShouldShow(fe.db, p) {
+				skip = true
+				break
+			}
+		}
+
+		if skip {
+			continue
+		}
+
 		spanID := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
 
 		spanDt, ok := fe.data[spanID]
