@@ -551,7 +551,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the annotation.`),
 			),
 
-		dagql.Func("publish", s.publish).
+		dagql.NodeFuncWithCacheKey("publish", DagOpWrapper(srv, s.publish), dagql.CachePerCall).
 			DoNotCache("side effect on an external system (OCI registry)").
 			Doc(`Package the container state as an OCI image, and publish it to a registry`,
 				`Returns the fully qualified address of the published image, with digest`).
@@ -580,7 +580,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("platform", s.platform).
 			Doc(`The platform this container executes and publishes as.`),
 
-		dagql.Func("export", s.export).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.export), dagql.CachePerCall).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
@@ -608,7 +608,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
-		dagql.Func("export", s.exportLegacy).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.exportLegacy), dagql.CachePerClient).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
@@ -1551,9 +1551,11 @@ type containerPublishArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) publish(ctx context.Context, parent *core.Container, args containerPublishArgs) (dagql.String, error) {
+func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerPublishArgs) (dagql.String, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get server: %w", err)
@@ -1563,7 +1565,7 @@ func (s *containerSchema) publish(ctx context.Context, parent *core.Container, a
 	if err != nil {
 		return "", err
 	}
-	ref, err := parent.Publish(
+	ref, err := parent.Self().PublishDagOp(
 		ctx,
 		args.Address.String(),
 		variants,
@@ -2104,9 +2106,11 @@ type containerExportArgs struct {
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 	Expand            bool                 `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) export(ctx context.Context, parent *core.Container, args containerExportArgs) (dagql.String, error) {
+func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExportArgs) (dagql.String, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", err
@@ -2121,12 +2125,12 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 		return "", err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return "", err
 	}
 
-	_, err = parent.Export(
+	_, err = parent.Self().ExportDagOp(
 		ctx,
 		core.ExportOpts{
 			Dest:              path,
@@ -2150,7 +2154,7 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 	return dagql.String(stat.Path), err
 }
 
-func (s *containerSchema) exportLegacy(ctx context.Context, parent *core.Container, args containerExportArgs) (dagql.Boolean, error) {
+func (s *containerSchema) exportLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExportArgs) (dagql.Boolean, error) {
 	_, err := s.export(ctx, parent, args)
 	if err != nil {
 		return false, err

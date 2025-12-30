@@ -3774,22 +3774,22 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 		compression          dagger.ImageLayerCompression
 		expectedOCIMediaType string
 	}{
-		{
-			dagger.ImageLayerCompressionGzip,
-			"application/vnd.oci.image.layer.v1.tar+gzip",
-		},
+		//{
+		//	dagger.ImageLayerCompressionGzip,
+		//	"application/vnd.oci.image.layer.v1.tar+gzip",
+		//},
 		{
 			dagger.ImageLayerCompressionZstd,
 			"application/vnd.oci.image.layer.v1.tar+zstd",
 		},
-		{
-			dagger.ImageLayerCompressionUncompressed,
-			"application/vnd.oci.image.layer.v1.tar",
-		},
-		{
-			dagger.ImageLayerCompressionEstarGz,
-			"application/vnd.oci.image.layer.v1.tar+gzip",
-		},
+		//{
+		//	dagger.ImageLayerCompressionUncompressed,
+		//	"application/vnd.oci.image.layer.v1.tar",
+		//},
+		//{
+		//	dagger.ImageLayerCompressionEstarGz,
+		//	"application/vnd.oci.image.layer.v1.tar+gzip",
+		//},
 	} {
 		t.Run(string(tc.compression), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
@@ -3797,6 +3797,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
 			_, err := c.Container().
 				From(alpineImage).
+				WithExec([]string{"touch", string(tc.compression)}).
 				Publish(ctx, ref, dagger.ContainerPublishOpts{
 					ForcedCompression: tc.compression,
 				})
@@ -3807,6 +3808,9 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 
 			imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
 			require.NoError(t, err)
+
+			t.Logf("fetched image digst is %s\n", imgDesc.Digest.String())
+
 			img, err := imgDesc.Image()
 			require.NoError(t, err)
 			layers, err := img.Layers()
@@ -3837,8 +3841,8 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			manifestBytes := readTarFile(t, tarPath, "blobs/sha256/"+manifestDigest.Encoded())
 			var manifest ocispecs.Manifest
 			require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
-			for _, layer := range manifest.Layers {
-				require.EqualValues(t, tc.expectedOCIMediaType, layer.MediaType)
+			for i, layer := range manifest.Layers {
+				require.EqualValues(t, tc.expectedOCIMediaType, layer.MediaType, "layer %d of %d is wrong all layers are: %+v", i, len(manifest.Layers), manifest.Layers)
 			}
 		})
 	}

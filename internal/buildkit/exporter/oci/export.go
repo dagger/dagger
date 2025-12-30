@@ -132,6 +132,7 @@ func (e *imageExporterInstance) Config() *exporter.Config {
 }
 
 func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source, inlineCache exptypes.InlineCache, sessionID string) (_ map[string]string, descref exporter.DescriptorReference, err error) {
+	fmt.Printf("ACB in oci/imageExporterInstance.Export\n")
 	if e.opt.Variant == VariantDocker && len(src.Refs) > 0 {
 		return nil, nil, errors.Errorf("docker exporter does not currently support exporting manifest lists")
 	}

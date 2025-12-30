@@ -2,6 +2,7 @@ package compression
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -11,6 +12,7 @@ import (
 )
 
 func (c zstdType) Compress(ctx context.Context, comp Config) (compressorFunc Compressor, finalize Finalizer) {
+	fmt.Printf("ACB zstdType.Compress called\n")
 	return func(dest io.Writer, _ string) (io.WriteCloser, error) {
 		return zstdWriter(comp)(dest)
 	}, nil
@@ -21,16 +23,21 @@ func (c zstdType) Decompress(ctx context.Context, cs content.Store, desc ocispec
 }
 
 func (c zstdType) NeedsConversion(ctx context.Context, cs content.Store, desc ocispecs.Descriptor) (bool, error) {
+	fmt.Printf("ACB zstdType.NeedsConversion called\n")
 	if !images.IsLayerType(desc.MediaType) {
+		fmt.Printf("ACB NeedsConversion false1\n")
 		return false, nil
 	}
 	ct, err := FromMediaType(desc.MediaType)
 	if err != nil {
+		fmt.Printf("ACB NeedsConversion false2 and err %v\n", err)
 		return false, err
 	}
 	if ct == Zstd {
+		fmt.Printf("ACB NeedsConversion false3\n")
 		return false, nil
 	}
+	fmt.Printf("ACB NeedsConversion true\n")
 	return true, nil
 }
 

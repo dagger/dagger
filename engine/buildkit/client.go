@@ -302,6 +302,7 @@ func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
 }
 
 func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []ResolveCacheExporterFunc) error {
+	fmt.Printf("ACB UpstreamCacheExport called\n")
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return err
@@ -341,6 +342,7 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 			}
 			bklog.G(ctx).Debugf("exporting cache with %T", exporter)
 			compressionCfg := exporter.Config().Compression
+			fmt.Printf("ACB exporting with compressionCfg %+v\n", compressionCfg)
 			err = solverresult.EachRef(solverRes, cacheRes, func(res bksolver.CachedResult, ref bkcache.ImmutableRef) error {
 				bklog.G(ctx).Debugf("exporting cache for %s", ref.ID())
 				ctx := withDescHandlerCacheOpts(ctx, ref)

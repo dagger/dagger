@@ -1,6 +1,7 @@
 package compression
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/pkg/errors"
@@ -13,6 +14,7 @@ const (
 )
 
 func ParseAttributes(attrs map[string]string) (Config, error) {
+	fmt.Printf("ACB ParseAttributes called on %+v\n", attrs)
 	var compressionType Type
 	if v, ok := attrs[attrLayerCompression]; ok {
 		c, err := Parse(v)
@@ -44,5 +46,6 @@ func ParseAttributes(attrs map[string]string) (Config, error) {
 		}
 		compressionConfig = compressionConfig.SetLevel(int(ii))
 	}
+	fmt.Printf("returning compressionConfig %+v\n", compressionConfig)
 	return compressionConfig, nil
 }

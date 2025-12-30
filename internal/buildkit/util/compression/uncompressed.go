@@ -2,6 +2,7 @@ package compression
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -25,6 +26,7 @@ func (c uncompressedType) Decompress(ctx context.Context, cs content.Store, desc
 }
 
 func (c uncompressedType) NeedsConversion(ctx context.Context, cs content.Store, desc ocispecs.Descriptor) (bool, error) {
+	fmt.Printf("ACB uncompressedType.NeedsConversion called\n")
 	if !images.IsLayerType(desc.MediaType) {
 		return false, nil
 	}
