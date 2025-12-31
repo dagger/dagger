@@ -529,7 +529,7 @@ func AfterSelectorsForConflictResolution(
 	other *Changeset,
 	conflicts Conflicts,
 	onConflictStrategy WithChangesetMergeConflict,
-) (parentAfterSelector, additionalAfterSelector []dagql.Selector, err error) {
+) (parentAfterSelector, additionalAfterSelector []dagql.Selector, err error) { //nolint:gocyclo
 	var sel dagql.Selector
 	// When SkipOnConflict all conflicts will be skipped
 	// this means the initial state of the file will be kept in the "after" directory
@@ -550,14 +550,14 @@ func AfterSelectorsForConflictResolution(
 			// if we prefer self, keep it and put the file on the "after" of additional changes
 			case PreferSelfOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
 			// if we prefer other, keep it and put the file on the "after" of parent changes
 			case PreferOtherOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					parentAfterSelector = append(parentAfterSelector, sel)
 				}
@@ -568,26 +568,26 @@ func AfterSelectorsForConflictResolution(
 			// on skip, use the "before" file everywhere
 			case SkipOnConflict:
 				if sel, err = withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					parentAfterSelector = append(parentAfterSelector, sel)
 				}
 				if sel, err = withFileFromBefore(ctx, srv, other, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
 			// if we prefer self, keep it and put the file on the "after" of additional changes
 			case PreferSelfOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
 			// if we prefer other, keep it and put the file on the "after" of parent changes
 			case PreferOtherOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					parentAfterSelector = append(parentAfterSelector, sel)
 				}
@@ -598,19 +598,19 @@ func AfterSelectorsForConflictResolution(
 			// on skip, use the "before" file everywhere
 			case SkipOnConflict:
 				if sel, err = withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					parentAfterSelector = append(parentAfterSelector, sel)
 				}
 				if sel, err = withFileFromBefore(ctx, srv, other, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
 			// if we prefer self, use the "after" from parent changes on additional changes
 			case PreferSelfOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
@@ -624,12 +624,12 @@ func AfterSelectorsForConflictResolution(
 			// on skip, use the "before" file everywhere
 			case SkipOnConflict:
 				if sel, err = withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					parentAfterSelector = append(parentAfterSelector, sel)
 				}
 				if sel, err = withFileFromBefore(ctx, srv, other, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
@@ -639,12 +639,12 @@ func AfterSelectorsForConflictResolution(
 			// if we prefer other, use the file from "after" of additional changes
 			case PreferOtherOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
-					return
+					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					parentAfterSelector = append(parentAfterSelector, sel)
 				}
 			}
 		}
 	}
-	return
+	return parentAfterSelector, additionalAfterSelector, err
 }
