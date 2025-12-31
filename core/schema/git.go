@@ -402,7 +402,7 @@ func (s *gitSchema) tags(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	if repo.needsReentry() {
 		tagsSelector := dagql.Selector{Field: "tags"}
 		if args.Patterns.Valid {
-			tagsSelector.Args = []dagql.NamedInput{{Name: "patterns", Value: args.Patterns.Value}}
+			tagsSelector.Args = []dagql.NamedInput{{Name: "patterns", Value: args.Patterns}}
 		}
 		return reenterRepo[dagql.Array[dagql.String]](ctx, repo, tagsSelector)
 	}
@@ -433,7 +433,7 @@ func (s *gitSchema) branches(ctx context.Context, parent dagql.ObjectResult[*cor
 	if repo.needsReentry() {
 		branchesSelector := dagql.Selector{Field: "branches"}
 		if args.Patterns.Valid {
-			branchesSelector.Args = []dagql.NamedInput{{Name: "patterns", Value: args.Patterns.Value}}
+			branchesSelector.Args = []dagql.NamedInput{{Name: "patterns", Value: args.Patterns}}
 		}
 		return reenterRepo[dagql.Array[dagql.String]](ctx, repo, branchesSelector)
 	}
@@ -660,19 +660,6 @@ func tryProtocols[T any](repoURL string, try func(url string) (T, error)) (T, er
 	return zero, fmt.Errorf("failed to determine Git URL protocol")
 }
 
-func needsAuthResolution(repo *core.RemoteGitRepository) bool {
-	if repo.URL == nil {
-		return true
-	}
-	if repo.URL.Scheme == gitutil.SSHProtocol && !repo.SSHAuthSocket.Valid {
-		return true
-	}
-	if (repo.URL.Scheme == gitutil.HTTPProtocol || repo.URL.Scheme == gitutil.HTTPSProtocol) &&
-		!repo.AuthToken.Valid && !repo.AuthHeader.Valid {
-		return true
-	}
-	return false
-}
 
 type resolvedRepo struct {
 	repo        *core.GitRepository
@@ -826,7 +813,7 @@ func (s *gitSchema) resolveGitRepo(
 		}, nil
 	}
 
-	if needsAuthResolution(remoteGitRepo) {
+	if remoteGitRepo.NeedsAuthResolution() {
 		srv, err := core.CurrentDagqlServer(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -867,25 +854,8 @@ func (s *gitSchema) resolveGitRef(
 		}, nil
 	}
 
-	repo := resolvedRepo.repo
-	if gitRef.Ref.SHA == "" && gitRef.Ref.Name != "" {
-		remote, err := repo.Backend.Remote(ctx)
-		if err != nil {
-			return nil, err
-		}
-		resolvedRefInfo, err := remote.Lookup(gitRef.Ref.Name)
-		if err != nil {
-			return nil, err
-		}
-		gitRef.Ref.SHA = resolvedRefInfo.SHA
-	}
-
-	if gitRef.Backend == nil {
-		refBackend, err := repo.Backend.Get(ctx, gitRef.Ref)
-		if err != nil {
-			return nil, err
-		}
-		gitRef.Backend = refBackend
+	if err := gitRef.Resolve(ctx); err != nil {
+		return nil, err
 	}
 
 	return &resolvedRef{
@@ -1105,37 +1075,18 @@ func (s *gitSchema) commonAncestor(
 	}
 
 	otherRef := other.Self()
-	otherRepo := otherRef.Repo.Self()
-	otherRemoteRepo, otherIsRemote := otherRepo.Backend.(*core.RemoteGitRepository)
+	otherRemoteRepo, otherIsRemote := otherRef.Repo.Self().Backend.(*core.RemoteGitRepository)
 
-	if otherIsRemote && (otherRef.Ref.SHA == "" || needsAuthResolution(otherRemoteRepo)) {
+	if otherIsRemote && otherRemoteRepo.NeedsAuthResolution() {
 		resolvedOther, err := s.resolveRef(ctx, srv, other)
 		if err != nil {
 			return inst, err
 		}
-		other = resolvedOther
-		otherRef = other.Self()
-		otherRepo = otherRef.Repo.Self()
+		otherRef = resolvedOther.Self()
 	}
 
-	if otherRef.Ref.SHA == "" && otherRef.Ref.Name != "" {
-		remote, err := otherRepo.Backend.Remote(ctx)
-		if err != nil {
-			return inst, err
-		}
-		resolvedRefInfo, err := remote.Lookup(otherRef.Ref.Name)
-		if err != nil {
-			return inst, err
-		}
-		otherRef.Ref = resolvedRefInfo
-	}
-
-	if otherRef.Backend == nil {
-		refBackend, err := otherRepo.Backend.Get(ctx, otherRef.Ref)
-		if err != nil {
-			return inst, err
-		}
-		otherRef.Backend = refBackend
+	if err := otherRef.Resolve(ctx); err != nil {
+		return inst, err
 	}
 
 	result, err := core.MergeBase(ctx, ref.ref, otherRef)

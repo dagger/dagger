@@ -77,6 +77,19 @@ func (*GitRepository) TypeDescription() string {
 	return "A git repository."
 }
 
+// Resolve resolves the repository's remote metadata. This is the repo-level
+// resolution that GitRef.Resolve() chains to.
+func (repo *GitRepository) Resolve(ctx context.Context) error {
+	if repo.Remote == nil {
+		remote, err := repo.Backend.Remote(ctx)
+		if err != nil {
+			return err
+		}
+		repo.Remote = remote
+	}
+	return nil
+}
+
 func (repo *GitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	return repo.Backend.PBDefinitions(ctx)
 }
@@ -101,6 +114,39 @@ func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {
 	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth)
+}
+
+// Resolve resolves the ref's SHA and name to their canonical forms, and initializes
+// the backend. This chains to GitRepository.Resolve() first.
+func (ref *GitRef) Resolve(ctx context.Context) error {
+	repo := ref.Repo.Self()
+
+	if err := repo.Resolve(ctx); err != nil {
+		return err
+	}
+
+	if ref.Ref.Name != "" {
+		resolvedRefInfo, err := repo.Remote.Lookup(ref.Ref.Name)
+		if err != nil {
+			return err
+		}
+		if ref.Ref.SHA == "" {
+			ref.Ref.SHA = resolvedRefInfo.SHA
+		}
+		if resolvedRefInfo.Name != "" {
+			ref.Ref.Name = resolvedRefInfo.Name
+		}
+	}
+
+	if ref.Backend == nil {
+		refBackend, err := repo.Backend.Get(ctx, ref.Ref)
+		if err != nil {
+			return err
+		}
+		ref.Backend = refBackend
+	}
+
+	return nil
 }
 
 // doGitCheckout performs a git checkout using the given git helper.
