@@ -57,6 +57,22 @@ type RemoteGitRepository struct {
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
 
+// NeedsAuthResolution returns true if the repository needs auth to be resolved
+// (protocol detection, SSH socket, or HTTP credentials).
+func (repo *RemoteGitRepository) NeedsAuthResolution() bool {
+	if repo.URL == nil {
+		return true
+	}
+	if repo.URL.Scheme == gitutil.SSHProtocol && !repo.SSHAuthSocket.Valid {
+		return true
+	}
+	if (repo.URL.Scheme == gitutil.HTTPProtocol || repo.URL.Scheme == gitutil.HTTPSProtocol) &&
+		!repo.AuthToken.Valid && !repo.AuthHeader.Valid {
+		return true
+	}
+	return false
+}
+
 type RemoteGitRef struct {
 	*gitutil.Ref
 	repo *RemoteGitRepository
