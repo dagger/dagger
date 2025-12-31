@@ -555,9 +555,9 @@ type withAuthTokenArgs struct {
 func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepository, args withAuthTokenArgs) (*core.GitRepository, error) {
 	repo := *parent
 	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		r := *remote
-		r.AuthToken = dagql.Opt(args.Token)
-		repo.Backend = &r
+		remoteCopy := *remote
+		remoteCopy.AuthToken = dagql.Opt(args.Token)
+		repo.Backend = &remoteCopy
 	}
 	return &repo, nil
 }
@@ -569,9 +569,9 @@ type withAuthHeaderArgs struct {
 func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitRepository, args withAuthHeaderArgs) (*core.GitRepository, error) {
 	repo := *parent
 	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		r := *remote
-		r.AuthHeader = dagql.Opt(args.Header)
-		repo.Backend = &r
+		remoteCopy := *remote
+		remoteCopy.AuthHeader = dagql.Opt(args.Header)
+		repo.Backend = &remoteCopy
 	}
 	return &repo, nil
 }
@@ -760,12 +760,12 @@ func (s *gitSchema) resolveAndLoadRepoObject(
 			return nil, fmt.Errorf("select unix socket: %w", err)
 		}
 
-		u := *remoteGitRepo.URL
-		if u.User == nil {
-			u.User = url.User("git")
+		urlCopy := *remoteGitRepo.URL
+		if urlCopy.User == nil {
+			urlCopy.User = url.User("git")
 		}
 
-		return reenter(u.String(),
+		return reenter(urlCopy.String(),
 			call.NewArgument("sshAuthSocket", call.NewLiteralID(sock.ID()), false),
 		)
 	}
@@ -891,12 +891,12 @@ func (s *gitSchema) resolveAndLoadRepoScalar(
 			return nil, fmt.Errorf("select unix socket: %w", err)
 		}
 
-		u := *remoteGitRepo.URL
-		if u.User == nil {
-			u.User = url.User("git")
+		urlCopy := *remoteGitRepo.URL
+		if urlCopy.User == nil {
+			urlCopy.User = url.User("git")
 		}
 
-		return reenter(u.String(),
+		return reenter(urlCopy.String(),
 			call.NewArgument("sshAuthSocket", call.NewLiteralID(sock.ID()), false),
 		)
 	}
@@ -1054,12 +1054,12 @@ func (s *gitSchema) resolveAndLoad(
 			return nil, fmt.Errorf("select unix socket: %w", err)
 		}
 
-		u := *remoteGitRepo.URL
-		if u.User == nil {
-			u.User = url.User("git")
+		urlCopy := *remoteGitRepo.URL
+		if urlCopy.User == nil {
+			urlCopy.User = url.User("git")
 		}
 
-		return reenter(u.String(),
+		return reenter(urlCopy.String(),
 			call.NewArgument("sshAuthSocket", call.NewLiteralID(sock.ID()), false),
 		)
 	}
@@ -1233,12 +1233,12 @@ func (s *gitSchema) resolveAndLoadScalar(
 			return nil, fmt.Errorf("select unix socket: %w", err)
 		}
 
-		u := *remoteGitRepo.URL
-		if u.User == nil {
-			u.User = url.User("git")
+		urlCopy := *remoteGitRepo.URL
+		if urlCopy.User == nil {
+			urlCopy.User = url.User("git")
 		}
 
-		return reenter(u.String(),
+		return reenter(urlCopy.String(),
 			call.NewArgument("sshAuthSocket", call.NewLiteralID(sock.ID()), false),
 		)
 	}
