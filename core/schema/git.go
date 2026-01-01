@@ -398,6 +398,7 @@ type tagsArgs struct {
 	Patterns dagql.Optional[dagql.ArrayInput[dagql.String]] `name:"patterns"`
 }
 
+//nolint:dupl
 func (s *gitSchema) tags(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args tagsArgs) (dagql.Array[dagql.String], error) {
 	repo, err := s.resolveGitRepo(ctx, parent)
 	if err != nil {
@@ -429,6 +430,7 @@ type branchesArgs struct {
 	Patterns dagql.Optional[dagql.ArrayInput[dagql.String]] `name:"patterns"`
 }
 
+//nolint:dupl
 func (s *gitSchema) branches(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args branchesArgs) (dagql.Array[dagql.String], error) {
 	repo, err := s.resolveGitRepo(ctx, parent)
 	if err != nil {
@@ -664,7 +666,6 @@ func tryProtocols[T any](repoURL string, try func(url string) (T, error)) (T, er
 	}
 	return zero, fmt.Errorf("failed to determine Git URL protocol")
 }
-
 
 type resolvedRepo struct {
 	repo        *core.GitRepository
