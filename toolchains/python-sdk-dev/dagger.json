@@ -24,5 +24,8 @@
       "name": "wolfi",
       "source": "../../modules/wolfi"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

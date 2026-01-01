@@ -42,5 +42,8 @@
       "name": "elixir-sdk-dev",
       "source": "../elixir-sdk-dev"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }
