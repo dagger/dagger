@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -292,6 +293,10 @@ func (s *gitSchema) url(ctx context.Context, parent dagql.ObjectResult[*core.Git
 			return dagql.Null[dagql.String](), err
 		}
 		return dagql.NonNull(result), nil
+	}
+
+	if _, err := repo.repo.Backend.Remote(ctx); err != nil {
+		return dagql.Null[dagql.String](), err
 	}
 
 	return dagql.NonNull(dagql.String(remoteGitRepo.URL.String())), nil
@@ -663,6 +668,7 @@ func tryProtocols[T any](repoURL string, try func(url string) (T, error)) (T, er
 
 type resolvedRepo struct {
 	repo        *core.GitRepository
+	repoID      *call.ID
 	auth        *authResolution
 	tryProtocol bool
 	repoURL     string
@@ -685,12 +691,6 @@ func (r *resolvedRef) needsReentry() bool {
 type authResolution struct {
 	urlOverride string
 	extraArgs   []dagql.NamedInput
-}
-
-func (auth *authResolution) gitSelector() dagql.Selector {
-	args := []dagql.NamedInput{{Name: "url", Value: dagql.NewString(auth.urlOverride)}}
-	args = append(args, auth.extraArgs...)
-	return dagql.Selector{Field: "git", Args: args}
 }
 
 func (s *gitSchema) resolveAuthArgs(
@@ -800,17 +800,32 @@ func (s *gitSchema) resolveGitRepo(
 	remoteGitRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
 
 	if !isRemote {
-		return &resolvedRepo{repo: repo}, nil
+		return &resolvedRepo{repo: repo, repoID: parent.ID()}, nil
 	}
 
 	repoURL := parent.ID().Arg("url").Value().ToInput().(string)
 
 	if remoteGitRepo.URL == nil {
-		return &resolvedRepo{
-			repo:        repo,
-			tryProtocol: true,
-			repoURL:     repoURL,
-		}, nil
+		if remoteGitRepo.SSHAuthSocket.Valid {
+			parsedURL, err := gitutil.ParseURL("ssh://git@" + repoURL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse SSH URL: %w", err)
+			}
+			remoteGitRepo.URL = parsedURL
+		} else if remoteGitRepo.AuthToken.Valid || remoteGitRepo.AuthHeader.Valid {
+			parsedURL, err := gitutil.ParseURL("https://" + repoURL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse HTTPS URL: %w", err)
+			}
+			remoteGitRepo.URL = parsedURL
+		} else {
+			return &resolvedRepo{
+				repo:        repo,
+				repoID:      parent.ID(),
+				tryProtocol: true,
+				repoURL:     repoURL,
+			}, nil
+		}
 	}
 
 	if remoteGitRepo.NeedsAuthResolution() {
@@ -821,8 +836,9 @@ func (s *gitSchema) resolveGitRepo(
 		auth, err := s.resolveAuthArgs(ctx, srv, remoteGitRepo)
 		if err == nil {
 			return &resolvedRepo{
-				repo: repo,
-				auth: auth,
+				repo:   repo,
+				repoID: parent.ID(),
+				auth:   auth,
 			}, nil
 		}
 		if !errors.Is(err, errNoAuthResolutionNeeded) {
@@ -830,7 +846,7 @@ func (s *gitSchema) resolveGitRepo(
 		}
 	}
 
-	return &resolvedRepo{repo: repo}, nil
+	return &resolvedRepo{repo: repo, repoID: parent.ID()}, nil
 }
 
 func (s *gitSchema) resolveGitRef(
@@ -865,6 +881,31 @@ func (s *gitSchema) resolveGitRef(
 	}, nil
 }
 
+func buildReentryRepoID(
+	resolved *resolvedRepo,
+	urlOverride string,
+	extraArgs []*call.Argument,
+	leafSelector dagql.Selector,
+	currentID *call.ID,
+) *call.ID {
+	newGitID := resolved.repoID.WithArgument(call.NewArgument("url", call.NewLiteralString(urlOverride), false))
+	for _, arg := range extraArgs {
+		newGitID = newGitID.WithArgument(arg)
+	}
+
+	leafArgs := make([]*call.Argument, 0, len(leafSelector.Args))
+	for _, arg := range leafSelector.Args {
+		leafArgs = append(leafArgs, call.NewArgument(arg.Name, arg.Value.ToLiteral(), false))
+	}
+
+	return newGitID.Append(
+		currentID.Type().ToAST(),
+		leafSelector.Field,
+		call.WithArgs(leafArgs...),
+		call.WithView(currentID.View()),
+	)
+}
+
 func reenterRepo[T any](
 	ctx context.Context,
 	resolved *resolvedRepo,
@@ -876,24 +917,29 @@ func reenterRepo[T any](
 		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
+	currentID := dagql.CurrentID(ctx)
+
+	reenter := func(urlOverride string, extraArgs ...*call.Argument) (T, error) {
+		newOpID := buildReentryRepoID(resolved, urlOverride, extraArgs, leafSelector, currentID)
+		result, err := srv.LoadType(ctx, newOpID)
+		if err != nil {
+			return zero, err
+		}
+		return result.Unwrap().(T), nil
+	}
+
 	if resolved.tryProtocol {
 		return tryProtocols(resolved.repoURL, func(url string) (T, error) {
-			var result T
-			err := srv.Select(ctx, srv.Root(), &result,
-				dagql.Selector{Field: "git", Args: []dagql.NamedInput{{Name: "url", Value: dagql.NewString(url)}}},
-				leafSelector,
-			)
-			return result, err
+			return reenter(url)
 		})
 	}
 
 	if resolved.auth != nil {
-		var result T
-		err := srv.Select(ctx, srv.Root(), &result,
-			resolved.auth.gitSelector(),
-			leafSelector,
-		)
-		return result, err
+		extraArgs := make([]*call.Argument, 0, len(resolved.auth.extraArgs))
+		for _, arg := range resolved.auth.extraArgs {
+			extraArgs = append(extraArgs, call.NewArgument(arg.Name, arg.Value.ToLiteral(), false))
+		}
+		return reenter(resolved.auth.urlOverride, extraArgs...)
 	}
 
 	return zero, fmt.Errorf("reenterRepo called but no reentry needed")
@@ -1037,7 +1083,7 @@ func (s *gitSchema) fetchRef(
 	if ref.needsReentry() {
 		return reenterRefScalar[dagql.String](ctx, ref, dagql.Selector{Field: "ref"})
 	}
-	return dagql.NewString(ref.ref.Ref.Name), nil
+	return dagql.NewString(cmp.Or(ref.ref.Ref.Name, ref.ref.Ref.SHA)), nil
 }
 
 type mergeBaseArgs struct {
