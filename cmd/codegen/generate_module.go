@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	modulePath string
-	moduleName string
-	isInit     bool
+	modulePath  string
+	moduleName  string
+	isInit      bool
+	portableAPI bool
 )
 
 var generateModuleCmd = &cobra.Command{
@@ -38,7 +39,8 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 	defer cfg.Close()
 
 	moduleConfig := &generator.ModuleGeneratorConfig{
-		IsInit: isInit,
+		IsInit:            isInit,
+		PortableDaggerAPI: portableAPI,
 	}
 
 	moduleConfig.ModuleName = moduleName
@@ -75,4 +77,5 @@ func init() {
 	generateModuleCmd.MarkFlagRequired("module-source-path")
 
 	generateModuleCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
+	generateModuleCmd.Flags().BoolVar(&portableAPI, "portable-api", false, "generate portable go code with dagger.io/dagger imports")
 }

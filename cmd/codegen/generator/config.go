@@ -43,6 +43,10 @@ func (c *Config) Close() error {
 	return nil
 }
 
+func (c *Config) IsPortableDaggerAPI() bool {
+	return c.ModuleConfig != nil && c.ModuleConfig.PortableDaggerAPI
+}
+
 // Specific configuration for module generation.
 type ModuleGeneratorConfig struct {
 	// Name of the module to generate code for.
@@ -59,6 +63,8 @@ type ModuleGeneratorConfig struct {
 	// where a pre-existing go.mod file is checked during dagger init for whether its module
 	// name is the expected value.
 	IsInit bool
+
+	PortableDaggerAPI bool
 }
 
 type ModuleSourceDependency struct {
@@ -80,4 +86,7 @@ type ClientGeneratorConfig struct {
 
 	// The directory where the client will be generated.
 	ClientDir string
+
+	// generate portable APIs for go
+	PortableDaggerAPI bool
 }
