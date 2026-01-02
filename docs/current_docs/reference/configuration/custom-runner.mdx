@@ -61,10 +61,10 @@ then the CLI will instead connect to the endpoint specified there. This
 environment variable currently accepts values in the following format:
 
 1. `container://<container name>` - Connect to the runner inside the given host container.
-    - Requires a local [container runtime](../../container-runtimes/).
+    - Requires a local [container runtime](/reference/container-runtimes/).
     - Can force a specific container runtime using `container+<runtime>://<container name>`, e.g. `container+podman://dagger-engine`.
 1. `image://<container image reference>` - Start the runner in Docker using the provided container image, pulling it locally if needed
-    - Requires a local [container runtime](../../container-runtimes/).
+    - Requires a local [container runtime](/reference/container-runtimes/).
     - Can force a specific container runtime using `image+<runtime>://<container image reference>`, e.g. `image+podman://registry.dagger.io/engine:latest`.
 1. `kube-pod://<podname>?context=<context>&namespace=<namespace>&container=<container>` - Connect to the runner inside the given Kubernetes pod.
     - Query strings params like context and namespace are optional.
