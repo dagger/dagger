@@ -414,12 +414,23 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	}
 	if strings.Count(rawPatch, "\n") > 100 {
 		// If the patch is too large, show a summary instead
-		addedDirectories := changes.Self().AddedPaths
-		addedDirectories = slices.DeleteFunc(addedDirectories, func(s string) bool {
+		var addedPaths, removedPaths []string
+		if err := srv.Select(ctx, changes, &addedPaths, dagql.Selector{
+			View:  srv.View,
+			Field: "addedPaths",
+		}); err != nil {
+			return fmt.Sprintf("WARNING: failed to fetch added paths: %s", err), nil
+		}
+		if err := srv.Select(ctx, changes, &removedPaths, dagql.Selector{
+			View:  srv.View,
+			Field: "removedPaths",
+		}); err != nil {
+			return fmt.Sprintf("WARNING: failed to fetch removed paths: %s", err), nil
+		}
+		addedDirectories := slices.DeleteFunc(addedPaths, func(s string) bool {
 			return !strings.HasSuffix(s, "/")
 		})
-		removedDirectories := changes.Self().RemovedPaths
-		removedDirectories = slices.DeleteFunc(removedDirectories, func(s string) bool {
+		removedDirectories := slices.DeleteFunc(removedPaths, func(s string) bool {
 			return !strings.HasSuffix(s, "/")
 		})
 		patch, err := diffparser.Parse(rawPatch)
