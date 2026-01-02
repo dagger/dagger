@@ -1768,12 +1768,38 @@ func (PythonSuite) TestIgnoreConstructorArg(ctx context.Context, t *testctx.T) {
         @dagger.object_type
         class Test:
             source: Annotated[
-                dagger.Directory, 
+                dagger.Directory,
                 dagger.DefaultPath("/"),
                 dagger.Ignore([".venv"]),
             ] = dagger.field()
         `).
 		With(daggerCall("source", "entries", "--json")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Contains(t, gjson.Parse(out).Value(), "dagger.json")
+}
+
+func (PythonSuite) TestDefaultPathConstructorWithoutField(ctx context.Context, t *testctx.T) {
+	// This test verifies that DefaultPath works on constructor fields
+	// even when dagger.field() is not used (issue #11554)
+	c := connect(ctx, t)
+
+	out, err := pythonModInit(t, c, `
+        from typing import Annotated
+        import dagger
+        from dagger import DefaultPath
+
+        @dagger.object_type
+        class Test:
+            # Constructor field with DefaultPath but no dagger.field()
+            source: Annotated[dagger.Directory, DefaultPath(".")]
+
+            @dagger.function
+            async def get_entries(self) -> list[str]:
+                return await self.source.entries()
+        `).
+		With(daggerCall("get-entries", "--json")).
 		Stdout(ctx)
 
 	require.NoError(t, err)
