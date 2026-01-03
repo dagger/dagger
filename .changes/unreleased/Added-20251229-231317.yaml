@@ -1,0 +1,7 @@
+kind: Added
+body: |
+    Add Documentation for using LLM.withMCPServer
+time: 2025-12-29T23:13:17.894107483+09:00
+custom:
+    Author: sukso96100
+    PR: "11605"
