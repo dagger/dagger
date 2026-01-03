@@ -49,8 +49,9 @@ var (
 
 	installName string
 
-	initBlueprint        string
-	toolchainInstallName string
+	initBlueprint           string
+	toolchainInstallName    string
+	toolchainInstallOverlay string
 
 	developSDK        string
 	developSourcePath string
@@ -177,6 +178,7 @@ func init() {
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
 
 	toolchainInstallCmd.Flags().StringVarP(&toolchainInstallName, "name", "n", "", "Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.")
+	toolchainInstallCmd.Flags().StringVar(&toolchainInstallOverlay, "overlay-for", "", "Install this toolchain as an overlay for the specified base toolchain.")
 	toolchainInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(toolchainInstallCmd, toolchainInstallCmd.Flags(), false)
 
@@ -804,7 +806,86 @@ var toolchainInstallCmd = &cobra.Command{
 				toolchainSrc = toolchainSrc.WithName(toolchainInstallName)
 			}
 
+			// If --overlay-for is specified, validate that the base toolchain exists
+			if toolchainInstallOverlay != "" {
+				// Get existing toolchains to validate the base exists
+				existingToolchains, err := modSrc.Toolchains(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get existing toolchains: %w", err)
+				}
+
+				// Check if the base toolchain exists
+				baseExists := false
+				for _, tc := range existingToolchains {
+					tcName, err := tc.ModuleName(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to get toolchain name: %w", err)
+					}
+					if tcName == toolchainInstallOverlay {
+						baseExists = true
+						break
+					}
+				}
+
+				if !baseExists {
+					return fmt.Errorf("cannot set overlay-for=%q: base toolchain %q does not exist. Install the base toolchain first.", toolchainInstallOverlay, toolchainInstallOverlay)
+				}
+			}
+
 			modSrc = modSrc.WithToolchains([]*dagger.ModuleSource{toolchainSrc})
+
+			// Set the overlayFor field if specified
+			if toolchainInstallOverlay != "" {
+				// Determine the toolchain name to use for setting overlayFor
+				tcName := toolchainInstallName
+				if tcName == "" {
+					// If no name was specified, get the name from the toolchain source
+					tcName, err = toolchainSrc.ModuleName(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to get toolchain name: %w", err)
+					}
+				}
+
+				// Use the internal API to set the overlayFor field
+				// This is done by directly manipulating the module source via GraphQL
+				query := `mutation SetOverlayFor($id: ModuleSourceID!, $name: String!, $overlayFor: String!) {
+					moduleSource(id: $id) {
+						withOverlayFor(name: $name, overlayFor: $overlayFor) {
+							id
+						}
+					}
+				}`
+
+				var response struct {
+					ModuleSource struct {
+						WithOverlayFor struct {
+							ID string
+						}
+					}
+				}
+
+				modSrcID, err := modSrc.ID(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get module source ID: %w", err)
+				}
+
+				err = dag.Do(ctx, &dagger.Request{
+					Query: query,
+					Variables: map[string]interface{}{
+						"id":         modSrcID,
+						"name":       tcName,
+						"overlayFor": toolchainInstallOverlay,
+					},
+				}, &dagger.Response{
+					Data: &response,
+				})
+				if err != nil {
+					return fmt.Errorf("failed to set overlayFor: %w", err)
+				}
+
+				// Update modSrc to use the new ID
+				modSrc = dag.LoadModuleSourceFromID(dagger.ModuleSourceID(response.ModuleSource.WithOverlayFor.ID))
+			}
 
 			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)
@@ -817,7 +898,11 @@ var toolchainInstallCmd = &cobra.Command{
 				return fmt.Errorf("failed to install toolchain: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "toolchain installed\n")
+			if toolchainInstallOverlay != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "toolchain installed as overlay for %s\n", toolchainInstallOverlay)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "toolchain installed\n")
+			}
 			return nil
 		})
 	},
