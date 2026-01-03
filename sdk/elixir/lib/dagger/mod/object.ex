@@ -59,13 +59,48 @@ defmodule Dagger.Mod.Object do
   alias Dagger.Mod.Object.Meta
 
   @doc """
+  Get module deprecation reason if deprecated from docs annotation metadata
+
+  Return `{:deprecated, reason}` or `nil` if the module did not specify `@moduledoc deprecated: "reason"`
+  """
+  def get_module_deprecated(module) do
+    with {_, metadatas, _} <- fetch_docs(module),
+         %{deprecated: reason} <- metadatas do
+      {:deprecated, reason}
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Get function deprecation reason if deprecated from docs or attribute
+
+  Return `{:deprecated, reason}` or `nil` if the function did not specify `@deprecated reason` attributes or `@doc deprecated: "reason" docstring`
+  """
+  def get_function_deprecated(module, func_name) do
+    fun = fn
+      {{:function, ^func_name, _}, _, _, _, _} -> true
+      _ -> false
+    end
+
+    with {_, _, func_docs} <- fetch_docs(module),
+         {{:function, ^func_name, _}, _, _, _, metadatas} <- Enum.find(func_docs, fun),
+         %{deprecated: reason} <- metadatas do
+      {:deprecated, reason}
+    else
+      _ ->
+        nil
+    end
+  end
+
+  @doc """
   Get module documentation.
 
   Returns module doc string or `nil` if the given module didn't have a documentation.
   """
   @spec get_module_doc(module()) :: String.t() | nil
   def get_module_doc(module) do
-    with {module_doc, _} <- fetch_docs(module),
+    with {module_doc, _, _} <- fetch_docs(module),
          %{"en" => doc} <- module_doc do
       String.trim(doc)
     else
@@ -87,7 +122,7 @@ defmodule Dagger.Mod.Object do
       _ -> false
     end
 
-    with {_, function_docs} <- fetch_docs(module),
+    with {_, _, function_docs} <- fetch_docs(module),
          {{:function, ^name, _}, _, _, doc_content, _} <- Enum.find(function_docs, fun),
          %{"en" => doc} <- doc_content do
       String.trim(doc)
@@ -99,8 +134,8 @@ defmodule Dagger.Mod.Object do
   end
 
   defp fetch_docs(module) do
-    {:docs_v1, _, :elixir, _, module_doc, _, function_docs} = Code.fetch_docs(module)
-    {module_doc, function_docs}
+    {:docs_v1, _, :elixir, _, module_doc, metadatas, function_docs} = Code.fetch_docs(module)
+    {module_doc, metadatas, function_docs}
   end
 
   @doc """
@@ -275,7 +310,12 @@ defmodule Dagger.Mod.Object do
     type = compile_typespec!(type)
     optional? = match?({:optional, _}, type)
     doc = opts[:doc]
-    field = Macro.escape({name, %Dagger.Mod.Object.FieldDef{type: type, doc: doc}})
+    deprecated = opts[:deprecated]
+
+    field =
+      Macro.escape(
+        {name, %Dagger.Mod.Object.FieldDef{type: type, doc: doc, deprecated: deprecated}}
+      )
 
     quote do
       @field unquote(field)

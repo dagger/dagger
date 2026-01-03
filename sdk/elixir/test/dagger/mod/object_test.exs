@@ -12,6 +12,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    name: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -25,6 +26,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    name: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -38,6 +40,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    value: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -51,6 +54,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    value: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -64,6 +68,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    name: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -82,6 +87,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    name: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:doc, nil},
                      {:default, "Foo"},
@@ -95,6 +101,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    value: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:doc, nil},
                      {:default, 42},
@@ -108,6 +115,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    value: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:doc, nil},
                      {:default, 1.6180342},
@@ -121,6 +129,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    value: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:doc, nil},
                      {:default, false},
@@ -145,6 +154,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    container: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -163,6 +173,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    alist: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -176,6 +187,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    alist: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -194,6 +206,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    s: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -212,6 +225,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    dir: [
                      {:default, nil},
+                     {:deprecated, nil},
                      {:ignore, ["deps", "_build"]},
                      {:default_path, "/sdk/elixir"},
                      {:doc, "The directory to run on."},
@@ -237,6 +251,7 @@ defmodule Dagger.Mod.ObjectTest do
                  args: [
                    name: [
                      {:ignore, nil},
+                     {:deprecated, nil},
                      {:default_path, nil},
                      {:default, nil},
                      {:doc, nil},
@@ -390,6 +405,7 @@ defmodule Dagger.Mod.ObjectTest do
                args: [
                  name: [
                    {:ignore, nil},
+                   {:deprecated, nil},
                    {:default_path, nil},
                    {:default, nil},
                    {:doc, nil},
@@ -401,11 +417,53 @@ defmodule Dagger.Mod.ObjectTest do
              fan_out: %Dagger.Mod.Object.FunctionDef{
                self: false,
                args: [
-                 name: [ignore: nil, default_path: nil, default: nil, doc: nil, type: :string]
+                 name: [
+                   ignore: nil,
+                   deprecated: nil,
+                   default_path: nil,
+                   default: nil,
+                   doc: nil,
+                   type: :string
+                 ]
                ],
                return: {:list, ObjectFieldAndFunction}
              }
            ]
+  end
+
+  describe "Deprecation level" do
+    test "field deprecation" do
+      assert DeprecatedDirective.__object__(:fields) == [
+               f1: %FieldDef{type: :string, doc: nil, deprecated: "deprecated field"},
+               f2: %FieldDef{type: :string, doc: nil, deprecated: nil}
+             ]
+    end
+
+    test "function argument deprecation" do
+      assert DeprecatedDirective.__object__(:functions)[:deprecated_args] ==
+               %Dagger.Mod.Object.FunctionDef{
+                 self: false,
+                 args: [
+                   foo: [
+                     {:ignore, nil},
+                     {:doc, nil},
+                     {:default, nil},
+                     {:default_path, nil},
+                     {:deprecated, "deprecated argument"},
+                     {:type, :string}
+                   ],
+                   bar: [
+                     {:ignore, nil},
+                     {:doc, nil},
+                     {:default, nil},
+                     {:default_path, nil},
+                     {:deprecated, nil},
+                     {:type, :string}
+                   ]
+                 ],
+                 return: :string
+               }
+    end
   end
 
   defp struct_keys(struct), do: struct |> Map.from_struct() |> Map.keys()

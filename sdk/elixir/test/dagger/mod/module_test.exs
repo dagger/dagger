@@ -281,6 +281,41 @@ defmodule Dagger.Mod.ModuleTest do
     end
   end
 
+  test "deprecated directive", %{dag: dag} do
+    root = root_object(dag, DeprecatedDirective)
+
+    assert {:ok, "module deprecation reason"} = Dagger.ObjectTypeDef.deprecated(root)
+
+    assert {:ok, [deprecated_by_attr, deprecated_by_docstr, deprecated_args]} =
+             Dagger.ObjectTypeDef.functions(root)
+
+    assert {:ok, "deprecatedByAttr"} = Dagger.Function.name(deprecated_by_attr)
+
+    assert {:ok, "deprecation reason"} =
+             Dagger.Function.deprecated(deprecated_by_attr)
+
+    assert {:ok, "deprecatedByDocstr"} = Dagger.Function.name(deprecated_by_docstr)
+
+    assert {:ok, "docstring deprecation reason"} =
+             Dagger.Function.deprecated(deprecated_by_docstr)
+
+    assert {:ok, "deprecatedArgs"} = Dagger.Function.name(deprecated_args)
+    assert {:ok, [foo, bar]} = Dagger.Function.args(deprecated_args)
+
+    assert {:ok, "deprecated argument"} =
+             Dagger.FunctionArg.deprecated(foo)
+
+    assert {:ok, nil} =
+             Dagger.FunctionArg.deprecated(bar)
+
+    assert {:ok, [f1, f2]} = Dagger.ObjectTypeDef.fields(root)
+    assert {:ok, "f1"} = Dagger.FieldTypeDef.name(f1)
+    assert {:ok, "deprecated field"} = Dagger.FieldTypeDef.deprecated(f1)
+
+    assert {:ok, "f2"} = Dagger.FieldTypeDef.name(f2)
+    assert {:ok, nil} = Dagger.FieldTypeDef.deprecated(f2)
+  end
+
   defp root_object(dag, module) do
     module = Module.define(dag, module)
     {:ok, [root_object]} = Dagger.Module.objects(module)

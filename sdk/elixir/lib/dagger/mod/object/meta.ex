@@ -6,7 +6,14 @@ defmodule Dagger.Mod.Object.Meta do
 
   def validate!(meta) do
     meta =
-      Keyword.validate!(meta, [:type, doc: nil, default: nil, default_path: nil, ignore: nil])
+      Keyword.validate!(meta, [
+        :type,
+        doc: nil,
+        default: nil,
+        default_path: nil,
+        deprecated: nil,
+        ignore: nil
+      ])
 
     :ok = Enum.each(meta, &validate/1)
 
@@ -21,5 +28,6 @@ defmodule Dagger.Mod.Object.Meta do
        do: :ok
 
   defp validate({:default_path, path}) when is_binary(path) or is_nil(path), do: :ok
+  defp validate({:deprecated, reason}) when is_binary(reason) or is_nil(reason), do: :ok
   defp validate({:ignore, patterns}) when is_list(patterns) or is_nil(patterns), do: :ok
 end
