@@ -292,6 +292,10 @@ func main() { //nolint:gocyclo
 			return err
 		}
 
+		if err := configureProxy(cfg); err != nil {
+			return err
+		}
+
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancelCause(context.Background())
 		defer cancelNetworking(errors.New("main done"))
@@ -839,4 +843,26 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		Bridge:        bridge,
 		CNIConfigPath: cniConfigPath,
 	}, nil
+}
+
+func configureProxy(cfg config.Config) error {
+	if cfg.Proxy == nil {
+		return nil
+	}
+
+	for key, value := range map[string]string{
+		"HTTP_PROXY": cfg.Proxy.HTTPProxy,
+		"HTTPS_PROXY": cfg.Proxy.HTTPSProxy,
+		"NO_PROXY": strings.Join(cfg.Proxy.NoProxy, ","),
+		"ALL_PROXY": cfg.Proxy.AllProxy,
+		"FTP_PROXY": cfg.Proxy.FTPProxy,
+	} {
+		if value != "" {
+			if err := os.Setenv(key, value); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
