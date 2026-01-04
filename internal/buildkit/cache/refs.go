@@ -78,10 +78,11 @@ func safeDiskUsage(ctx context.Context, root string) (int64, error) {
 			return filepath.SkipDir
 		}
 
-		// Get file info to check for circular references
-		info, err := d.Info()
-		if err != nil {
-			return nil // Skip entries we can't stat
+		// Get file info to check for circular references and size.
+		// Skip entries we can't stat rather than failing the entire walk.
+		info, _ := d.Info()
+		if info == nil {
+			return nil
 		}
 
 		// Check for circular references using inode number
