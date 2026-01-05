@@ -36,7 +36,7 @@ container |
 ```shell
 dagger core container \
   from --address=node:21 \
-  with-directory --path=/src --directory=https://github.com/dagger/hello-dagger \
+  with-directory --path=/src --source=https://github.com/dagger/hello-dagger \
   with-workdir --path=/src \
   with-mounted-cache --path=/root/.npm --cache=node-21 \
   with-exec --args="npm","install"

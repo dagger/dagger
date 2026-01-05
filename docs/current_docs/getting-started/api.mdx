@@ -71,7 +71,7 @@ container |
 <TabItem value="Dagger CLI">
 ```shell
 dagger core container \
-  with-directory --path=/src --directory=https://github.com/dagger/dagger \
+  with-directory --path=/src --source=https://github.com/dagger/dagger \
   directory --path=/src \
   entries
 ```
@@ -118,7 +118,7 @@ container |
 <TabItem value="Dagger CLI">
 ```shell
 dagger core container from --address="golang:latest" \
-  with-directory --path="/src" --directory="https://github.com/dagger/dagger#main" \
+  with-directory --path="/src" --source="https://github.com/dagger/dagger#main" \
   with-workdir --path="/src/cmd/dagger" \
   with-exec --args="go","build","-o","dagger","." \
   file --path="./dagger" \
