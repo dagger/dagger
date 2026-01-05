@@ -1175,111 +1175,11 @@ func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dag
 
 	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
 
-	parentChanges := parent.Self()
-	additionalChanges := changes.Self()
-
-	parentPaths, err := parentChanges.ComputePaths(ctx)
-	if err != nil {
-		return res, err
-	}
-	additionalPaths, err := additionalChanges.ComputePaths(ctx)
+	newChanges, err := parent.Self().WithChangeset(ctx, changes.Self(), onConflictStrategy)
 	if err != nil {
 		return res, err
 	}
 
-	conflicts := parentPaths.CheckConflicts(additionalPaths)
-	hasConflicts := !conflicts.IsEmpty()
-
-	if hasConflicts {
-		if args.OnConflict == FailOnMergeConflict {
-			return res, conflicts.Error()
-		}
-
-		parentAfterSelector, additionalAfterSelector, err := core.AfterSelectorsForConflictResolution(
-			ctx,
-			srv,
-			parentChanges,
-			additionalChanges,
-			conflicts,
-			onConflictStrategy)
-		if err != nil {
-			return res, err
-		}
-
-		// apply modifications to the after directories to fix conflicts
-		// and refresh the changeset with those new after directories
-
-		if err := srv.Select(ctx, parentChanges.After, &parent,
-			append(parentAfterSelector, dagql.Selector{
-				Field: "changes",
-				Args: []dagql.NamedInput{
-					{Name: "from", Value: dagql.NewID[*core.Directory](parentChanges.Before.ID())},
-				},
-			})...,
-		); err != nil {
-			return res, err
-		}
-
-		if err := srv.Select(ctx, additionalChanges.After, &changes,
-			append(additionalAfterSelector, dagql.Selector{
-				Field: "changes",
-				Args: []dagql.NamedInput{
-					{Name: "from", Value: dagql.NewID[*core.Directory](additionalChanges.Before.ID())},
-				},
-			})...,
-		); err != nil {
-			return res, err
-		}
-	}
-
-	// Now all possible conflicts have been resolved according to the strategy,
-	// merge the two resulting changesets in one:
-	// - before state is the combination of the two before directories from both changesets
-	var before dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, srv.Root(), &before,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](parentChanges.Before.ID())},
-			},
-		},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](additionalChanges.Before.ID())},
-			},
-		},
-	); err != nil {
-		return res, err
-	}
-
-	// - after state is the before state (combination of both) on which we are applying both set of changes
-	var after dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, before, &after,
-		dagql.Selector{
-			Field: "withChanges",
-			Args: []dagql.NamedInput{
-				{Name: "changes", Value: dagql.NewID[*core.Changeset](parent.ID())},
-			},
-		},
-		dagql.Selector{
-			Field: "withChanges",
-			Args: []dagql.NamedInput{
-				{Name: "changes", Value: dagql.NewID[*core.Changeset](changes.ID())},
-			},
-		},
-	); err != nil {
-		return res, err
-	}
-
-	// generate the new changeset merging the two changesets, with conflict resolved
-	newChanges, err := core.NewChangeset(ctx, before, after)
-	if err != nil {
-		return res, err
-	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, newChanges)
 }
 
