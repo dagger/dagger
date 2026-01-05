@@ -47,7 +47,7 @@ Create a simple workflow that is fully satisfied by the core Dagger API, without
     ```shell
     dagger core container from --address="cgr.dev/chainguard/wolfi-base" \
       with-exec --args="apk","add","go" \
-      with-directory --path="/src" --directory="https://github.com/golang/example#master" \
+      with-directory --path="/src" --source="https://github.com/golang/example#master" \
       with-workdir --path="/src/hello" \
       with-exec --args="go","build","-o","hello","." \
       file --path="./hello" \

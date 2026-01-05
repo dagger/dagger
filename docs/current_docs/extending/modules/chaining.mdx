@@ -558,7 +558,7 @@ github.com/dagger/dagger/modules/wolfi@v0.16.2 |
 ```shell
 dagger -m github.com/dagger/dagger/modules/wolfi@v0.16.2 call \
   container \
-  with-directory --path=/src --directory=. \
+  with-directory --path=/src --source=. \
   with-exec --args="ls","/src" \
   stdout
 ```
