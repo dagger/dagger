@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
 )
@@ -66,6 +67,9 @@ func Templates(funcs template.FuncMap) map[string]*template.Template {
 	if err != nil {
 		panic(err)
 	}
+
+	// Sort targets to ensure deterministic order
+	sort.Strings(targets)
 
 	files = map[string]*template.Template{}
 	for _, target := range targets {

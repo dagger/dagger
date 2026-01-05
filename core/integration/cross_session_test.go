@@ -1787,3 +1787,34 @@ func (m *Test) DriveRollsRoyce(ctx context.Context) error {
 	callOutput2, err := callCmd2.CombinedOutput()
 	require.NoError(t, err, string(callOutput2))
 }
+
+func (DirectorySuite) TestContentHashedDirectoryFile(ctx context.Context, t *testctx.T) {
+	// create two dirs with identical contents, but at different subpaths
+
+	rando := rand.Text()
+
+	rootA := t.TempDir()
+	fileA := filepath.Join(rootA, "subdirA", rando)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fileA), 0755))
+	require.NoError(t, os.WriteFile(fileA, []byte(rando), 0644))
+
+	rootB := t.TempDir()
+	fileB := filepath.Join(rootB, "subdirB", rando)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fileB), 0755))
+	require.NoError(t, os.WriteFile(fileB, []byte(rando), 0644))
+
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
+
+	// populate engine with cache entry from dir A
+	_, err := c1.Host().Directory(rootA).Directory("subdirA").Entries(ctx)
+	require.NoError(t, err)
+
+	// Try to load the subdir from B and read the file, it should succeed.
+	// The error case the engine needs to avoid is:
+	// 1. cache hit between rootB/subdirB + rootA/subdirA, using rootA/subdirA because it came first
+	// 2. try to read "subdirB/rando" from rootA, which doesn't exist
+	contents, err := c2.Host().Directory(rootB).Directory("subdirB").File(rando).Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, rando, contents)
+}

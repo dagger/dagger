@@ -15,7 +15,7 @@
     },
     {
       "name": "go",
-      "source": "../../modules/go"
+      "source": "../go"
     }
   ]
 }

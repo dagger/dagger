@@ -3986,7 +3986,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container plus the given OCI anotation.
+   * Retrieves this container plus the given OCI annotation.
    * @param name The name of the annotation.
    * @param value The value of the annotation.
    */

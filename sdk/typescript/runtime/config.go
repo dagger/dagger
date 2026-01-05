@@ -475,8 +475,11 @@ func moduleConfigFiles(path string) []string {
 		"package-lock.json",
 		"yarn.lock",
 		"pnpm-lock.yaml",
+
+		// Bun
 		"bun.lockb",
 		"bun.lock",
+		"bunfig.toml",
 
 		// Deno
 		"deno.json",

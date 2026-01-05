@@ -42,8 +42,10 @@ import (
 
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
 
-var ErrShellExited = errors.New("shell exited")
-var ErrInterrupted = errors.New("interrupted")
+var (
+	ErrShellExited = errors.New("shell exited")
+	ErrInterrupted = errors.New("interrupted")
+)
 
 type frontendPretty struct {
 	dagui.FrontendOpts
@@ -505,6 +507,10 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			// If we've already shown the root cause error for the command, we can
 			// skip displaying the primary output and error, since it's just a poorer
 			// representation of the same error (`Error: input: ...`)
+			var exitErr ExitError
+			if errors.As(fe.err, &exitErr) {
+				return exitErr
+			}
 			return ExitError{Code: 1, Original: fe.err}
 		}
 	}
@@ -866,8 +872,7 @@ func (fe *frontendPretty) renderLines(r *renderer, height int, prefix string) []
 		fe.focusedIdx = len(rows.Order) - 1
 	}
 
-	before, focused, after :=
-		rows.Order[:fe.focusedIdx],
+	before, focused, after := rows.Order[:fe.focusedIdx],
 		rows.Order[fe.focusedIdx],
 		rows.Order[fe.focusedIdx+1:]
 
@@ -1177,7 +1182,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		cmd := msg.cmd
 
 		if msg.raw {
-			var restore = func() error { return nil }
+			restore := func() error { return nil }
 			cmd = &wrapCommand{
 				ExecCommand: cmd,
 				before: func() error {
@@ -1889,8 +1894,10 @@ func (fe *frontendPretty) goErrorOrigin() {
 	fe.recalculateViewLocked()
 }
 
-const sidebarMinWidth = 30
-const sidebarMaxWidth = 50
+const (
+	sidebarMinWidth = 30
+	sidebarMaxWidth = 50
+)
 
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.window = msg

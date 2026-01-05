@@ -196,7 +196,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc(`Changes to apply to the directory`),
 			),
-		dagql.Func("export", s.export).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.export), dagql.CachePerClient).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
@@ -204,7 +204,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
 				dagql.Arg("wipe").Doc(`If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
 			),
-		dagql.Func("export", s.exportLegacy).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.exportLegacy), dagql.CachePerClient).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("dockerBuild", s.dockerBuild).
@@ -294,7 +294,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asPatch", DagOpFileWrapper(srv, s.changesetAsPatch,
 			WithStaticPath[*core.Changeset, changesetAsPatchArgs](core.ChangesetPatchFilename))).
 			Doc(`Return a Git-compatible patch of the changes`),
-		dagql.Func("export", s.changesetExport).
+		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.changesetExport), dagql.CachePerClient).
 			DoNotCache("Writes to the local host.").
 			Doc(`Applies the diff represented by this changeset to a path on the host.`).
 			Args(
@@ -599,23 +599,11 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	if args.InDagOp() {
-		f, err := parent.Self().File(ctx, args.Path)
-		if err != nil {
-			return inst, err
-		}
-		ctx = dagql.ContextWithID(ctx, dagql.CurrentID(ctx))
-		return dagql.NewObjectResultForCurrentID(ctx, srv, f)
-	}
-
-	filename := path.Join(parent.Self().Dir, args.Path)
-
-	file, err := DagOpFile(ctx, srv, parent.Self(), args, s.file, WithStaticPath[*core.Directory, dirFileArgs](filename))
+	f, err := parent.Self().FileLLB(ctx, args.Path)
 	if err != nil {
 		return inst, err
 	}
-
-	fileResult, err := dagql.NewObjectResultForCurrentID(ctx, srv, file)
+	fileResult, err := dagql.NewObjectResultForCurrentID(ctx, srv, f)
 	if err != nil {
 		return inst, err
 	}
@@ -633,6 +621,7 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
+	filename := path.Join(parent.Self().Dir, args.Path)
 	dgst = hashutil.HashStrings(
 		filename,
 		string(dgst),
@@ -672,14 +661,6 @@ type WithFileArgs struct {
 }
 
 var _ core.Inputs = WithFileArgs{}
-
-func (args WithFileArgs) Digest() (digest.Digest, error) {
-	var inputs []string
-
-	inputs = append(inputs, args.Path)
-
-	return hashutil.HashStrings(inputs...), nil
-}
 
 func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
 	deps := []llb.State{}
@@ -1010,10 +991,12 @@ func (s *directorySchema) changesetAsPatch(ctx context.Context, parent dagql.Obj
 
 type changesetExportArgs struct {
 	Path string
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) changesetExport(ctx context.Context, parent *core.Changeset, args changesetExportArgs) (dagql.String, error) {
-	err := parent.Export(ctx, args.Path)
+func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetExportArgs) (dagql.String, error) {
+	err := parent.Self().Export(ctx, args.Path)
 	if err != nil {
 		return "", err
 	}
@@ -1056,10 +1039,12 @@ func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.Objec
 type dirExportArgs struct {
 	Path string
 	Wipe bool `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) export(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.String, error) {
-	err := parent.Export(ctx, args.Path, !args.Wipe)
+func (s *directorySchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirExportArgs) (dagql.String, error) {
+	err := parent.Self().Export(ctx, args.Path, !args.Wipe)
 	if err != nil {
 		return "", err
 	}
@@ -1078,7 +1063,7 @@ func (s *directorySchema) export(ctx context.Context, parent *core.Directory, ar
 	return dagql.String(stat.Path), err
 }
 
-func (s *directorySchema) exportLegacy(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.Boolean, error) {
+func (s *directorySchema) exportLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirExportArgs) (dagql.Boolean, error) {
 	_, err := s.export(ctx, parent, args)
 	if err != nil {
 		return false, err

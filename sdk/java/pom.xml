@@ -291,7 +291,7 @@
         <auto-service.version>1.1.1</auto-service.version>
         <commons-compress.version>1.28.0</commons-compress.version>
         <commons-lang.version>3.20.0</commons-lang.version>
-        <exec-maven-plugin.version>3.6.2</exec-maven-plugin.version>
+        <exec-maven-plugin.version>3.6.3</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
         <fmt-maven-plugin.version>2.29</fmt-maven-plugin.version>
         <inject-maven-plugin.version>1.8</inject-maven-plugin.version>
@@ -312,11 +312,11 @@
         <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
         <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
         <versions-maven-plugin.version>2.20.1</versions-maven-plugin.version>
-        <mockito-core.version>5.20.0</mockito-core.version>
+        <mockito-core.version>5.21.0</mockito-core.version>
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
         <smallrye-graphql.version>2.16.0</smallrye-graphql.version>
-        <vertx-web-client.version>4.5.22</vertx-web-client.version>
+        <vertx-web-client.version>4.5.23</vertx-web-client.version>
         <system-stubs-jupiter.version>2.1.8</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>

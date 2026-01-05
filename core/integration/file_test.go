@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -1140,4 +1141,34 @@ func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "important", s)
 	})
+}
+
+// regression test for https://github.com/dagger/dagger/issues/11552
+func (FileSuite) TestFileCachingContents(ctx context.Context, t *testctx.T) {
+	wd := t.TempDir()
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
+
+	var eg errgroup.Group
+	startCh := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		filename := fmt.Sprintf("file%d.txt", i)
+		contents := fmt.Sprintf("%d", i)
+		err := os.WriteFile(filepath.Join(wd, filename), []byte(contents), 0o600)
+		require.NoError(t, err)
+
+		eg.Go(func() error {
+			<-startCh
+			file := c.Host().Directory(".").File(filename)
+
+			actualContents, err := c.Directory().
+				WithFile("the-file", file).
+				File("the-file").
+				Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, contents, actualContents)
+			return nil
+		})
+	}
+	close(startCh)
+	require.NoError(t, eg.Wait())
 }

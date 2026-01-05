@@ -134,20 +134,27 @@ func (id *ID) Digest() digest.Digest {
 	return digest.Digest(id.pb.Digest)
 }
 
+// Inputs returns the ID digests referenced by this ID, starting with the
+// receiver, if any.
 func (id *ID) Inputs() ([]digest.Digest, error) {
 	seen := map[digest.Digest]struct{}{}
 	var inputs []digest.Digest
+	see := func(dig digest.Digest) {
+		if _, ok := seen[dig]; !ok {
+			seen[dig] = struct{}{}
+			inputs = append(inputs, dig)
+		}
+	}
+	if id.Receiver() != nil {
+		see(id.Receiver().Digest())
+	}
 	for _, arg := range id.args {
 		ins, err := arg.value.Inputs()
 		if err != nil {
 			return nil, err
 		}
 		for _, in := range ins {
-			if _, ok := seen[in]; ok {
-				continue
-			}
-			seen[in] = struct{}{}
-			inputs = append(inputs, in)
+			see(in)
 		}
 	}
 	return inputs, nil
