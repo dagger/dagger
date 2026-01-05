@@ -606,3 +606,135 @@ func AfterSelectorsForConflictResolution(
 	}
 	return parentAfterSelector, additionalAfterSelector, err
 }
+
+// WithChangeset merges another changeset into this one, returning a new combined changeset.
+// The onConflictStrategy determines how conflicts are handled.
+func (ch *Changeset) WithChangeset(
+	ctx context.Context,
+	other *Changeset,
+	onConflictStrategy WithChangesetMergeConflict,
+) (*Changeset, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for conflicts
+	conflicts := ch.CheckConflicts(other)
+	hasConflicts := !conflicts.IsEmpty()
+
+	// Variables to hold the potentially modified changesets (with proper IDs)
+	var selfChangeset, otherChangeset dagql.ObjectResult[*Changeset]
+
+	if hasConflicts {
+		if onConflictStrategy == FailOnConflict {
+			return nil, conflicts.Error()
+		}
+
+		// Get selectors for conflict resolution
+		selfAfterSelector, otherAfterSelector, err := AfterSelectorsForConflictResolution(
+			ctx,
+			srv,
+			ch,
+			other,
+			conflicts,
+			onConflictStrategy,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Apply modifications to After directories and recreate changesets with proper IDs
+		// For self changeset
+		if err := srv.Select(ctx, ch.After, &selfChangeset,
+			append(selfAfterSelector, dagql.Selector{
+				Field: "changes",
+				Args: []dagql.NamedInput{
+					{Name: "from", Value: dagql.NewID[*Directory](ch.Before.ID())},
+				},
+			})...,
+		); err != nil {
+			return nil, err
+		}
+
+		// For other changeset
+		if err := srv.Select(ctx, other.After, &otherChangeset,
+			append(otherAfterSelector, dagql.Selector{
+				Field: "changes",
+				Args: []dagql.NamedInput{
+					{Name: "from", Value: dagql.NewID[*Directory](other.Before.ID())},
+				},
+			})...,
+		); err != nil {
+			return nil, err
+		}
+	} else {
+		// No conflicts - recreate changeset IDs from existing Before/After
+		if err := srv.Select(ctx, ch.After, &selfChangeset,
+			dagql.Selector{
+				Field: "changes",
+				Args: []dagql.NamedInput{
+					{Name: "from", Value: dagql.NewID[*Directory](ch.Before.ID())},
+				},
+			},
+		); err != nil {
+			return nil, err
+		}
+
+		if err := srv.Select(ctx, other.After, &otherChangeset,
+			dagql.Selector{
+				Field: "changes",
+				Args: []dagql.NamedInput{
+					{Name: "from", Value: dagql.NewID[*Directory](other.Before.ID())},
+				},
+			},
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	// Merge the before directories
+	// Create a new empty directory and merge both before directories into it
+	var before dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &before,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("")},
+				{Name: "source", Value: dagql.NewID[*Directory](ch.Before.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("")},
+				{Name: "source", Value: dagql.NewID[*Directory](other.Before.ID())},
+			},
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	// Apply both changesets to the merged before directory
+	var after dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, before, &after,
+		dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*Changeset](selfChangeset.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*Changeset](otherChangeset.ID())},
+			},
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	// Create and return the new merged changeset
+	return NewChangeset(ctx, before, after)
+}
