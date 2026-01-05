@@ -1283,4 +1283,66 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 			})
 		})
 	})
+
+	t.Run("n-way merge", func(ctx context.Context, t *testctx.T) {
+		// Create three independent changesets from the same base, each modifying different files
+		changeset1 := baseDir.
+			WithNewFile("filea.txt", "file a modified in changeset1").
+			WithNewFile("file1.txt", "file 1 added in changeset1").
+			Changes(baseDir)
+
+		changeset2 := baseDir.
+			WithNewFile("fileb.txt", "file b modified in changeset2").
+			WithNewFile("file2.txt", "file 2 added in changeset2").
+			WithoutFile("filec.txt").
+			Changes(baseDir)
+
+		changeset3 := baseDir.
+			WithNewFile("filed.txt", "file d modified in changeset3").
+			WithNewFile("file3.txt", "file 3 added in changeset3").
+			WithoutFile("filee.txt").
+			Changes(baseDir)
+
+		// Merge all three changesets at once using WithChangesets
+		res, err := changeset1.WithChangesets([]*dagger.Changeset{changeset2, changeset3}).Sync(ctx)
+		require.NoError(t, err)
+
+		// Verify the merged changeset contains changes from all three
+		modifiedPaths, err := res.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, modifiedPaths, []string{"filea.txt", "fileb.txt", "filed.txt"})
+
+		addedPaths, err := res.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, addedPaths, []string{"file1.txt", "file2.txt", "file3.txt"})
+
+		removedPaths, err := res.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, removedPaths, []string{"filec.txt", "filee.txt"})
+
+		// Verify file contents from each changeset are present
+		content, err := res.After().File("filea.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file a modified in changeset1", content)
+
+		content, err = res.After().File("fileb.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file b modified in changeset2", content)
+
+		content, err = res.After().File("filed.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file d modified in changeset3", content)
+
+		content, err = res.After().File("file1.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file 1 added in changeset1", content)
+
+		content, err = res.After().File("file2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file 2 added in changeset2", content)
+
+		content, err = res.After().File("file3.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file 3 added in changeset3", content)
+	})
 }

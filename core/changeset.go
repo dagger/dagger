@@ -385,8 +385,12 @@ func (conflicts Conflicts) IsEmpty() bool {
 
 // CheckConflicts detects conflicts using pre-computed path sets for O(1) lookups
 func (ch *ChangesetPaths) CheckConflicts(other *ChangesetPaths) Conflicts {
-	var conflicts Conflicts
 	otherSets := other.pathSets()
+	return ch.checkConflictsWithSets(otherSets)
+}
+
+func (ch *ChangesetPaths) checkConflictsWithSets(otherSets changesetPathSets) Conflicts {
+	var conflicts Conflicts
 	for _, addedPath := range ch.Added {
 		if _, exists := otherSets.added[addedPath]; exists {
 			conflicts = append(conflicts, Conflict{
@@ -639,135 +643,245 @@ func (ch *Changeset) WithChangeset(
 	other *Changeset,
 	onConflictStrategy WithChangesetMergeConflict,
 ) (*Changeset, error) {
+	return ch.WithChangesets(ctx, []*Changeset{other}, onConflictStrategy)
+}
+
+// WithChangesets merges multiple changesets into this one efficiently in a single pass.
+// This is more efficient than calling WithChangeset repeatedly because it:
+// - Only creates ONE final changeset instead of N-1 intermediate changesets
+// - Only walks directories 3 times total instead of 3*(N-1) times
+// - Pre-computes path sets once for all conflict detection
+func (ch *Changeset) WithChangesets(
+	ctx context.Context,
+	others []*Changeset,
+	onConflictStrategy WithChangesetMergeConflict,
+) (*Changeset, error) {
+	if len(others) == 0 {
+		return ch, nil
+	}
+
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check for conflicts
-	chPaths, err := ch.ComputePaths(ctx)
-	if err != nil {
-		return nil, err
-	}
-	otherPaths, err := other.ComputePaths(ctx)
-	if err != nil {
-		return nil, err
-	}
-	conflicts := chPaths.CheckConflicts(otherPaths)
-	hasConflicts := !conflicts.IsEmpty()
+	// Collect all changesets
+	all := make([]*Changeset, 0, len(others)+1)
+	all = append(all, ch)
+	all = append(all, others...)
 
-	// Variables to hold the potentially modified changesets (with proper IDs)
-	var selfChangeset, otherChangeset dagql.ObjectResult[*Changeset]
-
-	if hasConflicts {
-		if onConflictStrategy == FailOnConflict {
-			return nil, conflicts.Error()
-		}
-
-		// Get selectors for conflict resolution
-		selfAfterSelector, otherAfterSelector, err := AfterSelectorsForConflictResolution(
-			ctx,
-			srv,
-			ch,
-			other,
-			conflicts,
-			onConflictStrategy,
-		)
+	// Build path sets for all changesets once (for O(1) conflict detection)
+	csPaths := make([]*ChangesetPaths, len(all))
+	pathSets := make([]changesetPathSets, len(all))
+	for i, cs := range all {
+		paths, err := cs.ComputePaths(ctx)
 		if err != nil {
 			return nil, err
 		}
+		csPaths[i] = paths
+		pathSets[i] = paths.pathSets()
+	}
 
-		// Apply modifications to After directories and recreate changesets with proper IDs
-		// For self changeset
-		if err := srv.Select(ctx, ch.After, &selfChangeset,
-			append(selfAfterSelector, dagql.Selector{
-				Field: "changes",
-				Args: []dagql.NamedInput{
-					{Name: "from", Value: dagql.NewID[*Directory](ch.Before.ID())},
-				},
-			})...,
-		); err != nil {
-			return nil, err
-		}
+	// Check for conflicts across ALL changeset pairs
+	conflicts := checkConflictsMulti(csPaths, pathSets)
 
-		// For other changeset
-		if err := srv.Select(ctx, other.After, &otherChangeset,
-			append(otherAfterSelector, dagql.Selector{
-				Field: "changes",
-				Args: []dagql.NamedInput{
-					{Name: "from", Value: dagql.NewID[*Directory](other.Before.ID())},
-				},
-			})...,
-		); err != nil {
-			return nil, err
-		}
-	} else {
-		// No conflicts - recreate changeset IDs from existing Before/After
-		if err := srv.Select(ctx, ch.After, &selfChangeset,
-			dagql.Selector{
-				Field: "changes",
-				Args: []dagql.NamedInput{
-					{Name: "from", Value: dagql.NewID[*Directory](ch.Before.ID())},
-				},
-			},
-		); err != nil {
-			return nil, err
-		}
-
-		if err := srv.Select(ctx, other.After, &otherChangeset,
-			dagql.Selector{
-				Field: "changes",
-				Args: []dagql.NamedInput{
-					{Name: "from", Value: dagql.NewID[*Directory](other.Before.ID())},
-				},
-			},
-		); err != nil {
-			return nil, err
+	if !conflicts.IsEmpty() {
+		if onConflictStrategy == FailOnConflict {
+			return nil, conflicts.Error()
 		}
 	}
 
-	// Merge the before directories
-	// Create a new empty directory and merge both before directories into it
+	// Prepare changeset IDs - these will be modified if there are conflicts
+	changesetIDs := make([]dagql.ObjectResult[*Changeset], len(all))
+
+	if !conflicts.IsEmpty() {
+		// Resolve conflicts by modifying "after" directories
+		resolvedAfters := make([]dagql.ObjectResult[*Directory], len(all))
+		for i := range all {
+			resolvedAfters[i] = all[i].After
+		}
+
+		// Apply conflict resolution: for each conflict, determine which changeset(s) to modify
+		if err := resolveConflictsMulti(ctx, srv, all, csPaths, conflicts, onConflictStrategy, resolvedAfters); err != nil {
+			return nil, err
+		}
+
+		// Create changeset IDs from resolved afters
+		for i, cs := range all {
+			if err := srv.Select(ctx, resolvedAfters[i], &changesetIDs[i],
+				dagql.Selector{
+					Field: "changes",
+					Args: []dagql.NamedInput{
+						{Name: "from", Value: dagql.NewID[*Directory](cs.Before.ID())},
+					},
+				},
+			); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// No conflicts - create changeset IDs from existing Before/After
+		for i, cs := range all {
+			if err := srv.Select(ctx, cs.After, &changesetIDs[i],
+				dagql.Selector{
+					Field: "changes",
+					Args: []dagql.NamedInput{
+						{Name: "from", Value: dagql.NewID[*Directory](cs.Before.ID())},
+					},
+				},
+			); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Merge all "before" directories into one
+	// Start with an empty directory and merge all befores
+	selectors := []dagql.Selector{{Field: "directory"}}
+	for _, cs := range all {
+		selectors = append(selectors, dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("")},
+				{Name: "source", Value: dagql.NewID[*Directory](cs.Before.ID())},
+			},
+		})
+	}
+
 	var before dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &before,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("")},
-				{Name: "source", Value: dagql.NewID[*Directory](ch.Before.ID())},
-			},
-		},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("")},
-				{Name: "source", Value: dagql.NewID[*Directory](other.Before.ID())},
-			},
-		},
-	); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &before, selectors...); err != nil {
 		return nil, err
 	}
 
-	// Apply both changesets to the merged before directory
+	// Apply all changesets to the merged before directory
 	var after dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, before, &after,
-		dagql.Selector{
+	applySelectors := make([]dagql.Selector, len(changesetIDs))
+	for i, csID := range changesetIDs {
+		applySelectors[i] = dagql.Selector{
 			Field: "withChanges",
 			Args: []dagql.NamedInput{
-				{Name: "changes", Value: dagql.NewID[*Changeset](selfChangeset.ID())},
+				{Name: "changes", Value: dagql.NewID[*Changeset](csID.ID())},
 			},
-		},
-		dagql.Selector{
-			Field: "withChanges",
-			Args: []dagql.NamedInput{
-				{Name: "changes", Value: dagql.NewID[*Changeset](otherChangeset.ID())},
-			},
-		},
-	); err != nil {
+		}
+	}
+	if err := srv.Select(ctx, before, &after, applySelectors...); err != nil {
 		return nil, err
 	}
 
 	// Create and return the new merged changeset
 	return NewChangeset(ctx, before, after)
+}
+
+// checkConflictsMulti detects conflicts across multiple changesets using pre-computed path sets
+func checkConflictsMulti(changesets []*ChangesetPaths, pathSets []changesetPathSets) Conflicts {
+	var conflicts Conflicts
+
+	// Check each pair of changesets for conflicts
+	for i := 0; i < len(changesets); i++ {
+		for j := i + 1; j < len(changesets); j++ {
+			pairConflicts := changesets[i].checkConflictsWithSets(pathSets[j])
+			conflicts = append(conflicts, pairConflicts...)
+		}
+	}
+	return conflicts
+}
+
+// resolveConflictsMulti applies conflict resolution to the "after" directories
+func resolveConflictsMulti(
+	ctx context.Context,
+	srv *dagql.Server,
+	changesets []*Changeset,
+	changesetsPaths []*ChangesetPaths,
+	conflicts Conflicts,
+	onConflictStrategy WithChangesetMergeConflict,
+	resolvedAfters []dagql.ObjectResult[*Directory],
+) error {
+	// Group conflicts by the changesets they affect
+	// For simplicity, we apply resolution similarly to pairwise merging:
+	// - SKIP: revert to "before" state in all affected changesets
+	// - PREFER_SELF: keep first changeset's version, remove from others
+	// - PREFER_OTHER: keep last changeset's version, remove from earlier ones
+
+	// Build a map to track which paths need resolution in each changeset
+	resolutionsByChangeset := make([][]dagql.Selector, len(changesets))
+
+	for _, c := range conflicts {
+		// Find which changesets are involved in this conflict
+		var involvedIdxs []int
+		for i, cs := range changesetsPaths {
+			sets := cs.pathSets()
+			if _, ok := sets.added[c.Path]; ok {
+				involvedIdxs = append(involvedIdxs, i)
+			} else if _, ok := sets.modified[c.Path]; ok {
+				involvedIdxs = append(involvedIdxs, i)
+			} else if _, ok := sets.removed[c.Path]; ok {
+				involvedIdxs = append(involvedIdxs, i)
+			}
+		}
+
+		if len(involvedIdxs) < 2 {
+			continue // Not actually a conflict
+		}
+
+		switch onConflictStrategy {
+		case SkipOnConflict:
+			// Revert all involved changesets to "before" state for this path
+			for _, idx := range involvedIdxs {
+				cs := changesets[idx]
+				if c.Self == ChangeTypeAdded || c.Other == ChangeTypeAdded {
+					// Remove added file
+					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithoutFile(c.Path))
+				} else {
+					// Restore from before
+					file, err := fileAt(ctx, srv, cs.Before, c.Path)
+					if err != nil {
+						return err
+					}
+					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithFile(c.Path, file))
+				}
+			}
+
+		case PreferSelfOnConflict:
+			// Keep first changeset's version, modify others to match
+			firstIdx := involvedIdxs[0]
+			firstCs := changesets[firstIdx]
+			for _, idx := range involvedIdxs[1:] {
+				// Copy the file from the first changeset's after to others
+				file, err := fileAt(ctx, srv, firstCs.After, c.Path)
+				if err != nil {
+					// If file doesn't exist in first (removed), remove from others too
+					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithoutFile(c.Path))
+				} else {
+					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithFile(c.Path, file))
+				}
+			}
+
+		case PreferOtherOnConflict:
+			// Keep last changeset's version, modify earlier ones to match
+			lastIdx := involvedIdxs[len(involvedIdxs)-1]
+			lastCs := changesets[lastIdx]
+			for _, idx := range involvedIdxs[:len(involvedIdxs)-1] {
+				// Copy the file from the last changeset's after to earlier ones
+				file, err := fileAt(ctx, srv, lastCs.After, c.Path)
+				if err != nil {
+					// If file doesn't exist in last (removed), remove from earlier too
+					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithoutFile(c.Path))
+				} else {
+					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithFile(c.Path, file))
+				}
+			}
+		}
+	}
+
+	// Apply all resolutions
+	for i, selectors := range resolutionsByChangeset {
+		if len(selectors) == 0 {
+			continue
+		}
+		if err := srv.Select(ctx, changesets[i].After, &resolvedAfters[i], selectors...); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

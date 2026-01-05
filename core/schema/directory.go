@@ -318,6 +318,14 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
+		dagql.NodeFunc("withChangesets", s.changesetWithChangesets).
+			Doc(`Add changes from multiple changesets`,
+				`By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.`,
+				`This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.`).
+			Args(
+				dagql.Arg("changes").Doc(`Array of changesets to merge into the actual changeset`),
+				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
+			),
 	}.Install(srv)
 
 	ChangesetMergeConflictEnum.Install(srv)
@@ -1145,6 +1153,11 @@ type changesetWithChangesetArgs struct {
 	OnConflict ChangesetMergeConflict `default:"FAIL"`
 }
 
+type changesetWithChangesetsArgs struct {
+	Changes    []dagql.ID[*core.Changeset]
+	OnConflict ChangesetMergeConflict `default:"FAIL"`
+}
+
 func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithChangesetMergeConflict {
 	var conflictStrategy core.WithChangesetMergeConflict
 	switch onConflict {
@@ -1163,19 +1176,30 @@ func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithCha
 }
 
 func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (res dagql.ObjectResult[*core.Changeset], _ error) {
+	return s.changesetWithChangesets(ctx, parent, changesetWithChangesetsArgs{
+		Changes:    []dagql.ID[*core.Changeset]{args.Changes},
+		OnConflict: args.OnConflict,
+	})
+}
+
+func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (res dagql.ObjectResult[*core.Changeset], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
 	}
 
-	changes, err := args.Changes.Load(ctx, srv)
-	if err != nil {
-		return res, err
+	changes := make([]*core.Changeset, 0, len(args.Changes))
+	for _, id := range args.Changes {
+		change, err := id.Load(ctx, srv)
+		if err != nil {
+			return res, err
+		}
+		changes = append(changes, change.Self())
 	}
 
 	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
 
-	newChanges, err := parent.Self().WithChangeset(ctx, changes.Self(), onConflictStrategy)
+	newChanges, err := parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
 	if err != nil {
 		return res, err
 	}
