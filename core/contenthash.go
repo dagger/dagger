@@ -43,6 +43,17 @@ func GetContentHashFromDirectory(
 	bk *buildkit.Client,
 	dirInst dagql.ObjectResult[*Directory],
 ) (digest.Digest, error) {
+	return GetContentHashFromDirectoryFiltered(ctx, bk, dirInst, nil)
+}
+
+// GetContentHashFromDirectoryFiltered computes a content hash for a directory,
+// optionally excluding paths that match the provided patterns.
+func GetContentHashFromDirectoryFiltered(
+	ctx context.Context,
+	bk *buildkit.Client,
+	dirInst dagql.ObjectResult[*Directory],
+	exclude []string,
+) (digest.Digest, error) {
 	if dirInst.Self() == nil {
 		return "", fmt.Errorf("directory instance is nil")
 	}
@@ -60,7 +71,11 @@ func GetContentHashFromDirectory(
 		// omit directory name from the hash
 		dirPath += "/"
 	}
-	dgst, err := GetContentHashFromDef(ctx, bk, def.ToPB(), dirPath)
+	opts := bkcontenthash.ChecksumOpts{}
+	if len(exclude) > 0 {
+		opts.ExcludePatterns = exclude
+	}
+	dgst, err := GetContentHashFromDefWithOpts(ctx, bk, def.ToPB(), dirPath, opts, len(exclude) == 0)
 	if err != nil {
 		return "", fmt.Errorf("failed to get content hash: %w", err)
 	}
@@ -99,6 +114,23 @@ func GetContentHashFromDef(
 	def *pb.Definition,
 	subdir string,
 ) (digest.Digest, error) {
+	return GetContentHashFromDefWithOpts(ctx, bk, def, subdir, bkcontenthash.ChecksumOpts{}, true)
+}
+
+// GetContentHashFromDefWithOpts is a variant of GetContentHashFromDef that
+// allows callers to customize checksum options (e.g., to exclude paths).
+// When storeMetadata is true, the computed digest may be cached on the ref
+// metadata (same behavior as GetContentHashFromDef). Set it to false if the
+// options make the hash context-specific (e.g., excludes) to avoid polluting
+// the shared cache key.
+func GetContentHashFromDefWithOpts(
+	ctx context.Context,
+	bk *buildkit.Client,
+	def *pb.Definition,
+	subdir string,
+	opts bkcontenthash.ChecksumOpts,
+	storeMetadata bool,
+) (digest.Digest, error) {
 	if subdir == "" {
 		subdir = "/"
 	}
@@ -132,7 +164,7 @@ func GetContentHashFromDef(
 
 		md := contenthash.CacheRefMetadata{RefMetadata: ref}
 
-		if subdir == "/" {
+		if storeMetadata && subdir == "/" {
 			// content hashes for the root of dirs are saved in the metadata of the ref (both below
 			// and in the local source implementation); check if we have it already
 			dgst, ok := md.GetContentHashKey()
@@ -148,14 +180,17 @@ func GetContentHashFromDef(
 		)
 		defer telemetry.EndWithCause(span, &rerr)
 
-		dgst, err := bkcontenthash.Checksum(ctx, ref, subdir, bkcontenthash.ChecksumOpts{
-			FollowLinks: true,
-		}, nil)
+		if opts.FollowLinks == false && len(opts.IncludePatterns) == 0 && len(opts.ExcludePatterns) == 0 && !opts.Wildcard {
+			// default behavior matches previous implementation
+			opts.FollowLinks = true
+		}
+
+		dgst, err := bkcontenthash.Checksum(ctx, ref, subdir, opts, nil)
 		if err != nil {
 			return "", fmt.Errorf("failed to checksum ref at subdir %s: %w", subdir, err)
 		}
 
-		if subdir == "/" {
+		if storeMetadata && subdir == "/" {
 			// Save the content hash in the metadata of the ref if it's for the root of the dir
 			// We could probably save it for other subdirs with some shenanigans on the stored metadata,
 			// but bkcontenthash.Checksum does caching of already calculated path hashes, so we can avoid
@@ -165,7 +200,9 @@ func GetContentHashFromDef(
 			}
 		}
 
-		bklog.G(ctx).Debugf("GetContentHashKey setting ref %s with digest %s", ref.ID(), dgst)
+		if storeMetadata {
+			bklog.G(ctx).Debugf("GetContentHashKey setting ref %s with digest %s", ref.ID(), dgst)
+		}
 
 		return dgst, nil
 	})

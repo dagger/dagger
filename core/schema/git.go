@@ -613,26 +613,48 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	remoteGitRepo, isRemote := ref.ref.Repo.Self().Backend.(*core.RemoteGitRepository)
+	usedAuth := false
 	if isRemote {
-		usedAuth := remoteGitRepo.AuthToken.Valid ||
+		usedAuth = remoteGitRepo.AuthToken.Valid ||
 			remoteGitRepo.AuthHeader.Valid ||
 			remoteGitRepo.SSHAuthSocket.Valid
-		if usedAuth {
-			query, err := core.CurrentQuery(ctx)
-			if err != nil {
-				return inst, err
-			}
-			bk, err := query.Buildkit(ctx)
-			if err != nil {
-				return inst, err
-			}
-			dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
-			if err != nil {
-				return inst, fmt.Errorf("failed to get content hash: %w", err)
-			}
-			inst = inst.WithObjectDigest(hashutil.HashStrings(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
-		}
 	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	excludes := []string{".git", ".git/**"}
+	contentDigest, err := core.GetContentHashFromDirectoryFiltered(ctx, bk, inst, excludes)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get content hash: %w", err)
+	}
+
+	finalDigest := contentDigest
+	if isRemote && usedAuth {
+		scope := []string{contentDigest.String()}
+		if remoteGitRepo.AuthToken.Valid && remoteGitRepo.AuthToken.Value.ID() != nil {
+			scope = append(scope, "authToken:"+remoteGitRepo.AuthToken.Value.ID().Digest().String())
+		}
+		if remoteGitRepo.AuthHeader.Valid && remoteGitRepo.AuthHeader.Value.ID() != nil {
+			scope = append(scope, "authHeader:"+remoteGitRepo.AuthHeader.Value.ID().Digest().String())
+		}
+		if remoteGitRepo.SSHAuthSocket.Valid && remoteGitRepo.SSHAuthSocket.Value.ID() != nil {
+			scope = append(scope, "sshAuthSock:"+remoteGitRepo.SSHAuthSocket.Value.ID().Digest().String())
+		}
+		if remoteGitRepo.AuthUsername != "" {
+			scope = append(scope, "authUser:"+remoteGitRepo.AuthUsername)
+		}
+		finalDigest = hashutil.HashStrings(scope...)
+	}
+
+	inst = inst.WithObjectDigest(finalDigest)
 
 	return inst, nil
 }
