@@ -1,42 +1,50 @@
-## What is Dagger?
+## Dagger: a better way to ship
 
-Dagger is an open-source runtime for composable workflows. It's perfect for systems with many moving parts and a strong need for **repeatability**, **modularity**, **observability** and **cross-platform support**. This makes it a great choice for AI agents and CI/CD workflows.
+Dagger is a platform for automating software delivery. It can build, test and ship any codebase, reliably and at scale.
 
-<p align="center"><img src="docs/static/img/readme/dagger-factory.jpg" width="75%"></p>
+Dagger runs locally, in your CI server, or directly in the cloud. 
 
-## Key Features
+```
+brew install dagger/tap/dagger
+```
 
-- **Containerized Workflow Execution:** Transform code into containerized, composable operations. Build reproducible workflows in any language with custom environments, parallel processing, and seamless chaining.
+## Why Dagger?
 
-- **Universal Type System:** Mix and match components from any language with type-safe connections. Use the best tools from each ecosystem without translation headaches.
+Dagger makes your software delivery *programmable*, *local-first*, *repeatable* and *observable*.
 
-- **Automatic Artifact Caching:** Operations produce cacheable, immutable artifacts — even for LLMs and API calls. Your workflows run faster and cost less.
+**Programmable**. Shell scripts and proprietary YAML are no longer acceptable for automating software delivery. Dagger provides: a complete execution engine and system API; SDKs for 8 languages; an interactive REPL; a rich ecosystem of reusable modules; and more.
 
-- **Built-in Observability:** Full visibility into operations with tracing, logs, and metrics. Debug complex workflows and know exactly what's happening.
+**Local-first**. Once you automate a task with Dagger, it will reliably run on any supported system: your laptop, AI sandbox, CI server, or dedicated cloud infrastructure. The only dependency is a container runtime like Docker.
 
-<p align="center"><img src="docs/static/img/readme/cloud-trace.gif" width="60%"></a>
+**Repeatable**. Tools run in containers, orchestrated by sandboxed functions. Host dependencies are explicit and strictly typed. Intermediate artifacts are built just-in-time. Every operation is incremental by default, with advanced cache control. Whether it's a test report, a build or a deployment, Dagger gives you an output you can trust.
 
-- **Open Platform:** Works with any compute platform and tech stack — today and tomorrow. Ship faster, experiment freely, and don’t get locked into someone else's choices.
+**Observable**. Every operation emits a full OpenTelemetry trace, enriched by granular logs and metrics. Visualize the trace in directly in the terminal, or in a web view. Debug complex workflows immediately instead of guessing what went wrong from a wall of text logs.
 
-- **LLM Augmentation:** Native integration of any LLM that automatically discovers and uses available functions in your workflow. Ship mind-blowing agents in just a few dozen lines of code.
+## Features
 
-- **Interactive Terminal:** Directly interact with your workflow or agents in real-time through your terminal. Prototype, test, debug, and ship even faster.
+**System API**. A cross-language API for orchestrating containers, filesystems, secrets, git repositories, network tunnels, and more. Every operation is typed and composable.
 
-<p align="center"><img src="docs/static/img/readme/da-robots-white-box.svg" width="60%"></a>
+**SDKs in 8 languages**. Native SDKs for Go, Python, TypeScript, PHP, Java, .NET, Elixir and Rust. Each SDK is generated from the API schema, so you get idiomatic code with full type safety and editor support.
+
+**Typed artifacts**. Define custom object types with encapsulated state and functions. Types are content-addressed and can be passed across SDK language boundaries and module boundaries without serialization.
+
+**Incremental execution**. Every operation is keyed by its inputs. Change one file and only the affected operations re-run. Caching is content-addressed and works automatically across local runs and CI.
+
+**Runs anywhere**. The only requirement is a Linux container runtime. Runs natively on Linux, or via Docker Desktop and similar products on macOS and Windows. Local and CI behavior are identical.
+
+**Built-in tracing**. Every operation emits OpenTelemetry spans. The CLI includes a live TUI; traces can also be exported to Jaeger, Honeycomb, or any OTel-compatible backend.
+
 
 ## Getting started
 
-- [Dagger for AI Agents](https://docs.dagger.io/ai-agents)
-- [Dagger for CI](https://docs.dagger.io/quickstart)
+- [Documentation](https://docs.dagger.io)
+- [Quickstart](https://docs.dagger.io/quickstart)
 
-## Join the community
+## Community
 
-- Join the [Dagger community server](https://discord.gg/NpzVhsGnZu)
-- Follow us on [Twitter](https://twitter.com/dagger_io)
-- Check out our [community activities](https://dagger.io/community)
-- Read more in our [documentation](https://docs.dagger.io)
+- [Discord](https://discord.gg/dagger-io)
+- [GitHub Discussions](https://github.com/dagger/dagger/discussions)
 
 ## Contributing
 
-Interested in contributing or building dagger from scratch? See
-[CONTRIBUTING.md](https://github.com/dagger/dagger/tree/main/CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md).
