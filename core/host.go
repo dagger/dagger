@@ -85,7 +85,7 @@ func (Host) FindUpAll(
 				// NOTE: important that we use stat.Path here rather than curDirPath since the stat also
 				// does some normalization of paths when the client is using case-insensitive filesystems
 				// and we are stat'ing caller host filesystems
-				found[soughtName] = filepath.Dir(stat.Path)
+				found[soughtName] = filepath.Dir(stat.Name)
 				continue
 			}
 			if !errors.Is(err, os.ErrNotExist) {

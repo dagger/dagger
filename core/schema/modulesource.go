@@ -29,7 +29,6 @@ import (
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
-	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
@@ -389,7 +388,7 @@ func (s *moduleSourceSchema) localModuleSource(
 				// found a dep in the default dagger.json with the name localPath, load it and return it
 				parsedRef, err := core.ParseRefString(
 					ctx,
-					core.StatFSFunc(func(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+					core.StatFSFunc(func(ctx context.Context, path string) (*core.Stat, error) {
 						path = filepath.Join(defaultFindUpSourceRootDir, path)
 						return core.NewCallerStatFS(bk).Stat(ctx, path)
 					}),
@@ -616,12 +615,17 @@ func (s *moduleSourceSchema) gitModuleSource(
 		// first validate the given path exists at all, otherwise weird things like
 		// `dagger -m github.com/dagger/dagger/not/a/real/dir` can succeed because
 		// they find-up to a real dagger.json
-		statFS := core.NewCoreDirStatFS(gitSrc.ContextDirectory.Self(), bk)
-		if _, err := statFS.Stat(ctx, gitSrc.SourceRootSubpath); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
+		statFS := core.StatFSFunc(func(ctx context.Context, path string) (*core.Stat, error) {
+			return core.CallDirStat(ctx, gitSrc.ContextDirectory, path)
+		})
+
+		if gitSrc.SourceRootSubpath != "" {
+			if _, err := statFS.Stat(ctx, gitSrc.SourceRootSubpath); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
+				}
+				return inst, fmt.Errorf("failed to stat git module source: %w", err)
 			}
-			return inst, fmt.Errorf("failed to stat git module source: %w", err)
 		}
 
 		configDir, found, err := core.Host{}.FindUp(ctx, statFS,
