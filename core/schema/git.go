@@ -815,14 +815,14 @@ func (s *gitSchema) refResolve(
 			(*core.GitRef)(nil).Type(),
 			refRecv.Field(),
 			call.WithArgs(refRecv.Args()...),
-			call.WithView(curLeaf.View()),
+			call.WithView(refRecv.View()),
 		)
 
 		newLeaf := newRefRecv.Append(
 			curLeaf.Type().ToAST(),
 			curLeaf.Field(),
 			call.WithArgs(curLeaf.Args()...),
-			call.WithView(curLeaf.View()),
+			call.WithView(refRecv.View()),
 		)
 
 		loaded, err := srv.Load(ctx, newLeaf)
