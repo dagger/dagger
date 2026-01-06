@@ -661,7 +661,6 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	finalDigest := hashutil.HashStrings(scope...)
-
 	inst = inst.WithObjectDigest(finalDigest)
 
 	return inst, nil
