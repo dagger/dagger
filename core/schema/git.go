@@ -636,9 +636,16 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, fmt.Errorf("failed to get content hash: %w", err)
 	}
 
-	finalDigest := contentDigest
+	scope := []string{contentDigest.String()}
+
+	if args.DiscardGitDir {
+		scope = append(scope, "discardGitDir:true")
+	}
+	if args.Depth != 1 {
+		scope = append(scope, fmt.Sprintf("depth:%d", args.Depth))
+	}
+
 	if isRemote && usedAuth {
-		scope := []string{contentDigest.String()}
 		if remoteGitRepo.AuthToken.Valid && remoteGitRepo.AuthToken.Value.ID() != nil {
 			scope = append(scope, "authToken:"+remoteGitRepo.AuthToken.Value.ID().Digest().String())
 		}
@@ -651,8 +658,9 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if remoteGitRepo.AuthUsername != "" {
 			scope = append(scope, "authUser:"+remoteGitRepo.AuthUsername)
 		}
-		finalDigest = hashutil.HashStrings(scope...)
 	}
+
+	finalDigest := hashutil.HashStrings(scope...)
 
 	inst = inst.WithObjectDigest(finalDigest)
 
