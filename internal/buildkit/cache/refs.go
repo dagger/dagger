@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/cache/config"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -1663,7 +1664,9 @@ func readonlyOverlay(opt []string) []string {
 	for _, o := range opt {
 		if strings.HasPrefix(o, "upperdir=") {
 			upper = strings.TrimPrefix(o, "upperdir=")
-		} else if !strings.HasPrefix(o, "workdir=") {
+		} else if strings.HasPrefix(o, "workdir=") || o == "volatile" {
+			continue
+		} else {
 			out = append(out, o)
 		}
 	}
@@ -1730,9 +1733,10 @@ type sharableMountable struct {
 	mu            sync.Mutex
 	mountPoolRoot string
 
-	curMounts     []mount.Mount
-	curMountPoint string
-	curRelease    func() error
+	curMounts              []mount.Mount
+	curMountPoint          string
+	curRelease             func() error
+	curOverlayIncompatDirs []string
 }
 
 func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr error) {
@@ -1778,9 +1782,14 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 		if err := mount.All(mounts, dir); err != nil {
 			return nil, nil, err
 		}
+		overlayIncompatDirs := overlay.VolatileIncompatDirs(mounts)
+
 		defer func() {
 			if retErr != nil {
 				mount.Unmount(dir, 0)
+				for _, dir := range overlayIncompatDirs {
+					os.RemoveAll(dir)
+				}
 			}
 		}()
 		sm.curMounts = []mount.Mount{
@@ -1795,6 +1804,7 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 		}
 		sm.curMountPoint = dir
 		sm.curRelease = release
+		sm.curOverlayIncompatDirs = overlayIncompatDirs
 	}
 
 	mounts := make([]mount.Mount, len(sm.curMounts))
@@ -1817,8 +1827,13 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 		// no mount exist. release the current mount.
 		sm.curMounts = nil
 		if err := mount.Unmount(sm.curMountPoint, 0); err != nil {
+			slog.Error("failed to unmount sharable mount", "err", err)
 			return err
 		}
+		for _, dir := range sm.curOverlayIncompatDirs {
+			os.RemoveAll(dir)
+		}
+		sm.curOverlayIncompatDirs = nil
 		if err := sm.curRelease(); err != nil {
 			return err
 		}

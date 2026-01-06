@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/moby/patternmatcher"
@@ -297,7 +298,8 @@ type parentDir struct {
 func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, only map[string]struct{}, includePatterns, excludePatterns []string, useGitignore bool, alwaysReplaceExistingDestPaths bool, enableHardlinkOptimization bool, sourcePathResolver, destPathResolver PathResolver, changeFunc fsutil.ChangeFunc) (*copier, error) {
 	if xeh == nil {
 		xeh = func(dst, src, key string, err error) error {
-			return err
+			slog.Warn("xattr copy failed", "src", src, "dst", dst, "err", err, "xattr", key)
+			return nil
 		}
 	}
 

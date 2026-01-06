@@ -503,7 +503,7 @@ container |
 dagger core \
   container \
   from --address=alpine:latest \
-  with-directory --path=/src --directory=https://github.com/dagger/dagger \
+  with-directory --path=/src --source=https://github.com/dagger/dagger \
   with-exec --args="ls","/src" \
   stdout
 ```
@@ -538,7 +538,7 @@ container |
 dagger core \
   container \
   from --address=alpine:latest \
-  with-directory --path=/src --directory=ssh://git@github.com/dagger/dagger \
+  with-directory --path=/src --source=ssh://git@github.com/dagger/dagger \
   with-exec --args="ls","/src" \
   stdout
 ```

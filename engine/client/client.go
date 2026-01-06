@@ -69,6 +69,19 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
+const (
+	// cache configs that should be applied to be import and export
+	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	// cache configs for imports only
+	cacheImportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_IMPORT_CONFIG"
+	// cache configs for exports only
+	cacheExportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG"
+	// allow enabling scale-out of checks to support cloud
+	enableChecksScaleOutEnvName = "_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT"
+	// shutdown timeout, default is 10s
+	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
+)
+
 type Params struct {
 	// The id to connect to the API server with. If blank, will be set to a
 	// new random value.
@@ -175,8 +188,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		c.SecretToken = uuid.New().String()
 	}
 
-	// allow enabling scale-out of checks via an env var too for now to support cloud
-	c.EnableCloudScaleOut = c.EnableCloudScaleOut || os.Getenv("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT") != ""
+	c.EnableCloudScaleOut = c.EnableCloudScaleOut || os.Getenv(enableChecksScaleOutEnvName) != ""
 
 	// NB: decouple from the originator's cancel ctx
 	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
@@ -986,7 +998,15 @@ func (c *Client) shutdownServer() error {
 	// canceled
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	timeout := 10 * time.Second
+	if timeoutStr, ok := os.LookupEnv(shutdownTimeoutEnvName); ok {
+		if interval, err := time.ParseDuration(timeoutStr); err == nil {
+			timeout = interval
+		} else {
+			slog.Warn("invalid "+shutdownTimeoutEnvName+" value, using default 10 seconds", "error", err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.ShutdownEndpoint, nil)
@@ -1245,15 +1265,6 @@ func (c *Client) Do(
 func (c *Client) Dagger() *dagger.Client {
 	return c.daggerClient
 }
-
-const (
-	// cache configs that should be applied to be import and export
-	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
-	// cache configs for imports only
-	cacheImportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_IMPORT_CONFIG"
-	// cache configs for exports only
-	cacheExportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG"
-)
 
 // env is in form k1=v1,k2=v2;k3=v3... with ';' used to separate multiple cache configs.
 // any value that itself needs ';' can use '\;' to escape it.
