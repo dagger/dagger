@@ -1123,9 +1123,9 @@ var (
 		`A conflict causes the merge operation to fail`)
 	SkipOnMergeConflict = ChangesetMergeConflictEnum.Register("SKIP",
 		`A conflict is skipped, the merge operation continues`)
-	PreferSelfOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_SELF",
+	PreferOursOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_OURS",
 		`The conflict is resolved by applying the version of the calling changeset`)
-	PreferOtherOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_OTHER",
+	PreferTheirsOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_THEIRS",
 		`The conflict is resolved by applying the version of the other changeset`)
 )
 
@@ -1163,10 +1163,10 @@ func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithCha
 	switch onConflict {
 	case SkipOnMergeConflict:
 		conflictStrategy = core.SkipOnConflict
-	case PreferSelfOnMergeConflict:
-		conflictStrategy = core.PreferSelfOnConflict
-	case PreferOtherOnMergeConflict:
-		conflictStrategy = core.PreferOtherOnConflict
+	case PreferOursOnMergeConflict:
+		conflictStrategy = core.PreferOursOnConflict
+	case PreferTheirsOnMergeConflict:
+		conflictStrategy = core.PreferTheirsOnConflict
 	case FailOnMergeConflict:
 		fallthrough
 	default:

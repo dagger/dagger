@@ -500,8 +500,8 @@ type WithChangesetMergeConflict int
 const (
 	FailOnConflict WithChangesetMergeConflict = iota
 	SkipOnConflict
-	PreferSelfOnConflict
-	PreferOtherOnConflict
+	PreferOursOnConflict
+	PreferTheirsOnConflict
 )
 
 // AfterSelectorsForConflictResolution returns two arrays of selectors
@@ -523,7 +523,7 @@ func AfterSelectorsForConflictResolution(
 	// so that the diff will not see any difference
 	// - if file has been added, remove it from the "after" directory
 	// - if file has been modified or removed, copy the file from "before" to "after" to keep its initial state
-	// In case of PreferSelf or PreferOther this is applied to only one part (parent or additional changes)
+	// In case of PreferOurs or PreferTheirs this is applied to only one part (parent or additional changes)
 	// that way one of the two will not see a change while the other will see it.
 	// hence the change will be applied only once.
 	for _, c := range conflicts {
@@ -534,15 +534,15 @@ func AfterSelectorsForConflictResolution(
 			case SkipOnConflict:
 				parentAfterSelector = append(parentAfterSelector, selectorWithoutFile(c.Path))
 				additionalAfterSelector = append(additionalAfterSelector, selectorWithoutFile(c.Path))
-			// if we prefer self, keep it and put the file on the "after" of additional changes
-			case PreferSelfOnConflict:
+			// if we prefer ours, keep it and put the file on the "after" of additional changes
+			case PreferOursOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
 					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
-			// if we prefer other, keep it and put the file on the "after" of parent changes
-			case PreferOtherOnConflict:
+			// if we prefer theirs, keep it and put the file on the "after" of parent changes
+			case PreferTheirsOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
 					return parentAfterSelector, additionalAfterSelector, err
 				} else {
@@ -564,15 +564,15 @@ func AfterSelectorsForConflictResolution(
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
-			// if we prefer self, keep it and put the file on the "after" of additional changes
-			case PreferSelfOnConflict:
+			// if we prefer ours, keep it and put the file on the "after" of additional changes
+			case PreferOursOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
 					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
-			// if we prefer other, keep it and put the file on the "after" of parent changes
-			case PreferOtherOnConflict:
+			// if we prefer theirs, keep it and put the file on the "after" of parent changes
+			case PreferTheirsOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
 					return parentAfterSelector, additionalAfterSelector, err
 				} else {
@@ -594,15 +594,15 @@ func AfterSelectorsForConflictResolution(
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
-			// if we prefer self, use the "after" from parent changes on additional changes
-			case PreferSelfOnConflict:
+			// if we prefer ours, use the "after" from parent changes on additional changes
+			case PreferOursOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
 					return parentAfterSelector, additionalAfterSelector, err
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
-			// if we prefer other, remove the file from "after" of parent changes
-			case PreferOtherOnConflict:
+			// if we prefer theirs, remove the file from "after" of parent changes
+			case PreferTheirsOnConflict:
 				parentAfterSelector = append(parentAfterSelector, selectorWithoutFile(c.Path))
 			}
 		} else if c.Self == ChangeTypeRemoved &&
@@ -620,11 +620,11 @@ func AfterSelectorsForConflictResolution(
 				} else {
 					additionalAfterSelector = append(additionalAfterSelector, sel)
 				}
-			// if we prefer self, remove the file from "after" of additional changes
-			case PreferSelfOnConflict:
+			// if we prefer ours, remove the file from "after" of additional changes
+			case PreferOursOnConflict:
 				additionalAfterSelector = append(additionalAfterSelector, selectorWithoutFile(c.Path))
-			// if we prefer other, use the file from "after" of additional changes
-			case PreferOtherOnConflict:
+			// if we prefer theirs, use the file from "after" of additional changes
+			case PreferTheirsOnConflict:
 				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
 					return parentAfterSelector, additionalAfterSelector, err
 				} else {
@@ -799,8 +799,8 @@ func resolveConflictsMulti(
 	// Group conflicts by the changesets they affect
 	// For simplicity, we apply resolution similarly to pairwise merging:
 	// - SKIP: revert to "before" state in all affected changesets
-	// - PREFER_SELF: keep first changeset's version, remove from others
-	// - PREFER_OTHER: keep last changeset's version, remove from earlier ones
+	// - PREFER_OURS: keep first changeset's version, remove from others
+	// - PREFER_THEIRS: keep last changeset's version, remove from earlier ones
 
 	// Build a map to track which paths need resolution in each changeset
 	resolutionsByChangeset := make([][]dagql.Selector, len(changesets))
@@ -841,7 +841,7 @@ func resolveConflictsMulti(
 				}
 			}
 
-		case PreferSelfOnConflict:
+		case PreferOursOnConflict:
 			// Keep first changeset's version, modify others to match
 			firstIdx := involvedIdxs[0]
 			firstCs := changesets[firstIdx]
@@ -856,7 +856,7 @@ func resolveConflictsMulti(
 				}
 			}
 
-		case PreferOtherOnConflict:
+		case PreferTheirsOnConflict:
 			// Keep last changeset's version, modify earlier ones to match
 			lastIdx := involvedIdxs[len(involvedIdxs)-1]
 			lastCs := changesets[lastIdx]

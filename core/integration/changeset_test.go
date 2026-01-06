@@ -1159,8 +1159,8 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 		// - fail: in case of conflicts, refuse to merge changesets
 		// - skip: ignore changes **for the defined granularity** (file for now) on the path
 		//   -> all other changes are applied, but the file at the path remains in the before state for both changesets
-		// - prefer self: remove the change in the 'other' changeset, only apply change from 'original' (for this path)
-		// - prefer other: remove the change in the 'original' changeset, only apply change from 'other' (for this path)
+		// - prefer ours: remove the change in the 'other' changeset, only apply change from 'original' (for this path)
+		// - prefer theirs: remove the change in the 'original' changeset, only apply change from 'other' (for this path)
 
 		t.Run("fail", func(ctx context.Context, t *testctx.T) {
 			// this is the default behavior
@@ -1208,9 +1208,9 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 				require.NoError(t, err)
 			})
 
-			t.Run("prefer self", func(ctx context.Context, t *testctx.T) {
+			t.Run("prefer ours", func(ctx context.Context, t *testctx.T) {
 				res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-					OnConflict: dagger.ChangesetMergeConflictPreferSelf,
+					OnConflict: dagger.ChangesetMergeConflictPreferOurs,
 				}).Sync(ctx)
 				require.NoError(t, err)
 
@@ -1245,9 +1245,9 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 				require.Contains(t, addedPaths, "filei.txt")
 			})
 
-			t.Run("prefer other", func(ctx context.Context, t *testctx.T) {
+			t.Run("prefer theirs", func(ctx context.Context, t *testctx.T) {
 				res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-					OnConflict: dagger.ChangesetMergeConflictPreferOther,
+					OnConflict: dagger.ChangesetMergeConflictPreferTheirs,
 				}).Sync(ctx)
 				require.NoError(t, err)
 
