@@ -134,7 +134,7 @@ func (s *fileSchema) size(ctx context.Context, file *core.File, args struct{}) (
 		return 0, err
 	}
 
-	return dagql.NewInt(int(info.Size_)), nil
+	return dagql.NewInt(info.Size), nil
 }
 
 func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
@@ -142,11 +142,7 @@ func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (
 }
 
 func (s *fileSchema) stat(ctx context.Context, parent *core.File, args struct{}) (*core.Stat, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return parent.StatDagOp(ctx, srv)
+	return parent.Stat(ctx)
 }
 
 type fileDigestArgs struct {
