@@ -6,6 +6,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPathSets(t *testing.T) {
+	cs := &ChangesetPaths{
+		Added:    []string{"/a/file1", "/b/file2"},
+		Modified: []string{"/c/file3"},
+		Removed:  []string{"/d/file4"},
+	}
+
+	sets := cs.pathSets()
+
+	// Verify added paths
+	_, ok := sets.added["/a/file1"]
+	require.True(t, ok)
+	_, ok = sets.added["/b/file2"]
+	require.True(t, ok)
+	_, ok = sets.added["/nonexistent"]
+	require.False(t, ok)
+
+	// Verify modified paths
+	_, ok = sets.modified["/c/file3"]
+	require.True(t, ok)
+	_, ok = sets.modified["/nonexistent"]
+	require.False(t, ok)
+
+	// Verify removed paths
+	_, ok = sets.removed["/d/file4"]
+	require.True(t, ok)
+	_, ok = sets.removed["/nonexistent"]
+	require.False(t, ok)
+}
+
 func TestChangesetConflicts(t *testing.T) {
 	origin := &ChangesetPaths{
 		Added: []string{

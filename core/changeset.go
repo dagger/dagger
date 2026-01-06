@@ -130,6 +130,32 @@ type Changeset struct {
 	pathsErr    error
 }
 
+// changesetPathSets contains pre-computed sets for efficient O(1) path lookups
+type changesetPathSets struct {
+	added    map[string]struct{}
+	modified map[string]struct{}
+	removed  map[string]struct{}
+}
+
+// pathSets creates lookup maps for this changeset's paths
+func (ch *ChangesetPaths) pathSets() changesetPathSets {
+	sets := changesetPathSets{
+		added:    make(map[string]struct{}, len(ch.Added)),
+		modified: make(map[string]struct{}, len(ch.Modified)),
+		removed:  make(map[string]struct{}, len(ch.Removed)),
+	}
+	for _, p := range ch.Added {
+		sets.added[p] = struct{}{}
+	}
+	for _, p := range ch.Modified {
+		sets.modified[p] = struct{}{}
+	}
+	for _, p := range ch.Removed {
+		sets.removed[p] = struct{}{}
+	}
+	return sets
+}
+
 func (*Changeset) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Changeset",
@@ -357,21 +383,22 @@ func (conflicts Conflicts) IsEmpty() bool {
 	return len(conflicts) == 0
 }
 
+// CheckConflicts detects conflicts using pre-computed path sets for O(1) lookups
 func (ch *ChangesetPaths) CheckConflicts(other *ChangesetPaths) Conflicts {
 	var conflicts Conflicts
+	otherSets := other.pathSets()
 	for _, addedPath := range ch.Added {
-		if slices.Contains(other.Added, addedPath) {
+		if _, exists := otherSets.added[addedPath]; exists {
 			conflicts = append(conflicts, Conflict{
 				Path:  addedPath,
 				Self:  ChangeTypeAdded,
 				Other: ChangeTypeAdded,
 				Err:   ErrAddedTwice,
 			})
-			continue
 		}
 	}
 	for _, modifiedPath := range ch.Modified {
-		if slices.Contains(other.Modified, modifiedPath) {
+		if _, exists := otherSets.modified[modifiedPath]; exists {
 			conflicts = append(conflicts, Conflict{
 				Path:  modifiedPath,
 				Self:  ChangeTypeModified,
@@ -380,25 +407,23 @@ func (ch *ChangesetPaths) CheckConflicts(other *ChangesetPaths) Conflicts {
 			})
 			continue
 		}
-		if slices.Contains(other.Removed, modifiedPath) {
+		if _, exists := otherSets.removed[modifiedPath]; exists {
 			conflicts = append(conflicts, Conflict{
 				Path:  modifiedPath,
 				Self:  ChangeTypeModified,
 				Other: ChangeTypeRemoved,
 				Err:   ErrModifiedRemoved,
 			})
-			continue
 		}
 	}
 	for _, removedPath := range ch.Removed {
-		if slices.Contains(other.Modified, removedPath) {
+		if _, exists := otherSets.modified[removedPath]; exists {
 			conflicts = append(conflicts, Conflict{
 				Path:  removedPath,
 				Self:  ChangeTypeRemoved,
 				Other: ChangeTypeModified,
 				Err:   ErrModifiedRemoved,
 			})
-			continue
 		}
 	}
 	return conflicts
@@ -620,7 +645,15 @@ func (ch *Changeset) WithChangeset(
 	}
 
 	// Check for conflicts
-	conflicts := ch.CheckConflicts(other)
+	chPaths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	otherPaths, err := other.ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	conflicts := chPaths.CheckConflicts(otherPaths)
 	hasConflicts := !conflicts.IsEmpty()
 
 	// Variables to hold the potentially modified changesets (with proper IDs)
