@@ -682,6 +682,72 @@ func (s *gitSchema) resolveRef(ctx context.Context, srv *dagql.Server, ref dagql
 
 var errNoAuthResolutionNeeded = errors.New("no auth resolution needed")
 
+type idPatch func(*call.ID) *call.ID
+
+func reenterObject[T dagql.Typed](
+	ctx context.Context,
+	newReceiver *call.ID,
+	patch idPatch,
+) (dagql.ObjectResult[T], error) {
+	var zero dagql.ObjectResult[T]
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	cur := dagql.CurrentID(ctx)
+
+	newLeafID := newReceiver.Append(
+		cur.Type().ToAST(),
+		cur.Field(),
+		call.WithArgs(cur.Args()...),
+		call.WithView(cur.View()),
+	)
+
+	if patch != nil {
+		newLeafID = patch(newLeafID)
+	}
+
+	loaded, err := srv.Load(ctx, newLeafID)
+	if err != nil {
+		return zero, err
+	}
+	return loaded.(dagql.ObjectResult[T]), nil
+}
+
+func reenterType[T any](
+	ctx context.Context,
+	newReceiver *call.ID,
+	patch idPatch,
+) (T, error) {
+	var zero T
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	cur := dagql.CurrentID(ctx)
+
+	newLeafID := newReceiver.Append(
+		cur.Type().ToAST(),
+		cur.Field(),
+		call.WithArgs(cur.Args()...),
+		call.WithView(cur.View()),
+	)
+
+	if patch != nil {
+		newLeafID = patch(newLeafID)
+	}
+
+	loaded, err := srv.LoadType(ctx, newLeafID)
+	if err != nil {
+		return zero, err
+	}
+	return loaded.Unwrap().(T), nil
+}
+
 func tryProtocols[T any](repoURL string, try func(url string) (T, error)) (T, error) {
 	var zero T
 	for _, u := range []string{"https://" + repoURL, "ssh://git@" + repoURL} {
