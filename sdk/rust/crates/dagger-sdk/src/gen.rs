@@ -10506,6 +10506,11 @@ impl ModuleSource {
         let query = self.selection.select("engineVersion");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the module that this module extends, if any.
+    pub async fn extends(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("extends");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");
@@ -10736,26 +10741,6 @@ impl ModuleSource {
     pub fn with_name(&self, name: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withName");
         query = query.arg("name", name.into());
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a toolchain as an overlay for another toolchain.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the toolchain to make an overlay.
-    /// * `overlay_for` - The name of the base toolchain to overlay.
-    pub fn with_overlay_for(
-        &self,
-        name: impl Into<String>,
-        overlay_for: impl Into<String>,
-    ) -> ModuleSource {
-        let mut query = self.selection.select("withOverlayFor");
-        query = query.arg("name", name.into());
-        query = query.arg("overlayFor", overlay_for.into());
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

@@ -4803,6 +4803,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::extends",
+			"p": "Dagger/ModuleSource.html#method_extends",
+			"d": "<p>The name of the module that this module extends, if any.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::generatedContextDirectory",
 			"p": "Dagger/ModuleSource.html#method_generatedContextDirectory",
 			"d": "<p>The generated files and directories made on top of the module source's context directory.</p>"
@@ -4956,12 +4962,6 @@
 			"n": "Dagger\\ModuleSource::withName",
 			"p": "Dagger/ModuleSource.html#method_withName",
 			"d": "<p>Update the module source with a new name.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\ModuleSource::withOverlayFor",
-			"p": "Dagger/ModuleSource.html#method_withOverlayFor",
-			"d": "<p>Set a toolchain as an overlay for another toolchain.</p>"
 		},
 		{
 			"t": "M",

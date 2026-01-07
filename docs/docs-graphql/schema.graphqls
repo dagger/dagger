@@ -3991,6 +3991,9 @@ type ModuleSource {
   """The engine version of the module."""
   engineVersion: String!
 
+  """The name of the module that this module extends, if any."""
+  extends: String!
+
   """
   The generated files and directories made on top of the module source's context directory.
   """
@@ -4125,15 +4128,6 @@ type ModuleSource {
   withName(
     """The name to set."""
     name: String!
-  ): ModuleSource!
-
-  """Set a toolchain as an overlay for another toolchain."""
-  withOverlayFor(
-    """The name of the toolchain to make an overlay."""
-    name: String!
-
-    """The name of the base toolchain to overlay."""
-    overlayFor: String!
   ): ModuleSource!
 
   """Update the module source with a new SDK."""

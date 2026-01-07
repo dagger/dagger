@@ -123,6 +123,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The name of the module that this module extends, if any.
+     */
+    public function extends(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('extends');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'extends');
+    }
+
+    /**
      * The generated files and directories made on top of the module source's context directory.
      */
     public function generatedContextDirectory(): Directory
@@ -365,17 +374,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
         $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set a toolchain as an overlay for another toolchain.
-     */
-    public function withOverlayFor(string $name, string $overlayFor): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withOverlayFor');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('overlayFor', $overlayFor);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

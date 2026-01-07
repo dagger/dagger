@@ -9942,6 +9942,27 @@ class ModuleSource(Type):
         _ctx = self._select("engineVersion", _args)
         return await _ctx.execute(str)
 
+    async def extends(self) -> str:
+        """The name of the module that this module extends, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("extends", _args)
+        return await _ctx.execute(str)
+
     def generated_context_directory(self) -> Directory:
         """The generated files and directories made on top of the module source's
         context directory.
@@ -10385,23 +10406,6 @@ class ModuleSource(Type):
             Arg("name", name),
         ]
         _ctx = self._select("withName", _args)
-        return ModuleSource(_ctx)
-
-    def with_overlay_for(self, name: str, overlay_for: str) -> Self:
-        """Set a toolchain as an overlay for another toolchain.
-
-        Parameters
-        ----------
-        name:
-            The name of the toolchain to make an overlay.
-        overlay_for:
-            The name of the base toolchain to overlay.
-        """
-        _args = [
-            Arg("name", name),
-            Arg("overlayFor", overlay_for),
-        ]
-        _ctx = self._select("withOverlayFor", _args)
         return ModuleSource(_ctx)
 
     def with_sdk(self, source: str) -> Self:

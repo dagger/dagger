@@ -9658,6 +9658,7 @@ type ModuleSource struct {
 	configExists              *bool
 	digest                    *string
 	engineVersion             *string
+	extends                   *string
 	htmlRepoURL               *string
 	htmlURL                   *string
 	id                        *ModuleSourceID
@@ -9862,6 +9863,19 @@ func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 		return *r.engineVersion, nil
 	}
 	q := r.query.Select("engineVersion")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The name of the module that this module extends, if any.
+func (r *ModuleSource) Extends(ctx context.Context) (string, error) {
+	if r.extends != nil {
+		return *r.extends, nil
+	}
+	q := r.query.Select("extends")
 
 	var response string
 
