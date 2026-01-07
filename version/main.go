@@ -27,7 +27,7 @@ func New(
 	// - To avoid false negatives, include *all* inputs
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes", ".changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack"]
+	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes", ".changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack", "!**/.gitignore"]
 	inputs *dagger.Directory,
 
 	// File containing the next release version (e.g. .changes/.next)
@@ -38,7 +38,7 @@ func New(
 	return &Version{
 		Git:             git.AsGit(),
 		GitDir:          git,
-		Inputs:          inputs,
+		Inputs:          inputs.Filter(dagger.DirectoryFilterOpts{Gitignore: true}),
 		NextVersionFile: nextVersionFile,
 	}
 }
@@ -130,8 +130,15 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 }
 
 func (v Version) Dirty(ctx context.Context) (bool, error) {
-	checkout := v.Git.Head().Tree()
-	changes := v.Inputs.Changes(checkout)
+	committed := v.Git.Head().Tree()
+
+	// Overlay local inputs onto committed tree, then diff.
+	// This detects additions and modifications but not deletions.
+	// We use overlay instead of direct diff to avoid false positives from
+	// gitignored files and empty directories that exist locally but not in git.
+	local := committed.WithDirectory("", v.Inputs)
+	changes := committed.Changes(local)
+
 	isEmpty, err := changes.IsEmpty(ctx)
 	if err != nil {
 		return false, err
