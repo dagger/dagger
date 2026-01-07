@@ -67,10 +67,6 @@ type Module struct {
 	// This enables proxy field resolution to route calls to the toolchain's runtime
 	ToolchainModules map[string]*Module
 
-	// ToolchainOverlays maps base toolchain names to their overlay modules
-	// This enables routing function calls from base toolchains through their overlays
-	ToolchainOverlays map[string]*Module
-
 	// ToolchainArgumentConfigs stores argument configuration overrides for toolchains by their original name
 	ToolchainArgumentConfigs map[string][]*modules.ModuleConfigArgument
 
@@ -728,15 +724,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 				// Allow types from toolchain modules
-				allowExternal := false
-				if tcMod, ok := sourceMod.(*Module); ok && tcMod.IsToolchain {
-					allowExternal = true
-				}
-				// Allow overlay modules to return types from the module they overlay
-				if mod.Source.Valid && mod.Source.Value.Self() != nil && mod.Source.Value.Self().OverlayFor == sourceMod.Name() {
-					allowExternal = true
-				}
-				if !allowExternal {
+				if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
 					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
 						obj.OriginalName,
 						fn.OriginalName,
@@ -1096,13 +1084,6 @@ func (mod Module) Clone() *Module {
 		cp.ToolchainModules = make(map[string]*Module, len(mod.ToolchainModules))
 		for k, v := range mod.ToolchainModules {
 			cp.ToolchainModules[k] = v
-		}
-	}
-
-	if mod.ToolchainOverlays != nil {
-		cp.ToolchainOverlays = make(map[string]*Module, len(mod.ToolchainOverlays))
-		for k, v := range mod.ToolchainOverlays {
-			cp.ToolchainOverlays[k] = v
 		}
 	}
 

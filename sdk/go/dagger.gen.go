@@ -10223,17 +10223,6 @@ func (r *ModuleSource) WithName(name string) *ModuleSource {
 	}
 }
 
-// Set a toolchain as an overlay for another toolchain.
-func (r *ModuleSource) WithOverlayFor(name string, overlayFor string) *ModuleSource {
-	q := r.query.Select("withOverlayFor")
-	q = q.Arg("name", name)
-	q = q.Arg("overlayFor", overlayFor)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
 // Update the module source with a new SDK.
 func (r *ModuleSource) WithSDK(source string) *ModuleSource {
 	q := r.query.Select("withSDK")

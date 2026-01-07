@@ -1,10 +1,11 @@
 {
-  "name": "hello-overlay",
+  "name": "hello-extends",
   "engineVersion": "v0.19.4",
   "sdk": {
     "source": "go"
   },
   "source": ".",
+  "extends": "hello",
   "dependencies": [
     {
       "name": "hello",

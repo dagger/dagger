@@ -170,8 +170,10 @@ type ModuleSource struct {
 	ConfigToolchains []*modules.ModuleConfigDependency
 	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
 
-	// OverlayFor indicates the name of the toolchain this module source overlays (if any)
-	OverlayFor string
+	// Extends is the name of the module that this module extends
+	// When set, this module inherits all functions from the extended module,
+	// allowing it to override specific implementations while inheriting the rest
+	Extends string `field:"true" name:"extends" doc:"The name of the module that this module extends, if any."`
 
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.

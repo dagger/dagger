@@ -3,24 +3,24 @@ package main
 import (
 	"context"
 
-	"dagger/hello-overlay/internal/dagger"
+	"dagger/hello-extends/internal/dagger"
 )
 
-// HelloOverlay is the overlay that wraps the base hello toolchain
-type HelloOverlay struct{}
+// HelloExtends extends the base hello toolchain
+type HelloExtends struct{}
 
 // Message returns a wrapped message from the base hello toolchain
-func (m *HelloOverlay) Message(ctx context.Context) (string, error) {
+func (m *HelloExtends) Message(ctx context.Context) (string, error) {
 	// Access the base hello toolchain through dag
 	msg, err := dag.Hello().Message(ctx)
 	if err != nil {
 		return "", err
 	}
-	return "overlay: " + msg, nil
+	return "extended: " + msg, nil
 }
 
 // ConfigurableMessage returns a wrapped configurable message from the base hello toolchain
-func (m *HelloOverlay) ConfigurableMessage(
+func (m *HelloExtends) ConfigurableMessage(
 	ctx context.Context,
 	// +default="hello"
 	message string,
@@ -33,5 +33,5 @@ func (m *HelloOverlay) ConfigurableMessage(
 	if err != nil {
 		return "", err
 	}
-	return "overlay says: " + msg, nil
+	return "extended says: " + msg, nil
 }
