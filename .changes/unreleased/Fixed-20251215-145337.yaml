@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix incorrect file contents caching race condition bug
-time: 2025-12-15T14:53:37.378560538-08:00
-custom:
-    Author: alexcb
-    PR: "11575"

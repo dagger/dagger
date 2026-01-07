@@ -1,6 +1,0 @@
-kind: Added
-body: 'elixir: support for function caching'
-time: 2025-12-07T22:06:40.997740275+01:00
-custom:
-    Author: Nero-F
-    PR: "11532"

@@ -1,6 +1,0 @@
-kind: Fixed
-body: Disable Git askpass prompts to prevent unexpected IDE credential dialogs (e.g., VS Code popups that appear even when credentials are already configured). Credentials still work via helpers or .netrc. For the rare case where no credentials are configured, Dagger now fails early with a clear error instead of triggering a subtle prompt that users sometimes miss.
-time: 2025-12-03T12:56:12.87879947-08:00
-custom:
-    Author: sleiner-v
-    PR: "11437"
