@@ -1225,6 +1225,15 @@ func (r *Check) Run() *Check {
 	}
 }
 
+// The module source where the check is defined (i.e., toolchains)
+func (r *Check) Source() *ModuleSource {
+	q := r.query.Select("source")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 type CheckGroup struct {
 	query *querybuilder.Selection
 

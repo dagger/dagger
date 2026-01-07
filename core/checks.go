@@ -22,11 +22,12 @@ import (
 
 // Check represents a validation check with its result
 type Check struct {
-	Path        []string `field:"true" doc:"The path of the check within its module"`
-	Description string   `field:"true" doc:"The description of the check"`
-	Completed   bool     `field:"true" doc:"Whether the check completed"`
-	Passed      bool     `field:"true" doc:"Whether the check passed"`
-	Module      *Module
+	Path        []string      `field:"true" doc:"The path of the check within its module"`
+	Description string        `field:"true" doc:"The description of the check"`
+	Completed   bool          `field:"true" doc:"Whether the check completed"`
+	Passed      bool          `field:"true" doc:"Whether the check passed"`
+	Source      *ModuleSource `field:"true" doc:"The module source where the check is defined (i.e., toolchains)"`
+	Module      *Module       `field:"false" doc:"The module where the check is run"`
 }
 
 func (*Check) Type() *ast.Type {
@@ -219,6 +220,7 @@ func (c *Check) Name() string {
 func (c *Check) Clone() *Check {
 	cp := *c
 	cp.Module = c.Module.Clone()
+	cp.Source = c.Source.Clone()
 	return &cp
 }
 

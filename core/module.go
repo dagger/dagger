@@ -151,6 +151,8 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 				// Prepend the toolchain name to the check path
 				check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
 
+				check.Source = tcMod.GetSource()
+
 				match, err := check.Match(include)
 				if err != nil {
 					return nil, err
@@ -166,6 +168,10 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	// mod and any toolchain mods
 	for _, check := range group.Checks {
 		check.Module = mod
+		// if toolchains didn't set ModuleSource, then the check is defined in mod.
+		if check.Source == nil {
+			check.Source = mod.GetSource()
+		}
 	}
 	return group, nil
 }

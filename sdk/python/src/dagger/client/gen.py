@@ -1306,6 +1306,12 @@ class Check(Type):
         _ctx = self._select("run", _args)
         return Check(_ctx)
 
+    def source(self) -> "ModuleSource":
+        """The module source where the check is defined (i.e., toolchains)"""
+        _args: list[Arg] = []
+        _ctx = self._select("source", _args)
+        return ModuleSource(_ctx)
+
     def with_(self, cb: Callable[["Check"], "Check"]) -> "Check":
         """Call the provided callable with current Check.
 

@@ -2485,6 +2485,15 @@ impl Check {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The module source where the check is defined (i.e., toolchains)
+    pub fn source(&self) -> ModuleSource {
+        let query = self.selection.select("source");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 pub struct CheckGroup {

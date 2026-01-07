@@ -81,4 +81,13 @@ class Check extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
         return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * The module source where the check is defined (i.e., toolchains)
+     */
+    public function source(): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('source');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }
