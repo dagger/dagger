@@ -310,7 +310,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Files and directories that existed before and were updated in the newer directory.`),
 		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesetRemovedPaths)).
 			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
-		dagql.NodeFunc("withChangeset", s.changesetWithChangeset).
+		dagql.NodeFunc("withChangeset", DagOpChangesetWrapper(srv, s.changesetWithChangeset)).
 			Doc(`Add changes to an existing changeset`,
 				`By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted
 				using onConflict argument`).
@@ -318,7 +318,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
-		dagql.NodeFunc("withChangesets", s.changesetWithChangesets).
+		dagql.NodeFunc("withChangesets", DagOpChangesetWrapper(srv, s.changesetWithChangesets)).
 			Doc(`Add changes from multiple changesets`,
 				`By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.`,
 				`This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.`).
@@ -1151,11 +1151,13 @@ func (proto ChangesetMergeConflict) ToLiteral() call.Literal {
 type changesetWithChangesetArgs struct {
 	Changes    dagql.ID[*core.Changeset]
 	OnConflict ChangesetMergeConflict `default:"FAIL"`
+	DagOpInternalArgs
 }
 
 type changesetWithChangesetsArgs struct {
 	Changes    []dagql.ID[*core.Changeset]
 	OnConflict ChangesetMergeConflict `default:"FAIL"`
+	DagOpInternalArgs
 }
 
 func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithChangesetMergeConflict {
@@ -1175,36 +1177,31 @@ func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithCha
 	return conflictStrategy
 }
 
-func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (res dagql.ObjectResult[*core.Changeset], _ error) {
+func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (*core.Changeset, error) {
 	return s.changesetWithChangesets(ctx, parent, changesetWithChangesetsArgs{
 		Changes:    []dagql.ID[*core.Changeset]{args.Changes},
 		OnConflict: args.OnConflict,
 	})
 }
 
-func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (res dagql.ObjectResult[*core.Changeset], _ error) {
+func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Changeset, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 
 	changes := make([]*core.Changeset, 0, len(args.Changes))
 	for _, id := range args.Changes {
 		change, err := id.Load(ctx, srv)
 		if err != nil {
-			return res, err
+			return nil, err
 		}
 		changes = append(changes, change.Self())
 	}
 
 	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
 
-	newChanges, err := parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
-	if err != nil {
-		return res, err
-	}
-
-	return dagql.NewObjectResultForCurrentID(ctx, srv, newChanges)
+	return parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
 }
 
 type dirDockerBuildArgs struct {
