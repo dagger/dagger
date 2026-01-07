@@ -408,13 +408,13 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	objDef := obj.TypeDef
 
 	// Determine the effective module to use for function creation
-	// If the TypeDef has a SourceModuleName (set by overlay), use that module instead
+	// If the TypeDef has a SourceModuleName (set when extending a module), use that module instead
 	effectiveMod := obj.Module
 	if objDef.SourceModuleName != "" && objDef.SourceModuleName != obj.Module.OriginalName {
-		// TypeDef indicates this should use a different module (overlay scenario)
-		// Look up the overlay module from the parent module's toolchains
-		if overlayMod, ok := obj.Module.ToolchainModules[objDef.SourceModuleName]; ok {
-			effectiveMod = overlayMod
+		// TypeDef indicates this should use a different module (extends scenario)
+		// Look up the extending module from the parent module's toolchains
+		if extendingMod, ok := obj.Module.ToolchainModules[objDef.SourceModuleName]; ok {
+			effectiveMod = extendingMod
 		}
 	}
 

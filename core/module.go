@@ -418,19 +418,9 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 			}
 		}
 
-		// Check if this module is a toolchain being loaded in a parent context with an overlay
-		// If so, we need to check if there's an overlay and use the overlay's implementation
-		effectiveMod := mod
-		effectiveObjDef := objDef
-
-		// Look through all modules to find if any module has this as an overlaid toolchain
-		// This is a bit inefficient but necessary since we don't have parent context here
-		// Actually, we can't do this here because we don't have access to the parent module
-		// The overlay logic needs to happen at a different level
-
 		obj := &ModuleObject{
-			Module:  effectiveMod,
-			TypeDef: effectiveObjDef,
+			Module:  mod,
+			TypeDef: objDef,
 		}
 
 		if err := obj.Install(ctx, dag); err != nil {

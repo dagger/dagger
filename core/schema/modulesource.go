@@ -3963,11 +3963,11 @@ func rebasePatterns(patterns []string, base string) ([]string, error) {
 	return rebased, nil
 }
 
-// mergeCustomizations merges overlay customizations into base customizations.
-// Overlay customizations take precedence for matching function/argument combinations.
+// mergeCustomizations merges extending module customizations into base customizations.
+// Extending module customizations take precedence for matching function/argument combinations.
 func mergeCustomizations(
 	baseCustomizations []*modules.ModuleConfigArgument,
-	overlayCustomizations []*modules.ModuleConfigArgument,
+	extendingCustomizations []*modules.ModuleConfigArgument,
 ) []*modules.ModuleConfigArgument {
 	// Create a map for quick lookup of base customizations
 	// Key is "function_chain:argument_name"
@@ -3978,14 +3978,14 @@ func mergeCustomizations(
 	}
 
 	// Start with all base customizations
-	result := make([]*modules.ModuleConfigArgument, 0, len(baseCustomizations)+len(overlayCustomizations))
+	result := make([]*modules.ModuleConfigArgument, 0, len(baseCustomizations)+len(extendingCustomizations))
 	usedKeys := make(map[string]bool)
 
-	// Add overlay customizations (they take precedence)
-	for _, overlayCustom := range overlayCustomizations {
-		key := customizationKey(overlayCustom)
+	// Add extending module customizations (they take precedence)
+	for _, extendingCustom := range extendingCustomizations {
+		key := customizationKey(extendingCustom)
 		usedKeys[key] = true
-		result = append(result, overlayCustom)
+		result = append(result, extendingCustom)
 	}
 
 	// Add base customizations that weren't overridden
