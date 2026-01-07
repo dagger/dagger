@@ -273,75 +273,99 @@ dagger check -l
 
 This will list all checks that will run, excluding any that match your `ignoreChecks` patterns.
 
-## Toolchain Overlays
+## Extending Toolchains
 
-Toolchain overlays allow you to wrap and customize existing toolchains by writing a small amount of code that acts as middleware. When you need more control than what the `customizations` configuration provides, overlays let you intercept and modify toolchain behavior while still leveraging the base toolchain's functionality.
+Extending toolchains allows you to customize existing toolchains by creating a new module that inherits and optionally overrides specific functions. When you need more control than what the `customizations` configuration provides, the extends pattern lets you selectively override toolchain behavior while automatically inheriting the rest of the base toolchain's functionality.
 
-### What are Overlays?
+### What is Extending?
 
-An overlay is a Dagger module that wraps another toolchain (called the "base toolchain"). When you configure an overlay, all calls to the base toolchain are automatically routed through your overlay module first, giving you complete control over:
+Extending is a module pattern where you create a new module that inherits all functions from a base module (called the "extended module"). When you extend a module:
 
-- How functions are called
-- What parameters are passed
-- How results are processed
-- What additional functionality to add
+- Your module automatically inherits all functions from the extended module
+- You can override specific functions by implementing them in your module
+- Functions you don't implement are inherited unchanged from the extended module
+- You only install your extending module, not both modules
 
-The overlay module can then call the base toolchain's functions in any way it needs, effectively acting as middleware.
+This creates a simpler user experience compared to the old overlay pattern, where both modules needed to be installed.
 
-### When to Use Overlays
+### When to Use Extends
 
-Consider using overlays when:
+Consider extending a toolchain when:
 
-- **Complex customization**: You need to combine multiple toolchain functions in a specific way
-- **Adding integrations**: You want to integrate multiple toolchains together (e.g., using one toolchain's output as input to another)
+- **Selective customization**: You want to override a few functions while keeping the rest unchanged
+- **Adding integrations**: You want to enhance specific functions with additional functionality
 - **Environment-specific behavior**: Different deployment targets need different toolchain configurations
-- **Advanced parameter processing**: You need to transform or validate parameters before passing them to the base toolchain
-- **Adding observability**: You want to add logging, metrics, or tracing around toolchain operations
+- **Advanced parameter processing**: You need to transform or validate parameters before calling the base implementation
+- **Adding observability**: You want to add logging, metrics, or tracing around specific operations
 
-### Creating an Overlay
+### Creating an Extending Module
 
-To create an overlay toolchain:
+To create a module that extends an existing toolchain:
 
-1. **Create a new Dagger module** that will act as your overlay:
+1. **Create a new Dagger module** that will extend the base toolchain:
 
 ```shell
-mkdir my-overlay
-cd my-overlay
+mkdir my-extended-builder
+cd my-extended-builder
 dagger init --sdk=go
 ```
 
-2. **Implement functions with the same names** as the base toolchain functions you want to override. Your overlay can then call the base toolchain:
+2. **Add the base toolchain as a dependency**:
+
+```shell
+dagger install github.com/example/base-builder
+```
+
+3. **Add the `extends` field to your `dagger.json`**:
+
+```json
+{
+  "name": "my-extended-builder",
+  "sdk": {
+    "source": "go"
+  },
+  "extends": "base-builder",
+  "dependencies": [
+    {
+      "name": "base-builder",
+      "source": "github.com/example/base-builder"
+    }
+  ]
+}
+```
+
+4. **Implement only the functions you want to override**. Functions you don't implement will be automatically inherited:
 
 ```go
 package main
 
 import (
     "context"
-    "dagger/my-overlay/internal/dagger"
+    "dagger/my-extended-builder/internal/dagger"
 )
 
-type MyOverlay struct{}
+type MyExtendedBuilder struct{}
 
-// Wrap the base toolchain's Build function
-func (m *MyOverlay) Build(
+// Override the Build function from the base toolchain
+func (m *MyExtendedBuilder) Build(
     ctx context.Context,
     source *dagger.Directory,
 ) (*dagger.Container, error) {
     // Call the base toolchain with custom parameters
-    return dag.BaseToolchain().
-        Build(ctx, source, dagger.BaseToolchainBuildOpts{
+    return dag.BaseBuilder().
+        Build(ctx, source, dagger.BaseBuilderBuildOpts{
             Optimize: true,
             Target:   "production",
         })
 }
 
 // Add new functionality not in the base toolchain
-func (m *MyOverlay) BuildAndTest(
+func (m *MyExtendedBuilder) BuildAndTest(
     ctx context.Context,
     source *dagger.Directory,
 ) (string, error) {
     // Build using base toolchain
-    container, err := dag.BaseToolchain().Build(ctx, source)
+    container, err := dag.BaseBuilder().Build(ctx, source)
     if err != nil {
         return "", err
     }
@@ -349,29 +373,33 @@ func (m *MyOverlay) BuildAndTest(
     // Run tests using another toolchain
     return dag.Tester().Test(ctx, container)
 }
+
+// Other functions like Package(), Deploy(), etc. are automatically inherited
+// from the base-builder module and don't need to be reimplemented
 ```
 
-3. **Install the overlay** in your module using the `--overlay-for` flag:
+5. **Install only your extending module**:
 
 ```shell
-cd /path/to/your/module
-dagger toolchain install /path/to/my-overlay --overlay-for base-toolchain
+cd /path/to/your/app
+dagger toolchain install /path/to/my-extended-builder
 ```
 
-The `--overlay-for` flag tells Dagger that this toolchain should wrap the base toolchain named `base-toolchain`. When you call functions on `base-toolchain`, they will automatically route through your overlay.
+Note: You only install the extending module. The base toolchain is automatically available as a dependency.
 
-### How Overlays Work
+### How Extends Works
 
-When you configure a toolchain as an overlay:
+When you use the `extends` pattern:
 
-1. **Transparent routing**: All calls to the base toolchain are automatically routed through the overlay
-2. **Base toolchain as dependency**: The base toolchain is automatically added as a dependency of the overlay, making it accessible via `dag.BaseToolchain()`
-3. **Function matching**: Only functions you implement in the overlay are overridden; other base toolchain functions remain accessible
-4. **Customizations merge**: Any `customizations` defined for both the base and overlay are merged, with overlay customizations taking precedence
+1. **Automatic inheritance**: All functions from the extended module are automatically available in your module
+2. **Selective override**: Only functions you implement in your module override the base implementation
+3. **Base as dependency**: The extended module is a regular dependency, accessible via `dag.BaseModule()`
+4. **Single installation**: Users only install your extending module, not both modules
+5. **Customizations merge**: Any `customizations` defined for the extended module and your module are merged, with your customizations taking precedence
 
-### Example: Wrapping a Build Toolchain
+### Example: Extending a Build Toolchain
 
-Let's say you have a generic Go build toolchain but need project-specific customizations:
+Let's say there's a generic Go build toolchain but you need project-specific customizations:
 
 **Base toolchain** (`github.com/example/go-builder`):
 ```go
@@ -391,13 +419,26 @@ func (b *GoBuilder) Build(
         WithExec([]string{"go", "build", "-o", "app"}).
         File("/src/app")
 }
+
+func (b *GoBuilder) Test(
+    ctx context.Context,
+    source *dagger.Directory,
+) (string, error) {
+    return dag.Container().
+        From("golang:latest").
+        WithDirectory("/src", source).
+        WithWorkdir("/src").
+        WithExec([]string{"go", "test", "./..."}).
+        Stdout(ctx)
+}
 ```
 
-**Your overlay** (`./build-overlay`):
+**Your extending module** (`./my-builder`):
 ```go
-type BuildOverlay struct{}
+type MyBuilder struct{}
 
-func (o *BuildOverlay) Build(
+// Override Build to add private dependencies
+func (m *MyBuilder) Build(
     ctx context.Context,
     source *dagger.Directory,
 ) (*dagger.Container, error) {
@@ -417,31 +458,49 @@ func (o *BuildOverlay) Build(
         WithExec([]string{"apt-get", "update"}).
         WithExec([]string{"apt-get", "install", "-y", "ca-certificates"}), nil
 }
+
+// Test() is automatically inherited from go-builder - no need to reimplement!
 ```
 
-**Install the overlay**:
+**dagger.json** for your extending module:
+```json
+{
+  "name": "my-builder",
+  "sdk": {
+    "source": "go"
+  },
+  "extends": "go-builder",
+  "dependencies": [
+    {
+      "name": "go-builder",
+      "source": "github.com/example/go-builder"
+    }
+  ]
+}
+```
+
+**Install and use**:
 ```shell
-dagger toolchain install github.com/example/go-builder
-dagger toolchain install ./build-overlay --overlay-for go-builder
+# Install only your extending module
+dagger toolchain install ./my-builder
+
+# Both Build (overridden) and Test (inherited) are available
+dagger call my-builder build --source ./
+dagger call my-builder test --source ./
 ```
 
-**Use it**:
-```shell
-# This call goes through your overlay automatically
-dagger call go-builder build --source ./
-```
+### Extends with Customizations
 
-### Overlays with Customizations
-
-Overlays work seamlessly with the `customizations` configuration. When both the base toolchain and the overlay have customizations, they are merged with overlay customizations taking precedence:
+The extends pattern works seamlessly with the `customizations` configuration. Customizations from both the extended and extending modules are merged, with extending module customizations taking precedence:
 
 ```json
 {
-  "name": "my-app",
-  "toolchains": [
+  "name": "my-builder",
+  "extends": "base-builder",
+  "dependencies": [
     {
-      "name": "builder",
-      "source": "github.com/example/builder",
+      "name": "base-builder",
+      "source": "github.com/example/base-builder",
       "customizations": [
         {
           "function": ["build"],
@@ -449,40 +508,41 @@ Overlays work seamlessly with the `customizations` configuration. When both the 
           "default": "false"
         }
       ]
-    },
-    {
-      "name": "build-overlay",
-      "source": "./overlay",
-      "overlayFor": "builder",
-      "customizations": [
-        {
-          "function": ["build"],
-          "argument": "optimize",
-          "default": "true"
-        }
-      ]
     }
   ]
 }
 ```
 
-In this case, the overlay's customization (`optimize: true`) takes precedence over the base toolchain's customization.
+You can also add customizations at the toolchain level when installing an extending module.
 
-### Validation and Safety
+### Extending Without an SDK
 
-Dagger validates overlay configurations to prevent common issues:
+You can also create an extending module without any SDK code. This is useful when you only want to use customizations:
 
-- **Missing base toolchain**: You cannot install an overlay without first installing its base toolchain
-- **Circular dependencies**: Overlays cannot reference other overlays as their base, preventing circular chains
-- **Clear error messages**: Configuration errors provide specific guidance on how to fix the issue
+**dagger.json**:
+```json
+{
+  "name": "my-customized-builder",
+  "extends": "base-builder",
+  "dependencies": [
+    {
+      "name": "base-builder",
+      "source": "github.com/example/base-builder"
+    }
+  ]
+}
+```
 
-### Overlay Best Practices
+In this case, all functions from `base-builder` are inherited unchanged, but you can still apply customizations through the configuration.
 
-1. **Keep overlays focused**: An overlay should enhance or customize a single base toolchain, not combine unrelated functionality
-2. **Document wrapper behavior**: Clearly document which base toolchain functions your overlay modifies and how
-3. **Leverage base functionality**: Always call through to the base toolchain rather than reimplementing its logic
-4. **Use for project-specific needs**: Overlays are ideal for project-specific customizations while keeping the base toolchain generic
-5. **Test overlay independently**: Write tests that verify your overlay's behavior separate from the base toolchain
+### Extends Best Practices
+
+1. **Keep extending modules focused**: An extending module should enhance or customize a single base module, not combine unrelated functionality
+2. **Document overridden functions**: Clearly document which base functions your module overrides and how they differ
+3. **Leverage base functionality**: Call through to the base module rather than reimplementing its logic when possible
+4. **Use for project-specific needs**: Extending is ideal for project-specific customizations while keeping the base module generic
+5. **Test independently**: Write tests that verify your extending module's behavior separate from the base module
+6. **Minimize overrides**: Only override functions that truly need customization - inherited functions are automatically kept in sync with the base module
 
 ## Best Practices
 
