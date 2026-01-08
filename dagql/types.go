@@ -97,6 +97,15 @@ type AnyResult interface {
 
 	// WithSafeToPersistCache returns a new AnyResult with the given safe-to-persist-cache flag.
 	WithSafeToPersistCache(safe bool) AnyResult
+
+	// TODO: doc
+	IsContentHash() bool
+
+	// TODO: doc
+	WithIsContentHash(b bool) AnyResult
+
+	// TODO: doc
+	WithID(id *call.ID) AnyResult
 }
 
 // AnyObjectResult is an AnyResult that wraps a selectable value (i.e. a graph object)

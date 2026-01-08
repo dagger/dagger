@@ -928,7 +928,7 @@ func (s *moduleSourceSchema) contextDirectory(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	mod, err := core.GetPerSessionModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
 	if err != nil {
 		return inst, err
 	}
@@ -950,6 +950,7 @@ func (s *moduleSourceSchema) contextDirectory(
 	// cache keys per result should help fix this.
 	dgst := hashutil.HashStrings(dir.ID().Digest().String(), "contextualDir")
 	inst = inst.WithObjectDigest(dgst)
+	inst = inst.WithIsContentHash(true).(dagql.ObjectResult[*core.Directory])
 	return inst, nil
 }
 
@@ -970,7 +971,7 @@ func (s *moduleSourceSchema) contextFile(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	mod, err := core.GetPerSessionModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
 	if err != nil {
 		return inst, err
 	}
@@ -991,6 +992,7 @@ func (s *moduleSourceSchema) contextFile(
 	// cache keys per result should help fix this.
 	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualFile")
 	inst = inst.WithObjectDigest(dgst)
+	inst = inst.WithIsContentHash(true).(dagql.ObjectResult[*core.File])
 	return inst, nil
 }
 
@@ -3497,6 +3499,19 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	contentCacheKey := mod.ContentDigestCacheKey()
 	contentHashedInst := inst.WithObjectDigest(digest.Digest(contentCacheKey.CallKey))
 	_, err = dag.Cache.GetOrInitializeValue(ctx, contentCacheKey, contentHashedInst)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
+	}
+
+	// TODO:
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	perSessionContentCacheKey := mod.ContentDigestCacheKey()
+	perSessionContentCacheKey.CallKey = dagql.CacheKeyType(hashutil.HashStrings(perSessionContentCacheKey.CallKey, md.SessionID))
+	perSessionContentHashedInst := inst.WithObjectDigest(digest.Digest(perSessionContentCacheKey.CallKey))
+	_, err = dag.Cache.GetOrInitializeValue(ctx, perSessionContentCacheKey, perSessionContentHashedInst)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}

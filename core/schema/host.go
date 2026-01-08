@@ -329,7 +329,11 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get directory: %w", err)
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	return inst.WithIsContentHash(true).(dagql.ObjectResult[*core.Directory]), nil
 }
 
 type hostSocketArgs struct {

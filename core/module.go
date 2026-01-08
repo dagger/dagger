@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
@@ -304,6 +305,36 @@ func GetModuleFromContentDigest(
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
 		CallKey: dgst,
 	}
+	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
+		return nil, fmt.Errorf("module not found: %s", modName)
+	})
+	if err != nil {
+		return inst, err
+	}
+	inst, ok := modRes.Result().(dagql.ObjectResult[*Module])
+	if !ok {
+		return inst, fmt.Errorf("cached module has unexpected type: %T", modRes.Result())
+	}
+
+	return inst, nil
+}
+
+// TODO: doc
+func GetPerSessionModuleFromContentDigest(
+	ctx context.Context,
+	dag *dagql.Server,
+	modName string,
+	dgst string,
+) (inst dagql.ObjectResult[*Module], err error) {
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		CallKey: dgst,
+	}
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, err
+	}
+	cacheKey.CallKey = hashutil.HashStrings(cacheKey.CallKey, md.SessionID).String()
+
 	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
 		return nil, fmt.Errorf("module not found: %s", modName)
 	})

@@ -334,6 +334,7 @@ type Result[T Typed] struct {
 	self               T
 	postCall           cache.PostCallFunc
 	safeToPersistCache bool
+	isContentHash      bool
 }
 
 var _ AnyResult = Result[Typed]{}
@@ -391,8 +392,17 @@ func (r Result[T]) WithSafeToPersistCache(safe bool) AnyResult {
 	return r
 }
 
+func (r Result[T]) WithIsContentHash(b bool) AnyResult {
+	r.isContentHash = b
+	return r
+}
+
 func (r Result[T]) IsSafeToPersistCache() bool {
 	return r.safeToPersistCache
+}
+
+func (r Result[T]) IsContentHash() bool {
+	return r.isContentHash
 }
 
 // WithDigest returns an updated instance with the given metadata set.
@@ -405,6 +415,15 @@ func (r Result[T]) WithDigest(customDigest digest.Digest) Result[T] {
 	return Result[T]{
 		constructor: r.constructor.WithDigest(customDigest),
 		self:        r.self,
+	}
+}
+
+func (r Result[T]) WithID(id *call.ID) AnyResult {
+	return Result[T]{
+		constructor:        id,
+		self:               r.self,
+		postCall:           r.postCall,
+		safeToPersistCache: r.safeToPersistCache,
 	}
 }
 
@@ -454,6 +473,23 @@ func (r ObjectResult[T]) WithObjectDigest(customDigest digest.Digest) ObjectResu
 		Result: Result[T]{
 			constructor: r.constructor.WithDigest(customDigest),
 			self:        r.self,
+		},
+		class: r.class,
+	}
+}
+
+func (r ObjectResult[T]) WithIsContentHash(b bool) AnyResult {
+	r.isContentHash = b
+	return r
+}
+
+func (r ObjectResult[T]) WithID(id *call.ID) AnyResult {
+	return ObjectResult[T]{
+		Result: Result[T]{
+			constructor:        id,
+			self:               r.self,
+			postCall:           r.postCall,
+			safeToPersistCache: r.safeToPersistCache,
 		},
 		class: r.class,
 	}
@@ -744,6 +780,10 @@ func (r ObjectResult[T]) call(
 		return nil, fmt.Errorf("post-call error: %w", err)
 	}
 	val := res.Result()
+
+	if val != nil && val.IsContentHash() {
+		val = val.WithID(newID.WithDigest(val.ID().Digest()))
+	}
 
 	// If the returned val is IDable and has a different digest than the original, then
 	// add that different digest as a cache key for this val.
