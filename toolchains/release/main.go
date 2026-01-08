@@ -345,11 +345,11 @@ func (r *Release) Publish( //nolint:gocyclo
 				artifacts[i] = artifact
 
 				// FIXME: cleanup & simplify
-				err = func() (rerr error) {
+				func() (rerr error) {
 					defer func() {
 						if rerr != nil {
 							artifact.Notify = false
-							artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+							artifact.Errors = append(artifact.Errors, dag.Error(rerr.Error()))
 						}
 					}()
 					if dryRun {
