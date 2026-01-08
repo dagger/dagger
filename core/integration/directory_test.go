@@ -2696,6 +2696,13 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, 0o750, permissions)
 	})
+	t.Run("empty-path-fails", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stat := c.Directory().Stat("")
+
+		_, err := stat.Name(ctx)
+		require.ErrorContains(t, err, ": no such file or directory")
+	})
 }
 
 func (DirectorySuite) TestExistsUsingAbsoluteSymlink(ctx context.Context, t *testctx.T) {
