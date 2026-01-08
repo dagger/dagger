@@ -35,6 +35,7 @@ from dagger.mod._utils import (
     is_self,
     list_of,
     normalize_name,
+    to_camel_case,
 )
 
 CHECK_DEF_KEY: str = "__dagger_check__"
@@ -56,7 +57,8 @@ class Field:
     name: APIName = dataclasses.field(init=False)
 
     def __post_init__(self):
-        self.name = self.meta.name or normalize_name(self.original_name)
+        # Use camelCase for API name (what the engine sends during invocation)
+        self.name = self.meta.name or to_camel_case(normalize_name(self.original_name))
 
 
 @dataclasses.dataclass
@@ -85,6 +87,17 @@ class Function(Generic[P, R]):
             if self.meta.name is not None
             else normalize_name(self.original_name)
         )
+
+    @cached_property
+    def api_name(self) -> str:
+        """Return the camelCase API name for this function.
+
+        This is the name that will be used in the Dagger API and sent by the
+        engine during invocation.
+        """
+        if self.meta.name is not None:
+            return self.meta.name
+        return to_camel_case(normalize_name(self.original_name))
 
     @property
     def doc(self):
@@ -149,8 +162,10 @@ class Function(Generic[P, R]):
         if isinstance(annotation, dataclasses.InitVar):
             annotation: Any = annotation.type
 
+        # Use camelCase for API name (what the engine sends during invocation)
+        api_name = get_alt_name(param.annotation) or to_camel_case(normalize_name(param.name))
         return Parameter(
-            name=get_alt_name(param.annotation) or normalize_name(param.name),
+            name=api_name,
             signature=param,
             resolved_type=annotation,
             is_nullable=is_nullable(TypeHint(annotation)),
