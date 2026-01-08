@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
@@ -124,13 +125,27 @@ func (r *CheckGroup) List(ctx context.Context) ([]*Check, error) {
 func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	r = r.Clone()
 
-	dag, err := dagForCheck(ctx, r.Module)
-	if err != nil {
-		return nil, err
-	}
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Cache dag servers per module to avoid redundant setup
+	dagCache := make(map[string]*dagql.Server)
+	var dagCacheMu sync.Mutex
+	getDag := func(ctx context.Context, mod *Module) (*dagql.Server, error) {
+		dagCacheMu.Lock()
+		defer dagCacheMu.Unlock()
+		key := mod.Name()
+		if dag, ok := dagCache[key]; ok {
+			return dag, nil
+		}
+		dag, err := dagForCheck(ctx, mod)
+		if err != nil {
+			return nil, err
+		}
+		dagCache[key] = dag
+		return dag, nil
 	}
 
 	eg := new(errgroup.Group)
@@ -154,6 +169,15 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 				span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, check.Passed))
 				telemetry.EndWithCause(span, &rerr)
 			}()
+			// For aggregated groups (Module==nil), use check's own module
+			mod := r.Module
+			if mod == nil {
+				mod = check.Module
+			}
+			dag, err := getDag(ctx, mod)
+			if err != nil {
+				return err
+			}
 			return check.run(ctx, dag, clientMD.EnableCloudScaleOut)
 		})
 	}
@@ -209,7 +233,9 @@ func (r *CheckGroup) Clone() *CheckGroup {
 	for i := range cp.Checks {
 		cp.Checks[i] = cp.Checks[i].Clone()
 	}
-	cp.Module = r.Module.Clone()
+	if r.Module != nil {
+		cp.Module = r.Module.Clone()
+	}
 	return &cp
 }
 
@@ -219,8 +245,12 @@ func (c *Check) Name() string {
 
 func (c *Check) Clone() *Check {
 	cp := *c
-	cp.Module = c.Module.Clone()
-	cp.Source = c.Source.Clone()
+	if c.Module != nil {
+		cp.Module = c.Module.Clone()
+	}
+	if c.Source != nil {
+		cp.Source = c.Source.Clone()
+	}
 	return &cp
 }
 

@@ -747,6 +747,41 @@ Without arguments, the current working directory is replaced by the initial cont
 		)
 	}
 
+	// Add current-env command that creates an env with the current module installed
+	stdlib = append(stdlib, &ShellCommand{
+		Use:         "current-env",
+		Description: "Initialize an environment with the current module installed",
+		State:       NoState,
+		Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+			def := h.GetDef(nil)
+			if def.Source == nil {
+				return fmt.Errorf("no module loaded")
+			}
+			// Get the module ID from the module source
+			moduleID, err := def.Source.AsModule().ID(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get module ID: %w", err)
+			}
+			// Create an env state
+			emptySt := h.NewState()
+			envSt, err := h.functionCall(ctx, &emptySt, "env", []string{})
+			if err != nil {
+				return fmt.Errorf("failed to create env: %w", err)
+			}
+			// Get the withModule function definition to bypass argument parsing
+			// which would try to resolve the module ID as a path
+			withModuleFn, err := envSt.Function().GetNextDef(def, "withModule")
+			if err != nil {
+				return fmt.Errorf("failed to get withModule function: %w", err)
+			}
+			// Directly construct the state with the module ID, bypassing parseArgumentValues
+			finalSt := envSt.WithCall(withModuleFn, map[string]any{
+				"module": string(moduleID),
+			})
+			return h.Save(ctx, finalSt)
+		},
+	})
+
 	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
 		return cmp.Compare(x.Use, y.Use)
 	})
