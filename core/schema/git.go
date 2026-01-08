@@ -635,7 +635,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	excludes := []string{".git", ".git/**"}
-	contentDigest, err := core.GetContentHashFromDirectoryFiltered(ctx, bk, inst, excludes)
+	contentDigest, err := core.GetContentHashFromDirectoryFiltered(ctx, bk, inst, excludes, false)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get content hash: %w", err)
 	}

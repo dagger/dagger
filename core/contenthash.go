@@ -44,7 +44,7 @@ func GetContentHashFromDirectory(
 	bk *buildkit.Client,
 	dirInst dagql.ObjectResult[*Directory],
 ) (digest.Digest, error) {
-	return GetContentHashFromDirectoryFiltered(ctx, bk, dirInst, nil)
+	return GetContentHashFromDirectoryFiltered(ctx, bk, dirInst, nil, true)
 }
 
 // GetContentHashFromDirectoryFiltered computes a content hash for a directory,
@@ -54,6 +54,7 @@ func GetContentHashFromDirectoryFiltered(
 	bk *buildkit.Client,
 	dirInst dagql.ObjectResult[*Directory],
 	exclude []string,
+	followLinks bool,
 ) (digest.Digest, error) {
 	if dirInst.Self() == nil {
 		return "", fmt.Errorf("directory instance is nil")
@@ -73,7 +74,7 @@ func GetContentHashFromDirectoryFiltered(
 		dirPath += "/"
 	}
 	opts := bkcontenthash.ChecksumOpts{
-		FollowLinks: true,
+		FollowLinks: followLinks,
 	}
 	if len(exclude) > 0 {
 		opts.ExcludePatterns = exclude
