@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/contenthash"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 var checksumG singleflight.Group[string, digest.Digest]
@@ -71,7 +72,9 @@ func GetContentHashFromDirectoryFiltered(
 		// omit directory name from the hash
 		dirPath += "/"
 	}
-	opts := bkcontenthash.ChecksumOpts{}
+	opts := bkcontenthash.ChecksumOpts{
+		FollowLinks: true,
+	}
 	if len(exclude) > 0 {
 		opts.ExcludePatterns = exclude
 	}
@@ -156,7 +159,11 @@ func GetContentHashFromDefWithOpts(
 	}
 	ref := workerRef.ImmutableRef
 
-	key := ref.ID() + "/" + strings.TrimPrefix(subdir, "/")
+	key := strings.Join([]string{
+		ref.ID(),
+		strings.TrimPrefix(subdir, "/"),
+		checksumOptsKey(opts, storeMetadata),
+	}, "\x00")
 	dgst, _, err := checksumG.Do(ctx, key, func(ctx context.Context) (_ digest.Digest, rerr error) {
 		if err := ref.Finalize(ctx); err != nil {
 			return "", fmt.Errorf("failed to finalize ref: %w", err)
@@ -208,4 +215,14 @@ func GetContentHashFromDefWithOpts(
 	})
 
 	return dgst, err
+}
+
+func checksumOptsKey(opts bkcontenthash.ChecksumOpts, storeMetadata bool) string {
+	return hashutil.HashStrings(
+		fmt.Sprintf("followlinks=%t", opts.FollowLinks),
+		fmt.Sprintf("wildcard=%t", opts.Wildcard),
+		fmt.Sprintf("store=%t", storeMetadata),
+		"include="+strings.Join(opts.IncludePatterns, "\n"),
+		"exclude="+strings.Join(opts.ExcludePatterns, "\n"),
+	).String()
 }
