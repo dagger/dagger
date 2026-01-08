@@ -3494,11 +3494,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	// save a result for the final module based on its content hash, currently used in the _contextDirectory API
-	contentCacheKey := mod.ContentDigestCacheKey()
-	contentHashedInst := inst.WithObjectDigest(digest.Digest(contentCacheKey.CallKey))
-	_, err = dag.Cache.GetOrInitializeValue(ctx, contentCacheKey, contentHashedInst)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
+	if err := core.CacheModuleByContentDigest(ctx, dag, inst); err != nil {
+		return inst, fmt.Errorf("failed to cache module by content digest: %w", err)
 	}
 
 	return inst, nil
