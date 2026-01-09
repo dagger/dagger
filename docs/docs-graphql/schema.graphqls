@@ -3994,6 +3994,9 @@ type ModuleSource {
   """The engine version of the module."""
   engineVersion: String!
 
+  """The name of the module that this module extends, if any."""
+  extends: String!
+
   """
   The generated files and directories made on top of the module source's context directory.
   """

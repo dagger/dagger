@@ -1075,6 +1075,34 @@ func (mod Module) Clone() *Module {
 		cp.SDKConfig = cp.SDKConfig.Clone()
 	}
 
+	// Clone toolchain-related maps to ensure per-session isolation
+	if mod.ToolchainModules != nil {
+		cp.ToolchainModules = make(map[string]*Module, len(mod.ToolchainModules))
+		for k, v := range mod.ToolchainModules {
+			cp.ToolchainModules[k] = v
+		}
+	}
+
+	if mod.ToolchainArgumentConfigs != nil {
+		cp.ToolchainArgumentConfigs = make(map[string][]*modules.ModuleConfigArgument, len(mod.ToolchainArgumentConfigs))
+		for k, v := range mod.ToolchainArgumentConfigs {
+			// Create a new slice copy
+			configs := make([]*modules.ModuleConfigArgument, len(v))
+			copy(configs, v)
+			cp.ToolchainArgumentConfigs[k] = configs
+		}
+	}
+
+	if mod.ToolchainIgnoreChecks != nil {
+		cp.ToolchainIgnoreChecks = make(map[string][]string, len(mod.ToolchainIgnoreChecks))
+		for k, v := range mod.ToolchainIgnoreChecks {
+			// Create a new slice copy
+			checks := make([]string, len(v))
+			copy(checks, v)
+			cp.ToolchainIgnoreChecks[k] = checks
+		}
+	}
+
 	return &cp
 }
 

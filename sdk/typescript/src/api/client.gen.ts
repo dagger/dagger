@@ -9708,6 +9708,7 @@ export class ModuleSource extends BaseClient {
   private readonly _configExists?: boolean = undefined
   private readonly _digest?: string = undefined
   private readonly _engineVersion?: string = undefined
+  private readonly _extends?: string = undefined
   private readonly _htmlRepoURL?: string = undefined
   private readonly _htmlURL?: string = undefined
   private readonly _kind?: ModuleSourceKind = undefined
@@ -9734,6 +9735,7 @@ export class ModuleSource extends BaseClient {
     _configExists?: boolean,
     _digest?: string,
     _engineVersion?: string,
+    _extends?: string,
     _htmlRepoURL?: string,
     _htmlURL?: string,
     _kind?: ModuleSourceKind,
@@ -9757,6 +9759,7 @@ export class ModuleSource extends BaseClient {
     this._configExists = _configExists
     this._digest = _digest
     this._engineVersion = _engineVersion
+    this._extends = _extends
     this._htmlRepoURL = _htmlRepoURL
     this._htmlURL = _htmlURL
     this._kind = _kind
@@ -9938,6 +9941,21 @@ export class ModuleSource extends BaseClient {
     }
 
     const ctx = this._ctx.select("engineVersion")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The name of the module that this module extends, if any.
+   */
+  extends_ = async (): Promise<string> => {
+    if (this._extends) {
+      return this._extends
+    }
+
+    const ctx = this._ctx.select("extends")
 
     const response: Awaited<string> = await ctx.execute()
 

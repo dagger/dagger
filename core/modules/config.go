@@ -62,6 +62,12 @@ type ModuleConfig struct {
 	// Toolchain modules
 	Toolchains []*ModuleConfigDependency `json:"toolchains,omitempty"`
 
+	// Extends specifies the name of another module that this module extends.
+	// When set, this module inherits all functions and fields from the extended module,
+	// allowing it to override specific implementations while inheriting the rest.
+	// The extended module must be present in the Dependencies list.
+	Extends string `json:"extends,omitempty"`
+
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
 

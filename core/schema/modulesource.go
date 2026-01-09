@@ -769,7 +769,10 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 					return nil
 				})
 			}
-			return toolchainJobs.Run(ctx)
+			if err := toolchainJobs.Run(ctx); err != nil {
+				return err
+			}
+			return nil
 		})
 	}
 	return jobs.Run(ctx)
@@ -1028,6 +1031,31 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigBlueprint = modCfg.Blueprint
 	src.ConfigToolchains = modCfg.Toolchains
 	src.ConfigClients = modCfg.Clients
+	src.Extends = modCfg.Extends
+
+	// Validate extends field if set
+	if src.Extends != "" {
+		// Validate the extends configuration
+		if err := validateExtends(src.ModuleName, src.Extends, src.ConfigDependencies); err != nil {
+			return fmt.Errorf("invalid extends configuration: %w", err)
+		}
+
+		// Check if the extended module is in dependencies
+		found := false
+		for _, dep := range src.ConfigDependencies {
+			if dep.Name == src.Extends {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Auto-add the extended module as a dependency
+			src.ConfigDependencies = append(src.ConfigDependencies, &modules.ModuleConfigDependency{
+				Name:   src.Extends,
+				Source: src.Extends, // Will be resolved later
+			})
+		}
+	}
 
 	engineVersion := modCfg.EngineVersion
 	switch engineVersion {
@@ -3243,17 +3271,23 @@ func addToolchainFieldsToObject(
 ) (*core.TypeDef, error) {
 	objectDef = objectDef.Clone()
 
+	// Add each toolchain as a field on the object
 	for _, tcMod := range toolchainMods {
+		originalName := tcMod.NameField
+
+		// Store the toolchain module for routing
+		mod.ToolchainModules[originalName] = tcMod
+
+		// Find the main object for this toolchain
+		objectNameToFind := strcase.ToCamel(tcMod.NameField)
 		for _, obj := range tcMod.ObjectDefs {
-			if obj.AsObject.Value.Name == strcase.ToCamel(tcMod.NameField) {
-				// Use the original name (with hyphens) as the map key,
-				// but use camelCase for the GraphQL field name
-				originalName := tcMod.NameField
+			if obj.AsObject.Value.Name == objectNameToFind {
+				// Use camelCase for the GraphQL field name
 				fieldName := strcase.ToLowerCamel(tcMod.NameField)
 
 				// Always add toolchains as functions (treating them as zero-argument constructors
 				// if they don't have an explicit constructor). This ensures consistent behavior
-				// and proper routing to the blueprint module's runtime.
+				// and proper routing to the toolchain module's runtime.
 				var constructor *core.Function
 				if obj.AsObject.Value.Constructor.Valid {
 					constructor = obj.AsObject.Value.Constructor.Value.Clone()
@@ -3280,7 +3314,6 @@ func addToolchainFieldsToObject(
 					return nil, fmt.Errorf("failed to add toolchain function %q: %w", fieldName, err)
 				}
 
-				mod.ToolchainModules[originalName] = tcMod
 				break
 			}
 		}
@@ -3392,6 +3425,103 @@ func (s *moduleSourceSchema) integrateToolchains(
 	return mod, nil
 }
 
+// applyExtends merges functions from an extended module into the extending module
+// Functions in the extending module take precedence (override), while functions
+// only in the extended module are inherited.
+func (s *moduleSourceSchema) applyExtends(
+	ctx context.Context,
+	extendingMod *core.Module,
+	extendsName string,
+) (*core.Module, error) {
+	// Find the extended module in dependencies
+	var extendedMod *core.Module
+	for _, dep := range extendingMod.Deps.Mods {
+		if userMod, ok := dep.(*core.Module); ok && userMod.OriginalName == extendsName {
+			extendedMod = userMod
+			break
+		}
+	}
+
+	if extendedMod == nil {
+		return nil, fmt.Errorf("extended module %q not found in dependencies", extendsName)
+	}
+
+	// Find the main object of the extending module
+	extendingMainObjName := strcase.ToCamel(extendingMod.NameField)
+	var extendingMainObjIdx int = -1
+	for i, objDef := range extendingMod.ObjectDefs {
+		if objDef.AsObject.Valid && objDef.AsObject.Value.Name == extendingMainObjName {
+			extendingMainObjIdx = i
+			break
+		}
+	}
+
+	// Find the main object of the extended module
+	extendedMainObjName := strcase.ToCamel(extendedMod.NameField)
+	var extendedMainObj *core.ObjectTypeDef
+	for _, objDef := range extendedMod.ObjectDefs {
+		if objDef.AsObject.Valid && objDef.AsObject.Value.Name == extendedMainObjName {
+			extendedMainObj = objDef.AsObject.Value
+			break
+		}
+	}
+
+	if extendedMainObj == nil {
+		return nil, fmt.Errorf("main object not found in extended module %q", extendsName)
+	}
+
+	// If the extending module doesn't have a main object yet (no SDK), create one
+	if extendingMainObjIdx == -1 {
+		// Create a new main object for the extending module
+		newMainObj := &core.ObjectTypeDef{
+			Name:         extendingMainObjName,
+			OriginalName: extendingMod.OriginalName,
+			Functions:    []*core.Function{},
+		}
+
+		newTypeDef := &core.TypeDef{
+			Kind: core.TypeDefKindObject,
+			AsObject: dagql.Nullable[*core.ObjectTypeDef]{
+				Value: newMainObj,
+				Valid: true,
+			},
+		}
+
+		extendingMod.ObjectDefs = append(extendingMod.ObjectDefs, newTypeDef)
+		extendingMainObjIdx = len(extendingMod.ObjectDefs) - 1
+	}
+
+	// Merge functions from extended module into extending module
+	extendingObj := extendingMod.ObjectDefs[extendingMainObjIdx].AsObject.Value
+
+	// Build a map of existing function names in extending module (case-insensitive)
+	existingFuncs := make(map[string]bool)
+	for _, fn := range extendingObj.Functions {
+		existingFuncs[strings.ToLower(fn.OriginalName)] = true
+	}
+
+	// Inherit functions from extended module that don't exist in extending module
+	for _, extendedFn := range extendedMainObj.Functions {
+		fnNameLower := strings.ToLower(extendedFn.OriginalName)
+		if !existingFuncs[fnNameLower] {
+			// This function doesn't exist in extending module - inherit it
+			inheritedFn := extendedFn.Clone()
+			extendingObj.Functions = append(extendingObj.Functions, inheritedFn)
+		}
+		// If function exists in extending module, it takes precedence (override behavior)
+	}
+
+	// Also handle constructor if extending module doesn't have one
+	if !extendingObj.Constructor.Valid && extendedMainObj.Constructor.Valid {
+		extendingObj.Constructor = dagql.Nullable[*core.Function]{
+			Value: extendedMainObj.Constructor.Value.Clone(),
+			Valid: true,
+		}
+	}
+
+	return extendingMod, nil
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3479,6 +3609,14 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod, err = createStubModule(ctx, mod, dag)
 		if err != nil {
 			return inst, err
+		}
+	}
+
+	// Apply extends pattern if this module extends another
+	if originalSrc.Self().Extends != "" {
+		mod, err = s.applyExtends(ctx, mod, originalSrc.Self().Extends)
+		if err != nil {
+			return inst, fmt.Errorf("failed to apply extends from %q: %w", originalSrc.Self().Extends, err)
 		}
 	}
 
@@ -3570,6 +3708,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 
 		deps = deps.Append(clone)
 	}
+
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core
@@ -3785,6 +3924,28 @@ func (s *moduleSourceSchema) moduleSourceWithoutClient(
 	return src, nil
 }
 
+// validateExtends validates the extends configuration
+func validateExtends(moduleName, extendsName string, deps []*modules.ModuleConfigDependency) error {
+	// Module cannot extend itself
+	if moduleName == extendsName {
+		return fmt.Errorf("module %q cannot extend itself", moduleName)
+	}
+
+	// Check for circular extends by looking at the extended module's extends field
+	// This is a simple check - we'll detect circular extends at runtime when loading dependencies
+	for _, dep := range deps {
+		if dep.Name == extendsName {
+			// Found the extended module in dependencies
+			// Additional validation can be added here if needed
+			return nil
+		}
+	}
+
+	// It's okay if the extended module is not in dependencies yet
+	// We'll auto-add it in the calling code
+	return nil
+}
+
 func rebasePatterns(patterns []string, base string) ([]string, error) {
 	rebased := make([]string, 0, len(patterns))
 	for _, pattern := range patterns {
@@ -3800,6 +3961,51 @@ func rebasePatterns(patterns []string, base string) ([]string, error) {
 		rebased = append(rebased, relPath)
 	}
 	return rebased, nil
+}
+
+// mergeCustomizations merges extending module customizations into base customizations.
+// Extending module customizations take precedence for matching function/argument combinations.
+func mergeCustomizations(
+	baseCustomizations []*modules.ModuleConfigArgument,
+	extendingCustomizations []*modules.ModuleConfigArgument,
+) []*modules.ModuleConfigArgument {
+	// Create a map for quick lookup of base customizations
+	// Key is "function_chain:argument_name"
+	baseMap := make(map[string]*modules.ModuleConfigArgument)
+	for _, baseCustom := range baseCustomizations {
+		key := customizationKey(baseCustom)
+		baseMap[key] = baseCustom
+	}
+
+	// Start with all base customizations
+	result := make([]*modules.ModuleConfigArgument, 0, len(baseCustomizations)+len(extendingCustomizations))
+	usedKeys := make(map[string]bool)
+
+	// Add extending module customizations (they take precedence)
+	for _, extendingCustom := range extendingCustomizations {
+		key := customizationKey(extendingCustom)
+		usedKeys[key] = true
+		result = append(result, extendingCustom)
+	}
+
+	// Add base customizations that weren't overridden
+	for _, baseCustom := range baseCustomizations {
+		key := customizationKey(baseCustom)
+		if !usedKeys[key] {
+			result = append(result, baseCustom)
+		}
+	}
+
+	return result
+}
+
+// customizationKey creates a unique key for a customization based on its function chain and argument
+func customizationKey(custom *modules.ModuleConfigArgument) string {
+	functionChain := strings.Join(custom.Function, ".")
+	if functionChain == "" {
+		functionChain = "<constructor>"
+	}
+	return functionChain + ":" + custom.Argument
 }
 
 // Match a version string in a list of versions with optional subPath

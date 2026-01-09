@@ -273,6 +273,277 @@ dagger check -l
 
 This will list all checks that will run, excluding any that match your `ignoreChecks` patterns.
 
+## Extending Toolchains
+
+Extending toolchains allows you to customize existing toolchains by creating a new module that inherits and optionally overrides specific functions. When you need more control than what the `customizations` configuration provides, the extends pattern lets you selectively override toolchain behavior while automatically inheriting the rest of the base toolchain's functionality.
+
+### What is Extending?
+
+Extending is a module pattern where you create a new module that inherits all functions from a base module (called the "extended module"). When you extend a module:
+
+- Your module automatically inherits all functions from the extended module
+- You can override specific functions by implementing them in your module
+- Functions you don't implement are inherited unchanged from the extended module
+- You only install your extending module, not both modules
+
+This creates a simpler user experience compared to the old overlay pattern, where both modules needed to be installed.
+
+### When to Use Extends
+
+Consider extending a toolchain when:
+
+- **Selective customization**: You want to override a few functions while keeping the rest unchanged
+- **Adding integrations**: You want to enhance specific functions with additional functionality
+- **Environment-specific behavior**: Different deployment targets need different toolchain configurations
+- **Advanced parameter processing**: You need to transform or validate parameters before calling the base implementation
+- **Adding observability**: You want to add logging, metrics, or tracing around specific operations
+
+### Creating an Extending Module
+
+To create a module that extends an existing toolchain:
+
+1. **Create a new Dagger module** that will extend the base toolchain:
+
+```shell
+mkdir my-extended-builder
+cd my-extended-builder
+dagger init --sdk=go
+```
+
+2. **Add the base toolchain as a dependency**:
+
+```shell
+dagger install github.com/example/base-builder
+```
+
+3. **Add the `extends` field to your `dagger.json`**:
+
+```json
+{
+  "name": "my-extended-builder",
+  "sdk": {
+    "source": "go"
+  },
+  "extends": "base-builder",
+  "dependencies": [
+    {
+      "name": "base-builder",
+      "source": "github.com/example/base-builder"
+    }
+  ]
+}
+```
+
+4. **Implement only the functions you want to override**. Functions you don't implement will be automatically inherited:
+
+```go
+package main
+
+import (
+    "context"
+    "dagger/my-extended-builder/internal/dagger"
+)
+
+type MyExtendedBuilder struct{}
+
+// Override the Build function from the base toolchain
+func (m *MyExtendedBuilder) Build(
+    ctx context.Context,
+    source *dagger.Directory,
+) (*dagger.Container, error) {
+    // Call the base toolchain with custom parameters
+    return dag.BaseBuilder().
+        Build(ctx, source, dagger.BaseBuilderBuildOpts{
+            Optimize: true,
+            Target:   "production",
+        })
+}
+
+// Add new functionality not in the base toolchain
+func (m *MyExtendedBuilder) BuildAndTest(
+    ctx context.Context,
+    source *dagger.Directory,
+) (string, error) {
+    // Build using base toolchain
+    container, err := dag.BaseBuilder().Build(ctx, source)
+    if err != nil {
+        return "", err
+    }
+    
+    // Run tests using another toolchain
+    return dag.Tester().Test(ctx, container)
+}
+
+// Other functions like Package(), Deploy(), etc. are automatically inherited
+// from the base-builder module and don't need to be reimplemented
+```
+
+5. **Install only your extending module**:
+
+```shell
+cd /path/to/your/app
+dagger toolchain install /path/to/my-extended-builder
+```
+
+Note: You only install the extending module. The base toolchain is automatically available as a dependency.
+
+### How Extends Works
+
+When you use the `extends` pattern:
+
+1. **Automatic inheritance**: All functions from the extended module are automatically available in your module
+2. **Selective override**: Only functions you implement in your module override the base implementation
+3. **Base as dependency**: The extended module is a regular dependency, accessible via `dag.BaseModule()`
+4. **Single installation**: Users only install your extending module, not both modules
+5. **Customizations merge**: Any `customizations` defined for the extended module and your module are merged, with your customizations taking precedence
+
+### Example: Extending a Build Toolchain
+
+Let's say there's a generic Go build toolchain but you need project-specific customizations:
+
+**Base toolchain** (`github.com/example/go-builder`):
+```go
+type GoBuilder struct{}
+
+func (b *GoBuilder) Build(
+    ctx context.Context,
+    source *dagger.Directory,
+    // +optional
+    // +default="latest"
+    goVersion string,
+) (*dagger.Container, error) {
+    return dag.Container().
+        From("golang:" + goVersion).
+        WithDirectory("/src", source).
+        WithWorkdir("/src").
+        WithExec([]string{"go", "build", "-o", "app"}).
+        File("/src/app")
+}
+
+func (b *GoBuilder) Test(
+    ctx context.Context,
+    source *dagger.Directory,
+) (string, error) {
+    return dag.Container().
+        From("golang:latest").
+        WithDirectory("/src", source).
+        WithWorkdir("/src").
+        WithExec([]string{"go", "test", "./..."}).
+        Stdout(ctx)
+}
+```
+
+**Your extending module** (`./my-builder`):
+```go
+type MyBuilder struct{}
+
+// Override Build to add private dependencies
+func (m *MyBuilder) Build(
+    ctx context.Context,
+    source *dagger.Directory,
+) (*dagger.Container, error) {
+    // Pre-process: Add private dependencies
+    sourceWithDeps := source.
+        WithFile(".netrc", dag.Host().EnvVariable("NETRC_FILE"))
+    
+    // Call base toolchain with your custom Go version
+    container, err := dag.GoBuilder().Build(ctx, sourceWithDeps, 
+        dagger.GoBuilderBuildOpts{GoVersion: "1.21"})
+    if err != nil {
+        return nil, err
+    }
+    
+    // Post-process: Add runtime dependencies
+    return container.
+        WithExec([]string{"apt-get", "update"}).
+        WithExec([]string{"apt-get", "install", "-y", "ca-certificates"}), nil
+}
+
+// Test() is automatically inherited from go-builder - no need to reimplement!
+```
+
+**dagger.json** for your extending module:
+```json
+{
+  "name": "my-builder",
+  "sdk": {
+    "source": "go"
+  },
+  "extends": "go-builder",
+  "dependencies": [
+    {
+      "name": "go-builder",
+      "source": "github.com/example/go-builder"
+    }
+  ]
+}
+```
+
+**Install and use**:
+```shell
+# Install only your extending module
+dagger toolchain install ./my-builder
+
+# Both Build (overridden) and Test (inherited) are available
+dagger call my-builder build --source ./
+dagger call my-builder test --source ./
+```
+
+### Extends with Customizations
+
+The extends pattern works seamlessly with the `customizations` configuration. Customizations from both the extended and extending modules are merged, with extending module customizations taking precedence:
+
+```json
+{
+  "name": "my-builder",
+  "extends": "base-builder",
+  "dependencies": [
+    {
+      "name": "base-builder",
+      "source": "github.com/example/base-builder",
+      "customizations": [
+        {
+          "function": ["build"],
+          "argument": "optimize",
+          "default": "false"
+        }
+      ]
+    }
+  ]
+}
+```
+
+You can also add customizations at the toolchain level when installing an extending module.
+
+### Extending Without an SDK
+
+You can also create an extending module without any SDK code. This is useful when you only want to use customizations:
+
+**dagger.json**:
+```json
+{
+  "name": "my-customized-builder",
+  "extends": "base-builder",
+  "dependencies": [
+    {
+      "name": "base-builder",
+      "source": "github.com/example/base-builder"
+    }
+  ]
+}
+```
+
+In this case, all functions from `base-builder` are inherited unchanged, but you can still apply customizations through the configuration.
+
+### Extends Best Practices
+
+1. **Keep extending modules focused**: An extending module should enhance or customize a single base module, not combine unrelated functionality
+2. **Document overridden functions**: Clearly document which base functions your module overrides and how they differ
+3. **Leverage base functionality**: Call through to the base module rather than reimplementing its logic when possible
+4. **Use for project-specific needs**: Extending is ideal for project-specific customizations while keeping the base module generic
+5. **Test independently**: Write tests that verify your extending module's behavior separate from the base module
+6. **Minimize overrides**: Only override functions that truly need customization - inherited functions are automatically kept in sync with the base module
+
 ## Best Practices
 
 ### Keep Toolchains Focused

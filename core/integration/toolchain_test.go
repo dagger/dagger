@@ -374,3 +374,35 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 		require.Regexp(t, `passingContainer.*OK`, out)
 	})
 }
+
+// TestToolchainExtends tests the new "extends" pattern for module extension.
+// A module can extend another module by:
+// - Adding "extends": "moduleName" field at the top level of dagger.json
+// - Including the extended module in dependencies
+// - Functions in the extending module override those in the extended module
+// - Functions only in the extended module are inherited
+func (ToolchainSuite) TestToolchainExtends(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("basic extends with function overrides and inheritance", func(ctx context.Context, t *testctx.T) {
+		// Install the hello-simple-extends module which extends the hello-simple module
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "../hello-simple-extends"))
+
+		// Test Message (overridden by hello-simple-extends)
+		out, err := modGen.
+			With(daggerExec("call", "hello-simple-extends", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "extended: hello from simple")
+
+		// Test Goodbye (inherited from hello-simple base module)
+		out, err = modGen.
+			With(daggerExec("call", "hello-simple-extends", "goodbye")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "goodbye from simple")
+	})
+}

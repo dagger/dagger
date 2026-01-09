@@ -406,6 +406,18 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
 
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
+
+	// Determine the effective module to use for function creation
+	// If the TypeDef has a SourceModuleName (set when extending a module), use that module instead
+	effectiveMod := obj.Module
+	if objDef.SourceModuleName != "" && objDef.SourceModuleName != obj.Module.OriginalName {
+		// TypeDef indicates this should use a different module (extends scenario)
+		// Look up the extending module from the parent module's toolchains
+		if extendingMod, ok := obj.Module.ToolchainModules[objDef.SourceModuleName]; ok {
+			effectiveMod = extendingMod
+		}
+	}
+
 	for _, fun := range obj.TypeDef.Functions {
 		// Check if this is a toolchain proxy function
 		if obj.Module.ToolchainModules != nil {
@@ -419,7 +431,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 			}
 		}
 
-		objFun, err := objFun(ctx, obj.Module, objDef, fun, dag)
+		objFun, err := objFun(ctx, effectiveMod, objDef, fun, dag)
 		if err != nil {
 			return nil, err
 		}
@@ -464,6 +476,15 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 }
 
+// getMapKeys is a helper to get keys from a map[string]*Module for debugging
+func getMapKeys(m map[string]*Module) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // toolchainProxyFunction creates a function resolver that calls a toolchain module's constructor.
 // This is used when a toolchain has a constructor - instead of returning a pre-initialized object,
 // it calls the constructor function with the provided arguments.
@@ -475,6 +496,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no objects", tcMod.Name())
 	}
 
+	// Get the main object definition
 	var mainObjDef *ObjectTypeDef
 	for _, objDef := range tcMod.ObjectDefs {
 		if objDef.AsObject.Valid && gqlObjectName(objDef.AsObject.Value.OriginalName) == gqlObjectName(tcMod.OriginalName) {
