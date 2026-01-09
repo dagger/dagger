@@ -81,7 +81,7 @@ func (l *LibGenerator) GenerateBindings(
 		codegenArgs = append(codegenArgs, "--module-source-id", l.Opts.moduleSourceID)
 	}
 
-	if libOrigin == Bundle && l.Opts.genClient == false {
+	if libOrigin == Bundle && !l.Opts.genClient {
 		codegenArgs = append(codegenArgs, "--bundle")
 	}
 
@@ -124,7 +124,7 @@ func (l *LibGenerator) GenerateBundleLibrary(
 	// version of the library.
 	// Otherwise, we export the full library because if a client and a
 	// module coexist, they both depend on the same `sdk` directory.
-	if l.Opts.genClient && l.Opts.coexistWithModule == false {
+	if l.Opts.genClient && !l.Opts.coexistWithModule {
 		return result.
 			WithNewFile("index.ts", tsutils.StaticBundleClientIndexTS)
 	}
