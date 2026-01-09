@@ -98,13 +98,38 @@ def parse_function_from_lines [lines: list, start_idx: int] {
     # Get the export def line
     let first_line = $lines | get $start_idx
 
-    # Extract function name from "export def name ["
-    let name_match = $first_line | parse "export def {name} ["
-    if ($name_match | is-empty) {
-        return null
+    # Try to match two patterns:
+    # 1. "export def name [" - parameters on next lines
+    # 2. "export def name [] {" - no parameters, all on one line
+    # 3. "export def name[] {" - no parameters, no space before bracket
+    
+    # First, try to extract the function name
+    mut func_name = ""
+    mut params_on_same_line = false
+    
+    # Try pattern: "export def name [] {" or "export def name[] {"
+    # Check if line contains "[]" which indicates no parameters
+    if ($first_line | str contains "[]") {
+        # Extract name using string manipulation
+        # Remove "export def " prefix, then extract up to "[]"
+        let after_export = $first_line | str replace "export def " ""
+        # Split on "[]" and take the first part
+        let name_parts = $after_export | split row "[]"
+        if ($name_parts | length) > 0 {
+            $func_name = $name_parts.0 | str trim
+            $params_on_same_line = true
+        }
     }
-
-    let func_name = $name_match.0.name | str trim
+    
+    # If we didn't find a no-parameter function, try with parameters
+    if ($func_name | is-empty) {
+        # Try pattern: "export def name ["
+        let with_params_match = $first_line | parse "export def {name} ["
+        if ($with_params_match | is-empty) {
+            return null
+        }
+        $func_name = $with_params_match.0.name | str trim
+    }
 
     # Find the closing bracket for parameters by collecting all lines
     # until we find "] ->" or "] {"
@@ -114,14 +139,40 @@ def parse_function_from_lines [lines: list, start_idx: int] {
     mut return_type = "any"
     mut found_end = false
 
-    # Also look for "# Returns: type" in comments above the function
+    # Also look for "# Returns: type", "# @returns(type)", and "# @check" in comments above the function
     let comment_lines = $lines | skip (if $start_idx > 5 { $start_idx - 5 } else { 0 }) | take 5
+    mut is_check = false
+    
     for line in $comment_lines {
+        # Check for "# Returns: type" format
         if ($line | str contains "# Returns:") {
             let return_match = $line | parse "# Returns: {type}"
             if not ($return_match | is-empty) {
                 $return_type = $return_match.0.type | str trim
             }
+        }
+        
+        # Check for "# @returns(type)" format
+        if ($line | str contains "@returns(") {
+            let returns_match = $line | parse "# @returns({type})"
+            if not ($returns_match | is-empty) {
+                $return_type = $returns_match.0.type | str trim
+            }
+        }
+        
+        # Check for "# @check" annotation
+        if ($line | str contains "# @check") or ($line | str contains "#@check") {
+            $is_check = true
+        }
+    }
+
+    # If parameters are on the same line (no params case), we're done
+    if $params_on_same_line {
+        return {
+            name: $func_name
+            parameters: []
+            return_type: $return_type
+            is_check: $is_check
         }
     }
 
@@ -155,6 +206,7 @@ def parse_function_from_lines [lines: list, start_idx: int] {
         name: $func_name
         parameters: $params
         return_type: $return_type
+        is_check: $is_check
     }
 }
 
@@ -185,14 +237,55 @@ def parse_parameters [params_str: string] {
 
                 # Split by comment marker if present
                 let type_parts = $rest | split row "#"
-                let type = $type_parts.0 | str trim
-                let description = if ($type_parts | length) > 1 {
+                let type_and_default = $type_parts.0 | str trim
+                let comment = if ($type_parts | length) > 1 {
                     $type_parts.1 | str trim
                 } else {
                     ""
                 }
 
-                {name: $name, type: $type, description: $description}
+                # Check if there's a default value: "type = default"
+                mut nushell_type = $type_and_default
+                mut default_value = null
+                if ($type_and_default | str contains "=") {
+                    let default_parts = $type_and_default | split row "="
+                    $nushell_type = $default_parts.0 | str trim
+                    if ($default_parts | length) > 1 {
+                        # Extract default value and remove quotes
+                        let default_str = ($default_parts | skip 1 | str join "=" | str trim)
+                        $default_value = $default_str
+                    }
+                }
+
+                # Check if comment contains @dagger(Type) annotation
+                # Format: # @dagger(Directory) Description here
+                mut actual_type = $nushell_type
+                mut description = $comment
+                
+                if ($comment | str starts-with "@dagger(") {
+                    # Extract the Dagger type from @dagger(Type)
+                    # Parse up to the opening paren, then extract type until closing paren
+                    let dagger_match = $comment | parse "@dagger({type_and_rest}"
+                    if not ($dagger_match | is-empty) {
+                        let type_and_rest = $dagger_match.0.type_and_rest
+                        # Split on closing paren and take first part
+                        let type_parts = $type_and_rest | split row ")"
+                        $actual_type = $type_parts.0 | str trim
+                        # Description is everything after the closing paren
+                        $description = if ($type_parts | length) > 1 {
+                            $type_parts | skip 1 | str join ")" | str trim
+                        } else {
+                            ""
+                        }
+                    }
+                }
+
+                {
+                    name: $name, 
+                    type: $actual_type, 
+                    description: $description,
+                    default_value: $default_value
+                }
             }
         }
         | compact
@@ -238,21 +331,10 @@ def execute_function [stdin_data: string] {
         $args = ($args | insert $arg.name $arg.value)
     }
 
-    # Call the function dynamically
-    # Note: Nushell doesn't have great dynamic function calling, so we'll use a match
-    let result = match $func_name {
-        "hello" => (hello $args.name),
-        "add" => (add $args.a $args.b),
-        "echo" => (echo $args.message),
-        _ => {
-            error make {
-                msg: $"Unknown function: ($func_name)"
-                label: {
-                    text: "Function not found in module"
-                }
-            }
-        }
-    }
+    # NOTE: This execute_function code is not actually used.
+    # Function execution happens in executor.go instead.
+    # This is just placeholder/template code.
+    let result = "execution_not_implemented"
 
     # Return the result using Dagger API
     let result_json = $result | to json

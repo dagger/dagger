@@ -11,6 +11,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"nushell-sdk/internal/dagger"
 )
@@ -41,9 +42,10 @@ type NushellSdk struct {
 
 // FunctionParameter represents a parameter in a Nushell function
 type FunctionParameter struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Name         string  `json:"name"`
+	Type         string  `json:"type"`
+	Description  string  `json:"description"`
+	DefaultValue *string `json:"default_value"` // Pointer to distinguish between null and empty string
 }
 
 // FunctionDefinition represents a discovered Nushell function
@@ -51,6 +53,7 @@ type FunctionDefinition struct {
 	Name       string              `json:"name"`
 	Parameters []FunctionParameter `json:"parameters"`
 	ReturnType string              `json:"return_type"`
+	IsCheck    bool                `json:"is_check"`
 }
 
 const (
@@ -66,7 +69,7 @@ const (
 
 // Template for main.nu - embedded at compile time
 //
-//go:embed template/main.nu
+//go:embed templates/main.nu
 var tplMainNu string
 
 // Helper method to add a new file with contents to the module's source
@@ -160,9 +163,21 @@ func (m *NushellSdk) ModuleTypes(
 					return nil, fmt.Errorf("failed to convert parameter type for %s.%s: %w", fn.Name, param.Name, err)
 				}
 
-				funcDef = funcDef.WithArg(param.Name, paramType, dagger.FunctionWithArgOpts{
+				opts := dagger.FunctionWithArgOpts{
 					Description: param.Description,
-				})
+				}
+
+				// If parameter has a default value, make it optional
+				if param.DefaultValue != nil {
+					opts.DefaultValue = dagger.JSON(*param.DefaultValue)
+				}
+
+				funcDef = funcDef.WithArg(param.Name, paramType, opts)
+			}
+
+			// If this is a check function, mark it as such
+			if fn.IsCheck {
+				funcDef = funcDef.WithCheck()
 			}
 
 			mainObject = mainObject.WithFunction(funcDef)
@@ -309,7 +324,7 @@ func (m *NushellSdk) WithBase() *NushellSdk {
 	executor := dag.Container().
 		From("golang:1.24-alpine").
 		WithWorkdir("/build").
-		WithFile("/build/executor.go", dag.CurrentModule().Source().File("template/executor.go")).
+		WithFile("/build/executor.go", dag.CurrentModule().Source().File("runtime/executor.go")).
 		WithExec([]string{"go", "mod", "init", "executor"}).
 		WithExec([]string{"go", "get", "dagger.io/dagger@latest"}).
 		WithExec([]string{"go", "build", "-o", "executor", "executor.go"}).
@@ -326,13 +341,13 @@ func (m *NushellSdk) WithBase() *NushellSdk {
 		// Mount the runtime entrypoint
 		WithFile(
 			runtimePath,
-			dag.CurrentModule().Source().File("template/runtime.nu"),
+			dag.CurrentModule().Source().File("runtime/runtime.nu"),
 			dagger.ContainerWithFileOpts{Permissions: 0o755},
 		).
 		// Mount the dag.nu helper module for accessing Dagger API
 		WithFile(
 			"/usr/local/lib/dag.nu",
-			dag.CurrentModule().Source().File("template/dag.nu"),
+			dag.CurrentModule().Source().File("runtime/dag.nu"),
 			dagger.ContainerWithFileOpts{Permissions: 0o644},
 		).
 		// Mount the executor helper
@@ -382,6 +397,8 @@ func (m *NushellSdk) WithSource() *NushellSdk {
 }
 
 // typeStringToTypeDef converts a Nushell type string to a Dagger TypeDef
+// For Nushell, we use 'record' as the type for Dagger objects, and infer the actual
+// Dagger type from the parameter name
 func typeStringToTypeDef(typeStr string) (*dagger.TypeDef, error) {
 	switch typeStr {
 	case "string":
@@ -390,6 +407,12 @@ func typeStringToTypeDef(typeStr string) (*dagger.TypeDef, error) {
 		return dag.TypeDef().WithKind(dagger.TypeDefKindInteger), nil
 	case "bool", "boolean":
 		return dag.TypeDef().WithKind(dagger.TypeDefKindBoolean), nil
+	case "record":
+		// Records are used for Dagger objects in Nushell
+		// The actual type should be inferred from context (parameter name)
+		// For now, default to Container, but this should be improved
+		// TODO: Pass parameter name to this function for better inference
+		return dag.TypeDef().WithObject("Container"), nil
 	case "Container":
 		// Container is an object type in Dagger
 		return dag.TypeDef().WithObject("Container"), nil
@@ -412,6 +435,21 @@ func typeStringToTypeDef(typeStr string) (*dagger.TypeDef, error) {
 		// Use string as default for "any" type
 		return dag.TypeDef().WithKind(dagger.TypeDefKindString), nil
 	default:
+		// Check if it's a list type: list<type> or list
+		if strings.HasPrefix(typeStr, "list<") && strings.HasSuffix(typeStr, ">") {
+			// Extract element type from list<type>
+			elementTypeStr := typeStr[5 : len(typeStr)-1]
+			elementType, err := typeStringToTypeDef(elementTypeStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid list element type: %w", err)
+			}
+			return dag.TypeDef().WithListOf(elementType), nil
+		} else if typeStr == "list" {
+			// Untyped list, default to list<string>
+			elementType := dag.TypeDef().WithKind(dagger.TypeDefKindString)
+			return dag.TypeDef().WithListOf(elementType), nil
+		}
+
 		return nil, fmt.Errorf("unsupported type: %s", typeStr)
 	}
 }

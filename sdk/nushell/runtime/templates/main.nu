@@ -33,7 +33,7 @@ export def container-echo [
 # Example: dagger call grep-dir --directory-arg=. --pattern="TODO"
 # Returns: string
 export def grep-dir [
-    directory_arg: string  # Directory ID (pass a Directory object from Dagger)
+    directory_arg: record  # Directory to search in
     pattern: string        # The pattern to search for
 ] {
     # Create a container, mount the directory, and run grep
