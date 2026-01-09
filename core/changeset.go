@@ -126,10 +126,9 @@ type Changeset struct {
 	Before dagql.ObjectResult[*Directory] `field:"true" doc:"The older/lower snapshot to compare against."`
 	After  dagql.ObjectResult[*Directory] `field:"true" doc:"The newer/upper snapshot."`
 
-	// beforeIDEncoded and afterIDEncoded are used for JSON serialization
-	// when Before/After ObjectResults can't be directly serialized
-	beforeIDEncoded string
-	afterIDEncoded  string
+	// used for JSON deserialization, since we can't directly load IDs into
+	// objects in UnmarshalJSON
+	decoded *changesetJSONEnvelope
 
 	pathsOnce   *sync.Once
 	cachedPaths *ChangesetPaths
@@ -138,23 +137,15 @@ type Changeset struct {
 
 // changesetJSONEnvelope is used for JSON serialization of Changeset
 type changesetJSONEnvelope struct {
-	BeforeID string `json:"beforeId"`
-	AfterID  string `json:"afterId"`
+	BeforeID dagql.ID[*Directory] `json:"beforeId"`
+	AfterID  dagql.ID[*Directory] `json:"afterId"`
 }
 
 // MarshalJSON implements custom JSON marshaling that stores directory IDs
 func (ch *Changeset) MarshalJSON() ([]byte, error) {
-	beforeID, err := ch.Before.ID().Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode before ID: %w", err)
-	}
-	afterID, err := ch.After.ID().Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode after ID: %w", err)
-	}
 	return json.Marshal(changesetJSONEnvelope{
-		BeforeID: beforeID,
-		AfterID:  afterID,
+		BeforeID: dagql.NewID[*Directory](ch.Before.ID()),
+		AfterID:  dagql.NewID[*Directory](ch.After.ID()),
 	})
 }
 
@@ -164,8 +155,7 @@ func (ch *Changeset) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &env); err != nil {
 		return err
 	}
-	ch.beforeIDEncoded = env.BeforeID
-	ch.afterIDEncoded = env.AfterID
+	ch.decoded = &env
 	ch.pathsOnce = &sync.Once{}
 	return nil
 }
@@ -173,30 +163,19 @@ func (ch *Changeset) UnmarshalJSON(data []byte) error {
 // ResolveRefs loads the Before/After ObjectResults from stored IDs.
 // This must be called after JSON unmarshaling to fully reconstruct the Changeset.
 func (ch *Changeset) ResolveRefs(ctx context.Context, srv *dagql.Server) error {
-	if ch.beforeIDEncoded != "" {
-		var id DirectoryID
-		if err := id.Decode(ch.beforeIDEncoded); err != nil {
-			return fmt.Errorf("decode before ID: %w", err)
-		}
-		before, err := id.Load(ctx, srv)
-		if err != nil {
-			return fmt.Errorf("load before: %w", err)
-		}
-		ch.Before = before
-		ch.beforeIDEncoded = ""
+	if ch.decoded == nil {
+		return nil
 	}
-	if ch.afterIDEncoded != "" {
-		var id DirectoryID
-		if err := id.Decode(ch.afterIDEncoded); err != nil {
-			return fmt.Errorf("decode after ID: %w", err)
-		}
-		after, err := id.Load(ctx, srv)
-		if err != nil {
-			return fmt.Errorf("load after: %w", err)
-		}
-		ch.After = after
-		ch.afterIDEncoded = ""
+	var err error
+	ch.Before, err = ch.decoded.BeforeID.Load(ctx, srv)
+	if err != nil {
+		return fmt.Errorf("load before: %w", err)
 	}
+	ch.After, err = ch.decoded.AfterID.Load(ctx, srv)
+	if err != nil {
+		return fmt.Errorf("load after: %w", err)
+	}
+	ch.decoded = nil
 	return nil
 }
 
