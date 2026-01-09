@@ -300,9 +300,8 @@ func (s *gitSchema) url(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		return dagql.Null[dagql.String](), err
 	}
 
-	canonicalRepoRecv := resolved.ID()
-	if canonicalRepoRecv.Digest() != parent.ID().Digest() {
-		str, err := reenterType[dagql.String](ctx, canonicalRepoRecv)
+	if receiverChanged(resolved, parent) {
+		str, err := redirectScalar[dagql.String](ctx, resolved.ID())
 		if err != nil {
 			return dagql.Null[dagql.String](), err
 		}
@@ -353,9 +352,8 @@ func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult
 		return inst, err
 	}
 
-	canonicalRepoRecv := resolved.ID()
-	if canonicalRepoRecv.Digest() != parent.ID().Digest() {
-		refObj, err := reenterObject[*core.GitRef](ctx, canonicalRepoRecv)
+	if receiverChanged(resolved, parent) {
+		refObj, err := redirect[*core.GitRef](ctx, resolved.ID())
 		if err != nil {
 			return inst, err
 		}
@@ -420,23 +418,6 @@ type branchesArgs struct {
 }
 
 func (s *gitSchema) tags(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args tagsArgs) (dagql.Array[dagql.String], error) {
-	return s.resolveAndListRefs(ctx, parent, args.Patterns, func(remote *gitutil.Remote, patterns []string) []string {
-		return remote.Filter(patterns).Tags().ShortNames()
-	})
-}
-
-func (s *gitSchema) branches(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args branchesArgs) (dagql.Array[dagql.String], error) {
-	return s.resolveAndListRefs(ctx, parent, args.Patterns, func(remote *gitutil.Remote, patterns []string) []string {
-		return remote.Filter(patterns).Branches().ShortNames()
-	})
-}
-
-func (s *gitSchema) resolveAndListRefs(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.GitRepository],
-	patternInputs dagql.Optional[dagql.ArrayInput[dagql.String]],
-	selectRefs func(*gitutil.Remote, []string) []string,
-) (dagql.Array[dagql.String], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -447,14 +428,13 @@ func (s *gitSchema) resolveAndListRefs(
 		return nil, err
 	}
 
-	canonicalRepoRecv := resolved.ID()
-	if canonicalRepoRecv.Digest() != parent.ID().Digest() {
-		return reenterType[dagql.Array[dagql.String]](ctx, canonicalRepoRecv)
+	if receiverChanged(resolved, parent) {
+		return redirectScalar[dagql.Array[dagql.String]](ctx, resolved.ID())
 	}
 
 	var patterns []string
-	if patternInputs.Valid {
-		for _, pattern := range patternInputs.Value {
+	if args.Patterns.Valid {
+		for _, pattern := range args.Patterns.Value {
 			patterns = append(patterns, pattern.String())
 		}
 	}
@@ -463,7 +443,36 @@ func (s *gitSchema) resolveAndListRefs(
 	if err != nil {
 		return nil, err
 	}
-	return dagql.NewStringArray(selectRefs(remote, patterns)...), nil
+	return dagql.NewStringArray(remote.Filter(patterns).Tags().ShortNames()...), nil
+}
+
+func (s *gitSchema) branches(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args branchesArgs) (dagql.Array[dagql.String], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	var resolved dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, parent, &resolved, dagql.Selector{Field: "__resolve"}); err != nil {
+		return nil, err
+	}
+
+	if receiverChanged(resolved, parent) {
+		return redirectScalar[dagql.Array[dagql.String]](ctx, resolved.ID())
+	}
+
+	var patterns []string
+	if args.Patterns.Valid {
+		for _, pattern := range args.Patterns.Value {
+			patterns = append(patterns, pattern.String())
+		}
+	}
+
+	remote, err := resolved.Self().Backend.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(remote.Filter(patterns).Branches().ShortNames()...), nil
 }
 
 type cleanedArgs struct {
@@ -592,9 +601,8 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, err
 	}
 
-	canonicalRefRecv := resolved.ID()
-	if canonicalRefRecv.Digest() != parent.ID().Digest() {
-		return reenterObject[*core.Directory](ctx, canonicalRefRecv)
+	if receiverChanged(resolved, parent) {
+		return redirect[*core.Directory](ctx, resolved.ID())
 	}
 
 	ref := resolved.Self()
@@ -670,335 +678,6 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	return inst, nil
 }
 
-func (s *gitSchema) repoResolve(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.GitRepository],
-	_ struct{},
-) (dagql.ObjectResult[*core.GitRepository], error) {
-	var zero dagql.ObjectResult[*core.GitRepository]
-
-	if parent.ID().Field() == "__resolve" {
-		// Idempotence guard: when already on the canonical receiver, avoid infinite
-		// re-entry loops.
-		return parent, nil
-	}
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	repo := parent.Self()
-	remote, isRemote := repo.Backend.(*core.RemoteGitRepository)
-	if !isRemote {
-		return dagql.NewObjectResultForCurrentID(ctx, srv, repo)
-	}
-
-	curLeaf := dagql.CurrentID(ctx)
-	repoRecv := parent.ID()
-
-	loadResolveOn := func(newRepoRecv *call.ID) (dagql.ObjectResult[*core.GitRepository], error) {
-		leaf := newRepoRecv.Append(
-			curLeaf.Type().ToAST(),
-			curLeaf.Field(),
-			call.WithArgs(curLeaf.Args()...),
-			call.WithView(curLeaf.View()),
-		)
-		loaded, err := srv.Load(ctx, leaf)
-		if err != nil {
-			return zero, err
-		}
-		return loaded.(dagql.ObjectResult[*core.GitRepository]), nil
-	}
-
-	if remote.URL == nil {
-		raw := repoRecv.Arg("url").Value().ToInput().(string)
-
-		if remote.SSHAuthSocket.Valid {
-			next := repoRecv.WithArgument(call.NewArgument("url", call.NewLiteralString("ssh://git@"+raw), false))
-			return loadResolveOn(next)
-		}
-		if remote.AuthToken.Valid || remote.AuthHeader.Valid {
-			next := repoRecv.WithArgument(call.NewArgument("url", call.NewLiteralString("https://"+raw), false))
-			return loadResolveOn(next)
-		}
-
-		candidates := []string{
-			"https://" + raw,
-			"ssh://git@" + raw,
-		}
-
-		var lastAuthErr error
-		for _, cand := range candidates {
-			next := repoRecv.WithArgument(call.NewArgument("url", call.NewLiteralString(cand), false))
-			resolved, err := loadResolveOn(next)
-			if err == nil {
-				return resolved, nil
-			}
-			if errors.Is(err, gitutil.ErrGitAuthFailed) {
-				lastAuthErr = err
-				continue
-			}
-			return zero, err
-		}
-
-		if lastAuthErr != nil {
-			return zero, fmt.Errorf("failed to determine Git URL protocol")
-		}
-		return zero, fmt.Errorf("failed to determine Git URL protocol")
-	}
-
-	if remote.NeedsAuthResolution() {
-		auth, handled, err := s.resolveAuthArgs(ctx, srv, remote)
-		if err != nil {
-			return zero, err
-		}
-		if handled {
-			next := repoRecv.WithArgument(call.NewArgument("url", call.NewLiteralString(auth.urlOverride), false))
-			for _, ni := range auth.extraArgs {
-				next = next.WithArgument(call.NewArgument(ni.Name, ni.Value.ToLiteral(), false))
-			}
-			return loadResolveOn(next)
-		}
-	}
-
-	if _, err := repo.Backend.Remote(ctx); err != nil {
-		return zero, err
-	}
-
-	return dagql.NewObjectResultForCurrentID(ctx, srv, repo)
-}
-
-func (s *gitSchema) refResolve(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.GitRef],
-	_ struct{},
-) (dagql.ObjectResult[*core.GitRef], error) {
-	var zero dagql.ObjectResult[*core.GitRef]
-
-	if parent.ID().Field() == "__resolve" {
-		// Idempotence guard: when already on the canonical receiver, avoid infinite
-		// re-entry loops.
-		return parent, nil
-	}
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	curLeaf := dagql.CurrentID(ctx)
-	refRecv := parent.ID()
-	// Use the repo ID from the call receiver (object graph), not the resolved
-	// repo returned by __resolve; mixing them would mis-key cache entries.
-	curRepoID := parent.Self().Repo.ID()
-
-	var resolvedRepo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, parent.Self().Repo, &resolvedRepo, dagql.Selector{Field: "__resolve"}); err != nil {
-		return zero, err
-	}
-	canonicalRepoID := resolvedRepo.ID()
-
-	if canonicalRepoID.Digest() != curRepoID.Digest() {
-		newRefRecv := canonicalRepoID.Append(
-			(*core.GitRef)(nil).Type(),
-			refRecv.Field(),
-			call.WithArgs(refRecv.Args()...),
-			// Preserve the view from the original call so legacy view filters
-			// continue to apply after re-entry.
-			call.WithView(refRecv.View()),
-		)
-
-		newLeaf := newRefRecv.Append(
-			curLeaf.Type().ToAST(),
-			curLeaf.Field(),
-			call.WithArgs(curLeaf.Args()...),
-			// Keep the original view for the same reason as above rather than
-			// the view on the current leaf.
-			call.WithView(refRecv.View()),
-		)
-
-		loaded, err := srv.Load(ctx, newLeaf)
-		if err != nil {
-			return zero, err
-		}
-		return loaded.(dagql.ObjectResult[*core.GitRef]), nil
-	}
-
-	if err := parent.Self().Resolve(ctx); err != nil {
-		return zero, err
-	}
-
-	canonicalDigest := hashutil.HashStrings(
-		canonicalRepoID.Digest().String(),
-		parent.Self().Ref.Digest().String(),
-	)
-
-	resolved, err := dagql.NewObjectResultForCurrentID(ctx, srv, parent.Self())
-	if err != nil {
-		return zero, err
-	}
-	return resolved.WithObjectDigest(canonicalDigest), nil
-}
-
-func reenterObject[T dagql.Typed](
-	ctx context.Context,
-	newReceiver *call.ID,
-) (dagql.ObjectResult[T], error) {
-	var zero dagql.ObjectResult[T]
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	cur := dagql.CurrentID(ctx)
-
-	newLeafID := newReceiver.Append(
-		cur.Type().ToAST(),
-		cur.Field(),
-		call.WithArgs(cur.Args()...),
-		call.WithView(cur.View()),
-	)
-
-	loaded, err := srv.Load(ctx, newLeafID)
-	if err != nil {
-		return zero, err
-	}
-	return loaded.(dagql.ObjectResult[T]), nil
-}
-
-func reenterType[T any](
-	ctx context.Context,
-	newReceiver *call.ID,
-) (T, error) {
-	var zero T
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	cur := dagql.CurrentID(ctx)
-
-	newLeafID := newReceiver.Append(
-		cur.Type().ToAST(),
-		cur.Field(),
-		call.WithArgs(cur.Args()...),
-		call.WithView(cur.View()),
-	)
-
-	loaded, err := srv.LoadType(ctx, newLeafID)
-	if err != nil {
-		return zero, err
-	}
-	return loaded.Unwrap().(T), nil
-}
-
-type authResolution struct {
-	urlOverride string
-	extraArgs   []dagql.NamedInput
-}
-
-func (s *gitSchema) resolveAuthArgs(
-	ctx context.Context,
-	srv *dagql.Server,
-	remoteGitRepo *core.RemoteGitRepository,
-) (*authResolution, bool, error) {
-	if remoteGitRepo.URL.Scheme == gitutil.SSHProtocol && !remoteGitRepo.SSHAuthSocket.Valid {
-		clientMD, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, false, fmt.Errorf("client metadata: %w", err)
-		}
-		if clientMD.SSHAuthSocketPath == "" {
-			return nil, false, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
-		}
-
-		var sock dagql.ObjectResult[*core.Socket]
-		if err := srv.Select(ctx, srv.Root(), &sock,
-			dagql.Selector{Field: "host"},
-			dagql.Selector{
-				Field: "unixSocket",
-				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(clientMD.SSHAuthSocketPath)}},
-			},
-		); err != nil {
-			return nil, false, fmt.Errorf("select unix socket: %w", err)
-		}
-
-		urlCopy := *remoteGitRepo.URL
-		if urlCopy.User == nil {
-			urlCopy.User = url.User("git")
-		}
-
-		return &authResolution{
-			urlOverride: urlCopy.String(),
-			extraArgs: []dagql.NamedInput{
-				{Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](sock.ID()))},
-			},
-		}, true, nil
-	}
-
-	if (remoteGitRepo.URL.Scheme == gitutil.HTTPProtocol || remoteGitRepo.URL.Scheme == gitutil.HTTPSProtocol) &&
-		!remoteGitRepo.AuthToken.Valid && !remoteGitRepo.AuthHeader.Valid {
-		query, err := core.CurrentQuery(ctx)
-		if err != nil {
-			return nil, false, err
-		}
-
-		parentMD, err := query.NonModuleParentClientMetadata(ctx)
-		if err != nil {
-			return nil, false, fmt.Errorf("non-module parent client metadata: %w", err)
-		}
-
-		clientMD, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, false, fmt.Errorf("client metadata: %w", err)
-		}
-
-		if clientMD.ClientID == parentMD.ClientID {
-			authCtx := engine.ContextWithClientMetadata(ctx, parentMD)
-			bk, err := query.Buildkit(authCtx)
-			if err != nil {
-				return nil, false, fmt.Errorf("buildkit: %w", err)
-			}
-
-			creds, err := bk.GetCredential(authCtx, remoteGitRepo.URL.Scheme, remoteGitRepo.URL.Host, remoteGitRepo.URL.Path)
-			if err == nil && creds.Password != "" {
-				sum := sha256.Sum256([]byte(creds.Password))
-				secretName := hex.EncodeToString(sum[:])
-
-				var token dagql.ObjectResult[*core.Secret]
-				if err := srv.Select(authCtx, srv.Root(), &token,
-					dagql.Selector{
-						Field: "setSecret",
-						Args: []dagql.NamedInput{
-							{Name: "name", Value: dagql.NewString(secretName)},
-							{Name: "plaintext", Value: dagql.NewString(creds.Password)},
-						},
-					},
-				); err != nil {
-					return nil, false, fmt.Errorf("create git auth secret: %w", err)
-				}
-
-				extraArgs := []dagql.NamedInput{
-					{Name: "httpAuthToken", Value: dagql.Opt(dagql.NewID[*core.Secret](token.ID()))},
-				}
-				if creds.Username != "" {
-					extraArgs = append(extraArgs, dagql.NamedInput{Name: "httpAuthUsername", Value: dagql.NewString(creds.Username)})
-				}
-				return &authResolution{
-					urlOverride: remoteGitRepo.URL.String(),
-					extraArgs:   extraArgs,
-				}, true, nil
-			} else if err != nil {
-				slog.Warn("GetCredential failed", "error", err)
-			}
-		}
-	}
-
-	return nil, false, nil
-}
-
 func (s *gitSchema) fetchCommit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRef],
@@ -1014,9 +693,8 @@ func (s *gitSchema) fetchCommit(
 		return "", err
 	}
 
-	canonicalRefRecv := resolved.ID()
-	if canonicalRefRecv.Digest() != parent.ID().Digest() {
-		return reenterType[dagql.String](ctx, canonicalRefRecv)
+	if receiverChanged(resolved, parent) {
+		return redirectScalar[dagql.String](ctx, resolved.ID())
 	}
 
 	return dagql.NewString(resolved.Self().Ref.SHA), nil
@@ -1037,9 +715,8 @@ func (s *gitSchema) fetchRef(
 		return "", err
 	}
 
-	canonicalRefRecv := resolved.ID()
-	if canonicalRefRecv.Digest() != parent.ID().Digest() {
-		return reenterType[dagql.String](ctx, canonicalRefRecv)
+	if receiverChanged(resolved, parent) {
+		return redirectScalar[dagql.String](ctx, resolved.ID())
 	}
 
 	r := resolved.Self().Ref
@@ -1062,34 +739,32 @@ func (s *gitSchema) commonAncestor(
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	var selfResolved dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, parent, &selfResolved, dagql.Selector{Field: "__resolve"}); err != nil {
+	var resolvedSelf dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, parent, &resolvedSelf, dagql.Selector{Field: "__resolve"}); err != nil {
 		return inst, err
 	}
-	selfCanonicalRecv := selfResolved.ID()
-	selfChanged := selfCanonicalRecv.Digest() != parent.ID().Digest()
+	selfChanged := receiverChanged(resolvedSelf, parent)
 
 	other, err := args.Other.Load(ctx, srv)
 	if err != nil {
 		return inst, err
 	}
 
-	var otherResolved dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, other, &otherResolved, dagql.Selector{Field: "__resolve"}); err != nil {
+	var resolvedOther dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, other, &resolvedOther, dagql.Selector{Field: "__resolve"}); err != nil {
 		return inst, err
 	}
-	otherCanonicalRecv := otherResolved.ID()
-	otherChanged := otherCanonicalRecv.Digest() != other.ID().Digest()
+	otherChanged := receiverChanged(resolvedOther, other)
 
 	if selfChanged || otherChanged {
 		cur := dagql.CurrentID(ctx)
 		newArgs := cur.Args()
 		for i, arg := range newArgs {
 			if arg.Name() == "other" {
-				newArgs[i] = call.NewArgument("other", dagql.NewID[*core.GitRef](otherCanonicalRecv).ToLiteral(), false)
+				newArgs[i] = call.NewArgument("other", dagql.NewID[*core.GitRef](resolvedOther.ID()).ToLiteral(), false)
 			}
 		}
-		newLeaf := selfCanonicalRecv.Append(
+		newLeaf := resolvedSelf.ID().Append(
 			cur.Type().ToAST(),
 			cur.Field(),
 			call.WithArgs(newArgs...),
@@ -1102,9 +777,255 @@ func (s *gitSchema) commonAncestor(
 		return loaded.(dagql.ObjectResult[*core.GitRef]), nil
 	}
 
-	result, err := core.MergeBase(ctx, selfResolved.Self(), otherResolved.Self())
+	result, err := core.MergeBase(ctx, resolvedSelf.Self(), resolvedOther.Self())
 	if err != nil {
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, result)
+}
+
+// repoResolve implements __resolve for GitRepository.
+// It detects the protocol (https/ssh) and injects auth if needed.
+func (s *gitSchema) repoResolve(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRepository],
+	_ struct{},
+) (dagql.ObjectResult[*core.GitRepository], error) {
+	var zero dagql.ObjectResult[*core.GitRepository]
+
+	if alreadyResolving(parent.ID()) {
+		return parent, nil
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	repo := parent.Self()
+	remote, isRemote := repo.Backend.(*core.RemoteGitRepository)
+	if !isRemote {
+		return dagql.NewObjectResultForCurrentID(ctx, srv, repo)
+	}
+
+	repoID := parent.ID()
+
+	if remote.URL == nil {
+		raw := repoID.Arg("url").Value().ToInput().(string)
+
+		if remote.SSHAuthSocket.Valid {
+			next := repoID.WithArgument(call.NewArgument("url", call.NewLiteralString("ssh://git@"+raw), false))
+			return redirect[*core.GitRepository](ctx, next)
+		}
+		if remote.AuthToken.Valid || remote.AuthHeader.Valid {
+			next := repoID.WithArgument(call.NewArgument("url", call.NewLiteralString("https://"+raw), false))
+			return redirect[*core.GitRepository](ctx, next)
+		}
+
+		candidates := []string{
+			"https://" + raw,
+			"ssh://git@" + raw,
+		}
+
+		var lastAuthErr error
+		for _, cand := range candidates {
+			next := repoID.WithArgument(call.NewArgument("url", call.NewLiteralString(cand), false))
+			resolved, err := redirect[*core.GitRepository](ctx, next)
+			if err == nil {
+				return resolved, nil
+			}
+			if errors.Is(err, gitutil.ErrGitAuthFailed) {
+				lastAuthErr = err
+				continue
+			}
+			return zero, err
+		}
+
+		if lastAuthErr != nil {
+			return zero, fmt.Errorf("failed to determine Git URL protocol")
+		}
+		return zero, fmt.Errorf("failed to determine Git URL protocol")
+	}
+
+	if remote.NeedsAuthResolution() {
+		auth, handled, err := s.injectAuth(ctx, srv, remote)
+		if err != nil {
+			return zero, err
+		}
+		if handled {
+			next := repoID.WithArgument(call.NewArgument("url", call.NewLiteralString(auth.urlOverride), false))
+			for _, ni := range auth.extraArgs {
+				next = next.WithArgument(call.NewArgument(ni.Name, ni.Value.ToLiteral(), false))
+			}
+			return redirect[*core.GitRepository](ctx, next)
+		}
+	}
+
+	if _, err := repo.Backend.Remote(ctx); err != nil {
+		return zero, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, repo)
+}
+
+// refResolve implements __resolve for GitRef.
+// It ensures the underlying repo is resolved, then resolves the ref (e.g., branch name → SHA).
+func (s *gitSchema) refResolve(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRef],
+	_ struct{},
+) (dagql.ObjectResult[*core.GitRef], error) {
+	var zero dagql.ObjectResult[*core.GitRef]
+
+	if alreadyResolving(parent.ID()) {
+		return parent, nil
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	var resolvedRepo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, parent.Self().Repo, &resolvedRepo, dagql.Selector{Field: "__resolve"}); err != nil {
+		return zero, err
+	}
+
+	if receiverChanged(resolvedRepo, parent.Self().Repo) {
+		return redirectThroughRef[*core.GitRef](ctx, resolvedRepo.ID(), parent.ID())
+	}
+
+	if err := parent.Self().Resolve(ctx); err != nil {
+		return zero, err
+	}
+
+	canonicalDigest := hashutil.HashStrings(
+		resolvedRepo.ID().Digest().String(),
+		parent.Self().Ref.Digest().String(),
+	)
+
+	resolved, err := dagql.NewObjectResultForCurrentID(ctx, srv, parent.Self())
+	if err != nil {
+		return zero, err
+	}
+	return resolved.WithObjectDigest(canonicalDigest), nil
+}
+
+// injectAuth detects available credentials and injects them into the git call.
+//
+// For SSH: forwards the client's SSH_AUTH_SOCK to authenticate with the remote.
+// For HTTP(S): looks up credentials from the client's credential store (e.g., git-credential-helper).
+//
+// Returns (auth, true, nil) if auth was injected, (nil, false, nil) if no auth needed/available.
+func (s *gitSchema) injectAuth(
+	ctx context.Context,
+	srv *dagql.Server,
+	repo *core.RemoteGitRepository,
+) (*injectedAuth, bool, error) {
+	switch repo.URL.Scheme {
+	case gitutil.SSHProtocol:
+		if repo.SSHAuthSocket.Valid {
+			return nil, false, nil
+		}
+
+		clientMD, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, false, fmt.Errorf("client metadata: %w", err)
+		}
+		if clientMD.SSHAuthSocketPath == "" {
+			return nil, false, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+		}
+
+		var sock dagql.ObjectResult[*core.Socket]
+		if err := srv.Select(ctx, srv.Root(), &sock,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{
+				Field: "unixSocket",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(clientMD.SSHAuthSocketPath)}},
+			},
+		); err != nil {
+			return nil, false, fmt.Errorf("select unix socket: %w", err)
+		}
+
+		urlCopy := *repo.URL
+		if urlCopy.User == nil {
+			urlCopy.User = url.User("git")
+		}
+
+		return &injectedAuth{
+			urlOverride: urlCopy.String(),
+			extraArgs: []dagql.NamedInput{
+				{Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](sock.ID()))},
+			},
+		}, true, nil
+
+	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
+		if repo.AuthToken.Valid || repo.AuthHeader.Valid {
+			return nil, false, nil
+		}
+
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+
+		parentMD, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return nil, false, fmt.Errorf("non-module parent client metadata: %w", err)
+		}
+
+		clientMD, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, false, fmt.Errorf("client metadata: %w", err)
+		}
+
+		if clientMD.ClientID != parentMD.ClientID {
+			return nil, false, nil
+		}
+
+		authCtx := engine.ContextWithClientMetadata(ctx, parentMD)
+		bk, err := query.Buildkit(authCtx)
+		if err != nil {
+			return nil, false, fmt.Errorf("buildkit: %w", err)
+		}
+
+		creds, err := bk.GetCredential(authCtx, repo.URL.Scheme, repo.URL.Host, repo.URL.Path)
+		if err != nil {
+			slog.Warn("GetCredential failed", "error", err)
+			return nil, false, nil
+		}
+		if creds.Password == "" {
+			return nil, false, nil
+		}
+
+		sum := sha256.Sum256([]byte(creds.Password))
+		secretName := hex.EncodeToString(sum[:])
+
+		var token dagql.ObjectResult[*core.Secret]
+		if err := srv.Select(authCtx, srv.Root(), &token,
+			dagql.Selector{
+				Field: "setSecret",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.NewString(secretName)},
+					{Name: "plaintext", Value: dagql.NewString(creds.Password)},
+				},
+			},
+		); err != nil {
+			return nil, false, fmt.Errorf("create git auth secret: %w", err)
+		}
+
+		extraArgs := []dagql.NamedInput{
+			{Name: "httpAuthToken", Value: dagql.Opt(dagql.NewID[*core.Secret](token.ID()))},
+		}
+		if creds.Username != "" {
+			extraArgs = append(extraArgs, dagql.NamedInput{Name: "httpAuthUsername", Value: dagql.NewString(creds.Username)})
+		}
+
+		return &injectedAuth{
+			urlOverride: repo.URL.String(),
+			extraArgs:   extraArgs,
+		}, true, nil
+	}
+
+	return nil, false, nil
 }
