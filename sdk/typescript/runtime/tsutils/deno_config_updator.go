@@ -2,7 +2,6 @@ package tsutils
 
 import (
 	"fmt"
-	"path/filepath"
 	"typescript-sdk/tsdistconsts"
 
 	"github.com/tidwall/gjson"
@@ -75,20 +74,10 @@ func UpdateDenoConfigForModule(denoConfig string) (string, error) {
 	return denoConfig, nil
 }
 
-func UpdateDenoConfigForClient(denoConfig string, clientDir string, isRemote bool) (string, error) {
+func UpdateDenoConfigForClient(denoConfig string, isRemote bool) (string, error) {
 	denoConfig, err := updateDenoConfigForDagger(denoConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to update deno config for dagger: %w", err)
-	}
-
-	// Add path."@dagger.io/client"=[<path to client dir>]
-	denoConfig, err = sjson.Set(denoConfig,
-		"compilerOptions.paths."+gjson.Escape(daggerClientPathAlias),
-		// We explicitly add `./` so tsx can correctly interpret the path.
-		[]string{"./" + filepath.Join(clientDir, "client.gen.ts")},
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed to update tsconfig paths %s: %w", daggerClientPathAlias, err)
 	}
 
 	// If the dagger library is remote, we don't need to override @dagger.io/dagger

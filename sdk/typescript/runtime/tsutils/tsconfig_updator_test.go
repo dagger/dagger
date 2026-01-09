@@ -25,7 +25,7 @@ func TestDefaultTsConfigForModule(t *testing.T) {
   }
 }`)
 
-	res := DefaultTSConfigForModule()
+	res := DefaultTSConfig()
 	require.JSONEq(t, string(defaultTSConfig), res)
 }
 
@@ -43,16 +43,12 @@ func TestDefaultTSConfigForClient(t *testing.T) {
       ],
       "@dagger.io/dagger/telemetry": [
         "./sdk/telemetry.ts"
-      ],
-      "@dagger.io/client": [
-        "./dagger/client.gen.ts"
       ]
     }
   }
 }`)
 
-	res, err := DefaultTSConfigForClient("dagger")
-	require.NoError(t, err)
+	res := DefaultTSConfig()
 
 	require.JSONEq(t, string(defaultTSConfig), res)
 }
@@ -224,7 +220,6 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 	for _, tc := range []testCase{
 		{
 			name:      "empty tsconfig",
-			clientDir: "./dagger",
 			tsConfig:  `{}`,
 			isRemote:  false,
 			expected: `{
@@ -235,9 +230,6 @@ func TestUpdateTSConfigForClient(t *testing.T) {
       ],
       "@dagger.io/dagger/telemetry": [
         "./sdk/telemetry.ts"
-      ],
-      "@dagger.io/client": [
-        "./dagger/client.gen.ts"
       ]
     }
   }
@@ -245,22 +237,12 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 		},
 		{
 			name:      "tsconfig with remote dagger library",
-			clientDir: "example/foo",
 			isRemote:  true,
 			tsConfig:  `{}`,
-			expected: `{
-  "compilerOptions": {
-    "paths": {
-      "@dagger.io/client": [
-        "./example/foo/client.gen.ts"
-      ]
-    }
-  }
-}`,
+			expected: `{}`,
 		},
 		{
 			name:      "tsconfig with paths already set",
-			clientDir: "example/foo",
 			isRemote:  false,
 			tsConfig: `{
   "compilerOptions": {
@@ -295,7 +277,6 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 		},
 		{
 			name:      "tsconfig with comments",
-			clientDir: ".",
 			isRemote:  false,
 			tsConfig: `{
   "compilerOptions": {
@@ -351,9 +332,6 @@ func TestUpdateTSConfigForClient(t *testing.T) {
       ],
       "@dagger.io/dagger/telemetry": [
         "./sdk/telemetry.ts"
-      ],
-      "@dagger.io/client": [
-        "./client.gen.ts"
       ]
     }
   }
@@ -365,7 +343,7 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 
 			tc := tc
 
-			res, err := UpdateTSConfigForClient(tc.tsConfig, tc.clientDir, tc.isRemote)
+			res, err := UpdateTSConfigForClient(tc.tsConfig, tc.isRemote)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, res)
 		})
