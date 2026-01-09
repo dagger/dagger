@@ -62,8 +62,12 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		ctx, span := Tracer().Start(gctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(n.sdkSourceDir).
-			GenerateBundleLibrary(n.introspectionJSON, n.cfg.name, n.cfg.modulePath()).
+		sdkLibrary, err = NewLibGenerator(n.sdkSourceDir,
+			&LibGeneratorOpts{
+				moduleName: n.cfg.name,
+				modulePath: n.cfg.modulePath(),
+			}).
+			GenerateBundleLibrary(n.introspectionJSON, ModSourceDirPath).
 			Sync(ctx)
 		return err
 	})
@@ -138,8 +142,12 @@ func (n *NodeRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error
 		ctx, span := Tracer().Start(ctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(n.sdkSourceDir).
-			GenerateBundleLibrary(n.introspectionJSON, n.cfg.name, n.cfg.modulePath()).
+		sdkLibrary, err = NewLibGenerator(n.sdkSourceDir,
+			&LibGeneratorOpts{
+				moduleName: n.cfg.name,
+				modulePath: n.cfg.modulePath(),
+			}).
+			GenerateBundleLibrary(n.introspectionJSON, ModSourceDirPath).
 			Sync(ctx)
 		return err
 	})
@@ -208,7 +216,7 @@ func (n *NodeRuntime) withPackageJSON(ctx context.Context) (*NodeRuntime, error)
 		}
 	}
 
-	packageJSONFile, err := CreateOrUpdatePackageJSON(ctx, packageJSONFile)
+	packageJSONFile, err := CreateOrUpdatePackageJSONForModule(ctx, packageJSONFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update package.json: %w", err)
 	}
