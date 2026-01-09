@@ -48,6 +48,9 @@ from dagger.mod._utils import (
     is_annotated,
 )
 
+if typing.TYPE_CHECKING:
+    from dagger.mod._ast_types import ASTModuleInfo, ASTObjectDef, ASTEnumDef
+
 logger = logging.getLogger(__package__)
 
 OBJECT_DEF_KEY: typing.Final[str] = "__dagger_object__"
@@ -134,6 +137,10 @@ class Module:
                 "being converted into PascalCase, please file a bug report."
             )
             raise ObjectNotFoundError(msg, extra=e.extra) from None
+
+        # Check if we're in AST mode
+        if getattr(self, "_ast_mode", False):
+            return await self._typedefs_ast()
 
         mod = dag.module()
 
@@ -260,6 +267,161 @@ class Module:
                     deprecated=meta.deprecated if meta else None,
                 )
             mod = mod.with_enum(enum_def)
+
+        return await mod.id()
+
+    async def _typedefs_ast(self) -> dagger.ModuleID:  # noqa: C901, PLR0912, PLR0915
+        """Build TypeDefs from AST-extracted data (registration mode)."""
+        mod = dag.module()
+
+        # Module description from AST
+        if self._ast_module_doc:
+            mod = mod.with_description(self._ast_module_doc)
+
+        # Object types from AST
+        for obj_name, obj_def in self._ast_objects.items():
+            # Object/interface type
+            type_def = dag.type_def()
+            if obj_def.is_interface:
+                type_def = type_def.with_interface(
+                    obj_name,
+                    description=obj_def.docstring,
+                )
+            else:
+                type_def = type_def.with_object(
+                    obj_name,
+                    description=obj_def.docstring,
+                    deprecated=obj_def.deprecated,
+                )
+
+            # Object fields
+            for field_def in obj_def.fields:
+                if field_def.annotation is None:
+                    continue
+
+                ctx = f"type for field '{field_def.original_name}' in {obj_name}"
+                field_typedef = _ast_to_typedef(
+                    field_def.annotation,
+                    ctx,
+                    self._ast_objects,
+                )
+
+                type_def = type_def.with_field(
+                    field_def.api_name,
+                    field_typedef,
+                    description=None,  # Field doc from annotation not yet supported
+                    deprecated=field_def.deprecated,
+                )
+
+            # Object/interface functions
+            for func_def in obj_def.functions:
+                func_name = func_def.api_name
+                what = f"function '{func_name}'" if func_name else "constructor"
+
+                # Return type
+                if func_def.return_annotation is None:
+                    return_typedef = dag.type_def().with_kind(
+                        dagger.TypeDefKind.VOID_KIND
+                    )
+                else:
+                    return_typedef = _ast_to_typedef(
+                        func_def.return_annotation,
+                        f"return type for {what} in {obj_name}",
+                        self._ast_objects,
+                    )
+
+                func_api = dag.function(func_name, return_typedef)
+
+                # Description
+                doc = func_def.alt_doc or func_def.docstring
+                if doc:
+                    func_api = func_api.with_description(doc)
+
+                # Cache policy
+                if func_def.cache_policy is not None:
+                    if func_def.cache_policy == "never":
+                        func_api = func_api.with_cache_policy(
+                            dagger.FunctionCachePolicy.Never,
+                        )
+                    elif func_def.cache_policy == "session":
+                        func_api = func_api.with_cache_policy(
+                            dagger.FunctionCachePolicy.PerSession,
+                        )
+                    elif func_def.cache_policy != "":
+                        func_api = func_api.with_cache_policy(
+                            dagger.FunctionCachePolicy.Default,
+                            time_to_live=func_def.cache_policy,
+                        )
+
+                if func_def.deprecated:
+                    func_api = func_api.with_deprecated(reason=func_def.deprecated)
+                if func_def.is_check:
+                    func_api = func_api.with_check()
+
+                # Parameters
+                for param in func_def.parameters:
+                    if param.annotation is None:
+                        continue
+
+                    param_ctx = f"parameter type for '{param.name}' in {what} and {obj_name}"
+                    arg_typedef = _ast_to_typedef(
+                        param.annotation,
+                        param_ctx,
+                        self._ast_objects,
+                    )
+
+                    # Handle optional/nullable
+                    if param.annotation.is_optional or param.has_default:
+                        arg_typedef = arg_typedef.with_optional(True)
+
+                    # Convert default value to JSON if serializable
+                    default_json = None
+                    if param.has_default and param.default_value is not None:
+                        try:
+                            default_json = dagger.JSON(json.dumps(param.default_value))
+                        except (TypeError, ValueError):
+                            # Non-serializable default, mark as optional
+                            arg_typedef = arg_typedef.with_optional(True)
+
+                    func_api = func_api.with_arg(
+                        param.name,
+                        arg_typedef,
+                        description=param.doc,
+                        default_value=default_json,
+                        default_path=param.default_path,
+                        ignore=param.ignore,
+                        deprecated=param.deprecated,
+                    )
+
+                type_def = (
+                    type_def.with_constructor(func_api)
+                    if func_name == ""
+                    else type_def.with_function(func_api)
+                )
+
+            # Add object/interface to module
+            mod = (
+                mod.with_interface(type_def)
+                if obj_def.is_interface
+                else mod.with_object(type_def)
+            )
+
+        # Enum types from AST
+        for enum_name, enum_def in self._ast_enums.items():
+            enum_typedef = dag.type_def().with_enum(
+                enum_name,
+                description=enum_def.docstring,
+            )
+
+            for member in enum_def.members:
+                enum_typedef = enum_typedef.with_enum_member(
+                    member.name,
+                    value=member.value,
+                    description=member.docstring,
+                    deprecated=member.deprecated,
+                )
+
+            mod = mod.with_enum(enum_typedef)
 
         return await mod.id()
 
@@ -809,7 +971,7 @@ class Module:
             return isinstance(fn, Constructor)
 
         for _, fn in inspect.getmembers(cls, _is_constructor):
-            obj_def.functions[fn.name] = fn
+            obj_def.functions[fn.api_name] = fn
 
         # Find all methods decorated with `@mod.function`
         def _is_function(fn) -> typing.TypeGuard[Func]:
@@ -822,7 +984,7 @@ class Module:
                 origin=cls,
                 converter=self._converter,
             )
-            obj_def.functions[fn.name] = fn
+            obj_def.functions[fn.api_name] = fn
 
         if interface:
             return cls
@@ -866,6 +1028,43 @@ class Module:
         )
 
         return cls
+
+    def _register_from_ast(self, module_info: "ASTModuleInfo"):
+        """Register types from AST analysis (registration phase only).
+
+        This method is used when analyzing modules without loading them.
+        It creates placeholder ObjectType and enum registrations that can be
+        used by _typedefs() to generate the module definition.
+        """
+        from dagger.mod._ast_types import ASTEnumDef, ASTObjectDef
+
+        # Store AST-specific data for _typedefs() to use
+        self._ast_mode = True
+        self._ast_objects: dict[str, ASTObjectDef] = {}
+        self._ast_enums: dict[str, ASTEnumDef] = {}
+        self._ast_module_doc = module_info.module_doc
+
+        for obj_def in module_info.objects:
+            self._ast_objects[obj_def.name] = obj_def
+            # Also register in _objects dict with a minimal placeholder
+            # so get_object() works during _typedefs()
+            self._objects[obj_def.name] = _create_ast_object_placeholder(obj_def)
+            if obj_def.name == self._main_name:
+                self._main = self._objects[obj_def.name]
+
+        for enum_def in module_info.enums:
+            self._ast_enums[enum_def.name] = enum_def
+
+        # Log diagnostic info if main object not found
+        if self._main is None and self._main_name:
+            found_objects = list(self._ast_objects.keys())
+            logger.warning(
+                "Main object '%s' not found in analyzed source. "
+                "Found objects: %s. Source: %s",
+                self._main_name,
+                found_objects or "(none)",
+                module_info.source_path,
+            )
 
     @overload
     def interface(self, cls: T) -> T: ...
@@ -945,3 +1144,93 @@ class Module:
             return cls
 
         return wrapper(cls) if cls else wrapper
+
+
+# Helper class for AST mode
+@dataclasses.dataclass(slots=True)
+class _ASTObjectPlaceholder:
+    """Placeholder ObjectType for AST mode registration."""
+
+    name: str
+    interface: bool = False
+    deprecated: str | None = None
+    # Minimal attributes to satisfy get_object() and _typedefs()
+    fields: dict = dataclasses.field(default_factory=dict)
+    functions: dict = dataclasses.field(default_factory=dict)
+
+    @property
+    def cls(self):
+        """Return a mock class with __name__."""
+        return type(self.name, (), {"__name__": self.name, "__module__": "<ast>"})
+
+    def __str__(self):
+        s = "interface" if self.interface else "object"
+        return f"{s} '{self.name}' (AST mode)"
+
+
+def _create_ast_object_placeholder(obj_def: "ASTObjectDef") -> _ASTObjectPlaceholder:
+    """Create a placeholder ObjectType from AST data."""
+    from dagger.mod._ast_types import ASTObjectDef
+
+    return _ASTObjectPlaceholder(
+        name=obj_def.name,
+        interface=obj_def.is_interface,
+        deprecated=obj_def.deprecated,
+    )
+
+
+def _ast_to_typedef(  # noqa: C901, PLR0911, PLR0912
+    annotation: "ASTTypeAnnotation",
+    context: str,
+    module_objects: dict[str, "ASTObjectDef"],
+) -> "dagger.TypeDef":
+    """Convert AST type annotation to Dagger TypeDef."""
+    from dagger.mod._ast_analyzer import DAGGER_API_TYPES
+    from dagger.mod._ast_types import ASTTypeAnnotation
+
+    td = dag.type_def()
+
+    if annotation.is_optional:
+        td = td.with_optional(True)
+
+    base = annotation.base_type
+
+    # Handle list[T]
+    if base in ("list", "List", "typing.List", "Sequence", "typing.Sequence"):
+        if annotation.type_args:
+            elem_typedef = _ast_to_typedef(
+                annotation.type_args[0],
+                context,
+                module_objects,
+            )
+            return td.with_list_of(elem_typedef)
+        # list without type arg - error
+        msg = f"List type must have element type in {context}"
+        raise TypeError(msg)
+
+    # Handle builtins
+    if base in ("str", "string"):
+        return td.with_kind(dagger.TypeDefKind.STRING_KIND)
+    if base in ("int", "integer"):
+        return td.with_kind(dagger.TypeDefKind.INTEGER_KIND)
+    if base == "float":
+        return td.with_kind(dagger.TypeDefKind.FLOAT_KIND)
+    if base == "bool":
+        return td.with_kind(dagger.TypeDefKind.BOOLEAN_KIND)
+    if base in ("None", "NoneType"):
+        return td.with_kind(dagger.TypeDefKind.VOID_KIND)
+
+    # Handle Dagger API types (Container, Directory, etc.)
+    if base in DAGGER_API_TYPES:
+        return td.with_object(base)
+
+    # Handle module-defined types
+    if base in module_objects:
+        obj = module_objects[base]
+        if obj.is_interface:
+            return td.with_interface(base)
+        return td.with_object(base)
+
+    # Unknown type - try as object
+    msg = f"Unsupported {context}: {annotation.raw!r}"
+    raise TypeError(msg)
