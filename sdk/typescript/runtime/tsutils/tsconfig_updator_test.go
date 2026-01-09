@@ -210,18 +210,17 @@ func TestUpdateTSConfigForModule(t *testing.T) {
 
 func TestUpdateTSConfigForClient(t *testing.T) {
 	type testCase struct {
-		name      string
-		clientDir string
-		tsConfig  string
-		isRemote  bool
-		expected  string
+		name     string
+		tsConfig string
+		isRemote bool
+		expected string
 	}
 
 	for _, tc := range []testCase{
 		{
-			name:      "empty tsconfig",
-			tsConfig:  `{}`,
-			isRemote:  false,
+			name:     "empty tsconfig",
+			tsConfig: `{}`,
+			isRemote: false,
 			expected: `{
   "compilerOptions": {
     "paths": {
@@ -236,14 +235,14 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 }`,
 		},
 		{
-			name:      "tsconfig with remote dagger library",
-			isRemote:  true,
-			tsConfig:  `{}`,
+			name:     "tsconfig with remote dagger library",
+			isRemote: true,
+			tsConfig: `{}`,
 			expected: `{}`,
 		},
 		{
-			name:      "tsconfig with paths already set",
-			isRemote:  false,
+			name:     "tsconfig with paths already set",
+			isRemote: false,
 			tsConfig: `{
   "compilerOptions": {
     "paths": {
@@ -276,8 +275,8 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 }`,
 		},
 		{
-			name:      "tsconfig with comments",
-			isRemote:  false,
+			name:     "tsconfig with comments",
+			isRemote: false,
 			tsConfig: `{
   "compilerOptions": {
     // Environment setup & latest features

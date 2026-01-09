@@ -528,10 +528,6 @@ func (c *moduleConfig) modulePath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath)
 }
 
-func (c *moduleConfig) moduleRootPath() string {
-	return filepath.Join(ModSourceDirPath, c.modPath)
-}
-
 // Return the path to the tsconfig.json file inside the module source.
 func (c *moduleConfig) tsConfigPath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath, "tsconfig.json")

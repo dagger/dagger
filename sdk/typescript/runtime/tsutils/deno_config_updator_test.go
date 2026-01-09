@@ -196,7 +196,6 @@ func TestUpdateDenoConfigForModule(t *testing.T) {
 func TestUpdateDenoConfigForClient(t *testing.T) {
 	type testCase struct {
 		name       string
-		clientDir  string
 		isRemote   bool
 		denoConfig string
 		expected   string
