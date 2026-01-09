@@ -196,7 +196,6 @@ func TestUpdateDenoConfigForModule(t *testing.T) {
 func TestUpdateDenoConfigForClient(t *testing.T) {
 	type testCase struct {
 		name       string
-		clientDir  string
 		isRemote   bool
 		denoConfig string
 		expected   string
@@ -206,7 +205,6 @@ func TestUpdateDenoConfigForClient(t *testing.T) {
 		{
 			name:       "empty deno.json",
 			denoConfig: `{}`,
-			clientDir:  "dagger",
 			isRemote:   false,
 			expected: `{
   "imports": {
@@ -215,11 +213,6 @@ func TestUpdateDenoConfigForClient(t *testing.T) {
 		"@dagger.io/dagger/telemetry": "./sdk/telemetry.ts"
   },
   "nodeModulesDir": "auto",
-  "compilerOptions": {
-    "paths": {
-			"@dagger.io/client": ["./dagger/client.gen.ts"]
-		}
-  },
   "unstable": [
     "bare-node-builtins",
     "sloppy-imports",
@@ -229,9 +222,8 @@ func TestUpdateDenoConfigForClient(t *testing.T) {
 }`,
 		},
 		{
-			name:      "deno.json with remote lib already set",
-			clientDir: "example/foo",
-			isRemote:  true,
+			name:     "deno.json with remote lib already set",
+			isRemote: true,
 			denoConfig: `{
   "imports": {
     "typescript": "npm:typescript@5.9.3",
@@ -244,11 +236,6 @@ func TestUpdateDenoConfigForClient(t *testing.T) {
 		"@dagger.io/dagger": "npm:@dagger.io/dagger@0.18.0"
   },
   "nodeModulesDir": "auto",
-  "compilerOptions": {
-    "paths": {
-			"@dagger.io/client": ["./example/foo/client.gen.ts"]
-		}
-  },
   "unstable": [
     "bare-node-builtins",
     "sloppy-imports",
@@ -263,7 +250,7 @@ func TestUpdateDenoConfigForClient(t *testing.T) {
 
 			tc := tc
 
-			res, err := UpdateDenoConfigForClient(tc.denoConfig, tc.clientDir, tc.isRemote)
+			res, err := UpdateDenoConfigForClient(tc.denoConfig, tc.isRemote)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, res)
 		})

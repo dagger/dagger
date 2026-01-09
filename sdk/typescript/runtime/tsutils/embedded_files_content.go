@@ -13,10 +13,16 @@ import (
 //go:embed template/tsconfig.json
 var DefaultTSConfigJSON string
 
-// StaticBundleTelemetryTS is the content of the sdk/index.ts file.
+// StaticBundleModuleTS is the content of the sdk/index.ts file.
 //
 //go:embed module/index.ts
-var StaticBundleIndexTS string
+var StaticBundleModuleIndexTS string
+
+// StaticBundleClientIndexTS is the content of the sdk/index.ts file for
+// generated client using the bundled library.
+//
+//go:embed client/index.ts
+var StaticBundleClientIndexTS string
 
 // StaticBundleCoreDTS is a minimal core.d.ts allowing TS to resolve ./core.js imports.
 //

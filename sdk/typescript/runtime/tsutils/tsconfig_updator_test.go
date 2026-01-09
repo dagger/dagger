@@ -25,7 +25,7 @@ func TestDefaultTsConfigForModule(t *testing.T) {
   }
 }`)
 
-	res := DefaultTSConfigForModule()
+	res := DefaultTSConfig()
 	require.JSONEq(t, string(defaultTSConfig), res)
 }
 
@@ -43,16 +43,12 @@ func TestDefaultTSConfigForClient(t *testing.T) {
       ],
       "@dagger.io/dagger/telemetry": [
         "./sdk/telemetry.ts"
-      ],
-      "@dagger.io/client": [
-        "./dagger/client.gen.ts"
       ]
     }
   }
 }`)
 
-	res, err := DefaultTSConfigForClient("dagger")
-	require.NoError(t, err)
+	res := DefaultTSConfig()
 
 	require.JSONEq(t, string(defaultTSConfig), res)
 }
@@ -214,19 +210,17 @@ func TestUpdateTSConfigForModule(t *testing.T) {
 
 func TestUpdateTSConfigForClient(t *testing.T) {
 	type testCase struct {
-		name      string
-		clientDir string
-		tsConfig  string
-		isRemote  bool
-		expected  string
+		name     string
+		tsConfig string
+		isRemote bool
+		expected string
 	}
 
 	for _, tc := range []testCase{
 		{
-			name:      "empty tsconfig",
-			clientDir: "./dagger",
-			tsConfig:  `{}`,
-			isRemote:  false,
+			name:     "empty tsconfig",
+			tsConfig: `{}`,
+			isRemote: false,
 			expected: `{
   "compilerOptions": {
     "paths": {
@@ -235,33 +229,20 @@ func TestUpdateTSConfigForClient(t *testing.T) {
       ],
       "@dagger.io/dagger/telemetry": [
         "./sdk/telemetry.ts"
-      ],
-      "@dagger.io/client": [
-        "./dagger/client.gen.ts"
       ]
     }
   }
 }`,
 		},
 		{
-			name:      "tsconfig with remote dagger library",
-			clientDir: "example/foo",
-			isRemote:  true,
-			tsConfig:  `{}`,
-			expected: `{
-  "compilerOptions": {
-    "paths": {
-      "@dagger.io/client": [
-        "./example/foo/client.gen.ts"
-      ]
-    }
-  }
-}`,
+			name:     "tsconfig with remote dagger library",
+			isRemote: true,
+			tsConfig: `{}`,
+			expected: `{}`,
 		},
 		{
-			name:      "tsconfig with paths already set",
-			clientDir: "example/foo",
-			isRemote:  false,
+			name:     "tsconfig with paths already set",
+			isRemote: false,
 			tsConfig: `{
   "compilerOptions": {
     "paths": {
@@ -294,9 +275,8 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 }`,
 		},
 		{
-			name:      "tsconfig with comments",
-			clientDir: ".",
-			isRemote:  false,
+			name:     "tsconfig with comments",
+			isRemote: false,
 			tsConfig: `{
   "compilerOptions": {
     // Environment setup & latest features
@@ -351,9 +331,6 @@ func TestUpdateTSConfigForClient(t *testing.T) {
       ],
       "@dagger.io/dagger/telemetry": [
         "./sdk/telemetry.ts"
-      ],
-      "@dagger.io/client": [
-        "./client.gen.ts"
       ]
     }
   }
@@ -365,7 +342,7 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 
 			tc := tc
 
-			res, err := UpdateTSConfigForClient(tc.tsConfig, tc.clientDir, tc.isRemote)
+			res, err := UpdateTSConfigForClient(tc.tsConfig, tc.isRemote)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, res)
 		})

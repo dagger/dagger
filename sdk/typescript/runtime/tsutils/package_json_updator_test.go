@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUpdatePackageJSON(t *testing.T) {
+func TestUpdatePackageJSONForModule(t *testing.T) {
 	type testCase struct {
 		name        string
 		packageJSON string
@@ -114,7 +114,7 @@ func TestUpdatePackageJSON(t *testing.T) {
 
 			tc := tc
 
-			res, err := UpdatePackageJSON(tc.packageJSON)
+			res, err := UpdatePackageJSONForModule(tc.packageJSON)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, res)
 		})
