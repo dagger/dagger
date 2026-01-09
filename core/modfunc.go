@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"dagger.io/dagger/telemetry"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
@@ -813,18 +812,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("get function output directory: %w", err)
 	}
 
-	result, err := ctrOutputDir.Evaluate(ctx)
+	modMetaFile, err := ctrOutputDir.File(ctx, modMetaOutputPath)
 	if err != nil {
-		return nil, fmt.Errorf("evaluate function: %w", err)
-	}
-	if result == nil {
-		return nil, fmt.Errorf("function returned nil result")
+		return nil, fmt.Errorf("failed to get mod meta file: %w", err)
 	}
 
 	// Read the output of the function
-	outputBytes, err := result.Ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: modMetaOutputPath,
-	})
+	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read function output file: %w", err)
 	}
