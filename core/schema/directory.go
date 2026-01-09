@@ -312,18 +312,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
 		dagql.NodeFunc("withChangeset", DagOpChangesetWrapper(srv, s.changesetWithChangeset)).
 			Doc(`Add changes to an existing changeset`,
-				`By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted
-				using onConflict argument`).
+				`By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument`).
 			Args(
 				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
-				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
-			),
-		dagql.NodeFunc("withChangesets", DagOpChangesetWrapper(srv, s.changesetWithChangesets)).
-			Doc(`Add changes from multiple changesets`,
-				`By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.`,
-				`This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.`).
-			Args(
-				dagql.Arg("changes").Doc(`Array of changesets to merge into the actual changeset`),
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
 	}.Install(srv)
@@ -1121,8 +1112,8 @@ var ChangesetMergeConflictEnum = dagql.NewEnum[ChangesetMergeConflict]()
 var (
 	FailOnMergeConflict = ChangesetMergeConflictEnum.Register("FAIL",
 		`A conflict causes the merge operation to fail`)
-	SkipOnMergeConflict = ChangesetMergeConflictEnum.Register("SKIP",
-		`A conflict is skipped, the merge operation continues`)
+	LeaveConflictsOnMergeConflict = ChangesetMergeConflictEnum.Register("LEAVE_CONFLICTS",
+		`Conflicts are left in the merged files with conflict markers`)
 	PreferOursOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_OURS",
 		`The conflict is resolved by applying the version of the calling changeset`)
 	PreferTheirsOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_THEIRS",
@@ -1154,17 +1145,11 @@ type changesetWithChangesetArgs struct {
 	DagOpInternalArgs
 }
 
-type changesetWithChangesetsArgs struct {
-	Changes    []dagql.ID[*core.Changeset]
-	OnConflict ChangesetMergeConflict `default:"FAIL"`
-	DagOpInternalArgs
-}
-
 func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithChangesetMergeConflict {
 	var conflictStrategy core.WithChangesetMergeConflict
 	switch onConflict {
-	case SkipOnMergeConflict:
-		conflictStrategy = core.SkipOnConflict
+	case LeaveConflictsOnMergeConflict:
+		conflictStrategy = core.LeaveConflictsOnConflict
 	case PreferOursOnMergeConflict:
 		conflictStrategy = core.PreferOursOnConflict
 	case PreferTheirsOnMergeConflict:
@@ -1178,30 +1163,19 @@ func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithCha
 }
 
 func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (*core.Changeset, error) {
-	return s.changesetWithChangesets(ctx, parent, changesetWithChangesetsArgs{
-		Changes:    []dagql.ID[*core.Changeset]{args.Changes},
-		OnConflict: args.OnConflict,
-	})
-}
-
-func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Changeset, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	changes := make([]*core.Changeset, 0, len(args.Changes))
-	for _, id := range args.Changes {
-		change, err := id.Load(ctx, srv)
-		if err != nil {
-			return nil, err
-		}
-		changes = append(changes, change.Self())
+	change, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return nil, err
 	}
 
 	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
 
-	return parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
+	return parent.Self().WithChangeset(ctx, change.Self(), onConflictStrategy)
 }
 
 type dirDockerBuildArgs struct {
