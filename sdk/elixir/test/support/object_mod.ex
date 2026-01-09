@@ -99,6 +99,39 @@ defmodule ArgOptions do
   end
 end
 
+defmodule DeprecatedDirective do
+  @moduledoc deprecated: "module deprecation reason"
+  use Dagger.Mod.Object, name: "DeprecatedDirective"
+
+  object do
+    field(:f1, String.t(), deprecated: "deprecated field")
+    field(:f2, String.t(), deprecated: nil)
+  end
+
+  @deprecated "deprecation reason"
+  defn deprecated_by_attr() :: Dagger.Void.t() do
+    :ok
+  end
+
+  @doc deprecated: "docstring deprecation reason"
+  defn deprecated_by_docstr() :: Dagger.Void.t() do
+    :ok
+  end
+
+  defn deprecated_args(
+         foo: {
+           String.t(),
+           deprecated: "deprecated argument"
+         },
+         bar: {
+           String.t(),
+           deprecated: nil
+         }
+       ) :: String.t() do
+    foo <> bar
+  end
+end
+
 defmodule CacheAttribute do
   @moduledoc false
   use Dagger.Mod.Object, name: "CacheAttribute"
