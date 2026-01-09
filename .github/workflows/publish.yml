@@ -117,7 +117,7 @@ jobs:
       always() &&
       github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
-    runs-on: macos-13
+    runs-on: macos-15-intel
     steps:
       - name: "Set CLI Test URL"
         run: |
@@ -148,7 +148,7 @@ jobs:
         shell: bash
 
       - name: "Install Docker"
-        uses: douglascamata/setup-docker-macos-action@v1.0.1
+        uses: douglascamata/setup-docker-macos-action@v1.1.0
         with:
           lima: v1.2.2
         env:
