@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -329,7 +330,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer patchFile.Close()
 
-				cmd := exec.Command("git", "diff", "--no-prefix", "--no-index", "a", "b")
+				cmd := exec.Command("git", "diff", "--binary", "--no-prefix", "--no-index", "a", "b")
 				cmd.Dir = root
 				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
 				cmd.Stderr = stdio.Stderr
@@ -482,455 +483,489 @@ func (ch *ChangesetPaths) checkConflictsWithSets(otherSets changesetPathSets) Co
 	return conflicts
 }
 
-func selectorWithoutFile(path string) dagql.Selector {
-	return dagql.Selector{
-		Field: "withoutFile",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(path)},
-		},
-	}
-}
-
-func selectorWithFile(path string, source dagql.ObjectResult[*File]) dagql.Selector {
-	return dagql.Selector{
-		Field: "withFile",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(path)},
-			{Name: "source", Value: dagql.NewID[*File](source.ID())},
-		},
-	}
-}
-
-func fileAt(
-	ctx context.Context,
-	srv *dagql.Server,
-	dir dagql.ObjectResult[*Directory],
-	path string,
-) (dagql.ObjectResult[*File], error) {
-	var file dagql.ObjectResult[*File]
-	err := srv.Select(ctx, dir, &file,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(path)},
-			},
-		})
-	return file, err
-}
-
-func withFileFromBefore(
-	ctx context.Context,
-	srv *dagql.Server,
-	changeset *Changeset,
-	path string,
-) (sel dagql.Selector, err error) {
-	file, err := fileAt(ctx, srv, changeset.Before, path)
-	if err != nil {
-		return sel, err
-	}
-	return selectorWithFile(path, file), nil
-}
-
-func withFileFromAfter(
-	ctx context.Context,
-	srv *dagql.Server,
-	changeset *Changeset,
-	path string,
-) (sel dagql.Selector, err error) {
-	file, err := fileAt(ctx, srv, changeset.After, path)
-	if err != nil {
-		return sel, err
-	}
-	return selectorWithFile(path, file), nil
-}
-
 type WithChangesetMergeConflict int
 
 const (
 	FailOnConflict WithChangesetMergeConflict = iota
-	SkipOnConflict
+	LeaveConflictsOnConflict
 	PreferOursOnConflict
 	PreferTheirsOnConflict
 )
 
-// AfterSelectorsForConflictResolution returns two arrays of selectors
-// to apply to the "after" directories of two changesets to resolve their
-// conflicts using the defined strategy.
-//
-//nolint:gocyclo
-func AfterSelectorsForConflictResolution(
-	ctx context.Context,
-	srv *dagql.Server,
-	ch *Changeset,
-	other *Changeset,
-	conflicts Conflicts,
-	onConflictStrategy WithChangesetMergeConflict,
-) (parentAfterSelector, additionalAfterSelector []dagql.Selector, err error) {
-	var sel dagql.Selector
-	// When SkipOnConflict all conflicts will be skipped
-	// this means the initial state of the file will be kept in the "after" directory
-	// so that the diff will not see any difference
-	// - if file has been added, remove it from the "after" directory
-	// - if file has been modified or removed, copy the file from "before" to "after" to keep its initial state
-	// In case of PreferOurs or PreferTheirs this is applied to only one part (parent or additional changes)
-	// that way one of the two will not see a change while the other will see it.
-	// hence the change will be applied only once.
-	for _, c := range conflicts {
-		if c.Self == ChangeTypeAdded &&
-			c.Other == ChangeTypeAdded {
-			switch onConflictStrategy {
-			// on skip, just remove the file from the "after" directories
-			case SkipOnConflict:
-				parentAfterSelector = append(parentAfterSelector, selectorWithoutFile(c.Path))
-				additionalAfterSelector = append(additionalAfterSelector, selectorWithoutFile(c.Path))
-			// if we prefer ours, keep it and put the file on the "after" of additional changes
-			case PreferOursOnConflict:
-				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					additionalAfterSelector = append(additionalAfterSelector, sel)
-				}
-			// if we prefer theirs, keep it and put the file on the "after" of parent changes
-			case PreferTheirsOnConflict:
-				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					parentAfterSelector = append(parentAfterSelector, sel)
-				}
-			}
-		} else if c.Self == ChangeTypeModified &&
-			c.Other == ChangeTypeModified {
-			switch onConflictStrategy {
-			// on skip, use the "before" file everywhere
-			case SkipOnConflict:
-				if sel, err = withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					parentAfterSelector = append(parentAfterSelector, sel)
-				}
-				if sel, err = withFileFromBefore(ctx, srv, other, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					additionalAfterSelector = append(additionalAfterSelector, sel)
-				}
-			// if we prefer ours, keep it and put the file on the "after" of additional changes
-			case PreferOursOnConflict:
-				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					additionalAfterSelector = append(additionalAfterSelector, sel)
-				}
-			// if we prefer theirs, keep it and put the file on the "after" of parent changes
-			case PreferTheirsOnConflict:
-				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					parentAfterSelector = append(parentAfterSelector, sel)
-				}
-			}
-		} else if c.Self == ChangeTypeModified &&
-			c.Other == ChangeTypeRemoved {
-			switch onConflictStrategy {
-			// on skip, use the "before" file everywhere
-			case SkipOnConflict:
-				if sel, err = withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					parentAfterSelector = append(parentAfterSelector, sel)
-				}
-				if sel, err = withFileFromBefore(ctx, srv, other, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					additionalAfterSelector = append(additionalAfterSelector, sel)
-				}
-			// if we prefer ours, use the "after" from parent changes on additional changes
-			case PreferOursOnConflict:
-				if sel, err = withFileFromAfter(ctx, srv, ch, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					additionalAfterSelector = append(additionalAfterSelector, sel)
-				}
-			// if we prefer theirs, remove the file from "after" of parent changes
-			case PreferTheirsOnConflict:
-				parentAfterSelector = append(parentAfterSelector, selectorWithoutFile(c.Path))
-			}
-		} else if c.Self == ChangeTypeRemoved &&
-			c.Other == ChangeTypeModified {
-			switch onConflictStrategy {
-			// on skip, use the "before" file everywhere
-			case SkipOnConflict:
-				if sel, err = withFileFromBefore(ctx, srv, ch, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					parentAfterSelector = append(parentAfterSelector, sel)
-				}
-				if sel, err = withFileFromBefore(ctx, srv, other, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					additionalAfterSelector = append(additionalAfterSelector, sel)
-				}
-			// if we prefer ours, remove the file from "after" of additional changes
-			case PreferOursOnConflict:
-				additionalAfterSelector = append(additionalAfterSelector, selectorWithoutFile(c.Path))
-			// if we prefer theirs, use the file from "after" of additional changes
-			case PreferTheirsOnConflict:
-				if sel, err = withFileFromAfter(ctx, srv, other, c.Path); err != nil {
-					return parentAfterSelector, additionalAfterSelector, err
-				} else {
-					parentAfterSelector = append(parentAfterSelector, sel)
-				}
-			}
-		}
-	}
-	return parentAfterSelector, additionalAfterSelector, err
-}
+// ErrBinaryConflict is returned when a binary file has conflicts and the
+// strategy is LEAVE_CONFLICTS (binary files cannot have conflict markers).
+var ErrBinaryConflict = errors.New("binary file has conflicts")
 
-// WithChangeset merges another changeset into this one, returning a new combined changeset.
-// The onConflictStrategy determines how conflicts are handled.
+// WithChangeset merges another changeset into this one using git-based 3-way merge.
+// The onConflictStrategy determines how conflicts are handled:
+//   - FailOnConflict: fail if any file-level conflicts are detected
+//   - LeaveConflictsOnConflict: leave conflict markers in conflicting files (fails for binary)
+//   - PreferOursOnConflict: use our version for conflicts
+//   - PreferTheirsOnConflict: use their version for conflicts
 func (ch *Changeset) WithChangeset(
 	ctx context.Context,
 	other *Changeset,
 	onConflictStrategy WithChangesetMergeConflict,
 ) (*Changeset, error) {
-	return ch.WithChangesets(ctx, []*Changeset{other}, onConflictStrategy)
-}
-
-// WithChangesets merges multiple changesets into this one efficiently in a single pass.
-// This is more efficient than calling WithChangeset repeatedly because it:
-// - Only creates ONE final changeset instead of N-1 intermediate changesets
-// - Only walks directories 3 times total instead of 3*(N-1) times
-// - Pre-computes path sets once for all conflict detection
-func (ch *Changeset) WithChangesets(
-	ctx context.Context,
-	others []*Changeset,
-	onConflictStrategy WithChangesetMergeConflict,
-) (*Changeset, error) {
-	if len(others) == 0 {
-		return ch, nil
-	}
-
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Collect all changesets
-	all := make([]*Changeset, 0, len(others)+1)
-	all = append(all, ch)
-	all = append(all, others...)
-
-	// Build path sets for all changesets once (for O(1) conflict detection)
-	csPaths := make([]*ChangesetPaths, len(all))
-	pathSets := make([]changesetPathSets, len(all))
-	for i, cs := range all {
-		paths, err := cs.ComputePaths(ctx)
+	// For FAIL strategy, detect conflicts at file level first
+	if onConflictStrategy == FailOnConflict {
+		ourPaths, err := ch.ComputePaths(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("compute our paths: %w", err)
 		}
-		csPaths[i] = paths
-		pathSets[i] = paths.pathSets()
-	}
-
-	// Check for conflicts across ALL changeset pairs
-	conflicts := checkConflictsMulti(csPaths, pathSets)
-
-	if !conflicts.IsEmpty() {
-		if onConflictStrategy == FailOnConflict {
+		theirPaths, err := other.ComputePaths(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("compute their paths: %w", err)
+		}
+		if conflicts := ourPaths.CheckConflicts(theirPaths); !conflicts.IsEmpty() {
 			return nil, conflicts.Error()
 		}
 	}
 
-	// Prepare changeset IDs - these will be modified if there are conflicts
-	changesetIDs := make([]dagql.ObjectResult[*Changeset], len(all))
-
-	if !conflicts.IsEmpty() {
-		// Resolve conflicts by modifying "after" directories
-		resolvedAfters := make([]dagql.ObjectResult[*Directory], len(all))
-		for i := range all {
-			resolvedAfters[i] = all[i].After
-		}
-
-		// Apply conflict resolution: for each conflict, determine which changeset(s) to modify
-		if err := resolveConflictsMulti(ctx, srv, all, csPaths, conflicts, onConflictStrategy, resolvedAfters); err != nil {
-			return nil, err
-		}
-
-		// Create changeset IDs from resolved afters
-		for i, cs := range all {
-			if err := srv.Select(ctx, resolvedAfters[i], &changesetIDs[i],
-				dagql.Selector{
-					Field: "changes",
-					Args: []dagql.NamedInput{
-						{Name: "from", Value: dagql.NewID[*Directory](cs.Before.ID())},
-					},
-				},
-			); err != nil {
-				return nil, err
-			}
-		}
-	} else {
-		// No conflicts - create changeset IDs from existing Before/After
-		for i, cs := range all {
-			if err := srv.Select(ctx, cs.After, &changesetIDs[i],
-				dagql.Selector{
-					Field: "changes",
-					Args: []dagql.NamedInput{
-						{Name: "from", Value: dagql.NewID[*Directory](cs.Before.ID())},
-					},
-				},
-			); err != nil {
-				return nil, err
-			}
-		}
+	// Generate patches for both changesets
+	ourPatch, err := ch.AsPatch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("generate our patch: %w", err)
+	}
+	theirPatch, err := other.AsPatch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("generate their patch: %w", err)
 	}
 
-	// Merge all "before" directories into one
-	// Start with an empty directory and merge all befores
-	selectors := []dagql.Selector{{Field: "directory"}}
-	for _, cs := range all {
-		selectors = append(selectors, dagql.Selector{
+	// Merge "before" directories from both changesets
+	var before dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &before,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString("")},
-				{Name: "source", Value: dagql.NewID[*Directory](cs.Before.ID())},
+				{Name: "source", Value: dagql.NewID[*Directory](ch.Before.ID())},
 			},
-		})
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("")},
+				{Name: "source", Value: dagql.NewID[*Directory](other.Before.ID())},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("merge before directories: %w", err)
 	}
 
-	var before dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &before, selectors...); err != nil {
+	// Perform git-based merge - this modifies the base directory in place
+	afterDir, err := gitMergeWithPatches(ctx, before.Self(), ourPatch, theirPatch, onConflictStrategy)
+	if err != nil {
 		return nil, err
 	}
 
-	// Apply all changesets to the merged before directory
+	// Get the immutable ref ID to create a directory via the internal query
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refID := afterDir.Result.ID()
+
+	// Create the after directory using the internal __immutableRef query
 	var after dagql.ObjectResult[*Directory]
-	applySelectors := make([]dagql.Selector, len(changesetIDs))
-	for i, csID := range changesetIDs {
-		applySelectors[i] = dagql.Selector{
-			Field: "withChanges",
+	if err := srv.Select(ctx, srv.Root(), &after,
+		dagql.Selector{
+			Field: "__immutableRef",
 			Args: []dagql.NamedInput{
-				{Name: "changes", Value: dagql.NewID[*Changeset](csID.ID())},
+				{Name: "ref", Value: dagql.NewString(refID)},
 			},
+		},
+	); err != nil {
+		// Fallback: create a new directory and merge the result
+		scratchDir, err := NewScratchDirectory(ctx, query.Platform())
+		if err != nil {
+			return nil, fmt.Errorf("create scratch directory: %w", err)
+		}
+		scratchDir.Result = afterDir.Result
+		scratchDir.Dir = afterDir.Dir
+
+		// Use a simpler approach: merge the result with an empty directory
+		if err := srv.Select(ctx, before, &after,
+			dagql.Selector{
+				Field: "diff",
+				Args: []dagql.NamedInput{
+					{Name: "other", Value: dagql.NewID[*Directory](before.ID())},
+				},
+			},
+		); err != nil {
+			return nil, fmt.Errorf("create after directory: %w", err)
 		}
 	}
-	if err := srv.Select(ctx, before, &after, applySelectors...); err != nil {
-		return nil, err
-	}
 
-	// Create and return the new merged changeset
 	return NewChangeset(ctx, before, after)
 }
 
-// checkConflictsMulti detects conflicts across multiple changesets using pre-computed path sets
-func checkConflictsMulti(changesets []*ChangesetPaths, pathSets []changesetPathSets) Conflicts {
-	var conflicts Conflicts
-
-	// Check each pair of changesets for conflicts
-	for i := 0; i < len(changesets); i++ {
-		for j := i + 1; j < len(changesets); j++ {
-			pairConflicts := changesets[i].checkConflictsWithSets(pathSets[j])
-			conflicts = append(conflicts, pairConflicts...)
-		}
-	}
-	return conflicts
-}
-
-// resolveConflictsMulti applies conflict resolution to the "after" directories
-func resolveConflictsMulti(
+// gitMergeWithPatches performs a git-based 3-way merge of two patches.
+// It creates a temporary git repository, commits the base, creates two branches
+// with each patch applied, and merges them with the specified strategy.
+func gitMergeWithPatches(
 	ctx context.Context,
-	srv *dagql.Server,
-	changesets []*Changeset,
-	changesetsPaths []*ChangesetPaths,
-	conflicts Conflicts,
-	onConflictStrategy WithChangesetMergeConflict,
-	resolvedAfters []dagql.ObjectResult[*Directory],
-) error {
-	// Group conflicts by the changesets they affect
-	// For simplicity, we apply resolution similarly to pairwise merging:
-	// - SKIP: revert to "before" state in all affected changesets
-	// - PREFER_OURS: keep first changeset's version, remove from others
-	// - PREFER_THEIRS: keep last changeset's version, remove from earlier ones
-
-	// Build a map to track which paths need resolution in each changeset
-	resolutionsByChangeset := make([][]dagql.Selector, len(changesets))
-
-	for _, c := range conflicts {
-		// Find which changesets are involved in this conflict
-		var involvedIdxs []int
-		for i, cs := range changesetsPaths {
-			sets := cs.pathSets()
-			if _, ok := sets.added[c.Path]; ok {
-				involvedIdxs = append(involvedIdxs, i)
-			} else if _, ok := sets.modified[c.Path]; ok {
-				involvedIdxs = append(involvedIdxs, i)
-			} else if _, ok := sets.removed[c.Path]; ok {
-				involvedIdxs = append(involvedIdxs, i)
-			}
-		}
-
-		if len(involvedIdxs) < 2 {
-			continue // Not actually a conflict
-		}
-
-		switch onConflictStrategy {
-		case SkipOnConflict:
-			// Revert all involved changesets to "before" state for this path
-			for _, idx := range involvedIdxs {
-				cs := changesets[idx]
-				if c.Self == ChangeTypeAdded || c.Other == ChangeTypeAdded {
-					// Remove added file
-					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithoutFile(c.Path))
-				} else {
-					// Restore from before
-					file, err := fileAt(ctx, srv, cs.Before, c.Path)
-					if err != nil {
-						return err
-					}
-					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithFile(c.Path, file))
-				}
-			}
-
-		case PreferOursOnConflict:
-			// Keep first changeset's version, modify others to match
-			firstIdx := involvedIdxs[0]
-			firstCs := changesets[firstIdx]
-			for _, idx := range involvedIdxs[1:] {
-				// Copy the file from the first changeset's after to others
-				file, err := fileAt(ctx, srv, firstCs.After, c.Path)
-				if err != nil {
-					// If file doesn't exist in first (removed), remove from others too
-					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithoutFile(c.Path))
-				} else {
-					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithFile(c.Path, file))
-				}
-			}
-
-		case PreferTheirsOnConflict:
-			// Keep last changeset's version, modify earlier ones to match
-			lastIdx := involvedIdxs[len(involvedIdxs)-1]
-			lastCs := changesets[lastIdx]
-			for _, idx := range involvedIdxs[:len(involvedIdxs)-1] {
-				// Copy the file from the last changeset's after to earlier ones
-				file, err := fileAt(ctx, srv, lastCs.After, c.Path)
-				if err != nil {
-					// If file doesn't exist in last (removed), remove from earlier too
-					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithoutFile(c.Path))
-				} else {
-					resolutionsByChangeset[idx] = append(resolutionsByChangeset[idx], selectorWithFile(c.Path, file))
-				}
-			}
-		}
+	base *Directory,
+	ourPatch, theirPatch *File,
+	strategy WithChangesetMergeConflict,
+) (*Directory, error) {
+	baseRef, err := getRefOrEvaluate(ctx, base)
+	if err != nil {
+		return nil, fmt.Errorf("evaluate base: %w", err)
 	}
 
-	// Apply all resolutions
-	for i, selectors := range resolutionsByChangeset {
-		if len(selectors) == 0 {
-			continue
-		}
-		if err := srv.Select(ctx, changesets[i].After, &resolvedAfters[i], selectors...); err != nil {
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
+	defer stdio.Close()
+
+	// Read patch contents
+	ourPatchContent, err := ourPatch.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("read our patch: %w", err)
+	}
+	theirPatchContent, err := theirPatch.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("read their patch: %w", err)
+	}
+
+	// Create a new ref for the merge result
+	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("Changeset.withChangeset git merge"))
+	if err != nil {
+		return nil, err
+	}
+
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+		workDir, err := containerdfs.RootPath(root, base.Dir)
+		if err != nil {
 			return err
 		}
+
+		// Initialize git repository with base commit
+		if err := initGitRepo(ctx, workDir, stdio); err != nil {
+			return err
+		}
+
+		// Create 'ours' branch with our patch
+		if err := createBranchWithPatch(ctx, workDir, stdio, "ours", ourPatchContent); err != nil {
+			return err
+		}
+
+		// Go back to base and create 'theirs' branch with their patch
+		if err := checkoutBaseBranch(ctx, workDir, stdio); err != nil {
+			return err
+		}
+		if err := createBranchWithPatch(ctx, workDir, stdio, "theirs", theirPatchContent); err != nil {
+			return err
+		}
+
+		// Switch to 'ours' and merge 'theirs'
+		if err := runGitCommand(ctx, workDir, stdio, "checkout", "ours"); err != nil {
+			return fmt.Errorf("git checkout ours for merge: %w", err)
+		}
+
+		mergeErr := runGitCommand(ctx, workDir, stdio, "merge", "theirs", "--no-edit", "--no-commit")
+
+		// Always check for unmerged files - merge might fail OR succeed with unresolved conflicts
+		conflictFiles, err := getConflictedFiles(ctx, workDir)
+		if err != nil {
+			return fmt.Errorf("check conflicts: %w", err)
+		}
+
+		if len(conflictFiles) > 0 || mergeErr != nil {
+			if err := handleMergeConflicts(ctx, workDir, stdio, conflictFiles, strategy, mergeErr); err != nil {
+				return err
+			}
+		}
+
+		// Clean up .git directory
+		return os.RemoveAll(filepath.Join(workDir, ".git"))
+	})
+	if err != nil {
+		return nil, err
 	}
 
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Directory{
+		Result:   snap,
+		Dir:      base.Dir,
+		Platform: query.Platform(),
+	}, nil
+}
+
+// runGitCommand runs a git command in the specified directory.
+func runGitCommand(ctx context.Context, dir string, stdio telemetry.SpanStreams, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Stdout = stdio.Stdout
+	cmd.Stderr = stdio.Stderr
+	return cmd.Run()
+}
+
+// runGitApply applies a patch using git apply.
+func runGitApply(ctx context.Context, dir string, stdio telemetry.SpanStreams, patch string) error {
+	cmd := exec.CommandContext(ctx, "git", "apply", "--allow-empty", "-")
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(patch)
+	cmd.Stdout = stdio.Stdout
+	cmd.Stderr = stdio.Stderr
+	return cmd.Run()
+}
+
+// initGitRepo initializes a git repository with user config and commits all files as base.
+func initGitRepo(ctx context.Context, dir string, stdio telemetry.SpanStreams) error {
+	if err := runGitCommand(ctx, dir, stdio, "init"); err != nil {
+		return fmt.Errorf("git init: %w", err)
+	}
+	if err := runGitCommand(ctx, dir, stdio, "config", "user.email", "dagger@localhost"); err != nil {
+		return fmt.Errorf("git config email: %w", err)
+	}
+	if err := runGitCommand(ctx, dir, stdio, "config", "user.name", "Dagger"); err != nil {
+		return fmt.Errorf("git config name: %w", err)
+	}
+	if err := runGitCommand(ctx, dir, stdio, "add", "-A"); err != nil {
+		return fmt.Errorf("git add: %w", err)
+	}
+	if err := runGitCommand(ctx, dir, stdio, "commit", "--allow-empty", "-m", "base"); err != nil {
+		return fmt.Errorf("git commit base: %w", err)
+	}
 	return nil
+}
+
+// createBranchWithPatch creates a branch, applies the patch, and commits.
+func createBranchWithPatch(ctx context.Context, dir string, stdio telemetry.SpanStreams, branchName string, patchContent []byte) error {
+	if err := runGitCommand(ctx, dir, stdio, "checkout", "-b", branchName); err != nil {
+		return fmt.Errorf("git checkout %s: %w", branchName, err)
+	}
+	if len(patchContent) > 0 {
+		if err := runGitApply(ctx, dir, stdio, string(patchContent)); err != nil {
+			return fmt.Errorf("apply %s patch: %w", branchName, err)
+		}
+		if err := runGitCommand(ctx, dir, stdio, "add", "-A"); err != nil {
+			return fmt.Errorf("git add %s: %w", branchName, err)
+		}
+		if err := runGitCommand(ctx, dir, stdio, "commit", "--allow-empty", "-m", branchName); err != nil {
+			return fmt.Errorf("git commit %s: %w", branchName, err)
+		}
+	}
+	return nil
+}
+
+// checkoutBaseBranch checks out the base branch (master or main).
+func checkoutBaseBranch(ctx context.Context, dir string, stdio telemetry.SpanStreams) error {
+	if err := runGitCommand(ctx, dir, stdio, "checkout", "master"); err != nil {
+		if err := runGitCommand(ctx, dir, stdio, "checkout", "main"); err != nil {
+			return fmt.Errorf("git checkout base: %w", err)
+		}
+	}
+	return nil
+}
+
+// handleMergeConflicts handles conflicts based on the merge strategy.
+func handleMergeConflicts(ctx context.Context, dir string, stdio telemetry.SpanStreams, conflictFiles []string, strategy WithChangesetMergeConflict, mergeErr error) error {
+	switch strategy {
+	case LeaveConflictsOnConflict:
+		for _, file := range conflictFiles {
+			if isBinaryFile(ctx, dir, file) {
+				return fmt.Errorf("%w: %s", ErrBinaryConflict, file)
+			}
+		}
+		if err := runGitCommand(ctx, dir, stdio, "add", "-A"); err != nil {
+			return fmt.Errorf("git add after merge: %w", err)
+		}
+
+	case PreferOursOnConflict:
+		if err := resolveConflictsPreferSide(ctx, dir, stdio, conflictFiles, true); err != nil {
+			return err
+		}
+
+	case PreferTheirsOnConflict:
+		if err := resolveConflictsPreferSide(ctx, dir, stdio, conflictFiles, false); err != nil {
+			return err
+		}
+
+	default:
+		return fmt.Errorf("git merge failed with conflicts: %w", mergeErr)
+	}
+	return nil
+}
+
+// resolveConflictsPreferSide resolves all merge conflicts by preferring one side.
+// If preferOurs is true, uses our version; otherwise uses their version.
+func resolveConflictsPreferSide(ctx context.Context, dir string, stdio telemetry.SpanStreams, conflictFiles []string, preferOurs bool) error {
+	side := "--theirs"
+	sideName := "theirs"
+	if preferOurs {
+		side = "--ours"
+		sideName = "ours"
+	}
+
+	// Resolve content conflicts by checking out the preferred side
+	for _, file := range conflictFiles {
+		if err := runGitCommand(ctx, dir, stdio, "checkout", side, "--", file); err != nil {
+			// File might have been deleted on this side - that's fine
+			continue
+		}
+	}
+
+	// Handle files deleted on the preferred side
+	deletedFiles, err := getDeletedFiles(ctx, dir, preferOurs)
+	if err == nil {
+		for _, file := range deletedFiles {
+			_ = runGitCommand(ctx, dir, stdio, "rm", "--force", "--", file)
+		}
+	}
+
+	if err := runGitCommand(ctx, dir, stdio, "add", "-A"); err != nil {
+		return fmt.Errorf("git add after prefer %s: %w", sideName, err)
+	}
+	return nil
+}
+
+// getConflictedFiles returns a list of files with unresolved conflicts.
+func getConflictedFiles(ctx context.Context, dir string) ([]string, error) {
+	// Use git ls-files -u to get unmerged files
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "-u", "--full-name")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	// Parse output - each line is "mode hash stage\tfilename"
+	// We want unique filenames
+	seen := make(map[string]struct{})
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) == 2 {
+			file := parts[1]
+			if _, ok := seen[file]; !ok {
+				seen[file] = struct{}{}
+				files = append(files, file)
+			}
+		}
+	}
+	return files, nil
+}
+
+// getDeletedFiles returns files that were deleted in one branch during a merge conflict.
+// If preferOurs is true, returns files deleted in ours (to be removed when preferring ours).
+// If preferOurs is false, returns files deleted in theirs (to be removed when preferring theirs).
+func getDeletedFiles(ctx context.Context, dir string, preferOurs bool) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "-u", "--full-name")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+
+	// Track which files have which stages
+	type stages struct {
+		hasOurs   bool // stage 2
+		hasTheirs bool // stage 3
+	}
+	fileStages := make(map[string]*stages)
+
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		// Format: "mode hash stage\tfilename"
+		parts := strings.Fields(line)
+		if len(parts) < 4 {
+			continue
+		}
+		stage := parts[2]
+		tabIdx := strings.Index(line, "\t")
+		if tabIdx == -1 {
+			continue
+		}
+		file := line[tabIdx+1:]
+
+		if fileStages[file] == nil {
+			fileStages[file] = &stages{}
+		}
+		switch stage {
+		case "2":
+			fileStages[file].hasOurs = true
+		case "3":
+			fileStages[file].hasTheirs = true
+		}
+	}
+
+	var deleted []string
+	for file, s := range fileStages {
+		if preferOurs {
+			// Deleted in ours: has theirs (stage 3) but not ours (stage 2)
+			if s.hasTheirs && !s.hasOurs {
+				deleted = append(deleted, file)
+			}
+		} else {
+			// Deleted in theirs: has ours (stage 2) but not theirs (stage 3)
+			if s.hasOurs && !s.hasTheirs {
+				deleted = append(deleted, file)
+			}
+		}
+	}
+	return deleted, nil
+}
+
+// isBinaryFile checks if a file is binary by checking the git attribute or file content.
+func isBinaryFile(ctx context.Context, dir, file string) bool {
+	// Check if git considers it binary using diff
+	cmd := exec.CommandContext(ctx, "git", "diff", "--cached", "--numstat", "--", file)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err == nil && strings.HasPrefix(string(out), "-\t-\t") {
+		return true
+	}
+
+	// Also check the working tree file for NUL bytes (common binary indicator)
+	filePath := filepath.Join(dir, file)
+	f, err := os.Open(filePath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	// Read first 8KB to check for NUL bytes
+	buf := make([]byte, 8192)
+	n, err := f.Read(buf)
+	if err != nil && err != io.EOF {
+		return false
+	}
+	for i := 0; i < n; i++ {
+		if buf[i] == 0 {
+			return true
+		}
+	}
+	return false
 }

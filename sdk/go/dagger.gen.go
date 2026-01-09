@@ -1094,38 +1094,10 @@ type ChangesetWithChangesetOpts struct {
 
 // Add changes to an existing changeset
 //
-// By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
 func (r *Changeset) WithChangeset(changes *Changeset, opts ...ChangesetWithChangesetOpts) *Changeset {
 	assertNotNil("changes", changes)
 	q := r.query.Select("withChangeset")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `onConflict` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
-			q = q.Arg("onConflict", opts[i].OnConflict)
-		}
-	}
-	q = q.Arg("changes", changes)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// ChangesetWithChangesetsOpts contains options for Changeset.WithChangesets
-type ChangesetWithChangesetsOpts struct {
-	// What to do on a merge conflict
-	//
-	// Default: FAIL
-	OnConflict ChangesetMergeConflict
-}
-
-// Add changes from multiple changesets
-//
-// By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
-//
-// This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
-func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithChangesetsOpts) *Changeset {
-	q := r.query.Select("withChangesets")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `onConflict` optional argument
 		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
@@ -13450,8 +13422,8 @@ func (v ChangesetMergeConflict) Name() string {
 	switch v {
 	case ChangesetMergeConflictFail:
 		return "FAIL"
-	case ChangesetMergeConflictSkip:
-		return "SKIP"
+	case ChangesetMergeConflictLeaveConflicts:
+		return "LEAVE_CONFLICTS"
 	case ChangesetMergeConflictPreferOurs:
 		return "PREFER_OURS"
 	case ChangesetMergeConflictPreferTheirs:
@@ -13486,12 +13458,12 @@ func (v *ChangesetMergeConflict) UnmarshalJSON(dt []byte) error {
 		*v = ""
 	case "FAIL":
 		*v = ChangesetMergeConflictFail
+	case "LEAVE_CONFLICTS":
+		*v = ChangesetMergeConflictLeaveConflicts
 	case "PREFER_OURS":
 		*v = ChangesetMergeConflictPreferOurs
 	case "PREFER_THEIRS":
 		*v = ChangesetMergeConflictPreferTheirs
-	case "SKIP":
-		*v = ChangesetMergeConflictSkip
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -13502,8 +13474,8 @@ const (
 	// A conflict causes the merge operation to fail
 	ChangesetMergeConflictFail ChangesetMergeConflict = "FAIL"
 
-	// A conflict is skipped, the merge operation continues
-	ChangesetMergeConflictSkip ChangesetMergeConflict = "SKIP"
+	// Conflicts are left in the merged files with conflict markers
+	ChangesetMergeConflictLeaveConflicts ChangesetMergeConflict = "LEAVE_CONFLICTS"
 
 	// The conflict is resolved by applying the version of the calling changeset
 	ChangesetMergeConflictPreferOurs ChangesetMergeConflict = "PREFER_OURS"

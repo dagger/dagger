@@ -36,51 +36,6 @@ func TestPathSets(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestCheckConflictsMulti(t *testing.T) {
-	// Test detecting conflicts across multiple changesets
-	cs1 := &ChangesetPaths{
-		Added:    []string{"/file1"},
-		Modified: []string{"/file2"},
-	}
-	cs2 := &ChangesetPaths{
-		Added:    []string{"/file3"},
-		Modified: []string{"/file4"},
-	}
-	cs3 := &ChangesetPaths{
-		Added:    []string{"/file1"}, // Conflicts with cs1
-		Modified: []string{"/file2"}, // Conflicts with cs1
-	}
-
-	t.Run("no conflicts between two non-conflicting changesets", func(t *testing.T) {
-		all := []*ChangesetPaths{cs1, cs2}
-		pathSets := make([]changesetPathSets, len(all))
-		for i, cs := range all {
-			pathSets[i] = cs.pathSets()
-		}
-		conflicts := checkConflictsMulti(all, pathSets)
-		require.Empty(t, conflicts)
-	})
-
-	t.Run("detects conflicts in three changesets", func(t *testing.T) {
-		all := []*ChangesetPaths{cs1, cs2, cs3}
-		pathSets := make([]changesetPathSets, len(all))
-		for i, cs := range all {
-			pathSets[i] = cs.pathSets()
-		}
-		conflicts := checkConflictsMulti(all, pathSets)
-		// Should find 2 conflicts: /file1 (added twice) and /file2 (modified twice)
-		require.Len(t, conflicts, 2)
-
-		// Verify the paths in conflicts
-		conflictPaths := make(map[string]bool)
-		for _, c := range conflicts {
-			conflictPaths[c.Path] = true
-		}
-		require.True(t, conflictPaths["/file1"])
-		require.True(t, conflictPaths["/file2"])
-	})
-}
-
 func TestChangesetConflicts(t *testing.T) {
 	origin := &ChangesetPaths{
 		Added: []string{
