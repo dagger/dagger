@@ -4,13 +4,57 @@ This document outlines the key missing features in the current Nushell SDK imple
 
 ## Current State
 
-The SDK currently has:
-- ✅ Basic function discovery (top-level exported functions)
-- ✅ Simple type mapping (string, int, Container, Directory, File)
-- ✅ Runtime container setup
-- ✅ Template generation (main.nu)
-- ✅ Idiomatic API helpers (dag.nu)
-- ✅ Basic executor for function invocation
+The SDK is **functional for simple use cases** (top-level functions with basic types) but lacks support for complex module architectures (objects, methods, fields).
+
+## Completed Features ✅
+
+### Core Functionality
+- ✅ **Function Discovery**: Automatic discovery of exported Nushell functions
+- ✅ **Parameter-less Functions**: Functions without parameters fully supported
+- ✅ **Type Mapping**: string, int, bool, Container, Directory, File, Secret, CacheVolume, etc.
+- ✅ **Runtime Container Setup**: Go-based executor with Nushell runtime
+- ✅ **Template Generation**: Scaffolding for new modules (templates/main.nu)
+- ✅ **Idiomatic API Helpers**: 87 operations in dag.nu for pipeline-based API
+
+### Advanced Types (Added)
+- ✅ **Optional Parameters**: Default values with `param: type = "default"` syntax
+- ✅ **List Types**: Full support for `list<string>`, `list<int>`, `list<Container>`, etc.
+- ✅ **Return Type Annotations**: `# @returns(Type)` for explicit return types
+- ✅ **Type Annotations**: `# @dagger(Type)` for parameter type hints
+- ✅ **Records for Objects**: Dagger objects wrapped in records: `{id: "Container:..."}`
+
+### Check Support (Added)
+- ✅ **Check Functions**: `# @check` annotation for validation functions
+- ✅ **Container-based Checks**: Return containers that execute validation logic
+- ✅ **Check Registration**: Properly registered with `WithCheck()` in type system
+- ✅ **CLI Integration**: Works with `dagger check` command
+
+### Object ID Handling (Fixed)
+- ✅ **ID Detection**: Detects both simple (`Container:abc`) and protobuf IDs (base64)
+- ✅ **Parameter Marshaling**: Properly handles Dagger object IDs in parameters
+- ✅ **Return Value Marshaling**: Correctly extracts and returns object IDs
+- ✅ **Record Wrapping**: Wraps IDs in records for Nushell consumption
+
+### File Structure (Reorganized)
+- ✅ **Separated Runtime from Templates**: Clear distinction between infrastructure and scaffolding
+- ✅ **runtime/**: dag.nu, executor.go, runtime.nu
+- ✅ **templates/**: main.nu (user template)
+
+## Summary of Remaining Gaps
+
+The SDK is **functional for simple modules** but lacks architectural features for complex use cases:
+
+| Feature | Status | Priority | Impact |
+|---------|--------|----------|--------|
+| Object/Method System | ❌ Not Started | **Critical** | Blocks complex modules |
+| Pipeline Functions | ❌ Not Started | High | Limits idiomatic Nushell |
+| Field Accessors | ❌ Not Started | Medium | Part of object system |
+| Nested Object Params | ❌ Not Started | Low | Workaround possible |
+| Module Metadata | ❌ Not Started | Low | Advanced use cases |
+
+**Bottom Line:** Works great for simple modules. Needs object/method system for production use.
+
+---
 
 ## Critical Missing Features
 
@@ -91,90 +135,89 @@ export def "service port" [] {
 - Parser support for field discovery
 - Field TypeDef registration in main.go
 
-### 4. Proper Parameter Marshaling ❌
+### 4. Parameter Marshaling ✅ MOSTLY COMPLETE
 
-**Problem:** Complex parameter handling is incomplete:
-- No support for optional parameters with defaults
-- No support for list types beyond `list<string>`
-- No support for nested objects as parameters
-- No support for variadic parameters (beyond basic rest params)
+**Status:** Basic and intermediate parameter types are fully supported.
 
-**Example of what doesn't work:**
+**What works:**
+- ✅ Optional parameters with defaults: `name: string = "World"`
+- ✅ List types: `list<string>`, `list<int>`, `list<Container>`, etc.
+- ✅ Dagger object parameters: `Container`, `Directory`, `File`, etc.
+- ✅ Primitive types: `string`, `int`, `bool`
+
+**What's still missing:**
+- ❌ Nested object parameters: `config: {port: int, host: string}`
+- ❌ Variadic parameters: `...args`
+- ❌ List of custom objects (requires object/method system first)
+
+**Example of what works:**
 
 ```nushell
-# Optional with default - parser can't handle
+# This works now!
 export def greet [name: string = "World"] {
     $"Hello, ($name)!"
 }
 
-# List of custom objects - not supported
-export def process [items: list<MyObject>] {
-    $items | each {|item| ... }
-}
-
-# Nested object parameter - not supported
-export def configure [config: {port: int, host: string}] {
-    ...
+# This works too!
+export def process [items: list<string>] {
+    $items | str join ", "
 }
 ```
 
-**What we need:**
-- Enhanced parameter parser in `runtime.nu`
-- Type conversion in executor.go
-- Support for complex types in `typeStringToTypeDef()`
+### 5. Object ID Handling ✅ COMPLETE
 
-### 5. Proper Object ID Handling ❌
+**Status:** Fully implemented and working.
 
-**Problem:** The executor doesn't properly handle Dagger object IDs.
+**What works:**
+- ✅ Detects Dagger object IDs in both formats:
+  - Simple: `Container:abc123`
+  - Protobuf: Base64-encoded strings (100+ chars)
+- ✅ Wraps IDs in records for Nushell: `{id: "Container:..."}`
+- ✅ Extracts IDs from records when returning to Dagger
+- ✅ Handles parameters with Dagger object types
+- ✅ Returns Dagger objects correctly
 
-When Dagger calls a function with a `Container` parameter, it passes a JSON-encoded ID string like:
-```json
-{"container_id": "Container:abc123..."}
-```
-
-The executor needs to:
-1. Detect that the parameter is a Dagger object type
-2. Extract the ID from the JSON
-3. Pass just the ID string to the Nushell function
-
-**Current code in executor.go:**
+**Implementation:**
 ```go
-// This is too simplistic - just passes the raw JSON
-paramValue, _ := arg.Value.MarshalJSON()
-args = append(args, string(paramValue))
-```
-
-**What's needed:**
-```go
-// Need something like:
-if isDaggerObjectType(argDef.TypeDef) {
-    id := extractIDFromJSON(paramValue)
-    args = append(args, id)
-} else {
-    args = append(args, string(paramValue))
+// runtime/executor.go
+func isDaggerObjectID(s string) bool {
+    // Check for simple type prefix format
+    daggerTypes := []string{"Container:", "Directory:", "File:", ...}
+    for _, prefix := range daggerTypes {
+        if strings.HasPrefix(s, prefix) {
+            return true
+        }
+    }
+    // Check for protobuf format: long base64 strings
+    if len(s) > 100 {
+        return true
+    }
+    return false
 }
 ```
 
-### 6. Return Value Marshaling ❌
+### 6. Return Value Marshaling ✅ COMPLETE
 
-**Problem:** Functions that return Dagger objects don't properly marshal the result.
+**Status:** Fully implemented and working.
 
-**Example:**
+**What works:**
+- ✅ Detects when return value is a Dagger object
+- ✅ Extracts ID from record: `{id: "Container:..."}` → `"Container:..."`
+- ✅ Handles primitive types (string, int, bool)
+- ✅ Handles lists and complex types
+- ✅ Properly marshals to JSON for Dagger
+
+**Example (working):**
 
 ```nushell
-# Returns a Container ID, but Dagger expects structured JSON
-export def build [] {
+# This works correctly!
+export def build []: nothing -> record {  # @returns(Container)
     container from "golang:1.24"
     | container with-exec ["go", "build"]
-    # Returns: "Container:abc123..."
-    # Dagger expects: {"id": "Container:abc123..."}
+    # Returns: {id: "Container:abc123..."}
+    # Executor extracts: "Container:abc123..."
 }
 ```
-
-**What's needed:**
-- Detect when return type is a Dagger object
-- Wrap the ID in proper JSON structure
-- Handle primitive types vs object types differently
 
 ### 7. Module Metadata and Context ❌
 
@@ -198,19 +241,27 @@ export def build [] {
 
 ## Implementation Priorities
 
-### Phase 1: Core Functionality (Required for MVP)
-1. **Proper Object ID Handling** - Without this, passing Dagger objects to functions is broken
-2. **Return Value Marshaling** - Without this, returning Dagger objects is broken
+### ✅ Phase 1: Core Functionality - **COMPLETE**
+1. ✅ **Proper Object ID Handling** - Fully implemented
+2. ✅ **Return Value Marshaling** - Fully implemented  
+3. ✅ **Basic Parameter Marshaling** - Optional params, lists, etc.
+4. ✅ **Check Support** - Full integration with Dagger checks
+
+**Result:** SDK is functional for simple modules with top-level functions.
+
+### ❌ Phase 2: Object System - **NOT STARTED** (Required for Production)
+1. **Object/Method System** - Needed for any non-trivial module
+2. **Field Accessors** - Natural part of the object system
 3. **Pipeline Function Registration** - Core to Nushell's idioms
 
-### Phase 2: Object System (Required for Real-World Use)
-4. **Object/Method System** - Needed for any non-trivial module
-5. **Field Accessors** - Natural part of the object system
+**Blocker:** Architectural design needed for how objects work in Nushell.
 
-### Phase 3: Enhanced Type Support (Nice to Have)
-6. **Proper Parameter Marshaling** - Better DX, more flexible APIs
-7. **Module Metadata and Context** - Advanced use cases
-8. **Error Handling** - Better debugging experience
+### Phase 3: Enhanced Features - **PARTIALLY COMPLETE**
+- ✅ List types (complete)
+- ✅ Optional parameters (complete)
+- ❌ Nested object parameters (not started)
+- ❌ Module metadata access (not started)
+- ⚠️ Error handling (basic, could be improved)
 
 ## Comparison with Other SDKs
 
@@ -234,23 +285,25 @@ export def build [] {
 
 ## Recommendations
 
-### Short Term (Fix Blockers)
-1. Fix object ID handling in executor.go
-2. Fix return value marshaling in executor.go
-3. Add tests for these core flows
+### ✅ Short Term - **COMPLETE**
+1. ✅ Fix object ID handling in executor.go
+2. ✅ Fix return value marshaling in executor.go
+3. ✅ Add check support
+4. ✅ Add optional parameters and list types
+5. ⚠️ Add tests for these core flows (manual testing done, integration tests pending)
 
-### Medium Term (Enable Real Use)
+### ❌ Medium Term (Enable Real Use) - **NOT STARTED**
 1. Design Nushell object convention (records + metadata comments?)
 2. Implement object discovery in runtime.nu
 3. Update ModuleTypes() to support objects and methods
 4. Add field support
 
 ### Long Term (Production Ready)
-1. Implement full type system (optional params, complex types)
-2. Add comprehensive error handling
-3. Generate type-safe Nushell bindings from schema
-4. Add module context and metadata access
-5. Performance optimization (caching, parallel execution)
+1. ⚠️ Implement full type system (basic done, nested objects remaining)
+2. ❌ Add comprehensive error handling
+3. ❌ Generate type-safe Nushell bindings from schema
+4. ❌ Add module context and metadata access
+5. ❌ Performance optimization (caching, parallel execution)
 
 ## Questions to Resolve
 
