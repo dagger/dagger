@@ -111,14 +111,44 @@ class Module:
 
         await dag.current_function_call().return_value(dagger.JSON(output))
 
-    async def register(self):
-        """Register the module and its types with the Dagger API."""
+    async def register(self, *, use_ast: bool = False):
+        """Register the module and its types with the Dagger API.
+
+        Args:
+            use_ast: If True, use AST-based analysis instead of runtime
+                introspection. This allows registration without loading
+                dependencies.
+        """
         try:
-            result = await self._typedefs()
+            if use_ast:
+                result = await self._typedefs_from_ast()
+            else:
+                result = await self._typedefs()
             output = json.dumps(result)
         except TypeError as e:
             raise RegistrationError(str(e), e) from e
         await anyio.Path(TYPE_DEF_FILE).write_text(output)
+
+    async def _typedefs_from_ast(self) -> dagger.ModuleID:
+        """Build typedefs using AST analysis instead of runtime introspection.
+
+        This method analyzes the Python source files without executing them,
+        enabling type registration before dependencies are fetched.
+        """
+        from pathlib import Path
+
+        from dagger.mod._analyzer import analyze_package
+        from dagger.mod._ast_resolver import IRToTypeDefConverter
+
+        # Get source directory from environment
+        source_dir = Path(os.getenv("DAGGER_SOURCE_DIR", "."))
+
+        # Analyze module using AST
+        module_ir = analyze_package(source_dir, self._main_name)
+
+        # Convert IR to TypeDefs
+        converter = IRToTypeDefConverter(module_ir)
+        return await converter.convert()
 
     async def _typedefs(self) -> dagger.ModuleID:  # noqa: C901, PLR0912, PLR0915
         if not self._main_name:
