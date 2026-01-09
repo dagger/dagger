@@ -14,6 +14,22 @@ import (
 // This is a helper executable that bridges Dagger and Nushell
 // It gets function call context from Dagger, executes Nushell, and returns results
 
+// isDaggerObjectID checks if a string is a Dagger object ID
+// Dagger object IDs have the format "TypeName:id..." where TypeName is like Container, Directory, File, etc.
+func isDaggerObjectID(s string) bool {
+	// Check for common Dagger object types
+	daggerTypes := []string{
+		"Container:", "Directory:", "File:", "Secret:",
+		"Service:", "CacheVolume:", "Socket:", "Platform:",
+	}
+	for _, prefix := range daggerTypes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -58,12 +74,10 @@ func run() int {
 	// Build Nushell command
 	// We need to import the module and call the function with arguments
 	var args []string
-	argMap := make(map[string]string)
 
 	for _, arg := range inputArgs {
 		argName, _ := arg.Name(ctx)
 		argValue, _ := arg.Value(ctx)
-		argMap[argName] = string(argValue)
 
 		// Build argument string for Nushell
 		// Parse the JSON value and format it appropriately
@@ -71,14 +85,27 @@ func run() int {
 		if err := json.Unmarshal([]byte(string(argValue)), &val); err == nil {
 			switch v := val.(type) {
 			case string:
-				args = append(args, fmt.Sprintf(`"%s"`, v))
+				// Check if this is a Dagger object ID (format: "TypeName:id...")
+				// These should be passed as-is without extra quoting since they're
+				// already strings that the Nushell functions expect
+				if isDaggerObjectID(v) {
+					args = append(args, fmt.Sprintf(`"%s"`, v))
+				} else {
+					// Regular strings get quoted
+					args = append(args, fmt.Sprintf(`"%s"`, v))
+				}
 			case float64:
 				args = append(args, fmt.Sprintf(`%v`, v))
 			case bool:
 				args = append(args, fmt.Sprintf(`%v`, v))
 			default:
+				// For complex types, pass the raw JSON
 				args = append(args, fmt.Sprintf(`'%s'`, argValue))
 			}
+		} else {
+			// If JSON parsing fails, pass as-is
+			fmt.Fprintf(os.Stderr, "Warning: Failed to parse argument %s: %v\n", argName, err)
+			args = append(args, fmt.Sprintf(`'%s'`, argValue))
 		}
 	}
 
@@ -104,14 +131,29 @@ func run() int {
 	fmt.Fprintf(os.Stderr, "Result: %s\n", result)
 
 	// Return result as JSON
-	// Dagger will handle type conversion based on the function's declared return type
-	// For primitive types (string, int, bool), marshal as JSON
-	// For Dagger objects (Container, Directory, etc.), the result is an ID string that gets marshaled as JSON
-	resultJSON, err := json.Marshal(result)
+	// Dagger expects different formats depending on the return type:
+	// - For primitive types (string, int, bool): marshal the value directly
+	// - For Dagger objects (Container, Directory, etc.): the result is already an ID string
+	//   and should be marshaled as-is
+	//
+	// Since Nushell functions return plain values, we detect the type and marshal accordingly:
+	// - If it looks like a Dagger object ID, marshal it as a string
+	// - Otherwise, try to parse it as JSON first (for complex types), then fall back to string
+	var resultValue interface{}
+
+	// Try to parse as JSON first (for numbers, booleans, complex types)
+	if err := json.Unmarshal([]byte(result), &resultValue); err != nil {
+		// Not valid JSON, treat as string
+		resultValue = result
+	}
+
+	resultJSON, err := json.Marshal(resultValue)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to marshal result: %v\n", err)
 		return 1
 	}
+
+	fmt.Fprintf(os.Stderr, "Marshaled result: %s\n", string(resultJSON))
 
 	// Return value to Dagger
 	err = fnCall.ReturnValue(ctx, dagger.JSON(string(resultJSON)))
