@@ -35,7 +35,7 @@ func MakeDirectoryContentHashed(
 		return retInst, err
 	}
 
-	return dirInst.WithObjectDigest(dgst), nil
+	return dirInst.WithObjectDigest(dgst).WithIsContentHash(true).(dagql.ObjectResult[*Directory]), nil
 }
 
 func GetContentHashFromDirectory(
