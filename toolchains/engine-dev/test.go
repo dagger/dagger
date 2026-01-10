@@ -14,7 +14,7 @@ import (
 
 // List all core engine tests
 func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	return dag.Go(dagger.GoOpts{Source: dev.Source}).Tests(ctx)
+	return dag.Go(dagger.GoOpts{Source: dev.sourceWithEbpfObjects()}).Tests(ctx)
 }
 
 // Run core engine tests
@@ -52,9 +52,12 @@ func (dev *EngineDev) Test(
 	// Update golden files
 	// +optional
 	update bool,
+	// Enable the given ebpf progs in the engine during tests
+	// +optional
+	ebpfProgs []string,
 ) error {
 	// FIXME: use the damn standard Go toolchain
-	ctr, _, err := dev.testContainer(ctx)
+	ctr, _, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
 		return err
 	}
@@ -101,8 +104,11 @@ func (dev *EngineDev) TestTelemetry(
 	envFile *dagger.Secret,
 	// +optional
 	testVerbose bool,
+	// Enable the given ebpf progs in the engine during tests
+	// +optional
+	ebpfProgs []string,
 ) (*dagger.Directory, error) {
-	ctr, _, err := dev.testContainer(ctx)
+	ctr, _, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
 		return nil, err
 	}
@@ -237,8 +243,9 @@ func (dev *EngineDev) test(
 // Build an ephemeral test environment ready to run core engine tests
 // Also return the URL of a pprof debug endpoint, to dump profiling data from the tested engine
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
-func (dev *EngineDev) testContainer(ctx context.Context) (*dagger.Container, string, error) {
+func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*dagger.Container, string, error) {
 	devEngine, err := dev.
+		WithEBPFProgs(ebpfProgs).
 		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
@@ -305,7 +312,7 @@ func (dev *EngineDev) testContainer(ctx context.Context) (*dagger.Container, str
 	}
 
 	utilDirPath := "/dagger-dev"
-	tests := dag.Go(dagger.GoOpts{Source: dev.Source}).Env().
+	tests := dag.Go(dagger.GoOpts{Source: dev.sourceWithEbpfObjects()}).Env().
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithServiceBinding("daggerengine", devEngineSvc).

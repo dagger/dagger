@@ -174,7 +174,7 @@ func (dev *EngineDev) benchDump(
 	opts *benchOpts,
 	dOpts *dumpOpts,
 ) (*dagger.Directory, error) {
-	ctr, debugEndpoint, err := dev.testContainer(ctx)
+	ctr, debugEndpoint, err := dev.testContainer(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +227,7 @@ func (dev *EngineDev) bench(
 		)
 	}
 
-	ctr, _, err := dev.testContainer(ctx)
+	ctr, _, err := dev.testContainer(ctx, nil)
 	if err != nil {
 		return err
 	}
