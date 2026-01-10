@@ -262,9 +262,6 @@ enum ChangesetMergeConflict {
   """A conflict causes the merge operation to fail"""
   FAIL
 
-  """Conflicts are left in the merged files with conflict markers"""
-  LEAVE_CONFLICTS
-
   """
   The conflict is resolved by applying the version of the calling changeset
   """

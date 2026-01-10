@@ -13372,8 +13372,6 @@ func (v ChangesetMergeConflict) Name() string {
 	switch v {
 	case ChangesetMergeConflictFail:
 		return "FAIL"
-	case ChangesetMergeConflictLeaveConflicts:
-		return "LEAVE_CONFLICTS"
 	case ChangesetMergeConflictPreferOurs:
 		return "PREFER_OURS"
 	case ChangesetMergeConflictPreferTheirs:
@@ -13408,8 +13406,6 @@ func (v *ChangesetMergeConflict) UnmarshalJSON(dt []byte) error {
 		*v = ""
 	case "FAIL":
 		*v = ChangesetMergeConflictFail
-	case "LEAVE_CONFLICTS":
-		*v = ChangesetMergeConflictLeaveConflicts
 	case "PREFER_OURS":
 		*v = ChangesetMergeConflictPreferOurs
 	case "PREFER_THEIRS":
@@ -13423,9 +13419,6 @@ func (v *ChangesetMergeConflict) UnmarshalJSON(dt []byte) error {
 const (
 	// A conflict causes the merge operation to fail
 	ChangesetMergeConflictFail ChangesetMergeConflict = "FAIL"
-
-	// Conflicts are left in the merged files with conflict markers
-	ChangesetMergeConflictLeaveConflicts ChangesetMergeConflict = "LEAVE_CONFLICTS"
 
 	// The conflict is resolved by applying the version of the calling changeset
 	ChangesetMergeConflictPreferOurs ChangesetMergeConflict = "PREFER_OURS"

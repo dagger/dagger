@@ -116,30 +116,13 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     /**
      * Add changes to an existing changeset
      *
-     * By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+     * By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
      */
     public function withChangeset(
         ChangesetId|Changeset $changes,
         ?ChangesetMergeConflict $onConflict = null,
     ): Changeset {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangeset');
-        $innerQueryBuilder->setArgument('changes', $changes);
-        if (null !== $onConflict) {
-        $innerQueryBuilder->setArgument('onConflict', $onConflict);
-        }
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Add changes from multiple changesets
-     *
-     * By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
-     *
-     * This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
-     */
-    public function withChangesets(array $changes, ?ChangesetMergeConflict $onConflict = null): Changeset
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesets');
         $innerQueryBuilder->setArgument('changes', $changes);
         if (null !== $onConflict) {
         $innerQueryBuilder->setArgument('onConflict', $onConflict);

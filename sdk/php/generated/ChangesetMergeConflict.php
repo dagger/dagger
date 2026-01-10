@@ -16,9 +16,6 @@ enum ChangesetMergeConflict: string
     /** A conflict causes the merge operation to fail */
     case FAIL = 'FAIL';
 
-    /** A conflict is skipped, the merge operation continues */
-    case SKIP = 'SKIP';
-
     /** The conflict is resolved by applying the version of the calling changeset */
     case PREFER_OURS = 'PREFER_OURS';
 

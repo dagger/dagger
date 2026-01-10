@@ -1112,8 +1112,6 @@ var ChangesetMergeConflictEnum = dagql.NewEnum[ChangesetMergeConflict]()
 var (
 	FailOnMergeConflict = ChangesetMergeConflictEnum.Register("FAIL",
 		`A conflict causes the merge operation to fail`)
-	LeaveConflictsOnMergeConflict = ChangesetMergeConflictEnum.Register("LEAVE_CONFLICTS",
-		`Conflicts are left in the merged files with conflict markers`)
 	PreferOursOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_OURS",
 		`The conflict is resolved by applying the version of the calling changeset`)
 	PreferTheirsOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_THEIRS",
@@ -1148,8 +1146,6 @@ type changesetWithChangesetArgs struct {
 func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithChangesetMergeConflict {
 	var conflictStrategy core.WithChangesetMergeConflict
 	switch onConflict {
-	case LeaveConflictsOnMergeConflict:
-		conflictStrategy = core.LeaveConflictsOnConflict
 	case PreferOursOnMergeConflict:
 		conflictStrategy = core.PreferOursOnConflict
 	case PreferTheirsOnMergeConflict:

@@ -1179,32 +1179,6 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 		t.Run("granularity file", func(ctx context.Context, t *testctx.T) {
 			// this granularity is the default value
 
-			t.Run("leave conflicts", func(ctx context.Context, t *testctx.T) {
-				// Create a simpler conflict scenario for testing conflict markers
-				conflictBase := c.Directory().
-					WithNewFile("conflict.txt", "line 1\nline 2\nline 3\n")
-				conflictOurs := conflictBase.
-					WithNewFile("conflict.txt", "line 1\nours modified\nline 3\n").
-					Changes(conflictBase)
-				conflictTheirs := conflictBase.
-					WithNewFile("conflict.txt", "line 1\ntheirs modified\nline 3\n").
-					Changes(conflictBase)
-
-				res, err := conflictOurs.WithChangeset(conflictTheirs, dagger.ChangesetWithChangesetOpts{
-					OnConflict: dagger.ChangesetMergeConflictLeaveConflicts,
-				}).Sync(ctx)
-				require.NoError(t, err)
-
-				// The file should contain conflict markers
-				fileContent, err := res.After().File("conflict.txt").Contents(ctx)
-				require.NoError(t, err)
-				require.Contains(t, fileContent, "<<<<<<<")
-				require.Contains(t, fileContent, "=======")
-				require.Contains(t, fileContent, ">>>>>>>")
-				require.Contains(t, fileContent, "ours modified")
-				require.Contains(t, fileContent, "theirs modified")
-			})
-
 			t.Run("prefer ours", func(ctx context.Context, t *testctx.T) {
 				res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
 					OnConflict: dagger.ChangesetMergeConflictPreferOurs,
@@ -1343,27 +1317,5 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 		content, err = res.After().File("file3.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file 3 added in changeset3", content)
-	})
-
-	t.Run("binary conflict fails with leave_conflicts", func(ctx context.Context, t *testctx.T) {
-		// Create a base with a binary file (PNG header bytes)
-		binaryContent := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
-		binaryBase := c.Directory().
-			WithNewFile("image.png", binaryContent)
-
-		// Create two changesets that both modify the binary file
-		binaryOurs := binaryBase.
-			WithNewFile("image.png", binaryContent+"ours").
-			Changes(binaryBase)
-		binaryTheirs := binaryBase.
-			WithNewFile("image.png", binaryContent+"theirs").
-			Changes(binaryBase)
-
-		// LEAVE_CONFLICTS should fail for binary files
-		_, err := binaryOurs.WithChangeset(binaryTheirs, dagger.ChangesetWithChangesetOpts{
-			OnConflict: dagger.ChangesetMergeConflictLeaveConflicts,
-		}).Sync(ctx)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "binary")
 	})
 }

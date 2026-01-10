@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
@@ -487,21 +488,16 @@ type WithChangesetMergeConflict int
 
 const (
 	FailOnConflict WithChangesetMergeConflict = iota
-	LeaveConflictsOnConflict
 	PreferOursOnConflict
 	PreferTheirsOnConflict
 )
 
-// ErrBinaryConflict is returned when a binary file has conflicts and the
-// strategy is LEAVE_CONFLICTS (binary files cannot have conflict markers).
-var ErrBinaryConflict = errors.New("binary file has conflicts")
-
-// WithChangeset merges another changeset into this one using git-based 3-way merge.
+// WithChangeset merges another changeset into this one using file-level merge.
+// Changes from both changesets are applied, with conflicts resolved at the file level.
 // The onConflictStrategy determines how conflicts are handled:
 //   - FailOnConflict: fail if any file-level conflicts are detected
-//   - LeaveConflictsOnConflict: leave conflict markers in conflicting files (fails for binary)
-//   - PreferOursOnConflict: use our version for conflicts
-//   - PreferTheirsOnConflict: use their version for conflicts
+//   - PreferOursOnConflict: use our version for conflicting files
+//   - PreferTheirsOnConflict: use their version for conflicting files
 func (ch *Changeset) WithChangeset(
 	ctx context.Context,
 	other *Changeset,
@@ -512,19 +508,20 @@ func (ch *Changeset) WithChangeset(
 		return nil, err
 	}
 
-	// For FAIL strategy, detect conflicts at file level first
-	if onConflictStrategy == FailOnConflict {
-		ourPaths, err := ch.ComputePaths(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("compute our paths: %w", err)
-		}
-		theirPaths, err := other.ComputePaths(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("compute their paths: %w", err)
-		}
-		if conflicts := ourPaths.CheckConflicts(theirPaths); !conflicts.IsEmpty() {
-			return nil, conflicts.Error()
-		}
+	// Always compute paths for conflict detection and file-level merge
+	ourPaths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compute our paths: %w", err)
+	}
+	theirPaths, err := other.ComputePaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compute their paths: %w", err)
+	}
+
+	// Check for conflicts
+	conflicts := ourPaths.CheckConflicts(theirPaths)
+	if onConflictStrategy == FailOnConflict && !conflicts.IsEmpty() {
+		return nil, conflicts.Error()
 	}
 
 	// Generate patches for both changesets
@@ -559,8 +556,10 @@ func (ch *Changeset) WithChangeset(
 		return nil, fmt.Errorf("merge before directories: %w", err)
 	}
 
-	// Perform git-based merge - this modifies the base directory in place
-	afterDir, err := gitMergeWithPatches(ctx, before.Self(), ourPatch, theirPatch, onConflictStrategy)
+	// Perform file-level merge using git apply (no repository needed)
+	afterDir, err := applyChangesWithStrategy(ctx, before.Self(), ourPatch, theirPatch,
+		ourPaths, theirPaths, ch.After.Self(), other.After.Self(),
+		conflicts, onConflictStrategy)
 	if err != nil {
 		return nil, err
 	}
@@ -606,13 +605,16 @@ func (ch *Changeset) WithChangeset(
 	return NewChangeset(ctx, before, after)
 }
 
-// gitMergeWithPatches performs a git-based 3-way merge of two patches.
-// It creates a temporary git repository, commits the base, creates two branches
-// with each patch applied, and merges them with the specified strategy.
-func gitMergeWithPatches(
+// applyChangesWithStrategy applies changesets using git apply without creating a repository.
+// For no conflicts, it applies both patches sequentially.
+// For PreferOurs/PreferTheirs, it applies the preferred patch and copies non-conflicting files.
+func applyChangesWithStrategy(
 	ctx context.Context,
 	base *Directory,
 	ourPatch, theirPatch *File,
+	ourPaths, theirPaths *ChangesetPaths,
+	ourAfter, theirAfter *Directory,
+	conflicts Conflicts,
 	strategy WithChangesetMergeConflict,
 ) (*Directory, error) {
 	baseRef, err := getRefOrEvaluate(ctx, base)
@@ -648,10 +650,13 @@ func gitMergeWithPatches(
 		return nil, fmt.Errorf("read their patch: %w", err)
 	}
 
+	// Build conflict set for quick lookups
+	conflictSet := buildConflictSet(conflicts)
+
 	// Create a new ref for the merge result
 	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("Changeset.withChangeset git merge"))
+		bkcache.WithDescription("Changeset.withChangeset file-level merge"))
 	if err != nil {
 		return nil, err
 	}
@@ -662,45 +667,49 @@ func gitMergeWithPatches(
 			return err
 		}
 
-		// Initialize git repository with base commit
-		if err := initGitRepo(ctx, workDir, stdio); err != nil {
-			return err
-		}
-
-		// Create 'ours' branch with our patch
-		if err := createBranchWithPatch(ctx, workDir, stdio, "ours", ourPatchContent); err != nil {
-			return err
-		}
-
-		// Go back to base and create 'theirs' branch with their patch
-		if err := checkoutBaseBranch(ctx, workDir, stdio); err != nil {
-			return err
-		}
-		if err := createBranchWithPatch(ctx, workDir, stdio, "theirs", theirPatchContent); err != nil {
-			return err
-		}
-
-		// Switch to 'ours' and merge 'theirs'
-		if err := runGitCommand(ctx, workDir, stdio, "checkout", "ours"); err != nil {
-			return fmt.Errorf("git checkout ours for merge: %w", err)
-		}
-
-		mergeErr := runGitCommand(ctx, workDir, stdio, "merge", "theirs", "--no-edit", "--no-commit")
-
-		// Always check for unmerged files - merge might fail OR succeed with unresolved conflicts
-		conflictFiles, err := getConflictedFiles(ctx, workDir)
-		if err != nil {
-			return fmt.Errorf("check conflicts: %w", err)
-		}
-
-		if len(conflictFiles) > 0 || mergeErr != nil {
-			if err := handleMergeConflicts(ctx, workDir, stdio, conflictFiles, strategy, mergeErr); err != nil {
-				return err
+		switch strategy {
+		case FailOnConflict:
+			// No conflicts (already checked), apply both patches sequentially
+			if len(ourPatchContent) > 0 {
+				if err := runGitApply(ctx, workDir, stdio, string(ourPatchContent)); err != nil {
+					return fmt.Errorf("apply our patch: %w", err)
+				}
 			}
+			if len(theirPatchContent) > 0 {
+				if err := runGitApply(ctx, workDir, stdio, string(theirPatchContent)); err != nil {
+					return fmt.Errorf("apply their patch: %w", err)
+				}
+			}
+
+		case PreferOursOnConflict:
+			// Apply our patch first
+			if len(ourPatchContent) > 0 {
+				if err := runGitApply(ctx, workDir, stdio, string(ourPatchContent)); err != nil {
+					return fmt.Errorf("apply our patch: %w", err)
+				}
+			}
+			// Copy non-conflicting files from their After directory
+			if err := copyNonConflictingChanges(ctx, theirAfter, workDir, theirPaths, conflictSet, bkSessionGroup); err != nil {
+				return fmt.Errorf("copy their non-conflicting changes: %w", err)
+			}
+
+		case PreferTheirsOnConflict:
+			// Apply their patch first
+			if len(theirPatchContent) > 0 {
+				if err := runGitApply(ctx, workDir, stdio, string(theirPatchContent)); err != nil {
+					return fmt.Errorf("apply their patch: %w", err)
+				}
+			}
+			// Copy non-conflicting files from our After directory
+			if err := copyNonConflictingChanges(ctx, ourAfter, workDir, ourPaths, conflictSet, bkSessionGroup); err != nil {
+				return fmt.Errorf("copy our non-conflicting changes: %w", err)
+			}
+
+		default:
+			return fmt.Errorf("unsupported conflict strategy: %d", strategy)
 		}
 
-		// Clean up .git directory
-		return os.RemoveAll(filepath.Join(workDir, ".git"))
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -718,16 +727,148 @@ func gitMergeWithPatches(
 	}, nil
 }
 
-// runGitCommand runs a git command in the specified directory.
-func runGitCommand(ctx context.Context, dir string, stdio telemetry.SpanStreams, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Stdout = stdio.Stdout
-	cmd.Stderr = stdio.Stderr
-	return cmd.Run()
+// buildConflictSet creates a set of conflicting paths for quick lookups.
+func buildConflictSet(conflicts Conflicts) map[string]struct{} {
+	set := make(map[string]struct{}, len(conflicts))
+	for _, c := range conflicts {
+		set[c.Path] = struct{}{}
+	}
+	return set
 }
 
-// runGitApply applies a patch using git apply.
+// copyNonConflictingChanges copies files from the source directory for non-conflicting changes.
+func copyNonConflictingChanges(
+	ctx context.Context,
+	sourceDir *Directory,
+	targetPath string,
+	paths *ChangesetPaths,
+	conflictSet map[string]struct{},
+	bkSessionGroup bksession.Group,
+) error {
+	sourceRef, err := getRefOrEvaluate(ctx, sourceDir)
+	if err != nil {
+		return fmt.Errorf("evaluate source: %w", err)
+	}
+
+	return MountRef(ctx, sourceRef, bkSessionGroup, func(sourceRoot string, _ *mount.Mount) error {
+		sourcePath, err := containerdfs.RootPath(sourceRoot, sourceDir.Dir)
+		if err != nil {
+			return err
+		}
+
+		// Copy added files that don't conflict
+		for _, file := range paths.Added {
+			if _, conflicts := conflictSet[file]; conflicts {
+				continue
+			}
+			if err := changesetCopyFileOrDir(filepath.Join(sourcePath, file), filepath.Join(targetPath, file)); err != nil {
+				return fmt.Errorf("copy added %s: %w", file, err)
+			}
+		}
+
+		// Copy modified files that don't conflict
+		for _, file := range paths.Modified {
+			if _, conflicts := conflictSet[file]; conflicts {
+				continue
+			}
+			if err := changesetCopyFileOrDir(filepath.Join(sourcePath, file), filepath.Join(targetPath, file)); err != nil {
+				return fmt.Errorf("copy modified %s: %w", file, err)
+			}
+		}
+
+		// Delete removed files that don't conflict
+		for _, file := range paths.Removed {
+			if _, conflicts := conflictSet[file]; conflicts {
+				continue
+			}
+			targetFile := filepath.Join(targetPath, file)
+			if err := os.RemoveAll(targetFile); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove %s: %w", file, err)
+			}
+		}
+
+		return nil
+	}, mountRefAsReadOnly)
+}
+
+// changesetCopyFileOrDir copies a file or directory from src to dst.
+func changesetCopyFileOrDir(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if srcInfo.IsDir() {
+		return changesetCopyDir(src, dst)
+	}
+	return changesetCopyFile(src, dst)
+}
+
+// changesetCopyFile copies a single file from src to dst.
+func changesetCopyFile(src, dst string) error {
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	srcInfo, err := srcFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	if _, err = io.Copy(dstFile, srcFile); err != nil {
+		return fmt.Errorf("copy %s to %s: %w", src, dst, err)
+	}
+	return nil
+}
+
+// changesetCopyDir recursively copies a directory from src to dst.
+func changesetCopyDir(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := changesetCopyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			if err := changesetCopyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// runGitApply applies a patch using git apply (works without a repository).
 func runGitApply(ctx context.Context, dir string, stdio telemetry.SpanStreams, patch string) error {
 	cmd := exec.CommandContext(ctx, "git", "apply", "--allow-empty", "-")
 	cmd.Dir = dir
@@ -735,237 +876,4 @@ func runGitApply(ctx context.Context, dir string, stdio telemetry.SpanStreams, p
 	cmd.Stdout = stdio.Stdout
 	cmd.Stderr = stdio.Stderr
 	return cmd.Run()
-}
-
-// initGitRepo initializes a git repository with user config and commits all files as base.
-func initGitRepo(ctx context.Context, dir string, stdio telemetry.SpanStreams) error {
-	if err := runGitCommand(ctx, dir, stdio, "init"); err != nil {
-		return fmt.Errorf("git init: %w", err)
-	}
-	if err := runGitCommand(ctx, dir, stdio, "config", "user.email", "dagger@localhost"); err != nil {
-		return fmt.Errorf("git config email: %w", err)
-	}
-	if err := runGitCommand(ctx, dir, stdio, "config", "user.name", "Dagger"); err != nil {
-		return fmt.Errorf("git config name: %w", err)
-	}
-	if err := runGitCommand(ctx, dir, stdio, "add", "-A"); err != nil {
-		return fmt.Errorf("git add: %w", err)
-	}
-	if err := runGitCommand(ctx, dir, stdio, "commit", "--allow-empty", "-m", "base"); err != nil {
-		return fmt.Errorf("git commit base: %w", err)
-	}
-	return nil
-}
-
-// createBranchWithPatch creates a branch, applies the patch, and commits.
-func createBranchWithPatch(ctx context.Context, dir string, stdio telemetry.SpanStreams, branchName string, patchContent []byte) error {
-	if err := runGitCommand(ctx, dir, stdio, "checkout", "-b", branchName); err != nil {
-		return fmt.Errorf("git checkout %s: %w", branchName, err)
-	}
-	if len(patchContent) > 0 {
-		if err := runGitApply(ctx, dir, stdio, string(patchContent)); err != nil {
-			return fmt.Errorf("apply %s patch: %w", branchName, err)
-		}
-		if err := runGitCommand(ctx, dir, stdio, "add", "-A"); err != nil {
-			return fmt.Errorf("git add %s: %w", branchName, err)
-		}
-		if err := runGitCommand(ctx, dir, stdio, "commit", "--allow-empty", "-m", branchName); err != nil {
-			return fmt.Errorf("git commit %s: %w", branchName, err)
-		}
-	}
-	return nil
-}
-
-// checkoutBaseBranch checks out the base branch (master or main).
-func checkoutBaseBranch(ctx context.Context, dir string, stdio telemetry.SpanStreams) error {
-	if err := runGitCommand(ctx, dir, stdio, "checkout", "master"); err != nil {
-		if err := runGitCommand(ctx, dir, stdio, "checkout", "main"); err != nil {
-			return fmt.Errorf("git checkout base: %w", err)
-		}
-	}
-	return nil
-}
-
-// handleMergeConflicts handles conflicts based on the merge strategy.
-func handleMergeConflicts(ctx context.Context, dir string, stdio telemetry.SpanStreams, conflictFiles []string, strategy WithChangesetMergeConflict, mergeErr error) error {
-	switch strategy {
-	case LeaveConflictsOnConflict:
-		for _, file := range conflictFiles {
-			if isBinaryFile(ctx, dir, file) {
-				return fmt.Errorf("%w: %s", ErrBinaryConflict, file)
-			}
-		}
-		if err := runGitCommand(ctx, dir, stdio, "add", "-A"); err != nil {
-			return fmt.Errorf("git add after merge: %w", err)
-		}
-
-	case PreferOursOnConflict:
-		if err := resolveConflictsPreferSide(ctx, dir, stdio, conflictFiles, true); err != nil {
-			return err
-		}
-
-	case PreferTheirsOnConflict:
-		if err := resolveConflictsPreferSide(ctx, dir, stdio, conflictFiles, false); err != nil {
-			return err
-		}
-
-	default:
-		return fmt.Errorf("git merge failed with conflicts: %w", mergeErr)
-	}
-	return nil
-}
-
-// resolveConflictsPreferSide resolves all merge conflicts by preferring one side.
-// If preferOurs is true, uses our version; otherwise uses their version.
-func resolveConflictsPreferSide(ctx context.Context, dir string, stdio telemetry.SpanStreams, conflictFiles []string, preferOurs bool) error {
-	side := "--theirs"
-	sideName := "theirs"
-	if preferOurs {
-		side = "--ours"
-		sideName = "ours"
-	}
-
-	// Resolve content conflicts by checking out the preferred side
-	for _, file := range conflictFiles {
-		if err := runGitCommand(ctx, dir, stdio, "checkout", side, "--", file); err != nil {
-			// File might have been deleted on this side - that's fine
-			continue
-		}
-	}
-
-	// Handle files deleted on the preferred side
-	deletedFiles, err := getDeletedFiles(ctx, dir, preferOurs)
-	if err == nil {
-		for _, file := range deletedFiles {
-			_ = runGitCommand(ctx, dir, stdio, "rm", "--force", "--", file)
-		}
-	}
-
-	if err := runGitCommand(ctx, dir, stdio, "add", "-A"); err != nil {
-		return fmt.Errorf("git add after prefer %s: %w", sideName, err)
-	}
-	return nil
-}
-
-// getConflictedFiles returns a list of files with unresolved conflicts.
-func getConflictedFiles(ctx context.Context, dir string) ([]string, error) {
-	// Use git ls-files -u to get unmerged files
-	cmd := exec.CommandContext(ctx, "git", "ls-files", "-u", "--full-name")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	if len(out) == 0 {
-		return nil, nil
-	}
-	// Parse output - each line is "mode hash stage\tfilename"
-	// We want unique filenames
-	seen := make(map[string]struct{})
-	var files []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) == 2 {
-			file := parts[1]
-			if _, ok := seen[file]; !ok {
-				seen[file] = struct{}{}
-				files = append(files, file)
-			}
-		}
-	}
-	return files, nil
-}
-
-// getDeletedFiles returns files that were deleted in one branch during a merge conflict.
-// If preferOurs is true, returns files deleted in ours (to be removed when preferring ours).
-// If preferOurs is false, returns files deleted in theirs (to be removed when preferring theirs).
-func getDeletedFiles(ctx context.Context, dir string, preferOurs bool) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "git", "ls-files", "-u", "--full-name")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	if len(out) == 0 {
-		return nil, nil
-	}
-
-	// Track which files have which stages
-	type stages struct {
-		hasOurs   bool // stage 2
-		hasTheirs bool // stage 3
-	}
-	fileStages := make(map[string]*stages)
-
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		// Format: "mode hash stage\tfilename"
-		parts := strings.Fields(line)
-		if len(parts) < 4 {
-			continue
-		}
-		stage := parts[2]
-		tabIdx := strings.Index(line, "\t")
-		if tabIdx == -1 {
-			continue
-		}
-		file := line[tabIdx+1:]
-
-		if fileStages[file] == nil {
-			fileStages[file] = &stages{}
-		}
-		switch stage {
-		case "2":
-			fileStages[file].hasOurs = true
-		case "3":
-			fileStages[file].hasTheirs = true
-		}
-	}
-
-	var deleted []string
-	for file, s := range fileStages {
-		if preferOurs {
-			// Deleted in ours: has theirs (stage 3) but not ours (stage 2)
-			if s.hasTheirs && !s.hasOurs {
-				deleted = append(deleted, file)
-			}
-		} else {
-			// Deleted in theirs: has ours (stage 2) but not theirs (stage 3)
-			if s.hasOurs && !s.hasTheirs {
-				deleted = append(deleted, file)
-			}
-		}
-	}
-	return deleted, nil
-}
-
-// isBinaryFile checks if a file is binary by checking the git attribute or file content.
-func isBinaryFile(ctx context.Context, dir, file string) bool {
-	// Check if git considers it binary using diff
-	cmd := exec.CommandContext(ctx, "git", "diff", "--cached", "--numstat", "--", file)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err == nil && strings.HasPrefix(string(out), "-\t-\t") {
-		return true
-	}
-
-	// Also check the working tree file for NUL bytes (common binary indicator)
-	filePath := filepath.Join(dir, file)
-	f, err := os.Open(filePath)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-
-	// Read first 8KB to check for NUL bytes
-	buf := make([]byte, 8192)
-	n, err := f.Read(buf)
-	if err != nil && err != io.EOF {
-		return false
-	}
-	for i := 0; i < n; i++ {
-		if buf[i] == 0 {
-			return true
-		}
-	}
-	return false
 }
