@@ -20,11 +20,13 @@ import (
 )
 
 type GitRepository struct {
-	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
 	Backend GitRepositoryBackend
 	Remote  *gitutil.Remote
 
 	DiscardGitDir bool
+
+	// Internal per-repo pinned HEAD (ref/commit)
+	PinnedHead *gitutil.Ref `internal:"true"`
 }
 
 type GitRepositoryBackend interface {
@@ -59,21 +61,9 @@ type GitRefBackend interface {
 }
 
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
-	repo := &GitRepository{
+	return &GitRepository{
 		Backend: backend,
-	}
-
-	remote, err := backend.Remote(ctx)
-	if err != nil {
-		return nil, err
-	}
-	repo.Remote = remote
-
-	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
-		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
-	}
-
-	return repo, nil
+	}, nil
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -85,6 +75,19 @@ func (*GitRepository) Type() *ast.Type {
 
 func (*GitRepository) TypeDescription() string {
 	return "A git repository."
+}
+
+// Resolve resolves the repository's remote metadata. This is the repo-level
+// resolution that GitRef.Resolve() chains to.
+func (repo *GitRepository) Resolve(ctx context.Context) error {
+	if repo.Remote == nil {
+		remote, err := repo.Backend.Remote(ctx)
+		if err != nil {
+			return err
+		}
+		repo.Remote = remote
+	}
+	return nil
 }
 
 func (repo *GitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
@@ -103,11 +106,47 @@ func (*GitRef) TypeDescription() string {
 }
 
 func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	if ref.Backend == nil {
+		return nil, nil
+	}
 	return ref.Backend.PBDefinitions(ctx)
 }
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {
 	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth)
+}
+
+// Resolve resolves the ref's SHA and name to their canonical forms, and initializes
+// the backend. This chains to GitRepository.Resolve() first.
+func (ref *GitRef) Resolve(ctx context.Context) error {
+	repo := ref.Repo.Self()
+
+	if err := repo.Resolve(ctx); err != nil {
+		return err
+	}
+
+	if ref.Ref.Name != "" {
+		resolvedRefInfo, err := repo.Remote.Lookup(ref.Ref.Name)
+		if err != nil {
+			return err
+		}
+		if ref.Ref.SHA == "" {
+			ref.Ref.SHA = resolvedRefInfo.SHA
+		}
+		if resolvedRefInfo.Name != "" {
+			ref.Ref.Name = resolvedRefInfo.Name
+		}
+	}
+
+	if ref.Backend == nil {
+		refBackend, err := repo.Backend.Get(ctx, ref.Ref)
+		if err != nil {
+			return err
+		}
+		ref.Backend = refBackend
+	}
+
+	return nil
 }
 
 // doGitCheckout performs a git checkout using the given git helper.

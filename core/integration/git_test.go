@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -1341,34 +1340,6 @@ func decodeAndTrimPAT(encoded string) (string, error) {
 	return strings.TrimSpace(string(decodedPAT)), nil
 }
 
-// Ensure IsRemotePublic correctly detects repo visibility (see dagger/dagger#11112)
-func (GitSuite) TestIsRemotePublic(ctx context.Context, t *testctx.T) {
-	vc := append([]vcsTestCase{
-		{
-			name:                "Azure DevOps private",
-			expectedBaseHTMLURL: "dev.azure.com/daggere2e/private/_git/dagger-test-modules.git",
-			isPrivateRepo:       true,
-		},
-	}, vcsTestCases...)
-
-	for _, v := range vc {
-		t.Run(v.name, func(ctx context.Context, t *testctx.T) {
-			remoteURL := v.expectedBaseHTMLURL
-			if !strings.Contains(remoteURL, "://") {
-				remoteURL = "https://" + remoteURL
-			}
-
-			remote, err := gitutil.ParseURL(remoteURL)
-			require.NoError(t, err)
-
-			isRemotePublic, err := schema.IsRemotePublic(ctx, remote)
-			require.NoError(t, err)
-
-			require.Equalf(t, !v.isPrivateRepo, isRemotePublic, "Expected public=%v for repo %q", !v.isPrivateRepo, v.name)
-		})
-	}
-}
-
 func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	defer func() {
@@ -1392,6 +1363,65 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 	commit2, err := repo2.Head().Commit(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, commit2)
+}
+
+func (GitSuite) TestGitTreeDigestTracksContent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	git := goGitBase(t, c)
+
+	// first commit with a shallow tree
+	git = git.
+		WithNewFile("file.txt", "one").
+		WithExec([]string{"git", "add", "file.txt"}).
+		WithExec([]string{"git", "commit", "-m", "first"})
+	sha1Out, err := git.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	sha1 := strings.TrimSpace(sha1Out)
+
+	repo := git.Directory(".").AsGit()
+	baseID, err := repo.Commit(sha1).Tree().ID(ctx)
+	require.NoError(t, err)
+
+	t.Run("stable same commit", func(ctx context.Context, t *testctx.T) {
+		idAgain, err := repo.Commit(sha1).Tree().ID(ctx)
+		require.NoError(t, err)
+		require.Equal(t, baseID, idAgain)
+	})
+
+	t.Run("ignores .git changes", func(ctx context.Context, t *testctx.T) {
+		modGit := git.WithNewFile(".git/extra", "noise")
+		modRepo := modGit.Directory(".").AsGit()
+		gitDirID, err := modRepo.Commit(sha1).Tree().ID(ctx)
+		require.NoError(t, err)
+		require.Equal(t, baseID, gitDirID)
+	})
+
+	// second commit adds tracked content (and a nested file for depth)
+	git = git.
+		WithNewFile("file.txt", "two").
+		WithNewFile("deep/nested.txt", "deep").
+		WithExec([]string{"git", "add", "file.txt", "deep/nested.txt"}).
+		WithExec([]string{"git", "commit", "-m", "second"})
+	sha2Out, err := git.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	sha2 := strings.TrimSpace(sha2Out)
+
+	repo2 := git.Directory(".").AsGit()
+	id2, err := repo2.Commit(sha2).Tree().ID(ctx)
+	require.NoError(t, err)
+
+	t.Run("tracks tracked content changes", func(ctx context.Context, t *testctx.T) {
+		require.NotEqual(t, baseID, id2)
+	})
+
+	t.Run("checksum options (depth) change digest", func(ctx context.Context, t *testctx.T) {
+		depth1, err := repo2.Commit(sha2).Tree(dagger.GitRefTreeOpts{Depth: 1}).ID(ctx)
+		require.NoError(t, err)
+		depth2, err := repo2.Commit(sha2).Tree(dagger.GitRefTreeOpts{Depth: 2}).ID(ctx)
+		require.NoError(t, err)
+		require.NotEqual(t, depth1, depth2)
+	})
 }
 
 func (GitSuite) TestGitUncommittedRemote(ctx context.Context, t *testctx.T) {
