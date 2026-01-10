@@ -71,7 +71,7 @@ func (d docker) ContainerRun(ctx context.Context, name string, opts runOpts) err
 		args = append(args, "-v", volume)
 	}
 
-	envs := os.Environ()
+	envs := os.Environ()		
 
 	for _, env := range opts.env {
 		k, _, ok := strings.Cut(env, "=")
