@@ -835,6 +835,9 @@ func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.I
 			Version:  engine.Version,
 			Revision: srv.engineName,
 		},
+		SystemInfo: &controlapi.SystemInfo{
+			NumCPU: int32(runtime.NumCPU()),
+		},
 	}, nil
 }
 

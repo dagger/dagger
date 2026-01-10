@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -660,7 +659,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			defer telemetry.EndWithCause(span, &err)
 
 			eg, ctx := errgroup.WithContext(ctx)
-			sem := semaphore.NewWeighted(int64(runtime.NumCPU()))
+			sem := semaphore.NewWeighted(int64(engineClient.NumCPU()))
 			for srcRootPath, modSrc := range modSrcs {
 				name := strings.TrimPrefix(srcRootPath, baseSrcRootPath)
 				name = strings.TrimPrefix(name, "/")
