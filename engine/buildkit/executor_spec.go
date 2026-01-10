@@ -66,9 +66,9 @@ const (
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
 	DaggerNoInitEnv          = "_DAGGER_NOINIT"
 
-	DaggerSessionPortEnv   = "DAGGER_SESSION_PORT"
-	DaggerSessionTokenEnv  = "DAGGER_SESSION_TOKEN"
-	DaggerEngineNumCPUEnv  = "DAGGER_ENGINE_NUM_CPU"
+	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
+	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
+	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
 
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
