@@ -214,8 +214,16 @@ func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefStr
 		cloneUser += "@"
 	}
 
-	gitParsed.SourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + gitParsed.RepoRoot.Root
-	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + gitParsed.RepoRoot.Root
+	// For SSH URLs, inject port after host if it is defined: ssh://user@host:port/path
+	repoRootWithPort := gitParsed.RepoRoot.Root
+	if endpoint.Port > 0 && gitParsed.scheme == SchemeSSH {
+		if idx := strings.Index(repoRootWithPort, "/"); idx != -1 {
+			repoRootWithPort = fmt.Sprintf("%s:%d%s", repoRootWithPort[:idx], endpoint.Port, repoRootWithPort[idx:])
+		}
+	}
+
+	gitParsed.SourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + repoRootWithPort
+	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + repoRootWithPort
 
 	return gitParsed, nil
 }
