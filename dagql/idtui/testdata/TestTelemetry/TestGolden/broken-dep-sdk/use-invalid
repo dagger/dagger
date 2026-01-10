@@ -24,6 +24,7 @@ Expected stderr:
     │   ┃ - php
     │   ┃ - elixir
     │   ┃ - java
+    │   ┃ - nushell
     │   ┃ - any git module ref, e.g. github.com/dagger/dagger/sdk/elixir@main
     │   ┃ - any local module path, e.g. ./my-sdk
     │   ! invalid SDK: "unknown"
