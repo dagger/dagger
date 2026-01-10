@@ -32,30 +32,6 @@
     {
       "name": "go",
       "source": "toolchains/go",
-      "arguments": [
-        {
-          "name": "source",
-          "argument": "",
-          "ignore": [
-            "bin",
-            ".git",
-            "**/node_modules",
-            "**/.venv",
-            "**/__pycache__",
-            "**/sdk/runtime/**",
-            "docs/node_modules",
-            "sdk/typescript/node_modules",
-            "sdk/typescript/dist",
-            "sdk/rust/examples/backend/target",
-            "sdk/rust/target",
-            "sdk/php/vendor",
-            "docs/**",
-            "dagql/idtui/viztest/broken/**",
-            "modules/evals/**",
-            "**/broken*/**"
-          ]
-        }
-      ],
       "customizations": [
         {
           "name": "",
@@ -120,24 +96,6 @@
     {
       "name": "security",
       "source": "toolchains/security",
-      "arguments": [
-        {
-          "function": [
-            "scanSource"
-          ],
-          "name": "source",
-          "argument": "",
-          "ignore": [
-            "bin",
-            ".git",
-            "docs",
-            "sdk/rust/examples",
-            "sdk/rust/crates/dagger-sdk/examples",
-            "core/integration/testdata",
-            "dagql/idtui/viztest"
-          ]
-        }
-      ],
       "customizations": [
         {
           "function": [
