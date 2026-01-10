@@ -152,6 +152,7 @@ type Client struct {
 	bkClient   *bkclient.Client
 	bkVersion  string
 	bkName     string
+	numCPU     int
 	sessionSrv *BuildkitSessionServer
 
 	// A client for the dagger API that is directly hooked up to this engine client.
@@ -234,6 +235,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		}
 		c.nestedSessionPort = nestedSessionPort
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
+		numCPUVal := os.Getenv("DAGGER_ENGINE_NUM_CPU")
+		if numCPUVal != "" {
+			numCPU, err := strconv.Atoi(numCPUVal)
+			if err != nil {
+				return nil, fmt.Errorf("parse DAGGER_ENGINE_NUM_CPU: %w", err)
+			}
+			c.numCPU = numCPU
+		}
 		c.httpClient = c.newHTTPClient()
 		if err := c.init(connectCtx); err != nil {
 			return nil, fmt.Errorf("initialize nested client: %w", err)
@@ -443,6 +452,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	c.bkClient = bkClient
 	c.bkVersion = bkInfo.BuildkitVersion.Version
 	c.bkName = bkInfo.BuildkitVersion.Revision
+	c.numCPU = bkInfo.SystemInfo.NumCPU
 
 	slog.Info("connected", "name", c.bkName, "client-version", engine.Version, "server-version", c.bkVersion)
 
@@ -1264,6 +1274,11 @@ func (c *Client) Do(
 // A client to the Dagger API hooked up directly with this engine client.
 func (c *Client) Dagger() *dagger.Client {
 	return c.daggerClient
+}
+
+// NumCPU returns the number of CPUs available on the engine host.
+func (c *Client) NumCPU() int {
+	return c.numCPU
 }
 
 // env is in form k1=v1,k2=v2;k3=v3... with ';' used to separate multiple cache configs.

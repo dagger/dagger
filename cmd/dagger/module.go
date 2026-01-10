@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -658,6 +659,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			defer telemetry.EndWithCause(span, &err)
 
 			eg, ctx := errgroup.WithContext(ctx)
+			sem := semaphore.NewWeighted(int64(engineClient.NumCPU()))
 			for srcRootPath, modSrc := range modSrcs {
 				name := strings.TrimPrefix(srcRootPath, baseSrcRootPath)
 				name = strings.TrimPrefix(name, "/")
@@ -666,6 +668,10 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				}
 				ctx, span := Tracer().Start(ctx, "develop "+name, telemetry.Encapsulate())
 				eg.Go(func() (err error) {
+					if err := sem.Acquire(ctx, 1); err != nil {
+						return err
+					}
+					defer sem.Release(1)
 					defer telemetry.EndWithCause(span, &err)
 
 					if engineVersion := getCompatVersion(); engineVersion != "" {

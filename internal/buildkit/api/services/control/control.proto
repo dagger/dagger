@@ -178,6 +178,11 @@ message InfoRequest {}
 
 message InfoResponse {
 	moby.buildkit.v1.types.BuildkitVersion buildkitVersion = 1;
+	SystemInfo systemInfo = 2;
+}
+
+message SystemInfo {
+	int32 numCPU = 1;
 }
 
 message BuildHistoryRequest {

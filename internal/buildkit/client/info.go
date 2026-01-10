@@ -10,12 +10,17 @@ import (
 
 type Info struct {
 	BuildkitVersion BuildkitVersion `json:"buildkitVersion"`
+	SystemInfo      SystemInfo      `json:"systemInfo"`
 }
 
 type BuildkitVersion struct {
 	Package  string `json:"package"`
 	Version  string `json:"version"`
 	Revision string `json:"revision"`
+}
+
+type SystemInfo struct {
+	NumCPU int `json:"numCPU"`
 }
 
 func (c *Client) Info(ctx context.Context) (*Info, error) {
@@ -25,6 +30,7 @@ func (c *Client) Info(ctx context.Context) (*Info, error) {
 	}
 	return &Info{
 		BuildkitVersion: fromAPIBuildkitVersion(res.BuildkitVersion),
+		SystemInfo:      fromAPISystemInfo(res.SystemInfo),
 	}, nil
 }
 
@@ -36,5 +42,14 @@ func fromAPIBuildkitVersion(in *apitypes.BuildkitVersion) BuildkitVersion {
 		Package:  in.Package,
 		Version:  in.Version,
 		Revision: in.Revision,
+	}
+}
+
+func fromAPISystemInfo(in *controlapi.SystemInfo) SystemInfo {
+	if in == nil {
+		return SystemInfo{}
+	}
+	return SystemInfo{
+		NumCPU: int(in.NumCPU),
 	}
 }
