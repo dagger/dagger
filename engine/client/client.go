@@ -235,6 +235,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		}
 		c.nestedSessionPort = nestedSessionPort
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
+		numCPUVal := os.Getenv("DAGGER_ENGINE_NUM_CPU")
+		if numCPUVal != "" {
+			numCPU, err := strconv.Atoi(numCPUVal)
+			if err != nil {
+				return nil, fmt.Errorf("parse DAGGER_ENGINE_NUM_CPU: %w", err)
+			}
+			c.numCPU = numCPU
+		}
 		c.httpClient = c.newHTTPClient()
 		if err := c.init(connectCtx); err != nil {
 			return nil, fmt.Errorf("initialize nested client: %w", err)

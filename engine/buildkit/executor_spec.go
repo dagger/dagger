@@ -66,8 +66,9 @@ const (
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
 	DaggerNoInitEnv          = "_DAGGER_NOINIT"
 
-	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
-	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
+	DaggerSessionPortEnv   = "DAGGER_SESSION_PORT"
+	DaggerSessionTokenEnv  = "DAGGER_SESSION_TOKEN"
+	DaggerEngineNumCPUEnv  = "DAGGER_ENGINE_NUM_CPU"
 
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
@@ -1030,6 +1031,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return fmt.Errorf("unexpected listener address type: %T", httpListener.Addr())
 	}
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
+	state.spec.Process.Env = append(state.spec.Process.Env, DaggerEngineNumCPUEnv+"="+strconv.Itoa(runtime.NumCPU()))
 
 	http2Srv := &http2.Server{}
 	httpSrv := &http.Server{
