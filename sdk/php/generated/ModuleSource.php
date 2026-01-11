@@ -369,6 +369,17 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Set a toolchain as an overlay for another toolchain.
+     */
+    public function withOverlayFor(string $name, string $overlayFor): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withOverlayFor');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('overlayFor', $overlayFor);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Update the module source with a new SDK.
      */
     public function withSDK(string $source): ModuleSource
