@@ -499,7 +499,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 
 	if !usedHardlinkCopy {
 		if copyFileInfo {
-			if err := c.copyFileInfo(fi, target); err != nil {
+			if err := c.copyFileInfo(fi, src, target); err != nil {
 				return errors.Wrap(err, "failed to copy file info")
 			}
 			if err := copyXAttrs(target, src, c.xattrErrorHandler); err != nil {
@@ -589,7 +589,7 @@ func (c *copier) createParentDirs(overwriteTargetMetadata bool) error {
 			return err
 		}
 		if created {
-			if err := c.copyFileInfo(fi, parentDir.dstPath); err != nil {
+			if err := c.copyFileInfo(fi, parentDir.srcPath, parentDir.dstPath); err != nil {
 				return errors.Wrap(err, "failed to copy file info")
 			}
 
