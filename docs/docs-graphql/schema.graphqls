@@ -2147,6 +2147,20 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 scalar EnumValueTypeDefID
 
 type Env {
+  """
+  Return the check with the given name from the installed modules. Must match exactly one check.
+  """
+  check(
+    """The name of the check to retrieve"""
+    name: String!
+  ): Check! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
+
+  """Return all checks defined by the installed modules"""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
+
   """A unique identifier for this Env."""
   id: EnvID!
 

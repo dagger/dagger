@@ -3285,6 +3285,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::check",
+			"p": "Dagger/Env.html#method_check",
+			"d": "<p>Return the check with the given name from the installed modules. Must match exactly one check.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::checks",
+			"p": "Dagger/Env.html#method_checks",
+			"d": "<p>Return all checks defined by the installed modules</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::id",
 			"p": "Dagger/Env.html#method_id",
 			"d": "<p>A unique identifier for this Env.</p>"
