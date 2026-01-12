@@ -2709,10 +2709,10 @@ var (
 		`A successful execution (exit code 0)`,
 	)
 	ReturnFailure = ReturnTypesEnum.Register("FAILURE",
-		`A failed execution (exit codes 1-127)`,
+		`A failed execution (exit codes 1-127 and 192-255)`,
 	)
 	ReturnAny = ReturnTypesEnum.Register("ANY",
-		`Any execution (exit codes 0-127)`,
+		`Any execution (exit codes 0-127 and 192-255)`,
 	)
 )
 
@@ -2737,21 +2737,28 @@ func (expect ReturnTypes) ToLiteral() call.Literal {
 
 // ReturnCodes gets the valid exit codes allowed for a specific return status
 //
-// NOTE: exit status codes above 128 are likely from exiting via a signal - we
-// shouldn't try and handle these.
+// NOTE: exit status codes 128-191 are likely from exiting via a signal - we
+// shouldn't try and handle these. Codes 192-255 are safe to handle to support
+// tools that return exit codes >127, such as AWS CLI.
 func (expect ReturnTypes) ReturnCodes() []int {
 	switch expect {
 	case ReturnSuccess:
 		return []int{0}
 	case ReturnFailure:
-		codes := make([]int, 0, 128)
-		for i := 1; i <= 128; i++ {
+		codes := make([]int, 0, 127+64)
+		for i := 1; i <= 127; i++ {
+			codes = append(codes, i)
+		}
+		for i := 192; i <= 255; i++ {
 			codes = append(codes, i)
 		}
 		return codes
 	case ReturnAny:
-		codes := make([]int, 0, 129)
-		for i := 0; i <= 128; i++ {
+		codes := make([]int, 0, 128+64)
+		for i := 0; i <= 127; i++ {
+			codes = append(codes, i)
+		}
+		for i := 192; i <= 255; i++ {
 			codes = append(codes, i)
 		}
 		return codes
