@@ -217,6 +217,14 @@ func (FileSuite) TestWithName(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "content", mountedFileNameContent)
 	})
+
+	// regression test for https://github.com/dagger/dagger/issues/11660
+	t.Run("contents", func(ctx context.Context, t *testctx.T) {
+		f := c.File("test", "hello").WithName("tset")
+		s, err := f.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello", s)
+	})
 }
 
 func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
