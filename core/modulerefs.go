@@ -79,7 +79,7 @@ func ParseRefString(
 	}
 
 	// First, we stat ref in case the mod path github.com/username is a local directory
-	if stat, err := statFS.Stat(ctx, refString); err != nil {
+	if _, stat, err := statFS.Stat(ctx, refString); err != nil {
 		slog.Debug("parseRefString stat error", "error", err)
 	} else if stat.IsDir() {
 		return &ParsedRefString{

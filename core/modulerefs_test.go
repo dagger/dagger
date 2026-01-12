@@ -391,6 +391,6 @@ func TestParseRefString(t *testing.T) {
 type neverExistsFS struct {
 }
 
-func (fs neverExistsFS) Stat(ctx context.Context, path string) (*Stat, error) {
-	return nil, os.ErrNotExist
+func (fs neverExistsFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	return "", nil, os.ErrNotExist
 }
