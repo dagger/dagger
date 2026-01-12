@@ -6,29 +6,27 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strconv"
+	"strings"
 
 	"github.com/containerd/platforms"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
 	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
+	"github.com/dagger/dagger/util/containerutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/engine"
 	ociexporter "github.com/dagger/dagger/engine/buildkit/exporter/oci"
 )
 
-type ContainerExport struct {
-	Definition *bksolverpb.Definition
-	Config     specs.ImageConfig
-}
-
 func (c *Client) PublishContainerImage(
 	ctx context.Context,
 	inputByPlatform map[string]ContainerExport,
-	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
+	refName string, // the destination image name
+	useOCIMediaTypes bool,
+	forceCompression string,
 ) (map[string]string, error) {
 	ctx = buildkitTelemetryProvider(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -37,13 +35,28 @@ func (c *Client) PublishContainerImage(
 	}
 	defer cancel(errors.New("publish container image done"))
 
-	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
+	combinedResult, err := c.combineContainerRefs(ctx, inputByPlatform)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: lift this to dagger
 	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := map[string]string{
+		string(exptypes.OptKeyName):     refName,
+		string(exptypes.OptKeyPush):     strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(useOCIMediaTypes),
+	}
+	if forceCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(forceCompression)
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	err = addAnnotations(inputByPlatform, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -63,11 +76,43 @@ func (c *Client) PublishContainerImage(
 	return resp, nil
 }
 
+type ContainerExport struct {
+	Ref         bkcache.ImmutableRef
+	Config      specs.ImageConfig
+	Annotations []containerutil.ContainerAnnotation
+}
+
+func addAnnotations(inputByPlatform map[string]ContainerExport, opts map[string]string) error {
+	singlePlatform := len(inputByPlatform) == 1
+	for plat, variant := range inputByPlatform {
+		if singlePlatform {
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+			}
+		} else {
+			platformSpec, err := platforms.Parse(plat)
+			if err != nil {
+				return err
+			}
+			// multi platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+			}
+		}
+	}
+	return nil
+}
+
 func (c *Client) ExportContainerImage(
 	ctx context.Context,
-	inputByPlatform map[string]ContainerExport,
 	destPath string,
-	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
+	inputByPlatform map[string]ContainerExport,
+	forceCompression string,
+	tarExport bool,
+	leaseID string, // only required when tarExport is false
+	useOCIMediaTypes bool,
 ) (map[string]string, error) {
 	ctx = buildkitTelemetryProvider(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -78,7 +123,7 @@ func (c *Client) ExportContainerImage(
 
 	destPath = path.Clean(destPath)
 
-	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
+	combinedResult, err := c.combineContainerRefs(ctx, inputByPlatform)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +139,29 @@ func (c *Client) ExportContainerImage(
 		Variant:        variant,
 		LeaseManager:   c.Worker.LeaseManager(),
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	opts := map[string]string{
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(useOCIMediaTypes),
+	}
+
+	opts["tar"] = strconv.FormatBool(tarExport)
+	if !tarExport {
+		if leaseID == "" {
+			return nil, fmt.Errorf("missing leaseID")
+		}
+		opts["store"] = "export"
+		opts["lease"] = leaseID
+	}
+
+	if forceCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(forceCompression)
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	err = addAnnotations(inputByPlatform, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +196,8 @@ func (c *Client) ContainerImageToTarball(
 	engineHostPlatform specs.Platform,
 	destPath string,
 	inputByPlatform map[string]ContainerExport,
-	opts map[string]string,
+	useOCIMediaTypes bool,
+	forceCompression string,
 ) error {
 	ctx = buildkitTelemetryProvider(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -137,7 +206,7 @@ func (c *Client) ContainerImageToTarball(
 	}
 	defer cancel(errors.New("container image to tarball done"))
 
-	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
+	combinedResult, err := c.combineContainerRefs(ctx, inputByPlatform)
 	if err != nil {
 		return err
 	}
@@ -153,6 +222,20 @@ func (c *Client) ContainerImageToTarball(
 		Variant:        variant,
 		LeaseManager:   c.Worker.LeaseManager(),
 	})
+	if err != nil {
+		return err
+	}
+
+	opts := map[string]string{
+		"tar":                           strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(useOCIMediaTypes),
+	}
+	if forceCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(forceCompression)
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	err = addAnnotations(inputByPlatform, opts)
 	if err != nil {
 		return err
 	}
@@ -177,32 +260,15 @@ func (c *Client) ContainerImageToTarball(
 	return nil
 }
 
-func (c *Client) getContainerResult(
-	ctx context.Context,
+func (c *Client) combineContainerRefs(
+	_ context.Context,
 	inputByPlatform map[string]ContainerExport,
 ) (*solverresult.Result[bkcache.ImmutableRef], error) {
 	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
 	expPlatforms := &exptypes.Platforms{
 		Platforms: make([]exptypes.Platform, len(inputByPlatform)),
 	}
-	// TODO: probably faster to do this in parallel for each platform
 	for platformString, input := range inputByPlatform {
-		res, err := c.Solve(ctx, bkgw.SolveRequest{
-			Definition: input.Definition,
-			Evaluate:   true,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to solve for container publish: %w", err)
-		}
-		cacheRes, err := ConvertToWorkerCacheResult(ctx, res)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert result: %w", err)
-		}
-		ref, err := cacheRes.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-
 		platform, err := platforms.Parse(platformString)
 		if err != nil {
 			return nil, err
@@ -222,13 +288,13 @@ func (c *Client) getContainerResult(
 		combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
 		if len(inputByPlatform) == 1 {
 			combinedResult.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
-			combinedResult.SetRef(ref)
+			combinedResult.SetRef(input.Ref)
 		} else {
 			expPlatforms.Platforms[len(combinedResult.Refs)] = exptypes.Platform{
 				ID:       platformString,
 				Platform: platform,
 			}
-			combinedResult.AddRef(platformString, ref)
+			combinedResult.AddRef(platformString, input.Ref)
 		}
 	}
 
