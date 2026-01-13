@@ -3,8 +3,7 @@
 namespace Dagger\Tests\Unit\Service;
 
 use Dagger\Service\FindsDaggerObjects;
-use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
-use Dagger\Tests\Unit\Fixture\NoDaggerFunctions;
+use Dagger\Tests\Unit\Fixture;
 use Dagger\ValueObject\DaggerObject;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -31,9 +30,9 @@ class FindsDaggerObjectsTest extends TestCase
     {
         yield 'test fixtures' => [
             [
-                NoDaggerFunctions::getValueObjectEquivalent(),
-                DaggerObjectWithDaggerFunctions::getValueObjectEquivalent(),
-
+                Fixture\NoDaggerFunctions::getValueObjectEquivalent(),
+                Fixture\DaggerObjectWithDaggerFunctions::getValueObjectEquivalent(),
+                Fixture\Module\Field\MyModule::asValueObject(),
             ],
             __DIR__ . '/../Fixture',
         ];
