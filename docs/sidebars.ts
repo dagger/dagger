@@ -9,7 +9,12 @@ module.exports = {
       label: "Introduction",
       collapsible: true,
       collapsed: false,
-      items: ["index", "introduction/use-cases", "introduction/examples", "introduction/faq"],
+      items: [
+        "index",
+        "introduction/use-cases",
+        "introduction/examples",
+        "introduction/faq",
+      ],
     },
 
     // ========================================
@@ -25,13 +30,28 @@ module.exports = {
         "getting-started/installation",
         {
           type: "category",
+          label: "Core Concepts",
+          link: {
+            type: "doc",
+            id: "introduction/core-concepts/index",
+          },
+          collapsible: true,
+          collapsed: false,
+          items: [
+            "introduction/core-concepts/toolchains",
+            "introduction/core-concepts/checks",
+            "introduction/core-concepts/functions",
+          ],
+        },
+        {
+          type: "category",
           label: "Quickstarts",
           collapsible: true,
           collapsed: true,
           items: [
             "getting-started/quickstarts/basics/index",
-            "getting-started/quickstarts/ci/index",
             "getting-started/quickstarts/blueprint/index",
+            "getting-started/quickstarts/ci/index",
             "getting-started/quickstarts/agent/index",
             "getting-started/quickstarts/agent/inproject",
           ],
@@ -91,15 +111,6 @@ module.exports = {
             "introduction/features/programmability",
             "introduction/features/caching",
             "introduction/features/sandbox",
-          ],
-        },
-        {
-          type: "category",
-          label: "Validation & Quality",
-          collapsible: true,
-          collapsed: false,
-          items: [
-            "introduction/features/checks",
             "introduction/features/observability",
           ],
         },
@@ -110,7 +121,6 @@ module.exports = {
           collapsed: false,
           items: [
             "introduction/features/reusability",
-            "introduction/features/toolchains",
             "introduction/features/services",
           ],
         },

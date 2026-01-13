@@ -1,19 +1,21 @@
 ---
-title: "Use a Blueprint Module"
-slug: "/getting-started/quickstarts/blueprint"
-description: "Use a Blueprint Module"
-keywords: ["quickstart", "ci", "dagger", "blueprint"]
+title: "Use a Toolchain"
+slug: "/getting-started/quickstarts/toolchain"
+description: "Install and use a pre-built toolchain for your project"
+keywords: ["quickstart", "ci", "dagger", "toolchain", "blueprint"]
 ---
 
-# Use a Blueprint Module
+# Use a Toolchain
 
-A Dagger module may reference another module as its blueprint.
+Toolchains are pre-built Dagger modules that provide ready-to-use functions and checks for common development workflows. They let you add powerful CI/CD capabilities to your project without writing any code—just install a toolchain and start calling its functions.
 
-Using a module as a blueprint means that your module will automatically have the functions of the blueprint module directly callable. This is great for platform teams daggerizing many software components with identical stacks because each project does not need to reimplement the same code in every project, they simply install the blueprint.
+This quickstart will guide you through installing and using a toolchain in an example application. You'll see how toolchains provide build, test, and publish functions that work immediately with your codebase.
 
-When you use a blueprint module, the [context directory](../../types/directory.mdx#git-repositories) will automatically be your repository rather than the blueprint's repository.
+:::tip What's a Toolchain?
+A toolchain is a Dagger module designed for consumption. You install it and use its functions directly—no code writing required. Toolchains package best practices, checks, and automation that you can use across projects.
 
-This quickstart will guide you through using a blueprint module in an example application.
+[Learn more about toolchains →](/core-concepts/toolchains)
+:::
 
 ## Requirements
 
@@ -67,26 +69,30 @@ Once you confirm your authentication code, your Dagger CLI will be authenticated
 
 After successfully creating your organization, all future Dagger workflows can be inspected in Dagger Cloud.
 
-## Initialize a Dagger module with a blueprint
+## Install a Toolchain
 
-Create a new Dagger module using `dagger init`, but using an existing module as a blueprint.
+Create a new Dagger module using `dagger init` and then install a toolchain:
 
 ```shell
-dagger init --blueprint=github.com/kpenfound/blueprints/hello-dagger
+dagger init
+dagger toolchain install github.com/kpenfound/blueprints/hello-dagger --name hello
 ```
 
-The `--blueprint` flag means the new module will use the Dagger module at [github.com/kpenfound/blueprints/hello-dagger](https://github.com/kpenfound/blueprints/tree/main/hello-dagger) as a blueprint, meaning I can use that module directly with `dagger call`.
+This installs the toolchain from [github.com/kpenfound/blueprints/hello-dagger](https://github.com/kpenfound/blueprints/tree/main/hello-dagger), making all its functions immediately available for your project.
 
-See what tools have been installed:
+## See What's Available
+
+List the functions the toolchain provides:
 
 ```shell
 dagger functions
+dagger call hello --help
 ```
 
 You will see:
 
 ```
-dagger functions
+dagger call hello --help
 ▶ connect 0.2s
 ▶ load module: . 1.0s
 
@@ -97,18 +103,54 @@ publish     Publish the application container after building and testing it on-t
 test        Return the result of running unit tests
 ```
 
-So the functions in the `github.com/kpenfound/blueprints/hello-dagger` module are now available to be used!
+These functions are now available to use with your project—no code writing required!
 
-Try running the test function:
+## Use Toolchain Functions
+
+Try calling the test function:
 
 ```shell
-dagger call test
+dagger call hello test
 ```
 
-## Next steps
+You can call any of the toolchain's functions:
 
-Congratulations! You've installed your first blueprint module with Dagger.
+```shell
+# Build the application
+dagger call hello build
 
-Now you have the tools to successfully take the next step: [adopting Dagger in your project](../../../reference/best-practices/adopting.mdx).
+# Get a development environment
+dagger call hello build-env
 
-In the meantime, we encourage you to [join our awesome community on Discord](https://discord.gg/dagger-io) to introduce yourself and ask questions. And [starring our GitHub repository](https://github.com/dagger/dagger) is always appreciated!
+# Publish after building and testing
+dagger call hello publish --address=ghcr.io/myorg/hello-dagger:latest
+```
+
+All of these functions work with your project code automatically. The toolchain handles the complexity—you just call the functions you need.
+
+## What Just Happened?
+
+When you installed the toolchain:
+
+1. **The toolchain functions became available** to call directly
+2. **Your project directory** is automatically used as the source code
+3. **You can now run** build, test, and publish workflows without writing code
+
+This is the power of toolchains: immediate value without complexity.
+
+## Next Steps
+
+Congratulations! You've installed and used your first toolchain.
+
+**What you can do now:**
+
+- **[Run checks](/core-concepts/checks)** - Most toolchains include validation checks
+- **[Use in CI](/getting-started/quickstarts/ci)** - Run the same commands in your CI pipeline
+- **[Daggerverse](https://daggerverse.dev)** - Discover more toolchains for your stack
+- **[Customize](/core-concepts/toolchains#customizing-toolchains)** - Add your own functions or modify behavior
+- **[Build your own](/extending)** - Create toolchains for your organization
+
+**Community:**
+
+- [Join our Discord](https://discord.gg/dagger-io) to ask questions and share ideas
+- [Star our GitHub repository](https://github.com/dagger/dagger) to stay updated

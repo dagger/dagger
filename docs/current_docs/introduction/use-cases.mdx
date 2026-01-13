@@ -6,26 +6,6 @@ slug: "/use-cases"
 
 Dagger is a versatile tool with multiple applications and use cases. Some of the most common ones are described below.
 
-## Agentic CI
-
-Coding agents are dramatically increasing the volume of code flowing through your software delivery pipelines. And those pipelines, typically characterized by artisanal "glue" scripts and complex YAML, starting to crack under the pressure. This presents an opportunity: organizations can leverage AI to increase throughput and maintain their software development velocity.
-
-Agentic CI proposes integrating Large Language Models (LLMs), and their ability to use tools, into existing CI workflows. It involves transferring many of the time-consuming tasks typically handled by human reviewers - enforcing coding standards, securing code against common exploits, diagnosing test failures - to autonomous AI agents running on existing CI infrastructure.
-
-### Benefits
-
-- Agentic CI can speed up the development cycle, by enabling fast, automatic identification and correction for bugs, security vulnerabilities, or performance issues. Agents can also provide quick feedback on test coverage and results.
-- With agentic CI, developers can focus on higher-value tasks, such as defining product architecture or adding new features, instead of spending time and effort diagnosing test failures, enforcing coding standards, or performing other manual tasks.
-- As the amount of AI-generated code increases, agentic CI infrastructure can quickly scale up to deal with the increasing workload.
-
-Dagger can be used as a runtime and programming environment for AI agents, making it simple and efficient to integrate them into existing CI workflows.
-
-- Dagger provides an `LLM` type that enables native integration of Large Language Models (LLM) in your workflows, together with out-of-the-box support for tool use: an LLM can automatically discover and use any available Dagger Functions in the provided environment.
-- Dagger has built-in Model Context Protocol (MCP) support that allows you to easily expose Dagger modules as an MCP server. This allows you to configure a client (such as Claude Desktop, Cursor, Goose CLI/Desktop) to consume modules from [the Daggerverse](https://daggerverse.dev) or any Git repository as native MCP servers.
-- Dagger Shell lets you interact with any attached LLM using natural language commands. Each input builds upon previous interactions, creating a prompt chain that lets you execute complex workflows without needing to know the exact syntax of the underlying Dagger API.
-- Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using local providers like Docker Model Runner or Ollama.
-- Dagger provides [end-to-end tracing](features/observability.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
-
 ## Portable CI
 
 A common problem seen in software development is the "works on my machine" problem - essentially, that code runs as expected in one environment (such as a developer's laptop), but fails or works differently in other environments (such as in CI or production). This usually happens because of subtle environmental differences - differences in operating systems, environment variables, installed software versions, and so on.
@@ -54,3 +34,23 @@ Dagger modules provide a framework that you can use to break up this complexity 
 :::tip
 Learn about [best practices for monorepo CI](../reference/best-practices/monorepos.mdx).
 :::
+
+## Agentic CI
+
+Coding agents are dramatically increasing the volume of code flowing through your software delivery pipelines. And those pipelines, typically characterized by artisanal "glue" scripts and complex YAML, starting to crack under the pressure. This presents an opportunity: organizations can leverage AI to increase throughput and maintain their software development velocity.
+
+Agentic CI proposes integrating Large Language Models (LLMs), and their ability to use tools, into existing CI workflows. It involves transferring many of the time-consuming tasks typically handled by human reviewers - enforcing coding standards, securing code against common exploits, diagnosing test failures - to autonomous AI agents running on existing CI infrastructure.
+
+### Benefits
+
+- Agentic CI can speed up the development cycle, by enabling fast, automatic identification and correction for bugs, security vulnerabilities, or performance issues. Agents can also provide quick feedback on test coverage and results.
+- With agentic CI, developers can focus on higher-value tasks, such as defining product architecture or adding new features, instead of spending time and effort diagnosing test failures, enforcing coding standards, or performing other manual tasks.
+- As the amount of AI-generated code increases, agentic CI infrastructure can quickly scale up to deal with the increasing workload.
+
+Dagger can be used as a runtime and programming environment for AI agents, making it simple and efficient to integrate them into existing CI workflows.
+
+- Dagger provides an `LLM` type that enables native integration of Large Language Models (LLM) in your workflows, together with out-of-the-box support for tool use: an LLM can automatically discover and use any available Dagger Functions in the provided environment.
+- Dagger has built-in Model Context Protocol (MCP) support that allows you to easily expose Dagger modules as an MCP server. This allows you to configure a client (such as Claude Desktop, Cursor, Goose CLI/Desktop) to consume modules from [the Daggerverse](https://daggerverse.dev) or any Git repository as native MCP servers.
+- Dagger Shell lets you interact with any attached LLM using natural language commands. Each input builds upon previous interactions, creating a prompt chain that lets you execute complex workflows without needing to know the exact syntax of the underlying Dagger API.
+- Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using local providers like Docker Model Runner or Ollama.
+- Dagger provides [end-to-end tracing](features/observability.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.

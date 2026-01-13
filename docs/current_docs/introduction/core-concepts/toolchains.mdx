@@ -1,0 +1,246 @@
+---
+title: "Toolchains"
+slug: /core-concepts/toolchains
+description: "Install pre-built tools and checks for your project"
+---
+
+# Toolchains
+
+Toolchains are Dagger modules that provide ready-to-use functions and checks for common development workflows. They let you add powerful CI/CD capabilities to your project without writing any code.
+
+## What is a Toolchain?
+
+A toolchain is a Dagger module designed for consumption. Instead of importing it into your code, you install it and use its functions directly via `dagger call` or `dagger check`.
+
+**Key characteristics:**
+- Provides ready-to-use functions (build, test, lint, etc.)
+- Includes checks for validation
+- Works with your project's source code automatically
+- No Dagger code writing required
+
+## Installing a Toolchain
+
+To install a toolchain, use the `dagger toolchain install` command:
+
+```shell
+# Install from GitHub
+dagger toolchain install github.com/dagger/jest
+
+# See what functions are available
+dagger functions
+
+# Call toolchain functions
+dagger call jest test
+
+# Run all checks
+dagger check
+```
+
+You can install toolchains from:
+- **GitHub repositories**: `github.com/user/repo/path`
+- **Local paths**: `./path/to/toolchain` or `/absolute/path`
+- **Git URLs**: Any valid Git URL with optional version tags
+
+### Install with a Custom Name
+
+By default, the toolchain is accessible using its module name. You can specify a custom name if needed:
+
+```shell
+dagger toolchain install github.com/example/toolchain --name mytool
+dagger call mytool build
+```
+
+### Install Multiple Toolchains
+
+You can install as many toolchains as you need. Each toolchain becomes available under its own namespace:
+
+```shell
+dagger toolchain install github.com/example/hello
+dagger toolchain install github.com/example/builder
+dagger toolchain install github.com/example/tester
+
+# Call functions from any installed toolchain
+dagger call hello message
+dagger call builder build
+dagger call tester test
+```
+
+## Common Use Cases
+
+### Tool-Specific Toolchains
+
+Toolchains work best when they focus on a single tool. Instead of a monolithic "Python toolchain," install separate toolchains for each tool your project uses:
+
+```shell
+# Install tool-specific toolchains
+dagger toolchain install github.com/example/black    # Code formatting
+dagger toolchain install github.com/example/pylint   # Linting
+dagger toolchain install github.com/example/pytest   # Testing
+
+# Each toolchain integrates deeply with its specific tool
+dagger call black format
+dagger call pylint check
+dagger call pytest test
+
+# Run all pytest checks
+dagger check 'pytest:*'
+
+# Or run all checks together
+dagger check
+```
+
+This approach allows each toolchain to:
+- Integrate deeply with its tool without assumptions about your project
+- Provide tool-specific customization options
+- Update independently when the tool evolves
+- Mix and match tools across different languages/stacks
+
+For example, a frontend project might use:
+
+```shell
+dagger toolchain install github.com/example/prettier   # JavaScript formatting
+dagger toolchain install github.com/example/eslint     # JavaScript linting
+dagger toolchain install github.com/example/vitest     # Testing
+dagger toolchain install github.com/example/playwright # E2E testing
+```
+
+### Standardizing Team Practices
+
+Platform teams can create organization-specific toolchains that enforce standards:
+
+```shell
+# Organization provides standard toolchain configurations
+dagger toolchain install github.com/myorg/security-scanner
+dagger toolchain install github.com/myorg/license-checker
+dagger toolchain install github.com/myorg/deployment
+
+# All projects use the same standards
+dagger check  # Runs org-wide validation
+```
+
+## Customizing Toolchains
+
+Toolchains are designed to work out of the box with sensible defaults, but most support customization through optional arguments.
+
+### Using Optional Arguments
+
+Most toolchain functions accept optional arguments to customize their behavior. Use `dagger functions` to see what's available:
+
+```shell
+# See available functions and their arguments
+dagger functions
+dagger call build --help
+
+# Example: customize build output directory
+dagger call build --output-dir=./dist
+
+# Example: run tests with specific pattern
+dagger call test --pattern="integration/*"
+
+# Example: customize container registry
+dagger call publish --registry=ghcr.io --image-name=myapp
+```
+
+
+### Advanced: Customizing in dagger.json
+
+For more advanced customization, you can edit your `dagger.json` configuration file to override toolchain defaults.
+
+#### Overriding Argument Defaults
+
+You can override the default value of any function argument in a toolchain using the `customizations` array:
+
+```json
+{
+  "name": "my-app",
+  "toolchains": [
+    {
+      "name": "greeter",
+      "source": "github.com/example/greeter",
+      "customizations": [
+        {
+          "function": ["greet"],
+          "argument": "message",
+          "default": "hola"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Overriding defaultPath Arguments
+
+Many toolchain functions use `+defaultPath` annotations to automatically load files from your module's directory. You can customize these paths:
+
+```json
+{
+  "name": "my-app",
+  "toolchains": [
+    {
+      "name": "linter",
+      "source": "github.com/example/linter",
+      "customizations": [
+        {
+          "argument": "source",
+          "defaultPath": "/my-subdirectory"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Filtering Toolchain Checks
+
+When you install a toolchain that includes checks, all checks are automatically included when you run `dagger check`. You can selectively filter out specific checks using the `ignoreChecks` configuration:
+
+```json
+{
+  "name": "my-app",
+  "toolchains": [
+    {
+      "name": "linter",
+      "source": "github.com/example/linter",
+      "ignoreChecks": [
+        "failing-check",
+        "experimental-*"
+      ]
+    }
+  ]
+}
+```
+
+The `ignoreChecks` configuration supports glob patterns, making it easy to exclude multiple checks that match a pattern. Use this for gradual adoption, environment-specific checks, or to skip experimental features.
+
+To see which checks are active after applying filters:
+
+```shell
+dagger check -l
+```
+
+## Toolchains and CI
+
+Toolchains work identically locally and in CI. The same `dagger check` commands run in both places:
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dagger/dagger-for-github@v6
+      - run: dagger check
+```
+
+[See CI integration examples →](/getting-started/ci-integrations/github-actions)
+
+## Next Steps
+
+- **[Use a Toolchain Quickstart](/getting-started/quickstarts/toolchain)** - Get started in 5 minutes
+- **[Checks](/core-concepts/checks)** - Learn about validation checks
+- **[Building with Dagger](/extending)** - Create your own toolchain
+- **[Daggerverse](https://daggerverse.dev)** - Explore available toolchains
