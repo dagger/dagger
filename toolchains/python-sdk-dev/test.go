@@ -13,6 +13,9 @@ type TestSuite struct {
 	// The base container to run the tests
 	// +private
 	Container *dagger.Container
+	// The source directory containing the Python SDK
+	// +private
+	Source *dagger.Directory
 	// The python version to test against
 	// +private
 	Version string
@@ -21,29 +24,31 @@ type TestSuite struct {
 	DisableNestedExec bool
 }
 
-// Run the pytest command.
+// Run the pytest command using the python toolchain.
 func (t *TestSuite) Run(
+	ctx context.Context,
 	// Arguments to pass to pytest
 	args []string,
-) *dagger.Container {
-	cmd := []string{"uv", "run"}
-	if t.Version != "" {
-		cmd = append(cmd, "-p", t.Version)
+) error {
+	opts := dagger.PythonTestOpts{
+		Source:    t.Source,
+		Container: t.Container,
+		Args:      args,
 	}
-	return t.Container.
-		WithExec(
-			append(append(cmd, "pytest"), args...),
-			dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	if t.Version != "" {
+		opts.Version = t.Version
+	}
+	return dag.Python().Test(ctx, opts)
 }
 
-// Run python tests.
-func (t *TestSuite) Default() *dagger.Container {
-	return t.Run([]string{"-Wd", "-l", "-m", "not provision"})
+// Run python tests (excludes provision tests).
+func (t *TestSuite) All(ctx context.Context) error {
+	return t.Run(ctx, []string{"-Wd", "-l", "-m", "not provision"})
 }
 
 // Run unit tests.
-func (t *TestSuite) Unit() *dagger.Container {
-	return t.Run([]string{"-m", "not slow and not provision"})
+func (t *TestSuite) Unit(ctx context.Context) error {
+	return t.Run(ctx, []string{"-m", "not slow and not provision"})
 }
 
 // Test provisioning.

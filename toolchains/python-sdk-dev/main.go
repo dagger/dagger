@@ -138,14 +138,10 @@ func (t PythonSdkDev) WithDirectory(
 // +check
 // Test the Python SDK
 func (t PythonSdkDev) Test(ctx context.Context) error {
-	// FIXME: apply Erik's nested fix fix 2025-nov-7
 	jobs := parallel.New()
 	for _, version := range supportedVersions {
 		jobs = jobs.WithJob("test with python version "+version, func(ctx context.Context) error {
-			_, err := t.TestSuite(version, false).
-				Default().
-				Sync(ctx)
-			return err
+			return t.TestSuite(version, false).All(ctx)
 		})
 	}
 	return jobs.Run(ctx)
@@ -162,6 +158,7 @@ func (t PythonSdkDev) TestSuite(
 ) *TestSuite {
 	return &TestSuite{
 		Container:         t.DevContainer,
+		Source:            t.Workspace.Directory(t.SourcePath),
 		Version:           version,
 		DisableNestedExec: disableNestedExec,
 	}

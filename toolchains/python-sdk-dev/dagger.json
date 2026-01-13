@@ -23,6 +23,10 @@
     {
       "name": "wolfi",
       "source": "../../modules/wolfi"
+    },
+    {
+      "name": "python",
+      "source": "../python"
     }
   ]
 }
