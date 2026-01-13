@@ -2362,6 +2362,12 @@ pub struct ChangesetWithChangesetOpts {
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<ChangesetMergeConflict>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ChangesetWithChangesetsOpts {
+    /// What to do on a merge conflict
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<ChangesetsMergeConflict>,
+}
 impl Changeset {
     /// Files and directories that were added in the newer directory.
     pub async fn added_paths(&self) -> Result<Vec<String>, DaggerError> {
@@ -2481,6 +2487,47 @@ impl Changeset {
                 Box::pin(async move { changes.into_id().await.unwrap().quote() })
             }),
         );
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add changes from multiple changesets using git octopus merge strategy
+    /// This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+    /// Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - List of changesets to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changesets(&self, changes: Vec<ChangesetId>) -> Changeset {
+        let mut query = self.selection.select("withChangesets");
+        query = query.arg("changes", changes);
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add changes from multiple changesets using git octopus merge strategy
+    /// This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+    /// Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - List of changesets to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changesets_opts(
+        &self,
+        changes: Vec<ChangesetId>,
+        opts: ChangesetWithChangesetsOpts,
+    ) -> Changeset {
+        let mut query = self.selection.select("withChangesets");
+        query = query.arg("changes", changes);
         if let Some(on_conflict) = opts.on_conflict {
             query = query.arg("onConflict", on_conflict);
         }
@@ -13711,6 +13758,13 @@ pub enum ChangesetMergeConflict {
     PreferOurs,
     #[serde(rename = "PREFER_THEIRS")]
     PreferTheirs,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ChangesetsMergeConflict {
+    #[serde(rename = "FAIL")]
+    Fail,
+    #[serde(rename = "FAIL_EARLY")]
+    FailEarly,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {

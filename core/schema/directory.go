@@ -317,9 +317,18 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
+		dagql.NodeFunc("withChangesets", DagOpChangesetWrapper(srv, s.changesetWithChangesets)).
+			Doc(`Add changes from multiple changesets using git octopus merge strategy`,
+				`This is more efficient than chaining multiple withChangeset calls when merging many changesets.`,
+				`Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).`).
+			Args(
+				dagql.Arg("changes").Doc(`List of changesets to merge into the actual changeset`),
+				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
+			),
 	}.Install(srv)
 
 	ChangesetMergeConflictEnum.Install(srv)
+	ChangesetsMergeConflictEnum.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -1141,6 +1150,49 @@ func (proto ChangesetMergeConflict) ToLiteral() call.Literal {
 	return ChangesetMergeConflictEnum.Literal(proto)
 }
 
+// ChangesetsMergeConflict is the enum for octopus merge conflict strategies (WithChangesets).
+// Only FAIL_EARLY and FAIL are supported (no -X ours/theirs with octopus merge).
+type ChangesetsMergeConflict string
+
+var ChangesetsMergeConflictEnum = dagql.NewEnum[ChangesetsMergeConflict]()
+
+var (
+	FailEarlyOnMergeConflicts = ChangesetsMergeConflictEnum.Register("FAIL_EARLY",
+		`Fail before attempting merge if file-level conflicts are detected between any changesets`)
+	FailOnMergeConflicts = ChangesetsMergeConflictEnum.Register("FAIL",
+		`Attempt the octopus merge and fail if git merge fails due to conflicts`)
+)
+
+func (proto ChangesetsMergeConflict) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ChangesetsMergeConflict",
+		NonNull:   true,
+	}
+}
+
+func (proto ChangesetsMergeConflict) TypeDescription() string {
+	return "Strategy to use when merging multiple changesets with git octopus merge."
+}
+
+func (proto ChangesetsMergeConflict) Decoder() dagql.InputDecoder {
+	return ChangesetsMergeConflictEnum
+}
+
+func (proto ChangesetsMergeConflict) ToLiteral() call.Literal {
+	return ChangesetsMergeConflictEnum.Literal(proto)
+}
+
+func mergeConflictsStrategyToCore(onConflict ChangesetsMergeConflict) core.WithChangesetsMergeConflict {
+	switch onConflict {
+	case FailEarlyOnMergeConflicts:
+		return core.FailEarlyOnConflicts
+	case FailOnMergeConflicts:
+		fallthrough
+	default:
+		return core.FailOnConflicts
+	}
+}
+
 type changesetWithChangesetArgs struct {
 	Changes    dagql.ID[*core.Changeset]
 	OnConflict ChangesetMergeConflict `default:"FAIL"`
@@ -1178,6 +1230,32 @@ func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dag
 	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
 
 	return parent.Self().WithChangeset(ctx, change.Self(), onConflictStrategy)
+}
+
+type changesetWithChangesetsArgs struct {
+	Changes    dagql.ArrayInput[dagql.ID[*core.Changeset]]
+	OnConflict ChangesetsMergeConflict `default:"FAIL"`
+	DagOpInternalArgs
+}
+
+func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Changeset, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	changes := make([]*core.Changeset, len(args.Changes))
+	for i, changeID := range args.Changes {
+		change, err := changeID.Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("load changeset %d: %w", i, err)
+		}
+		changes[i] = change.Self()
+	}
+
+	onConflictStrategy := mergeConflictsStrategyToCore(args.OnConflict)
+
+	return parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
 }
 
 type dirDockerBuildArgs struct {

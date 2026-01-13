@@ -250,6 +250,21 @@ type Changeset {
     """What to do on a merge conflict"""
     onConflict: ChangesetMergeConflict = FAIL
   ): Changeset!
+
+  """
+  Add changes from multiple changesets using git octopus merge strategy
+
+  This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+
+  Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+  """
+  withChangesets(
+    """List of changesets to merge into the actual changeset"""
+    changes: [ChangesetID!]!
+
+    """What to do on a merge conflict"""
+    onConflict: ChangesetsMergeConflict = FAIL
+  ): Changeset!
 }
 
 """
@@ -280,6 +295,19 @@ enum ChangesetMergeConflict {
   The conflict is resolved by applying the version of the other changeset
   """
   PREFER_THEIRS
+}
+
+"""
+Strategy to use when merging multiple changesets with git octopus merge.
+"""
+enum ChangesetsMergeConflict {
+  """
+  Fail before attempting merge if file-level conflicts are detected between any changesets
+  """
+  FAIL_EARLY
+
+  """Attempt the octopus merge and fail if git merge fails due to conflicts"""
+  FAIL
 }
 
 type Check {

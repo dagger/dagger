@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -509,6 +510,17 @@ const (
 	PreferTheirsOnConflict
 )
 
+// WithChangesetsMergeConflict specifies how to handle conflicts when merging multiple changesets
+// using git's octopus merge strategy. Only FAIL_EARLY and FAIL are supported (no -X ours/theirs).
+type WithChangesetsMergeConflict int
+
+const (
+	// FailEarlyOnConflicts fails before attempting merge if file-level conflicts are detected.
+	FailEarlyOnConflicts WithChangesetsMergeConflict = iota
+	// FailOnConflicts attempts the merge and fails if git merge fails due to conflicts.
+	FailOnConflicts
+)
+
 // WithChangeset merges another changeset into this one using git-based 3-way merge.
 // The onConflictStrategy determines how conflicts are handled:
 //   - FailEarlyOnConflict: fail before merge if file-level conflicts are detected
@@ -521,11 +533,6 @@ func (ch *Changeset) WithChangeset(
 	other *Changeset,
 	onConflictStrategy WithChangesetMergeConflict,
 ) (*Changeset, error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	// Compute paths for both changesets - needed for conflict detection and resolution
 	ourPaths, err := ch.ComputePaths(ctx)
 	if err != nil {
@@ -545,25 +552,9 @@ func (ch *Changeset) WithChangeset(
 	}
 
 	// Merge "before" directories from both changesets
-	var before dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &before,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("")},
-				{Name: "source", Value: dagql.NewID[*Directory](ch.Before.ID())},
-			},
-		},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("")},
-				{Name: "source", Value: dagql.NewID[*Directory](other.Before.ID())},
-			},
-		},
-	); err != nil {
-		return nil, fmt.Errorf("merge before directories: %w", err)
+	before, err := mergeBeforeDirectories(ctx, ch, other)
+	if err != nil {
+		return nil, err
 	}
 
 	ourPatch, err := ch.AsPatch(ctx)
@@ -587,7 +578,113 @@ func (ch *Changeset) WithChangeset(
 		return nil, err
 	}
 
-	// Create the after directory from the merge result ref
+	return newChangesetFromMerge(ctx, before, afterDir)
+}
+
+// WithChangesets merges multiple changesets into this one using git's octopus merge strategy.
+// The onConflictStrategy determines how conflicts are handled:
+//   - FailEarlyOnConflicts: fail before merge if file-level conflicts are detected
+//   - FailOnConflicts: attempt merge, fail if git merge fails
+func (ch *Changeset) WithChangesets(
+	ctx context.Context,
+	others []*Changeset,
+	onConflictStrategy WithChangesetsMergeConflict,
+) (*Changeset, error) {
+	// Empty array: return unchanged changeset
+	if len(others) == 0 {
+		return ch, nil
+	}
+
+	// Single element: delegate to WithChangeset (more efficient 2-way merge)
+	if len(others) == 1 {
+		// Map the strategy to the 2-way merge equivalent
+		var twoWayStrategy WithChangesetMergeConflict
+		switch onConflictStrategy {
+		case FailEarlyOnConflicts:
+			twoWayStrategy = FailEarlyOnConflict
+		default:
+			twoWayStrategy = FailOnConflict
+		}
+		return ch.WithChangeset(ctx, others[0], twoWayStrategy)
+	}
+
+	// FAIL_EARLY: check for conflicts between all pairs before attempting merge
+	if onConflictStrategy == FailEarlyOnConflicts {
+		if err := checkAllPairwiseConflicts(ctx, ch, others); err != nil {
+			return nil, err
+		}
+	}
+
+	// Merge "before" directories from all changesets
+	before, err := mergeBeforeDirectories(ctx, ch, others...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get patches for all changesets
+	ourPatch, err := ch.AsPatch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get our patch: %w", err)
+	}
+
+	otherPatches := make([]*File, len(others))
+	for i, other := range others {
+		patch, err := other.AsPatch(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get patch for changeset %d: %w", i, err)
+		}
+		otherPatches[i] = patch
+	}
+
+	// Perform the octopus merge
+	afterDir, err := gitOctopusMergeWithPatches(ctx, before.Self(), ourPatch, otherPatches)
+	if err != nil {
+		return nil, err
+	}
+
+	return newChangesetFromMerge(ctx, before, afterDir)
+}
+
+// mergeBeforeDirectories merges the "before" directories from all changesets.
+func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Changeset) (dagql.ObjectResult[*Directory], error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+
+	selectors := []dagql.Selector{
+		{Field: "directory"},
+		withDirectorySelector(ch.Before.ID()),
+	}
+	for _, other := range others {
+		selectors = append(selectors, withDirectorySelector(other.Before.ID()))
+	}
+
+	var before dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &before, selectors...); err != nil {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("merge before directories: %w", err)
+	}
+	return before, nil
+}
+
+// withDirectorySelector creates a dagql selector for withDirectory at root path.
+func withDirectorySelector(dirID *call.ID) dagql.Selector {
+	return dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("")},
+			{Name: "source", Value: dagql.NewID[*Directory](dirID)},
+		},
+	}
+}
+
+// newChangesetFromMerge creates a new changeset from merged before directory and after directory result.
+func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Directory], afterDir *Directory) (*Changeset, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var after dagql.ObjectResult[*Directory]
 	if err := srv.Select(ctx, srv.Root(), &after,
 		dagql.Selector{
@@ -601,6 +698,43 @@ func (ch *Changeset) WithChangeset(
 	}
 
 	return NewChangeset(ctx, before, after)
+}
+
+// checkAllPairwiseConflicts checks for conflicts between all pairs of changesets.
+func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Changeset) error {
+	ourPaths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("compute our paths: %w", err)
+	}
+
+	otherPaths := make([]*ChangesetPaths, len(others))
+	for i, other := range others {
+		paths, err := other.ComputePaths(ctx)
+		if err != nil {
+			return fmt.Errorf("compute paths for changeset %d: %w", i, err)
+		}
+		otherPaths[i] = paths
+	}
+
+	// Check conflicts between our changeset and each other
+	for i, paths := range otherPaths {
+		conflicts := ourPaths.CheckConflicts(paths)
+		if !conflicts.IsEmpty() {
+			return fmt.Errorf("conflict with changeset %d: %w", i, conflicts.Error())
+		}
+	}
+
+	// Check conflicts between each pair of others
+	for i := 0; i < len(otherPaths); i++ {
+		for j := i + 1; j < len(otherPaths); j++ {
+			conflicts := otherPaths[i].CheckConflicts(otherPaths[j])
+			if !conflicts.IsEmpty() {
+				return fmt.Errorf("conflict between changesets %d and %d: %w", i, j, conflicts.Error())
+			}
+		}
+	}
+
+	return nil
 }
 
 // gitMergeWithPatches performs a git-based 3-way merge of two patches.
@@ -730,6 +864,111 @@ func gitMergeWithPatches(
 	}, nil
 }
 
+// gitOctopusMergeWithPatches performs a git octopus merge of multiple patches.
+// It creates a temporary git repository, commits the base, creates a branch for
+// each patch, and merges them all using git's octopus merge strategy.
+func gitOctopusMergeWithPatches(
+	ctx context.Context,
+	base *Directory,
+	ourPatch *File,
+	otherPatches []*File,
+) (*Directory, error) {
+	baseRef, err := getRefOrEvaluate(ctx, base)
+	if err != nil {
+		return nil, fmt.Errorf("evaluate base: %w", err)
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read all patch contents
+	ourPatchContent, err := ourPatch.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("read our patch: %w", err)
+	}
+
+	otherPatchContents := make([][]byte, len(otherPatches))
+	for i, patch := range otherPatches {
+		content, err := patch.Contents(ctx, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("read patch %d: %w", i, err)
+		}
+		otherPatchContents[i] = content
+	}
+
+	// Create a new ref for the merge result
+	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("Changeset.withChangesets git octopus merge"))
+	if err != nil {
+		return nil, err
+	}
+
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+		workDir, err := containerdfs.RootPath(root, base.Dir)
+		if err != nil {
+			return err
+		}
+
+		// Initialize git repository with base commit
+		if err := initGitRepo(ctx, workDir); err != nil {
+			return err
+		}
+
+		// Create 'ours' branch with our patch
+		if err := createBranchWithPatch(ctx, workDir, "ours", ourPatchContent); err != nil {
+			return err
+		}
+
+		// Create a branch for each other changeset from base commit (HEAD~1)
+		branchNames := make([]string, len(otherPatchContents))
+		for i, patchContent := range otherPatchContents {
+			branchName := fmt.Sprintf("branch_%d", i)
+			branchNames[i] = branchName
+			if err := createBranchWithPatch(ctx, workDir, branchName, patchContent, "HEAD~1"); err != nil {
+				return err
+			}
+		}
+
+		// Switch to 'ours' branch for the merge
+		if err := runGit(ctx, workDir, "checkout", "ours"); err != nil {
+			return err
+		}
+
+		// Build octopus merge command: git merge --no-edit --no-commit branch_0 branch_1 ...
+		mergeArgs := []string{"merge", "--no-edit", "--no-commit"}
+		mergeArgs = append(mergeArgs, branchNames...)
+
+		if err := runGit(ctx, workDir, mergeArgs...); err != nil {
+			return err
+		}
+
+		// Clean up .git directory
+		return os.RemoveAll(filepath.Join(workDir, ".git"))
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Directory{
+		Result:   snap,
+		Dir:      base.Dir,
+		Platform: query.Platform(),
+	}, nil
+}
+
 // runGit executes a git command in the specified directory.
 func runGit(ctx context.Context, dir string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -786,12 +1025,14 @@ func createBranchWithPatch(ctx context.Context, dir string, branchName string, p
 		if err := gitApplyPatch(ctx, dir, patchContent); err != nil {
 			return fmt.Errorf("apply %s patch: %w", branchName, err)
 		}
-		if err := runGit(ctx, dir, "add", "-A"); err != nil {
-			return err
-		}
-		if err := runGit(ctx, dir, "commit", "--allow-empty", "-m", branchName); err != nil {
-			return err
-		}
+	}
+	// Always commit (even if empty) to ensure consistent commit structure
+	// This is needed so that HEAD~1 references work correctly
+	if err := runGit(ctx, dir, "add", "-A"); err != nil {
+		return err
+	}
+	if err := runGit(ctx, dir, "commit", "--allow-empty", "-m", branchName); err != nil {
+		return err
 	}
 	return nil
 }

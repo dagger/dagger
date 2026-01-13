@@ -257,8 +257,18 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withChangeset">withChangeset</a>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes, <abbr title="Dagger\Dagger\ChangesetMergeConflict">ChangesetMergeConflict</abbr>|null $onConflict = null)
-
+        
                                             <p><p>Add changes to an existing changeset</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withChangesets">withChangesets</a>(array $changes, <abbr title="Dagger\Dagger\ChangesetsMergeConflict">ChangesetsMergeConflict</abbr>|null $onConflict = null)
+        
+                                            <p><p>Add changes from multiple changesets using git octopus merge strategy</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -725,12 +735,12 @@
     <strong>withChangeset</strong>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes, <abbr title="Dagger\Dagger\ChangesetMergeConflict">ChangesetMergeConflict</abbr>|null $onConflict = null)
         </code>
     </h3>
-    <div class="details">
-
-
+    <div class="details">    
+    
+            
 
         <div class="method-description">
-                            <p><p>Add changes to an existing changeset</p></p>                <p><p>By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument</p></p>
+                            <p><p>Add changes to an existing changeset</p></p>                <p><p>By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -748,7 +758,7 @@
             </tr>
             </table>
 
-
+            
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -758,9 +768,57 @@
         </tr>
     </table>
 
+            
+            
+            
+                    </div>
+    </div>
 
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withChangesets">
+        <div class="location">at line 140</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>withChangesets</strong>(array $changes, <abbr title="Dagger\Dagger\ChangesetsMergeConflict">ChangesetsMergeConflict</abbr>|null $onConflict = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
 
+        <div class="method-description">
+                            <p><p>Add changes from multiple changesets using git octopus merge strategy</p></p>                <p><p>This is more efficient than chaining multiple withChangeset calls when merging many changesets.</p>
+<p>Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
 
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array</td>
+                <td>$changes</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ChangesetsMergeConflict">ChangesetsMergeConflict</abbr>|null</td>
+                <td>$onConflict</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
                     </div>
     </div>
 

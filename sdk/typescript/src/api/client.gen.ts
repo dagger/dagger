@@ -118,6 +118,13 @@ export type ChangesetWithChangesetOpts = {
   onConflict?: ChangesetMergeConflict
 }
 
+export type ChangesetWithChangesetsOpts = {
+  /**
+   * What to do on a merge conflict
+   */
+  onConflict?: ChangesetsMergeConflict
+}
+
 /**
  * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
  */
@@ -196,6 +203,54 @@ function ChangesetMergeConflictNameToValue(
       return ChangesetMergeConflict.PreferTheirs
     default:
       return name as ChangesetMergeConflict
+  }
+}
+/**
+ * Strategy to use when merging multiple changesets with git octopus merge.
+ */
+export enum ChangesetsMergeConflict {
+  /**
+   * Attempt the octopus merge and fail if git merge fails due to conflicts
+   */
+  Fail = "FAIL",
+
+  /**
+   * Fail before attempting merge if file-level conflicts are detected between any changesets
+   */
+  FailEarly = "FAIL_EARLY",
+}
+
+/**
+ * Utility function to convert a ChangesetsMergeConflict value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ChangesetsMergeConflictValueToName(
+  value: ChangesetsMergeConflict,
+): string {
+  switch (value) {
+    case ChangesetsMergeConflict.Fail:
+      return "FAIL"
+    case ChangesetsMergeConflict.FailEarly:
+      return "FAIL_EARLY"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ChangesetsMergeConflict name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ChangesetsMergeConflictNameToValue(
+  name: string,
+): ChangesetsMergeConflict {
+  switch (name) {
+    case "FAIL":
+      return ChangesetsMergeConflict.Fail
+    case "FAIL_EARLY":
+      return ChangesetsMergeConflict.FailEarly
+    default:
+      return name as ChangesetsMergeConflict
   }
 }
 /**
@@ -3179,6 +3234,34 @@ export class Changeset extends BaseClient {
     }
 
     const ctx = this._ctx.select("withChangeset", {
+      changes,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Add changes from multiple changesets using git octopus merge strategy
+   *
+   * This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+   *
+   * Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+   * @param changes List of changesets to merge into the actual changeset
+   * @param opts.onConflict What to do on a merge conflict
+   */
+  withChangesets = (
+    changes: Changeset[],
+    opts?: ChangesetWithChangesetsOpts,
+  ): Changeset => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetsMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("withChangesets", {
       changes,
       ...opts,
       __metadata: metadata,

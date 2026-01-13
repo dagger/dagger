@@ -128,6 +128,7 @@
               <li><a href="#definition-Changeset">Changeset</a></li>
               <li><a href="#definition-ChangesetID">ChangesetID</a></li>
               <li><a href="#definition-ChangesetMergeConflict">ChangesetMergeConflict</a></li>
+              <li><a href="#definition-ChangesetsMergeConflict">ChangesetsMergeConflict</a></li>
               <li><a href="#definition-Check">Check</a></li>
               <li><a href="#definition-CheckGroup">CheckGroup</a></li>
               <li><a href="#definition-CheckGroupID">CheckGroupID</a></li>
@@ -5168,6 +5169,31 @@
                           </div>
                         </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Changeset-withChangesets" href="#Changeset-withChangesets"><code>withChangesets</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td>
+                          <p>Add changes from multiple changesets using git octopus merge strategy</p>
+                          <p>This is more efficient than chaining multiple withChangeset calls when merging many changesets.</p>
+                          <p>Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>[ChangesetID!]!</code></a></span></h6>
+                                <p>List of changesets to merge into the actual changeset</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>onConflict</code></span> - <span class="property-type"><a href="#definition-ChangesetsMergeConflict"><code>ChangesetsMergeConflict</code></a></span></h6>
+                                <p>What to do on a merge conflict</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -5238,6 +5264,52 @@
                           <p><code>PREFER_THEIRS</code></p>
                         </td>
                         <td> The conflict is resolved by applying the version of the other changeset </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"FAIL_EARLY"</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ChangesetsMergeConflict" class="definition definition-enum" data-traverse-target="definition-ChangesetsMergeConflict">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ChangesetsMergeConflict</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Strategy to use when merging multiple changesets with git octopus merge.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>FAIL_EARLY</code></p>
+                        </td>
+                        <td> Fail before attempting merge if file-level conflicts are detected between any changesets </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FAIL</code></p>
+                        </td>
+                        <td> Attempt the octopus merge and fail if git merge fails due to conflicts </td>
                       </tr>
                     </tbody>
                   </table>
