@@ -454,6 +454,37 @@ func (cr *cacheRecord) mount(ctx context.Context) (_ snapshot.Mountable, rerr er
 	return cr.mountCache, nil
 }
 
+func (cr *cacheRecord) hasDirtyVolatile(ctx context.Context) (_ bool, rerr error) {
+	mntable, err := cr.mount(ctx)
+	if err != nil {
+		return false, err
+	}
+	mnts, cleanup, err := mntable.Mount()
+	if err != nil {
+		return false, err
+	}
+	defer cleanup()
+	if len(mnts) == 0 {
+		return false, nil
+	}
+	mnt := mnts[0]
+
+	if !overlay.IsOverlayMountType(mnt) {
+		return false, nil
+	}
+	volatileDir := overlay.VolatileIncompatDir(mnt)
+	if volatileDir == "" {
+		return false, nil
+	}
+	if _, err := os.Lstat(volatileDir); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // call when holding the manager lock
 func (cr *cacheRecord) remove(ctx context.Context, removeSnapshot bool) (rerr error) {
 	defer func() {
