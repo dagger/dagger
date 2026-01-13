@@ -129,6 +129,11 @@ func CurrentBuildkitSessionGroup(ctx context.Context) (bksession.Group, bool) {
 	return g, ok
 }
 
+// NewSessionGroup creates a session group from a client ID.
+func NewSessionGroup(clientID string) bksession.Group {
+	return bksession.NewGroup(clientID)
+}
+
 func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result) (outputs []solver.Result, err error) {
 	ctx = ctxWithBkSessionGroup(ctx, g)
 

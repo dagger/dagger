@@ -40,6 +40,24 @@ var (
 	errEmptyResultRef = fmt.Errorf("empty result reference")
 )
 
+// requiresBuildkitSessionGroup returns a session group for operations that need client resources
+// (credentials, secrets, etc). Some operations run outside the DagOp context (e.g., Stat called
+// internally by Directory.Directory), so we fall back to the buildkit client's session.
+func requiresBuildkitSessionGroup(ctx context.Context) bksession.Group {
+	if g, ok := buildkit.CurrentBuildkitSessionGroup(ctx); ok {
+		return g
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil
+	}
+	return buildkit.NewSessionGroup(bk.ID())
+}
+
 type Evaluatable interface {
 	dagql.Typed
 	Evaluate(context.Context) (*buildkit.Result, error)

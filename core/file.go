@@ -469,6 +469,8 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 		return nil, &os.PathError{Op: "stat", Path: file.File, Err: syscall.ENOENT}
 	}
 
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+
 	osStatFunc := os.Stat
 	rootPathFunc := containerdfs.RootPath
 	// TODO Could there be a case where a File() is a symlink?
@@ -480,7 +482,7 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 	// }
 
 	var fileInfo os.FileInfo
-	err = MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, immutableRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, file.File)
 		if err != nil {
 			return err
