@@ -8,6 +8,11 @@ use Dagger\Attribute\{DaggerFunction, DaggerObject};
 
 #[DaggerObject] class ScalarKind
 {
+    #[DaggerFunction] public bool $boolField = true;
+    #[DaggerFunction] public float $floatField = 3.14;
+    #[DaggerFunction] public int $intField = 5;
+    #[DaggerFunction] public string $stringField = 'Hello, field!';
+
     #[DaggerFunction] public function oppositeBool(bool $arg): bool
     {
         return !$arg;

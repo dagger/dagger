@@ -128,6 +128,7 @@ final class DaggerObjectWithDaggerFunctions
         return new ValueObject\DaggerObject(
             DaggerObjectWithDaggerFunctions::class,
             '',
+            [],
             [
                 new ValueObject\DaggerFunction(
                     '',
