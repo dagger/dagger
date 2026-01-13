@@ -284,6 +284,120 @@ dagger check -l
 
 This will list all checks that will run, excluding any that match your `ignoreChecks` patterns.
 
+## Customizing Toolchains
+
+When you install a toolchain, you can customize how its functions behave in your module by overriding argument defaults. This allows you to adapt toolchains to your specific needs without modifying the toolchain itself.
+
+Any modifications to defaults that can be applied to function arguments can be customized. This includes `default`, `defaultPath`, and `ignore`.
+
+### Configuration Format
+
+Toolchain customizations are configured in your `dagger.json` file using the `customizations` array within each toolchain configuration:
+
+```json
+{
+  "name": "my-app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "toolchain-name",
+      "source": "github.com/example/toolchain",
+      "customizations": [
+        {
+          "function": ["functionName"],
+          "argument": "argumentName",
+          "default": "newDefaultValue"
+        }
+      ]
+    }
+  ]
+}
+```
+
+:::note
+To override a constructor argument, simply omit the function name.
+:::
+
+### Overriding Function Argument Defaults
+
+You can override the default value of any function argument in a toolchain. For example, if a toolchain has a function with a `message` argument that defaults to "hello", you can change it to "hola":
+
+```json
+{
+  "name": "my-app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "greeter",
+      "source": "github.com/example/greeter",
+      "customizations": [
+        {
+          "function": ["greet"],
+          "argument": "message",
+          "default": "hola"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Overriding defaultPath Arguments
+
+Many toolchain functions use `+defaultPath` annotations to automatically load files from your module's directory. You can customize these paths to point to different paths:
+
+```json
+{
+  "name": "my-app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "linter",
+      "source": "github.com/example/linter",
+      "customizations": [
+        {
+          "argument": "source",
+          "defaultPath": "/my-subdirectory"
+        }
+      ]
+    }
+  ]
+}
+```
+
+This is particularly useful when you want to use a different path for specific subprojects.
+
+### Customizing Chained Functions
+
+For toolchains that return objects with their own methods (chained functions), you can specify a function path to target specific arguments:
+
+```json
+{
+  "name": "my-app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "deployer",
+      "source": "github.com/example/deployer",
+      "customizations": [
+        {
+          "function": ["environment", "deploy"],
+          "argument": "region",
+          "default": "us-west-2"
+        }
+      ]
+    }
+  ]
+}
+```
+
+This customization applies to the `region` argument of the `deploy` function, which is called on the object returned by the `environment` function:
+
+```shell
+# Uses "us-west-2" as the default region
+dagger call deployer environment deploy
+```
+
 ## Best Practices
 
 ### Keep Toolchains Focused
