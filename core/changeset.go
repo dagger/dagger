@@ -765,16 +765,6 @@ func gitMergeWithPatches(
 		return nil, err
 	}
 
-	// Read patch contents
-	ourPatchContent, err := ourPatch.Contents(ctx, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("read our patch: %w", err)
-	}
-	theirPatchContent, err := theirPatch.Contents(ctx, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("read their patch: %w", err)
-	}
-
 	// Create a new ref for the merge result
 	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
@@ -794,13 +784,13 @@ func gitMergeWithPatches(
 			return err
 		}
 
-		// Create 'ours' branch with our patch
-		if err := createBranchWithPatch(ctx, workDir, "ours", ourPatchContent); err != nil {
+		// Create 'ours' branch with our patch (patch file is mounted internally)
+		if err := createBranchWithPatchFile(ctx, workDir, "ours", ourPatch); err != nil {
 			return err
 		}
 
 		// Create 'theirs' branch from base commit (HEAD~1) with their patch
-		if err := createBranchWithPatch(ctx, workDir, "theirs", theirPatchContent, "HEAD~1"); err != nil {
+		if err := createBranchWithPatchFile(ctx, workDir, "theirs", theirPatch, "HEAD~1"); err != nil {
 			return err
 		}
 
@@ -888,21 +878,6 @@ func gitOctopusMergeWithPatches(
 		return nil, err
 	}
 
-	// Read all patch contents
-	ourPatchContent, err := ourPatch.Contents(ctx, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("read our patch: %w", err)
-	}
-
-	otherPatchContents := make([][]byte, len(otherPatches))
-	for i, patch := range otherPatches {
-		content, err := patch.Contents(ctx, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("read patch %d: %w", i, err)
-		}
-		otherPatchContents[i] = content
-	}
-
 	// Create a new ref for the merge result
 	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
@@ -922,17 +897,17 @@ func gitOctopusMergeWithPatches(
 			return err
 		}
 
-		// Create 'ours' branch with our patch
-		if err := createBranchWithPatch(ctx, workDir, "ours", ourPatchContent); err != nil {
+		// Create 'ours' branch with our patch (patch file is mounted internally)
+		if err := createBranchWithPatchFile(ctx, workDir, "ours", ourPatch); err != nil {
 			return err
 		}
 
 		// Create a branch for each other changeset from base commit (HEAD~1)
-		branchNames := make([]string, len(otherPatchContents))
-		for i, patchContent := range otherPatchContents {
+		branchNames := make([]string, len(otherPatches))
+		for i, patch := range otherPatches {
 			branchName := fmt.Sprintf("branch_%d", i)
 			branchNames[i] = branchName
-			if err := createBranchWithPatch(ctx, workDir, branchName, patchContent, "HEAD~1"); err != nil {
+			if err := createBranchWithPatchFile(ctx, workDir, branchName, patch, "HEAD~1"); err != nil {
 				return err
 			}
 		}
@@ -987,17 +962,40 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
-// gitApplyPatch applies a patch using git apply via a temp file.
-func gitApplyPatch(ctx context.Context, dir string, patch []byte) error {
-	if len(patch) == 0 {
+// gitApplyPatchFromFile applies a patch by mounting the patch file and running git apply.
+// This avoids loading the entire patch into memory.
+func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
+	if patch == nil {
 		return nil
 	}
-	patchFile := filepath.Join(dir, ".dagger-patch")
-	if err := os.WriteFile(patchFile, patch, 0600); err != nil {
-		return fmt.Errorf("write patch file: %w", err)
+
+	patchRef, err := getRefOrEvaluate(ctx, patch)
+	if err != nil {
+		return fmt.Errorf("evaluate patch ref: %w", err)
 	}
-	defer os.Remove(patchFile)
-	return runGit(ctx, dir, "apply", "--allow-empty", patchFile)
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return fmt.Errorf("no buildkit session group in context")
+	}
+
+	return MountRef(ctx, patchRef, bkSessionGroup, func(patchMount string, _ *mount.Mount) error {
+		patchPath, err := containerdfs.RootPath(patchMount, patch.File)
+		if err != nil {
+			return err
+		}
+
+		// Check if patch file is empty
+		info, err := os.Stat(patchPath)
+		if err != nil {
+			return fmt.Errorf("stat patch file: %w", err)
+		}
+		if info.Size() == 0 {
+			return nil
+		}
+
+		return runGit(ctx, dir, "apply", "--allow-empty", patchPath)
+	}, mountRefAsReadOnly)
 }
 
 // initGitRepo initializes a git repository and commits all files as base.
@@ -1011,9 +1009,9 @@ func initGitRepo(ctx context.Context, dir string) error {
 	return runGit(ctx, dir, "commit", "--allow-empty", "-m", "base")
 }
 
-// createBranchWithPatch creates a branch, applies the patch, and commits.
+// createBranchWithPatchFile creates a branch, applies the patch from a file, and commits.
 // If startPoint is provided, the branch is created from that commit.
-func createBranchWithPatch(ctx context.Context, dir string, branchName string, patchContent []byte, startPoint ...string) error {
+func createBranchWithPatchFile(ctx context.Context, dir string, branchName string, patch *File, startPoint ...string) error {
 	checkoutArgs := []string{"checkout", "-b", branchName}
 	if len(startPoint) > 0 {
 		checkoutArgs = append(checkoutArgs, startPoint[0])
@@ -1021,8 +1019,8 @@ func createBranchWithPatch(ctx context.Context, dir string, branchName string, p
 	if err := runGit(ctx, dir, checkoutArgs...); err != nil {
 		return err
 	}
-	if len(patchContent) > 0 {
-		if err := gitApplyPatch(ctx, dir, patchContent); err != nil {
+	if patch != nil {
+		if err := gitApplyPatchFromFile(ctx, dir, patch); err != nil {
 			return fmt.Errorf("apply %s patch: %w", branchName, err)
 		}
 	}
