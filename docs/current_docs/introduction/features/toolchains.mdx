@@ -38,6 +38,13 @@ dagger toolchain install github.com/platform/deployer
 dagger call linter lint
 ```
 
+Platform teams can include [checks](./checks.mdx) in their toolchains, enabling app teams to run standardized validation with a single command:
+
+```shell
+# Run all checks from installed toolchains
+dagger check
+```
+
 ### CI/CD Composition
 
 Build a complete CI/CD pipeline by composing toolchains:
@@ -204,6 +211,10 @@ dagger call tester test --source ./app
 ## Filtering Toolchain Checks
 
 When you install a toolchain that includes checks, all checks from that toolchain are automatically included when you run `dagger check`. However, there may be times when you want to exclude certain checks from a toolchain while keeping others. The `ignoreChecks` configuration allows you to selectively filter out specific checks from a toolchain.
+
+:::tip
+Learn more about creating and using checks in the [Checks feature guide](./checks.mdx). This section focuses specifically on filtering checks from installed toolchains.
+:::
 
 ### Using ignoreChecks
 
