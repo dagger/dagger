@@ -327,11 +327,32 @@ func (cm *cacheManager) init(ctx context.Context) error {
 	}
 
 	for _, si := range items {
-		if _, err := cm.getRecord(ctx, si.ID()); err != nil {
+		cr, err := cm.getRecord(ctx, si.ID())
+		if err != nil {
 			bklog.G(ctx).Debugf("could not load snapshot %s: %+v", si.ID(), err)
 			cm.MetadataStore.Clear(si.ID())
 			cm.LeaseManager.Delete(ctx, leases.Lease{ID: si.ID()})
 			cm.LeaseManager.Delete(ctx, leases.Lease{ID: si.ID() + "-variants"})
+			continue
+		}
+
+		// check if the engine had a hard crash and left an overlay volatile dir over, in which
+		// case we should just remove the cache record
+		if cr.mutable {
+			dirtyVolatile, err := cr.hasDirtyVolatile(ctx)
+			if err != nil {
+				return err
+			}
+			if dirtyVolatile {
+				if cr.equalImmutable != nil {
+					if err := cr.equalImmutable.remove(ctx, false); err != nil {
+						return err
+					}
+				}
+				if err := cr.remove(ctx, true); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
