@@ -1576,6 +1576,8 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
 	}
 
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+
 	osStatFunc := os.Stat
 	rootPathFunc := containerdfs.RootPath
 	if doNotFollowSymlinks {
@@ -1586,7 +1588,7 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 	}
 
 	var fileInfo os.FileInfo
-	err = MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, immutableRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, path.Join(dir.Dir, targetPath))
 		if err != nil {
 			return err
