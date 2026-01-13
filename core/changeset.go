@@ -646,6 +646,8 @@ func (ch *Changeset) WithChangesets(
 }
 
 // mergeBeforeDirectories merges the "before" directories from all changesets.
+// It also excludes any .git directories that might be present in the input directories
+// since the merge process creates and removes its own .git for the merge operation.
 func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Changeset) (dagql.ObjectResult[*Directory], error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -659,6 +661,15 @@ func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Chang
 	for _, other := range others {
 		selectors = append(selectors, withDirectorySelector(other.Before.ID()))
 	}
+
+	// Exclude .git directory to avoid conflicts with the merge process
+	// which creates its own temporary .git directory
+	selectors = append(selectors, dagql.Selector{
+		Field: "withoutDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(".git")},
+		},
+	})
 
 	var before dagql.ObjectResult[*Directory]
 	if err := srv.Select(ctx, srv.Root(), &before, selectors...); err != nil {
@@ -962,8 +973,8 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
-// gitApplyPatchFromFile applies a patch by mounting the patch file and running git apply.
-// This avoids loading the entire patch into memory.
+// gitApplyPatchFromFile applies a patch by mounting the patch file, copying it to the
+// working directory (via streaming to avoid memory issues), and running git apply.
 func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 	if patch == nil {
 		return nil
@@ -994,7 +1005,33 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 			return nil
 		}
 
-		return runGit(ctx, dir, "apply", "--allow-empty", patchPath)
+		// Copy patch to a temp file in the working directory via streaming
+		// This avoids loading the entire patch into memory while ensuring
+		// git can access the patch file from the same filesystem
+		tempPatch := filepath.Join(dir, ".dagger-patch")
+		srcFile, err := os.Open(patchPath)
+		if err != nil {
+			return fmt.Errorf("open patch file: %w", err)
+		}
+		defer srcFile.Close()
+
+		dstFile, err := os.Create(tempPatch)
+		if err != nil {
+			return fmt.Errorf("create temp patch file: %w", err)
+		}
+
+		if _, err := io.Copy(dstFile, srcFile); err != nil {
+			dstFile.Close()
+			os.Remove(tempPatch)
+			return fmt.Errorf("copy patch file: %w", err)
+		}
+		if err := dstFile.Close(); err != nil {
+			os.Remove(tempPatch)
+			return fmt.Errorf("close temp patch file: %w", err)
+		}
+
+		defer os.Remove(tempPatch)
+		return runGit(ctx, dir, "apply", "--allow-empty", tempPatch)
 	}, mountRefAsReadOnly)
 }
 
