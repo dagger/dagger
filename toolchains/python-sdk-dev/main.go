@@ -157,7 +157,7 @@ func (t PythonSdkDev) TestSuite(
 	// +optional
 	version string,
 	// Disable nested execution for the test runs
-	// +option
+	// +optional
 	disableNestedExec bool,
 ) *TestSuite {
 	return &TestSuite{
