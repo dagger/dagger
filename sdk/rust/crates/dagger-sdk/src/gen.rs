@@ -2362,12 +2362,6 @@ pub struct ChangesetWithChangesetOpts {
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<ChangesetMergeConflict>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ChangesetWithChangesetsOpts {
-    /// What to do on a merge conflict
-    #[builder(setter(into, strip_option), default)]
-    pub on_conflict: Option<ChangesetMergeConflict>,
-}
 impl Changeset {
     /// Files and directories that were added in the newer directory.
     pub async fn added_paths(&self) -> Result<Vec<String>, DaggerError> {
@@ -2446,7 +2440,7 @@ impl Changeset {
         query.execute(self.graphql_client.clone()).await
     }
     /// Add changes to an existing changeset
-    /// By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+    /// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
     ///
     /// # Arguments
     ///
@@ -2468,7 +2462,7 @@ impl Changeset {
         }
     }
     /// Add changes to an existing changeset
-    /// By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+    /// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
     ///
     /// # Arguments
     ///
@@ -2487,47 +2481,6 @@ impl Changeset {
                 Box::pin(async move { changes.into_id().await.unwrap().quote() })
             }),
         );
-        if let Some(on_conflict) = opts.on_conflict {
-            query = query.arg("onConflict", on_conflict);
-        }
-        Changeset {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Add changes from multiple changesets
-    /// By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
-    /// This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - Array of changesets to merge into the actual changeset
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_changesets(&self, changes: Vec<ChangesetId>) -> Changeset {
-        let mut query = self.selection.select("withChangesets");
-        query = query.arg("changes", changes);
-        Changeset {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Add changes from multiple changesets
-    /// By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
-    /// This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - Array of changesets to merge into the actual changeset
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_changesets_opts(
-        &self,
-        changes: Vec<ChangesetId>,
-        opts: ChangesetWithChangesetsOpts,
-    ) -> Changeset {
-        let mut query = self.selection.select("withChangesets");
-        query = query.arg("changes", changes);
         if let Some(on_conflict) = opts.on_conflict {
             query = query.arg("onConflict", on_conflict);
         }
@@ -13750,12 +13703,14 @@ pub enum CacheSharingMode {
 pub enum ChangesetMergeConflict {
     #[serde(rename = "FAIL")]
     Fail,
+    #[serde(rename = "FAIL_EARLY")]
+    FailEarly,
+    #[serde(rename = "LEAVE_CONFLICT_MARKERS")]
+    LeaveConflictMarkers,
     #[serde(rename = "PREFER_OURS")]
     PreferOurs,
     #[serde(rename = "PREFER_THEIRS")]
     PreferTheirs,
-    #[serde(rename = "SKIP")]
-    Skip,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {

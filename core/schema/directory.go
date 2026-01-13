@@ -1110,10 +1110,12 @@ type ChangesetMergeConflict string
 var ChangesetMergeConflictEnum = dagql.NewEnum[ChangesetMergeConflict]()
 
 var (
+	FailEarlyOnMergeConflict = ChangesetMergeConflictEnum.Register("FAIL_EARLY",
+		`Fail before attempting merge if file-level conflicts are detected`)
 	FailOnMergeConflict = ChangesetMergeConflictEnum.Register("FAIL",
-		`A conflict causes the merge operation to fail`)
-	LeaveConflictsOnMergeConflict = ChangesetMergeConflictEnum.Register("LEAVE_CONFLICTS",
-		`Conflicts are left in the merged files with conflict markers`)
+		`Attempt the merge and fail if git merge fails due to conflicts`)
+	LeaveConflictMarkersOnMergeConflict = ChangesetMergeConflictEnum.Register("LEAVE_CONFLICT_MARKERS",
+		`Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.`)
 	PreferOursOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_OURS",
 		`The conflict is resolved by applying the version of the calling changeset`)
 	PreferTheirsOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_THEIRS",
@@ -1128,7 +1130,7 @@ func (proto ChangesetMergeConflict) Type() *ast.Type {
 }
 
 func (proto ChangesetMergeConflict) TypeDescription() string {
-	return "Mediatypes to use in published or exported image metadata."
+	return "Strategy to use when merging changesets with conflicting changes."
 }
 
 func (proto ChangesetMergeConflict) Decoder() dagql.InputDecoder {
@@ -1146,20 +1148,20 @@ type changesetWithChangesetArgs struct {
 }
 
 func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithChangesetMergeConflict {
-	var conflictStrategy core.WithChangesetMergeConflict
 	switch onConflict {
-	case LeaveConflictsOnMergeConflict:
-		conflictStrategy = core.LeaveConflictsOnConflict
+	case FailEarlyOnMergeConflict:
+		return core.FailEarlyOnConflict
+	case LeaveConflictMarkersOnMergeConflict:
+		return core.LeaveConflictMarkers
 	case PreferOursOnMergeConflict:
-		conflictStrategy = core.PreferOursOnConflict
+		return core.PreferOursOnConflict
 	case PreferTheirsOnMergeConflict:
-		conflictStrategy = core.PreferTheirsOnConflict
+		return core.PreferTheirsOnConflict
 	case FailOnMergeConflict:
 		fallthrough
 	default:
-		conflictStrategy = core.FailOnConflict
+		return core.FailOnConflict
 	}
-	return conflictStrategy
 }
 
 func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (*core.Changeset, error) {

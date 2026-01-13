@@ -257,13 +257,19 @@ The `ChangesetID` scalar type represents an identifier for an object of type Cha
 """
 scalar ChangesetID
 
-"""Mediatypes to use in published or exported image metadata."""
+"""Strategy to use when merging changesets with conflicting changes."""
 enum ChangesetMergeConflict {
-  """A conflict causes the merge operation to fail"""
+  """Fail before attempting merge if file-level conflicts are detected"""
+  FAIL_EARLY
+
+  """Attempt the merge and fail if git merge fails due to conflicts"""
   FAIL
 
-  """Conflicts are left in the merged files with conflict markers"""
-  LEAVE_CONFLICTS
+  """
+  Let git create conflict markers in files. For modify/delete conflicts, keeps
+  the modified version. Fails on binary conflicts.
+  """
+  LEAVE_CONFLICT_MARKERS
 
   """
   The conflict is resolved by applying the version of the calling changeset

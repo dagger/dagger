@@ -118,26 +118,29 @@ export type ChangesetWithChangesetOpts = {
   onConflict?: ChangesetMergeConflict
 }
 
-export type ChangesetWithChangesetsOpts = {
-  /**
-   * What to do on a merge conflict
-   */
-  onConflict?: ChangesetMergeConflict
-}
-
 /**
  * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
  */
 export type ChangesetID = string & { __ChangesetID: never }
 
 /**
- * Mediatypes to use in published or exported image metadata.
+ * Strategy to use when merging changesets with conflicting changes.
  */
 export enum ChangesetMergeConflict {
   /**
-   * A conflict causes the merge operation to fail
+   * Attempt the merge and fail if git merge fails due to conflicts
    */
   Fail = "FAIL",
+
+  /**
+   * Fail before attempting merge if file-level conflicts are detected
+   */
+  FailEarly = "FAIL_EARLY",
+
+  /**
+   * Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.
+   */
+  LeaveConflictMarkers = "LEAVE_CONFLICT_MARKERS",
 
   /**
    * The conflict is resolved by applying the version of the calling changeset
@@ -148,11 +151,6 @@ export enum ChangesetMergeConflict {
    * The conflict is resolved by applying the version of the other changeset
    */
   PreferTheirs = "PREFER_THEIRS",
-
-  /**
-   * A conflict is skipped, the merge operation continues
-   */
-  Skip = "SKIP",
 }
 
 /**
@@ -165,12 +163,14 @@ function ChangesetMergeConflictValueToName(
   switch (value) {
     case ChangesetMergeConflict.Fail:
       return "FAIL"
+    case ChangesetMergeConflict.FailEarly:
+      return "FAIL_EARLY"
+    case ChangesetMergeConflict.LeaveConflictMarkers:
+      return "LEAVE_CONFLICT_MARKERS"
     case ChangesetMergeConflict.PreferOurs:
       return "PREFER_OURS"
     case ChangesetMergeConflict.PreferTheirs:
       return "PREFER_THEIRS"
-    case ChangesetMergeConflict.Skip:
-      return "SKIP"
     default:
       return value
   }
@@ -186,12 +186,14 @@ function ChangesetMergeConflictNameToValue(
   switch (name) {
     case "FAIL":
       return ChangesetMergeConflict.Fail
+    case "FAIL_EARLY":
+      return ChangesetMergeConflict.FailEarly
+    case "LEAVE_CONFLICT_MARKERS":
+      return ChangesetMergeConflict.LeaveConflictMarkers
     case "PREFER_OURS":
       return ChangesetMergeConflict.PreferOurs
     case "PREFER_THEIRS":
       return ChangesetMergeConflict.PreferTheirs
-    case "SKIP":
-      return ChangesetMergeConflict.Skip
     default:
       return name as ChangesetMergeConflict
   }
@@ -3161,7 +3163,7 @@ export class Changeset extends BaseClient {
   /**
    * Add changes to an existing changeset
    *
-   * By default the opperation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+   * By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
    * @param changes Changes to merge into the actual changeset
    * @param opts.onConflict What to do on a merge conflict
    */
@@ -3177,34 +3179,6 @@ export class Changeset extends BaseClient {
     }
 
     const ctx = this._ctx.select("withChangeset", {
-      changes,
-      ...opts,
-      __metadata: metadata,
-    })
-    return new Changeset(ctx)
-  }
-
-  /**
-   * Add changes from multiple changesets
-   *
-   * By default the operation will fail in case of conflicts, for instance a file modified in multiple changesets. The behavior can be adjusted using onConflict argument.
-   *
-   * This is more efficient than calling withChangeset repeatedly as it performs a single n-way merge.
-   * @param changes Array of changesets to merge into the actual changeset
-   * @param opts.onConflict What to do on a merge conflict
-   */
-  withChangesets = (
-    changes: Changeset[],
-    opts?: ChangesetWithChangesetsOpts,
-  ): Changeset => {
-    const metadata = {
-      onConflict: {
-        is_enum: true,
-        value_to_name: ChangesetMergeConflictValueToName,
-      },
-    }
-
-    const ctx = this._ctx.select("withChangesets", {
       changes,
       ...opts,
       __metadata: metadata,

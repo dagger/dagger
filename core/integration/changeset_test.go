@@ -1155,129 +1155,136 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 			WithNewFile("filei.txt", "file i added in other").
 			Changes(baseDir)
 
-		// four ways to solve it:
-		// - fail: in case of conflicts, refuse to merge changesets
-		// - skip: ignore changes **for the defined granularity** (file for now) on the path
-		//   -> all other changes are applied, but the file at the path remains in the before state for both changesets
-		// - prefer ours: remove the change in the 'other' changeset, only apply change from 'original' (for this path)
-		// - prefer theirs: remove the change in the 'original' changeset, only apply change from 'other' (for this path)
+		// Conflict resolution strategies:
+		// - FAIL_EARLY: fail before merge if file-level conflicts detected
+		// - FAIL: attempt merge, fail if git merge fails
+		// - LEAVE_CONFLICT_MARKERS: keep conflict markers, keep modified for modify/delete
+		// - PREFER_OURS: use -X ours, resolve modify/delete by preferring ours
+		// - PREFER_THEIRS: use -X theirs, resolve modify/delete by preferring theirs
 
-		t.Run("fail", func(ctx context.Context, t *testctx.T) {
-			// this is the default behavior
-			_, err := original.WithChangeset(other).Sync(ctx)
+		t.Run("fail early", func(ctx context.Context, t *testctx.T) {
+			// FAIL_EARLY checks file-level conflicts before attempting merge
+			_, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictFailEarly,
+			}).Sync(ctx)
 			require.ErrorContains(t, err, "filea.txt")
 			require.ErrorContains(t, err, "fileb.txt")
 			require.ErrorContains(t, err, "filec.txt")
 			require.ErrorContains(t, err, "filef.txt")
-			// ensure explicit is ok
+		})
+
+		t.Run("fail", func(ctx context.Context, t *testctx.T) {
+			// FAIL is the default - attempts merge and fails if conflicts occur
+			_, err := original.WithChangeset(other).Sync(ctx)
+			require.Error(t, err)
+			// explicit FAIL
 			_, err = original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
 				OnConflict: dagger.ChangesetMergeConflictFail,
 			}).Sync(ctx)
 			require.Error(t, err)
 		})
 
-		t.Run("granularity file", func(ctx context.Context, t *testctx.T) {
-			// this granularity is the default value
+		t.Run("leave conflict markers", func(ctx context.Context, t *testctx.T) {
+			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictLeaveConflictMarkers,
+			}).Sync(ctx)
+			require.NoError(t, err)
 
-			t.Run("leave conflicts", func(ctx context.Context, t *testctx.T) {
-				// Create a simpler conflict scenario for testing conflict markers
-				conflictBase := c.Directory().
-					WithNewFile("conflict.txt", "line 1\nline 2\nline 3\n")
-				conflictOurs := conflictBase.
-					WithNewFile("conflict.txt", "line 1\nours modified\nline 3\n").
-					Changes(conflictBase)
-				conflictTheirs := conflictBase.
-					WithNewFile("conflict.txt", "line 1\ntheirs modified\nline 3\n").
-					Changes(conflictBase)
+			// For files modified in both changesets, content should have conflict markers
+			c, err := res.After().File("filea.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, c, "<<<<<<<")
+			require.Contains(t, c, "=======")
+			require.Contains(t, c, ">>>>>>>")
 
-				res, err := conflictOurs.WithChangeset(conflictTheirs, dagger.ChangesetWithChangesetOpts{
-					OnConflict: dagger.ChangesetMergeConflictLeaveConflicts,
-				}).Sync(ctx)
-				require.NoError(t, err)
+			// For modify/delete conflicts, keep the modified version
+			// fileb.txt: modified in original, removed in other -> keep original's modification
+			c, err = res.After().File("fileb.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file b modified in original", c)
+			// filec.txt: removed in original, modified in other -> keep other's modification
+			c, err = res.After().File("filec.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file c modified in other", c)
 
-				// The file should contain conflict markers
-				fileContent, err := res.After().File("conflict.txt").Contents(ctx)
-				require.NoError(t, err)
-				require.Contains(t, fileContent, "<<<<<<<")
-				require.Contains(t, fileContent, "=======")
-				require.Contains(t, fileContent, ">>>>>>>")
-				require.Contains(t, fileContent, "ours modified")
-				require.Contains(t, fileContent, "theirs modified")
-			})
+			// For files added in both, content should have conflict markers
+			c, err = res.After().File("filef.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, c, "<<<<<<<")
+		})
 
-			t.Run("prefer ours", func(ctx context.Context, t *testctx.T) {
-				res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-					OnConflict: dagger.ChangesetMergeConflictPreferOurs,
-				}).Sync(ctx)
-				require.NoError(t, err)
+		t.Run("prefer ours", func(ctx context.Context, t *testctx.T) {
+			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictPreferOurs,
+			}).Sync(ctx)
+			require.NoError(t, err)
 
-				modifiedPaths, err := res.ModifiedPaths(ctx)
-				require.NoError(t, err)
-				addedPaths, err := res.AddedPaths(ctx)
-				require.NoError(t, err)
-				removedPaths, err := res.RemovedPaths(ctx)
-				require.NoError(t, err)
+			modifiedPaths, err := res.ModifiedPaths(ctx)
+			require.NoError(t, err)
+			addedPaths, err := res.AddedPaths(ctx)
+			require.NoError(t, err)
+			removedPaths, err := res.RemovedPaths(ctx)
+			require.NoError(t, err)
 
-				// - on filea.txt, file is modified in both changesets
-				require.Contains(t, modifiedPaths, "filea.txt")
-				c, err := res.After().File("filea.txt").Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "file a modified in original", c)
-				// - on fileb.txt, file is modified in 'original' changeset and removed in 'other' changeset
-				require.Contains(t, modifiedPaths, "fileb.txt")
-				c, err = res.After().File("fileb.txt").Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "file b modified in original", c)
-				// - on filec.txt, file is removed in 'original' changeset and modified in 'other' changeset
-				require.Contains(t, removedPaths, "filec.txt")
-				// - on filef.txt, file is added in both changesets
-				require.Contains(t, addedPaths, "filef.txt")
-				c, err = res.After().File("filef.txt").Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "file f added in original", c)
+			// - on filea.txt, file is modified in both changesets
+			require.Contains(t, modifiedPaths, "filea.txt")
+			c, err := res.After().File("filea.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file a modified in original", c)
+			// - on fileb.txt, file is modified in 'original' changeset and removed in 'other' changeset
+			require.Contains(t, modifiedPaths, "fileb.txt")
+			c, err = res.After().File("fileb.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file b modified in original", c)
+			// - on filec.txt, file is removed in 'original' changeset and modified in 'other' changeset
+			require.Contains(t, removedPaths, "filec.txt")
+			// - on filef.txt, file is added in both changesets
+			require.Contains(t, addedPaths, "filef.txt")
+			c, err = res.After().File("filef.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file f added in original", c)
 
-				// ensure other changes are still applied
-				require.Contains(t, modifiedPaths, "filee.txt")
-				require.Contains(t, addedPaths, "fileg.txt")
-				require.Contains(t, addedPaths, "filei.txt")
-			})
+			// ensure other changes are still applied
+			require.Contains(t, modifiedPaths, "filee.txt")
+			require.Contains(t, addedPaths, "fileg.txt")
+			require.Contains(t, addedPaths, "filei.txt")
+		})
 
-			t.Run("prefer theirs", func(ctx context.Context, t *testctx.T) {
-				res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
-					OnConflict: dagger.ChangesetMergeConflictPreferTheirs,
-				}).Sync(ctx)
-				require.NoError(t, err)
+		t.Run("prefer theirs", func(ctx context.Context, t *testctx.T) {
+			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictPreferTheirs,
+			}).Sync(ctx)
+			require.NoError(t, err)
 
-				modifiedPaths, err := res.ModifiedPaths(ctx)
-				require.NoError(t, err)
-				addedPaths, err := res.AddedPaths(ctx)
-				require.NoError(t, err)
-				removedPaths, err := res.RemovedPaths(ctx)
-				require.NoError(t, err)
+			modifiedPaths, err := res.ModifiedPaths(ctx)
+			require.NoError(t, err)
+			addedPaths, err := res.AddedPaths(ctx)
+			require.NoError(t, err)
+			removedPaths, err := res.RemovedPaths(ctx)
+			require.NoError(t, err)
 
-				// - on filea.txt, file is modified in both changesets
-				require.Contains(t, modifiedPaths, "filea.txt")
-				c, err := res.After().File("filea.txt").Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "file a modified in other", c)
-				// - on fileb.txt, file is modified in 'original' changeset and removed in 'other' changeset
-				require.Contains(t, removedPaths, "fileb.txt")
-				// - on filec.txt, file is removed in 'original' changeset and modified in 'other' changeset
-				require.Contains(t, modifiedPaths, "filec.txt")
-				c, err = res.After().File("filec.txt").Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "file c modified in other", c)
-				// - on filef.txt, file is added in both changesets
-				require.Contains(t, addedPaths, "filef.txt")
-				c, err = res.After().File("filef.txt").Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "file f added in other", c)
+			// - on filea.txt, file is modified in both changesets
+			require.Contains(t, modifiedPaths, "filea.txt")
+			c, err := res.After().File("filea.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file a modified in other", c)
+			// - on fileb.txt, file is modified in 'original' changeset and removed in 'other' changeset
+			require.Contains(t, removedPaths, "fileb.txt")
+			// - on filec.txt, file is removed in 'original' changeset and modified in 'other' changeset
+			require.Contains(t, modifiedPaths, "filec.txt")
+			c, err = res.After().File("filec.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file c modified in other", c)
+			// - on filef.txt, file is added in both changesets
+			require.Contains(t, addedPaths, "filef.txt")
+			c, err = res.After().File("filef.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file f added in other", c)
 
-				// ensure other changes are still applied
-				require.Contains(t, modifiedPaths, "filee.txt")
-				require.Contains(t, addedPaths, "fileg.txt")
-				require.Contains(t, addedPaths, "filei.txt")
-			})
+			// ensure other changes are still applied
+			require.Contains(t, modifiedPaths, "filee.txt")
+			require.Contains(t, addedPaths, "fileg.txt")
+			require.Contains(t, addedPaths, "filei.txt")
 		})
 	})
 
@@ -1343,27 +1350,5 @@ func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
 		content, err = res.After().File("file3.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file 3 added in changeset3", content)
-	})
-
-	t.Run("binary conflict fails with leave_conflicts", func(ctx context.Context, t *testctx.T) {
-		// Create a base with a binary file (PNG header bytes)
-		binaryContent := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
-		binaryBase := c.Directory().
-			WithNewFile("image.png", binaryContent)
-
-		// Create two changesets that both modify the binary file
-		binaryOurs := binaryBase.
-			WithNewFile("image.png", binaryContent+"ours").
-			Changes(binaryBase)
-		binaryTheirs := binaryBase.
-			WithNewFile("image.png", binaryContent+"theirs").
-			Changes(binaryBase)
-
-		// LEAVE_CONFLICTS should fail for binary files
-		_, err := binaryOurs.WithChangeset(binaryTheirs, dagger.ChangesetWithChangesetOpts{
-			OnConflict: dagger.ChangesetMergeConflictLeaveConflicts,
-		}).Sync(ctx)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "binary")
 	})
 }

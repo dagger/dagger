@@ -5197,7 +5197,7 @@
               <div class="doc-copy">
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Mediatypes to use in published or exported image metadata.</p>
+                  <p>Strategy to use when merging changesets with conflicting changes.</p>
                 </div>
                 <div class="definition-properties doc-copy-section">
                   <h5>Values</h5>
@@ -5211,15 +5211,21 @@
                     <tbody>
                       <tr>
                         <td>
-                          <p><code>FAIL</code></p>
+                          <p><code>FAIL_EARLY</code></p>
                         </td>
-                        <td> A conflict causes the merge operation to fail </td>
+                        <td> Fail before attempting merge if file-level conflicts are detected </td>
                       </tr>
                       <tr>
                         <td>
-                          <p><code>LEAVE_CONFLICTS</code></p>
+                          <p><code>FAIL</code></p>
                         </td>
-                        <td> Conflicts are left in the merged files with conflict markers </td>
+                        <td> Attempt the merge and fail if git merge fails due to conflicts </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>LEAVE_CONFLICT_MARKERS</code></p>
+                        </td>
+                        <td> Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts. </td>
                       </tr>
                       <tr>
                         <td>
@@ -5240,7 +5246,7 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"FAIL"</span>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"FAIL_EARLY"</span>
 </code></pre>
                 </div>
               </div>

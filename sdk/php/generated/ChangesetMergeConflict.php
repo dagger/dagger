@@ -9,15 +9,18 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * Mediatypes to use in published or exported image metadata.
+ * Strategy to use when merging changesets with conflicting changes.
  */
 enum ChangesetMergeConflict: string
 {
-    /** A conflict causes the merge operation to fail */
+    /** Fail before attempting merge if file-level conflicts are detected */
+    case FAIL_EARLY = 'FAIL_EARLY';
+
+    /** Attempt the merge and fail if git merge fails due to conflicts */
     case FAIL = 'FAIL';
 
-    /** A conflict is skipped, the merge operation continues */
-    case SKIP = 'SKIP';
+    /** Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts. */
+    case LEAVE_CONFLICT_MARKERS = 'LEAVE_CONFLICT_MARKERS';
 
     /** The conflict is resolved by applying the version of the calling changeset */
     case PREFER_OURS = 'PREFER_OURS';

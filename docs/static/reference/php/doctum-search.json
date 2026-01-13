@@ -1665,12 +1665,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Changeset::withChangesets",
-			"p": "Dagger/Changeset.html#method_withChangesets",
-			"d": "<p>Add changes from multiple changesets</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Check::completed",
 			"p": "Dagger/Check.html#method_completed",
 			"d": "<p>Whether the check completed</p>"

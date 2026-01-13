@@ -310,19 +310,23 @@ class CacheSharingMode(Enum):
 
 
 class ChangesetMergeConflict(Enum):
-    """Mediatypes to use in published or exported image metadata."""
+    """Strategy to use when merging changesets with conflicting
+    changes."""
 
     FAIL = "FAIL"
-    """A conflict causes the merge operation to fail"""
+    """Attempt the merge and fail if git merge fails due to conflicts"""
+
+    FAIL_EARLY = "FAIL_EARLY"
+    """Fail before attempting merge if file-level conflicts are detected"""
+
+    LEAVE_CONFLICT_MARKERS = "LEAVE_CONFLICT_MARKERS"
+    """Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts."""
 
     PREFER_OURS = "PREFER_OURS"
     """The conflict is resolved by applying the version of the calling changeset"""
 
     PREFER_THEIRS = "PREFER_THEIRS"
     """The conflict is resolved by applying the version of the other changeset"""
-
-    SKIP = "SKIP"
-    """A conflict is skipped, the merge operation continues"""
 
 
 class ExistsType(Enum):
@@ -1175,7 +1179,7 @@ class Changeset(Type):
     ) -> Self:
         """Add changes to an existing changeset
 
-        By default the opperation will fail in case of conflicts, for instance
+        By default the operation will fail in case of conflicts, for instance
         a file modified in both changesets. The behavior can be adjusted using
         onConflict argument
 
@@ -1191,35 +1195,6 @@ class Changeset(Type):
             Arg("onConflict", on_conflict, ChangesetMergeConflict.FAIL),
         ]
         _ctx = self._select("withChangeset", _args)
-        return Changeset(_ctx)
-
-    def with_changesets(
-        self,
-        changes: list["Changeset"],
-        *,
-        on_conflict: ChangesetMergeConflict | None = ChangesetMergeConflict.FAIL,
-    ) -> Self:
-        """Add changes from multiple changesets
-
-        By default the operation will fail in case of conflicts, for instance
-        a file modified in multiple changesets. The behavior can be adjusted
-        using onConflict argument.
-
-        This is more efficient than calling withChangeset repeatedly as it
-        performs a single n-way merge.
-
-        Parameters
-        ----------
-        changes:
-            Array of changesets to merge into the actual changeset
-        on_conflict:
-            What to do on a merge conflict
-        """
-        _args = [
-            Arg("changes", changes),
-            Arg("onConflict", on_conflict, ChangesetMergeConflict.FAIL),
-        ]
-        _ctx = self._select("withChangesets", _args)
         return Changeset(_ctx)
 
     def with_(self, cb: Callable[["Changeset"], "Changeset"]) -> "Changeset":

@@ -13413,17 +13413,19 @@ const (
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
 )
 
-// Mediatypes to use in published or exported image metadata.
+// Strategy to use when merging changesets with conflicting changes.
 type ChangesetMergeConflict string
 
 func (ChangesetMergeConflict) IsEnum() {}
 
 func (v ChangesetMergeConflict) Name() string {
 	switch v {
+	case ChangesetMergeConflictFailEarly:
+		return "FAIL_EARLY"
 	case ChangesetMergeConflictFail:
 		return "FAIL"
-	case ChangesetMergeConflictLeaveConflicts:
-		return "LEAVE_CONFLICTS"
+	case ChangesetMergeConflictLeaveConflictMarkers:
+		return "LEAVE_CONFLICT_MARKERS"
 	case ChangesetMergeConflictPreferOurs:
 		return "PREFER_OURS"
 	case ChangesetMergeConflictPreferTheirs:
@@ -13458,8 +13460,10 @@ func (v *ChangesetMergeConflict) UnmarshalJSON(dt []byte) error {
 		*v = ""
 	case "FAIL":
 		*v = ChangesetMergeConflictFail
-	case "LEAVE_CONFLICTS":
-		*v = ChangesetMergeConflictLeaveConflicts
+	case "FAIL_EARLY":
+		*v = ChangesetMergeConflictFailEarly
+	case "LEAVE_CONFLICT_MARKERS":
+		*v = ChangesetMergeConflictLeaveConflictMarkers
 	case "PREFER_OURS":
 		*v = ChangesetMergeConflictPreferOurs
 	case "PREFER_THEIRS":
@@ -13471,11 +13475,14 @@ func (v *ChangesetMergeConflict) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	// A conflict causes the merge operation to fail
+	// Fail before attempting merge if file-level conflicts are detected
+	ChangesetMergeConflictFailEarly ChangesetMergeConflict = "FAIL_EARLY"
+
+	// Attempt the merge and fail if git merge fails due to conflicts
 	ChangesetMergeConflictFail ChangesetMergeConflict = "FAIL"
 
-	// Conflicts are left in the merged files with conflict markers
-	ChangesetMergeConflictLeaveConflicts ChangesetMergeConflict = "LEAVE_CONFLICTS"
+	// Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.
+	ChangesetMergeConflictLeaveConflictMarkers ChangesetMergeConflict = "LEAVE_CONFLICT_MARKERS"
 
 	// The conflict is resolved by applying the version of the calling changeset
 	ChangesetMergeConflictPreferOurs ChangesetMergeConflict = "PREFER_OURS"
