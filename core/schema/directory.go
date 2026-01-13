@@ -605,7 +605,7 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	f, err := parent.Self().FileLLB(ctx, args.Path)
+	f, err := parent.Self().FileLLB(ctx, parent, args.Path)
 	if err != nil {
 		return inst, err
 	}
@@ -1104,7 +1104,7 @@ type dirDockerBuildArgs struct {
 }
 
 func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*core.Directory], filename string) ([]byte, error) {
-	file, err := parent.Self().FileLLB(ctx, filename)
+	file, err := parent.Self().FileLLB(ctx, parent, filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil

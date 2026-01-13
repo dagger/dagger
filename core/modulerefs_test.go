@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/engine/vcs"
-	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -392,6 +391,6 @@ func TestParseRefString(t *testing.T) {
 type neverExistsFS struct {
 }
 
-func (fs neverExistsFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
-	return nil, os.ErrNotExist
+func (fs neverExistsFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	return "", nil, os.ErrNotExist
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path"
@@ -13,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -1237,12 +1237,12 @@ func ResolveDepToSource(
 }
 
 type StatFS interface {
-	Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error)
+	Stat(ctx context.Context, path string) (string, *Stat, error)
 }
 
-type StatFSFunc func(ctx context.Context, path string) (*fsutiltypes.Stat, error)
+type StatFSFunc func(ctx context.Context, path string) (string, *Stat, error)
 
-func (f StatFSFunc) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+func (f StatFSFunc) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	return f(ctx, path)
 }
 
@@ -1254,33 +1254,27 @@ func NewCallerStatFS(bk *buildkit.Client) *CallerStatFS {
 	return &CallerStatFS{bk}
 }
 
-func (fs CallerStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
-	stat, err := fs.bk.StatCallerHostPath(ctx, path, true)
+func (csfs CallerStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	bkStat, err := csfs.bk.StatCallerHostPath(ctx, path, true)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			return nil, os.ErrNotExist
+			return "", nil, os.ErrNotExist
 		}
-		return nil, err
+		return "", nil, err
 	}
-	return stat, nil
-}
 
-type CoreDirStatFS struct {
-	dir *Directory
-	bk  *buildkit.Client
-}
+	// Note that the mkstat func (from fsutils) returns a relative path; however, the Stat
+	// struct only stores the basename, so we also return the relative dir path.
+	pathDir := filepath.Dir(bkStat.Path)
+	pathBase := filepath.Base(bkStat.Path)
 
-func NewCoreDirStatFS(dir *Directory, bk *buildkit.Client) *CoreDirStatFS {
-	return &CoreDirStatFS{dir, bk}
-}
-
-func (fs CoreDirStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
-	stat, err := fs.dir.StatLLB(ctx, fs.bk, path)
-	if err != nil {
-		return nil, err
-	}
-	stat.Path = path // otherwise stat.Path is just the basename
-	return stat, nil
+	fileMode := fs.FileMode(bkStat.Mode)
+	return pathDir, &Stat{
+		Name:        pathBase,
+		Size:        int(bkStat.Size_),
+		Permissions: int(fileMode.Perm()),
+		FileType:    FileModeToFileType(fileMode),
+	}, nil
 }
 
 type ModuleSourceStatFS struct {
@@ -1288,13 +1282,30 @@ type ModuleSourceStatFS struct {
 	src *ModuleSource
 }
 
-func NewModuleSourceStatFS(bk *buildkit.Client, src *ModuleSource) *ModuleSourceStatFS {
-	return &ModuleSourceStatFS{bk, src}
+func CallDirStat(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) (string, *Stat, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+
+	var info *Stat
+	err = dag.Select(ctx, dir, &info,
+		dagql.Selector{
+			Field: "stat",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		},
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	return filepath.Dir(path), info, nil
 }
 
-func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	if fs.src == nil {
-		return nil, os.ErrNotExist
+		return "", nil, os.ErrNotExist
 	}
 
 	switch fs.src.Kind {
@@ -1303,18 +1314,12 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (*fsutiltype
 		return CallerStatFS{fs.bk}.Stat(ctx, path)
 	case ModuleSourceKindGit:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
-		return CoreDirStatFS{
-			dir: fs.src.Git.UnfilteredContextDir.Self(),
-			bk:  fs.bk,
-		}.Stat(ctx, path)
+		return CallDirStat(ctx, fs.src.Git.UnfilteredContextDir, path)
 	case ModuleSourceKindDir:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
-		return CoreDirStatFS{
-			dir: fs.src.ContextDirectory.Self(),
-			bk:  fs.bk,
-		}.Stat(ctx, path)
+		return CallDirStat(ctx, fs.src.ContextDirectory, path)
 	default:
-		return nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+		return "", nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
 }
 
