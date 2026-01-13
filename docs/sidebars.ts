@@ -12,6 +12,7 @@ module.exports = {
         "introduction/features/programmability",
         "introduction/features/reusability",
         "introduction/features/caching",
+        "introduction/features/checks",
         "introduction/features/observability",
         "introduction/features/sandbox",
         "introduction/features/secrets",
