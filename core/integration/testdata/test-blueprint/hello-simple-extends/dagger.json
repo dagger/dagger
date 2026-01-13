@@ -1,0 +1,15 @@
+{
+  "name": "hello-simple-extends",
+  "engineVersion": "v0.19.4",
+  "sdk": {
+    "source": "go"
+  },
+  "source": ".",
+  "extends": "hello-simple",
+  "dependencies": [
+    {
+      "name": "hello-simple",
+      "source": "../hello-simple"
+    }
+  ]
+}

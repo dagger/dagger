@@ -10515,6 +10515,11 @@ impl ModuleSource {
         let query = self.selection.select("engineVersion");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the module that this module extends, if any.
+    pub async fn extends(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("extends");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");

@@ -144,6 +144,10 @@
           "type": "array",
           "description": "Toolchain modules"
         },
+        "extends": {
+          "type": "string",
+          "description": "Extends specifies the name of another module that this module extends. When set, this module inherits all functions and fields from the extended module, allowing it to override specific implementations while inheriting the rest. The extended module must be present in the Dependencies list."
+        },
         "include": {
           "items": {
             "type": "string"

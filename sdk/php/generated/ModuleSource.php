@@ -123,6 +123,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The name of the module that this module extends, if any.
+     */
+    public function extends(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('extends');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'extends');
+    }
+
+    /**
      * The generated files and directories made on top of the module source's context directory.
      */
     public function generatedContextDirectory(): Directory
