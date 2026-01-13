@@ -1,0 +1,93 @@
+pub description = "A toolchain for testing Python applications with automatic OpenTelemetry tracing"
+
+type Python {
+  """
+  The uv binary extracted from the bundled Docker image
+  """
+  let uvBinary = currentModule().source().directory("images/uv").dockerBuild().rootfs()
+
+  """
+  Default Python container with uv (aligned with python-sdk-dev)
+  """
+  let defaultContainer = wolfi().
+    container(packages: ["libgcc"]).
+    withEnvVariable("PYTHONUNBUFFERED", "1").
+    withEnvVariable("PATH", "/root/.local/bin:/usr/local/bin:$PATH", expand: true).
+    withEnvVariable("UV_LINK_MODE", "copy").
+    withEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv").
+    withMountedCache("/root/.cache/uv", cacheVolume("python-toolchain-uv")).
+    withDirectory("/usr/local/bin", uvBinary, include: ["uv*"])
+
+  """
+  The pytest_otel source directory bundled with this module
+  """
+  let pytestOtelSource = currentModule().source().directory("pytest_otel")
+
+  """
+  Test a Python project with pytest and OpenTelemetry tracing.
+
+  This function automatically injects pytest_otel for test tracing visibility
+  in Dagger TUI and Dagger Cloud. No configuration required.
+
+  The function will:
+  - Use the provided container or default to Wolfi Linux with uv
+  - Install your project dependencies using uv sync
+  - Inject pytest_otel for automatic test tracing
+  - Run pytest with the specified Python version
+  """
+  pub test(
+    """
+    The source directory containing your Python project
+    """
+    source: Directory! @defaultPath(path: "/"),
+
+    """
+    Optional: A custom container with Python and uv installed.
+    If not provided, defaults to Wolfi Linux with uv.
+    """
+    container: Container,
+
+    """
+    Additional arguments to pass to pytest (e.g., ["-x", "--tb=short"])
+    """
+    args: [String!]! = ["-v"],
+
+    """
+    Python version to use (e.g., "3.12", "3.11", "3.10")
+    """
+    version: String! = "3.12",
+  ): Void @check {
+    # Determine base container
+    let base = if (container != null) {
+      container
+    } else {
+      defaultContainer
+    }
+
+    # Build test container
+    base.
+      # Mount user source code
+      withDirectory("/app", source).
+      withWorkdir("/app").
+
+      # Install user dependencies using uv
+      # Note: uv sync requires pyproject.toml; for requirements.txt use uv pip install
+      withExec([
+        "sh", "-c",
+        "if [ -f pyproject.toml ]; then uv sync; elif [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi"
+      ]).
+
+      # Bundle and install pytest_otel
+      # Note: uv pip install doesn't respect UV_PROJECT_ENVIRONMENT, so we set VIRTUAL_ENV
+      withDirectory("/opt/pytest_otel", pytestOtelSource).
+      withExec(["sh", "-c", "VIRTUAL_ENV=$UV_PROJECT_ENVIRONMENT uv pip install /opt/pytest_otel"]).
+
+      # Run pytest with provided arguments using specified Python version
+      # TRACEPARENT and OTEL endpoints are automatically set by Dagger
+      withExec(["uv", "run", "-p", version, "pytest"] + args).
+
+      sync
+
+    null
+  }
+}
