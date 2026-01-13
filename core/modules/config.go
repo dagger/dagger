@@ -84,6 +84,11 @@ type ModuleConfig struct {
 	// If true, disable the new default function caching behavior for this module. Functions will
 	// instead default to the old behavior of per-session caching.
 	DisableDefaultFunctionCaching *bool `json:"disableDefaultFunctionCaching,omitempty"`
+
+	// IgnoreChecks is a list of check patterns to exclude from this module.
+	// Patterns can use glob syntax to match check names.
+	// Note: This only applies to the module itself, not when it's installed as a toolchain.
+	IgnoreChecks []string `json:"ignoreChecks,omitempty"`
 }
 
 type ModuleConfigUserFields struct {

@@ -170,6 +170,9 @@ type ModuleSource struct {
 	ConfigToolchains []*modules.ModuleConfigDependency
 	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
 
+	// IgnoreChecks are the check patterns to ignore for this module (from dagger.json)
+	IgnoreChecks []string
+
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
@@ -231,6 +234,10 @@ func (src ModuleSource) Clone() *ModuleSource {
 	origToolchains := src.Toolchains
 	src.Toolchains = make([]dagql.ObjectResult[*ModuleSource], len(origToolchains))
 	copy(src.Toolchains, origToolchains)
+
+	origIgnoreChecks := src.IgnoreChecks
+	src.IgnoreChecks = make([]string, len(origIgnoreChecks))
+	copy(src.IgnoreChecks, origIgnoreChecks)
 
 	if src.Local != nil {
 		src.Local = src.Local.Clone()

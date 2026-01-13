@@ -73,6 +73,10 @@ type Module struct {
 	// ToolchainIgnoreChecks stores check patterns to ignore for each toolchain by their original name
 	ToolchainIgnoreChecks map[string][]string
 
+	// IgnoreChecks stores check patterns to ignore for this module's own checks
+	// Note: This only applies to the module itself, not when it's installed as a toolchain
+	IgnoreChecks []string
+
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
 
@@ -107,6 +111,25 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	group := &CheckGroup{Module: mod}
 	// 1. Walk main module for checks
 	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
+		// Check if this check should be ignored based on module's own ignoreChecks patterns
+		ignored := false
+		if len(mod.IgnoreChecks) > 0 {
+			for _, ignorePattern := range mod.IgnoreChecks {
+				checkMatch, err := check.Match([]string{ignorePattern})
+				if err != nil {
+					return nil, err
+				}
+				if checkMatch {
+					ignored = true
+					break
+				}
+			}
+		}
+
+		if ignored {
+			continue // Skip this check
+		}
+
 		match, err := check.Match(include)
 		if err != nil {
 			return nil, err

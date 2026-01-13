@@ -1028,6 +1028,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigBlueprint = modCfg.Blueprint
 	src.ConfigToolchains = modCfg.Toolchains
 	src.ConfigClients = modCfg.Clients
+	src.IgnoreChecks = modCfg.IgnoreChecks
 
 	engineVersion := modCfg.EngineVersion
 	switch engineVersion {
@@ -2892,6 +2893,7 @@ func (s *moduleSourceSchema) createBaseModule(
 		ToolchainModules:              make(map[string]*core.Module),
 		ToolchainArgumentConfigs:      make(map[string][]*modules.ModuleConfigArgument),
 		ToolchainIgnoreChecks:         make(map[string][]string),
+		IgnoreChecks:                  tcCtx.originalSrc.Self().IgnoreChecks,
 	}
 
 	// Load toolchain argument configurations from the original source
