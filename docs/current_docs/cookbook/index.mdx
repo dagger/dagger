@@ -6,4 +6,110 @@ description: "Learn how to use Dagger to build, test, and deploy your applicatio
 sidebar_label: "Overview"
 ---
 
-The Dagger Cookbook is a collection of practical examples that demonstrate how to use Dagger to build, test, and deploy your applications broken into specific categories such as Secrets, Files and Directories, and Container Images.
+# Cookbook
+
+The Dagger Cookbook provides practical, real-world examples for common development workflows. Each recipe shows you how to solve specific problems using Dagger's features and APIs.
+
+## What You'll Find
+
+These recipes demonstrate patterns you can adapt for your own projects. They cover everything from basic container operations to advanced CI/CD workflows and AI agent integrations.
+
+---
+
+## 🏗️ [Builds](/cookbook/builds)
+
+Build and compile applications in reproducible container environments.
+
+**Examples:**
+- Building Go, Python, Node.js applications
+- Multi-stage builds for optimized images
+- Cross-compilation and multi-platform builds
+- Caching build artifacts for faster iterations
+
+---
+
+## 📦 [Containers](/cookbook/containers)
+
+Work with container images and registries.
+
+**Examples:**
+- Building custom container images
+- Publishing images to registries (Docker Hub, GitHub Container Registry, etc.)
+- Multi-platform image builds (linux/amd64, linux/arm64)
+- Image scanning and security best practices
+
+---
+
+## 📁 [Filesystems](/cookbook/filesystems)
+
+Manage files, directories, and artifacts across your workflows.
+
+**Examples:**
+- Copying files between host and containers
+- Working with Git repositories
+- Managing build artifacts
+- File filtering and transformations
+- Directory synchronization
+
+---
+
+## 🔌 [Services](/cookbook/services)
+
+Integrate external services into your workflows (databases, caches, APIs).
+
+**Examples:**
+- Running databases for testing (PostgreSQL, MySQL, Redis)
+- Service health checks and readiness
+- Service networking and communication
+- Test fixtures and data seeding
+
+---
+
+## 🔐 [Secrets](/cookbook/secrets)
+
+Securely handle sensitive data in your workflows.
+
+**Examples:**
+- Loading secrets from environment variables
+- Using secrets in builds and deployments
+- Integrating with secret managers
+- Accessing private Git repositories
+- Authenticating with container registries
+
+---
+
+## 🤖 [AI Agents](/cookbook/agents)
+
+Build AI-powered workflows and agents with LLM integration.
+
+**Examples:**
+- Creating autonomous CI agents
+- Code analysis and review workflows
+- Documentation generation
+- Automated testing with AI assistance
+- Custom AI-powered development tools
+
+---
+
+## ⚠️ [Error Handling](/cookbook/errors)
+
+Handle errors gracefully and build resilient workflows.
+
+**Examples:**
+- Error propagation and handling patterns
+- Retry logic and backoff strategies
+- Graceful degradation
+- Debugging failed workflows
+- Custom error messages and reporting
+
+---
+
+## Need Something Else?
+
+Can't find what you're looking for? Check out:
+
+- **[Features](/features)** - Explore Dagger's capabilities
+- **[Module Development](/extending/modules)** - Build reusable modules
+- **[Reference](/reference/)** - Deep dive into APIs and configuration
+
+Have a recipe idea? [Contribute to the cookbook!](https://github.com/dagger/dagger/tree/main/docs/current_docs/cookbook)

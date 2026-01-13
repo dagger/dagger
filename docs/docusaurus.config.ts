@@ -55,7 +55,7 @@ const config: Config = {
           path: "./current_docs",
           routeBasePath: "/",
           sidebarPath: "./sidebars.ts",
-          sidebarCollapsible: false,
+          sidebarCollapsible: true,
           editUrl: "https://github.com/dagger/dagger/edit/main/docs",
           remarkPlugins: [
             [
@@ -228,43 +228,6 @@ const config: Config = {
         srcDark: "img/dagger-logo-white.png",
       },
       items: [
-        {
-          position: "left",
-          to: "/",
-          label: "Introduction",
-          className: "navbar-blog-link",
-          activeBaseRegex:
-            "^/$|^/(?!getting-started|extending|reference|cookbook|ci|types|integrations).*",
-        },
-        {
-          position: "left",
-          to: "/getting-started",
-          label: "Getting Started",
-          className: "navbar-blog-link",
-          activeBaseRegex:
-            "^/getting-started/?.*|^/integrations/?.*|^/types/?.*",
-        },
-        {
-          position: "left",
-          to: "/extending",
-          label: "Extending Dagger",
-          className: "navbar-blog-link",
-          activeBaseRegex: "^/extending/?.*",
-        },
-        {
-          position: "left",
-          to: "/reference",
-          label: "Reference",
-          className: "navbar-blog-link",
-          activeBaseRegex: "^/reference/?.*",
-        },
-        {
-          position: "left",
-          to: "/cookbook",
-          label: "Cookbook",
-          className: "navbar-blog-link",
-          activeBaseRegex: "^/cookbook/?.*",
-        },
         // TODO(jasonmccallister): Add these items back in the nav or possible swizzle into a sidebar or toc?
         // {
         //   position: "right",
