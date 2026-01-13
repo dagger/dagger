@@ -130,6 +130,11 @@ engine:
   ### Set runtimeClassName to use a custom runtimeClass
   runtimeClassName: ""
 
+  ### Share process namespace with sidecars for monitoring and observability
+  # Enables sidecar containers to see processes in the main engine container
+  # Useful for monitoring tools like Datadog, security scanners, and log collectors
+  shareProcessNamespace: false
+
   readinessProbeSettings:
     initialDelaySeconds: 5
     timeoutSeconds: 14

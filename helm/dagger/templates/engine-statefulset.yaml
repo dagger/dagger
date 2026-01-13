@@ -56,6 +56,9 @@ spec:
         runAsGroup: 1001
         fsGroup: 1001
         fsGroupChangePolicy: "OnRootMismatch"
+      {{- if .Values.engine.shareProcessNamespace }}
+      shareProcessNamespace: true
+      {{- end }}
       serviceAccountName: {{ include "dagger.serviceAccountName" . }}
       {{- if .Values.engine.priorityClassName }}
       priorityClassName: {{ .Values.engine.priorityClassName }}
