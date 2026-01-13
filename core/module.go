@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
@@ -304,6 +305,12 @@ func GetModuleFromContentDigest(
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
 		CallKey: dgst,
 	}
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, err
+	}
+	cacheKey.CallKey = hashutil.HashStrings(cacheKey.CallKey, md.SessionID).String()
+
 	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
 		return nil, fmt.Errorf("module not found: %s", modName)
 	})
@@ -316,6 +323,28 @@ func GetModuleFromContentDigest(
 	}
 
 	return inst, nil
+}
+
+// CacheModuleByContentDigest caches the given module instance using its content digest + session ID, corresponding to
+// the getter above (GetModuleFromContentDigest).
+func CacheModuleByContentDigest(
+	ctx context.Context,
+	dag *dagql.Server,
+	mod dagql.ObjectResult[*Module],
+) error {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	perSessionContentCacheKey := mod.Self().ContentDigestCacheKey()
+	perSessionContentCacheKey.CallKey = dagql.CacheKeyType(hashutil.HashStrings(perSessionContentCacheKey.CallKey, md.SessionID))
+	perSessionContentHashedInst := mod.WithObjectDigest(digest.Digest(perSessionContentCacheKey.CallKey))
+	_, err = dag.Cache.GetOrInitializeValue(ctx, perSessionContentCacheKey, perSessionContentHashedInst)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Return all user defaults for this module
