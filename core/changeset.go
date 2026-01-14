@@ -136,7 +136,6 @@ type Changeset struct {
 	pathsErr    error
 }
 
-// changesetJSONEnvelope is used for JSON serialization of Changeset
 type changesetJSONEnvelope struct {
 	BeforeID dagql.ID[*Directory] `json:"beforeId"`
 	AfterID  dagql.ID[*Directory] `json:"afterId"`
@@ -161,8 +160,7 @@ func (ch *Changeset) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ResolveRefs loads the Before/After ObjectResults from stored IDs.
-// This must be called after JSON unmarshaling to fully reconstruct the Changeset.
+// ResolveRefs must be called after JSON unmarshaling to fully reconstruct the Changeset.
 func (ch *Changeset) ResolveRefs(ctx context.Context, srv *dagql.Server) error {
 	if ch.decoded == nil {
 		return nil
@@ -180,14 +178,13 @@ func (ch *Changeset) ResolveRefs(ctx context.Context, srv *dagql.Server) error {
 	return nil
 }
 
-// changesetPathSets contains pre-computed sets for efficient O(1) path lookups
+// changesetPathSets enables O(1) path lookups during conflict detection.
 type changesetPathSets struct {
 	added    map[string]struct{}
 	modified map[string]struct{}
 	removed  map[string]struct{}
 }
 
-// pathSets creates lookup maps for this changeset's paths
 func (ch *ChangesetPaths) pathSets() changesetPathSets {
 	sets := changesetPathSets{
 		added:    make(map[string]struct{}, len(ch.Added)),
@@ -433,7 +430,6 @@ func (conflicts Conflicts) IsEmpty() bool {
 	return len(conflicts) == 0
 }
 
-// ModifyDeletePaths returns the paths of modify/delete conflicts.
 func (conflicts Conflicts) ModifyDeletePaths() []string {
 	var paths []string
 	for _, c := range conflicts {
@@ -533,7 +529,6 @@ func (ch *Changeset) WithChangeset(
 	other *Changeset,
 	onConflictStrategy WithChangesetMergeConflict,
 ) (*Changeset, error) {
-	// Compute paths for both changesets - needed for conflict detection and resolution
 	ourPaths, err := ch.ComputePaths(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("compute our paths: %w", err)
@@ -543,15 +538,11 @@ func (ch *Changeset) WithChangeset(
 		return nil, fmt.Errorf("compute their paths: %w", err)
 	}
 
-	// Compute file-level conflicts
 	conflicts := ourPaths.CheckConflicts(theirPaths)
-
-	// FAIL_EARLY: check for conflicts before attempting merge
 	if onConflictStrategy == FailEarlyOnConflict && !conflicts.IsEmpty() {
 		return nil, conflicts.Error()
 	}
 
-	// Merge "before" directories from both changesets
 	before, err := mergeBeforeDirectories(ctx, ch, other)
 	if err != nil {
 		return nil, err
@@ -566,7 +557,6 @@ func (ch *Changeset) WithChangeset(
 		return nil, fmt.Errorf("generate their patch: %w", err)
 	}
 
-	// Perform git-based merge
 	afterDir, err := gitMergeWithPatches(ctx,
 		before.Self(),
 		ourPatch, theirPatch,
@@ -590,14 +580,12 @@ func (ch *Changeset) WithChangesets(
 	others []*Changeset,
 	onConflictStrategy WithChangesetsMergeConflict,
 ) (*Changeset, error) {
-	// Empty array: return unchanged changeset
 	if len(others) == 0 {
 		return ch, nil
 	}
 
-	// Single element: delegate to WithChangeset (more efficient 2-way merge)
+	// Single element uses more efficient 2-way merge
 	if len(others) == 1 {
-		// Map the strategy to the 2-way merge equivalent
 		var twoWayStrategy WithChangesetMergeConflict
 		switch onConflictStrategy {
 		case FailEarlyOnConflicts:
@@ -615,13 +603,11 @@ func (ch *Changeset) WithChangesets(
 		}
 	}
 
-	// Merge "before" directories from all changesets
 	before, err := mergeBeforeDirectories(ctx, ch, others...)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get patches for all changesets
 	ourPatch, err := ch.AsPatch(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get our patch: %w", err)
@@ -636,7 +622,6 @@ func (ch *Changeset) WithChangesets(
 		otherPatches[i] = patch
 	}
 
-	// Perform the octopus merge
 	afterDir, err := gitOctopusMergeWithPatches(ctx, before.Self(), ourPatch, otherPatches)
 	if err != nil {
 		return nil, err
@@ -645,9 +630,8 @@ func (ch *Changeset) WithChangesets(
 	return newChangesetFromMerge(ctx, before, afterDir)
 }
 
-// mergeBeforeDirectories merges the "before" directories from all changesets.
-// It also excludes any .git directories that might be present in the input directories
-// since the merge process creates and removes its own .git for the merge operation.
+// mergeBeforeDirectories merges the "before" directories from all changesets,
+// excluding .git since the merge process creates its own temporary .git directory.
 func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Changeset) (dagql.ObjectResult[*Directory], error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -662,8 +646,6 @@ func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Chang
 		selectors = append(selectors, withDirectorySelector(other.Before.ID()))
 	}
 
-	// Exclude .git directory to avoid conflicts with the merge process
-	// which creates its own temporary .git directory
 	selectors = append(selectors, dagql.Selector{
 		Field: "withoutDirectory",
 		Args: []dagql.NamedInput{
@@ -678,7 +660,6 @@ func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Chang
 	return before, nil
 }
 
-// withDirectorySelector creates a dagql selector for withDirectory at root path.
 func withDirectorySelector(dirID *call.ID) dagql.Selector {
 	return dagql.Selector{
 		Field: "withDirectory",
@@ -689,7 +670,6 @@ func withDirectorySelector(dirID *call.ID) dagql.Selector {
 	}
 }
 
-// newChangesetFromMerge creates a new changeset from merged before directory and after directory result.
 func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Directory], afterDir *Directory) (*Changeset, error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -711,7 +691,6 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 	return NewChangeset(ctx, before, after)
 }
 
-// checkAllPairwiseConflicts checks for conflicts between all pairs of changesets.
 func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Changeset) error {
 	ourPaths, err := ch.ComputePaths(ctx)
 	if err != nil {
@@ -727,7 +706,6 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 		otherPaths[i] = paths
 	}
 
-	// Check conflicts between our changeset and each other
 	for i, paths := range otherPaths {
 		conflicts := ourPaths.CheckConflicts(paths)
 		if !conflicts.IsEmpty() {
@@ -735,7 +713,6 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 		}
 	}
 
-	// Check conflicts between each pair of others
 	for i := 0; i < len(otherPaths); i++ {
 		for j := i + 1; j < len(otherPaths); j++ {
 			conflicts := otherPaths[i].CheckConflicts(otherPaths[j])
@@ -748,19 +725,9 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 	return nil
 }
 
-// gitMergeWithPatches performs a git-based 3-way merge of two patches.
-// It creates a temporary git repository, commits the base, creates two branches
-// with each patch applied, and merges them with the specified strategy.
-// modifyDeleteConflicts contains paths that have modify/delete conflicts (the only
-// conflicts not auto-resolved by -X ours/theirs).
-func gitMergeWithPatches(
-	ctx context.Context,
-	base *Directory,
-	ourPatch, theirPatch *File,
-	ourRemoved, theirRemoved []string,
-	conflicts Conflicts,
-	strategy WithChangesetMergeConflict,
-) (*Directory, error) {
+// withGitMergeWorkspace sets up a workspace for git merge operations, runs the provided
+// function, then commits and returns the resulting directory.
+func withGitMergeWorkspace(ctx context.Context, base *Directory, description string, fn func(workDir string) error) (*Directory, error) {
 	baseRef, err := getRefOrEvaluate(ctx, base)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate base: %w", err)
@@ -776,10 +743,9 @@ func gitMergeWithPatches(
 		return nil, err
 	}
 
-	// Create a new ref for the merge result
 	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("Changeset.withChangeset git merge"))
+		bkcache.WithDescription(description))
 	if err != nil {
 		return nil, err
 	}
@@ -789,28 +755,46 @@ func gitMergeWithPatches(
 		if err != nil {
 			return err
 		}
+		return fn(workDir)
+	})
+	if err != nil {
+		return nil, err
+	}
 
-		// Initialize git repository with base commit
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Directory{
+		Result:   snap,
+		Dir:      base.Dir,
+		Platform: query.Platform(),
+	}, nil
+}
+
+func gitMergeWithPatches(
+	ctx context.Context,
+	base *Directory,
+	ourPatch, theirPatch *File,
+	ourRemoved, theirRemoved []string,
+	conflicts Conflicts,
+	strategy WithChangesetMergeConflict,
+) (*Directory, error) {
+	return withGitMergeWorkspace(ctx, base, "Changeset.withChangeset git merge", func(workDir string) error {
 		if err := initGitRepo(ctx, workDir); err != nil {
 			return err
 		}
-
-		// Create 'ours' branch with our patch (patch file is mounted internally)
 		if err := createBranchWithPatchFile(ctx, workDir, "ours", ourPatch); err != nil {
 			return err
 		}
-
-		// Create 'theirs' branch from base commit (HEAD~1) with their patch
 		if err := createBranchWithPatchFile(ctx, workDir, "theirs", theirPatch, "HEAD~1"); err != nil {
 			return err
 		}
-
-		// Switch to 'ours' and merge 'theirs' with appropriate strategy
 		if err := runGit(ctx, workDir, "checkout", "ours"); err != nil {
 			return err
 		}
 
-		// Build merge command with strategy options
 		mergeArgs := []string{"merge", "--no-edit", "--no-commit"}
 		switch strategy {
 		case PreferOursOnConflict:
@@ -822,98 +806,42 @@ func gitMergeWithPatches(
 
 		mergeErr := runGit(ctx, workDir, mergeArgs...)
 
-		// Handle conflicts based on strategy
 		switch strategy {
 		case FailOnConflict:
-			// Fail if merge had any conflicts (including modify/delete)
 			if mergeErr != nil {
 				return mergeErr
 			}
-
 		case LeaveConflictMarkers, PreferOursOnConflict, PreferTheirsOnConflict:
-			// Handle modify/delete conflicts based on strategy
 			modifyDeleteConflicts := conflicts.ModifyDeletePaths()
 			if len(modifyDeleteConflicts) > 0 {
 				if err := resolveModifyDeleteConflicts(ctx, workDir, modifyDeleteConflicts, strategy, ourRemoved, theirRemoved); err != nil {
 					return err
 				}
 			}
-
 		default:
-			// FailEarlyOnConflict or unknown strategy - fail if merge had issues
 			if mergeErr != nil {
 				return mergeErr
 			}
 		}
 
-		// Clean up .git directory
 		return os.RemoveAll(filepath.Join(workDir, ".git"))
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	snap, err := newRef.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Directory{
-		Result:   snap,
-		Dir:      base.Dir,
-		Platform: query.Platform(),
-	}, nil
 }
 
-// gitOctopusMergeWithPatches performs a git octopus merge of multiple patches.
-// It creates a temporary git repository, commits the base, creates a branch for
-// each patch, and merges them all using git's octopus merge strategy.
 func gitOctopusMergeWithPatches(
 	ctx context.Context,
 	base *Directory,
 	ourPatch *File,
 	otherPatches []*File,
 ) (*Directory, error) {
-	baseRef, err := getRefOrEvaluate(ctx, base)
-	if err != nil {
-		return nil, fmt.Errorf("evaluate base: %w", err)
-	}
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create a new ref for the merge result
-	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("Changeset.withChangesets git octopus merge"))
-	if err != nil {
-		return nil, err
-	}
-
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
-		workDir, err := containerdfs.RootPath(root, base.Dir)
-		if err != nil {
-			return err
-		}
-
-		// Initialize git repository with base commit
+	return withGitMergeWorkspace(ctx, base, "Changeset.withChangesets git octopus merge", func(workDir string) error {
 		if err := initGitRepo(ctx, workDir); err != nil {
 			return err
 		}
-
-		// Create 'ours' branch with our patch (patch file is mounted internally)
 		if err := createBranchWithPatchFile(ctx, workDir, "ours", ourPatch); err != nil {
 			return err
 		}
 
-		// Create a branch for each other changeset from base commit (HEAD~1)
 		branchNames := make([]string, len(otherPatches))
 		for i, patch := range otherPatches {
 			branchName := fmt.Sprintf("branch_%d", i)
@@ -923,12 +851,10 @@ func gitOctopusMergeWithPatches(
 			}
 		}
 
-		// Switch to 'ours' branch for the merge
 		if err := runGit(ctx, workDir, "checkout", "ours"); err != nil {
 			return err
 		}
 
-		// Build octopus merge command: git merge --no-edit --no-commit branch_0 branch_1 ...
 		mergeArgs := []string{"merge", "--no-edit", "--no-commit"}
 		mergeArgs = append(mergeArgs, branchNames...)
 
@@ -936,26 +862,10 @@ func gitOctopusMergeWithPatches(
 			return err
 		}
 
-		// Clean up .git directory
 		return os.RemoveAll(filepath.Join(workDir, ".git"))
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	snap, err := newRef.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Directory{
-		Result:   snap,
-		Dir:      base.Dir,
-		Platform: query.Platform(),
-	}, nil
 }
 
-// runGit executes a git command in the specified directory.
 func runGit(ctx context.Context, dir string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
@@ -973,8 +883,7 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
-// gitApplyPatchFromFile applies a patch by mounting the patch file, copying it to the
-// working directory (via streaming to avoid memory issues), and running git apply.
+// gitApplyPatchFromFile streams the patch to avoid loading it entirely into memory.
 func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 	if patch == nil {
 		return nil
@@ -1005,9 +914,6 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 			return nil
 		}
 
-		// Copy patch to a temp file in the working directory via streaming
-		// This avoids loading the entire patch into memory while ensuring
-		// git can access the patch file from the same filesystem
 		tempPatch := filepath.Join(dir, ".dagger-patch")
 		srcFile, err := os.Open(patchPath)
 		if err != nil {
@@ -1035,7 +941,6 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 	}, mountRefAsReadOnly)
 }
 
-// initGitRepo initializes a git repository and commits all files as base.
 func initGitRepo(ctx context.Context, dir string) error {
 	if err := runGit(ctx, dir, "init"); err != nil {
 		return err
@@ -1046,8 +951,6 @@ func initGitRepo(ctx context.Context, dir string) error {
 	return runGit(ctx, dir, "commit", "--allow-empty", "-m", "base")
 }
 
-// createBranchWithPatchFile creates a branch, applies the patch from a file, and commits.
-// If startPoint is provided, the branch is created from that commit.
 func createBranchWithPatchFile(ctx context.Context, dir string, branchName string, patch *File, startPoint ...string) error {
 	checkoutArgs := []string{"checkout", "-b", branchName}
 	if len(startPoint) > 0 {
@@ -1072,29 +975,20 @@ func createBranchWithPatchFile(ctx context.Context, dir string, branchName strin
 	return nil
 }
 
-// resolveModifyDeleteConflicts resolves modify/delete conflicts based on strategy.
-// For PREFER_OURS/THEIRS: prefer that side (delete if it deleted, keep if it modified)
-// For LEAVE_CONFLICT_MARKERS: always keep the modified version
+// resolveModifyDeleteConflicts handles conflicts where one side modified and the other deleted.
+// For LEAVE_CONFLICT_MARKERS, keeps the modified version.
 func resolveModifyDeleteConflicts(ctx context.Context, dir string, conflictFiles []string, strategy WithChangesetMergeConflict, ourRemoved, theirRemoved []string) error {
 	if len(conflictFiles) == 0 {
 		return nil
 	}
 
-	// Build sets for quick lookup
-	ourRemovedSet := make(map[string]struct{}, len(ourRemoved))
-	for _, p := range ourRemoved {
-		ourRemovedSet[p] = struct{}{}
-	}
-	theirRemovedSet := make(map[string]struct{}, len(theirRemoved))
-	for _, p := range theirRemoved {
-		theirRemovedSet[p] = struct{}{}
-	}
+	ourRemovedSet := toSet(ourRemoved)
+	theirRemovedSet := toSet(theirRemoved)
 
 	for _, file := range conflictFiles {
 		_, ourDeleted := ourRemovedSet[file]
 		_, theirDeleted := theirRemovedSet[file]
 
-		// Determine which side to use based on strategy
 		var useOurs bool
 		switch strategy {
 		case PreferOursOnConflict:
@@ -1102,34 +996,34 @@ func resolveModifyDeleteConflicts(ctx context.Context, dir string, conflictFiles
 		case PreferTheirsOnConflict:
 			useOurs = false
 		case LeaveConflictMarkers:
-			// Keep the modified version (not the deleted one)
 			useOurs = theirDeleted && !ourDeleted
 		default:
 			continue
 		}
 
-		if useOurs {
-			if ourDeleted {
-				if err := runGit(ctx, dir, "rm", "--force", "--", file); err != nil {
-					return fmt.Errorf("git rm %s: %w", file, err)
-				}
-			} else {
-				if err := runGit(ctx, dir, "checkout", "--ours", "--", file); err != nil {
-					return fmt.Errorf("git checkout --ours %s: %w", file, err)
-				}
+		deleted := (useOurs && ourDeleted) || (!useOurs && theirDeleted)
+		if deleted {
+			if err := runGit(ctx, dir, "rm", "--force", "--", file); err != nil {
+				return fmt.Errorf("git rm %s: %w", file, err)
 			}
 		} else {
-			if theirDeleted {
-				if err := runGit(ctx, dir, "rm", "--force", "--", file); err != nil {
-					return fmt.Errorf("git rm %s: %w", file, err)
-				}
-			} else {
-				if err := runGit(ctx, dir, "checkout", "--theirs", "--", file); err != nil {
-					return fmt.Errorf("git checkout --theirs %s: %w", file, err)
-				}
+			side := "--ours"
+			if !useOurs {
+				side = "--theirs"
+			}
+			if err := runGit(ctx, dir, "checkout", side, "--", file); err != nil {
+				return fmt.Errorf("git checkout %s %s: %w", side, file, err)
 			}
 		}
 	}
 
 	return runGit(ctx, dir, "add", "-A")
+}
+
+func toSet(slice []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(slice))
+	for _, s := range slice {
+		set[s] = struct{}{}
+	}
+	return set
 }
