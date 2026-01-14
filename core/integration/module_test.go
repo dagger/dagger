@@ -7849,6 +7849,102 @@ func (m *Depdep) TestFile(
 			require.Equal(t, out1, out2)
 		})
 	})
+
+	t.Run("git contextual arg", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+
+		// Initialize git repo
+		gitCmd := exec.Command("git", "init")
+		gitCmd.Dir = modDir
+		gitOutput, err := gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		gitCmd = exec.Command("git", "config", "user.email", "dagger@example.com")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		gitCmd = exec.Command("git", "config", "user.name", "Dagger Tests")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		// Initialize dagger module
+		initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--name=test", "--sdk=go", "--source=.")
+		initOutput, err := initCmd.CombinedOutput()
+		require.NoError(t, err, string(initOutput))
+
+		installCmd := hostDaggerCommand(ctx, t, modDir, "install",
+			"github.com/dagger/dagger-test-modules/contextual-git-bug@"+vcsTestCaseCommit)
+		installOutput, err := installCmd.CombinedOutput()
+		require.NoError(t, err, string(installOutput))
+
+		// Write module source
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+    "context"
+    "dagger/test/internal/dagger"
+)
+
+type Test struct {
+    //+private
+    Ref *dagger.GitRef
+    //+private
+    Dep *dagger.Dep
+}
+
+func New(
+    // +defaultPath="."
+    ref *dagger.GitRef,
+    //+defaultPath="crap"
+    source *dagger.Directory,
+) *Test {
+    return &Test{
+        Ref: ref,
+        Dep: dag.Dep(source),
+    }
+}
+
+func (m *Test) Fn(
+    ctx context.Context,
+    //+defaultPath="config/config.local.js"
+    configFile *dagger.File,
+) (*dagger.Directory, error) {
+    return m.Dep.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
+}
+`), 0644)
+		require.NoError(t, err)
+
+		// Create git commit
+		gitCmd = exec.Command("git", "add", ".")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		gitCmd = exec.Command("git", "commit", "-m", "make HEAD exist")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		// Create directories and config file
+		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "crap"), 0755))
+		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "config"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("1"), 0644))
+
+		// Run first dagger call
+		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "fn")
+		callOutput, err := callCmd.CombinedOutput()
+		require.NoError(t, err, string(callOutput))
+
+		// Update config file
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("2"), 0644))
+
+		// Run second dagger call
+		callCmd = hostDaggerCommand(ctx, t, modDir, "call", "fn")
+		callOutput, err = callCmd.CombinedOutput()
+		require.NoError(t, err, string(callOutput))
+	})
 }
 
 func (ModuleSuite) TestNestedClientCreatedByModule(ctx context.Context, t *testctx.T) {
