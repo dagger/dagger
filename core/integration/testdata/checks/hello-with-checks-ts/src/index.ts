@@ -5,6 +5,13 @@ import { dag, object, func, check } from "@dagger.io/dagger";
 
 @object()
 class HelloWithChecksTs {
+  @func()
+  baseImage: string;
+
+  constructor(baseImage: string = "alpine:3") {
+    this.baseImage = baseImage;
+  }
+
   /**
    * Returns a passing check
    */
@@ -13,7 +20,7 @@ class HelloWithChecksTs {
   async passingCheck(): Promise<void> {
     await dag
       .container()
-      .from("alpine:3")
+      .from(this.baseImage)
       .withExec(["sh", "-c", "exit 0"])
       .sync();
   }
@@ -26,7 +33,7 @@ class HelloWithChecksTs {
   async failingCheck(): Promise<void> {
     await dag
       .container()
-      .from("alpine:3")
+      .from(this.baseImage)
       .withExec(["sh", "-c", "exit 1"])
       .sync();
   }
