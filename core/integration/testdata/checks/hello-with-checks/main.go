@@ -7,7 +7,7 @@ import (
 	"dagger/hello-with-checks/internal/dagger"
 )
 
-type HelloWithChecks struct{
+type HelloWithChecks struct {
 	BaseImage string
 }
 

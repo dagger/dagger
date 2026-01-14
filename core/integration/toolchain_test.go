@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -142,24 +144,21 @@ func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--sdk=go", "--name=test", "--source=.")).
 			WithNewFile("main.go", `package main
 
-import (
-	"dagger/test/internal/dagger"
-)
-
 type Test struct {
-	BaseGreeting string
+  BaseGreeting string
 }
 
 func New(
-	baseGreeting string,
+  //+default="foo"
+  baseGreeting string,
 ) *Test {
-	return &Test{
-		BaseGreeting: baseGreeting,
-	}
+  return &Test{
+    BaseGreeting: baseGreeting,
+  }
 }
 
 func (t *Test) Hello() string {
-	return t.BaseGreeting
+  return t.BaseGreeting
 }
 `)
 
@@ -178,7 +177,7 @@ func (t *Test) Hello() string {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
 					With(daggerExec("toolchain", "install", tc.toolchainPath)).
-					With(daggerExec("--progress=report", "check", "passing-check")).
+					With(daggerExec("--progress=report", "check", fmt.Sprintf("%s:passing-check", strings.TrimPrefix(tc.toolchainPath, "../")))).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
 				require.Regexp(t, `passingCheck.*OK`, out)
