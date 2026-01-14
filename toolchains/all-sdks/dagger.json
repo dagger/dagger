@@ -41,6 +41,10 @@
     {
       "name": "elixir-sdk-dev",
       "source": "../elixir-sdk-dev"
+    },
+    {
+      "name": "nushell-sdk-dev",
+      "source": "../nushell-sdk-dev"
     }
   ]
 }

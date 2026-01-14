@@ -86,6 +86,7 @@ func all[T any]() []namedSDK[T] {
 		{"java", dag.JavaSDKDev()},
 		{"rust", dag.RustSDKDev()},
 		{"elixir", dag.ElixirSDKDev()},
+		{"nushell", dag.NushellSDKDev()},
 	} {
 		if casted, ok := entry.sdk.(T); ok {
 			result = append(result, namedSDK[T]{

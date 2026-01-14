@@ -47,6 +47,7 @@ jobs:
           - "cli/**"
           - "check-generated"
           - "ci/**"
+          - "sdk/nushell/**"
     runs-on:
       - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
     name: checks
