@@ -330,7 +330,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer patchFile.Close()
 
-				cmd := exec.Command("git", "diff", "--binary", "--no-prefix", "--no-index", "a", "b")
+				cmd := exec.CommandContext(ctx, "git", "diff", "--binary", "--no-prefix", "--no-index", "a", "b")
 				cmd.Dir = root
 				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
 				cmd.Stderr = stdio.Stderr
@@ -1110,15 +1110,23 @@ func resolveModifyDeleteConflicts(ctx context.Context, dir string, conflictFiles
 
 		if useOurs {
 			if ourDeleted {
-				_ = runGit(ctx, dir, "rm", "--force", "--", file)
+				if err := runGit(ctx, dir, "rm", "--force", "--", file); err != nil {
+					return fmt.Errorf("git rm %s: %w", file, err)
+				}
 			} else {
-				_ = runGit(ctx, dir, "checkout", "--ours", "--", file)
+				if err := runGit(ctx, dir, "checkout", "--ours", "--", file); err != nil {
+					return fmt.Errorf("git checkout --ours %s: %w", file, err)
+				}
 			}
 		} else {
 			if theirDeleted {
-				_ = runGit(ctx, dir, "rm", "--force", "--", file)
+				if err := runGit(ctx, dir, "rm", "--force", "--", file); err != nil {
+					return fmt.Errorf("git rm %s: %w", file, err)
+				}
 			} else {
-				_ = runGit(ctx, dir, "checkout", "--theirs", "--", file)
+				if err := runGit(ctx, dir, "checkout", "--theirs", "--", file); err != nil {
+					return fmt.Errorf("git checkout --theirs %s: %w", file, err)
+				}
 			}
 		}
 	}
