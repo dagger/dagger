@@ -23,7 +23,7 @@ func New(
 }
 
 // getNushellContainer returns a container with Nushell and the SDK runtime
-func (t *NushellSdkDev) getNushellContainer(ctx context.Context) *dagger.Container {
+func (t *NushellSdkDev) getNushellContainer() *dagger.Container {
 	// Get the SDK directory from workspace
 	sdkDir := t.Workspace.Directory("sdk/nushell")
 
@@ -47,7 +47,7 @@ func (t *NushellSdkDev) getNushellContainer(ctx context.Context) *dagger.Contain
 // +check
 // Run Nushell SDK tests
 func (t *NushellSdkDev) Test(ctx context.Context) error {
-	container := t.getNushellContainer(ctx)
+	container := t.getNushellContainer()
 
 	// First run structural validation
 	_, err := container.
@@ -79,7 +79,7 @@ func (t *NushellSdkDev) Test(ctx context.Context) error {
 // +check
 // Run Nushell SDK check examples
 func (t *NushellSdkDev) CheckExamples(ctx context.Context) error {
-	container := t.getNushellContainer(ctx)
+	container := t.getNushellContainer()
 
 	// Check that examples run without errors
 	_, err := container.
@@ -92,7 +92,7 @@ func (t *NushellSdkDev) CheckExamples(ctx context.Context) error {
 // +check
 // Verify README examples are valid
 func (t *NushellSdkDev) CheckReadme(ctx context.Context) error {
-	container := t.getNushellContainer(ctx)
+	container := t.getNushellContainer()
 
 	// Verify README exists and has content
 	_, err := container.
@@ -105,7 +105,7 @@ func (t *NushellSdkDev) CheckReadme(ctx context.Context) error {
 // +check
 // Verify documentation exists
 func (t *NushellSdkDev) CheckDocs(ctx context.Context) error {
-	container := t.getNushellContainer(ctx)
+	container := t.getNushellContainer()
 
 	// Verify runtime documentation exists (files are in runtime/runtime/)
 	_, err := container.
@@ -118,7 +118,7 @@ func (t *NushellSdkDev) CheckDocs(ctx context.Context) error {
 // +check
 // Verify runtime structure is correct
 func (t *NushellSdkDev) CheckStructure(ctx context.Context) error {
-	container := t.getNushellContainer(ctx)
+	container := t.getNushellContainer()
 
 	// Verify all expected runtime files exist (in runtime/runtime/ subdirectory)
 	requiredFiles := []string{
