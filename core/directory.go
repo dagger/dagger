@@ -1223,7 +1223,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 		if err != nil {
 			return err
 		}
-		return RestoreErrPath(os.MkdirAll(resolvedDir, permissions), dest)
+		return TrimErrPathPrefix(os.MkdirAll(resolvedDir, permissions), root)
 	}, withSavedSnapshot("withNewDirectory %s", dest))
 }
 
@@ -1594,7 +1594,7 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 			return err
 		}
 		fileInfo, err = osStatFunc(resolvedPath)
-		return RestoreErrPath(err, targetPath)
+		return TrimErrPathPrefix(err, root)
 	})
 	if err != nil {
 		return nil, err

@@ -488,7 +488,7 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 			return err
 		}
 		fileInfo, err = osStatFunc(resolvedPath)
-		return RestoreErrPath(err, file.File)
+		return TrimErrPathPrefix(err, root)
 	})
 	if err != nil {
 		return nil, err
@@ -507,26 +507,22 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 }
 
 func (file *File) WithName(ctx context.Context, filename string) (*File, error) {
-	// Clone the file
 	file = file.Clone()
-
-	st, err := file.State()
-	if err != nil {
-		return nil, err
-	}
-
-	// Create a new file with the new name
-	newFile := llb.Scratch().File(llb.Copy(st, file.File, filepath.Base(filename)))
-
-	def, err := newFile.Marshal(ctx, llb.Platform(file.Platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-
-	file.LLB = def.ToPB()
-	file.File = filepath.Base(filename)
-
-	return file, nil
+	return execInMount(ctx, file, func(root string) error {
+		src, err := RootPathWithoutFinalSymlink(root, file.File)
+		if err != nil {
+			return err
+		}
+		dst, err := RootPathWithoutFinalSymlink(root, filename)
+		if err != nil {
+			return err
+		}
+		err = os.Rename(src, dst)
+		if err != nil {
+			return TrimErrPathPrefix(err, root)
+		}
+		return nil
+	}, withSavedSnapshot("withName %s", filename))
 }
 
 func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
