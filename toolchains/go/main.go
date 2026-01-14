@@ -219,19 +219,145 @@ func (p *Go) Env(
 		WithMountedDirectory("", p.Source)
 }
 
-// List tests
-func (p *Go) Tests(
+func (p *Go) RunTests(
 	ctx context.Context,
-	// Packages to list tests from (default all packages)
+	// Path of the working directory for 'go test', relative to the workspace root
+	workdir,
+	// Tests to include, in the standard go test pattern format (go test -run)
 	// +optional
-	// +default=["./..."]
-	pkgs []string,
-) (string, error) {
-	script := "go test -list=. " + strings.Join(pkgs, " ") + " | grep ^Test | sort"
-	return p.
+	include string,
+	// Tests to exclude, in the standard go test pattern format (go test -skip)
+	// +optional
+	exclude string,
+	// Abort test run on first failure
+	// +optional
+	failfast bool,
+	// How many tests to run in parallel - defaults to the number of CPUs
+	// +optional
+	// +default=0
+	parallel int,
+	// How long before timing out the test run
+	// +optional
+	// +default="30m"
+	timeout string,
+	// +optional
+	// +default=1
+	count int,
+) error {
+	if p.Race {
+		p.Cgo = true
+	}
+	cmd := []string{"go", "test", "-v"}
+	if parallel != 0 {
+		cmd = append(cmd, fmt.Sprintf("-parallel=%d", parallel))
+	}
+	cmd = append(cmd, fmt.Sprintf("-timeout=%s", timeout))
+	cmd = append(cmd, fmt.Sprintf("-count=%d", count))
+	if include != "" {
+		cmd = append(cmd, "-run", include)
+	}
+	if exclude != "" {
+		cmd = append(cmd, "-skip", exclude)
+	}
+	if failfast {
+		cmd = append(cmd, "-failfast")
+	}
+	_, err := p.
 		Env(defaultPlatform).
-		WithExec([]string{"sh", "-c", script}).
-		Stdout(ctx)
+		WithExec(goCommand(cmd, []string{"."}, p.Ldflags, p.Values, p.Race)).
+		Sync(ctx)
+	return err
+}
+
+func (p *Go) Tests(ctx context.Context) ([]*TestDirectory, error) {
+	dirs := make(map[string]*TestDirectory)
+	err := parallel.New().WithJob("scan workspace for go tests", func(ctx context.Context) error {
+		// Search for top-level test function declarations (not methods with receivers)
+		// This matches "func TestXxx(" but not "func (s *Suite) TestXxx("
+		results, err := p.Source.Search(
+			ctx,
+			`^func (Test\w+)\(`,
+			dagger.DirectorySearchOpts{
+				Globs: []string{"**/*_test.go"},
+			},
+		)
+		if err != nil {
+			return err
+		}
+		ctr := p.Env(defaultPlatform)
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			if err != nil {
+				return err
+			}
+			matchedLine, err := result.MatchedLines(ctx)
+			if err != nil {
+				return err
+			}
+			// Extract the test name from the matched line
+			testName := extractTestName(matchedLine)
+			if testName == "" {
+				continue
+			}
+			// Use directory path as the package identifier
+			dir := path.Clean(filepath.Dir(filePath))
+			if dir == "" {
+				dir = "."
+			}
+			if _, ok := dirs[dir]; !ok {
+				dirs[dir] = &TestDirectory{
+					Name: dir,
+				}
+			}
+			dirs[dir].Tests = append(dirs[dir].Tests, &Test{
+				Container: ctr.WithWorkdir(dir),
+				Name:      testName,
+			})
+		}
+		return nil
+	}).Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dirlist := make([]*TestDirectory, 0, len(dirs))
+	for _, dir := range dirs {
+		dirlist = append(dirlist, dir)
+	}
+	return dirlist, nil
+}
+
+// extractTestName extracts the test function name from a line like "func TestFoo(t *testing.T) {"
+func extractTestName(line string) string {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "func Test") {
+		return ""
+	}
+	// Remove "func " prefix
+	line = strings.TrimPrefix(line, "func ")
+	// Find the opening parenthesis
+	idx := strings.Index(line, "(")
+	if idx == -1 {
+		return ""
+	}
+	return line[:idx]
+}
+
+type TestDirectory struct {
+	Name  string
+	Tests []*Test
+}
+
+type Test struct {
+	Container *dagger.Container // +private
+	Name      string
+}
+
+// +check
+func (test *Test) Run(ctx context.Context) error {
+	_, err := test.Container.
+		WithExec([]string{"go", "test", "-run", test.Name}).
+		Sync(ctx)
+	return err
 }
 
 // Build the given main packages, and return the build directory

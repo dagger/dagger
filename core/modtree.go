@@ -216,6 +216,7 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 }
 
 func debugTrace(ctx context.Context, msg string, args ...any) {
+	return // uncomment to enable debug
 	_ = parallel.
 		New().
 		WithContextualTracer(true).
