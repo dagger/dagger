@@ -1,6 +1,0 @@
-kind: Added
-body: 'elixir: support module level deprecation'
-time: 2025-12-29T04:36:01.606108236+01:00
-custom:
-    Author: Nero-F
-    PR: "11599"
