@@ -94,7 +94,7 @@ type TypescriptSdkDev {
         withFile("/bin/verify-pkg-version-bump", binary).
         withMountedDirectory("/work/repo", repoTelemetryDir).
         withMountedDirectory("/work/current", currentTelemetryDir).
-        withExec(["verify-pkg-version-bump", version], expect: ReturnType.ANY).
+        withExec(["verify-pkg-version-bump", version], expect: ReturnType.ANY, experimentalPrivilegedNesting: true).
         exitCode
       assert { exitCode == 0 }
 		}
