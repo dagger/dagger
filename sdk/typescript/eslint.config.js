@@ -9,12 +9,12 @@ export default [
   eslintPluginPrettierRecommended,
   ...tseslint.configs.recommended,
   {
-    files: "src/**/*.ts",
+    files: ["src/**/*.ts"],
     languageOptions: {
       parser: tseslint.parser,
-      parserOption: {
+      parserOptions: {
         // Resolve project paths from this file
-        tsconfigRootDir: new URL(".", import.meta.url),
+        tsconfigRootDir: import.meta.dirname,
       },
     },
   },
