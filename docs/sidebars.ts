@@ -1,5 +1,5 @@
 module.exports = {
-  // Unified single sidebar - combines all previous tab-based sidebars
+  // Unified single sidebar
   current: [
     // ========================================
     // 📘 INTRODUCTION
@@ -9,12 +9,7 @@ module.exports = {
       label: "Introduction",
       collapsible: true,
       collapsed: false,
-      items: [
-        "index",
-        "introduction/use-cases",
-        "introduction/examples",
-        "introduction/faq",
-      ],
+      items: ["index", "introduction/use-cases", "introduction/faq"],
     },
 
     // ========================================
@@ -204,23 +199,9 @@ module.exports = {
     // 🍳 COOKBOOK
     // ========================================
     {
-      type: "category",
+      type: "doc",
+      id: "cookbook/index",
       label: "Cookbook",
-      link: {
-        type: "doc",
-        id: "cookbook/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
-        "cookbook/builds",
-        "cookbook/containers",
-        "cookbook/filesystems",
-        "cookbook/services",
-        "cookbook/secrets",
-        "cookbook/agents",
-        "cookbook/errors",
-      ],
     },
 
     // ========================================
