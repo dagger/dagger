@@ -204,8 +204,6 @@ type ModuleConfigDependency struct {
 	// The pinned version of the module dependency.
 	Pin string `json:"pin,omitempty"`
 
-	// Deprecated: Include in config struct for dagger develop compat for 1 release.
-	Arguments []*ModuleConfigArgument `json:"arguments,omitempty"`
 	// Customizations configuration for toolchains that override function argument pragmas.
 	Customizations []*ModuleConfigArgument `json:"customizations,omitempty"`
 
@@ -218,9 +216,6 @@ type ModuleConfigDependency struct {
 type ModuleConfigArgument struct {
 	// The function chain to apply this argument to. Empty or nil for constructor.
 	Function []string `json:"function,omitempty"`
-
-	// Deprecated: Include in config struct for dagger develop compat for 1 release.
-	Name string `json:"name"`
 
 	// The name of the argument to override.
 	Argument string `json:"argument"`

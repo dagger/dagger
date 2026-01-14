@@ -2269,13 +2269,6 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 			Name: depSrc.Self().ModuleName,
 		}
 
-		// TODO: this is for backwards compatibility until the configuration change is released
-		if i < len(src.ConfigDependencies) && src.ConfigDependencies[i] != nil {
-			//nolint:staticcheck
-			depCfg.Arguments = src.ConfigDependencies[i].Arguments
-			depCfg.Customizations = src.ConfigDependencies[i].Customizations
-		}
-
 		modCfg.Dependencies[i] = depCfg
 
 		switch src.Kind {
