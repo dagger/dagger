@@ -248,10 +248,8 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			continue
 		}
 		spanID := SpanID{log.SpanID()}
-		if spanID == db.PrimarySpan {
-			// buffer raw logs so we can replay them later
-			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
-		}
+		// buffer raw logs so we can replay them later or extract structured data
+		db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		// flag that the span has received logs
 		db.initSpan(spanID).HasLogs = true
 	}

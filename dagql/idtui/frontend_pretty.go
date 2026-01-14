@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -699,6 +700,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	if fe.FocusedSpan.IsValid() {
 		focused = fe.db.Spans.Map[fe.FocusedSpan]
 	}
+
+	// Check if there's a service URL available
+	serviceURL := fe.getServiceURL()
+
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
@@ -706,6 +711,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
 			KeyEnabled(fe.cloudURL != "")),
+		key.NewBinding(key.WithKeys("b"),
+			key.WithHelp("b", "open service"),
+			KeyEnabled(serviceURL != "")),
 		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
@@ -735,6 +743,67 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 	return func(b *key.Binding) {
 		b.SetEnabled(enabled)
 	}
+}
+
+// Regular expressions to extract URLs from log messages
+var (
+	// Matches URLs in log text, handling ANSI escape codes and http_url= prefix
+	serviceURLRegex = regexp.MustCompile(`(?:https?_url=)?(?:\x1b\[[0-9;]*m)?(https?://[^\s\x1b]+)`)
+)
+
+// getServiceURL extracts the service URL from the primary span logs
+// by looking for "tunnel started" or "port is healthy" log entries and parsing the URL from the body text
+func (fe *frontendPretty) getServiceURL() string {
+	if !fe.db.PrimarySpan.IsValid() {
+		return ""
+	}
+
+	// Helper function to check logs for a given span
+	checkSpanLogs := func(spanID dagui.SpanID) string {
+		logs, ok := fe.db.PrimaryLogs[spanID]
+		if !ok || len(logs) == 0 {
+			return ""
+		}
+
+		// Look through logs for "tunnel started" or "port is healthy" message
+		for _, logRecord := range logs {
+			body := logRecord.Body().AsString()
+
+			// Check if body contains either message
+			if !strings.Contains(body, "tunnel started") {
+				continue
+			}
+
+			// Extract URL from the body text, skipping ANSI codes
+			if matches := serviceURLRegex.FindStringSubmatch(body); len(matches) > 1 {
+				return matches[1]
+			}
+		}
+		return ""
+	}
+
+	// Recursively check spans and their children
+	var checkSpan func(spanID dagui.SpanID) string
+	checkSpan = func(spanID dagui.SpanID) string {
+		// Check this span's logs
+		if url := checkSpanLogs(spanID); url != "" {
+			return url
+		}
+
+		// Check children
+		span := fe.db.Spans.Map[spanID]
+		if span != nil {
+			for _, child := range span.ChildSpans.Order {
+				if url := checkSpan(child.ID); url != "" {
+					return url
+				}
+			}
+		}
+
+		return ""
+	}
+
+	return checkSpan(fe.db.PrimarySpan)
 }
 
 func (fe *frontendPretty) Render(out TermOutput) error {
@@ -1571,6 +1640,19 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 					"url", url,
 					"err", err,
 					"output", fe.browserBuf.String())
+			}
+			return nil
+		}
+	case "b":
+		serviceURL := fe.getServiceURL()
+		if serviceURL == "" {
+			return nil
+		}
+		return func() tea.Msg {
+			if err := browser.OpenURL(serviceURL); err != nil {
+				slog.Warn("failed to open URL",
+					"url", serviceURL,
+					"err", err)
 			}
 			return nil
 		}
