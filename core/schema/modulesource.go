@@ -80,6 +80,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
 		dagql.NodeFuncWithCacheKey("_contextFile", s.contextFile, dagql.CachePerCall).
 			Doc(`Obtain a contextual file argument for the given path and module.`),
+		dagql.NodeFuncWithCacheKey("_contextGitRepository", s.contextGitRepository, dagql.CachePerCall).
+			Doc(`Obtain a contextual git repository argument for the given module.`),
+		dagql.NodeFuncWithCacheKey("_contextGitRef", s.contextGitRef, dagql.CachePerCall).
+			Doc(`Obtain a contextual git ref argument for the given module.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.Directory]{
@@ -994,6 +998,88 @@ func (s *moduleSourceSchema) contextFile(
 	// different cache keys than normally loaded host files. Support for multiple
 	// cache keys per result should help fix this.
 	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualFile")
+	inst = inst.WithObjectDigest(dgst)
+	return inst, nil
+}
+
+func (s *moduleSourceSchema) contextGitRepository(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+	f, err := mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, f.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create git repository result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host file loads, which
+	// can lead function calls encountering cached results that include contextual
+	// file loads from older sessions to load from the wrong path
+	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualGitRepository")
+	inst = inst.WithObjectDigest(dgst)
+	return inst, nil
+}
+
+func (s *moduleSourceSchema) contextGitRef(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.GitRef], err error) {
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	mod, err := core.GetModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+	f, err := mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git ref: %w", err)
+	}
+
+	var gitRef dagql.ObjectResult[*core.GitRef]
+	err = dag.Select(ctx, f, &gitRef,
+		dagql.Selector{
+			Field: "head",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("load contextual git ref: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, gitRef.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create git ref result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host file loads, which
+	// can lead function calls encountering cached results that include contextual
+	// file loads from older sessions to load from the wrong path
+	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualGitRef")
 	inst = inst.WithObjectDigest(dgst)
 	return inst, nil
 }

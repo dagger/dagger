@@ -1067,10 +1067,62 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*File](f.ID()), nil
 
 	case "GitRepository", "GitRef":
-		var git dagql.ObjectResult[*GitRepository]
-
+		// only local sources and git repos sourced from local dirs need special handling
+		// to prevent errant reloads, other module types are reproducible and can be called directly
+		isLocalMod := fn.mod.ContextSource.Value.Self().Kind == ModuleSourceKindLocal
 		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
-		if cleanedPath == "." || cleanedPath == ".git" {
+		isLocalGit := cleanedPath == "." || cleanedPath == ".git"
+		if isLocalMod && isLocalGit {
+			contentCacheKey := fn.mod.ContentDigestCacheKey()
+			switch arg.TypeDef.AsObject.Value.Name {
+			case "GitRepository":
+				var f dagql.ObjectResult[*GitRepository]
+				err := dag.Select(ctx, dag.Root(), &f,
+					dagql.Selector{
+						Field: "_contextGitRepository",
+						Args: []dagql.NamedInput{
+							{
+								Name:  "module",
+								Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
+							},
+							{
+								Name:  "digest",
+								Value: dagql.String(contentCacheKey.CallKey),
+							},
+						},
+					},
+				)
+				if err != nil {
+					return nil, fmt.Errorf("load contextual git repository %q: %w", arg.DefaultPath, err)
+				}
+				return dagql.NewID[*GitRepository](f.ID()), nil
+
+			case "GitRef":
+				var f dagql.ObjectResult[*GitRef]
+				err := dag.Select(ctx, dag.Root(), &f,
+					dagql.Selector{
+						Field: "_contextGitRef",
+						Args: []dagql.NamedInput{
+							{
+								Name:  "module",
+								Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
+							},
+							{
+								Name:  "digest",
+								Value: dagql.String(contentCacheKey.CallKey),
+							},
+						},
+					},
+				)
+				if err != nil {
+					return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
+				}
+				return dagql.NewID[*GitRef](f.ID()), nil
+			}
+		}
+
+		var git dagql.ObjectResult[*GitRepository]
+		if isLocalGit {
 			// handle getting the git repo from the current module context
 			var err error
 			git, err = fn.mod.ContextSource.Value.Self().LoadContextGit(ctx, dag)
