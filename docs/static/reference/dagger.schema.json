@@ -22,10 +22,6 @@
           "type": "array",
           "description": "The function chain to apply this argument to. Empty or nil for constructor."
         },
-        "name": {
-          "type": "string",
-          "description": "Deprecated: Include in config struct for dagger develop compat for 1 release."
-        },
         "argument": {
           "type": "string",
           "description": "The name of the argument to override."
@@ -49,7 +45,6 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "name",
         "argument"
       ],
       "description": "ModuleConfigArgument represents an argument override for a toolchain function"
@@ -85,13 +80,6 @@
         "pin": {
           "type": "string",
           "description": "The pinned version of the module dependency."
-        },
-        "arguments": {
-          "items": {
-            "$ref": "#/$defs/ModuleConfigArgument"
-          },
-          "type": "array",
-          "description": "Deprecated: Include in config struct for dagger develop compat for 1 release."
         },
         "customizations": {
           "items": {
