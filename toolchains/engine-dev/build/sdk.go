@@ -147,6 +147,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 
 	bunBuilderCtr := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultBunImageRef).
+		WithExec([]string{"bun", "install", "-g", "npm"}).
 		// We cannot mount the directory because bun will struggle with symlinks when compiling
 		// the introspector binary.
 		WithDirectory("/src", rootfs).
@@ -154,7 +155,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		WithExec([]string{"bun", "install"}).
 		WithExec([]string{"bun", "run", "build"}).
 		WithWorkdir("/src").
-		WithExec([]string{"bun", "pm", "pkg", "set", `dependencies[@dagger.io/telemetry]="./telemetry"`}).
+		WithExec([]string{"npm", "pkg", "set", `dependencies[@dagger.io/telemetry]=./telemetry`}).
 		WithExec([]string{"bun", "install"}).
 		// Create introspector binary
 		WithExec([]string{"bun", "build", "src/module/entrypoint/introspection_entrypoint.ts", "--compile", "--outfile", "/bin/ts-introspector"}).
