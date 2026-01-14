@@ -13,7 +13,7 @@ type HelloWithChecks struct{
 
 func New(
 	//+default="alpine:3"
-	baseImage string
+	baseImage string,
 ) *HelloWithChecks {
 	return &HelloWithChecks{
 		BaseImage: baseImage,
