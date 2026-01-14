@@ -107,6 +107,7 @@ func (ToolchainSuite) TestMultipleToolchains(ctx context.Context, t *testctx.T) 
 
 func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+
 	t.Run("use blueprint with sdk", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
@@ -124,6 +125,65 @@ func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")
+	})
+
+	// Verify that the parent fields of the top level module is not invading
+	// toolchains state.
+	t.Run("use checks with sdk that have a constructor", func(ctx context.Context, t *testctx.T) {
+		// Set up test environment with checks test data
+		modGen := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init", "--sdk=go", "--name=test", "--source=.")).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	BaseGreeting string
+}
+
+func New(
+	baseGreeting string,
+) *Test {
+	return &Test{
+		BaseGreeting: baseGreeting,
+	}
+}
+
+func (t *Test) Hello() string {
+	return t.BaseGreeting
+}
+`)
+
+		type TestCase struct {
+			sdk           string
+			toolchainPath string
+		}
+
+		for _, tc := range []TestCase{
+			{"go", "../hello-with-checks"},
+			{"python", "../hello-with-checks-py"},
+			{"typescript", "../hello-with-checks-ts"},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.
+					With(daggerExec("toolchain", "install", tc.toolchainPath)).
+					With(daggerExec("--progress=report", "check", "passing-check")).
+					CombinedOutput(ctx)
+				require.NoError(t, err)
+				require.Regexp(t, `passingCheck.*OK`, out)
+			})
+		}
 	})
 }
 

@@ -545,7 +545,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
 				ParentTyped:    obj,
-				ParentFields:   obj.Self().Fields,
+				ParentFields:   nil,
 				SkipSelfSchema: false,
 				Server:         dag,
 			}
