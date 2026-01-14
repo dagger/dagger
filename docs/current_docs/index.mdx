@@ -28,6 +28,8 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 
 **SDKs in 8 languages**. Native SDKs for Go, Python, TypeScript, PHP, Java, .NET, Elixir and Rust. Each SDK is generated from the API schema, so you get idiomatic code with full type safety and editor support.
 
+**Toolchains**. Install and use pre-built modules for common tools like linters, formatters, and test runners. No code required - just `dagger toolchain install` and start using validated, reusable automation.
+
 **Typed artifacts**. Define custom object types with encapsulated state and functions. Types are content-addressed and can be passed across SDK language boundaries and module boundaries without serialization.
 
 **Incremental execution**. Every operation is keyed by its inputs. Change one file and only the affected operations re-run. Caching is content-addressed and works automatically across local runs and CI.
@@ -40,7 +42,8 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 ## Get started
 
 - [Installation →](./getting-started/installation.mdx) Install Dagger and set up your development environment
-- [Basics →](./getting-started/quickstarts/basics/index.mdx) Learn Dagger fundamentals
+- [Core Concepts →](/core-concepts) Understand toolchains, checks, and functions
+- [Use a Toolchain →](./getting-started/quickstarts/blueprint/index.mdx) Get started without writing code
 - [CI Quickstart →](./getting-started/quickstarts/ci/index.mdx) Build your first workflow
 
 ## Dagger platform
@@ -66,6 +69,26 @@ Dagger Functions are packaged, shared and reused using Dagger modules.
 When a Dagger module is loaded into a Dagger session, the Dagger API is dynamically extended with new functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions plus the new functions provided by that module.
 
 [**Learn more about Dagger modules →**](./introduction/features/reusability.mdx)
+
+### Core Concepts
+
+Start here to understand the fundamentals of working with Dagger:
+
+- **[Toolchains](/core-concepts/toolchains)** - Install and use modules without writing code
+- **[Checks](/core-concepts/checks)** - Validate commits with automated quality, security, and standards checks
+- **[Functions](/core-concepts/functions)** - Building blocks of Dagger workflows
+
+[**Learn core concepts →**](/core-concepts)
+
+### Key Features
+
+Dagger provides powerful features to build, validate, and manage your workflows:
+
+- **[Programmable workflows](./introduction/features/programmability.mdx)** - Write pipelines in code, not YAML
+- **[Automatic caching](./introduction/features/caching.mdx)** - Speed up execution with intelligent caching
+- **[LLM integration](./introduction/features/llm.mdx)** - Build AI agents with native LLM support
+
+[**Explore all features →**](./introduction/features/index.mdx)
 
 ### CLI
 

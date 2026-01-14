@@ -1,9 +1,211 @@
 ---
 title: "Cookbook"
 slug: /cookbook
-toc_max_heading_level: 2
+toc_max_heading_level: 3
 description: "Learn how to use Dagger to build, test, and deploy your applications with practical examples."
-sidebar_label: "Overview"
 ---
 
-The Dagger Cookbook is a collection of practical examples that demonstrate how to use Dagger to build, test, and deploy your applications broken into specific categories such as Secrets, Files and Directories, and Container Images.
+import MultiStageBuild from '@cookbookBuild/_multi-stage.mdx';
+import MatrixBuild from '@cookbookBuild/_matrix-build.mdx';
+import BuildMultiArch from '@cookbookBuild/_multi-arch.mdx';
+import BuildMultiArchCC from '@cookbookBuild/_multi-arch-cross-compilation.mdx';
+import BuildImageFromDockerfile from '@cookbookBuild/_image-from-dockerfile.mdx';
+import BuildImageFromDockerfileContext from '@cookbookBuild/_image-from-dockerfile-build-context.mdx';
+import OciAnnotations from '@cookbookBuild/_oci-annotations.mdx';
+import OciLabels from '@cookbookBuild/_oci-labels.mdx';
+import InvalidateCache from '@cookbookBuild/_invalidate-cache.mdx';
+import CacheDependencies from '@cookbookBuild/_cache-dependencies.mdx';
+import ExecuteConcurrently from '@cookbookBuild/_execute-concurrently.mdx';
+import PersistServiceState from '@cookbookBuild/_persist-service-state.mdx';
+
+import PublishPrivateRegistry from "@cookbookContainer/_publish-private-registry.mdx";
+import PublishPrivateRegistryMultiple from "@cookbookContainer/_publish-private-registry-multiple.mdx";
+import ExportContainerImageToHost from "@cookbookContainer/_export-container-image-to-host.mdx";
+import SetEnvVar from "@cookbookContainer/_set-env-var.mdx";
+
+import CloneRemoteGit from "@cookbookFilesystem/_clone-remote-git.mdx";
+import MountCopyDirectory from "@cookbookFilesystem/_mount-copy-directory.mdx";
+import ModifyCopiedDirectory from "@cookbookFilesystem/_modify-copied-directory.mdx";
+import CopySubsetDirectory from "@cookbookFilesystem/_copy-subset-directory.mdx";
+import CopyPredefinedFilters from "@cookbookFilesystem/_copy-predefined-filters.mdx";
+import ExportDirectoryOrFileToHost from "@cookbookFilesystem/_export-directory-or-file-to-host.mdx";
+import MountCopyFile from "@cookbookFilesystem/_mount-copy-file.mdx";
+import CopyFileRuntime from "@cookbookFilesystem/_copy-file-runtime.mdx";
+import RequestFileHttp from "@cookbookFilesystem/_request-file-http.mdx";
+import SetModuleDefault from "@cookbookFilesystem/_set-module-default.mdx";
+
+import UseService from "@cookbookService/_use-service.mdx";
+import ExposeServiceToHost from "@cookbookService/_expose-service-to-host.mdx";
+import ExposeHostServiceToFunction from "@cookbookService/_expose-host-service-to-function.mdx";
+import UseServiceEndpoints from "@cookbookService/_use-service-endpoints.mdx";
+import CreateServiceForTest from "@cookbookService/_create-service-for-test.mdx";
+import StartStopService from "@cookbookService/_start-stop-service.mdx";
+import CreateInterdependentServices from "@cookbookService/_create-interdependent-services.mdx";
+
+import UseSecretVariable from "@cookbookSecret/_use-secret-variable.mdx";
+import MountFilesAsSecret from "@cookbookSecret/_mount-files-as-secret.mdx";
+import DockerfileBuild from "@cookbookSecret/_dockerfile-build.mdx";
+
+import EnvUseStrings from "@cookbookAgent/_env-use-strings.mdx";
+import EnvUseContainers from "@cookbookAgent/_env-use-containers.mdx";
+import EnvUseDirectories from "@cookbookAgent/_env-use-directories.mdx";
+import EnvUseMultipleTypes from "@cookbookAgent/_env-use-multiple-types.mdx";
+import BuildCodingAgent from "@cookbookAgent/_build-coding-agent.mdx";
+
+import HandleErrors from "@cookbookError/_handle-errors.mdx";
+import ContinueAfterErrors from "@cookbookError/_continue-after-errors.mdx";
+import DebugTerminal from "@cookbookError/_debug-terminal.mdx";
+import InspectFilesystem from "@cookbookError/_inspect-filesystem.mdx";
+import CreateCustomSpans from "@cookbookError/_custom-spans.mdx";
+
+# Cookbook
+
+The Dagger Cookbook provides practical, real-world examples for common development workflows. Each recipe shows you how to solve specific problems using Dagger's features and APIs.
+
+These recipes demonstrate patterns you can adapt for your own projects. They cover everything from basic container operations to advanced CI/CD workflows and AI agent integrations. Use your browser's find function (Ctrl+F or Cmd+F) to quickly locate specific topics.
+
+---
+
+## Builds
+
+Build and compile applications in reproducible container environments. This section contains practical examples for building artifacts (files and directories) with Dagger.
+
+<MultiStageBuild />
+
+<MatrixBuild />
+
+<BuildMultiArch />
+
+<BuildMultiArchCC />
+
+<BuildImageFromDockerfile />
+
+<BuildImageFromDockerfileContext />
+
+<CacheDependencies />
+
+<ExecuteConcurrently />
+
+<PersistServiceState />
+
+<OciAnnotations />
+
+<OciLabels />
+
+<InvalidateCache />
+
+---
+
+## Container Images
+
+Work with container images and registries. Dagger allows you to build, publish, and export container images, also known as just-in-time artifacts, as part of your Dagger Functions.
+
+<PublishPrivateRegistry />
+
+<PublishPrivateRegistryMultiple />
+
+<ExportContainerImageToHost />
+
+<SetEnvVar />
+
+---
+
+## Filesystems
+
+Manage files, directories, and artifacts across your workflows. This section contains practical examples for working with files and directories in Dagger.
+
+<CloneRemoteGit />
+
+<MountCopyDirectory />
+
+<ModifyCopiedDirectory />
+
+<CopySubsetDirectory />
+
+<CopyPredefinedFilters />
+
+<MountCopyFile />
+
+<CopyFileRuntime />
+
+<ExportDirectoryOrFileToHost />
+
+<RequestFileHttp />
+
+<SetModuleDefault />
+
+---
+
+## Services
+
+Integrate external services into your workflows (databases, caches, APIs). This section contains practical examples for working with services in Dagger.
+
+<UseService />
+
+<ExposeServiceToHost />
+
+<ExposeHostServiceToFunction />
+
+<UseServiceEndpoints />
+
+<CreateServiceForTest />
+
+<StartStopService />
+
+<CreateInterdependentServices />
+
+---
+
+## Secrets
+
+Securely handle sensitive data in your workflows. This section contains practical examples for working with secrets in Dagger.
+
+<UseSecretVariable />
+
+<MountFilesAsSecret />
+
+<DockerfileBuild />
+
+---
+
+## LLMs and Environments
+
+Build AI-powered workflows and agents with LLM integration. This section contains practical examples for working with LLMs and environments in Dagger.
+
+<EnvUseStrings />
+
+<EnvUseContainers />
+
+<EnvUseDirectories />
+
+<EnvUseMultipleTypes />
+
+<BuildCodingAgent />
+
+---
+
+## Errors and Debugging
+
+Handle errors gracefully and build resilient workflows. This section contains practical examples for handling and debugging errors in Dagger workflows.
+
+<HandleErrors />
+
+<ContinueAfterErrors />
+
+<DebugTerminal />
+
+<InspectFilesystem />
+
+<CreateCustomSpans />
+
+---
+
+## Need Something Else?
+
+Can't find what you're looking for? Check out:
+
+- **[Features](/features)** - Explore Dagger's capabilities
+- **[Module Development](/extending/modules)** - Build reusable modules
+- **[Reference](/reference/)** - Deep dive into APIs and configuration
+
+Have a recipe idea? [Contribute to the cookbook!](https://github.com/dagger/dagger/tree/main/docs/current_docs/cookbook)

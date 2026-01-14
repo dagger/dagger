@@ -1,0 +1,184 @@
+---
+title: "Core Concepts"
+slug: /core-concepts
+description: "Understand the fundamental concepts that power Dagger"
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Core Concepts
+
+Dagger is built around a few core concepts that work together to enable powerful, reusable automation workflows. Understanding these concepts will help you get the most value from Dagger, whether you're consuming existing toolchains or building your own.
+
+---
+
+## [Toolchains](/core-concepts/toolchains)
+
+**Install pre-built tools and checks for your project. No code required.**
+
+Toolchains are Dagger modules that provide ready-to-use functions and checks for common development workflows. Install a toolchain and immediately get linting, testing, security scanning, and more for your codebase.
+
+**Perfect for:** Application developers who want better CI/testing without writing infrastructure code.
+
+```shell
+# Install a toolchain for your tools
+dagger install github.com/dagger/jest
+
+# Run all checks
+dagger check
+```
+
+[Learn about Toolchains →](/core-concepts/toolchains)
+
+---
+
+## [Checks](/core-concepts/checks)
+
+**Validate every commit with automated quality, security, and standards checks.**
+
+Checks are functions that validate your code without requiring any arguments. They run linting, tests, security scans, and other validations to ensure your code meets quality standards. Checks run identically in local development and CI.
+
+**Perfect for:** Ensuring code quality and catching issues before they reach production.
+
+```shell
+# Run all checks concurrently
+dagger check
+
+# Or run individual checks
+dagger check lint
+dagger check security-*
+```
+
+[Learn about Checks →](/core-concepts/checks)
+
+---
+
+## [Functions](/core-concepts/functions)
+
+**Building blocks for creating custom workflows.**
+
+Functions are the fundamental units of computation in Dagger. They accept inputs, perform operations (often in containers), and return outputs. Functions can be composed together to build complex workflows. When you write Dagger code, you're creating functions.
+
+**Perfect for:** Platform engineers and developers building custom automation or creating toolchains.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+// A Dagger Function in Go
+func (m *MyModule) Build() *Container {
+    return dag.Container().
+        From("golang:1.21").
+        WithDirectory("/src", m.Source).
+        WithWorkdir("/src").
+        WithExec([]string{"go", "build", "-o", "app"})
+}
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+# A Dagger Function in Python
+@function
+def build(self) -> dagger.Container:
+    return (
+        dag.container()
+        .from_("python:3.11")
+        .with_directory("/src", self.source)
+        .with_workdir("/src")
+        .with_exec(["pip", "install", "-r", "requirements.txt"])
+        .with_exec(["python", "setup.py", "build"])
+    )
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// A Dagger Function in TypeScript
+@func()
+build(): Container {
+  return dag
+    .container()
+    .from("node:20")
+    .withDirectory("/src", this.source)
+    .withWorkdir("/src")
+    .withExec(["npm", "install"])
+    .withExec(["npm", "run", "build"]);
+}
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php
+// A Dagger Function in PHP
+#[DaggerFunction]
+public function build(): Container
+{
+    return dag()
+        ->container()
+        ->from('php:8.2')
+        ->withDirectory('/app', $this->source)
+        ->withWorkdir('/app')
+        ->withExec(['composer', 'install'])
+        ->withExec(['php', 'artisan', 'build']);
+}
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java
+// A Dagger Function in Java
+@DaggerFunction
+public Container build() {
+    return dag.container()
+        .from("maven:3.9-eclipse-temurin-21")
+        .withDirectory("/app", source)
+        .withWorkdir("/app")
+        .withExec(List.of("mvn", "clean", "package"));
+}
+```
+
+</TabItem>
+</Tabs>
+
+[Learn about Functions →](/core-concepts/functions)
+
+---
+
+## How They Work Together
+
+These concepts compose to create powerful workflows:
+
+1. **Toolchains** package **Functions** and **Checks** for reuse
+2. **Checks** are **Functions** that validate without required arguments
+3. **Functions** can call other **Functions**, including those from **Toolchains**
+
+### Example: Full Development Workflow
+
+```shell
+# Install a toolchain (provides functions and checks)
+dagger install github.com/example/node-toolchain
+
+# Use toolchain functions
+dagger call node build        # Build your application
+dagger check node:test        # Run tests
+dagger check                  # Run all validation checks
+
+# Customize by adding your own functions
+dagger develop --sdk=typescript   # Add custom functions
+# Write functions that use toolchain capabilities
+```
+
+---
+
+## Next Steps
+
+- **[Use a Toolchain](/getting-started/quickstarts/toolchain)** - Get started in 5 minutes
+- **[Daggerverse](https://daggerverse.dev)** - Discover toolchains for your stack
+- **[Types](/getting-started/types)** - Learn about data types in Dagger
+- **[Building with Dagger](/extending)** - Create your own functions and toolchains

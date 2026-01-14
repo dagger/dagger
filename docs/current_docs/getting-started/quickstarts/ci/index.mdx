@@ -231,13 +231,109 @@ You should now be able to access the application by browsing to `http://localhos
 
 <VideoPlayer src="/img/current_docs/getting-started/quickstarts/ci/curl.webm" alt="Testing the service" />
 
+## Validate your workflow with checks
+
+Now that you've built a workflow, it's important to validate that your code meets quality standards before committing. Dagger provides a built-in mechanism for this through **checks**.
+
+Checks are special Dagger Functions that validate commits—they run without required arguments, making them perfect for automated validation at any stage: locally before pushing, on every commit in CI, or on merge to main.
+
+### Create a check
+
+Let's add a simple check to validate that our application builds successfully. Create a new function that runs the build and returns an error if it fails:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go title="dagger/main.go"
+// Validate that the application builds successfully
+// +check
+func (m *HelloDagger) ValidateBuild(
+    ctx context.Context,
+    // +optional
+    // +defaultPath="/"
+    // +ignore=[".git", "node_modules"]
+    source *dagger.Directory,
+) error {
+    _, err := m.Build(source).Sync(ctx)
+    return err
+}
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python title="dagger/src/main.py"
+@function
+@check
+async def validate_build(
+    self,
+    source: Annotated[
+        dagger.Directory,
+        DefaultPath("/"),
+        Ignore([".git", "node_modules"]),
+    ] = None,
+) -> None:
+    """Validate that the application builds successfully"""
+    await self.build(source).sync()
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript title="dagger/src/index.ts"
+/**
+ * Validate that the application builds successfully
+ */
+@func()
+@check()
+async validateBuild(
+  @argument({ defaultPath: "/", ignore: [".git", "node_modules"] })
+  source?: Directory,
+): Promise<void> {
+  await this.build(source).sync()
+}
+```
+
+</TabItem>
+</Tabs>
+
+Note how this check:
+- Has **no required arguments** (source has defaults, making it optional)
+- Returns an **error type** (or void/None) not a Container
+- Calls the existing `build()` function and validates it succeeds
+
+### Run checks
+
+Now you can validate your workflow by running all checks:
+
+```shell
+dagger check
+```
+
+This command automatically discovers and runs all functions marked as checks in parallel. If the build succeeds, the check passes. If it fails, you'll get immediate feedback before committing.
+
+You can also list available checks:
+
+```shell
+dagger check -l
+```
+
+Checks integrate seamlessly into your development workflow:
+- **Locally**: Run `dagger check` before pushing to catch issues early
+- **CI**: Add `dagger check` to your CI pipeline as a quality gate
+- **Pre-commit hooks**: Configure checks to run automatically on commit
+
+:::tip
+Learn more about creating advanced checks, filtering, and ignoring checks in the [Checks guide](/core-concepts/checks).
+:::
+
 ## Next steps
 
 Congratulations! You've created your first CI workflow with Dagger.
 
 Now you have the tools to successfully take the next step: [adopting Dagger in your project](../../../reference/best-practices/adopting.mdx).
 
-The guide [Use a Blueprint Module](../blueprint/index.mdx) will show you how to use a blueprint module instead of writing code for every single project.
+The guide [Use a Toolchain](/getting-started/quickstarts/toolchain) will show you how to use a toolchain instead of writing code for every single project.
 
 The next guide [Build an AI Agent](../agent/inproject.mdx) will show you how to add agentic capabilities to your newly Daggerized project.
 

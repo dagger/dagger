@@ -1,0 +1,113 @@
+---
+title: "Functions"
+slug: /core-concepts/functions
+description: "Building blocks for creating workflows"
+---
+
+# Functions
+
+Functions are the building blocks of Dagger workflows. They're units of computation that accept inputs, perform operations (typically in containers), and return outputs. Functions can be combined together to create complex workflows.
+
+## What are Functions?
+
+A Dagger Function is code you write that:
+- Accepts typed inputs (strings, containers, directories, etc.)
+- Performs operations using the Dagger API
+- Returns typed outputs
+
+Functions run in isolated, reproducible environments and can be composed together to build workflows of any complexity.
+
+## Who Uses Functions?
+
+### Toolchain Consumers
+If you're using toolchains, **you don't need to write functions**—you're calling functions created by others:
+
+```shell
+dagger call go build   # Calls the 'build' function from your toolchain
+dagger call go test    # Calls the 'test' function
+```
+
+### Toolchain Builders & Customizers
+When you create or customize toolchains, you write functions:
+
+```go
+// A function that builds your application
+func (m *MyModule) Build() *Container {
+    return dag.Container().
+        From("golang:1.21").
+        WithDirectory("/src", m.Source).
+        WithWorkdir("/src").
+        WithExec([]string{"go", "build", "-o", "app"})
+}
+```
+
+## Common Function Patterns
+
+### Build Functions
+Transform source code into artifacts:
+
+```go
+func (m *MyModule) Build() *Container {
+    return dag.Container().
+        From("node:20").
+        WithDirectory("/app", m.Source).
+        WithWorkdir("/app").
+        WithExec([]string{"npm", "install"}).
+        WithExec([]string{"npm", "run", "build"})
+}
+```
+
+### Test Functions
+Execute tests and return results:
+
+```go
+func (m *MyModule) Test(ctx context.Context) (string, error) {
+    return dag.Container().
+        From("python:3.11").
+        WithDirectory("/app", m.Source).
+        WithWorkdir("/app").
+        WithExec([]string{"pytest", "--verbose"}).
+        Stdout(ctx)
+}
+```
+
+### Generate Functions
+Run generation tools and return a Changeset, which will be applied to the source directory:
+
+```go
+func (m *MyModule) Generate() *Changeset {
+    generated := dag.Container().
+        From("golang:1.21").
+        WithDirectory("/app", m.Source).
+        WithWorkdir("/app").
+        WithExec([]string{"go", "generate"}).
+        Directory("/app")
+    return generated.Changes(m.Source)
+}
+```
+
+## How Functions Work in Toolchains
+
+When you install a toolchain, you get access to all its functions:
+
+```shell
+# Install a toolchain
+dagger toolchain install github.com/dagger/jest
+
+# See available functions
+dagger functions
+
+# Call any function
+dagger call jest test
+dagger call jest list
+dagger check jest:*
+```
+
+The toolchain author wrote the functions, and you use them without writing any code yourself.
+
+## Learning More
+
+- **[Toolchains](/core-concepts/toolchains)** - Use pre-built functions without writing code
+- **[Checks](/core-concepts/checks)** - Special functions for validation
+- **[Module Development](/extending/functions)** - Deep dive into creating functions
+- **[Use a Toolchain Quickstart](/getting-started/quickstarts/toolchain)** - Get started with functions
