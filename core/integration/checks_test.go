@@ -162,6 +162,38 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 		require.Regexp(t, `failingCheck.*ERROR`, out)
 		require.NoError(t, err)
 	})
+	t.Run("run checks from a blueprint (Java)", func(ctx context.Context, t *testctx.T) {
+		// install hello-with-checks-java as blueprint
+		modGen := checksTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--blueprint", "../hello-with-checks-java"))
+		// list checks
+		out, err := modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "passing-check")
+		require.Contains(t, out, "failing-check")
+		// run a specific passing check
+		out, err = modGen.
+			With(daggerExec("--progress=report", "check", "passing-check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		// run a specific failing check
+		out, err = modGen.
+			With(daggerExecFail("--progress=report", "check", "failing-check")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
+		require.NoError(t, err)
+		// run all checks
+		out, err = modGen.
+			With(daggerExecFail("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.Regexp(t, `passingCheck.*OK`, out)
+		require.Regexp(t, `failingCheck.*ERROR`, out)
+		require.NoError(t, err)
+	})
 }
 
 func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {

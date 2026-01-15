@@ -26,8 +26,8 @@ import java.lang.annotation.Target;
  * }
  * }</pre>
  *
- * <p>This annotation can be combined with {@link Function} to create functions that are both
- * callable and marked as checks.
+ * <p><strong>Important:</strong> This annotation must be combined with {@link Function} annotation.
+ * Checks must be callable functions that can be invoked via {@code dagger check}.
  */
 @Target({ElementType.METHOD})
 @Retention(RetentionPolicy.SOURCE)
