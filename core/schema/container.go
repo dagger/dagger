@@ -13,6 +13,7 @@ import (
 	"slices"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
@@ -799,9 +800,15 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 
 type containerFromArgs struct {
 	Address string
+
+	ContainerDagOpInternalArgs
 }
 
-func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.Result[*core.Container], _ error) {
+func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql server: %w", err)
+	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -820,12 +827,34 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		ctr, err := parent.Self().FromCanonicalRef(ctx, refName, nil)
+		if args.InDagOp() {
+			ctr, err := parent.Self().SetFSFromCanonicalRef(ctx, refName, nil)
+			if err != nil {
+				return inst, err
+			}
+			return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+		}
+
+		ctr, err := DagOpContainer(ctx, srv, parent.Self(), args, s.from)
 		if err != nil {
 			return inst, err
 		}
 
-		return dagql.NewResultForCurrentID(ctx, ctr)
+		// Note that this must be done outside the dagop context, otherwise the image config data will be lost
+		ctr.SetMetadataFromCanonicalRef(ctx, refName, nil)
+
+		if ctr.FS.Self().Dir == "" {
+			// FIXME The dir is set under SetFSFromCanonicalRef; however it's done inside a dagop, which doesn't propigate back here
+			// As a result, if SetFSFromCanonicalRef sets it to anything besides a "/", it will preemptively return an error.
+			ctr.FS.Self().Dir = "/"
+			// return inst, fmt.Errorf("containerSchema.from: dir path is empty, shouldnt happen")
+		}
+
+		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	}
+
+	if args.InDagOp() {
+		return inst, fmt.Errorf("container.from called in a dagop context but without canonical image name, this shouldnt happen")
 	}
 
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical
@@ -845,10 +874,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
 	}
 
-	srv, err := query.Server.Server(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get server: %w", err)
-	}
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("from %s", refName),
+		telemetry.Internal(),
+	)
+	defer telemetry.EndWithCause(span, nil)
+
 	err = srv.Select(ctx, parent, &inst,
 		dagql.Selector{
 			Field: "from",

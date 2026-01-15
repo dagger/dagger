@@ -162,6 +162,10 @@ func (dir *Directory) StateWithSourcePath() (llb.State, error) {
 		return dirSt, nil
 	}
 
+	if dir.Dir == "" {
+		return llb.State{}, fmt.Errorf("got empty dir path, which shouldnt happen")
+	}
+
 	return llb.Scratch().File(
 		llb.Copy(dirSt, dir.Dir, ".", &llb.CopyInfo{
 			CopyDirContentsOnly: true,

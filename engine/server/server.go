@@ -828,6 +828,10 @@ func (srv *Server) FileSyncer() *filesync.FileSyncer {
 	return srv.workerFileSyncer
 }
 
+func (srv *Server) SourceManager() *source.Manager {
+	return srv.workerSourceManager
+}
+
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
 	return &controlapi.InfoResponse{
 		BuildkitVersion: &apitypes.BuildkitVersion{
