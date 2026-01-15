@@ -134,6 +134,16 @@ spec:
             {{- if .Values.engine.readinessProbeSettings }}
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
             {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -exc
+                - |-
+                  dagger core version
+            {{- if .Values.engine.livenessProbeSettings }}
+            {{- toYaml .Values.engine.livenessProbeSettings | nindent 12 }}
+            {{- end }}
           {{- if .Values.engine.lifecycle }}
           lifecycle:
             {{- if .Values.engine.lifecycle.preStop }}
