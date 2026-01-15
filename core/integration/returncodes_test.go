@@ -20,7 +20,7 @@ func (ReturnCodesSuite) TestLargeExitCode(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("ExpectAny", func(ctx context.Context, t *testctx.T) {
-		exit, err := c.Container().From("alpine:3.16.2").
+		exit, err := c.Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", "exit 254"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
 			ExitCode(ctx)
 		require.NoError(t, err)
@@ -28,7 +28,7 @@ func (ReturnCodesSuite) TestLargeExitCode(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("ExpectFailure", func(ctx context.Context, t *testctx.T) {
-		exit, err := c.Container().From("alpine:3.16.2").
+		exit, err := c.Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", "exit 254"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
 			ExitCode(ctx)
 		require.NoError(t, err)
@@ -36,7 +36,7 @@ func (ReturnCodesSuite) TestLargeExitCode(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("ExpectSuccessShouldError", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Container().From("alpine:3.16.2").
+		_, err := c.Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", "exit 254"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeSuccess}).
 			ExitCode(ctx)
 		require.Error(t, err)
