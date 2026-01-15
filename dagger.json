@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.19.9",
+  "engineVersion": "v0.19.10",
   "sdk": {
     "source": "go"
   },
@@ -97,7 +97,9 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": ["scanSource"],
+          "function": [
+            "scanSource"
+          ],
           "argument": "source",
           "ignore": [
             "bin",
