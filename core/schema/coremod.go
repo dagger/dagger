@@ -406,7 +406,7 @@ var _ core.ModType = (*CoreModObject)(nil)
 func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	if value == nil {
 		// TODO remove if this is OK. Why is this not handled by a wrapping Nullable instead?
-		slog.Warn("CoreModObject.ConvertFromSDKResult: got nil value")
+		slog.ExtraDebug("CoreModObject.ConvertFromSDKResult: got nil value")
 		return nil, nil
 	}
 	id, ok := value.(string)

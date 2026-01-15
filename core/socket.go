@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/grpcutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -39,6 +40,10 @@ func (*Socket) Type() *ast.Type {
 
 func (*Socket) TypeDescription() string {
 	return "A Unix or TCP/IP socket that can be mounted into a container."
+}
+
+func (*Socket) PBDefinitions(context.Context) ([]*pb.Definition, error) {
+	return nil, nil
 }
 
 func (socket *Socket) LLBID() string {

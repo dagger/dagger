@@ -514,7 +514,7 @@ func (k procKiller) Cleanup() {
 // otherwise for `runc exec` we will read the pid from a pidfile and then
 // send the signal directly that process.
 func (k procKiller) Kill(ctx context.Context) (err error) {
-	bklog.G(ctx).Debugf("sending sigkill to process in container %s", k.id)
+	bklog.G(ctx).Tracef("sending sigkill to process in container %s", k.id)
 	defer func() {
 		if err != nil {
 			bklog.G(ctx).Errorf("failed to kill process in container id %s: %+v", k.id, err)

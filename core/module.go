@@ -648,7 +648,7 @@ func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
+	slog.Trace("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
 	return nil, false
 }
 
@@ -662,7 +662,7 @@ func (mod *Module) modTypeForInterface(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
+	slog.Trace("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
 	return nil, false
 }
 
@@ -676,7 +676,7 @@ func (mod *Module) modTypeForEnum(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
+	slog.Trace("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
 	return nil, false
 }
 

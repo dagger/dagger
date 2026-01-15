@@ -16,7 +16,6 @@ import (
 	"github.com/gofrs/flock"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
-	"go.opentelemetry.io/otel/trace"
 )
 
 const aboveTargetGracePeriod = 5 * time.Minute
@@ -128,7 +127,7 @@ type cniPool struct {
 }
 
 func (pool *cniPool) close() {
-	bklog.L.Debugf("cleaning up cni pool")
+	bklog.L.Tracef("cleaning up cni pool")
 
 	pool.mu.Lock()
 	pool.closed = true
@@ -167,8 +166,7 @@ func (pool *cniPool) get(ctx context.Context) (*cniNS, error) {
 		ns := pool.available[len(pool.available)-1]
 		pool.available = pool.available[:len(pool.available)-1]
 		pool.mu.Unlock()
-		trace.SpanFromContext(ctx).AddEvent("returning network namespace from pool")
-		bklog.G(ctx).Debugf("returning network namespace %s from pool", ns.id)
+		bklog.G(ctx).Tracef("returning network namespace %s from pool", ns.id)
 		return ns, nil
 	}
 	pool.mu.Unlock()
@@ -231,7 +229,7 @@ func (pool *cniPool) cleanupToTargetSize() {
 	for pool.actualSize > pool.targetSize &&
 		len(pool.available) > 0 &&
 		time.Since(pool.available[0].lastUsed) >= aboveTargetGracePeriod {
-		bklog.L.Debugf("releasing network namespace %s since it was last used at %s", pool.available[0].id, pool.available[0].lastUsed)
+		bklog.L.Tracef("releasing network namespace %s since it was last used at %s", pool.available[0].id, pool.available[0].lastUsed)
 		toRelease = append(toRelease, pool.available[0])
 		pool.available = pool.available[1:]
 		pool.actualSize--
@@ -259,14 +257,12 @@ func (c *cniProvider) New(ctx context.Context, hostname string) (network.Namespa
 
 func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error) {
 	id := identity.NewID()
-	trace.SpanFromContext(ctx).AddEvent("creating new network namespace")
-	bklog.G(ctx).Debugf("creating new network namespace %s", id)
+	bklog.G(ctx).Tracef("creating new network namespace %s", id)
 	nativeID, err := createNetNS(c, id)
 	if err != nil {
 		return nil, err
 	}
-	trace.SpanFromContext(ctx).AddEvent("finished creating network namespace")
-	bklog.G(ctx).Debugf("finished creating network namespace %s", id)
+	bklog.G(ctx).Tracef("finished creating network namespace %s", id)
 
 	nsOpts := []cni.NamespaceOpts{}
 
@@ -291,8 +287,7 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 		deleteNetNS(nativeID)
 		return nil, errors.Wrap(err, "CNI setup error")
 	}
-	trace.SpanFromContext(ctx).AddEvent("finished setting up network namespace")
-	bklog.G(ctx).Debugf("finished setting up network namespace %s", id)
+	bklog.G(ctx).Tracef("finished setting up network namespace %s", id)
 
 	vethName := ""
 	for k := range cniRes.Interfaces {
@@ -384,7 +379,7 @@ func (ns *cniNS) Sample() (*resourcestypes.NetworkSample, error) {
 }
 
 func (ns *cniNS) release() error {
-	bklog.L.Debugf("releasing cni network namespace %s", ns.id)
+	bklog.L.Tracef("releasing cni network namespace %s", ns.id)
 	err := ns.handle.Remove(context.TODO(), ns.id, ns.nativeID, ns.opts...)
 	if err1 := unmountNetNS(ns.nativeID); err1 != nil && err == nil {
 		err = err1

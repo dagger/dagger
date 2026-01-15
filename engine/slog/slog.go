@@ -1,6 +1,7 @@
 package slog
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -51,7 +52,56 @@ func (l *Logger) TraceContext(ctx context.Context, msg string, args ...any) {
 	l.Log(ctx, LevelTrace, msg, args...)
 }
 
+// LineWriter wraps a Logger and writes each line as a log message at the specified level.
+// It buffers partial lines until a newline is received.
+type LineWriter struct {
+	logger *Logger
+	level  Level
+	buf    []byte
+}
+
+// NewLineWriter creates an io.Writer that logs each line at the specified level.
+func NewLineWriter(logger *Logger, level Level) *LineWriter {
+	return &LineWriter{
+		logger: logger,
+		level:  level,
+	}
+}
+
+func (w *LineWriter) Write(p []byte) (n int, err error) {
+	w.buf = append(w.buf, p...)
+	for {
+		idx := bytes.IndexByte(w.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := string(w.buf[:idx])
+		w.buf = w.buf[idx+1:]
+		w.logger.Log(context.Background(), w.level, line)
+	}
+	return len(p), nil
+}
+
 func Default() *Logger { return &Logger{slog.Default()} }
+
+// ctxKey is the context key for storing a Logger.
+type ctxKey struct{}
+
+// WithLogger returns a new context with the given logger stored in it.
+func WithLogger(ctx context.Context, logger *Logger) context.Context {
+	return context.WithValue(ctx, ctxKey{}, logger)
+}
+
+// FromContext returns the Logger stored in the context, or the default logger if none is set.
+func FromContext(ctx context.Context) *Logger {
+	if logger, ok := ctx.Value(ctxKey{}).(*Logger); ok {
+		return logger
+	}
+	if logger, ok := ctx.Value(ctxKey{}).(*slog.Logger); ok {
+		return &Logger{logger}
+	}
+	return Default()
+}
 
 func SetDefault(l *Logger) {
 	slog.SetDefault(l.Logger)
@@ -70,7 +120,7 @@ func Debug(msg string, args ...any) {
 }
 
 func DebugContext(ctx context.Context, msg string, args ...any) {
-	Default().DebugContext(ctx, msg, args...)
+	FromContext(ctx).DebugContext(ctx, msg, args...)
 }
 
 func Info(msg string, args ...any) {
@@ -78,7 +128,7 @@ func Info(msg string, args ...any) {
 }
 
 func InfoContext(ctx context.Context, msg string, args ...any) {
-	Default().InfoContext(ctx, msg, args...)
+	FromContext(ctx).InfoContext(ctx, msg, args...)
 }
 
 func Warn(msg string, args ...any) {
@@ -86,7 +136,7 @@ func Warn(msg string, args ...any) {
 }
 
 func WarnContext(ctx context.Context, msg string, args ...any) {
-	Default().WarnContext(ctx, msg, args...)
+	FromContext(ctx).WarnContext(ctx, msg, args...)
 }
 
 func Error(msg string, args ...any) {
@@ -94,7 +144,7 @@ func Error(msg string, args ...any) {
 }
 
 func ErrorContext(ctx context.Context, msg string, args ...any) {
-	Default().ErrorContext(ctx, msg, args...)
+	FromContext(ctx).ErrorContext(ctx, msg, args...)
 }
 
 func ExtraDebug(msg string, args ...any) {
@@ -102,7 +152,7 @@ func ExtraDebug(msg string, args ...any) {
 }
 
 func ExtraDebugContext(ctx context.Context, msg string, args ...any) {
-	Default().ExtraDebugContext(ctx, msg, args...)
+	FromContext(ctx).ExtraDebugContext(ctx, msg, args...)
 }
 
 func Trace(msg string, args ...any) {
@@ -110,12 +160,14 @@ func Trace(msg string, args ...any) {
 }
 
 func TraceContext(ctx context.Context, msg string, args ...any) {
-	Default().TraceContext(ctx, msg, args...)
+	FromContext(ctx).TraceContext(ctx, msg, args...)
 }
 
 func NewTextHandler(w io.Writer, opts *slog.HandlerOptions) *slog.TextHandler {
 	return slog.NewTextHandler(w, opts)
 }
+
+type HandlerOptions = slog.HandlerOptions
 
 func NewJSONHandler(w io.Writer, opts *slog.HandlerOptions) *slog.JSONHandler {
 	return slog.NewJSONHandler(w, opts)

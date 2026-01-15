@@ -31,19 +31,11 @@ var ignoredMessages = map[string]struct{}{
 	"checking and pushing to":      {},
 	"response completed":           {},
 	"authorized request":           {},
-	"serving grpc connection":      {},
 	"diff applied":                 {},
 	"using pigz for decompression": {},
 }
 
 var ignoredMessagePrefixes = []string{
-	"returning network namespace",
-	"releasing cni network namespace",
-	"creating new network namespace",
-	"finished creating network namespace",
-	"finished setting up network namespace",
-	"sending sigkill to process in container",
-	"diffcopy took",
 	"Using single walk diff for",
 }
 

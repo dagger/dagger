@@ -36,7 +36,6 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/moby/sys/reexec"
 	"github.com/moby/sys/userns"
-	sloglogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -314,7 +313,7 @@ func main() { //nolint:gocyclo
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 
 	app.Action = func(c *cli.Context) error {
-		bklog.G(ctx).Debug("starting dagger engine version:", engineVersion)
+		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
 		defer cancel(errors.New("main done"))
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
 		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.
@@ -373,10 +372,6 @@ func main() { //nolint:gocyclo
 
 		logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 
-		// Wire slog up to send to Logrus so engine logs using slog also get sent
-		// to Cloud
-		slogOpts := sloglogrus.Option{}
-
 		noiseReduceHook := &noiseReductionHook{
 			ignoreLogger: logrus.New(),
 		}
@@ -401,7 +396,6 @@ func main() { //nolint:gocyclo
 			if err != nil {
 				return err
 			}
-			slogOpts.Level = slogLevel
 
 			logrusLevel, err := logLevel.ToLogrusLevel()
 			if err != nil {
@@ -415,9 +409,9 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
-		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
-		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slogLevel,
+		})))
 
 		extraDebugEnabled := slogLevel == slog.LevelExtraDebug || slogLevel == slog.LevelTrace
 		enabledEbpfPrgs := enabledEbpfPrograms(extraDebugEnabled)
@@ -444,7 +438,7 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		bklog.G(context.Background()).Debugf("engine name: %s", engineName)
+		bklog.G(context.Background()).Infof("engine name: %s", engineName)
 
 		if bkcfg.GRPC.DebugAddress != "" {
 			if err := setupDebugHandlers(bkcfg.GRPC.DebugAddress); err != nil {
@@ -531,8 +525,10 @@ func main() { //nolint:gocyclo
 		select {
 		case serverErr := <-errCh:
 			err = serverErr
+			bklog.G(ctx).WithError(err).Error("server error")
 			cancel(fmt.Errorf("server error: %w", serverErr))
 		case <-ctx.Done():
+			bklog.G(context.WithoutCancel(ctx)).WithError(ctx.Err()).Error("server context canceled")
 			// context should only be cancelled when a signal is received, which
 			// isn't an error
 			if ctx.Err() != context.Canceled {
@@ -542,7 +538,7 @@ func main() { //nolint:gocyclo
 
 		cancelNetworking(errors.New("shutdown"))
 
-		bklog.G(ctx).Infof("stopping server")
+		bklog.G(context.WithoutCancel(ctx)).Infof("stopping server")
 		if os.Getenv("NOTIFY_SOCKET") != "" {
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
@@ -559,6 +555,8 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(*cli.Context) error {
+		fmt.Println("shutting down telemetry...")
+		defer fmt.Println("telemetry shut down complete")
 		telemetry.Close()
 		return nil
 	}

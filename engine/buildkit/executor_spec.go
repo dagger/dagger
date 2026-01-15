@@ -1162,18 +1162,20 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	lg := bklog.G(ctx).
 		WithField("id", state.id).
 		WithField("args", state.spec.Process.Args)
-	if w.execMD != nil && w.execMD.CallerClientID != "" {
-		lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
+	if w.execMD != nil {
 		if w.execMD.CallID != nil {
 			lg = lg.WithField("call_id", w.execMD.CallID.Digest())
+		}
+		if w.execMD.CallerClientID != "" {
+			lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
 		}
 		if w.execMD.ClientID != "" {
 			lg = lg.WithField("nested_client_id", w.execMD.ClientID)
 		}
 	}
-	lg.Debug("starting container")
+	lg.Info("starting container")
 	defer func() {
-		lg.WithError(rerr).Debug("container done")
+		lg.WithError(rerr).Info("container done")
 	}()
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
