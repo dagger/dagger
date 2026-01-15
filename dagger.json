@@ -1,9 +1,6 @@
 {
   "name": "dagger-dev",
   "engineVersion": "v0.19.9",
-  "sdk": {
-    "source": "go"
-  },
   "toolchains": [
     {
       "name": "changelog",
@@ -16,6 +13,10 @@
     {
       "name": "cli",
       "source": "toolchains/cli-dev"
+    },
+    {
+      "name": "dev",
+      "source": "toolchains/dagger-dev"
     },
     {
       "name": "docs",
@@ -125,32 +126,5 @@
     "go.mod",
     "go.sum",
     "util/parallel"
-  ],
-  "dependencies": [
-    {
-      "name": "changelog",
-      "source": "toolchains/changelog"
-    },
-    {
-      "name": "docs",
-      "source": "toolchains/docs-dev"
-    },
-    {
-      "name": "helm",
-      "source": "toolchains/helm-dev"
-    },
-    {
-      "name": "sdks",
-      "source": "toolchains/all-sdks"
-    },
-    {
-      "name": "engine-dev",
-      "source": "toolchains/engine-dev"
-    },
-    {
-      "name": "cli",
-      "source": "toolchains/cli-dev"
-    }
-  ],
-  "source": ".dagger"
+  ]
 }

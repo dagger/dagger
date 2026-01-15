@@ -6,7 +6,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"dagger/dagger-dev/internal/dagger"
+
 	"github.com/dagger/dagger/util/parallel"
 )
 
