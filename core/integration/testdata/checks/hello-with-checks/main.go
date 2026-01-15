@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"sort"
 
 	"dagger/hello-with-checks/internal/dagger"
 )
@@ -44,4 +45,22 @@ func (m *HelloWithChecks) PassingContainer() *dagger.Container {
 // +check
 func (m *HelloWithChecks) FailingContainer() *dagger.Container {
 	return dag.Container().From(m.BaseImage).WithExec([]string{"sh", "-c", "exit 1"})
+}
+
+// Returns the names of all checks visible from the current environment.
+func (m *HelloWithChecks) CurrentEnvChecks(ctx context.Context) ([]string, error) {
+	checks, err := dag.CurrentEnv().Checks().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(checks))
+	for _, check := range checks {
+		name, err := check.Name(ctx)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
