@@ -96,7 +96,7 @@ engine:
 
   image:
     ### Set a ref if you want to use a custom Dagger image
-    #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness probes will fail
+    #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness and liveness probes will fail
     #   In the example below, we are configuring the latest, unreleased bleeding edge version
     #
     # ref: registry.dagger.io/engine:main
@@ -141,6 +141,14 @@ engine:
     periodSeconds: 15
     successThreshold: 1
     failureThreshold: 10
+
+  livenessProbeSettings:
+    initialDelaySeconds: 5
+    timeoutSeconds: 29
+    periodSeconds: 30
+    successThreshold: 1
+    failureThreshold: 20
+    terminationGracePeriodSeconds: 30
 
   ### The Engine may need to finish operations in flight, or sync its state to a remote destination.
   #   We give it ample time by setting this value to 5 mins by default.
