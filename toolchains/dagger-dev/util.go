@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"dagger/dagger-dev/internal/dagger"
 )
 
 // Merge Changesets together

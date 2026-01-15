@@ -1,0 +1,33 @@
+{
+  "name": "dagger-dev",
+  "engineVersion": "v0.19.9",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "changelog",
+      "source": "../changelog"
+    },
+    {
+      "name": "docs",
+      "source": "../docs-dev"
+    },
+    {
+      "name": "helm",
+      "source": "../helm-dev"
+    },
+    {
+      "name": "sdks",
+      "source": "../all-sdks"
+    },
+    {
+      "name": "engine-dev",
+      "source": "../engine-dev"
+    },
+    {
+      "name": "cli",
+      "source": "../cli-dev"
+    }
+  ]
+}

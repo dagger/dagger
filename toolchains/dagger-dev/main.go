@@ -6,7 +6,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"dagger/dagger-dev/internal/dagger"
+
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -15,13 +16,13 @@ type DaggerDev struct{}
 
 // Verify that generated code is up to date
 // +check
-func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
-	_, err := dev.Generate(ctx, true)
+func (dev *DaggerDev) Check(ctx context.Context) error {
+	_, err := dev.All(ctx, true)
 	return err
 }
 
 // Run all code generation - SDKs, docs, grpc stubs, changelog
-func (dev *DaggerDev) Generate(ctx context.Context,
+func (dev *DaggerDev) All(ctx context.Context,
 	// +optional
 	check bool,
 ) (*dagger.Changeset, error) {

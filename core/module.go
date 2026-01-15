@@ -100,23 +100,10 @@ func (mod *Module) Name() string {
 }
 
 func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	mainObj, ok := mod.MainObject()
-	if !ok {
-		return nil, fmt.Errorf("scan for checks: %q: can't load main object", mod.Name())
-	}
 	objChecksCache := map[string][]*Check{}
 	group := &CheckGroup{Module: mod}
-	// 1. Walk main module for checks
-	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
-		match, err := check.Match(include)
-		if err != nil {
-			return nil, err
-		}
-		if match {
-			group.Checks = append(group.Checks, check)
-		}
-	}
-	// 2. Walk toolchain modules for checks
+
+	// Walk toolchain modules for checks
 	for _, dep := range mod.Deps.Mods {
 		if tcMod, ok := dep.(*Module); ok && tcMod.IsToolchain {
 			tcMainObj, ok := tcMod.MainObject()
