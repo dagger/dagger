@@ -15,7 +15,7 @@
       "source": "toolchains/cli-dev"
     },
     {
-      "name": "dev",
+      "name": "generate",
       "source": "toolchains/dagger-dev"
     },
     {
