@@ -300,10 +300,52 @@ func (v *directoryValue) String() string {
 }
 
 func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
-	return dag.Address(v.String()).
+	path := v.String()
+	var includes []string
+	excludes := modArg.Ignore
+	gitIgnore := false
+	if i := strings.Index(path, "?"); i > 0 {
+		// this will support something like
+		// "--path-arg=.?include=cmd,internal&exclude=docs&gitignore=true"
+		origPath := path
+		pathArgs := strings.Split(path[i+1:], "&")
+		path = path[:i]
+		for _, pathArg := range pathArgs {
+			if j := strings.Index(pathArg, "="); j > 0 {
+				argName := pathArg[:j]
+				argValue := pathArg[j+1:]
+				switch argName {
+				case "include":
+					includes = strings.Split(argValue, ",")
+				case "exclude":
+					excludes = strings.Split(argValue, ",")
+				case "gitignore":
+					if bVal, err := strconv.ParseBool(argValue); err == nil {
+						gitIgnore = bVal
+					} else {
+						return nil, fmt.Errorf("invalid option %s=%s in %q: %v", argName, argValue, origPath, err)
+					}
+				default:
+					return nil, fmt.Errorf("unknown option %q in %q", argName, origPath)
+				}
+			} else {
+				argName := pathArg
+				switch argName {
+				case "gitignore":
+					gitIgnore = true
+				default:
+					return nil, fmt.Errorf("unknown option %q in %q", argName, origPath)
+				}
+			}
+		}
+	}
+	// if path contains options - parse them here
+	return dag.Address(path).
 		Directory(
 			dagger.AddressDirectoryOpts{
-				Exclude: modArg.Ignore,
+				Include:   includes,
+				Exclude:   excludes,
+				Gitignore: gitIgnore,
 			},
 		).Sync(ctx)
 }
