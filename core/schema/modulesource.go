@@ -1686,10 +1686,13 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 				symbolicItemStr += "/" + strings.TrimPrefix(item.Self().SourceRootSubpath, "/")
 			}
 			// This enables toolchains to install multiple versions from the same source
-			if item.Self().Git.Version != "" {
-				symbolicItemStr += "@" + item.Self().Git.Version
-			} else if item.Self().Git.Commit != "" {
-				symbolicItemStr += "@" + item.Self().Git.Commit
+			// For dependencies, we want to deduplicate by base path (without version) so updates work correctly
+			if accessor.typ == core.ModuleRelationTypeToolchain {
+				if item.Self().Git.Version != "" {
+					symbolicItemStr += "@" + item.Self().Git.Version
+				} else if item.Self().Git.Commit != "" {
+					symbolicItemStr += "@" + item.Self().Git.Commit
+				}
 			}
 		}
 
@@ -1810,11 +1813,21 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		if itemSrcRoot := existingItem.Self().SourceRootSubpath; itemSrcRoot != "" {
 			existingSymbolic += "/" + strings.TrimPrefix(itemSrcRoot, "/")
 		}
+		// For matching purposes, include version/commit in symbolic representation to match deduplication logic
+		// This ensures proper matching when updating dependencies with version information
+		existingSymbolicWithVersion := existingSymbolic
+		if existingItem.Self().Git.Version != "" {
+			existingSymbolicWithVersion += "@" + existingItem.Self().Git.Version
+		} else if existingItem.Self().Git.Commit != "" {
+			existingSymbolicWithVersion += "@" + existingItem.Self().Git.Commit
+		}
 
+		matched := false
 		for updateReq := range updateReqs {
-			if updateReq.symbolic != existingName && updateReq.symbolic != existingSymbolic {
+			if updateReq.symbolic != existingName && updateReq.symbolic != existingSymbolic && updateReq.symbolic != existingSymbolicWithVersion {
 				continue
 			}
+			matched = true
 			delete(updateReqs, updateReq)
 
 			updateVersion := updateReq.version
@@ -1840,6 +1853,12 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 			}
 
 			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedItem.ID()))
+			break
+		}
+
+		// If this item wasn't matched for update, keep it as-is
+		if !matched {
+			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](existingItem.ID()))
 		}
 	}
 
