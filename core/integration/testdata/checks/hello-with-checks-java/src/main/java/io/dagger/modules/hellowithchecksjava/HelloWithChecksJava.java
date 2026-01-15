@@ -1,8 +1,11 @@
+package io.dagger.modules.hellowithchecksjava;
+
 import io.dagger.client.Container;
 import io.dagger.client.Dagger;
 import io.dagger.module.annotation.Check;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
+import java.util.List;
 
 /** A module for HelloWithChecksJava functions */
 @Object
@@ -16,7 +19,7 @@ public class HelloWithChecksJava {
         Dagger.dag()
             .container()
             .from("alpine:3")
-            .withExec(new String[] {"sh", "-c", "exit 0"});
+            .withExec(List.of("sh", "-c", "exit 0"));
     container.sync();
   }
 
@@ -28,7 +31,7 @@ public class HelloWithChecksJava {
         Dagger.dag()
             .container()
             .from("alpine:3")
-            .withExec(new String[] {"sh", "-c", "exit 1"});
+            .withExec(List.of("sh", "-c", "exit 1"));
     container.sync();
   }
 }

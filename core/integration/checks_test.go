@@ -163,8 +163,12 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	})
 	t.Run("run checks from a blueprint (Java)", func(ctx context.Context, t *testctx.T) {
+		// For Java, we need to mount the local SDK since Check annotation support
+		// is not yet in a released SDK version
+		sdkSrc := c.Host().Directory("../../sdk/java")
 		// install hello-with-checks-java as blueprint
 		modGen := checksTestEnv(t, c).
+			WithDirectory("sdk/java", sdkSrc).
 			WithWorkdir("app").
 			With(daggerExec("init", "--blueprint", "../hello-with-checks-java"))
 		// list checks
