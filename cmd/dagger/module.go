@@ -239,7 +239,8 @@ dagger init --sdk=go
 				}
 			}
 
-			modSrc := dag.ModuleSource(srcRootArg, dagger.ModuleSourceOpts{
+			// Check if module already exists before preparing
+			checkModSrc := dag.ModuleSource(srcRootArg, dagger.ModuleSourceOpts{
 				// Tell the engine to use the provided arg as the source root, don't
 				// try to find-up a dagger.json in a parent directory and use that as
 				// the source root.
@@ -252,8 +253,7 @@ dagger init --sdk=go
 				// We can only init local modules
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
+			alreadyExists, err := checkModSrc.ConfigExists(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to check if module already exists: %w", err)
 			}
@@ -261,19 +261,10 @@ dagger init --sdk=go
 				return fmt.Errorf("module already exists")
 			}
 
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			// Prepare the new module with name and engine version
+			modSrc, contextDirPath, srcRootAbsPath, moduleName, err := prepareNewModule(ctx, dag, srcRootArg, moduleName)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
-			}
-			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get source root subpath: %w", err)
-			}
-			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
-
-			// default module name to directory of source root
-			if moduleName == "" {
-				moduleName = filepath.Base(srcRootAbsPath)
+				return err
 			}
 
 			// only bother setting source path if there's an sdk at this time
@@ -300,7 +291,6 @@ dagger init --sdk=go
 				}
 			}
 
-			modSrc = modSrc.WithName(moduleName)
 			if sdk != "" {
 				modSrc = modSrc.WithSDK(sdk)
 			}
@@ -310,8 +300,6 @@ dagger init --sdk=go
 			if len(moduleIncludes) > 0 {
 				modSrc = modSrc.WithIncludes(moduleIncludes)
 			}
-			// engine version must be set before setting blueprint
-			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
 			// Install blueprint if specified
 			if initBlueprint != "" {
 				// Validate that we don't have both SDK and blueprint
@@ -783,6 +771,8 @@ var toolchainInstallCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+			_, explicitModRef := getExplicitModuleSourceRef()
+
 			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
 				// We can only install toolchains to a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
@@ -792,13 +782,26 @@ var toolchainInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to check if module already exists: %w", err)
 			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
 
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+			var contextDirPath string
+			if !alreadyExists {
+				if explicitModRef {
+					// User explicitly specified --mod or DAGGER_MODULE but module doesn't exist
+					return fmt.Errorf("module must be fully initialized")
+				}
+
+				// Auto-initialize bare module (no SDK, no blueprint)
+				var srcRootAbsPath, moduleName string
+				modSrc, contextDirPath, srcRootAbsPath, moduleName, err = prepareNewModule(ctx, dag, modRef, "")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Initialized module %s in %s\n", moduleName, srcRootAbsPath)
+			} else {
+				contextDirPath, err = modSrc.LocalContextDirectoryPath(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get local context directory path: %w", err)
+				}
 			}
 
 			toolchainRefStr := extraArgs[0]
@@ -1228,6 +1231,45 @@ func getModuleSourceRefWithDefault() (string, error) {
 		return "", fmt.Errorf("cannot use default module source with --no-mod")
 	}
 	return moduleURLDefault, nil
+}
+
+// prepareNewModule creates a new ModuleSource for initialization at the given reference.
+// It sets up the module with the given name (or defaults to directory basename if empty)
+// and engine version. The caller is responsible for adding any additional configuration
+// (SDK, blueprint, toolchains, etc.) and calling Export.
+// Returns the configured ModuleSource and path information.
+func prepareNewModule(
+	ctx context.Context,
+	dag *dagger.Client,
+	modRef string,
+	name string,
+) (modSrc *dagger.ModuleSource, contextDirPath string, srcRootAbsPath string, moduleName string, err error) {
+	modSrc = dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+		DisableFindUp:  true,
+		AllowNotExists: true,
+		RequireKind:    dagger.ModuleSourceKindLocalSource,
+	})
+
+	contextDirPath, err = modSrc.LocalContextDirectoryPath(ctx)
+	if err != nil {
+		return nil, "", "", "", fmt.Errorf("failed to get local context directory path: %w", err)
+	}
+	srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, "", "", "", fmt.Errorf("failed to get source root subpath: %w", err)
+	}
+	srcRootAbsPath = filepath.Join(contextDirPath, srcRootSubPath)
+
+	// Default module name to directory basename if not provided
+	moduleName = name
+	if moduleName == "" {
+		moduleName = filepath.Base(srcRootAbsPath)
+	}
+
+	// Set name and engine version
+	modSrc = modSrc.WithName(moduleName).WithEngineVersion(modules.EngineVersionLatest)
+
+	return modSrc, contextDirPath, srcRootAbsPath, moduleName, nil
 }
 
 // Wraps a command with optional module loading. If a module was explicitly specified by the user,
