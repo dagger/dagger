@@ -1685,6 +1685,12 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 			if item.Self().SourceRootSubpath != "" {
 				symbolicItemStr += "/" + strings.TrimPrefix(item.Self().SourceRootSubpath, "/")
 			}
+			// This enables toolchains to install multiple versions from the same source
+			if item.Self().Git.Version != "" {
+				symbolicItemStr += "@" + item.Self().Git.Version
+			} else if item.Self().Git.Commit != "" {
+				symbolicItemStr += "@" + item.Self().Git.Commit
+			}
 		}
 
 		_, isDuplicateSymbolic := symbolicItems[symbolicItemStr]
