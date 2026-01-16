@@ -520,8 +520,19 @@ func (sdk *goSDK) baseWithCodegen(
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
 
-	if !engine.IsDevVersion(src.Self().EngineVersion) {
-		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(src.Self().EngineVersion))
+	var engineVersion dagql.String
+	if err := dag.Select(ctx, dag.Root(), &engineVersion,
+		dagql.Selector{
+			Field: "version",
+		},
+	); err != nil {
+		if err != nil {
+			return ctr, fmt.Errorf("failed to get engine version: %w", err)
+		}
+	}
+
+	if !engine.IsDevVersion(string(engineVersion)) {
+		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engineVersion))
 	}
 
 	selectors := []dagql.Selector{
