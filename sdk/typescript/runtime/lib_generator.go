@@ -122,8 +122,6 @@ func (l *LibGenerator) GenerateBundleLibrary(
 
 	// If we're generating a standalone client, we export a lighter
 	// version of the library.
-	// Otherwise, we export the full library because if a client and a
-	// module coexist, they both depend on the same `sdk` directory.
 	if l.Opts.genClient && !l.Opts.coexistWithModule {
 		return result.
 			WithNewFile("index.ts", tsutils.StaticBundleClientIndexTS)

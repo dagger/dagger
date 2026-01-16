@@ -78,11 +78,7 @@ func (t *TypescriptSdk) ModuleTypes(
 	}
 
 	// TODO(TomChv): Update the TypeScript Codegen so it doesn't rely on moduleSourcePath anymore.
-	clientBindings := NewLibGenerator(t.SDKSourceDir,
-		&LibGeneratorOpts{
-			moduleName: cfg.name,
-			modulePath: cfg.modulePath(),
-		}).
+	clientBindings := NewLibGenerator(t.SDKSourceDir, cfg.libGeneratorOpts()).
 		GenerateBindings(introspectionJSON, Bundle, ModSourceDirPath)
 
 	return NewIntrospector(t.SDKSourceDir).

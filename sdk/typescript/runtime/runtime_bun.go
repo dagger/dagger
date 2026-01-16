@@ -58,11 +58,7 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 		ctx, span := Tracer().Start(ctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(b.sdkSourceDir,
-			&LibGeneratorOpts{
-				moduleName: b.cfg.name,
-				modulePath: b.cfg.modulePath(),
-			}).
+		sdkLibrary, err = NewLibGenerator(b.sdkSourceDir, b.cfg.libGeneratorOpts()).
 			GenerateBundleLibrary(b.introspectionJSON, ModSourceDirPath).
 			Sync(ctx)
 		return err
@@ -132,11 +128,7 @@ func (b *BunRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error)
 		ctx, span := Tracer().Start(ctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(b.sdkSourceDir,
-			&LibGeneratorOpts{
-				moduleName: b.cfg.name,
-				modulePath: b.cfg.modulePath(),
-			}).
+		sdkLibrary, err = NewLibGenerator(b.sdkSourceDir, b.cfg.libGeneratorOpts()).
 			GenerateBundleLibrary(b.introspectionJSON, ModSourceDirPath).
 			Sync(ctx)
 		return err

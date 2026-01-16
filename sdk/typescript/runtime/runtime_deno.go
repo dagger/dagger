@@ -49,11 +49,7 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		ctx, span := Tracer().Start(ctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir,
-			&LibGeneratorOpts{
-				moduleName: d.cfg.name,
-				modulePath: d.cfg.modulePath(),
-			}).
+		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir, d.cfg.libGeneratorOpts()).
 			GenerateBundleLibrary(d.introspectionJSON, ModSourceDirPath).
 			Sync(ctx)
 		return err
@@ -109,11 +105,7 @@ func (d *DenoRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error
 		ctx, span := Tracer().Start(ctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir,
-			&LibGeneratorOpts{
-				moduleName: d.cfg.name,
-				modulePath: d.cfg.modulePath(),
-			}).
+		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir, d.cfg.libGeneratorOpts()).
 			GenerateBundleLibrary(d.introspectionJSON, ModSourceDirPath).
 			Sync(ctx)
 		return err

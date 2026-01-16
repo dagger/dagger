@@ -550,6 +550,13 @@ func (c *moduleConfig) wrappedSourceCodeDirectory() *dagger.Directory {
 	)
 }
 
+func (c *moduleConfig) libGeneratorOpts() *LibGeneratorOpts {
+	return &LibGeneratorOpts{
+		moduleName: c.name,
+		modulePath: c.modulePath(),
+	}
+}
+
 // Returns a list of files to include for module configs.
 func moduleConfigFiles(path string) []string {
 	modConfigFiles := []string{
