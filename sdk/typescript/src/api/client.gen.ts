@@ -1055,6 +1055,13 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
+export type EnvChecksOpts = {
+  /**
+   * Only include checks matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type EnvFileGetOpts = {
   /**
    * Return the value exactly as written to the file. No quote removal or variable expansion
@@ -5950,6 +5957,26 @@ export class Env extends BaseClient {
     const response: Awaited<EnvID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Return the check with the given name from the installed modules. Must match exactly one check.
+   * @param name The name of the check to retrieve
+   * @experimental
+   */
+  check = (name: string): Check => {
+    const ctx = this._ctx.select("check", { name })
+    return new Check(ctx)
+  }
+
+  /**
+   * Return all checks defined by the installed modules
+   * @param opts.include Only include checks matching the specified patterns
+   * @experimental
+   */
+  checks = (opts?: EnvChecksOpts): CheckGroup => {
+    const ctx = this._ctx.select("checks", { ...opts })
+    return new CheckGroup(ctx)
   }
 
   /**

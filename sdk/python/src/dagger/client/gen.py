@@ -5168,6 +5168,47 @@ class EnumValueTypeDef(Type):
 
 @typecheck
 class Env(Type):
+    def check(self, name: str) -> Check:
+        """Return the check with the given name from the installed modules. Must
+        match exactly one check.
+
+        .. caution::
+            Experimental: Checks API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        name:
+            The name of the check to retrieve
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("check", _args)
+        return Check(_ctx)
+
+    def checks(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> CheckGroup:
+        """Return all checks defined by the installed modules
+
+        .. caution::
+            Experimental: Checks API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        include:
+            Only include checks matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("checks", _args)
+        return CheckGroup(_ctx)
+
     async def id(self) -> EnvID:
         """A unique identifier for this Env.
 

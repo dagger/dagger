@@ -183,6 +183,38 @@ func (env *Env) WithoutInput(key string) *Env {
 	return env
 }
 
+// Checks returns a CheckGroup aggregating all checks from installed modules
+func (env *Env) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
+	var allChecks []*Check
+	for _, mod := range env.installedModules {
+		group, err := mod.Checks(ctx, include)
+		if err != nil {
+			return nil, fmt.Errorf("get checks for module %q: %w", mod.Name(), err)
+		}
+		allChecks = append(allChecks, group.Checks...)
+	}
+	return &CheckGroup{
+		Module: nil, // nil indicates aggregated group
+		Checks: allChecks,
+	}, nil
+}
+
+// Check returns a single check by name from the installed modules
+func (env *Env) Check(ctx context.Context, name string) (*Check, error) {
+	checkGroup, err := env.Checks(ctx, []string{name})
+	if err != nil {
+		return nil, err
+	}
+	switch len(checkGroup.Checks) {
+	case 1:
+		return checkGroup.Checks[0].Clone(), nil
+	case 0:
+		return nil, fmt.Errorf("check %q not found", name)
+	default:
+		return nil, fmt.Errorf("multiple checks found with name %q", name)
+	}
+}
+
 type Binding struct {
 	Key         string
 	Value       dagql.Typed
