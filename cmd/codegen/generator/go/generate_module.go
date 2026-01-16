@@ -251,8 +251,9 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 		}
 	}
 
+	// If the module uses a released version of the engine, we add it to the list of dependencies.
 	if g.Config.ModuleConfig.LibVersion != "" {
-		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "get", fmt.Sprintf("dagger.io/dagger@%s", g.Config.ModuleConfig.LibVersion)))
+		mod.AddRequire("dagger.io/dagger", g.Config.ModuleConfig.LibVersion)
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,
