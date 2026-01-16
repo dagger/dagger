@@ -1328,7 +1328,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
             from typing_extensions import Doc
 
             import dagger
-            
+
 
             @dagger.object_type
             class Test:
@@ -1370,7 +1370,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
             from typing_extensions import Doc
 
             import dagger
-            
+
 
             @dagger.object_type
             class Test:
@@ -1517,7 +1517,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
                 @dagger.function
                 def quack(self, word: typing.Annotated[str, Doc("A word for the duck to speak")] = "") -> str:
                     """A quack sound"""
-                
+
             @dagger.object_type
             class Test:
                 @dagger.function
@@ -1768,7 +1768,7 @@ func (PythonSuite) TestIgnoreConstructorArg(ctx context.Context, t *testctx.T) {
         @dagger.object_type
         class Test:
             source: Annotated[
-                dagger.Directory, 
+                dagger.Directory,
                 dagger.DefaultPath("/"),
                 dagger.Ignore([".venv"]),
             ] = dagger.field()
@@ -1815,11 +1815,11 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 						return await dag.dep().exec()
 					except dagger.ExecError as e:
 						# If the SDK didn't properly propagate the error
-						# extensions this would be a dagger.QueryError instead, 
+						# extensions this would be a dagger.QueryError instead,
 						# so not caught.
 						assert e.exit_code == 5
 						return f"error: {e.stderr}"
-	
+
 				@dagger.function
 				def coro(self) -> str:
 					# Should fail because dag.version() returns a coroutine
@@ -1828,7 +1828,7 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 
 				@dagger.function
 				async def nowait(self) -> str:
-					# Should fail because of missing await 
+					# Should fail because of missing await
 					return dag.version()
 
 				@dagger.function
@@ -1920,4 +1920,35 @@ func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) dagger.WithContain
 			Include: inc,
 		}))
 	}
+}
+
+func (PythonSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+import dataclasses
+import dagger
+from dagger import dag, function, object_type
+
+@object_type
+class Test:
+    ctr: dagger.Container = dataclasses.field(
+        default_factory=lambda: dag.container().from_("alpine:3.19")
+    )
+
+    @function
+    async def version(self) -> str:
+        return await self.ctr.with_exec(
+            ["/bin/sh", "-c", "cat /etc/alpine-release"]
+        ).stdout()
+`)
+
+	out, err := modGen.With(daggerCall("version")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "3.19") // Alpine version contains "3.19.0"
+
+	// Test that we can override the default via constructor
+	out2, err := modGen.With(daggerCall("--ctr=alpine:3.18", "version")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out2, "3.18")
 }

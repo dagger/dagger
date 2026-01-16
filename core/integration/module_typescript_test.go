@@ -2069,3 +2069,33 @@ func (TypescriptSuite) TestBundleLocalMigration(ctx context.Context, t *testctx.
 		})
 	})
 }
+
+func (TypescriptSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `import { dag, Container, object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async testWithDefaultContainer(
+    ctr: Container = dag.container().from("alpine:latest"),
+  ): Promise<string> {
+    return ctr.withExec(["cat", "/etc/alpine-release"]).stdout()
+  }
+}
+`))
+
+	out, err := modGen.With(daggerCall("test-with-default-container")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, ".") // Alpine version contains a dot like "3.19.0"
+
+	// Test that we can override the default
+	out2, err := modGen.With(daggerCall("test-with-default-container", "--ctr=alpine:3.18")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out2, ".")
+}

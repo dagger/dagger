@@ -126,17 +126,53 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		input := modType.TypeDef().ToInput()
 		var defaultVal dagql.Input
 		if arg.DefaultValue != nil {
-			var val any
-			dec := json.NewDecoder(bytes.NewReader(arg.DefaultValue.Bytes()))
-			dec.UseNumber()
-			if err := dec.Decode(&val); err != nil {
-				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+			// For Container types with address string defaults (like Go's // +default="alpine:latest"),
+			// we need to mark the type as optional but can't include the default in the schema
+			// because the address needs to be resolved at call time using the Address API.
+			// However, for Container IDs (like from Python/TypeScript lambdas), we can include them.
+			isContainerType := arg.TypeDef.Kind == TypeDefKindObject &&
+				arg.TypeDef.AsObject.Value.Name == "Container"
+
+			// Check if this is an address string that needs special handling
+			needsAddressConversion := false
+			if isContainerType {
+				var defaultStr string
+				if err := json.Unmarshal([]byte(arg.DefaultValue), &defaultStr); err == nil {
+					// Check if it's a Container ID by trying to decode it
+					ctrID := &call.ID{}
+					isContainerID := ctrID.Decode(defaultStr) == nil
+					
+					// Only skip default if it's an address string (not a Container ID)
+					needsAddressConversion = !isContainerID
+				}
 			}
 
-			var err error
-			defaultVal, err = input.Decoder().DecodeInput(val)
-			if err != nil {
-				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+			if needsAddressConversion {
+				// It's an address string (from Go pragma), can't include in schema
+				// Make a copy of the TypeDef and mark it as optional for the schema
+				optionalTypeDef := arg.TypeDef.WithOptional(true)
+				input = optionalTypeDef.ToInput()
+				// defaultVal stays nil - will be resolved at call time
+			} else {
+				// Handle normally (including Container IDs from Python/TypeScript)
+				var val any
+				dec := json.NewDecoder(bytes.NewReader(arg.DefaultValue.Bytes()))
+				dec.UseNumber()
+				if err := dec.Decode(&val); err != nil {
+					return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+				}
+
+				// Make Container types optional even when they have ID defaults
+				if isContainerType {
+					optionalTypeDef := arg.TypeDef.WithOptional(true)
+					input = optionalTypeDef.ToInput()
+				}
+
+				var err error
+				defaultVal, err = input.Decoder().DecodeInput(val)
+				if err != nil {
+					return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+				}
 			}
 		}
 

@@ -202,9 +202,61 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 			defaultInput = userDefaultInput
 		} else if hasModuleDefault {
 			// 2. Module-defined default
+			defaultValue := arg.DefaultValue
+
+			// Special handling for Container types: convert address strings to Container IDs
+			// The default value can be either an image reference (e.g. "alpine:latest") 
+			// or a Container ID (from Python/TypeScript runtime defaults)
+			if arg.TypeDef.Kind == TypeDefKindObject && arg.TypeDef.AsObject.Value.Name == "Container" {
+				var defaultStr string
+				if err := json.Unmarshal([]byte(arg.DefaultValue), &defaultStr); err != nil {
+					return nil, fmt.Errorf("unmarshal container default for arg %q: %w", name, err)
+				}
+
+				srv := opts.Server
+				if srv == nil {
+					srv = dagql.CurrentDagqlServer(ctx)
+				}
+
+				// Use the Address API to resolve the value to a Container
+				// This handles both image references and Container IDs
+				var addr dagql.ObjectResult[*Address]
+				err := srv.Select(ctx, srv.Root(), &addr,
+					dagql.Selector{
+						Field: "address",
+						Args: []dagql.NamedInput{
+							{Name: "value", Value: dagql.String(defaultStr)},
+						},
+					},
+				)
+				if err != nil {
+					return nil, fmt.Errorf("load address %q for container default: %w", defaultStr, err)
+				}
+
+				var ctr dagql.ObjectResult[*Container]
+				err = srv.Select(ctx, addr, &ctr,
+					dagql.Selector{Field: "container"},
+				)
+				if err != nil {
+					return nil, fmt.Errorf("load container from address %q: %w", defaultStr, err)
+				}
+
+				// Encode the Container ID as the default value
+				ctrID, err := ctr.ID().Encode()
+				if err != nil {
+					return nil, fmt.Errorf("encode container ID for default: %w", err)
+				}
+				// Marshal the ID string to JSON (adds quotes around it)
+				ctrIDJSON, err := json.Marshal(ctrID)
+				if err != nil {
+					return nil, fmt.Errorf("marshal container ID to JSON: %w", err)
+				}
+				defaultValue = JSON(ctrIDJSON)
+			}
+
 			defaultInput = &FunctionCallArgValue{
 				Name:  name,
-				Value: arg.DefaultValue,
+				Value: defaultValue,
 			}
 		} else {
 			// 3. No default. moving on

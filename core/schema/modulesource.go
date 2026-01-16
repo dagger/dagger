@@ -3658,18 +3658,18 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
 	}
-	for _, tcMod := range tcMods {
+	for i, tcMod := range tcMods {
 		clone := tcMod.Self().Clone()
 		clone.IsToolchain = true
 		clone.ContextSource = dagql.NonNull(src)
 
 		// Apply argument configurations from the parent module's toolchain config
-		// Find matching config by toolchain name
-		for _, tcCfg := range src.Self().ConfigToolchains {
-			if tcCfg.Name == clone.OriginalName && len(tcCfg.Customizations) > 0 {
+		// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
+		if i < len(src.Self().ConfigToolchains) {
+			tcCfg := src.Self().ConfigToolchains[i]
+			if len(tcCfg.Customizations) > 0 {
 				// Apply configurations to the toolchain module's functions, including chained functions
 				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
-				break
 			}
 		}
 
