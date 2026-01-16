@@ -142,10 +142,8 @@ func (t PythonSdkDev) Test(ctx context.Context) error {
 	jobs := parallel.New()
 	for _, version := range supportedVersions {
 		jobs = jobs.WithJob("test with python version "+version, func(ctx context.Context) error {
-			_, err := t.TestSuite(version, false).
-				Default().
-				Sync(ctx)
-			return err
+			return t.TestSuite(version, false).
+				RunDefault(ctx)
 		})
 	}
 	return jobs.Run(ctx)
