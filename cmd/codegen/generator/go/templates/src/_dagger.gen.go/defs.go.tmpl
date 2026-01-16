@@ -17,8 +17,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 {{ if IsModuleCode }}
-	"{{.PackageImport}}/internal/querybuilder"
-	"{{.PackageImport}}/internal/telemetry"
+	"{{.UtilityPkgImport}}/querybuilder"
+	"{{.UtilityPkgImport}}/telemetry"
 {{ end }}
 
 {{- if IsStandaloneClient }}

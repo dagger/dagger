@@ -520,6 +520,10 @@ func (sdk *goSDK) baseWithCodegen(
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
 
+	if !engine.IsDevVersion(src.Self().EngineVersion) {
+		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(src.Self().EngineVersion))
+	}
+
 	selectors := []dagql.Selector{
 		{
 			Field: "withMountedFile",
