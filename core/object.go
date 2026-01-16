@@ -543,11 +543,6 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			var err error
-			ctx, err = withToolchainParentEnv(ctx, tcMod, dag)
-			if err != nil {
-				return nil, err
-			}
 			opts := &CallOpts{
 				ParentTyped:    obj,
 				ParentFields:   nil,
@@ -567,58 +562,6 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 			return modFun.Call(ctx, opts)
 		},
 	}, nil
-}
-
-func withToolchainParentEnv(ctx context.Context, mod *Module, dag *dagql.Server) (context.Context, error) {
-	if mod == nil || !mod.IsToolchain {
-		return ctx, nil
-	}
-	if _, ok := EnvIDFromContext(ctx); ok {
-		return ctx, nil
-	}
-	if !mod.ContextSource.Valid || mod.ContextSource.Value.Self() == nil {
-		return ctx, nil
-	}
-
-	var parentMod dagql.ObjectResult[*Module]
-	if err := dag.Select(ctx, mod.ContextSource.Value, &parentMod, dagql.Selector{
-		Field: "asModule",
-	}); err != nil {
-		return ctx, fmt.Errorf("failed to load toolchain parent module: %w", err)
-	}
-
-	workspaceSource := parentMod.Self().GetSource()
-	if workspaceSource == nil {
-		workspaceSource = parentMod.Self().GetContextSource()
-	}
-	if workspaceSource == nil {
-		return ctx, fmt.Errorf("failed to resolve toolchain parent module workspace")
-	}
-
-	var env dagql.ObjectResult[*Env]
-	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
-		Field: "env",
-	}, dagql.Selector{
-		Field: "withModule",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "module",
-				Value: dagql.NewID[*Module](parentMod.ID()),
-			},
-		},
-	}, dagql.Selector{
-		Field: "withWorkspace",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "workspace",
-				Value: dagql.NewID[*Directory](workspaceSource.ContextDirectory.ID()),
-			},
-		},
-	}); err != nil {
-		return ctx, fmt.Errorf("failed to build toolchain parent env: %w", err)
-	}
-
-	return EnvIDToContext(ctx, env.ID()), nil
 }
 
 // objFun creates a dagql.Field for a function defined on a module object type.
@@ -662,11 +605,6 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			var err error
-			ctx, err = withToolchainParentEnv(ctx, mod, dag)
-			if err != nil {
-				return nil, err
-			}
 			opts := &CallOpts{
 				ParentTyped:    obj,
 				ParentFields:   obj.Self().Fields,
