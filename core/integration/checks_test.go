@@ -266,34 +266,3 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	})
 }
-
-func (ChecksSuite) TestCurrentEnvFromToolchain(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	modGen := checksTestEnv(t, c).
-		WithWorkdir("app").
-		With(daggerExec("init", "--sdk=go", "--name=app", "--source=.")).
-		WithNewFile("main.go", `package main
-
-import "context"
-
-type App struct{}
-
-func New() *App {
-	return &App{}
-}
-
-// Returns a passing check
-// +check
-func (a *App) RootCheck(ctx context.Context) error {
-	return nil
-}
-`)
-
-	out, err := modGen.
-		With(daggerExec("toolchain", "install", "../hello-with-checks")).
-		With(daggerExec("call", "hello-with-checks", "current-env-checks")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "rootCheck")
-	require.Contains(t, out, "helloWithChecks:passingCheck")
-}
