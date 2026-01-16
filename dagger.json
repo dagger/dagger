@@ -51,7 +51,8 @@
             "docs/**",
             "dagql/idtui/viztest/broken/**",
             "modules/evals/**",
-            "**/broken*/**"
+            "**/broken*/**",
+            "core/integration/testdata/checks/hello-with-checks/"
           ]
         }
       ]
