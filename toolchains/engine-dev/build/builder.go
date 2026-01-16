@@ -110,8 +110,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		"mount", "umount", "posix-libc-utils", "coreutils",
 		// for git
 		"git", "openssh-client",
-		// for decompression
-		"pigz", "xz",
+		// for compression/decompression, containerd prefers igzip from the isa-l package as it's fastest
+		"isa-l", "pigz", "xz",
 		// for CNI
 		"iptables", "ip6tables", "dnsmasq",
 		// for Kata Containers integration
