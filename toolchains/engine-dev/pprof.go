@@ -70,7 +70,7 @@ func (dev *EngineDev) TestDump(
 	if err != nil {
 		return nil, err
 	}
-	ctr, debugEndpoint, err := dev.testContainer(ctx)
+	ctr, debugEndpoint, err := dev.testContainer(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

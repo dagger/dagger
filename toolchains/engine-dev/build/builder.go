@@ -107,6 +107,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	pkgs := []string{
 		"ca-certificates",
+		"mount", "umount", "posix-libc-utils", "coreutils",
 		// for git
 		"git", "openssh-client",
 		// for decompression
@@ -191,7 +192,7 @@ func (build *Builder) CodegenBinary() *dagger.File {
 }
 
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binary("./cmd/engine", true, race)
+	return build.binaryWithSource("./cmd/engine", true, race, build.source.With(EbpfGenerate))
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
@@ -202,8 +203,13 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 	return build.binary("./cmd/dialstdio", false, false)
 }
 
+//nolint:unparam
 func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
-	return build.Go(version, race).
+	return build.binaryWithSource(pkg, version, race, build.source)
+}
+
+func (build *Builder) binaryWithSource(pkg string, version bool, race bool, source *dagger.Directory) *dagger.File {
+	return build.goWithSource(source, version, race).
 		Binary(pkg, dagger.GoBinaryOpts{
 			Platform:  build.platform,
 			NoSymbols: true,
@@ -212,6 +218,10 @@ func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
 }
 
 func (build *Builder) Go(version bool, race bool) *dagger.Go {
+	return build.goWithSource(build.source, version, race)
+}
+
+func (build *Builder) goWithSource(source *dagger.Directory, version bool, race bool) *dagger.Go {
 	var values []string
 	if version && build.version != "" {
 		values = append(values, "github.com/dagger/dagger/engine.Version="+build.version)
@@ -220,10 +230,25 @@ func (build *Builder) Go(version bool, race bool) *dagger.Go {
 		values = append(values, "github.com/dagger/dagger/engine.Tag="+build.tag)
 	}
 	return dag.Go(dagger.GoOpts{
-		Source: build.source,
+		Source: source,
 		Values: values,
 		Race:   race,
 	})
+}
+
+func EbpfGenerate(src *dagger.Directory) *dagger.Directory {
+	return dag.
+		Go(dagger.GoOpts{
+			Source: src,
+			ExtraPackages: []string{
+				"clang",
+				"lld",
+				"libbpf-dev",
+			},
+		}).
+		Env().
+		WithExec([]string{"go", "generate", "./engine/ebpf/..."}).
+		Directory(".")
 }
 
 func (build *Builder) runcBin() *dagger.File {

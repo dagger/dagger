@@ -61,6 +61,7 @@ type EngineDev struct {
 	BuildkitConfig []string // +private
 	LogLevel       string   // +private
 	SubnetNumber   int      // +private
+	EBPFProgs      []string // +private
 
 	Race               bool // +private
 	ClientDockerConfig *dagger.Secret
@@ -72,6 +73,11 @@ func (dev *EngineDev) NetworkCidr() string {
 
 func (dev *EngineDev) IncrementSubnet() *EngineDev {
 	dev.SubnetNumber++
+	return dev
+}
+
+func (dev *EngineDev) WithEBPFProgs(names []string) *EngineDev {
+	dev.EBPFProgs = append(dev.EBPFProgs, names...)
 	return dev
 }
 
@@ -88,6 +94,10 @@ func (dev *EngineDev) WithRace() *EngineDev {
 func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	dev.LogLevel = level
 	return dev
+}
+
+func (dev *EngineDev) sourceWithEbpfObjects() *dagger.Directory {
+	return dev.Source.With(build.EbpfGenerate)
 }
 
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
@@ -166,6 +176,10 @@ func (dev *EngineDev) Container(
 	if err != nil {
 		return nil, err
 	}
+	for _, prog := range dev.EBPFProgs {
+		ctr = ctr.WithEnvVariable("DAGGER_EBPF_PROG_"+strings.ToUpper(prog), "y")
+	}
+
 	ctr = ctr.
 		WithFile(engineJSONPath, cfg).
 		WithFile(engineTOMLPath, bkcfg).
@@ -345,8 +359,26 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
-	withGoGenerate := dag.Go(dagger.GoOpts{Source: dev.Source}).Env().
+func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
+	// ebpf object files are actually expected to only be generated during a build, not
+	// committed, so we remove stubs and real ones before+after go generate
+	base := dev.Source
+	ebpfObjectFiles, err := base.Glob(ctx, "**/*_bpfel.o")
+	if err != nil {
+		return nil, err
+	}
+	if len(ebpfObjectFiles) > 0 {
+		base = base.WithoutFiles(ebpfObjectFiles)
+	}
+
+	withGoGenerate := dag.Go(dagger.GoOpts{
+		Source: dev.Source,
+		ExtraPackages: []string{
+			"clang",
+			"lld",
+			"libbpf-dev",
+		},
+	}).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
@@ -355,8 +387,9 @@ func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
+		WithExec([]string{"find", "engine/ebpf", "-name", "*_bpfel.o", "-delete"}).
 		Directory(".")
-	changes := changes(dev.Source, withGoGenerate, []string{"github.com"})
+	changes := changes(base, withGoGenerate, []string{"github.com"})
 	return changes, nil
 }
 
