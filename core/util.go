@@ -101,7 +101,7 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		// NB: being SUPER cautious for now, since this feels a bit spooky to drop
 		// on the floor. might be worth just implementing HasPBDefinitions for
 		// everything. (would be nice to just skip scalars though.)
-		slog.Warn("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
+		slog.Debug("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
 		return nil, nil
 	}
 }
@@ -599,8 +599,9 @@ func TrimErrPathPrefix(err error, prefix string) error {
 	case *os.LinkError:
 		e.Old = strings.TrimPrefix(e.Old, prefix)
 		e.New = strings.TrimPrefix(e.New, prefix)
+	case nil:
 	default:
-		slog.Warn("TrimErrPathPrefix: unhandled type", "type", fmt.Sprintf("%T", err))
+		slog.Debug("TrimErrPathPrefix: unhandled type", "type", fmt.Sprintf("%T", err))
 	}
 	return err
 }

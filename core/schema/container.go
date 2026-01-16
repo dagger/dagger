@@ -1010,7 +1010,6 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	}
 
 	if args.SkipEntrypoint != nil {
-		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
 		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
 

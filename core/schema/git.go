@@ -469,7 +469,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 	discardGitDir := false
 	if args.KeepGitDir.Valid {
-		slog.Warn("The 'keepGitDir' argument is deprecated. Use `tree`'s `discardGitDir' instead.")
 		discardGitDir = !args.KeepGitDir.Value.Bool()
 	}
 

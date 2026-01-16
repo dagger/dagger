@@ -1047,8 +1047,7 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 
 		res, err := gw.FrontendLLBBridge.Solve(ctx, req, sid)
 		if err != nil {
-			// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
-			bklog.G(ctx).Errorf("solve error: %+v", err)
+			bklog.G(ctx).Errorf("solve error: %v", err)
 			err = includeBuildkitContextCancelledLine(err)
 			return nil, err
 		}

@@ -251,8 +251,8 @@ func (srv *Server) initializeDaggerSession(
 	sess *daggerSession,
 	failureCleanups *cleanups.Cleanups,
 ) error {
-	slog.ExtraDebug("initializing new session", "session", clientMetadata.SessionID)
-	defer slog.ExtraDebug("initialized new session", "session", clientMetadata.SessionID)
+	slog.Info("initializing new session", "session", clientMetadata.SessionID)
+	defer slog.Debug("initialized new session", "session", clientMetadata.SessionID)
 
 	sess.sessionID = clientMetadata.SessionID
 	sess.mainClientCallerID = clientMetadata.ClientID
@@ -320,7 +320,7 @@ func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Conte
 func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession) error {
 	slog := slog.With("session", sess.sessionID)
 
-	slog.Debug("removing session; stopping client services and flushing")
+	slog.Info("removing session; stopping client services and flushing")
 	defer slog.Debug("session removed")
 
 	// check if the local cache needs pruning after session is removed, prune if so
@@ -449,6 +449,14 @@ func (srv *Server) initializeDaggerClient(
 	failureCleanups *cleanups.Cleanups,
 	opts *ClientInitOpts,
 ) error {
+	slog := slog.With(
+		"isMainClient", client.clientID == client.daggerSession.mainClientCallerID,
+		"sessionID", client.daggerSession.sessionID,
+		"clientID", client.clientID,
+		"mainClientID", client.daggerSession.mainClientCallerID,
+	)
+	slog.Info("initializing new client")
+
 	// initialize all the buildkit+session attachable state for the client
 	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
 	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
@@ -878,6 +886,12 @@ func (srv *Server) getOrInitClient(
 			return nil
 		}
 
+		slog := slog.With(
+			"sessionID", sess.sessionID,
+			"clientID", client.clientID,
+		)
+		slog.Info("all client connections closed")
+
 		// if the main client caller has no more active calls, cleanup the whole session
 		if clientID != sess.mainClientCallerID {
 			return nil
@@ -891,7 +905,6 @@ func (srv *Server) getOrInitClient(
 		default:
 			// this should never happen unless there's a bug
 			slog.Error("session state being removed not in initialized state",
-				"session", sess.sessionID,
 				"state", sess.state,
 			)
 			return nil
@@ -974,9 +987,18 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	}
 
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
+		WithField("trace", trace.SpanContextFromContext(ctx).TraceID().String()).
+		WithField("span", trace.SpanContextFromContext(ctx).SpanID().String()).
 		WithField("client_id", clientMetadata.ClientID).
 		WithField("client_hostname", clientMetadata.ClientHostname).
 		WithField("session_id", clientMetadata.SessionID))
+	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With(
+		"client_id", clientMetadata.ClientID,
+		"client_hostname", clientMetadata.ClientHostname,
+		"session_id", clientMetadata.SessionID,
+		"trace", trace.SpanContextFromContext(ctx).TraceID().String(),
+		"span", trace.SpanContextFromContext(ctx).SpanID().String(),
+	))
 
 	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
 	// are checked by gqlgen's handler
@@ -1206,11 +1228,11 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		"clientID", client.clientID,
 		"mainClientID", sess.mainClientCallerID)
 
-	slog.Trace("shutting down server")
-	defer slog.Trace("done shutting down server")
+	slog.Info("client shutdown")
+	defer slog.Debug("client shutdown done")
 
 	if client.clientID == sess.mainClientCallerID {
-		slog.Debug("main client is shutting down")
+		slog.Info("main client is shutting down")
 
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
@@ -1225,7 +1247,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			// create an internal span so we hide exporter children spans which are quite noisy
 			ctx, cInternal := t.Start(ctx, "cache export internal", telemetry.Internal())
 			defer cInternal.End()
-			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
+			bklog.G(ctx).Infof("running cache export for client %s", client.clientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
 			for i, cacheExportCfg := range sess.cacheExporterCfgs {
 				cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup bksession.Group) (remotecache.Exporter, error) {
@@ -1240,7 +1262,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			if err != nil {
 				bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", client.clientID)
 			}
-			bklog.G(ctx).Debugf("done running cache export for client %s", client.clientID)
+			bklog.G(ctx).Infof("done running cache export for client %s", client.clientID)
 		}
 
 		defer func() {

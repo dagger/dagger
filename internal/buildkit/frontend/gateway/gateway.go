@@ -1625,7 +1625,7 @@ func serve(ctx context.Context, grpcServer *grpc.Server, conn net.Conn) {
 		<-ctx.Done()
 		conn.Close()
 	}()
-	bklog.G(ctx).Debugf("serving grpc connection")
+	bklog.G(ctx).Tracef("serving grpc connection")
 	(&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{Handler: grpcServer})
 }
 

@@ -980,7 +980,8 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		}
 
 		if rerr != nil {
-			rerr = gqlErr(rerr, append(idToPath(self.ID()), ast.PathName(sel.Name())))
+			queryPath := append(idToPath(self.ID()), ast.PathName(sel.Name()))
+			rerr = gqlErr(rerr, queryPath)
 		}
 	}()
 

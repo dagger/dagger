@@ -132,7 +132,6 @@ require (
 	github.com/prometheus/procfs v0.17.0
 	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
 	github.com/rs/cors v1.11.1
-	github.com/samber/slog-logrus/v2 v2.5.2
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
 	github.com/sirupsen/logrus v1.9.3
 	github.com/sourcegraph/conc v0.3.0
@@ -316,8 +315,6 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
-	github.com/samber/lo v1.47.0 // indirect
-	github.com/samber/slog-common v0.18.1 // indirect
 	github.com/sasha-s/go-deadlock v0.3.5 // indirect
 	github.com/seccomp/libseccomp-golang v0.10.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.6.0 // indirect
