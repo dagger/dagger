@@ -530,7 +530,7 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	if !engine.IsDevVersion(engineVersion.String()) {
-		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engineVersion))
+		codegenArgs = append(codegenArgs, "--lib-version", engineVersion)
 	}
 
 	selectors := []dagql.Selector{
