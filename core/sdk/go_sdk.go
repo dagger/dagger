@@ -526,12 +526,10 @@ func (sdk *goSDK) baseWithCodegen(
 			Field: "version",
 		},
 	); err != nil {
-		if err != nil {
-			return ctr, fmt.Errorf("failed to get engine version: %w", err)
-		}
+		return ctr, fmt.Errorf("failed to get engine version: %w", err)
 	}
 
-	if !engine.IsDevVersion(string(engineVersion)) {
+	if !engine.IsDevVersion(engineVersion.String()) {
 		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engineVersion))
 	}
 

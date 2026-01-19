@@ -202,7 +202,7 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 		PackageImport: path.Join(goMod.Module.Mod.Path, packageImport),
 
 		// Assume the utility package are from the remote library but this
-		// will be overriden to packageImport is it's a dev engine.
+		// will be overridden to packageImport is it's a dev engine.
 		UtilityPkgImport: "dagger.io/dagger",
 	}, needsRegen, nil
 }
