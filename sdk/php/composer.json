@@ -6,7 +6,7 @@
     "license": "Apache-2.0",
     "minimum-stability": "stable",
     "require": {
-        "php": ">=8.2",
+        "php": ">=8.4",
         "carnage/php-graphql-client": "^1.14.1",
         "jms/serializer": "^3.32.5",
         "nette/php-generator": "^4.2.0",
