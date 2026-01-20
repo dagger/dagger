@@ -107,7 +107,110 @@ Currently, only Dagger modules with no required constructor arguments are suppor
 
 ### Connect to external MCP servers from Dagger
 
-Support for connecting to external MCP servers from Dagger is coming soon.
+To connect with MCP servers, You can use `LLM.withMCPServer` to attach them to `LLM`. You will need to supply MCP Servers you want to use as `Service`.
+
+Following is an example adds MCP Language Server to `LLM`.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+mcpServer := dag.Container().
+    From("golang").
+    WithExec([]string{"go", "install", "golang.org/x/tools/gopls@latest"}).
+    WithExec([]string{"go", "install", "github.com/isaacphi/mcp-language-server@latest"}).
+    WithWorkdir("/src").
+    AsService(dagger.ContainerAsServiceOpts{Args: []string{"mcp-language-server", "--workspace", "/src", "--lsp", "gopls"}})
+
+work := dag.LLM().
+		WithEnv(environment).
+		WithMCPServer("lsp", mcpServer).
+		WithPrompt("yout llm prompt")
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+mcp_server = (
+    dag.container()
+    .from_("golang")
+    .with_exec(["go", "install", "golang.org/x/tools/gopls@latest"])
+    .with_exec(["go", "install", "github.com/isaacphi/mcp-language-server@latest"])
+    .with_workdir("/src")
+    .as_service(args=["mcp-language-server", "--workspace", "/src", "--lsp", "gopls"])
+)
+
+work = (
+    dag.llm()
+    .with_env(environment)
+    .with_mcp_server("lsp", mcp_server)
+    .with_prompt("your llm prompt")
+)
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const mcpServer = dag
+  .container()
+  .from("golang")
+  .withExec(["go", "install", "golang.org/x/tools/gopls@latest"])
+  .withExec(["go", "install", "github.com/isaacphi/mcp-language-server@latest"])
+  .withWorkdir("/src")
+  .asService({
+    args: ["mcp-language-server", "--workspace", "/src", "--lsp", "gopls"],
+  })
+
+const work = dag
+  .llm()
+  .withEnv(environment)
+  .withMCPServer("lsp", mcpServer)
+  .withPrompt("your llm prompt")
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php
+$mcpServer = dag()
+    ->container()
+    ->from('golang')
+    ->withExec(['go', 'install', 'golang.org/x/tools/gopls@latest'])
+    ->withExec(['go', 'install', 'github.com/isaacphi/mcp-language-server@latest'])
+    ->withWorkdir('/src')
+    ->asService(args: ['mcp-language-server', '--workspace', '/src', '--lsp', 'gopls']);
+
+$work = dag()
+    ->llm()
+    ->withEnv($environment)
+    ->withMCPServer('lsp', $mcpServer)
+    ->withPrompt('your llm prompt');
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java
+Service mcpServer = dag().container()
+    .from("golang")
+    .withExec(List.of("go", "install", "golang.org/x/tools/gopls@latest"))
+    .withExec(List.of("go", "install", "github.com/isaacphi/mcp-language-server@latest"))
+    .withWorkdir("/src")
+    .asService(
+        new Container.AsServiceArguments()
+            .withArgs(List.of("mcp-language-server", "--workspace", "/src", "--lsp", "gopls")));
+
+var work = dag()
+    .llm()
+    .withEnv(environment)
+    .withMCPServer("lsp", mcpServer)
+    .withPrompt("your llm prompt");
+```
+
+</TabItem>
+</Tabs>
 
 ## Prompt mode
 
