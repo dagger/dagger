@@ -2080,22 +2080,26 @@ func (TypescriptSuite) TestContainerDefaultValue(ctx context.Context, t *testctx
 		With(sdkSource("typescript", `import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
-export class Test {
+class Test {
+  ctr: Container
+
+  constructor(ctr?: Container) {
+    this.ctr = ctr ?? dag.container().from("alpine:3.19")
+  }
+
   @func()
-  async testWithDefaultContainer(
-    ctr: Container = dag.container().from("alpine:latest"),
-  ): Promise<string> {
-    return ctr.withExec(["cat", "/etc/alpine-release"]).stdout()
+  async version(): Promise<string> {
+    return this.ctr.withExec(["cat", "/etc/alpine-release"]).stdout()
   }
 }
 `))
 
-	out, err := modGen.With(daggerCall("test-with-default-container")).Stdout(ctx)
+	out, err := modGen.With(daggerCall("version")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, ".") // Alpine version contains a dot like "3.19.0"
+	require.Contains(t, out, "3.19") // Alpine version contains "3.19"
 
-	// Test that we can override the default
-	out2, err := modGen.With(daggerCall("test-with-default-container", "--ctr=alpine:3.18")).Stdout(ctx)
+	// Test that we can override the default via constructor
+	out2, err := modGen.With(daggerCall("--ctr=alpine:3.18", "version")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out2, ".")
+	require.Contains(t, out2, "3.18")
 }
