@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/transfer/archive"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core/containersource"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -502,7 +503,6 @@ func (mnts ContainerMounts) Replace(newMnt ContainerMount) (ContainerMounts, err
 }
 
 func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
-	fmt.Printf("ACB FromRefString %q called\n", addr)
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image address %s: %w", addr, err)
@@ -546,15 +546,15 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 	return ctr.Self(), nil
 }
 
-func (container *Container) SetFSFromCanonicalRef(
+// FromCanonicalRef implements the dagop portion of the "from" command: it fetches an image, and updates the root fs
+// to point to a snapshot of the referenced image
+func (container *Container) FromCanonicalRef(
 	ctx context.Context,
 	refName reference.Canonical,
 	// cfgBytes is optional, will be retrieved if not provided
 	cfgBytes []byte,
 ) (*Container, error) {
 	container = container.Clone()
-
-	fmt.Printf("ACB SetFSFromCanonicalRef %q called\n", refName)
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -565,24 +565,37 @@ func (container *Container) SetFSFromCanonicalRef(
 
 	refStr := refName.String()
 
-	sm := query.SourceManager()
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
-	id, err := sm.Identifier(&pb.Op_Source{
-		Source: &pb.SourceOp{
-			Identifier: "docker-image://" + refStr,
-		},
-	},
-		&pb.Platform{
-			Architecture: platform.Architecture,
-			OS:           platform.OS,
-			Variant:      platform.Variant,
-			OSVersion:    platform.OSVersion,
-			OSFeatures:   platform.OSFeatures,
-		})
+	hsm, err := containersource.NewSource(containersource.SourceOpt{
+		Snapshotter:   bk.Worker.Snapshotter,
+		ContentStore:  bk.Worker.ContentStore(),
+		ImageStore:    bk.Worker.ImageStore,
+		CacheAccessor: query.BuildkitCache(),
+		RegistryHosts: bk.Worker.RegistryHosts,
+		ResolverType:  containersource.ResolverTypeRegistry,
+		LeaseManager:  bk.Worker.LeaseManager(),
+	})
 	if err != nil {
 		return nil, err
 	}
-	src, err := sm.Resolve(ctx, id, query.BuildkitSession(), nil)
+
+	attrs := map[string]string{}
+	id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
+		Architecture: platform.Architecture,
+		OS:           platform.OS,
+		Variant:      platform.Variant,
+		OSVersion:    platform.OSVersion,
+		OSFeatures:   platform.OSFeatures,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
 	if err != nil {
 		return nil, err
 	}
@@ -591,22 +604,6 @@ func (container *Container) SetFSFromCanonicalRef(
 	if !ok {
 		return nil, fmt.Errorf("no buildkit session group found")
 	}
-
-	// TODO: do we need any of this in our caching logic?
-	// it turns out we need to call CacheKey() before calling snapshot (even if we don't use the returned results)
-	index := 0 // TODO will this ever be different?
-	k, pin, cacheOpts, done, err := src.CacheKey(ctx, bkSessionGroup, index)
-	if err != nil {
-		return nil, err
-	}
-	_ = k
-	_ = pin
-	_ = cacheOpts
-	_ = done
-	// dgst := digest.FromBytes([]byte("buildkit.source.v0.hacked" + ":" + k))
-	// if strings.HasPrefix(k, "session:") {
-	// 	dgst = digest.Digest("random:" + dgst.Encoded())
-	// }
 
 	ref, err := src.Snapshot(ctx, bkSessionGroup)
 	if err != nil {
@@ -636,14 +633,14 @@ func (container *Container) SetFSFromCanonicalRef(
 	return container, nil
 }
 
-func (container *Container) SetMetadataFromCanonicalRef(
+// FromCanonicalRefUpdateConfig is must be called outside of a dagop context, and is responsible for fetching the image config
+// and applying it to the container's metadata
+func (container *Container) FromCanonicalRefUpdateConfig(
 	ctx context.Context,
 	refName reference.Canonical,
 	// cfgBytes is optional, will be retrieved if not provided
 	cfgBytes []byte,
 ) (*Container, error) {
-	fmt.Printf("ACB SetMetadataFromCanonicalRef %q called\n", refName)
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -2861,9 +2858,6 @@ func UpdatedRootFS(
 	updatedRootfs, err := dagql.NewObjectResultForID(dir, curSrv, rootfsID)
 	if err != nil {
 		return nil, err
-	}
-	if updatedRootfs.Self().Dir == "" {
-		fmt.Printf("ACB updatedRootfs dir is empty\n")
 	}
 	return &updatedRootfs, nil
 }

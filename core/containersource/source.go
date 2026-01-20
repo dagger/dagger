@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/containerd/containerd/v2/core/content"
-	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/remotes"
@@ -17,11 +16,9 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/source"
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
-	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
 	"github.com/dagger/dagger/internal/buildkit/util/pull"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver"
@@ -30,9 +27,6 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
-
-// TODO: break apart containerd specifics like contentstore so the resolver
-// code can be used with any implementation
 
 type ResolverType int
 
@@ -44,7 +38,6 @@ const (
 type SourceOpt struct {
 	Snapshotter   snapshot.Snapshotter
 	ContentStore  content.Store
-	Applier       diff.Applier
 	CacheAccessor cache.Accessor
 	ImageStore    images.Store // optional
 	RegistryHosts docker.RegistryHosts
@@ -54,10 +47,7 @@ type SourceOpt struct {
 
 type Source struct {
 	SourceOpt
-	g flightcontrol.Group[*resolveImageResult]
 }
-
-var _ source.Source = &Source{}
 
 func NewSource(opt SourceOpt) (*Source, error) {
 	is := &Source{
@@ -74,7 +64,7 @@ func (is *Source) Schemes() []string {
 	return []string{srctypes.DockerImageScheme}
 }
 
-func (is *Source) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
+func (is *Source) Identifier(ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
 	if is.ResolverType == ResolverTypeOCILayout {
 		return is.ociIdentifier(ref, attrs, platform)
 	}
@@ -82,7 +72,13 @@ func (is *Source) Identifier(scheme, ref string, attrs map[string]string, platfo
 	return is.registryIdentifier(ref, attrs, platform)
 }
 
-func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, vtx solver.Vertex) (source.SourceInstance, error) {
+// SourceInstance represents a cacheable vertex created by a Source.
+type SourceInstance interface {
+	// Snapshot creates a cache ref for the instance. May return a nil ref if source points to empty content, e.g. image without any layers.
+	Snapshot(ctx context.Context, g session.Group) (cache.ImmutableRef, error)
+}
+
+func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager) (SourceInstance, error) {
 	var (
 		p          *puller
 		platform   = platforms.DefaultSpec()
@@ -142,7 +138,6 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 		RecordType:     recordType,
 		Ref:            ref.String(),
 		SessionManager: sm,
-		vtx:            vtx,
 		store:          store,
 		layerLimit:     layerLimit,
 	}
@@ -155,15 +150,10 @@ func (is *Source) ResolveImageConfig(ctx context.Context, ref string, opt source
 		tracing.FinishWithError(span, retErr)
 	}()
 
-	key := ref
 	var (
-		rm    resolver.ResolveMode
 		rslvr remotes.Resolver
 		err   error
 	)
-	if platform := opt.Platform; platform != nil {
-		key += platforms.Format(*platform)
-	}
 
 	switch is.ResolverType {
 	case ResolverTypeRegistry:
@@ -171,7 +161,7 @@ func (is *Source) ResolveImageConfig(ctx context.Context, ref string, opt source
 		if iopt == nil {
 			return "", nil, errors.Errorf("missing imageopt for resolve")
 		}
-		rm, err = resolver.ParseImageResolveMode(iopt.ResolveMode)
+		rm, err := resolver.ParseImageResolveMode(iopt.ResolveMode)
 		if err != nil {
 			return "", nil, err
 		}
@@ -181,26 +171,13 @@ func (is *Source) ResolveImageConfig(ctx context.Context, ref string, opt source
 		if iopt == nil {
 			return "", nil, errors.Errorf("missing ocilayoutopt for resolve")
 		}
-		rm = resolver.ResolveModeForcePull
 		rslvr = getOCILayoutResolver(iopt.Store, sm, g)
 	}
-	key += rm.String()
-	res, err := is.g.Do(ctx, key, func(ctx context.Context) (*resolveImageResult, error) {
-		dgst, dt, err := imageutil.Config(ctx, ref, rslvr, is.ContentStore, is.LeaseManager, opt.Platform)
-		if err != nil {
-			return nil, err
-		}
-		return &resolveImageResult{dgst: dgst, dt: dt}, nil
-	})
+	dgst, dt, err := imageutil.Config(ctx, ref, rslvr, is.ContentStore, is.LeaseManager, opt.Platform)
 	if err != nil {
 		return "", nil, err
 	}
-	return res.dgst, res.dt, nil
-}
-
-type resolveImageResult struct {
-	dgst digest.Digest
-	dt   []byte
+	return dgst, dt, nil
 }
 
 func (is *Source) registryIdentifier(ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {

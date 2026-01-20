@@ -18,10 +18,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/session"
-	"github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/solver/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/util/estargz"
-	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
@@ -44,11 +42,9 @@ type puller struct {
 	Ref            string
 	SessionManager *session.Manager
 	layerLimit     *int
-	vtx            solver.Vertex
 	ResolverType
 	store sourceresolver.ResolveImageConfigOptStore
 
-	g                flightcontrol.Group[struct{}]
 	cacheKeyErr      error
 	cacheKeyDone     bool
 	releaseTmpLeases func(context.Context) error
@@ -83,7 +79,8 @@ func mainManifestKey(desc ocispecs.Descriptor, platform ocispecs.Platform, layer
 	return digest.FromBytes(dt), nil
 }
 
-func (p *puller) CacheKey(ctx context.Context, g session.Group, index int) (cacheKey string, imgDigest string, cacheOpts solver.CacheOpts, cacheDone bool, err error) {
+//nolint:gocyclo
+func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.ImmutableRef, err error) {
 	var getResolver pull.SessionResolver
 	switch p.ResolverType {
 	case ResolverTypeRegistry:
@@ -102,116 +99,78 @@ func (p *puller) CacheKey(ctx context.Context, g session.Group, index int) (cach
 	// be canceled before the progress output is complete
 	progressFactory := progress.FromContext(ctx)
 
-	_, err = p.g.Do(ctx, "", func(ctx context.Context) (_ struct{}, err error) {
-		if p.cacheKeyErr != nil || p.cacheKeyDone {
-			return struct{}{}, p.cacheKeyErr
+	if p.cacheKeyErr != nil || p.cacheKeyDone {
+		return nil, p.cacheKeyErr
+	}
+	defer func() {
+		if !errdefs.IsCanceled(ctx, err) {
+			p.cacheKeyErr = err
 		}
-		defer func() {
-			if !errdefs.IsCanceled(ctx, err) {
-				p.cacheKeyErr = err
-			}
-		}()
-		ctx, done, err := leaseutil.WithLease(ctx, p.LeaseManager, leases.WithExpiration(5*time.Minute), leaseutil.MakeTemporary)
-		if err != nil {
-			return struct{}{}, err
-		}
-		p.releaseTmpLeases = done
-		defer imageutil.AddLease(done)
-
-		resolveProgressDone := progress.OneOff(ctx, "resolve "+p.Src.String())
-		defer func() {
-			resolveProgressDone(err)
-		}()
-
-		p.manifest, err = p.PullManifests(ctx, getResolver)
-		if err != nil {
-			return struct{}{}, err
-		}
-
-		if ll := p.layerLimit; ll != nil {
-			if *ll > len(p.manifest.Descriptors) {
-				return struct{}{}, errors.Errorf("layer limit %d is greater than the number of layers in the image %d", *ll, len(p.manifest.Descriptors))
-			}
-			p.manifest.Descriptors = p.manifest.Descriptors[:*ll]
-		}
-
-		if len(p.manifest.Descriptors) > 0 {
-			progressController := &controller.Controller{
-				WriterFactory: progressFactory,
-			}
-			if p.vtx != nil {
-				progressController.Digest = p.vtx.Digest()
-				progressController.Name = p.vtx.Name()
-				progressController.ProgressGroup = p.vtx.Options().ProgressGroup
-			}
-
-			p.descHandlers = cache.DescHandlers(make(map[digest.Digest]*cache.DescHandler))
-			for i, desc := range p.manifest.Descriptors {
-				labels := snapshots.FilterInheritedLabels(desc.Annotations)
-				if labels == nil {
-					labels = make(map[string]string)
-				}
-				maps.Copy(labels, estargz.SnapshotLabels(p.manifest.Ref, p.manifest.Descriptors, i))
-
-				p.descHandlers[desc.Digest] = &cache.DescHandler{
-					Provider:       p.manifest.Provider,
-					Progress:       progressController,
-					SnapshotLabels: labels,
-					Annotations:    desc.Annotations,
-					Ref:            p.manifest.Ref,
-				}
-			}
-		}
-
-		desc := p.manifest.MainManifestDesc
-		k, err := mainManifestKey(desc, p.Platform, p.layerLimit)
-		if err != nil {
-			return struct{}{}, err
-		}
-		p.manifestKey = k.String()
-
-		dt, err := content.ReadBlob(ctx, p.ContentStore, p.manifest.ConfigDesc)
-		if err != nil {
-			return struct{}{}, err
-		}
-		ck, err := cacheKeyFromConfig(dt, p.layerLimit)
-		if err != nil {
-			return struct{}{}, err
-		}
-		p.configKey = ck.String()
-		p.cacheKeyDone = true
-		return struct{}{}, nil
-	})
+	}()
+	ctx, done, err := leaseutil.WithLease(ctx, p.LeaseManager, leases.WithExpiration(5*time.Minute), leaseutil.MakeTemporary)
 	if err != nil {
-		return "", "", nil, false, err
+		return nil, err
+	}
+	p.releaseTmpLeases = done
+	defer imageutil.AddLease(done)
+
+	resolveProgressDone := progress.OneOff(ctx, "resolve "+p.Src.String())
+	defer func() {
+		resolveProgressDone(err)
+	}()
+
+	p.manifest, err = p.PullManifests(ctx, getResolver)
+	if err != nil {
+		return nil, err
 	}
 
-	cacheOpts = solver.CacheOpts(make(map[interface{}]interface{}))
-	for dgst, descHandler := range p.descHandlers {
-		cacheOpts[cache.DescHandlerKey(dgst)] = descHandler
+	if ll := p.layerLimit; ll != nil {
+		if *ll > len(p.manifest.Descriptors) {
+			return nil, errors.Errorf("layer limit %d is greater than the number of layers in the image %d", *ll, len(p.manifest.Descriptors))
+		}
+		p.manifest.Descriptors = p.manifest.Descriptors[:*ll]
 	}
 
-	cacheDone = index > 0
-	if index == 0 || p.configKey == "" {
-		return p.manifestKey, p.manifest.MainManifestDesc.Digest.String(), cacheOpts, cacheDone, nil
-	}
-	return p.configKey, p.manifest.MainManifestDesc.Digest.String(), cacheOpts, cacheDone, nil
-}
+	if len(p.manifest.Descriptors) > 0 {
+		progressController := &controller.Controller{
+			WriterFactory: progressFactory,
+		}
 
-func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.ImmutableRef, err error) {
-	var getResolver pull.SessionResolver
-	switch p.ResolverType {
-	case ResolverTypeRegistry:
-		resolver := resolver.DefaultPool.GetResolver(p.RegistryHosts, p.Ref, "pull", p.SessionManager, g).WithImageStore(p.ImageStore, p.Mode)
-		p.Puller.Resolver = resolver
-		getResolver = func(g session.Group) remotes.Resolver { return resolver.WithSession(g) }
-	case ResolverTypeOCILayout:
-		resolver := getOCILayoutResolver(p.store, p.SessionManager, g)
-		p.Puller.Resolver = resolver
-		// OCILayout has no need for session
-		getResolver = func(g session.Group) remotes.Resolver { return resolver }
-	default:
+		p.descHandlers = cache.DescHandlers(make(map[digest.Digest]*cache.DescHandler))
+		for i, desc := range p.manifest.Descriptors {
+			labels := snapshots.FilterInheritedLabels(desc.Annotations)
+			if labels == nil {
+				labels = make(map[string]string)
+			}
+			maps.Copy(labels, estargz.SnapshotLabels(p.manifest.Ref, p.manifest.Descriptors, i))
+
+			p.descHandlers[desc.Digest] = &cache.DescHandler{
+				Provider:       p.manifest.Provider,
+				Progress:       progressController,
+				SnapshotLabels: labels,
+				Annotations:    desc.Annotations,
+				Ref:            p.manifest.Ref,
+			}
+		}
 	}
+
+	desc := p.manifest.MainManifestDesc
+	k, err := mainManifestKey(desc, p.Platform, p.layerLimit)
+	if err != nil {
+		return nil, err
+	}
+	p.manifestKey = k.String()
+
+	dt, err := content.ReadBlob(ctx, p.ContentStore, p.manifest.ConfigDesc)
+	if err != nil {
+		return nil, err
+	}
+	ck, err := cacheKeyFromConfig(dt, p.layerLimit)
+	if err != nil {
+		return nil, err
+	}
+	p.configKey = ck.String()
+	p.cacheKeyDone = true
 
 	if len(p.manifest.Descriptors) == 0 {
 		return nil, nil
@@ -236,7 +195,7 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 		current, err = p.CacheAccessor.GetByBlob(ctx, layerDesc, parent,
 			p.descHandlers, cache.WithImageRef(p.manifest.Ref))
 		if parent != nil {
-			parent.Release(context.TODO())
+			parent.Release(context.WithoutCancel(ctx))
 		}
 		if err != nil {
 			return nil, err

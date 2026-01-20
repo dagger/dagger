@@ -62,7 +62,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
 			),
 
-		dagql.NodeFunc("from", s.from).
+		dagql.NodeFuncWithCacheKey("from", s.from, s.fromCacheKey).
 			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
 			Args(
 				dagql.Arg("address").Doc(
@@ -804,6 +804,32 @@ type containerFromArgs struct {
 	ContainerDagOpInternalArgs
 }
 
+func (s *containerSchema) fromCacheKey(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerFromArgs,
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	refName, err := reference.ParseNormalizedNamed(args.Address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
+	}
+
+	var imageRef string
+	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
+		imageRef = "digest:" + string(refName.Digest())
+	} else {
+		imageRef = args.Address
+	}
+
+	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+	resp.CacheKey.CallKey = hashutil.HashStrings(
+		parent.ID().Digest().String(),
+		imageRef,
+	).String()
+	return resp, nil
+}
+
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -828,7 +854,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
 		if args.InDagOp() {
-			ctr, err := parent.Self().SetFSFromCanonicalRef(ctx, refName, nil)
+			ctr, err := parent.Self().FromCanonicalRef(ctx, refName, nil)
 			if err != nil {
 				return inst, err
 			}
@@ -841,13 +867,14 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 
 		// Note that this must be done outside the dagop context, otherwise the image config data will be lost
-		ctr.SetMetadataFromCanonicalRef(ctx, refName, nil)
+		ctr.FromCanonicalRefUpdateConfig(ctx, refName, nil)
 
 		if ctr.FS.Self().Dir == "" {
-			// FIXME The dir is set under SetFSFromCanonicalRef; however it's done inside a dagop, which doesn't propigate back here
-			// As a result, if SetFSFromCanonicalRef sets it to anything besides a "/", it will preemptively return an error.
+			// FIXME The dir is set under FromCanonicalRef; however it's done inside a dagop, which doesn't propigate back here
+			// As a result, if FromCanonicalRef sets it to anything besides a "/", it will preemptively return an error.
+			// Ideally, we should simply return an error here when this is empty (indicating it failed to propigate)
+			// however, for the time being we will just set it to the root dir.
 			ctr.FS.Self().Dir = "/"
-			// return inst, fmt.Errorf("containerSchema.from: dir path is empty, shouldnt happen")
 		}
 
 		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
