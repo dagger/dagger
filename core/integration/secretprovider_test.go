@@ -348,6 +348,147 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 	require.Equal(t, secretValue, result)
 }
 
+func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Start LocalStack container for testing AWS services
+	localstack, err := c.Container().
+		From("localstack/localstack:latest").
+		WithEnvVariable("SERVICES", "secretsmanager,ssm").
+		WithEnvVariable("DEBUG", "1").
+		WithExposedPort(4566).
+		AsService().Start(ctx)
+	require.NoError(t, err)
+
+	// Wait for LocalStack to be ready and set up AWS CLI base container
+	awsCLI := c.Container().
+		From("alpine:latest").
+		WithExec([]string{"apk", "add", "--no-cache", "aws-cli", "curl"}).
+		WithServiceBinding("localstack", localstack).
+		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
+		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
+		WithEnvVariable("AWS_REGION", "us-east-1").
+		WithExec([]string{"sh", "-c", "sleep 10 && curl -v http://localstack:4566/_localstack/health || true"}) // Wait and test LocalStack
+
+	// Create test secrets in Secrets Manager
+	secretValue := "secret" + identity.NewID()
+	_, err = awsCLI.
+		WithExec([]string{
+			"aws", "secretsmanager", "create-secret",
+			"--endpoint-url", "http://localstack:4566",
+			"--name", "test/string-secret",
+			"--secret-string", secretValue,
+		}).Sync(ctx)
+	require.NoError(t, err)
+
+	// Create JSON secret for field extraction test
+	jsonSecret := fmt.Sprintf(`{"username":"admin","password":"%s"}`, secretValue)
+	_, err = awsCLI.
+		WithExec([]string{
+			"aws", "secretsmanager", "create-secret",
+			"--endpoint-url", "http://localstack:4566",
+			"--name", "test/json-secret",
+			"--secret-string", jsonSecret,
+		}).Sync(ctx)
+	require.NoError(t, err)
+
+	// Create test parameters in Parameter Store
+	paramValue := "param" + identity.NewID()
+	_, err = awsCLI.
+		WithExec([]string{
+			"aws", "ssm", "put-parameter",
+			"--endpoint-url", "http://localstack:4566",
+			"--name", "/test/parameter",
+			"--value", paramValue,
+			"--type", "SecureString",
+		}).Sync(ctx)
+	require.NoError(t, err)
+
+	// Container for running Dagger queries
+	ctr := c.Container().
+		From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithServiceBinding("localstack", localstack).
+		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
+		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
+		WithEnvVariable("AWS_REGION", "us-east-1").
+		WithEnvVariable("AWS_ENDPOINT_URL", "http://localstack:4566")
+
+	// Test 1: Secrets Manager string secret
+	out, err := fetchSecret(
+		ctx,
+		ctr,
+		"aws://test/string-secret",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, out)
+
+	// Test 2: Secrets Manager JSON field extraction
+	out, err = fetchSecret(
+		ctx,
+		ctr,
+		"aws://test/json-secret?field=password",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, out)
+
+	// Test 3: Parameter Store parameter
+	out, err = fetchSecret(
+		ctx,
+		ctr,
+		"aws:///test/parameter",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, paramValue, out)
+
+	// Test 4: Secret not found error
+	_, err = fetchSecret(
+		ctx,
+		ctr,
+		"aws://nonexistent/secret",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	requireErrOut(t, err, "secret not found")
+
+	// Test 5: Parameter not found error
+	_, err = fetchSecret(
+		ctx,
+		ctr,
+		"aws:///nonexistent/parameter",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	requireErrOut(t, err, "parameter not found")
+
+	// Test 6: Invalid JSON field extraction
+	_, err = fetchSecret(
+		ctx,
+		ctr,
+		"aws://test/json-secret?field=nonexistent",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	requireErrOut(t, err, "not found in JSON secret")
+
+	// Test 7: Caching - retrieve same secret twice
+	out1, err := fetchSecret(
+		ctx,
+		ctr,
+		"aws://test/string-secret",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	out2, err := fetchSecret(
+		ctx,
+		ctr,
+		"aws://test/string-secret",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, out1, out2)
+}
+
 func fetchSecret(ctx context.Context, ctr *dagger.Container, url string, opts dagger.ContainerWithExecOpts) (string, error) {
 	query := fmt.Sprintf(`{secret(uri: %q) {plaintext}}`, url)
 	opts.Stdin = query
