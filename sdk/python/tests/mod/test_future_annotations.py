@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
+from typing_extensions import Doc
+
 import dagger
 from dagger import DefaultPath, Deprecated, Ignore, Name
 from dagger.mod import Module
-from typing_extensions import Doc
 
 
 def test_default_path_with_future_annotations():
