@@ -193,6 +193,6 @@ func envFileContentHashWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 		if err != nil {
 			return inst, err
 		}
-		return dop.WithObjectDigest(dgst), nil
+		return dop.WithContentDigest(dgst), nil
 	}
 }

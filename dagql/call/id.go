@@ -134,6 +134,13 @@ func (id *ID) Digest() digest.Digest {
 	return digest.Digest(id.pb.Digest)
 }
 
+func (id *ID) ContentDigest() digest.Digest {
+	if id == nil {
+		return ""
+	}
+	return digest.Digest(id.pb.ContentDigest)
+}
+
 // Inputs returns the ID digests referenced by this ID, starting with the
 // receiver, if any.
 func (id *ID) Inputs() ([]digest.Digest, error) {
@@ -292,6 +299,16 @@ func WithCustomDigest(dig digest.Digest) IDOpt {
 	}
 }
 
+func WithContentDigest(dig digest.Digest) IDOpt {
+	return func(id *ID) {
+		if dig != "" {
+			id.pb.ContentDigest = dig.String()
+		} else {
+			id.pb.ContentDigest = ""
+		}
+	}
+}
+
 func WithArgs(args ...*Argument) IDOpt {
 	return func(id *ID) {
 		id.args = args
@@ -446,24 +463,36 @@ func (id *ID) shallowClone() *ID {
 		Digest:         cp.pb.Digest,
 		View:           cp.pb.View,
 		IsCustomDigest: cp.pb.IsCustomDigest,
+		ContentDigest:  cp.pb.ContentDigest,
 	}
 	return &cp
 }
 
 func (id *ID) apply(opts ...IDOpt) *ID {
+	origDgst := id.pb.Digest
+	origIsCustomDigest := id.pb.IsCustomDigest
+
 	// clear any existing digest; must be re-applied each time
 	id.pb.Digest = ""
 	id.pb.IsCustomDigest = false
 	for _, opt := range opts {
 		opt(id)
 	}
+
 	if !id.HasCustomDigest() {
-		var err error
-		id.pb.Digest, err = id.calcDigest()
-		if err != nil {
-			// something has to be deeply wrong if we can't
-			// marshal proto and hash the bytes
-			panic(err)
+		if origIsCustomDigest {
+			// retain the original custom digest
+			id.pb.Digest = origDgst
+			id.pb.IsCustomDigest = true
+		} else {
+			// recompute automatic digest
+			var err error
+			id.pb.Digest, err = id.calcDigest()
+			if err != nil {
+				// something has to be deeply wrong if we can't
+				// marshal proto and hash the bytes
+				panic(err)
+			}
 		}
 	}
 	return id
@@ -478,7 +507,6 @@ func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 		return
 	}
 	callsByDigest[id.pb.Digest] = id.pb
-
 	id.receiver.gatherCalls(callsByDigest)
 	id.module.gatherCalls(callsByDigest)
 	for _, arg := range id.args {
@@ -561,8 +589,10 @@ func (id *ID) decode(
 	return nil
 }
 
-// presumes that id.pb.Digest are NOT set already,
-// otherwise those values will be incorrectly included in the digest
+// calcDigest calculates the recipe digest for the ID. Does not include the
+// contentDigest field. For references to other IDs (e.g. receiver, arguments),
+// it prefers their content digest if available, otherwise falls back to their
+// regular digest.
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
 		return "", nil
@@ -577,8 +607,15 @@ func (id *ID) calcDigest() (string, error) {
 	h := hashutil.NewHasher()
 
 	// ReceiverDigest
-	h = h.WithString(id.pb.ReceiverDigest).
-		WithDelim()
+	// prefer content digest if available, otherwise use regular digest
+	if id.receiver != nil {
+		if id.receiver.pb.ContentDigest != "" {
+			h = h.WithString(id.receiver.pb.ContentDigest)
+		} else {
+			h = h.WithString(id.receiver.pb.Digest)
+		}
+	}
+	h = h.WithDelim()
 
 	// Type
 	var curType *callpbv1.Type
@@ -598,7 +635,10 @@ func (id *ID) calcDigest() (string, error) {
 		WithDelim()
 
 	// Args
-	for _, arg := range id.pb.Args {
+	for _, arg := range id.args {
+		if arg.isSensitive {
+			continue
+		}
 		h, err = AppendArgumentBytes(arg, h)
 		if err != nil {
 			h.Close()
@@ -629,71 +669,76 @@ func (id *ID) calcDigest() (string, error) {
 }
 
 // AppendArgumentBytes appends a binary representation of the given argument to the given byte slice.
-func AppendArgumentBytes(arg *callpbv1.Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
-	h = h.WithString(arg.Name)
+func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
+	h = h.WithString(arg.pb.Name)
 
-	h, err := appendLiteralBytes(arg.Value, h)
+	h, err := appendLiteralBytes(arg.value, h)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
+		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
 	}
 
 	return h, nil
 }
 
 // appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
-func appendLiteralBytes(lit *callpbv1.Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
+func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions
-	switch v := lit.Value.(type) {
-	case *callpbv1.Literal_CallDigest:
+	switch v := lit.(type) {
+	case *LiteralID:
 		const prefix = '0'
-		h = h.WithByte(prefix).
-			WithString(v.CallDigest)
-	case *callpbv1.Literal_Null:
+		h = h.WithByte(prefix)
+		// prefer content digest if available
+		if v.id.pb.ContentDigest != "" {
+			h = h.WithString(v.id.pb.ContentDigest)
+		} else {
+			h = h.WithString(v.id.pb.Digest)
+		}
+	case *LiteralNull:
 		const prefix = '1'
 		h = h.WithByte(prefix)
-		if v.Null {
+		if v.pbVal.Null {
 			h = h.WithByte(1)
 		} else {
 			h = h.WithByte(2)
 		}
-	case *callpbv1.Literal_Bool:
+	case *LiteralBool:
 		const prefix = '2'
 		h = h.WithByte(prefix)
-		if v.Bool {
+		if v.pbVal.Bool {
 			h = h.WithByte(1)
 		} else {
 			h = h.WithByte(2)
 		}
-	case *callpbv1.Literal_Enum:
+	case *LiteralEnum:
 		const prefix = '3'
 		h = h.WithByte(prefix).
-			WithString(v.Enum)
-	case *callpbv1.Literal_Int:
+			WithString(v.pbVal.Enum)
+	case *LiteralInt:
 		const prefix = '4'
 		h = h.WithByte(prefix).
-			WithInt64(v.Int)
-	case *callpbv1.Literal_Float:
+			WithInt64(v.pbVal.Int)
+	case *LiteralFloat:
 		const prefix = '5'
 		h = h.WithByte(prefix).
-			WithFloat64(v.Float)
-	case *callpbv1.Literal_String_:
+			WithFloat64(v.pbVal.Float)
+	case *LiteralString:
 		const prefix = '6'
 		h = h.WithByte(prefix).
-			WithString(v.String_)
-	case *callpbv1.Literal_List:
+			WithString(v.pbVal.String_)
+	case *LiteralList:
 		const prefix = '7'
 		h = h.WithByte(prefix)
-		for _, elem := range v.List.Values {
+		for _, elem := range v.values {
 			h, err = appendLiteralBytes(elem, h)
 			if err != nil {
 				return nil, err
 			}
 		}
-	case *callpbv1.Literal_Object:
+	case *LiteralObject:
 		const prefix = '8'
 		h = h.WithByte(prefix)
-		for _, arg := range v.Object.Values {
+		for _, arg := range v.values {
 			h, err = AppendArgumentBytes(arg, h)
 			if err != nil {
 				return nil, err

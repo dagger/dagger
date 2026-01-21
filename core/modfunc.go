@@ -584,11 +584,22 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 
 		for _, arg := range ctxArgVals {
-			dgstInputs = append(dgstInputs, arg.name, arg.val.ID().Digest().String())
+			id := arg.val.ID()
+			// prefer content digest if available
+			dgst := id.ContentDigest()
+			if dgst == "" {
+				dgst = id.Digest()
+			}
+			dgstInputs = append(dgstInputs, arg.name, dgst.String())
 		}
 		for _, arg := range userDefaultVals {
 			if arg != nil {
-				dgstInputs = append(dgstInputs, arg.name, arg.val.ID().Digest().String())
+				id := arg.val.ID()
+				dgst := id.ContentDigest()
+				if dgst == "" {
+					dgst = id.Digest()
+				}
+				dgstInputs = append(dgstInputs, arg.name, dgst.String())
 			}
 		}
 	}

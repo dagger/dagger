@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -658,7 +657,7 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		string(dgst),
 	)
 
-	return fileResult.WithObjectDigest(dgst), nil
+	return fileResult.WithContentDigest(dgst), nil
 }
 
 type WithNewFileArgs struct {
@@ -1512,7 +1511,7 @@ func maintainContentHashing[A any](
 		// *unless* it's been manually rewritten using hashutil.HashStrings (e.g. in
 		// the case of GitRef.tree - that case is manually rewritten to avoid
 		// accidental collisions later)
-		if parent.ID().HasCustomDigest() && parent.ID().Digest().Algorithm() == digest.SHA256 {
+		if parent.ID().ContentDigest() != "" {
 			query, err := core.CurrentQuery(ctx)
 			if err != nil {
 				return res, err

@@ -5338,6 +5338,8 @@ func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.
 
 func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 	theTest := func(ctx context.Context, t *testctx.T, fileSelector func(*dagger.Client, string) *dagger.File) {
+		t.Helper()
+
 		dir := t.TempDir()
 		fileData := identity.NewID()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(fileData), 0o600))
