@@ -29,7 +29,6 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pkg/errors"
 )
 
 type puller struct {
@@ -41,7 +40,6 @@ type puller struct {
 	RecordType     client.UsageRecordType
 	Ref            string
 	SessionManager *session.Manager
-	layerLimit     *int
 	ResolverType
 	store sourceresolver.ResolveImageConfigOptStore
 
@@ -55,7 +53,7 @@ type puller struct {
 	*pull.Puller
 }
 
-func mainManifestKey(desc ocispecs.Descriptor, platform ocispecs.Platform, layerLimit *int) (digest.Digest, error) {
+func mainManifestKey(desc ocispecs.Descriptor, platform ocispecs.Platform) (digest.Digest, error) {
 	dt, err := json.Marshal(struct {
 		Digest     digest.Digest
 		OS         string
@@ -71,7 +69,6 @@ func mainManifestKey(desc ocispecs.Descriptor, platform ocispecs.Platform, layer
 		Variant:    platform.Variant,
 		OSVersion:  platform.OSVersion,
 		OSFeatures: platform.OSFeatures,
-		Limit:      layerLimit,
 	})
 	if err != nil {
 		return "", err
@@ -124,13 +121,6 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 		return nil, err
 	}
 
-	if ll := p.layerLimit; ll != nil {
-		if *ll > len(p.manifest.Descriptors) {
-			return nil, errors.Errorf("layer limit %d is greater than the number of layers in the image %d", *ll, len(p.manifest.Descriptors))
-		}
-		p.manifest.Descriptors = p.manifest.Descriptors[:*ll]
-	}
-
 	if len(p.manifest.Descriptors) > 0 {
 		progressController := &controller.Controller{
 			WriterFactory: progressFactory,
@@ -155,7 +145,7 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 	}
 
 	desc := p.manifest.MainManifestDesc
-	k, err := mainManifestKey(desc, p.Platform, p.layerLimit)
+	k, err := mainManifestKey(desc, p.Platform)
 	if err != nil {
 		return nil, err
 	}
@@ -165,10 +155,7 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 	if err != nil {
 		return nil, err
 	}
-	ck, err := cacheKeyFromConfig(dt, p.layerLimit)
-	if err != nil {
-		return nil, err
-	}
+	ck := cacheKeyFromConfig(dt)
 	p.configKey = ck.String()
 	p.cacheKeyDone = true
 
@@ -242,25 +229,15 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 
 // cacheKeyFromConfig returns a stable digest from image config. If image config
 // is a known oci image we will use chainID of layers.
-func cacheKeyFromConfig(dt []byte, layerLimit *int) (digest.Digest, error) {
+func cacheKeyFromConfig(dt []byte) digest.Digest {
 	var img ocispecs.Image
 	err := json.Unmarshal(dt, &img)
 	if err != nil {
-		if layerLimit != nil {
-			return "", errors.Wrap(err, "failed to parse image config")
-		}
-		return digest.FromBytes(dt), nil // digest of config
-	}
-	if layerLimit != nil {
-		l := *layerLimit
-		if len(img.RootFS.DiffIDs) < l {
-			return "", errors.Errorf("image has %d layers, limit is %d", len(img.RootFS.DiffIDs), l)
-		}
-		img.RootFS.DiffIDs = img.RootFS.DiffIDs[:l]
+		return digest.FromBytes(dt) // digest of config
 	}
 	if img.RootFS.Type != "layers" || len(img.RootFS.DiffIDs) == 0 {
-		return "", nil
+		return ""
 	}
 
-	return identity.ChainID(img.RootFS.DiffIDs), nil
+	return identity.ChainID(img.RootFS.DiffIDs)
 }

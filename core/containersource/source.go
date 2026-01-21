@@ -87,7 +87,6 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 		recordType client.UsageRecordType
 		ref        reference.Spec
 		store      sourceresolver.ResolveImageConfigOptStore
-		layerLimit *int
 	)
 	switch is.ResolverType {
 	case ResolverTypeRegistry:
@@ -102,7 +101,6 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 		mode = imageIdentifier.ResolveMode
 		recordType = imageIdentifier.RecordType
 		ref = imageIdentifier.Reference
-		layerLimit = imageIdentifier.LayerLimit
 	case ResolverTypeOCILayout:
 		ociIdentifier, ok := id.(*OCIIdentifier)
 		if !ok {
@@ -118,7 +116,6 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 			StoreID:   ociIdentifier.StoreID,
 		}
 		ref = ociIdentifier.Reference
-		layerLimit = ociIdentifier.LayerLimit
 	default:
 		return nil, errors.Errorf("unknown resolver type: %v", is.ResolverType)
 	}
@@ -139,7 +136,6 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 		Ref:            ref.String(),
 		SessionManager: sm,
 		store:          store,
-		layerLimit:     layerLimit,
 	}
 	return p, nil
 }
@@ -220,7 +216,6 @@ func (is *Source) registryIdentifier(ref string, attrs map[string]string, platfo
 			if l <= 0 {
 				return nil, errors.Errorf("invalid layer limit %s", v)
 			}
-			id.LayerLimit = &l
 		}
 	}
 
@@ -259,7 +254,6 @@ func (is *Source) ociIdentifier(ref string, attrs map[string]string, platform *p
 			if l <= 0 {
 				return nil, errors.Errorf("invalid layer limit %s", v)
 			}
-			id.LayerLimit = &l
 		}
 	}
 
