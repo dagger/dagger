@@ -22,8 +22,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/estargz"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
-	"github.com/dagger/dagger/internal/buildkit/util/progress"
-	"github.com/dagger/dagger/internal/buildkit/util/progress/controller"
 	"github.com/dagger/dagger/internal/buildkit/util/pull"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver"
 	digest "github.com/opencontainers/go-digest"
@@ -92,10 +90,6 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 	default:
 	}
 
-	// progressFactory needs the outer context, the context in `p.g.Do` will
-	// be canceled before the progress output is complete
-	progressFactory := progress.FromContext(ctx)
-
 	if p.cacheKeyErr != nil || p.cacheKeyDone {
 		return nil, p.cacheKeyErr
 	}
@@ -111,21 +105,12 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 	p.releaseTmpLeases = done
 	defer imageutil.AddLease(done)
 
-	resolveProgressDone := progress.OneOff(ctx, "resolve "+p.Src.String())
-	defer func() {
-		resolveProgressDone(err)
-	}()
-
 	p.manifest, err = p.PullManifests(ctx, getResolver)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(p.manifest.Descriptors) > 0 {
-		progressController := &controller.Controller{
-			WriterFactory: progressFactory,
-		}
-
 		p.descHandlers = cache.DescHandlers(make(map[digest.Digest]*cache.DescHandler))
 		for i, desc := range p.manifest.Descriptors {
 			labels := snapshots.FilterInheritedLabels(desc.Annotations)
@@ -136,7 +121,6 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 
 			p.descHandlers[desc.Digest] = &cache.DescHandler{
 				Provider:       p.manifest.Provider,
-				Progress:       progressController,
 				SnapshotLabels: labels,
 				Annotations:    desc.Annotations,
 				Ref:            p.manifest.Ref,
