@@ -52,11 +52,17 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 				"Installs the current module into the environment, exposing its functions to the model",
 				"Contextual path arguments will be populated using the environment's workspace.",
 			),
+		dagql.Func("withMainModule", s.withMainModule).
+			Doc(
+				"Sets the main module for this environment (the project being worked on)",
+				"Contextual path arguments will be populated using the environment's workspace.",
+			),
 		dagql.Func("withModule", s.withModule).
 			Doc(
 				"Installs a module into the environment, exposing its functions to the model",
 				"Contextual path arguments will be populated using the environment's workspace.",
-			),
+			).
+			Deprecated("Use withMainModule instead"),
 		dagql.Func("withStringInput", s.withStringInput).
 			Doc("Provides a string input binding to the environment").
 			Args(
@@ -155,7 +161,7 @@ func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.
 	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
 		Field: "env",
 	}, dagql.Selector{
-		Field: "withModule",
+		Field: "withMainModule",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "module",
@@ -218,6 +224,16 @@ func (s environmentSchema) withWorkspace(ctx context.Context, env *core.Env, arg
 		return nil, err
 	}
 	return env.WithWorkspace(dir), nil
+}
+
+func (s environmentSchema) withMainModule(ctx context.Context, env *core.Env, args struct {
+	Module core.ModuleID
+}) (*core.Env, error) {
+	mod, err := args.Module.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return env.WithMainModule(mod.Self()), nil
 }
 
 func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args struct {
