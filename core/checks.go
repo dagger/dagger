@@ -2,10 +2,7 @@ package core
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io/fs"
-	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/util/parallel"
@@ -166,86 +163,4 @@ func (c *Check) Run(ctx context.Context) (*Check, error) {
 	c.Completed = true
 	c.Passed = (err == nil)
 	return c, nil
-}
-
-func (c *Check) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return true, err
-	}
-
-	cloudEngineClient, useCloudEngine, err := q.CloudEngineClient(ctx,
-		c.Node.RootAddress(),
-		// FIXME: we're saying the "function" is the check and no execCmd,
-		// which works with cloud but is weird
-		c.Name(),
-		nil,
-	)
-	if err != nil {
-		return true, fmt.Errorf("engine-to-engine connect: %w", err)
-	}
-	if !useCloudEngine {
-		// just run locally
-		return false, nil
-	}
-	defer func() {
-		rerr = errors.Join(rerr, cloudEngineClient.Close())
-	}()
-
-	query := cloudEngineClient.Dagger().QueryBuilder()
-
-	//
-	// construct a query to run this check on the cloud engine
-	//
-
-	// load the module, depending on its kind
-	mod := c.Node.Module
-	switch mod.Source.Value.Self().Kind {
-	case ModuleSourceKindLocal:
-		query = query.Select("moduleSource").
-			Arg("refString", filepath.Join(
-				mod.Source.Value.Self().Local.ContextDirectoryPath,
-				mod.Source.Value.Self().SourceRootSubpath,
-			))
-	case ModuleSourceKindGit:
-		query = query.Select("moduleSource").
-			Arg("refString", mod.Source.Value.Self().AsString()).
-			Arg("refPin", mod.Source.Value.Self().Git.Commit).
-			Arg("requireKind", mod.Source.Value.Self().Kind)
-	case ModuleSourceKindDir:
-		// FIXME: whether this actually works or not depends on whether the dir is reproducible. For simplicity,
-		// we just assume it is and will error out later if not. Would be better to explicitly check though.
-		dirID := mod.Source.Value.Self().DirSrc.OriginalContextDir.ID()
-		dirIDEnc, err := dirID.Encode()
-		if err != nil {
-			return true, fmt.Errorf("encode dir ID: %w", err)
-		}
-		query = query.Select("loadDirectoryFromID").
-			Arg("id", dirIDEnc)
-		query = query.Select("asModuleSource").
-			Arg("sourceRootPath", mod.Source.Value.Self().DirSrc.OriginalSourceRootSubpath)
-	}
-	query = query.Select("asModule")
-
-	// run the check
-
-	query = query.Select("check").
-		Arg("name", c.Name())
-
-	query = query.Select("run")
-
-	query = query.SelectMultiple("completed", "passed")
-
-	// execute the query against the remote engine
-
-	var res struct {
-		Completed bool
-		Passed    bool
-	}
-	err = query.Bind(&res).Execute(ctx)
-	if err != nil {
-		return true, err
-	}
-
-	return true, nil
 }

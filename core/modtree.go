@@ -252,7 +252,7 @@ func (p ModTreePath) CliCase() []string {
 	return cliCase
 }
 
-func (p ModTreePath) ApiCase() []string {
+func (p ModTreePath) APICase() []string {
 	apiCase := make([]string, len(p))
 	for i := range p {
 		apiCase[i] = gqlFieldName(p[i])
@@ -268,14 +268,13 @@ func (p ModTreePath) Contains(ctx context.Context, target ModTreePath) (result b
 		// if the target is shorter, it can't be a sub-path
 		return false
 	}
-	targetParent := ModTreePath(target[:len(p)])
+	targetParent := target[:len(p)]
 	return p.Equals(ctx, targetParent)
 }
 
 func (p ModTreePath) Equals(ctx context.Context, other ModTreePath) (result bool) {
 	defer func() {
 		debugTrace(ctx, "%v.Equals(%v) -> %v", p, other, result)
-
 	}()
 	if len(p) != len(other) {
 		return false
@@ -291,7 +290,7 @@ func (p ModTreePath) Equals(ctx context.Context, other ModTreePath) (result bool
 
 func (p ModTreePath) Glob(ctx context.Context, pattern string) (bool, error) {
 	slashPattern := strings.ReplaceAll(pattern, ":", "/")
-	for _, pathVariant := range [][]string{p.ApiCase(), p.CliCase()} {
+	for _, pathVariant := range [][]string{p.APICase(), p.CliCase()} {
 		slashPath := strings.Join(pathVariant, "/")
 		if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
 			return false, err
