@@ -114,6 +114,12 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("originalSubpath", s.moduleSourceOriginalSubpath).
 			Doc(`The original subpath used when instantiating this module source, relative to the context directory.`),
 
+		// NOTE: if/when this turns public, think about a less confusing and future proof name: `includes`, `includePaths`, `includePatterns`
+		// which would be relative to the context directory, while the same suggestions with an `original` prefix could mean the `Include` field
+		// as it was in the dagger.json.
+		dagql.Func("_rebasedIncludePaths", s.moduleSourceRebasedIncludePaths).
+			Doc(`List of include paths from dagger.json, relative to the context directory.`),
+
 		dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, dagql.CachePerClient).
 			Doc(`Update the module source with a new source subpath.`).
 			Args(
@@ -1271,6 +1277,14 @@ func (s *moduleSourceSchema) moduleSourceOriginalSubpath(
 	args struct{},
 ) (string, error) {
 	return src.OriginalSubpath, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceRebasedIncludePaths(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) ([]string, error) {
+	return src.RebasedIncludePaths, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
