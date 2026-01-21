@@ -782,7 +782,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     if (javadocString == null) {
       return "";
     }
-    return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+    return StaticJavaParser.parseJavadoc(javadocString, false).getDescription().toText().trim();
   }
 
   private String parseModuleDescription(Element element) {
@@ -812,7 +812,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   private String parseJavaDocDescription(Element element) {
     String javadocString = elementUtils.getDocComment(element);
     if (javadocString != null) {
-      return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+      return StaticJavaParser.parseJavadoc(javadocString, false).getDescription().toText().trim();
     }
     return "";
   }
@@ -822,7 +822,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     if (javadocString == null) {
       return "";
     }
-    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString);
+    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString, false);
     Optional<JavadocBlockTag> blockTag =
         javadoc.getBlockTags().stream()
             .filter(tag -> tag.getType() == Type.PARAM)

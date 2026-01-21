@@ -297,10 +297,10 @@
         <inject-maven-plugin.version>1.8</inject-maven-plugin.version>
         <jakarta.json-api.version>2.1.3</jakarta.json-api.version>
         <jakarta.json.bind-api.version>3.0.1</jakarta.json.bind-api.version>
-        <javapoet.version>0.9.0</javapoet.version>
-        <javaparser.version>3.27.1</javaparser.version>
+        <javapoet.version>0.10.0</javapoet.version>
+        <javaparser.version>3.28.0</javaparser.version>
         <json-path.version>2.10.0</json-path.version>
-        <junit.version>6.0.1</junit.version>
+        <junit.version>6.0.2</junit.version>
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
@@ -311,12 +311,12 @@
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
         <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
-        <versions-maven-plugin.version>2.20.1</versions-maven-plugin.version>
+        <versions-maven-plugin.version>2.21.0</versions-maven-plugin.version>
         <mockito-core.version>5.21.0</mockito-core.version>
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
-        <smallrye-graphql.version>2.16.0</smallrye-graphql.version>
-        <vertx-web-client.version>4.5.23</vertx-web-client.version>
+        <smallrye-graphql.version>2.17.0</smallrye-graphql.version>
+        <vertx-web-client.version>4.5.24</vertx-web-client.version>
         <system-stubs-jupiter.version>2.1.8</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>
