@@ -7393,6 +7393,23 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Sets the main module for this environment (the project being worked on)
+    /// Contextual path arguments will be populated using the environment's workspace.
+    pub fn with_main_module(&self, module: impl IntoID<ModuleId>) -> Env {
+        let mut query = self.selection.select("withMainModule");
+        query = query.arg_lazy(
+            "module",
+            Box::new(move || {
+                let module = module.clone();
+                Box::pin(async move { module.into_id().await.unwrap().quote() })
+            }),
+        );
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Installs a module into the environment, exposing its functions to the model
     /// Contextual path arguments will be populated using the environment's workspace.
     pub fn with_module(&self, module: impl IntoID<ModuleId>) -> Env {

@@ -8948,10 +8948,30 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withModule" href="#Env-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Env-withMainModule" href="#Env-withMainModule"><code>withMainModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td>
+                          <p>Sets the main module for this environment (the project being worked on)</p>
+                          <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>module</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Env-withModule" href="#Env-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td>
                           <p>Installs a module into the environment, exposing its functions to the model</p>
                           <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
+                          <span class="deprecation-reason">Use withMainModule instead</span>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">

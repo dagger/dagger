@@ -3501,6 +3501,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withMainModule",
+			"p": "Dagger/Env.html#method_withMainModule",
+			"d": "<p>Sets the main module for this environment (the project being worked on)</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withModule",
 			"p": "Dagger/Env.html#method_withModule",
 			"d": "<p>Installs a module into the environment, exposing its functions to the model</p>"

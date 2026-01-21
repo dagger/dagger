@@ -5861,13 +5861,34 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
+    def with_main_module(self, module: "Module") -> Self:
+        """Sets the main module for this environment (the project being worked
+        on)
+
+        Contextual path arguments will be populated using the environment's
+        workspace.
+        """
+        _args = [
+            Arg("module", module),
+        ]
+        _ctx = self._select("withMainModule", _args)
+        return Env(_ctx)
+
     def with_module(self, module: "Module") -> Self:
         """Installs a module into the environment, exposing its functions to the
         model
 
         Contextual path arguments will be populated using the environment's
         workspace.
+
+        .. deprecated::
+            Use withMainModule instead
         """
+        warnings.warn(
+            'Method "with_module" is deprecated: Use withMainModule instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("module", module),
         ]

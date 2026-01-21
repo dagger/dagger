@@ -2480,11 +2480,18 @@ type Env {
   ): Env!
 
   """
+  Sets the main module for this environment (the project being worked on)
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  withMainModule(module: ModuleID!): Env!
+
+  """
   Installs a module into the environment, exposing its functions to the model
 
   Contextual path arguments will be populated using the environment's workspace.
   """
-  withModule(module: ModuleID!): Env!
+  withModule(module: ModuleID!): Env! @deprecated(reason: "Use withMainModule instead")
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
