@@ -18,10 +18,10 @@ import (
 )
 
 var (
-	awsMutex              sync.Mutex
+	awsMutex                sync.Mutex
 	awsSecretsManagerClient *secretsmanager.Client
-	awsSSMClient          *ssm.Client
-	awsCache              = make(map[string][]byte)
+	awsSSMClient            *ssm.Client
+	awsCache                = make(map[string][]byte)
 )
 
 // AWS provider for SecretProvider
@@ -103,20 +103,20 @@ func initAWSClients(ctx context.Context, region string) error {
 
 	// Support custom endpoint for testing (e.g., LocalStack)
 	endpointURL := os.Getenv("AWS_ENDPOINT_URL")
-	if endpointURL != "" {
-		customResolver := aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{
-					URL:           endpointURL,
-					SigningRegion: region,
-				}, nil
-			})
-		cfg.EndpointResolverWithOptions = customResolver
-	}
 
-	// Initialize clients
-	awsSecretsManagerClient = secretsmanager.NewFromConfig(cfg)
-	awsSSMClient = ssm.NewFromConfig(cfg)
+	// Initialize Secrets Manager client
+	awsSecretsManagerClient = secretsmanager.NewFromConfig(cfg, func(options *secretsmanager.Options) {
+		if endpointURL != "" {
+			options.BaseEndpoint = aws.String(endpointURL)
+		}
+	})
+
+	// Initialize SSM client
+	awsSSMClient = ssm.NewFromConfig(cfg, func(options *ssm.Options) {
+		if endpointURL != "" {
+			options.BaseEndpoint = aws.String(endpointURL)
+		}
+	})
 
 	return nil
 }
