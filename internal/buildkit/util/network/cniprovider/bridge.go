@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	cni "github.com/containerd/go-cni"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -17,28 +16,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 )
-
-// detectIPMasqBackend determines whether to use iptables or nftables for IP masquerading.
-// On kernels without CONFIG_NETFILTER_XTABLES_LEGACY (6.17+), legacy iptables fails.
-// Returns "nftables" if legacy xtables is unavailable, empty string to use default.
-func detectIPMasqBackend() string {
-	// /proc/net/ip_tables_names only exists when legacy iptables kernel modules are available
-	if _, err := os.Stat("/proc/net/ip_tables_names"); os.IsNotExist(err) {
-		bklog.L.Debugf("legacy xtables not available (/proc/net/ip_tables_names missing), using nftables backend for ipMasq")
-		return "nftables"
-	}
-
-	// Double-check by probing the nat table
-	cmd := exec.Command("iptables", "-t", "nat", "-L", "-n")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		if strings.Contains(string(output), "Table does not exist") {
-			bklog.L.Debugf("legacy xtables nat table unavailable, using nftables backend for ipMasq")
-			return "nftables"
-		}
-	}
-
-	return "" // Use default (iptables)
-}
 
 func NewBridge(opt Opt) (network.Provider, error) {
 	cniOptions := []cni.Opt{cni.WithInterfacePrefix("eth")}
@@ -110,13 +87,6 @@ func NewBridge(opt Opt) (network.Provider, error) {
 		firewallBackend = "iptables"
 	}
 
-	// Detect if we need nftables backend for IP masquerading
-	// On kernels without CONFIG_NETFILTER_XTABLES_LEGACY (6.17+), legacy iptables fails
-	var ipMasqBackendConfig string
-	if ipMasqBackend := detectIPMasqBackend(); ipMasqBackend != "" {
-		ipMasqBackendConfig = fmt.Sprintf(`"ipMasqBackend": "%s",`, ipMasqBackend)
-	}
-
 	cniOptions = append(cniOptions, cni.WithConfListBytes([]byte(fmt.Sprintf(`{
 		"cniVersion": "1.0.0",
 		"name": "buildkit",
@@ -129,7 +99,7 @@ func NewBridge(opt Opt) (network.Provider, error) {
 				"bridge": "%s",
 				"isDefaultGateway": true,
 				"ipMasq": true,
-				%s
+				"ipMasqBackend": "nftables",
 				"ipam": {
 				  "type": "%s",
 				  "ranges": [
@@ -145,7 +115,7 @@ func NewBridge(opt Opt) (network.Provider, error) {
 				"ingressPolicy": "same-bridge"
 			}
 		]
-		}`, loopbackBinName, bridgeBinName, opt.BridgeName, ipMasqBackendConfig, hostLocalBinName, opt.BridgeSubnet, firewallBinName, firewallBackend))))
+		}`, loopbackBinName, bridgeBinName, opt.BridgeName, hostLocalBinName, opt.BridgeSubnet, firewallBinName, firewallBackend))))
 
 	unlock, err := initLock()
 	if err != nil {

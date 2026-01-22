@@ -113,7 +113,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		// for compression/decompression, containerd prefers igzip from the isa-l package as it's fastest
 		"isa-l", "pigz", "xz",
 		// for CNI (use nft variants for compatibility with kernels lacking legacy xtables)
-		"iptables-nft", "dnsmasq",
+		"nftables", "iptables-legacy", "dnsmasq",
 		// for Kata Containers integration
 		"e2fsprogs",
 		// for Directory.search
