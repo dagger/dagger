@@ -2997,19 +2997,6 @@ func (s *moduleSourceSchema) createBaseModule(
 		OriginalName:                  src.Self().ModuleOriginalName,
 		SDKConfig:                     sdk,
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
-		ToolchainModules:              make(map[string]*core.Module),
-		ToolchainArgumentConfigs:      make(map[string][]*modules.ModuleConfigArgument),
-		ToolchainIgnoreChecks:         make(map[string][]string),
-	}
-
-	// Load toolchain argument configurations from the original source
-	for _, tcCfg := range tcCtx.originalSrc.Self().ConfigToolchains {
-		if len(tcCfg.Customizations) > 0 {
-			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Customizations
-		}
-		if len(tcCfg.IgnoreChecks) > 0 {
-			mod.ToolchainIgnoreChecks[tcCfg.Name] = tcCfg.IgnoreChecks
-		}
 	}
 
 	// Load dependencies as modules
@@ -3372,9 +3359,11 @@ func addToolchainFieldsToObject(
 					}
 				}
 
-				// Apply argument configuration overrides if present
-				if argConfigs, ok := mod.ToolchainArgumentConfigs[originalName]; ok {
-					constructor = applyArgumentConfigToFunction(constructor, argConfigs, []string{})
+				// Apply argument configuration overrides if present (from registry)
+				if mod.Toolchains != nil {
+					if entry, ok := mod.Toolchains.Get(originalName); ok && entry.ArgumentConfigs != nil {
+						constructor = applyArgumentConfigToFunction(constructor, entry.ArgumentConfigs, []string{})
+					}
 				}
 
 				constructor.Name = fieldName
@@ -3388,7 +3377,6 @@ func addToolchainFieldsToObject(
 					return nil, fmt.Errorf("failed to add toolchain function %q: %w", fieldName, err)
 				}
 
-				mod.ToolchainModules[originalName] = tcMod
 				break
 			}
 		}
@@ -3471,9 +3459,34 @@ func (s *moduleSourceSchema) integrateToolchains(
 		return mod, nil
 	}
 
-	// Initialize toolchain modules map
-	if mod.ToolchainModules == nil {
-		mod.ToolchainModules = make(map[string]*core.Module)
+	// Initialize toolchain registry
+	mod.Toolchains = core.NewToolchainRegistry(mod)
+
+	// Register all toolchains in the registry
+	for _, tcMod := range toolchainMods {
+		originalName := tcMod.NameField
+		fieldName := strcase.ToLowerCamel(tcMod.NameField)
+
+		mod.Toolchains.Register(originalName, fieldName, tcMod)
+
+		// Apply configurations from config
+		if entry, ok := mod.Toolchains.Get(originalName); ok {
+			// Read configs from the module source
+			src := mod.GetSource()
+			if src != nil {
+				for _, tcCfg := range src.ConfigToolchains {
+					if tcCfg.Name == originalName {
+						if len(tcCfg.Customizations) > 0 {
+							entry.ArgumentConfigs = tcCfg.Customizations
+						}
+						if len(tcCfg.IgnoreChecks) > 0 {
+							entry.IgnoreChecks = tcCfg.IgnoreChecks
+						}
+						break
+					}
+				}
+			}
+		}
 	}
 
 	// Check if we have an SDK module (has object definitions)
