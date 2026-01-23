@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"sync"
 
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/sources/blob"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type querySchema struct {
@@ -90,17 +92,47 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 
 type schemaJSONArgs struct {
 	HiddenTypes []string `default:"[]"`
+
+	ExpectedView string `internal:"true" default:"unknown" name:"expectedView"`
+	RawDagOpInternalArgs
 }
+
+var (
+	uglyMu sync.Mutex
+	uglyM  map[string]string
+)
 
 func (s *querySchema) schemaJSONFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args schemaJSONArgs,
-) (inst dagql.Result[*core.File], rerr error) {
-	dagqlSchema := introspection.WrapSchema(s.srv.Schema())
+) (inst dagql.ObjectResult[*core.File], rerr error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+	const schemaJSONFilename = "schema.json"
+	const perm fs.FileMode = 0644
+
+	if args.InDagOp() {
+		var moduleSchemaJSON string
+		uglyMu.Lock()
+		moduleSchemaJSON = uglyM[args.ExpectedView]
+		uglyMu.Unlock()
+
+		f, err := core.NewFileWithContentsDagOp(ctx, schemaJSONFilename, []byte(moduleSchemaJSON), perm, nil, parent.Self().Platform())
+		if err != nil {
+			return inst, err
+		}
+
+		return dagql.NewObjectResultForCurrentID(ctx, srv, f)
+	}
+
+	view := s.srv.View
+	dagqlSchema := introspection.WrapSchema(s.srv.SchemaForView(view))
 
 	introspectionResponse := codegenintrospection.Response{
-		SchemaVersion: string(s.srv.View),
+		SchemaVersion: string(view),
 		Schema:        &codegenintrospection.Schema{},
 	}
 	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {
@@ -127,35 +159,37 @@ func (s *querySchema) schemaJSONFile(
 		return inst, fmt.Errorf("failed to marshal introspection JSON: %w", err)
 	}
 
-	const schemaJSONFilename = "schema.json"
-	const perm fs.FileMode = 0644
+	dgst := hashutil.HashStrings(string(moduleSchemaJSON))
 
-	f, err := core.NewFileWithContents(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self().Platform())
+	uglyMu.Lock()
+	uglyID := dgst.String()
+	if uglyM == nil {
+		uglyM = map[string]string{}
+	}
+	uglyM[uglyID] = string(moduleSchemaJSON)
+	uglyMu.Unlock()
+
+	// also mixin the checksum
+	newID := dagql.CurrentID(ctx).
+		WithArgument(call.NewArgument(
+			"expectedView",
+			call.NewLiteralString(uglyID), // TODO pass along s.srv.View.String() instead and get the schema inside the dagop
+			false,
+		)).
+		WithDigest(hashutil.HashStrings(
+			dgst.String(),
+		))
+	ctxDagOp := dagql.ContextWithID(ctx, newID)
+
+	f, err := DagOpFile[*core.Query, schemaJSONArgs](ctxDagOp, srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
 	if err != nil {
 		return inst, err
 	}
-	bk, err := parent.Self().Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	dgst, err := core.GetContentHashFromDef(ctx, bk, f.LLB, "/")
-	if err != nil {
-		return inst, fmt.Errorf("failed to get content hash: %w", err)
-	}
-
-	// LLB marshalling takes up too much memory when file ops have a ton of contents, so we still go through
-	// the blob source for now simply to avoid that.
-	f, err = core.NewFileSt(ctx, blob.LLB(dgst), f.File, f.Platform, f.Services)
+	dop, err := dagql.NewObjectResultForID[*core.File](f, srv, newID)
 	if err != nil {
 		return inst, err
 	}
-
-	fileInst, err := dagql.NewResultForCurrentID(ctx, f)
-	if err != nil {
-		return inst, err
-	}
-
-	return fileInst.WithDigest(dgst), nil
+	return dop, nil
 }
 
 func dagqlToCodegenType(dagqlType *introspection.Type) *codegenintrospection.Type {
