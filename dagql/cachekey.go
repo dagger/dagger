@@ -131,9 +131,10 @@ func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, ObjectRes
 		req GetCacheConfigRequest,
 	) (*GetCacheConfigResponse, error) {
 		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+		schemaDgst := srv.SchemaDigest()
 		resp.CacheKey.CallKey = hashutil.HashStrings(
 			resp.CacheKey.CallKey,
-			srv.SchemaDigest().String(),
+			schemaDgst.String(),
 		).String()
 		return resp, nil
 	}
