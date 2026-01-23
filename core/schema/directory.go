@@ -318,6 +318,11 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
 		dagql.NodeFunc("withChangesets", DagOpChangesetWrapper(srv, s.changesetWithChangesets)).
+			// ensure we are not exposing this feature on engines < v0.15.0
+			// before v0.15.0 the Go codegen can't handle the same value in multiple enums
+			// withChangeset and withChangesets features are using two different enums with some common values
+			// withChangesets will only be visible on engines >= v0.15.0
+			View(AfterVersion("v0.15.0")).
 			Doc(`Add changes from multiple changesets using git octopus merge strategy`,
 				`This is more efficient than chaining multiple withChangeset calls when merging many changesets.`,
 				`Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).`).
@@ -1119,9 +1124,18 @@ type ChangesetMergeConflict string
 var ChangesetMergeConflictEnum = dagql.NewEnum[ChangesetMergeConflict]()
 
 var (
-	FailEarlyOnMergeConflict = ChangesetMergeConflictEnum.Register("FAIL_EARLY",
+	FailEarlyOnMergeConflict = ChangesetMergeConflictEnum.RegisterView("FAIL_EARLY",
+		// starting with engine version 0.15.0 Go codegen only exposes scoped enum values
+		// like ChangesetMergeConflictFailEarly and doesn't expose anymore unscopped enum values (FailEarly)
+		// unscopped enum values will conflict as the same value is defined twice in ChangesetMergeConflictEnum and
+		// ChangesetsMergeConflictEnum.
+		// Ensure those enum values are only exposed on engines >= 0.15.0
+		// Values are removed on this enum ChangesetMergeConflictEnum and not ChangesetsMergeConflictEnum so that
+		// there's never an empty enum, that causes troubles with other SDKs like python
+		AfterVersion("v0.15.0"),
 		`Fail before attempting merge if file-level conflicts are detected`)
-	FailOnMergeConflict = ChangesetMergeConflictEnum.Register("FAIL",
+	FailOnMergeConflict = ChangesetMergeConflictEnum.RegisterView("FAIL",
+		AfterVersion("v0.15.0"),
 		`Attempt the merge and fail if git merge fails due to conflicts`)
 	LeaveConflictMarkersOnMergeConflict = ChangesetMergeConflictEnum.Register("LEAVE_CONFLICT_MARKERS",
 		`Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.`)
