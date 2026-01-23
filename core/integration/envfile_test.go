@@ -537,3 +537,14 @@ func (m *Dep) Bar(
 	require.NoError(t, err, string(callOutput))
 	require.Equal(t, "doodoo", string(decodeOutput))
 }
+
+func (EnvFileSuite) TestUpdateVariableWithTheSameValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ef := c.File(".env", "FOO=bar").AsEnvFile().
+		WithVariable("FOO", "bar"). // updating this with the same value, causes infinte recursion
+		AsFile()
+
+	// Note that ef.Contents() does not trigger the bug, we must load it into a Directory
+	_, err := c.Directory().WithFile(".env", ef).Sync(ctx)
+	require.NoError(t, err)
+}
