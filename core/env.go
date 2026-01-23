@@ -21,6 +21,10 @@ type Env struct {
 	// The full module dependency chain for the environment, including the core
 	// module and any dependencies from the environment's creator
 	deps *ModDeps
+
+	// The main module for this environment (the project being worked on)
+	MainModule *Module
+
 	// The modules explicitly installed into the environment, to be exposed as
 	// tools that implicitly call the constructor with the environment's workspace
 	installedModules []*Module
@@ -86,6 +90,13 @@ func (env *Env) WithWorkspace(dir dagql.ObjectResult[*Directory]) *Env {
 	cp := *env
 	cp.Workspace = dir
 	return &cp
+}
+
+func (env *Env) WithMainModule(mod *Module) *Env {
+	cp := env.Clone()
+	cp.MainModule = mod
+	cp.deps = cp.deps.Append(mod)
+	return cp
 }
 
 func (env *Env) WithModule(mod *Module) *Env {
@@ -183,23 +194,15 @@ func (env *Env) WithoutInput(key string) *Env {
 	return env
 }
 
-// Checks returns a CheckGroup aggregating all checks from installed modules
+// Checks returns a CheckGroup from the main module
 func (env *Env) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	var allChecks []*Check
-	for _, mod := range env.installedModules {
-		group, err := mod.Checks(ctx, include)
-		if err != nil {
-			return nil, fmt.Errorf("get checks for module %q: %w", mod.Name(), err)
-		}
-		allChecks = append(allChecks, group.Checks...)
+	if env.MainModule == nil {
+		return nil, fmt.Errorf("no main module set on environment")
 	}
-	return &CheckGroup{
-		Module: nil, // nil indicates aggregated group
-		Checks: allChecks,
-	}, nil
+	return env.MainModule.Checks(ctx, include)
 }
 
-// Check returns a single check by name from the installed modules
+// Check returns a single check by name from the main module
 func (env *Env) Check(ctx context.Context, name string) (*Check, error) {
 	checkGroup, err := env.Checks(ctx, []string{name})
 	if err != nil {

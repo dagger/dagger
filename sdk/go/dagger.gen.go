@@ -5566,9 +5566,24 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
+// Sets the main module for this environment (the project being worked on)
+//
+// Contextual path arguments will be populated using the environment's workspace.
+func (r *Env) WithMainModule(module *Module) *Env {
+	assertNotNil("module", module)
+	q := r.query.Select("withMainModule")
+	q = q.Arg("module", module)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Installs a module into the environment, exposing its functions to the model
 //
 // Contextual path arguments will be populated using the environment's workspace.
+//
+// Deprecated: Use withMainModule instead
 func (r *Env) WithModule(module *Module) *Env {
 	assertNotNil("module", module)
 	q := r.query.Select("withModule")

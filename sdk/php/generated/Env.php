@@ -416,6 +416,18 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Sets the main module for this environment (the project being worked on)
+     *
+     * Contextual path arguments will be populated using the environment's workspace.
+     */
+    public function withMainModule(ModuleId|Module $module): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMainModule');
+        $innerQueryBuilder->setArgument('module', $module);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Installs a module into the environment, exposing its functions to the model
      *
      * Contextual path arguments will be populated using the environment's workspace.

@@ -6409,9 +6409,22 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Sets the main module for this environment (the project being worked on)
+   *
+   * Contextual path arguments will be populated using the environment's workspace.
+   */
+  withMainModule = (module_: Module_): Env => {
+    const ctx = this._ctx.select("withMainModule", {
+      module: module_,
+    })
+    return new Env(ctx)
+  }
+
+  /**
    * Installs a module into the environment, exposing its functions to the model
    *
    * Contextual path arguments will be populated using the environment's workspace.
+   * @deprecated Use withMainModule instead
    */
   withModule = (module_: Module_): Env => {
     const ctx = this._ctx.select("withModule", {
