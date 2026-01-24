@@ -8,41 +8,41 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type callerSchema struct{}
+type workspaceSchema struct{}
 
-var _ SchemaResolvers = &callerSchema{}
+var _ SchemaResolvers = &workspaceSchema{}
 
-func (s *callerSchema) Install(dag *dagql.Server) {
-	dagql.Fields[*core.Caller]{
-		dagql.NodeFunc("directory", s.callerDirectory).
-			Doc(`Load a directory from the caller's context.`).
+func (s *workspaceSchema) Install(dag *dagql.Server) {
+	dagql.Fields[*core.Workspace]{
+		dagql.NodeFunc("directory", s.workspaceDirectory).
+			Doc(`Load a directory from the workspace.`).
 			Args(
-				dagql.Arg("path").Doc(`The path to the directory within the caller's context.`),
+				dagql.Arg("path").Doc(`The path to the directory within the workspace.`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
-		dagql.NodeFunc("file", s.callerFile).
-			Doc(`Load a file from the caller's context.`).
+		dagql.NodeFunc("file", s.workspaceFile).
+			Doc(`Load a file from the workspace.`).
 			Args(
-				dagql.Arg("path").Doc(`The path to the file within the caller's context.`),
+				dagql.Arg("path").Doc(`The path to the file within the workspace.`),
 			),
 	}.Install(dag)
 
-	// Internal query for creating Caller from ModuleSource (used for Caller arg injection)
+	// Internal query for creating Workspace from ModuleSource (used for Workspace arg injection)
 	dag.Root().Extend(
-		dagql.NodeFunc("_caller", s.createCaller).
-			Doc(`Create a Caller from a ModuleSource. Internal use only.`).
+		dagql.NodeFunc("_workspace", s.createWorkspace).
+			Doc(`Create a Workspace from a ModuleSource. Internal use only.`).
 			Args(
-				dagql.Arg("source").Doc(`The module source ID to create caller from.`),
+				dagql.Arg("source").Doc(`The module source ID to create workspace from.`),
 			),
 	)
 }
 
-func (s *callerSchema) callerDirectory(
+func (s *workspaceSchema) workspaceDirectory(
 	ctx context.Context,
-	caller dagql.ObjectResult[*core.Caller],
+	ws dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Path      string
 		Exclude   dagql.Optional[dagql.ArrayInput[dagql.String]]
@@ -70,13 +70,13 @@ func (s *callerSchema) callerDirectory(
 		filter.Gitignore = args.Gitignore.Value.Bool()
 	}
 
-	src := caller.Self().ModuleSource()
+	src := ws.Self().ModuleSource()
 	return src.LoadContextDir(ctx, dag, args.Path, filter)
 }
 
-func (s *callerSchema) callerFile(
+func (s *workspaceSchema) workspaceFile(
 	ctx context.Context,
-	caller dagql.ObjectResult[*core.Caller],
+	ws dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Path string
 	},
@@ -86,19 +86,19 @@ func (s *callerSchema) callerFile(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	src := caller.Self().ModuleSource()
+	src := ws.Self().ModuleSource()
 	return src.LoadContextFile(ctx, dag, args.Path)
 }
 
-// createCaller creates a Caller from a ModuleSource.
-// This is an internal function used to inject Caller arguments in function calls.
-func (s *callerSchema) createCaller(
+// createWorkspace creates a Workspace from a ModuleSource.
+// This is an internal function used to inject Workspace arguments in function calls.
+func (s *workspaceSchema) createWorkspace(
 	ctx context.Context,
 	_ *core.Query,
 	args struct {
 		Source dagql.ID[*core.ModuleSource]
 	},
-) (*core.Caller, error) {
+) (*core.Workspace, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
@@ -109,7 +109,7 @@ func (s *callerSchema) createCaller(
 		return nil, fmt.Errorf("failed to load module source: %w", err)
 	}
 
-	return &core.Caller{
+	return &core.Workspace{
 		Source: sourceResult,
 	}, nil
 }

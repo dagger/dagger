@@ -214,45 +214,45 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		hasArg[name] = true
 	}
 
-	// Inject Caller arguments from caller's context
+	// Inject Workspace arguments for toolchains
 	for _, arg := range fn.metadata.Args {
 		name := arg.OriginalName
 		if hasArg[name] {
 			continue
 		}
-		if !arg.isCallerArg() {
+		if !arg.isWorkspaceArg() {
 			continue
 		}
 
-		// Load the caller
-		caller, err := fn.loadCaller(ctx)
+		// Load the workspace (installer's context for toolchains)
+		ws, err := fn.loadWorkspace(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("load caller for arg %q: %w", name, err)
+			return nil, fmt.Errorf("load workspace for arg %q: %w", name, err)
 		}
 
-		// Create a Caller instance via the _caller query to get a proper ID
+		// Create a Workspace instance via the _workspace query to get a proper ID
 		srv := opts.Server
 		if srv == nil {
 			srv = dagql.CurrentDagqlServer(ctx)
 		}
 
-		var callerResult dagql.ObjectResult[*Caller]
-		err = srv.Select(ctx, srv.Root(), &callerResult,
+		var wsResult dagql.ObjectResult[*Workspace]
+		err = srv.Select(ctx, srv.Root(), &wsResult,
 			dagql.Selector{
-				Field: "_caller",
+				Field: "_workspace",
 				Args: []dagql.NamedInput{
-					{Name: "source", Value: dagql.NewID[*ModuleSource](caller.Source.ID())},
+					{Name: "source", Value: dagql.NewID[*ModuleSource](ws.Source.ID())},
 				},
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("create caller for arg %q: %w", name, err)
+			return nil, fmt.Errorf("create workspace for arg %q: %w", name, err)
 		}
 
-		// Encode the Caller ID as JSON
-		encodedID, err := callerResult.ID().Encode()
+		// Encode the Workspace ID as JSON
+		encodedID, err := wsResult.ID().Encode()
 		if err != nil {
-			return nil, fmt.Errorf("encode caller ID for arg %q: %w", name, err)
+			return nil, fmt.Errorf("encode workspace ID for arg %q: %w", name, err)
 		}
 
 		callInputs = append(callInputs, &FunctionCallArgValue{
@@ -543,7 +543,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	dgstInputs := []string{cacheCfgResp.CacheKey.CallKey}
 
 	var ctxArgs []*FunctionArg
-	var callerArgs []*FunctionArg // Args of type Caller
+	var workspaceArgs []*FunctionArg // Args of type Workspace (for toolchains)
 	var userDefaults []*UserDefault
 
 	for _, argMetadata := range fn.metadata.Args {
@@ -558,12 +558,12 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			// This applies to both types of object defaults:
 			//  1) "contextual args" from `defaultPath` annotations
 			//  2) "user defaults" from user-defined .env
-			//  3) Caller args (injected from caller)
+			//  3) Workspace args (injected for toolchains)
 			continue
 		}
-		// Check if this is a Caller arg
-		if argMetadata.isCallerArg() {
-			callerArgs = append(callerArgs, argMetadata)
+		// Check if this is a Workspace arg
+		if argMetadata.isWorkspaceArg() {
+			workspaceArgs = append(workspaceArgs, argMetadata)
 			continue
 		}
 		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
@@ -582,7 +582,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(callerArgs) > 0 {
+	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 {
 		cacheCfgResp.UpdatedArgs = make(map[string]dagql.Input)
 		var mu sync.Mutex
 		type argInput struct {
@@ -659,34 +659,34 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			}
 		}
 
-		// Process Caller arguments - create Caller from caller's context
-		// and include in cache key
-		if len(callerArgs) > 0 {
-			caller, err := fn.loadCaller(ctx)
+		// Process Workspace arguments - create Workspace from installer's context
+		// and include in cache key (for toolchains)
+		if len(workspaceArgs) > 0 {
+			ws, err := fn.loadWorkspace(ctx)
 			if err != nil {
-				return nil, fmt.Errorf("load caller for Caller args: %w", err)
+				return nil, fmt.Errorf("load workspace for Workspace args: %w", err)
 			}
 
-			// Create Caller via _caller query to get proper dagql ID
-			var callerResult dagql.ObjectResult[*Caller]
-			err = srv.Select(ctx, srv.Root(), &callerResult,
+			// Create Workspace via _workspace query to get proper dagql ID
+			var wsResult dagql.ObjectResult[*Workspace]
+			err = srv.Select(ctx, srv.Root(), &wsResult,
 				dagql.Selector{
-					Field: "_caller",
+					Field: "_workspace",
 					Args: []dagql.NamedInput{
-						{Name: "source", Value: dagql.NewID[*ModuleSource](caller.Source.ID())},
+						{Name: "source", Value: dagql.NewID[*ModuleSource](ws.Source.ID())},
 					},
 				},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("create caller for Caller args: %w", err)
+				return nil, fmt.Errorf("create workspace for Workspace args: %w", err)
 			}
 
-			// Add Caller ID to cache key digest
-			dgstInputs = append(dgstInputs, "caller", callerResult.ID().Digest().String())
+			// Add Workspace ID to cache key digest
+			dgstInputs = append(dgstInputs, "workspace", wsResult.ID().Digest().String())
 
-			// Add Caller to UpdatedArgs for each Caller arg
-			for _, arg := range callerArgs {
-				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(dagql.NewID[*Caller](callerResult.ID()))
+			// Add Workspace to UpdatedArgs for each Workspace arg
+			for _, arg := range workspaceArgs {
+				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(dagql.NewID[*Workspace](wsResult.ID()))
 			}
 		}
 	}
@@ -1281,18 +1281,18 @@ func (fn *ModuleFunction) loadContextualArg(
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
 }
 
-// loadCaller returns a Caller representing the context that should be provided
-// to this function's Caller argument.
+// loadWorkspace returns a Workspace representing the context that should be
+// provided to this function's Workspace argument.
 //
 // For toolchains (fn.mod.IsToolchain == true):
-//   - Returns Caller from fn.mod.ContextSource, which was set to the installer's
+//   - Returns Workspace from fn.mod.ContextSource, which was set to the installer's
 //     source during toolchain loading. This is how toolchains receive access to
 //     the project that installed them.
 //
 // For regular modules:
-//   - Returns Caller from the calling module in the current call chain.
+//   - Returns Workspace from the calling module in the current call chain.
 //   - If called directly from CLI (no parent module), returns an error.
-func (fn *ModuleFunction) loadCaller(ctx context.Context) (*Caller, error) {
+func (fn *ModuleFunction) loadWorkspace(ctx context.Context) (*Workspace, error) {
 	// For toolchains, use the ContextSource which was set during installation
 	// to point to the installer's module source.
 	if fn.mod.IsToolchain {
@@ -1300,7 +1300,7 @@ func (fn *ModuleFunction) loadCaller(ctx context.Context) (*Caller, error) {
 		if !contextSource.Valid {
 			return nil, fmt.Errorf("toolchain has no context source: was it installed correctly?")
 		}
-		return &Caller{
+		return &Workspace{
 			Source: contextSource.Value,
 		}, nil
 	}
@@ -1314,8 +1314,8 @@ func (fn *ModuleFunction) loadCaller(ctx context.Context) (*Caller, error) {
 	callerMod, err := query.ModuleParent(ctx)
 	if err != nil {
 		// No parent module means direct CLI call or non-module client.
-		// Caller args require a module caller.
-		return nil, fmt.Errorf("no caller module: Caller args require a module caller: %w", err)
+		// Workspace args require a module caller.
+		return nil, fmt.Errorf("no caller module: Workspace args require a module caller: %w", err)
 	}
 
 	// Use the caller's context source
@@ -1328,7 +1328,7 @@ func (fn *ModuleFunction) loadCaller(ctx context.Context) (*Caller, error) {
 		return nil, fmt.Errorf("caller module has no source")
 	}
 
-	return &Caller{
+	return &Workspace{
 		Source: contextSource.Value,
 	}, nil
 }

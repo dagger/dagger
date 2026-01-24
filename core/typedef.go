@@ -366,9 +366,9 @@ func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != "" || arg.DefaultAddress != ""
 }
 
-// isCallerArg returns true if this argument is of type Caller.
-func (arg *FunctionArg) isCallerArg() bool {
-	return IsCallerType(arg.TypeDef)
+// isWorkspaceArg returns true if this argument is of type Workspace.
+func (arg *FunctionArg) isWorkspaceArg() bool {
+	return IsWorkspaceType(arg.TypeDef)
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {
