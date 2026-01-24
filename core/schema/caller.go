@@ -8,41 +8,41 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type contextSchema struct{}
+type callerSchema struct{}
 
-var _ SchemaResolvers = &contextSchema{}
+var _ SchemaResolvers = &callerSchema{}
 
-func (s *contextSchema) Install(dag *dagql.Server) {
-	dagql.Fields[*core.Context]{
-		dagql.NodeFunc("directory", s.contextDirectory).
-			Doc(`Load a directory from this context.`).
+func (s *callerSchema) Install(dag *dagql.Server) {
+	dagql.Fields[*core.Caller]{
+		dagql.NodeFunc("directory", s.callerDirectory).
+			Doc(`Load a directory from the caller's context.`).
 			Args(
-				dagql.Arg("path").Doc(`The path to the directory within the context.`),
+				dagql.Arg("path").Doc(`The path to the directory within the caller's context.`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
-		dagql.NodeFunc("file", s.contextFile).
-			Doc(`Load a file from this context.`).
+		dagql.NodeFunc("file", s.callerFile).
+			Doc(`Load a file from the caller's context.`).
 			Args(
-				dagql.Arg("path").Doc(`The path to the file within the context.`),
+				dagql.Arg("path").Doc(`The path to the file within the caller's context.`),
 			),
 	}.Install(dag)
 
-	// Internal query for creating Context from ModuleSource (used for Context arg injection)
+	// Internal query for creating Caller from ModuleSource (used for Caller arg injection)
 	dag.Root().Extend(
-		dagql.NodeFunc("_context", s.createContext).
-			Doc(`Create a Context from a ModuleSource. Internal use only.`).
+		dagql.NodeFunc("_caller", s.createCaller).
+			Doc(`Create a Caller from a ModuleSource. Internal use only.`).
 			Args(
-				dagql.Arg("source").Doc(`The module source ID to create context from.`),
+				dagql.Arg("source").Doc(`The module source ID to create caller from.`),
 			),
 	)
 }
 
-func (s *contextSchema) contextDirectory(
+func (s *callerSchema) callerDirectory(
 	ctx context.Context,
-	ctxObj dagql.ObjectResult[*core.Context],
+	caller dagql.ObjectResult[*core.Caller],
 	args struct {
 		Path      string
 		Exclude   dagql.Optional[dagql.ArrayInput[dagql.String]]
@@ -70,13 +70,13 @@ func (s *contextSchema) contextDirectory(
 		filter.Gitignore = args.Gitignore.Value.Bool()
 	}
 
-	src := ctxObj.Self().ModuleSource()
+	src := caller.Self().ModuleSource()
 	return src.LoadContextDir(ctx, dag, args.Path, filter)
 }
 
-func (s *contextSchema) contextFile(
+func (s *callerSchema) callerFile(
 	ctx context.Context,
-	ctxObj dagql.ObjectResult[*core.Context],
+	caller dagql.ObjectResult[*core.Caller],
 	args struct {
 		Path string
 	},
@@ -86,19 +86,19 @@ func (s *contextSchema) contextFile(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	src := ctxObj.Self().ModuleSource()
+	src := caller.Self().ModuleSource()
 	return src.LoadContextFile(ctx, dag, args.Path)
 }
 
-// createContext creates a Context from a ModuleSource.
-// This is an internal function used to inject Context arguments in function calls.
-func (s *contextSchema) createContext(
+// createCaller creates a Caller from a ModuleSource.
+// This is an internal function used to inject Caller arguments in function calls.
+func (s *callerSchema) createCaller(
 	ctx context.Context,
 	_ *core.Query,
 	args struct {
 		Source dagql.ID[*core.ModuleSource]
 	},
-) (*core.Context, error) {
+) (*core.Caller, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
@@ -109,7 +109,7 @@ func (s *contextSchema) createContext(
 		return nil, fmt.Errorf("failed to load module source: %w", err)
 	}
 
-	return &core.Context{
+	return &core.Caller{
 		Source: sourceResult,
 	}, nil
 }
