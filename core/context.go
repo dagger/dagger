@@ -65,3 +65,51 @@ func ContextMetadataFromContext(ctx context.Context) (*ContextMetadata, bool) {
 	cm, ok := ctx.Value(contextKey{}).(*ContextMetadata)
 	return cm, ok
 }
+
+// IsContextType returns true if the given TypeDef represents a Context type.
+func IsContextType(td *TypeDef) bool {
+	if td == nil {
+		return false
+	}
+	if td.Kind != TypeDefKindObject {
+		return false
+	}
+	if !td.AsObject.Valid {
+		return false
+	}
+	return td.AsObject.Value.Name == "Context"
+}
+
+// ContainsContext returns true if the given TypeDef contains a Context type,
+// either directly or nested within fields. This is used for cache invalidation.
+func ContainsContext(td *TypeDef) bool {
+	if td == nil {
+		return false
+	}
+
+	switch td.Kind {
+	case TypeDefKindObject:
+		if !td.AsObject.Valid {
+			return false
+		}
+		if td.AsObject.Value.Name == "Context" {
+			return true
+		}
+		// Check all fields recursively
+		for _, field := range td.AsObject.Value.Fields {
+			if ContainsContext(field.TypeDef) {
+				return true
+			}
+		}
+		return false
+
+	case TypeDefKindList:
+		if !td.AsList.Valid {
+			return false
+		}
+		return ContainsContext(td.AsList.Value.ElementTypeDef)
+
+	default:
+		return false
+	}
+}
