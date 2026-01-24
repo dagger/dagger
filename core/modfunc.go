@@ -213,6 +213,55 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		callInputs = append(callInputs, defaultInput)
 		hasArg[name] = true
 	}
+
+	// Inject Context arguments from caller's context
+	for _, arg := range fn.metadata.Args {
+		name := arg.OriginalName
+		if hasArg[name] {
+			continue
+		}
+		if !arg.isContextArg() {
+			continue
+		}
+
+		// Load the caller's context
+		callerCtx, err := fn.loadCallerContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load caller context for arg %q: %w", name, err)
+		}
+
+		// Create a Context instance via the _context query to get a proper ID
+		srv := opts.Server
+		if srv == nil {
+			srv = dagql.CurrentDagqlServer(ctx)
+		}
+
+		var ctxResult dagql.ObjectResult[*Context]
+		err = srv.Select(ctx, srv.Root(), &ctxResult,
+			dagql.Selector{
+				Field: "_context",
+				Args: []dagql.NamedInput{
+					{Name: "source", Value: dagql.NewID[*ModuleSource](callerCtx.Source.ID())},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create context for arg %q: %w", name, err)
+		}
+
+		// Encode the Context ID as JSON
+		encodedID, err := ctxResult.ID().Encode()
+		if err != nil {
+			return nil, fmt.Errorf("encode context ID for arg %q: %w", name, err)
+		}
+
+		callInputs = append(callInputs, &FunctionCallArgValue{
+			Name:  name,
+			Value: JSON(fmt.Sprintf("%q", encodedID)),
+		})
+		hasArg[name] = true
+	}
+
 	return callInputs, nil
 }
 
@@ -494,6 +543,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	dgstInputs := []string{cacheCfgResp.CacheKey.CallKey}
 
 	var ctxArgs []*FunctionArg
+	var contextArgs []*FunctionArg // Args of type Context
 	var userDefaults []*UserDefault
 
 	for _, argMetadata := range fn.metadata.Args {
@@ -508,6 +558,12 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			// This applies to both types of object defaults:
 			//  1) "contextual args" from `defaultPath` annotations
 			//  2) "user defaults" from user-defined .env
+			//  3) Context args (injected from caller)
+			continue
+		}
+		// Check if this is a Context arg
+		if argMetadata.isContextArg() {
+			contextArgs = append(contextArgs, argMetadata)
 			continue
 		}
 		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
@@ -526,7 +582,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	if len(ctxArgs) > 0 || len(userDefaults) > 0 {
+	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(contextArgs) > 0 {
 		cacheCfgResp.UpdatedArgs = make(map[string]dagql.Input)
 		var mu sync.Mutex
 		type argInput struct {
@@ -600,6 +656,37 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					dgst = id.Digest()
 				}
 				dgstInputs = append(dgstInputs, arg.name, dgst.String())
+			}
+		}
+
+		// Process Context arguments - create Context from caller's context
+		// and include in cache key
+		if len(contextArgs) > 0 {
+			callerCtx, err := fn.loadCallerContext(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("load caller context for Context args: %w", err)
+			}
+
+			// Create Context via _context query to get proper dagql ID
+			var ctxResult dagql.ObjectResult[*Context]
+			err = srv.Select(ctx, srv.Root(), &ctxResult,
+				dagql.Selector{
+					Field: "_context",
+					Args: []dagql.NamedInput{
+						{Name: "source", Value: dagql.NewID[*ModuleSource](callerCtx.Source.ID())},
+					},
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("create context for Context args: %w", err)
+			}
+
+			// Add Context ID to cache key digest
+			dgstInputs = append(dgstInputs, "caller_context", ctxResult.ID().Digest().String())
+
+			// Add Context to UpdatedArgs for each Context arg
+			for _, arg := range contextArgs {
+				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(dagql.NewID[*Context](ctxResult.ID()))
 			}
 		}
 	}
@@ -1192,6 +1279,41 @@ func (fn *ModuleFunction) loadContextualArg(
 	}
 
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+}
+
+// loadCallerContext returns a Context representing the caller's context.
+// This is used when a function has a Context argument - it receives the
+// caller's context, not its own module's context.
+func (fn *ModuleFunction) loadCallerContext(ctx context.Context) (*Context, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+
+	// Try to get the parent module (the caller)
+	callerMod, err := query.ModuleParent(ctx)
+	if err != nil {
+		// If there's no parent module, we're being called directly from the CLI
+		// or a non-module client. In this case, we could either:
+		// 1. Return an error
+		// 2. Return a "host" context based on NonModuleParentClientMetadata
+		// For now, we'll return an error - the caller must be a module
+		return nil, fmt.Errorf("no caller module: Context args require a module caller: %w", err)
+	}
+
+	// Use the caller's context source
+	contextSource := callerMod.ContextSource
+	if !contextSource.Valid {
+		// Fall back to the caller's regular source
+		contextSource = callerMod.Source
+	}
+	if !contextSource.Valid {
+		return nil, fmt.Errorf("caller module has no source")
+	}
+
+	return &Context{
+		Source: contextSource.Value,
+	}, nil
 }
 
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {

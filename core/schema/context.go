@@ -29,6 +29,15 @@ func (s *contextSchema) Install(dag *dagql.Server) {
 				dagql.Arg("path").Doc(`The path to the file within the context.`),
 			),
 	}.Install(dag)
+
+	// Internal query for creating Context from ModuleSource (used for Context arg injection)
+	dag.Root().Extend(
+		dagql.NodeFunc("_context", s.createContext).
+			Doc(`Create a Context from a ModuleSource. Internal use only.`).
+			Args(
+				dagql.Arg("source").Doc(`The module source ID to create context from.`),
+			),
+	)
 }
 
 func (s *contextSchema) contextDirectory(
@@ -79,4 +88,28 @@ func (s *contextSchema) contextFile(
 
 	src := ctxObj.Self().ModuleSource()
 	return src.LoadContextFile(ctx, dag, args.Path)
+}
+
+// createContext creates a Context from a ModuleSource.
+// This is an internal function used to inject Context arguments in function calls.
+func (s *contextSchema) createContext(
+	ctx context.Context,
+	_ *core.Query,
+	args struct {
+		Source dagql.ID[*core.ModuleSource]
+	},
+) (*core.Context, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	sourceResult, err := args.Source.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load module source: %w", err)
+	}
+
+	return &core.Context{
+		Source: sourceResult,
+	}, nil
 }
