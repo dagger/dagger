@@ -366,9 +366,9 @@ func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != "" || arg.DefaultAddress != ""
 }
 
-// isContextArg returns true if this argument is of type Context.
-func (arg *FunctionArg) isContextArg() bool {
-	return IsContextType(arg.TypeDef)
+// isCallerArg returns true if this argument is of type Caller.
+func (arg *FunctionArg) isCallerArg() bool {
+	return IsCallerType(arg.TypeDef)
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {

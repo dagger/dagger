@@ -138,9 +138,6 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
-		dagql.Func("context", s.currentModuleContext).
-			Doc(`The execution context of the module, providing access to filesystem, secrets, and other contextual resources.`),
-
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
@@ -983,31 +980,6 @@ func (s *moduleSchema) currentModuleSource(
 	}
 
 	return inst, err
-}
-
-func (s *moduleSchema) currentModuleContext(
-	ctx context.Context,
-	curMod *core.CurrentModule,
-	args struct{},
-) (*core.Context, error) {
-	mod := curMod.Module
-	if mod == nil {
-		return nil, fmt.Errorf("no current module")
-	}
-
-	// Use the module's context source (which may differ from Source for blueprints/toolchains)
-	contextSource := mod.ContextSource
-	if !contextSource.Valid {
-		// Fall back to the module's own source if no context source is set
-		contextSource = mod.Source
-	}
-	if !contextSource.Valid {
-		return nil, fmt.Errorf("module has no source")
-	}
-
-	return &core.Context{
-		Source: contextSource.Value,
-	}, nil
 }
 
 func (s *moduleSchema) currentModuleWorkdir(
