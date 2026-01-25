@@ -112,8 +112,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		"git", "openssh-client",
 		// for compression/decompression, containerd prefers igzip from the isa-l package as it's fastest
 		"isa-l", "pigz", "xz",
-		// for CNI (use nft variants for compatibility with kernels lacking legacy xtables)
-		"iptables-nft", "dnsmasq",
+		// for CNI (use iptables-wrappers for auto-detection of nft vs legacy backend)
+		"iptables-wrappers", "dnsmasq",
 		// for Kata Containers integration
 		"e2fsprogs",
 		// for Directory.search
