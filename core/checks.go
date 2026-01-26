@@ -468,9 +468,11 @@ func dagForCheck(ctx context.Context, mod *Module) (*dagql.Server, error) {
 			return nil, fmt.Errorf("run checks for module %q: serve core schema: %w", mod.Name(), err)
 		}
 	}
-	for _, tcMod := range mod.ToolchainModules {
-		if err := tcMod.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("run checks for module %q: serve toolchain module %q: %w", mod.Name(), tcMod.Name(), err)
+	if mod.Toolchains != nil {
+		for _, entry := range mod.Toolchains.Entries() {
+			if err := entry.Module.Install(ctx, dag); err != nil {
+				return nil, fmt.Errorf("run checks for module %q: serve toolchain module %q: %w", mod.Name(), entry.Module.Name(), err)
+			}
 		}
 	}
 	if err := mod.Install(ctx, dag); err != nil {

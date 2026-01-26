@@ -407,14 +407,14 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
 	for _, fun := range obj.TypeDef.Functions {
-		// Check if this is a toolchain proxy function
-		if obj.Module.ToolchainModules != nil {
-			if tcMod, ok := obj.Module.ToolchainModules[fun.OriginalName]; ok {
-				bpFun, err := toolchainProxyFunction(ctx, obj.Module, fun, tcMod, dag)
+		// Check if this is a toolchain proxy function using the registry
+		if obj.Module.Toolchains != nil {
+			if entry, ok := obj.Module.Toolchains.Get(fun.OriginalName); ok {
+				proxyField, err := entry.CreateProxyField(ctx, obj.Module, fun, dag)
 				if err != nil {
 					return nil, err
 				}
-				fields = append(fields, bpFun)
+				fields = append(fields, proxyField)
 				continue
 			}
 		}
@@ -462,106 +462,6 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
 		},
 	}
-}
-
-// toolchainProxyFunction creates a function resolver that calls a toolchain module's constructor.
-// This is used when a toolchain has a constructor - instead of returning a pre-initialized object,
-// it calls the constructor function with the provided arguments.
-// If the toolchain has no constructor, it returns an uninitialized object (treating it like a
-// zero-argument constructor).
-func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcMod *Module, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
-	// Find the toolchain's main object type
-	if len(tcMod.ObjectDefs) == 0 {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no objects", tcMod.Name())
-	}
-
-	var mainObjDef *ObjectTypeDef
-	for _, objDef := range tcMod.ObjectDefs {
-		if objDef.AsObject.Valid && gqlObjectName(objDef.AsObject.Value.OriginalName) == gqlObjectName(tcMod.OriginalName) {
-			mainObjDef = objDef.AsObject.Value
-			break
-		}
-	}
-	if mainObjDef == nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no main object", tcMod.Name())
-	}
-
-	// Check if toolchain has a constructor
-	hasConstructor := mainObjDef.Constructor.Valid
-
-	if !hasConstructor {
-		// No constructor - treat as a zero-argument function that returns an uninitialized object
-		spec, err := fun.FieldSpec(ctx, mod)
-		if err != nil {
-			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
-		}
-		spec.Module = mod.IDModule()
-		spec.GetCacheConfig = mod.CacheConfigForCall
-
-		return dagql.Field[*ModuleObject]{
-			Spec: &spec,
-			Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-				// Return an instance of the toolchain's main object with empty fields
-				// The toolchain module's own resolvers will handle function calls on this object
-				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
-					Module:  tcMod,
-					TypeDef: mainObjDef,
-					Fields:  map[string]any{}, // empty fields, functions will be called on the toolchain's runtime
-				})
-			},
-		}, nil
-	}
-
-	// Has constructor - create a ModFunction for it and use its spec
-	constructor := mainObjDef.Constructor.Value
-
-	modFun, err := NewModFunction(
-		ctx,
-		tcMod,
-		mainObjDef,
-		constructor,
-	)
-	if err != nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to create toolchain constructor function %q: %w", fun.Name, err)
-	}
-
-	// Apply local user defaults
-	if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to merge user defaults for toolchain constructor %q: %w", fun.Name, err)
-	}
-
-	// Get the constructor's spec, which includes its arguments
-	spec, err := constructor.FieldSpec(ctx, tcMod)
-	if err != nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain constructor: %w", err)
-	}
-	// But use the toolchain name from the parent module
-	spec.Name = fun.Name
-	spec.Module = mod.IDModule()
-	spec.GetCacheConfig = modFun.CacheConfigForCall
-
-	return dagql.Field[*ModuleObject]{
-		Spec: &spec,
-		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			opts := &CallOpts{
-				ParentTyped:    obj,
-				ParentFields:   nil,
-				SkipSelfSchema: false,
-				Server:         dag,
-			}
-			for name, val := range args {
-				opts.Inputs = append(opts.Inputs, CallInput{
-					Name:  name,
-					Value: val,
-				})
-			}
-			// NB: ensure deterministic order
-			sort.Slice(opts.Inputs, func(i, j int) bool {
-				return opts.Inputs[i].Name < opts.Inputs[j].Name
-			})
-			return modFun.Call(ctx, opts)
-		},
-	}, nil
 }
 
 // objFun creates a dagql.Field for a function defined on a module object type.
