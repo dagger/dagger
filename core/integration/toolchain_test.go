@@ -320,6 +320,70 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 	})
 }
 
+func (ToolchainSuite) TestToolchainAutoInit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("auto-init module on toolchain install", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app")
+		// Note: NOT calling "dagger init" - the toolchain install should auto-init
+
+		modGen = modGen.With(daggerExec("toolchain", "install", "../hello"))
+		_, err := modGen.Stdout(ctx)
+		require.NoError(t, err)
+
+		configContent, err := modGen.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configContent, `"name": "app"`)
+		require.Contains(t, configContent, `"toolchains"`)
+
+		_, err = modGen.
+			With(daggerExec("call", "hello", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("auto-init sets module name to directory name", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithDirectory("my-custom-app", c.Directory()).
+			WithWorkdir("my-custom-app")
+
+		modGen = modGen.
+			With(daggerExec("toolchain", "install", "../hello"))
+		out, err := modGen.
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Initialized module my-custom-app")
+
+		configContent, err := modGen.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configContent, `"name": "my-custom-app"`)
+	})
+
+	t.Run("explicit --mod flag prevents auto-init", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app")
+
+		_, err := modGen.
+			With(daggerExec("toolchain", "install", "--mod=.", "../hello")).
+			Stdout(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("no auto-init when module already exists", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")) // Initialize first
+
+		out, err := modGen.
+			With(daggerExec("toolchain", "install", "../hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "Initialized module")
+		require.Contains(t, out, "toolchain installed")
+	})
+}
+
 func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("ignore checks from toolchain using ignoreChecks config", func(ctx context.Context, t *testctx.T) {
