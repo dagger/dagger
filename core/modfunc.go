@@ -963,6 +963,32 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	}
 }
 
+// loadContainerFromAddress loads a Container from a given address using the Address API.
+func loadContainerFromAddress(ctx context.Context, dag *dagql.Server, address string) (dagql.IDType, error) {
+	var addr dagql.ObjectResult[*Address]
+	err := dag.Select(ctx, dag.Root(), &addr,
+		dagql.Selector{
+			Field: "address",
+			Args: []dagql.NamedInput{
+				{Name: "value", Value: dagql.String(address)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load address %q for container default: %w", address, err)
+	}
+
+	var ctr dagql.ObjectResult[*Container]
+	err = dag.Select(ctx, addr, &ctr,
+		dagql.Selector{Field: "container"},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load container from address %q: %w", address, err)
+	}
+
+	return dagql.NewID[*Container](ctr.ID()), nil
+}
+
 // loadContextualArg loads a contextual argument from the module context directory or address.
 //
 // For Directory, it will load the directory from the module context directory.
@@ -987,30 +1013,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		if arg.TypeDef.AsObject.Value.Name != "Container" {
 			return nil, fmt.Errorf("defaultAddress can only be used with Container type, not %s", arg.TypeDef.AsObject.Value.Name)
 		}
-
-		// Use the Address API to resolve the address to a Container
-		var addr dagql.ObjectResult[*Address]
-		err := dag.Select(ctx, dag.Root(), &addr,
-			dagql.Selector{
-				Field: "address",
-				Args: []dagql.NamedInput{
-					{Name: "value", Value: dagql.String(arg.DefaultAddress)},
-				},
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("load address %q for container default: %w", arg.DefaultAddress, err)
-		}
-
-		var ctr dagql.ObjectResult[*Container]
-		err = dag.Select(ctx, addr, &ctr,
-			dagql.Selector{Field: "container"},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("load container from address %q: %w", arg.DefaultAddress, err)
-		}
-
-		return dagql.NewID[*Container](ctr.ID()), nil
+		return loadContainerFromAddress(ctx, dag, arg.DefaultAddress)
 	}
 
 	if arg.DefaultPath == "" {
