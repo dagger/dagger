@@ -13,7 +13,9 @@ Standard GraphQL only passes scalars between operations. dagql extends this by:
 
 2. **Object arguments become IDs**: When a field takes an object argument, the GraphQL schema uses `<TypeName>ID` as the type. The ID encodes the full call chain.
 
-3. **Automatic caching**: Results are cached by their ID digest. Same inputs → same digest → cache hit.
+3. **Automatic caching**: Results are cached by their **recipe digest** (the ID digest). If a
+   **content digest** is available, the cache can also fall back to that to reuse results
+   that are content-identical even when the recipe differs.
 
 ## Core Types
 
@@ -45,13 +47,13 @@ Key methods: `InstallObject`, `InstallScalar`, `Resolve`, `Load`, `Select`. The 
 
 ### Result Types
 
-**`AnyResult`** (`types.go:77`) is a `Typed` value wrapped with its constructor ID. This is the interface - it doesn't know the concrete type at compile time. Key methods: `ID()`, `Unwrap()` (get inner value), `DerefValue()` (unwrap nullables), `NthValue(int)` (index into arrays).
+**`AnyResult`** (`types.go:77`) is a `Typed` value wrapped with its constructor ID. This is the interface - it doesn't know the concrete type at compile time. Key methods: `ID()`, `Unwrap()` (get inner value), `DerefValue()` (unwrap nullables), `NthValue(int)` (index into arrays), `WithID(...)`.
 
 **`AnyObjectResult`** (`types.go:103`) extends `AnyResult` for selectable objects. Adds `ObjectType()`, `Call(ctx, srv, id)`, and `Select(ctx, srv, selector)`.
 
-**`Result[T]`** (`objects.go:332`) is the generic implementation of `AnyResult`. It wraps a typed value `self` with its `constructor` ID. Immutable - methods return new instances. Also carries optional `postCall` callback and `safeToPersistCache` flag.
+**`Result[T]`** (`objects.go:332`) is the generic implementation of `AnyResult`. It wraps a typed value `self` with its `constructor` ID. Immutable - methods return new instances. Also carries optional `postCall` callback and `safeToPersistCache` flag. Key helpers: `WithDigest` (override recipe digest), `WithContentDigest` (attach content digest), and `WithID` (replace the constructor ID without changing the wrapped value).
 
-**`ObjectResult[T]`** (`objects.go:424`) extends `Result[T]` with a `class` reference, enabling field selection. This is what field resolvers receive when using `NodeFunc`. Key methods: `Self()` (get unwrapped value), `ID()` (get constructor ID), `Select()`, `Call()`.
+**`ObjectResult[T]`** (`objects.go:424`) extends `Result[T]` with a `class` reference, enabling field selection. This is what field resolvers receive when using `NodeFunc`. Key methods: `Self()` (get unwrapped value), `ID()` (get constructor ID), `Select()`, `Call()`, `WithContentDigest`, and `ObjectResultWithPostCall`.
 
 ### ID[T]
 
@@ -141,9 +143,14 @@ Use `NodeFunc` when you need:
 
 ### Returning ObjectResult with a Different ID
 
-**This is crucial for cache optimization.** By default, a field's return value gets the operation's ID (parent + field + args). But when you return an `ObjectResult[T]`, the returned object can have a **completely different ID**. Subsequent field calls chain off that new ID, not the original operation.
+**This is crucial for cache optimization.** By default, a field's return value gets the operation's ID (parent + field + args). But when you return an `ObjectResult[T]`, the returned object can have a **different recipe ID**, and subsequent field calls chain off that new ID.
 
-This enables **cache sharing** across different query paths that arrive at the same underlying object.
+There are **two distinct ways** to enable cache sharing across different query paths:
+
+1. **Override the recipe ID** (use `WithObjectDigest`, `WithDigest`, or `WithID`) when you want the object to *be* the other call chain.
+2. **Attach a content digest** (use `WithContentDigest`) when you want to keep the original recipe ID but allow content-based reuse.
+
+The cache layer tracks both the call key and any result call/content digests.
 
 **Example**: Consider these two query paths:
 ```
@@ -172,15 +179,22 @@ dagql.Func("directory", func(ctx context.Context, self *core.Container, args dir
     return dir, nil  // ID = container.directory(path: "/dir")
 })
 
-// Returns ObjectResult - can have different ID
+// Returns ObjectResult - can have different recipe ID (or a content digest)
 dagql.NodeFunc("directory", func(ctx context.Context, self dagql.ObjectResult[*core.Container], args dirArgs) (dagql.ObjectResult[*core.Directory], error) {
     dir := self.Self().GetDirectory(args.Path)
     // Return with the directory's own ID, not the container operation
     return dagql.NewObjectResultForID(dir, srv, dir.ID())
 })
 ```
+If you want content-based sharing while keeping the original recipe ID, return the normal ID but attach a content digest:
 
-The resolution flow handles this in `call()` (`objects.go:752-776`): if the returned value is `IDable` and has a different digest than the operation, it adds a secondary cache entry under that digest.
+```go
+dirResult, err := dagql.NewObjectResultForID(dir, srv, dir.ID())
+if err != nil {
+    return dirResult, err
+}
+return dirResult.WithContentDigest(digest), nil
+```
 
 ### Custom Cache Keys
 
@@ -207,6 +221,10 @@ Custom cache key function signature:
 func(ctx context.Context, inst ObjectResult[T], args A, req GetCacheConfigRequest) (*GetCacheConfigResponse, error)
 ```
 
+Notes:
+- `GetCacheConfig` customizes the **recipe call key** (and TTL/DoNotCache). It does not set a content digest.
+- Content digests are attached to the result (e.g. `WithContentDigest`) and are used by the cache as a secondary lookup.
+
 ## Resolution Flow
 
 When a GraphQL query is executed:
@@ -219,22 +237,23 @@ Server.Resolve(ctx, root, selections...)
                     └── call()       // Cache lookup + execution
 ```
 
-### preselect (`objects.go:497`)
+### preselect
 
 1. Look up field spec from class
 2. Build arguments (from selector + defaults)
 3. Create new ID via `receiver.Append(...)`
-4. Compute default cache key from ID digest
+4. Compute default cache key from recipe digest (and include content digest if present)
 5. **If `GetCacheConfig` is set**: call it to customize cache key
 
-### call (`objects.go:689`)
+### call
 
 1. Set current ID in context (`idToContext`)
 2. Call `Cache.GetOrInitializeWithCallbacks`:
    - On cache hit: return cached result
    - On miss: execute `Class.Call` → field's `Func`
 3. Run any `PostCall` callback
-4. If returned value has different digest, add secondary cache entry
+4. If the cache hit was **via content digest**, keep using the input recipe ID
+   (`val = val.WithID(newID)`) so the client sees the recipe it requested
 
 ## Server Key Methods
 
@@ -262,18 +281,24 @@ type SessionCache struct {
 }
 ```
 
-Key type is `string` (the digest), value type is `AnyResult`.
+Key type is `string` (the recipe digest); content digests are used as a secondary lookup. Value type is `AnyResult`.
 
 ### CacheKey Structure
 
 ```go
 type CacheKey struct {
-    CallKey        string  // The cache lookup key (usually ID digest)
+    CallKey        string  // The cache lookup key (usually recipe digest)
     TTL            int64   // Optional TTL in seconds
     DoNotCache     bool    // Skip caching entirely
     ConcurrencyKey string  // For deduping concurrent calls
+    ContentDigestKey string // Optional secondary lookup key for content-based reuse
 }
 ```
+
+Returned values can also supply:
+- `ResultCallKey` (the recipe digest of the returned value, if different), and
+- `ContentDigestKey` (content digest of the returned value),
+which the cache uses to index results under additional keys.
 
 ## Field Installation Pattern
 
@@ -300,6 +325,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 | `CurrentID(ctx)` | Get the ID being evaluated |
 | `CurrentDagqlServer(ctx)` | Get the server |
 | `NewResultForCurrentID(ctx, val)` | Wrap value with current ID |
+| `NewObjectResultForCurrentID(ctx, srv, val)` | Wrap object value with current ID and class |
 
 ## Code Locations
 
@@ -318,7 +344,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 - **Func vs NodeFunc choice**: Use `Func` by default. Only use `NodeFunc` when you need `self.ID()`.
 
-- **Cache key affects ID**: When `GetCacheConfig` returns a different `CallKey`, the ID's digest is updated to match (`objects.go:599`). This ensures the returned object's ID reflects its actual cache key.
+- **Cache key affects ID**: When `GetCacheConfig` returns a different `CallKey`, the ID's recipe digest is updated to match. This ensures the returned object's ID reflects its actual cache key. Content digests do not change the recipe digest.
+
+- **Content digest hits preserve recipe IDs**: If a cache hit is based on content digest, dagql keeps the original recipe ID so clients don't see a "random" recipe from the cache.
 
 - **DoNotCache still returns cacheable results**: `CachePerCall` makes every call execute, but the returned `AnyResult` can still be cached under its own digest if passed around.
 

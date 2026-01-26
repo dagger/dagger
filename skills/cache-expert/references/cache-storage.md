@@ -30,8 +30,11 @@ type Cache[K KeyType, V any] interface {
 
 The implementation (`cache[K, V]`) has:
 - **`ongoingCalls`**: Map of in-progress calls, keyed by `(callKey, concurrencyKey)`. Used for call deduplication.
-- **`completedCalls`**: Map of completed results, keyed by storage key. This is the actual cache.
+- **`completedCalls`**: Map of completed results, keyed by storage key. This is the primary cache.
+- **`completedCallsByContent`**: Map of completed results, keyed by content digest. Used for content-based lookup.
 - **`db`**: Optional SQLite database for TTL metadata.
+
+Each completed-calls map stores a result list so a single result can be indexed under multiple keys (e.g., call key + content digest).
 
 ### Session Cache (`dagql/session_cache.go`)
 
@@ -58,7 +61,7 @@ type SessionCache struct {
 
 **Values stored**: `AnyResult` (which includes `Result[T]` and `ObjectResult[T]`)
 
-**Key type**: `string` (the digest)
+**Key type**: `string` (the recipe digest); content digests are used as a secondary lookup
 
 The cache stores the full dagql result objects in memory. Large data (filesystems, container images) is not stored in the dagql cache itself - that's handled by the underlying BuildKit layer (being phased out).
 
@@ -66,10 +69,11 @@ The cache stores the full dagql result objects in memory. Large data (filesystem
 
 ```go
 type CacheKey[K KeyType] struct {
-    CallKey        K       // Primary lookup key (usually ID digest)
+    CallKey        K       // Primary lookup key (usually recipe digest)
     ConcurrencyKey K       // For deduping in-progress calls
     TTL            int64   // Time-to-live in seconds (0 = no expiration)
     DoNotCache     bool    // Skip caching entirely
+    ContentDigestKey K     // Optional secondary lookup key for content-based reuse
 }
 ```
 
@@ -116,9 +120,12 @@ CREATE TABLE calls (
 2. Compute `storageKey` (usually = `callKey`, but may incorporate session ID for TTL entries)
 3. If TTL set, check SQLite for expiration
 4. Check `completedCalls` map - if hit, increment refCount and return
-5. Check `ongoingCalls` map - if hit, wait for completion
-6. Start new call, add to `ongoingCalls`
-7. On completion: remove from `ongoingCalls`, add to `completedCalls`
+5. If `ContentDigestKey` is set, check `completedCallsByContent` map
+6. Check `ongoingCalls` map - if hit, wait for completion
+7. Start new call, add to `ongoingCalls`
+8. On completion: remove from `ongoingCalls`, add to `completedCalls`, and index under any result call/content digests
+
+The cache `Result` exposes whether a hit came from the primary call key or from a content digest fallback (`HitContentDigestCache()`), which callers can use to preserve the original recipe ID.
 
 ### Reference Counting
 
@@ -134,8 +141,12 @@ type ValueWithCallbacks[V any] struct {
     PostCall           PostCallFunc    // Called on every return (cached or not)
     OnRelease          OnReleaseFunc   // Called when removed from cache
     SafeToPersistCache bool            // OK to persist TTL metadata
+    ContentDigestKey   string          // Optional content digest key for the result
+    ResultCallKey      string          // Optional recipe digest for the result (if different)
 }
 ```
+
+If `ResultCallKey` or `ContentDigestKey` are set, the cache indexes the result under those keys in addition to the primary storage key.
 
 ## TTL-Based Caching (Function Calls)
 
