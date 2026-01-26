@@ -11,9 +11,15 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 
+{{ if IsPortableDaggerAPI }}
+    "dagger.io/dagger"
+    "dagger.io/dagger/telemetry"
+    "dagger.io/dagger/querybuilder"
+{{ else }}
 	"{{.PackageImport}}/internal/dagger"
 	"{{.PackageImport}}/internal/telemetry"
 	"{{.PackageImport}}/internal/querybuilder"
+{{ end }}
 )
 
 var dag = dagger.Connect()
