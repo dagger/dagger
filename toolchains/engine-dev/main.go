@@ -192,7 +192,15 @@ func (dev *EngineDev) Container(
 	ctr = ctr.
 		WithFile(cliPath, cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr)
+
 	// ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
+
+	// Set to specify a version on the dev engine so it can use the corresponding
+	// published version.
+	// ctr = ctr.WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v0.19.10")
+
+	// Set if the dev engine has a version but it needs to act as a dev engine.
+	// ctr = ctr.WithEnvVariable("_EXPERIMENTAL_DAGGER_DEV_ENGINE", "1")
 
 	return ctr, nil
 }

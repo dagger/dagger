@@ -41,20 +41,27 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	mfs := memfs.New()
 
-	var overlay fs.FS = layerfs.New(
-		mfs,
-		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
-		&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
-	)
+	layers := []fs.FS{mfs}
 
-	genSt := &generator.GeneratedState{
-		Overlay: overlay,
-	}
+	genSt := &generator.GeneratedState{}
 
 	pkgInfo, partial, err := g.bootstrapMod(mfs, genSt, false)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
+
+	// If the module is generated from a dev engine, also generate internal telemetry and querybuilder
+	if moduleConfig.LibVersion == "" {
+		layers = append(layers,
+			&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
+			&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
+		)
+
+		pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
+	}
+
+	genSt.Overlay = layerfs.New(layers...)
+
 	if outDir != "." {
 		mfs.MkdirAll(outDir, 0700)
 		fs, err := mfs.Sub(outDir)
@@ -193,6 +200,10 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 	return &PackageInfo{
 		// PackageName is unknown until we load the package
 		PackageImport: path.Join(goMod.Module.Mod.Path, packageImport),
+
+		// Assume the utility package are from the remote library but this
+		// will be overridden to packageImport is it's a dev engine.
+		UtilityPkgImport: "dagger.io/dagger",
 	}, needsRegen, nil
 }
 
@@ -240,12 +251,18 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 		}
 	}
 
+	// If the module uses a released version of the engine, we add it to the list of dependencies.
+	if g.Config.ModuleConfig.LibVersion != "" {
+		mod.AddRequire("dagger.io/dagger", g.Config.ModuleConfig.LibVersion)
+	}
+
 	genSt.PostCommands = append(genSt.PostCommands,
 		// run 'go mod tidy' after generating to fix and prune dependencies
 		//
 		// NOTE: this has to happen before 'go work use' to synchronize Go version
 		// bumps
-		exec.Command("go", "mod", "tidy"))
+		exec.Command("go", "mod", "tidy"),
+	)
 
 	if goWork != "" {
 		// run "go work use ." after generating if we had a go.work at the root

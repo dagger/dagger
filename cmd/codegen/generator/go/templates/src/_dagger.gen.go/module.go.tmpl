@@ -12,8 +12,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 
 	"{{.PackageImport}}/internal/dagger"
-	"{{.PackageImport}}/internal/telemetry"
-	"{{.PackageImport}}/internal/querybuilder"
+	"{{.UtilityPkgImport}}/telemetry"
+	"{{.UtilityPkgImport}}/querybuilder"
 )
 
 var dag = dagger.Connect()

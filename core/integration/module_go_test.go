@@ -1809,6 +1809,41 @@ func Foo() *dagger.Directory {
 	require.JSONEq(t, `{"minimal":{"hello":"hello world"}}`, out)
 }
 
+// Verify that we can use the released library in module.
+//
+// WARNING: this test can fail if we make a breaking change on the `telemetry` or
+// `querybuilder` package and use that changes in the go generated files.
+// If so, please disable that test until the release is done then re enable it.
+func (GoSuite) TestReleaseLibraryInModule(ctx context.Context, t *testctx.T) {
+	versions := []string{"v0.19.10", "v0.19.5"}
+
+	for _, version := range versions {
+		version := version
+
+		t.Run(fmt.Sprintf("use version %s", version), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+				return c.
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version)
+			}))
+
+			modCtr := engineClientContainer(ctx, t, c, devEngineSvc).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version).
+				WithWorkdir("/work").
+				With(daggerNonNestedExec("init", "--sdk=go", "--name=test", "--source=."))
+
+			goMod, err := modCtr.File("go.mod").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, goMod, fmt.Sprintf("dagger.io/dagger %s", version))
+
+			out, err := modCtr.With(daggerNonNestedExec("call", "container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, out, "hello\n")
+		})
+	}
+}
+
 func (GoSuite) TestNameCase(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
