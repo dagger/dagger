@@ -3163,6 +3163,11 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 					arg.DefaultPath = argCfg.DefaultPath
 				}
 
+				// Apply defaultAddress if specified
+				if argCfg.DefaultAddress != "" {
+					arg.DefaultAddress = argCfg.DefaultAddress
+				}
+
 				// Apply ignore patterns if specified
 				if len(argCfg.Ignore) > 0 {
 					arg.Ignore = argCfg.Ignore

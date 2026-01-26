@@ -534,14 +534,15 @@ func (s *moduleSchema) functionWithCheck(ctx context.Context, fn *core.Function,
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
-	Name         string
-	TypeDef      core.TypeDefID
-	Description  string    `default:""`
-	DefaultValue core.JSON `default:""`
-	DefaultPath  string    `default:""`
-	Ignore       []string  `default:"[]"`
-	SourceMap    dagql.Optional[core.SourceMapID]
-	Deprecated   *string
+	Name           string
+	TypeDef        core.TypeDefID
+	Description    string    `default:""`
+	DefaultValue   core.JSON `default:""`
+	DefaultPath    string    `default:""`
+	DefaultAddress string    `default:""`
+	Ignore         []string  `default:"[]"`
+	SourceMap      dagql.Optional[core.SourceMapID]
+	Deprecated     *string
 }) (*core.Function, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -558,10 +559,11 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		return nil, err
 	}
 
-	// Check if both values are used, return an error if so.
+	// Check if multiple default values are used, return an error if so.
 	defaultSet := []bool{
 		args.DefaultValue != nil,
 		args.DefaultPath != "",
+		args.DefaultAddress != "",
 	}
 	defaultCount := 0
 	for _, v := range defaultSet {
@@ -584,6 +586,17 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		}
 	}
 
+	// Check if default address is set for supported type (Container only)
+	if args.DefaultAddress != "" {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set default address for Object, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Name
+		if name != "Container" {
+			return nil, fmt.Errorf("can only set default address for Container type, not %s", name)
+		}
+	}
+
 	// Check if ignore is set for non-directory type
 	if len(args.Ignore) > 0 {
 		if argType.Self().Kind != core.TypeDefKindObject {
@@ -595,14 +608,14 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		}
 	}
 
-	// When using a default path SDKs can't set a default value and the argument
+	// When using a default path or address, SDKs can't set a default value and the argument
 	// may be non-nullable, so we need to enforce it as optional.
 	td := argType.Self()
-	if args.DefaultPath != "" {
+	if args.DefaultPath != "" || args.DefaultAddress != "" {
 		td = td.WithOptional(true)
 	}
 
-	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore, sourceMap, args.Deprecated), nil
+	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, sourceMap, args.Deprecated), nil
 }
 
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {

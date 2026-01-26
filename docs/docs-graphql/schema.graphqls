@@ -1,6 +1,9 @@
 """Indicates that this function is a check."""
 directive @check on FIELD_DEFINITION
 
+"""Indicates that the argument defaults to a container address."""
+directive @defaultAddress(address: String!) on ARGUMENT_DEFINITION
+
 """Indicates that the argument defaults to a contextual path."""
 directive @defaultPath(path: String!) on ARGUMENT_DEFINITION
 
@@ -3115,6 +3118,8 @@ type Function {
 
     """If deprecated, the reason or migration path."""
     deprecated: String
+
+    defaultAddress: String = ""
   ): Function!
 
   """Returns the function updated to use the provided cache policy."""
@@ -3156,6 +3161,12 @@ An argument accepted by a function.
 This is a specification for an argument at function definition time, not an argument passed at function call time.
 """
 type FunctionArg {
+  """
+  Only applies to arguments of type Container. If the argument is not set, load
+  it from the given address (e.g. alpine:latest)
+  """
+  defaultAddress: String!
+
   """
   Only applies to arguments of type File or Directory. If the argument is not
   set, load it from the given path in the context directory

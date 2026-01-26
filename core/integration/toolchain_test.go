@@ -335,7 +335,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
         {
           "function": ["testWithDefaultContainer"],
           "argument": "ctr",
-          "default": "alpine:3.18"
+          "defaultAddress": "alpine:3.18"
         }
       ]
     }

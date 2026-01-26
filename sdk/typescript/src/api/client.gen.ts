@@ -1355,6 +1355,7 @@ export type FunctionWithArgOpts = {
    * If deprecated, the reason or migration path.
    */
   deprecated?: string
+  defaultAddress?: string
 }
 
 export type FunctionWithCachePolicyOpts = {
@@ -7650,6 +7651,7 @@ export class Function_ extends BaseClient {
  */
 export class FunctionArg extends BaseClient {
   private readonly _id?: FunctionArgID = undefined
+  private readonly _defaultAddress?: string = undefined
   private readonly _defaultPath?: string = undefined
   private readonly _defaultValue?: JSON = undefined
   private readonly _deprecated?: string = undefined
@@ -7662,6 +7664,7 @@ export class FunctionArg extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: FunctionArgID,
+    _defaultAddress?: string,
     _defaultPath?: string,
     _defaultValue?: JSON,
     _deprecated?: string,
@@ -7671,6 +7674,7 @@ export class FunctionArg extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._defaultAddress = _defaultAddress
     this._defaultPath = _defaultPath
     this._defaultValue = _defaultValue
     this._deprecated = _deprecated
@@ -7689,6 +7693,21 @@ export class FunctionArg extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<FunctionArgID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+   */
+  defaultAddress = async (): Promise<string> => {
+    if (this._defaultAddress) {
+      return this._defaultAddress
+    }
+
+    const ctx = this._ctx.select("defaultAddress")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }

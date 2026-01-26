@@ -4,6 +4,9 @@ slug: /getting-started/types/container
 description: "Learn about the Container type in Dagger and how to use it for container operations."
 ---
 
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
 import ContainerType from "@daggerTypes/_container.mdx";
 import BuildImageFromDockerfile from '@cookbookBuild/_image-from-dockerfile.mdx';
 import BuildImageFromDockerfileContext from '@cookbookBuild/_image-from-dockerfile-build-context.mdx';
@@ -13,6 +16,56 @@ import DebugTerminal from "@cookbookError/_debug-terminal.mdx";
 import InspectFilesystem from "@cookbookError/_inspect-filesystem.mdx";
 
 <ContainerType />
+
+## Default addresses
+
+It is possible to assign a default address for a `Container` argument in a Dagger Function. Dagger will automatically use this default address to pull the container image when no value is specified for the argument.
+
+:::tip
+Default addresses are only available for `Container` arguments. They are
+commonly used to provide a sensible default base image for build or test
+operations. When a value is explicitly passed for the argument, it always
+overrides the default address.
+:::
+
+Here's an example:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+The default address is set by adding a `defaultAddress` pragma on the corresponding Dagger Function `ctr` argument.
+
+```go file=./snippets/default-address/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+
+The default address is set by adding a `DefaultAddress` annotation on the corresponding Dagger Function `ctr` argument.
+
+```python file=./snippets/default-address/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+The default address is set by adding an `@argument` decorator with a `defaultAddress` parameter on the corresponding Dagger Function `ctr` argument.
+
+```typescript file=./snippets/default-address/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+
+The default address is set by adding a `#[DefaultAddress]` Attribute on the corresponding Dagger Function `ctr` argument.
+
+```php file=./snippets/default-address/php/src/MyModule.php
+```
+</TabItem>
+</Tabs>
+
+The default address can be any valid container image reference, such as:
+- `alpine:latest` - Docker Hub image with tag
+- `alpine:3.19` - Docker Hub image with specific version
+- `ghcr.io/owner/image:tag` - GitHub Container Registry image
+- `gcr.io/project/image:tag` - Google Container Registry image
 
 ## Examples
 
