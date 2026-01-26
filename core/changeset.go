@@ -539,7 +539,10 @@ func (ch *Changeset) WithChangeset(
 	}
 
 	conflicts := ourPaths.CheckConflicts(theirPaths)
-	if onConflictStrategy == FailEarlyOnConflict && !conflicts.IsEmpty() {
+
+	if conflicts.IsEmpty() {
+		return mergeChangesetsWithoutGit(ctx, ch, other)
+	} else if onConflictStrategy == FailEarlyOnConflict {
 		return nil, conflicts.Error()
 	}
 
@@ -596,11 +599,12 @@ func (ch *Changeset) WithChangesets(
 		return ch.WithChangeset(ctx, others[0], twoWayStrategy)
 	}
 
-	// FAIL_EARLY: check for conflicts between all pairs before attempting merge
-	if onConflictStrategy == FailEarlyOnConflicts {
-		if err := checkAllPairwiseConflicts(ctx, ch, others); err != nil {
-			return nil, err
-		}
+	err := checkAllPairwiseConflicts(ctx, ch, others)
+
+	if err == nil {
+		return mergeChangesetsWithoutGit(ctx, ch, others...)
+	} else if onConflictStrategy == FailEarlyOnConflicts {
+		return nil, err
 	}
 
 	before, err := mergeBeforeDirectories(ctx, ch, others...)
@@ -1026,4 +1030,32 @@ func toSet(slice []string) map[string]struct{} {
 		set[s] = struct{}{}
 	}
 	return set
+}
+
+// mergeChangesetsWithoutGit merges changesets without using git by applying
+// each changeset sequentially. This is only safe when there are no file overlaps
+// between changesets.
+func mergeChangesetsWithoutGit(ctx context.Context, ch *Changeset, others ...*Changeset) (*Changeset, error) {
+	// Merge before directories (same as git path)
+	before, err := mergeBeforeDirectories(ctx, ch, others...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start with merged before and apply each changeset sequentially
+	afterDir := before.Self()
+
+	afterDir, err = afterDir.WithChanges(ctx, ch)
+	if err != nil {
+		return nil, fmt.Errorf("apply changeset: %w", err)
+	}
+
+	for i, other := range others {
+		afterDir, err = afterDir.WithChanges(ctx, other)
+		if err != nil {
+			return nil, fmt.Errorf("apply changeset %d: %w", i, err)
+		}
+	}
+
+	return newChangesetFromMerge(ctx, before, afterDir)
 }
