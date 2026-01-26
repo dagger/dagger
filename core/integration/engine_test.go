@@ -520,6 +520,9 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 					return c.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.engineVersion).
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion).
+						// Required to use the bundled go SDK instead of the remote one
+						// This avoid breaking that test because of a breaking change on
+						// the generated files.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_DEV_ENGINE", "1")
 				})
 				devEngineSvc = devEngineContainerAsService(devEngine)
