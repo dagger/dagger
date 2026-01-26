@@ -175,6 +175,13 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	ctr = ctr.
 		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
+		// Force iptables to use nftables backend for kernels without legacy xtables (6.17+)
+		WithExec([]string{"ln", "-sf", "/sbin/xtables-nft-multi", "/sbin/iptables"}).
+		WithExec([]string{"ln", "-sf", "/sbin/xtables-nft-multi", "/sbin/iptables-save"}).
+		WithExec([]string{"ln", "-sf", "/sbin/xtables-nft-multi", "/sbin/iptables-restore"}).
+		WithExec([]string{"ln", "-sf", "/sbin/xtables-nft-multi", "/sbin/ip6tables"}).
+		WithExec([]string{"ln", "-sf", "/sbin/xtables-nft-multi", "/sbin/ip6tables-save"}).
+		WithExec([]string{"ln", "-sf", "/sbin/xtables-nft-multi", "/sbin/ip6tables-restore"}).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
 
 	if err := eg.Wait(); err != nil {
