@@ -77,6 +77,7 @@ func (d DocsDev) LintMarkdown(
 	ctx context.Context,
 	// +defaultPath="/"
 	// +ignore=[
+	// "**/*",
 	// "!**/README.md",
 	// "!docs/**/*.md",
 	// "!**/.markdownlint.*",
