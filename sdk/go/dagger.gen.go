@@ -923,6 +923,14 @@ type Changeset struct {
 	isEmpty *bool
 	sync    *ChangesetID
 }
+type WithChangesetFunc func(r *Changeset) *Changeset
+
+// With calls the provided function with current Changeset.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Changeset) With(f WithChangesetFunc) *Changeset {
+	return f(r)
+}
 
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
 	return &Changeset{
@@ -1074,6 +1082,61 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 	return &Changeset{
 		query: q.Root().Select("loadChangesetFromID").Arg("id", id),
 	}, nil
+}
+
+// ChangesetWithChangesetOpts contains options for Changeset.WithChangeset
+type ChangesetWithChangesetOpts struct {
+	// What to do on a merge conflict
+	//
+	// Default: FAIL
+	OnConflict ChangesetMergeConflict
+}
+
+// Add changes to an existing changeset
+//
+// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+func (r *Changeset) WithChangeset(changes *Changeset, opts ...ChangesetWithChangesetOpts) *Changeset {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChangeset")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// ChangesetWithChangesetsOpts contains options for Changeset.WithChangesets
+type ChangesetWithChangesetsOpts struct {
+	// What to do on a merge conflict
+	//
+	// Default: FAIL
+	OnConflict ChangesetsMergeConflict
+}
+
+// Add changes from multiple changesets using git octopus merge strategy
+//
+// This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+//
+// Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithChangesetsOpts) *Changeset {
+	q := r.query.Select("withChangesets")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 type Check struct {
@@ -13376,6 +13439,141 @@ const (
 
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+)
+
+// Strategy to use when merging changesets with conflicting changes.
+type ChangesetMergeConflict string
+
+func (ChangesetMergeConflict) IsEnum() {}
+
+func (v ChangesetMergeConflict) Name() string {
+	switch v {
+	case ChangesetMergeConflictFailEarly:
+		return "FAIL_EARLY"
+	case ChangesetMergeConflictFail:
+		return "FAIL"
+	case ChangesetMergeConflictLeaveConflictMarkers:
+		return "LEAVE_CONFLICT_MARKERS"
+	case ChangesetMergeConflictPreferOurs:
+		return "PREFER_OURS"
+	case ChangesetMergeConflictPreferTheirs:
+		return "PREFER_THEIRS"
+	default:
+		return ""
+	}
+}
+
+func (v ChangesetMergeConflict) Value() string {
+	return string(v)
+}
+
+func (v *ChangesetMergeConflict) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ChangesetMergeConflict) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAIL":
+		*v = ChangesetMergeConflictFail
+	case "FAIL_EARLY":
+		*v = ChangesetMergeConflictFailEarly
+	case "LEAVE_CONFLICT_MARKERS":
+		*v = ChangesetMergeConflictLeaveConflictMarkers
+	case "PREFER_OURS":
+		*v = ChangesetMergeConflictPreferOurs
+	case "PREFER_THEIRS":
+		*v = ChangesetMergeConflictPreferTheirs
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Fail before attempting merge if file-level conflicts are detected
+	ChangesetMergeConflictFailEarly ChangesetMergeConflict = "FAIL_EARLY"
+
+	// Attempt the merge and fail if git merge fails due to conflicts
+	ChangesetMergeConflictFail ChangesetMergeConflict = "FAIL"
+
+	// Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.
+	ChangesetMergeConflictLeaveConflictMarkers ChangesetMergeConflict = "LEAVE_CONFLICT_MARKERS"
+
+	// The conflict is resolved by applying the version of the calling changeset
+	ChangesetMergeConflictPreferOurs ChangesetMergeConflict = "PREFER_OURS"
+
+	// The conflict is resolved by applying the version of the other changeset
+	ChangesetMergeConflictPreferTheirs ChangesetMergeConflict = "PREFER_THEIRS"
+)
+
+// Strategy to use when merging multiple changesets with git octopus merge.
+type ChangesetsMergeConflict string
+
+func (ChangesetsMergeConflict) IsEnum() {}
+
+func (v ChangesetsMergeConflict) Name() string {
+	switch v {
+	case ChangesetsMergeConflictFailEarly:
+		return "FAIL_EARLY"
+	case ChangesetsMergeConflictFail:
+		return "FAIL"
+	default:
+		return ""
+	}
+}
+
+func (v ChangesetsMergeConflict) Value() string {
+	return string(v)
+}
+
+func (v *ChangesetsMergeConflict) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ChangesetsMergeConflict) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAIL":
+		*v = ChangesetsMergeConflictFail
+	case "FAIL_EARLY":
+		*v = ChangesetsMergeConflictFailEarly
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Fail before attempting merge if file-level conflicts are detected between any changesets
+	ChangesetsMergeConflictFailEarly ChangesetsMergeConflict = "FAIL_EARLY"
+
+	// Attempt the octopus merge and fail if git merge fails due to conflicts
+	ChangesetsMergeConflictFail ChangesetsMergeConflict = "FAIL"
 )
 
 // File type.
