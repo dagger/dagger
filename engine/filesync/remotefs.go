@@ -124,7 +124,7 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 				pkt.Stat.Path = path
 				pkt.Stat.Linkname = filepath.FromSlash(pkt.Stat.Linkname)
 
-				if os.FileMode(pkt.Stat.Mode)&os.ModeType == 0 {
+				if !pkt.Stat.GitIgnored && os.FileMode(pkt.Stat.Mode)&os.ModeType == 0 {
 					r, w := io.Pipe()
 					rFile := &remoteFile{
 						id: curFileID,
