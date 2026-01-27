@@ -49,7 +49,7 @@ type splitResult struct {
 func (r *splitResult) Release(ctx context.Context) error {
 	if atomic.AddInt64(&r.released, 1) > 1 {
 		err := errors.Errorf("releasing already released reference %+v", r.Result.ID())
-		bklog.G(ctx).Error(err)
+		bklog.G(ctx).Debug(err)
 		return err
 	}
 	if atomic.AddInt64(r.sem, 1) == 2 {
@@ -118,7 +118,7 @@ type splitResultProxy struct {
 func (r *splitResultProxy) Release(ctx context.Context) error {
 	if atomic.AddInt64(&r.released, 1) > 1 {
 		err := errors.New("releasing already released reference")
-		bklog.G(ctx).Error(err)
+		bklog.G(ctx).Debug(err)
 		return err
 	}
 	if atomic.AddInt64(r.sem, 1) == 2 {

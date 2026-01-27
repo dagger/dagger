@@ -553,6 +553,29 @@ func currentIDForContainerDagOp(
 	return newID.WithDigest(digest.Digest(dgst)), nil
 }
 
+// DagOpChangesetWrapper caches a changeset field as a buildkit operation.
+// After JSON deserialization, it resolves the ObjectResult references that
+// couldn't be directly unmarshaled.
+func DagOpChangesetWrapper[T dagql.Typed, A DagOpInternalArgsIface](
+	srv *dagql.Server,
+	fn dagql.NodeFuncHandler[T, A, *core.Changeset],
+) dagql.NodeFuncHandler[T, A, *core.Changeset] {
+	return func(ctx context.Context, self dagql.ObjectResult[T], args A) (*core.Changeset, error) {
+		if args.InDagOp() {
+			return fn(ctx, self, args)
+		}
+		cs, err := DagOp(ctx, srv, self, args, fn)
+		if err != nil {
+			return nil, err
+		}
+		// Resolve refs after JSON deserialization to reconstruct ObjectResult fields
+		if err := cs.ResolveRefs(ctx, srv); err != nil {
+			return nil, fmt.Errorf("resolve changeset refs: %w", err)
+		}
+		return cs, nil
+	}
+}
+
 func extractLLBDependencies(ctx context.Context, val any) ([]llb.State, error) {
 	hasPBs, ok := dagql.UnwrapAs[core.HasPBDefinitions](val)
 	if !ok {

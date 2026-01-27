@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"dagger.io/dagger"
@@ -1087,4 +1088,533 @@ func (ChangesetSuite) TestEmpty(ctx context.Context, t *testctx.T) {
 	empty, err = removedDir.Changes(baseDir).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, empty)
+}
+
+func (ChangesetSuite) TestChangesetMerge(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	baseDir := c.Directory().
+		WithNewFile("filea.txt", "initial file a content").
+		WithNewFile("fileb.txt", "initial file b content").
+		WithNewFile("filec.txt", "initial file c content").
+		WithNewFile("filed.txt", "initial file d content").
+		WithNewFile("filee.txt", "initial file e content")
+	original := baseDir.
+		WithNewFile("filea.txt", "file a modified in original").
+		WithNewFile("fileb.txt", "file b modified in original").
+		WithoutFile("filec.txt").
+		WithNewFile("filef.txt", "file f added in original").
+		WithNewFile("fileg.txt", "file g added in original").
+		Changes(baseDir)
+
+	t.Run("initial state", func(ctx context.Context, t *testctx.T) {
+		modifiedPaths, err := original.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, modifiedPaths, []string{"filea.txt", "fileb.txt"})
+		addedPaths, err := original.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, addedPaths, []string{"filef.txt", "fileg.txt"})
+		removedPaths, err := original.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, removedPaths, []string{"filec.txt"})
+	})
+
+	t.Run("no conflicts", func(ctx context.Context, t *testctx.T) {
+		other := baseDir.
+			WithNewFile("filee.txt", "file e modified in other").
+			WithNewFile("fileh.txt", "file h added in other").
+			WithoutFile("filed.txt").
+			Changes(baseDir)
+
+		// ensure resulting changeset contains modifications from both
+		// changesets
+		res, err := original.WithChangeset(other).Sync(ctx)
+		require.NoError(t, err)
+		modifiedPath, err := res.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, modifiedPath, []string{"filea.txt", "fileb.txt", "filee.txt"})
+		addedPath, err := res.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, addedPath, []string{"filef.txt", "fileg.txt", "fileh.txt"})
+		removedPaths, err := res.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, removedPaths, []string{"filec.txt", "filed.txt"})
+	})
+
+	t.Run("with conflict", func(ctx context.Context, t *testctx.T) {
+		// this will cause multiple conflicts:
+		// - on filea.txt, file is modified in both changesets
+		// - on fileb.txt, file is modified in 'original' changeset and removed in 'other' changeset
+		// - on filec.txt, file is removed in 'original' changeset and modified in 'other' changeset
+		// - on filef.txt, file is added in both changesets
+		other := baseDir.
+			WithNewFile("filea.txt", "file a modified in other").
+			WithoutFile("fileb.txt").
+			WithNewFile("filec.txt", "file c modified in other").
+			WithNewFile("filef.txt", "file f added in other").
+			WithNewFile("filee.txt", "file e modified in other").
+			WithNewFile("filei.txt", "file i added in other").
+			Changes(baseDir)
+
+		// Conflict resolution strategies:
+		// - FAIL_EARLY: fail before merge if file-level conflicts detected
+		// - FAIL: attempt merge, fail if git merge fails
+		// - LEAVE_CONFLICT_MARKERS: keep conflict markers, keep modified for modify/delete
+		// - PREFER_OURS: use -X ours, resolve modify/delete by preferring ours
+		// - PREFER_THEIRS: use -X theirs, resolve modify/delete by preferring theirs
+
+		t.Run("fail early", func(ctx context.Context, t *testctx.T) {
+			// FAIL_EARLY checks file-level conflicts before attempting merge
+			_, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictFailEarly,
+			}).Sync(ctx)
+			require.ErrorContains(t, err, "filea.txt")
+			require.ErrorContains(t, err, "fileb.txt")
+			require.ErrorContains(t, err, "filec.txt")
+			require.ErrorContains(t, err, "filef.txt")
+		})
+
+		t.Run("fail", func(ctx context.Context, t *testctx.T) {
+			// FAIL is the default - attempts merge and fails if conflicts occur
+			_, err := original.WithChangeset(other).Sync(ctx)
+			require.Error(t, err)
+			// explicit FAIL
+			_, err = original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictFail,
+			}).Sync(ctx)
+			require.Error(t, err)
+		})
+
+		t.Run("leave conflict markers", func(ctx context.Context, t *testctx.T) {
+			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictLeaveConflictMarkers,
+			}).Sync(ctx)
+			require.NoError(t, err)
+
+			// For files modified in both changesets, content should have conflict markers
+			c, err := res.After().File("filea.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, c, "<<<<<<<")
+			require.Contains(t, c, "=======")
+			require.Contains(t, c, ">>>>>>>")
+
+			// For modify/delete conflicts, keep the modified version
+			// fileb.txt: modified in original, removed in other -> keep original's modification
+			c, err = res.After().File("fileb.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file b modified in original", c)
+			// filec.txt: removed in original, modified in other -> keep other's modification
+			c, err = res.After().File("filec.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file c modified in other", c)
+
+			// For files added in both, content should have conflict markers
+			c, err = res.After().File("filef.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, c, "<<<<<<<")
+		})
+
+		t.Run("prefer ours", func(ctx context.Context, t *testctx.T) {
+			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictPreferOurs,
+			}).Sync(ctx)
+			require.NoError(t, err)
+
+			modifiedPaths, err := res.ModifiedPaths(ctx)
+			require.NoError(t, err)
+			addedPaths, err := res.AddedPaths(ctx)
+			require.NoError(t, err)
+			removedPaths, err := res.RemovedPaths(ctx)
+			require.NoError(t, err)
+
+			// - on filea.txt, file is modified in both changesets
+			require.Contains(t, modifiedPaths, "filea.txt")
+			c, err := res.After().File("filea.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file a modified in original", c)
+			// - on fileb.txt, file is modified in 'original' changeset and removed in 'other' changeset
+			require.Contains(t, modifiedPaths, "fileb.txt")
+			c, err = res.After().File("fileb.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file b modified in original", c)
+			// - on filec.txt, file is removed in 'original' changeset and modified in 'other' changeset
+			require.Contains(t, removedPaths, "filec.txt")
+			// - on filef.txt, file is added in both changesets
+			require.Contains(t, addedPaths, "filef.txt")
+			c, err = res.After().File("filef.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file f added in original", c)
+
+			// ensure other changes are still applied
+			require.Contains(t, modifiedPaths, "filee.txt")
+			require.Contains(t, addedPaths, "fileg.txt")
+			require.Contains(t, addedPaths, "filei.txt")
+		})
+
+		t.Run("prefer theirs", func(ctx context.Context, t *testctx.T) {
+			res, err := original.WithChangeset(other, dagger.ChangesetWithChangesetOpts{
+				OnConflict: dagger.ChangesetMergeConflictPreferTheirs,
+			}).Sync(ctx)
+			require.NoError(t, err)
+
+			modifiedPaths, err := res.ModifiedPaths(ctx)
+			require.NoError(t, err)
+			addedPaths, err := res.AddedPaths(ctx)
+			require.NoError(t, err)
+			removedPaths, err := res.RemovedPaths(ctx)
+			require.NoError(t, err)
+
+			// - on filea.txt, file is modified in both changesets
+			require.Contains(t, modifiedPaths, "filea.txt")
+			c, err := res.After().File("filea.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file a modified in other", c)
+			// - on fileb.txt, file is modified in 'original' changeset and removed in 'other' changeset
+			require.Contains(t, removedPaths, "fileb.txt")
+			// - on filec.txt, file is removed in 'original' changeset and modified in 'other' changeset
+			require.Contains(t, modifiedPaths, "filec.txt")
+			c, err = res.After().File("filec.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file c modified in other", c)
+			// - on filef.txt, file is added in both changesets
+			require.Contains(t, addedPaths, "filef.txt")
+			c, err = res.After().File("filef.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file f added in other", c)
+
+			// ensure other changes are still applied
+			require.Contains(t, modifiedPaths, "filee.txt")
+			require.Contains(t, addedPaths, "fileg.txt")
+			require.Contains(t, addedPaths, "filei.txt")
+		})
+	})
+
+	t.Run("sequential merge", func(ctx context.Context, t *testctx.T) {
+		// Create three independent changesets from the same base, each modifying different files
+		changeset1 := baseDir.
+			WithNewFile("filea.txt", "file a modified in changeset1").
+			WithNewFile("file1.txt", "file 1 added in changeset1").
+			Changes(baseDir)
+
+		changeset2 := baseDir.
+			WithNewFile("fileb.txt", "file b modified in changeset2").
+			WithNewFile("file2.txt", "file 2 added in changeset2").
+			WithoutFile("filec.txt").
+			Changes(baseDir)
+
+		changeset3 := baseDir.
+			WithNewFile("filed.txt", "file d modified in changeset3").
+			WithNewFile("file3.txt", "file 3 added in changeset3").
+			WithoutFile("filee.txt").
+			Changes(baseDir)
+
+		// Merge changesets sequentially using WithChangeset
+		merged, err := changeset1.WithChangeset(changeset2).Sync(ctx)
+		require.NoError(t, err)
+		res, err := merged.WithChangeset(changeset3).Sync(ctx)
+		require.NoError(t, err)
+
+		// Verify the merged changeset contains changes from all three
+		modifiedPaths, err := res.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, modifiedPaths, []string{"filea.txt", "fileb.txt", "filed.txt"})
+
+		addedPaths, err := res.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, addedPaths, []string{"file1.txt", "file2.txt", "file3.txt"})
+
+		removedPaths, err := res.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, removedPaths, []string{"filec.txt", "filee.txt"})
+
+		// Verify file contents from each changeset are present
+		content, err := res.After().File("filea.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file a modified in changeset1", content)
+
+		content, err = res.After().File("fileb.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file b modified in changeset2", content)
+
+		content, err = res.After().File("filed.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file d modified in changeset3", content)
+
+		content, err = res.After().File("file1.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file 1 added in changeset1", content)
+
+		content, err = res.After().File("file2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file 2 added in changeset2", content)
+
+		content, err = res.After().File("file3.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file 3 added in changeset3", content)
+	})
+}
+
+func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	baseDir := c.Directory().
+		WithNewFile("filea.txt", "initial file a content").
+		WithNewFile("fileb.txt", "initial file b content").
+		WithNewFile("filec.txt", "initial file c content").
+		WithNewFile("filed.txt", "initial file d content").
+		WithNewFile("filee.txt", "initial file e content")
+
+	t.Run("empty array returns unchanged changeset", func(ctx context.Context, t *testctx.T) {
+		original := baseDir.
+			WithNewFile("filea.txt", "file a modified").
+			WithNewFile("newfile.txt", "new file").
+			Changes(baseDir)
+
+		// WithChangesets with empty array should return unchanged changeset
+		res, err := original.WithChangesets([]*dagger.Changeset{}).Sync(ctx)
+		require.NoError(t, err)
+
+		// Verify the changeset is unchanged
+		modifiedPaths, err := res.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"filea.txt"}, modifiedPaths)
+
+		addedPaths, err := res.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"newfile.txt"}, addedPaths)
+	})
+
+	t.Run("single element delegates to WithChangeset", func(ctx context.Context, t *testctx.T) {
+		original := baseDir.
+			WithNewFile("filea.txt", "file a modified in original").
+			Changes(baseDir)
+
+		other := baseDir.
+			WithNewFile("fileb.txt", "file b modified in other").
+			WithNewFile("newfile.txt", "new file").
+			Changes(baseDir)
+
+		// WithChangesets with single element should work like WithChangeset
+		res, err := original.WithChangesets([]*dagger.Changeset{other}).Sync(ctx)
+		require.NoError(t, err)
+
+		modifiedPaths, err := res.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"filea.txt", "fileb.txt"}, modifiedPaths)
+
+		addedPaths, err := res.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"newfile.txt"}, addedPaths)
+	})
+
+	t.Run("multiple changesets no conflicts", func(ctx context.Context, t *testctx.T) {
+		// Create base changeset
+		original := baseDir.
+			WithNewFile("filea.txt", "file a modified in original").
+			WithNewFile("file1.txt", "file 1 added in original").
+			Changes(baseDir)
+
+		// Create multiple independent changesets from the same base
+		changeset1 := baseDir.
+			WithNewFile("fileb.txt", "file b modified in changeset1").
+			WithNewFile("file2.txt", "file 2 added in changeset1").
+			Changes(baseDir)
+
+		changeset2 := baseDir.
+			WithNewFile("filec.txt", "file c modified in changeset2").
+			WithNewFile("file3.txt", "file 3 added in changeset2").
+			WithoutFile("filed.txt").
+			Changes(baseDir)
+
+		changeset3 := baseDir.
+			WithNewFile("filee.txt", "file e modified in changeset3").
+			WithNewFile("file4.txt", "file 4 added in changeset3").
+			Changes(baseDir)
+
+		// Merge all changesets at once using octopus merge
+		res, err := original.WithChangesets([]*dagger.Changeset{changeset1, changeset2, changeset3}).Sync(ctx)
+		require.NoError(t, err)
+
+		// Verify the merged changeset contains changes from all changesets
+		modifiedPaths, err := res.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"filea.txt", "fileb.txt", "filec.txt", "filee.txt"}, modifiedPaths)
+
+		addedPaths, err := res.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"file1.txt", "file2.txt", "file3.txt", "file4.txt"}, addedPaths)
+
+		removedPaths, err := res.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"filed.txt"}, removedPaths)
+
+		// Verify file contents from each changeset are present
+		content, err := res.After().File("filea.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file a modified in original", content)
+
+		content, err = res.After().File("fileb.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file b modified in changeset1", content)
+
+		content, err = res.After().File("filec.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file c modified in changeset2", content)
+
+		content, err = res.After().File("filee.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file e modified in changeset3", content)
+	})
+
+	t.Run("with conflicts - fail early", func(ctx context.Context, t *testctx.T) {
+		original := baseDir.
+			WithNewFile("filea.txt", "file a modified in original").
+			Changes(baseDir)
+
+		// Create changesets with conflicts
+		changeset1 := baseDir.
+			WithNewFile("filea.txt", "file a modified in changeset1"). // conflict with original
+			Changes(baseDir)
+
+		changeset2 := baseDir.
+			WithNewFile("fileb.txt", "file b modified in changeset2").
+			Changes(baseDir)
+
+		// FAIL_EARLY should detect conflicts before attempting merge
+		_, err := original.WithChangesets([]*dagger.Changeset{changeset1, changeset2}, dagger.ChangesetWithChangesetsOpts{
+			OnConflict: dagger.ChangesetsMergeConflictFailEarly,
+		}).Sync(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "filea.txt")
+	})
+
+	t.Run("with conflicts between other changesets - fail early", func(ctx context.Context, t *testctx.T) {
+		original := baseDir.
+			WithNewFile("filea.txt", "file a modified in original").
+			Changes(baseDir)
+
+		// Create changesets that conflict with each other (not with original)
+		changeset1 := baseDir.
+			WithNewFile("fileb.txt", "file b modified in changeset1").
+			Changes(baseDir)
+
+		changeset2 := baseDir.
+			WithNewFile("fileb.txt", "file b modified in changeset2"). // conflict with changeset1
+			Changes(baseDir)
+
+		// FAIL_EARLY should detect conflicts between any pair of changesets
+		_, err := original.WithChangesets([]*dagger.Changeset{changeset1, changeset2}, dagger.ChangesetWithChangesetsOpts{
+			OnConflict: dagger.ChangesetsMergeConflictFailEarly,
+		}).Sync(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "fileb.txt")
+	})
+
+	t.Run("with conflicts - fail", func(ctx context.Context, t *testctx.T) {
+		original := baseDir.
+			WithNewFile("filea.txt", "file a modified in original").
+			Changes(baseDir)
+
+		// Create changesets with conflicts
+		changeset1 := baseDir.
+			WithNewFile("filea.txt", "file a modified in changeset1"). // conflict with original
+			Changes(baseDir)
+
+		// FAIL is the default - attempts merge and fails if conflicts occur
+		_, err := original.WithChangesets([]*dagger.Changeset{changeset1}).Sync(ctx)
+		require.Error(t, err)
+
+		// explicit FAIL
+		_, err = original.WithChangesets([]*dagger.Changeset{changeset1}, dagger.ChangesetWithChangesetsOpts{
+			OnConflict: dagger.ChangesetsMergeConflictFail,
+		}).Sync(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("comparison with sequential merge", func(ctx context.Context, t *testctx.T) {
+		// Create the same changesets and verify that WithChangesets produces
+		// equivalent results to sequential WithChangeset calls
+
+		original := baseDir.
+			WithNewFile("filea.txt", "file a modified in original").
+			Changes(baseDir)
+
+		changeset1 := baseDir.
+			WithNewFile("fileb.txt", "file b modified in changeset1").
+			WithNewFile("file1.txt", "file 1 added").
+			Changes(baseDir)
+
+		changeset2 := baseDir.
+			WithNewFile("filec.txt", "file c modified in changeset2").
+			WithNewFile("file2.txt", "file 2 added").
+			Changes(baseDir)
+
+		// Sequential merge
+		seqMerged, err := original.WithChangeset(changeset1).Sync(ctx)
+		require.NoError(t, err)
+		seqResult, err := seqMerged.WithChangeset(changeset2).Sync(ctx)
+		require.NoError(t, err)
+
+		// Octopus merge
+		octopusResult, err := original.WithChangesets([]*dagger.Changeset{changeset1, changeset2}).Sync(ctx)
+		require.NoError(t, err)
+
+		// Both should have the same paths
+		seqModified, err := seqResult.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		octopusModified, err := octopusResult.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, seqModified, octopusModified)
+
+		seqAdded, err := seqResult.AddedPaths(ctx)
+		require.NoError(t, err)
+		octopusAdded, err := octopusResult.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, seqAdded, octopusAdded)
+
+		// Verify content is the same
+		seqContent, err := seqResult.After().File("filea.txt").Contents(ctx)
+		require.NoError(t, err)
+		octopusContent, err := octopusResult.After().File("filea.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, seqContent, octopusContent)
+
+		seqContent, err = seqResult.After().File("fileb.txt").Contents(ctx)
+		require.NoError(t, err)
+		octopusContent, err = octopusResult.After().File("fileb.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, seqContent, octopusContent)
+
+		seqContent, err = seqResult.After().File("filec.txt").Contents(ctx)
+		require.NoError(t, err)
+		octopusContent, err = octopusResult.After().File("filec.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, seqContent, octopusContent)
+	})
+
+	t.Run("many changesets", func(ctx context.Context, t *testctx.T) {
+		// Test with many changesets (simulating the 10-20 changeset use case)
+		original := baseDir.Changes(baseDir) // empty changeset
+
+		changesets := make([]*dagger.Changeset, 10)
+		for i := range 10 {
+			changesets[i] = baseDir.
+				WithNewFile(fmt.Sprintf("newfile%d.txt", i), fmt.Sprintf("content from changeset %d", i)).
+				Changes(baseDir)
+		}
+
+		res, err := original.WithChangesets(changesets).Sync(ctx)
+		require.NoError(t, err)
+
+		// Verify all added files are present
+		addedPaths, err := res.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Len(t, addedPaths, 10)
+
+		for i := range 10 {
+			content, err := res.After().File(fmt.Sprintf("newfile%d.txt", i)).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf("content from changeset %d", i), content)
+		}
+	})
 }

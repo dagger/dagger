@@ -1,7 +1,7 @@
 /**
  * A module for HelloWithChecksTs functions
  */
-import { dag, object, func, check } from "@dagger.io/dagger";
+import { Container, dag, object, func, check } from "@dagger.io/dagger";
 
 @object()
 class HelloWithChecksTs {
@@ -36,5 +36,29 @@ class HelloWithChecksTs {
       .from(this.baseImage)
       .withExec(["sh", "-c", "exit 1"])
       .sync();
+  }
+
+  /**
+   * Returns a container which runs as a passing check
+   */
+  @func()
+  @check()
+  passingContainer(): Container {
+    return dag
+      .container()
+      .from(this.baseImage)
+      .withExec(["sh", "-c", "exit 0"]);
+  }
+
+  /**
+   * Returns a container which runs as a failing check
+   */
+  @func()
+  @check()
+  failingContainer(): Container {
+    return dag
+      .container()
+      .from(this.baseImage)
+      .withExec(["sh", "-c", "exit 1"]);
   }
 }

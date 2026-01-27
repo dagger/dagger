@@ -2356,6 +2356,18 @@ pub struct Changeset {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ChangesetWithChangesetOpts {
+    /// What to do on a merge conflict
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<ChangesetMergeConflict>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ChangesetWithChangesetsOpts {
+    /// What to do on a merge conflict
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<ChangesetsMergeConflict>,
+}
 impl Changeset {
     /// Files and directories that were added in the newer directory.
     pub async fn added_paths(&self) -> Result<Vec<String>, DaggerError> {
@@ -2432,6 +2444,98 @@ impl Changeset {
     pub async fn sync(&self) -> Result<ChangesetId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Add changes to an existing changeset
+    /// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Changes to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changeset(&self, changes: impl IntoID<ChangesetId>) -> Changeset {
+        let mut query = self.selection.select("withChangeset");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add changes to an existing changeset
+    /// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Changes to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changeset_opts(
+        &self,
+        changes: impl IntoID<ChangesetId>,
+        opts: ChangesetWithChangesetOpts,
+    ) -> Changeset {
+        let mut query = self.selection.select("withChangeset");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add changes from multiple changesets using git octopus merge strategy
+    /// This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+    /// Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - List of changesets to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changesets(&self, changes: Vec<ChangesetId>) -> Changeset {
+        let mut query = self.selection.select("withChangesets");
+        query = query.arg("changes", changes);
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add changes from multiple changesets using git octopus merge strategy
+    /// This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+    /// Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - List of changesets to merge into the actual changeset
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_changesets_opts(
+        &self,
+        changes: Vec<ChangesetId>,
+        opts: ChangesetWithChangesetsOpts,
+    ) -> Changeset {
+        let mut query = self.selection.select("withChangesets");
+        query = query.arg("changes", changes);
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 #[derive(Clone)]
@@ -6612,7 +6716,56 @@ pub struct Env {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EnvChecksOpts<'a> {
+    /// Only include checks matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
 impl Env {
+    /// Return the check with the given name from the installed modules. Must match exactly one check.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the check to retrieve
+    pub fn check(&self, name: impl Into<String>) -> Check {
+        let mut query = self.selection.select("check");
+        query = query.arg("name", name.into());
+        Check {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all checks defined by the installed modules
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn checks(&self) -> CheckGroup {
+        let query = self.selection.select("checks");
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all checks defined by the installed modules
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn checks_opts<'a>(&self, opts: EnvChecksOpts<'a>) -> CheckGroup {
+        let mut query = self.selection.select("checks");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this Env.
     pub async fn id(&self) -> Result<EnvId, DaggerError> {
         let query = self.selection.select("id");
@@ -7338,6 +7491,23 @@ impl Env {
         let mut query = self.selection.select("withJSONValueOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Sets the main module for this environment (the project being worked on)
+    /// Contextual path arguments will be populated using the environment's workspace.
+    pub fn with_main_module(&self, module: impl IntoID<ModuleId>) -> Env {
+        let mut query = self.selection.select("withMainModule");
+        query = query.arg_lazy(
+            "module",
+            Box::new(move || {
+                let module = module.clone();
+                Box::pin(async move { module.into_id().await.unwrap().quote() })
+            }),
+        );
         Env {
             proc: self.proc.clone(),
             selection: query,
@@ -13585,6 +13755,26 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ChangesetMergeConflict {
+    #[serde(rename = "FAIL")]
+    Fail,
+    #[serde(rename = "FAIL_EARLY")]
+    FailEarly,
+    #[serde(rename = "LEAVE_CONFLICT_MARKERS")]
+    LeaveConflictMarkers,
+    #[serde(rename = "PREFER_OURS")]
+    PreferOurs,
+    #[serde(rename = "PREFER_THEIRS")]
+    PreferTheirs,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ChangesetsMergeConflict {
+    #[serde(rename = "FAIL")]
+    Fail,
+    #[serde(rename = "FAIL_EARLY")]
+    FailEarly,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {

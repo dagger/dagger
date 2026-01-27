@@ -309,6 +309,37 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class ChangesetMergeConflict(Enum):
+    """Strategy to use when merging changesets with conflicting
+    changes."""
+
+    FAIL = "FAIL"
+    """Attempt the merge and fail if git merge fails due to conflicts"""
+
+    FAIL_EARLY = "FAIL_EARLY"
+    """Fail before attempting merge if file-level conflicts are detected"""
+
+    LEAVE_CONFLICT_MARKERS = "LEAVE_CONFLICT_MARKERS"
+    """Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts."""
+
+    PREFER_OURS = "PREFER_OURS"
+    """The conflict is resolved by applying the version of the calling changeset"""
+
+    PREFER_THEIRS = "PREFER_THEIRS"
+    """The conflict is resolved by applying the version of the other changeset"""
+
+
+class ChangesetsMergeConflict(Enum):
+    """Strategy to use when merging multiple changesets with git octopus
+    merge."""
+
+    FAIL = "FAIL"
+    """Attempt the octopus merge and fail if git merge fails due to conflicts"""
+
+    FAIL_EARLY = "FAIL_EARLY"
+    """Fail before attempting merge if file-level conflicts are detected between any changesets"""
+
+
 class ExistsType(Enum):
     """File type."""
 
@@ -1150,6 +1181,67 @@ class Changeset(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+    def with_changeset(
+        self,
+        changes: Self,
+        *,
+        on_conflict: ChangesetMergeConflict | None = ChangesetMergeConflict.FAIL,
+    ) -> Self:
+        """Add changes to an existing changeset
+
+        By default the operation will fail in case of conflicts, for instance
+        a file modified in both changesets. The behavior can be adjusted using
+        onConflict argument
+
+        Parameters
+        ----------
+        changes:
+            Changes to merge into the actual changeset
+        on_conflict:
+            What to do on a merge conflict
+        """
+        _args = [
+            Arg("changes", changes),
+            Arg("onConflict", on_conflict, ChangesetMergeConflict.FAIL),
+        ]
+        _ctx = self._select("withChangeset", _args)
+        return Changeset(_ctx)
+
+    def with_changesets(
+        self,
+        changes: list["Changeset"],
+        *,
+        on_conflict: ChangesetsMergeConflict | None = ChangesetsMergeConflict.FAIL,
+    ) -> Self:
+        """Add changes from multiple changesets using git octopus merge strategy
+
+        This is more efficient than chaining multiple withChangeset calls when
+        merging many changesets.
+
+        Only FAIL and FAIL_EARLY conflict strategies are supported (octopus
+        merge cannot use -X ours/theirs).
+
+        Parameters
+        ----------
+        changes:
+            List of changesets to merge into the actual changeset
+        on_conflict:
+            What to do on a merge conflict
+        """
+        _args = [
+            Arg("changes", changes),
+            Arg("onConflict", on_conflict, ChangesetsMergeConflict.FAIL),
+        ]
+        _ctx = self._select("withChangesets", _args)
+        return Changeset(_ctx)
+
+    def with_(self, cb: Callable[["Changeset"], "Changeset"]) -> "Changeset":
+        """Call the provided callable with current Changeset.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -5168,6 +5260,47 @@ class EnumValueTypeDef(Type):
 
 @typecheck
 class Env(Type):
+    def check(self, name: str) -> Check:
+        """Return the check with the given name from the installed modules. Must
+        match exactly one check.
+
+        .. caution::
+            Experimental: Checks API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        name:
+            The name of the check to retrieve
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("check", _args)
+        return Check(_ctx)
+
+    def checks(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> CheckGroup:
+        """Return all checks defined by the installed modules
+
+        .. caution::
+            Experimental: Checks API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        include:
+            Only include checks matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("checks", _args)
+        return CheckGroup(_ctx)
+
     async def id(self) -> EnvID:
         """A unique identifier for this Env.
 
@@ -5820,13 +5953,34 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
+    def with_main_module(self, module: "Module") -> Self:
+        """Sets the main module for this environment (the project being worked
+        on)
+
+        Contextual path arguments will be populated using the environment's
+        workspace.
+        """
+        _args = [
+            Arg("module", module),
+        ]
+        _ctx = self._select("withMainModule", _args)
+        return Env(_ctx)
+
     def with_module(self, module: "Module") -> Self:
         """Installs a module into the environment, exposing its functions to the
         model
 
         Contextual path arguments will be populated using the environment's
         workspace.
+
+        .. deprecated::
+            Use withMainModule instead
         """
+        warnings.warn(
+            'Method "with_module" is deprecated: Use withMainModule instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("module", module),
         ]
@@ -13169,6 +13323,8 @@ __all__ = [
     "CacheVolumeID",
     "Changeset",
     "ChangesetID",
+    "ChangesetMergeConflict",
+    "ChangesetsMergeConflict",
     "Check",
     "CheckGroup",
     "CheckGroupID",

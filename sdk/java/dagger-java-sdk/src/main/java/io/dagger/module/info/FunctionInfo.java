@@ -5,4 +5,5 @@ public record FunctionInfo(
     String qName,
     String description,
     TypeInfo returnType,
-    ParameterInfo[] parameters) {}
+    ParameterInfo[] parameters,
+    boolean isCheck) {}

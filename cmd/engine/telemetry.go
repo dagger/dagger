@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
@@ -53,12 +52,6 @@ func InitTelemetry(ctx context.Context) context.Context {
 
 	ctx = telemetry.Init(ctx, telemetry.Config{
 		Resource: otelResource,
-	})
-
-	// send engine logs to OTel. logrus is the globally used logger; bklog
-	// also sends to it.
-	logrus.AddHook(&otelLogrusHook{
-		logger: telemetry.LoggerProvider(ctx).Logger(InstrumentationScopeName),
 	})
 
 	return ctx

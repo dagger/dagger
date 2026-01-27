@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/transfer/archive"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core/containersource"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -502,45 +503,51 @@ func (mnts ContainerMounts) Replace(newMnt ContainerMount) (ContainerMounts, err
 }
 
 func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	platform := container.Platform
-
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image address %s: %w", addr, err)
 	}
+
 	// add a default :latest if no tag or digest, otherwise this is a no-op
 	refName = reference.TagNameOnly(refName)
 
-	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		return container.FromCanonicalRef(ctx, refName, nil)
+	var containerArgs []dagql.NamedInput
+	if container.Platform.OS != "" {
+		containerArgs = append(containerArgs, dagql.NamedInput{Name: "platform", Value: dagql.Opt(container.Platform)})
 	}
 
-	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
-		Platform: ptr(platform.Spec()),
-		ImageOpt: &sourceresolver.ResolveImageOpt{
-			ResolveMode: llb.ResolveModeDefault.String(),
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Dagger server: %w", err)
+	}
+
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("from %s", addr),
+		telemetry.Internal(),
+	)
+	defer telemetry.EndWithCause(span, nil)
+
+	var ctr dagql.ObjectResult[*Container]
+	err = srv.Select(ctx, srv.Root(), &ctr,
+		dagql.Selector{
+			Field: "container",
+			Args:  containerArgs,
 		},
-	})
+		dagql.Selector{
+			Field: "from",
+			Args: []dagql.NamedInput{
+				{Name: "address", Value: dagql.String(refName.String())},
+			},
+		},
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
-	}
-	canonRefName, err := reference.WithDigest(refName, digest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
+		return nil, err
 	}
 
-	return container.FromCanonicalRef(ctx, canonRefName, cfgBytes)
+	return ctr.Self(), nil
 }
 
+// FromCanonicalRef implements the dagop portion of the "from" command: it fetches an image, and updates the root fs
+// to point to a snapshot of the referenced image
 func (container *Container) FromCanonicalRef(
 	ctx context.Context,
 	refName reference.Canonical,
@@ -553,13 +560,97 @@ func (container *Container) FromCanonicalRef(
 	if err != nil {
 		return nil, err
 	}
+
+	platform := container.Platform
+
+	refStr := refName.String()
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	hsm, err := containersource.NewSource(containersource.SourceOpt{
+		Snapshotter:   bk.Worker.Snapshotter,
+		ContentStore:  bk.Worker.ContentStore(),
+		ImageStore:    bk.Worker.ImageStore,
+		CacheAccessor: query.BuildkitCache(),
+		RegistryHosts: bk.Worker.RegistryHosts,
+		ResolverType:  containersource.ResolverTypeRegistry,
+		LeaseManager:  bk.Worker.LeaseManager(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	attrs := map[string]string{}
+	id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
+		Architecture: platform.Architecture,
+		OS:           platform.OS,
+		Variant:      platform.Variant,
+		OSVersion:    platform.OSVersion,
+		OSFeatures:   platform.OSFeatures,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group found")
+	}
+
+	ref, err := src.Snapshot(ctx, bkSessionGroup)
+	if err != nil {
+		return nil, err
+	}
+
+	rootfsDir := &Directory{
+		Result: ref,
+	}
+	if container.FS != nil {
+		rootfsDir.Dir = container.FS.Self().Dir
+		if rootfsDir.Dir == "" {
+			return nil, fmt.Errorf("SetFSFromCanonicalRef got an empty dir")
+		} else if rootfsDir.Dir != "/" {
+			return nil, fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
+		}
+		rootfsDir.Platform = container.FS.Self().Platform
+		rootfsDir.Services = container.FS.Self().Services
+	} else {
+		rootfsDir.Dir = "/"
+	}
+	updatedRootFS, err := UpdatedRootFS(ctx, rootfsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update rootfs: %w", err)
+	}
+	container.FS = updatedRootFS
+	return container, nil
+}
+
+// FromCanonicalRefUpdateConfig is must be called outside of a dagop context, and is responsible for fetching the image config
+// and applying it to the container's metadata
+func (container *Container) FromCanonicalRefUpdateConfig(
+	ctx context.Context,
+	refName reference.Canonical,
+	// cfgBytes is optional, will be retrieved if not provided
+	cfgBytes []byte,
+) (*Container, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	platform := container.Platform
-
 	refStr := refName.String()
 
 	// since this is an image ref w/ a digest, always check the local cache for the image
@@ -582,27 +673,10 @@ func (container *Container) FromCanonicalRef(
 		return nil, err
 	}
 
-	fsSt := llb.Image(
-		refStr,
-		llb.WithCustomNamef("pull %s", refStr),
-		resolveMode,
-		buildkit.WithTracePropagation(ctx),
-		buildkit.WithPassthrough(),
-	)
-
-	def, err := fsSt.Marshal(ctx, llb.Platform(platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 	container.ImageRef = refStr
 	container.Platform = Platform(platforms.Normalize(imgSpec.Platform))
-	rootfsDir := NewDirectory(def.ToPB(), "/", container.Platform, container.Services)
-	container.FS, err = UpdatedRootFS(ctx, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
-	}
+
 	return container, nil
 }
 
@@ -1787,6 +1861,10 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
+
+	ctx, span := Tracer(ctx).Start(ctx, "evaling", telemetry.Internal())
+	defer span.End()
+
 	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: def.ToPB(),

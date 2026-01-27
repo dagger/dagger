@@ -149,6 +149,10 @@ public class Entrypoint {
         .withFunction(
             dag().function("printSeverity", dag().typeDef().withKind(TypeDefKind.STRING_KIND))
                 .withArg("severity", dag().typeDef().withEnum("Severity")))
+        .withFunction(
+            dag().function("validate", dag().typeDef().withKind(TypeDefKind.VOID_KIND).withOptional(true))
+                .withDescription("Validates the module configuration")
+                .withCheck())
         .withField("source", dag().typeDef().withObject("Directory"),
             new TypeDef.WithFieldArguments().withDescription("Project source directory"))
         .withField("version", dag().typeDef().withKind(TypeDefKind.STRING_KIND))
@@ -310,6 +314,11 @@ public class Entrypoint {
         Objects.requireNonNull(severity, "severity must not be null");
         String res = obj.printSeverity(severity);
         return JsonConverter.toJSON(res);
+      } else if (fnName.equals("validate")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        obj.validate();
+        return JsonConverter.toJSON(null);
       }
       if (fnName.equals("")) {
         Directory source = null;

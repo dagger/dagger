@@ -196,7 +196,7 @@ func logMetrics(ctx context.Context, engineStateRootDir string, eng *server.Serv
 			}
 		}
 
-		l.Debug("engine metrics")
+		l.Info("engine metrics")
 	}
 }
 

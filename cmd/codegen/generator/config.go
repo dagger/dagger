@@ -59,6 +59,9 @@ type ModuleGeneratorConfig struct {
 	// where a pre-existing go.mod file is checked during dagger init for whether its module
 	// name is the expected value.
 	IsInit bool
+
+	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
+	LibVersion string
 }
 
 type ModuleSourceDependency struct {

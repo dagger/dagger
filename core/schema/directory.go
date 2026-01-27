@@ -13,10 +13,12 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type directorySchema struct{}
@@ -308,7 +310,30 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Files and directories that existed before and were updated in the newer directory.`),
 		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesetRemovedPaths)).
 			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
+		dagql.NodeFunc("withChangeset", DagOpChangesetWrapper(srv, s.changesetWithChangeset)).
+			Doc(`Add changes to an existing changeset`,
+				`By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument`).
+			Args(
+				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
+				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
+			),
+		dagql.NodeFunc("withChangesets", DagOpChangesetWrapper(srv, s.changesetWithChangesets)).
+			// ensure we are not exposing this feature on engines < v0.15.0
+			// before v0.15.0 the Go codegen can't handle the same value in multiple enums
+			// withChangeset and withChangesets features are using two different enums with some common values
+			// withChangesets will only be visible on engines >= v0.15.0
+			View(AfterVersion("v0.15.0")).
+			Doc(`Add changes from multiple changesets using git octopus merge strategy`,
+				`This is more efficient than chaining multiple withChangeset calls when merging many changesets.`,
+				`Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).`).
+			Args(
+				dagql.Arg("changes").Doc(`List of changesets to merge into the actual changeset`),
+				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
+			),
 	}.Install(srv)
+
+	ChangesetMergeConflictEnum.Install(srv)
+	ChangesetsMergeConflictEnum.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -1092,6 +1117,159 @@ func (s *directorySchema) exportLegacy(ctx context.Context, parent dagql.ObjectR
 		return false, err
 	}
 	return true, nil
+}
+
+type ChangesetMergeConflict string
+
+var ChangesetMergeConflictEnum = dagql.NewEnum[ChangesetMergeConflict]()
+
+var (
+	FailEarlyOnMergeConflict = ChangesetMergeConflictEnum.RegisterView("FAIL_EARLY",
+		// starting with engine version 0.15.0 Go codegen only exposes scoped enum values
+		// like ChangesetMergeConflictFailEarly and doesn't expose anymore unscopped enum values (FailEarly)
+		// unscopped enum values will conflict as the same value is defined twice in ChangesetMergeConflictEnum and
+		// ChangesetsMergeConflictEnum.
+		// Ensure those enum values are only exposed on engines >= 0.15.0
+		// Values are removed on this enum ChangesetMergeConflictEnum and not ChangesetsMergeConflictEnum so that
+		// there's never an empty enum, that causes troubles with other SDKs like python
+		AfterVersion("v0.15.0"),
+		`Fail before attempting merge if file-level conflicts are detected`)
+	FailOnMergeConflict = ChangesetMergeConflictEnum.RegisterView("FAIL",
+		AfterVersion("v0.15.0"),
+		`Attempt the merge and fail if git merge fails due to conflicts`)
+	LeaveConflictMarkersOnMergeConflict = ChangesetMergeConflictEnum.Register("LEAVE_CONFLICT_MARKERS",
+		`Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.`)
+	PreferOursOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_OURS",
+		`The conflict is resolved by applying the version of the calling changeset`)
+	PreferTheirsOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_THEIRS",
+		`The conflict is resolved by applying the version of the other changeset`)
+)
+
+func (proto ChangesetMergeConflict) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ChangesetMergeConflict",
+		NonNull:   true,
+	}
+}
+
+func (proto ChangesetMergeConflict) TypeDescription() string {
+	return "Strategy to use when merging changesets with conflicting changes."
+}
+
+func (proto ChangesetMergeConflict) Decoder() dagql.InputDecoder {
+	return ChangesetMergeConflictEnum
+}
+
+func (proto ChangesetMergeConflict) ToLiteral() call.Literal {
+	return ChangesetMergeConflictEnum.Literal(proto)
+}
+
+// ChangesetsMergeConflict is the enum for octopus merge conflict strategies (WithChangesets).
+// Only FAIL_EARLY and FAIL are supported (no -X ours/theirs with octopus merge).
+type ChangesetsMergeConflict string
+
+var ChangesetsMergeConflictEnum = dagql.NewEnum[ChangesetsMergeConflict]()
+
+var (
+	FailEarlyOnMergeConflicts = ChangesetsMergeConflictEnum.Register("FAIL_EARLY",
+		`Fail before attempting merge if file-level conflicts are detected between any changesets`)
+	FailOnMergeConflicts = ChangesetsMergeConflictEnum.Register("FAIL",
+		`Attempt the octopus merge and fail if git merge fails due to conflicts`)
+)
+
+func (proto ChangesetsMergeConflict) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ChangesetsMergeConflict",
+		NonNull:   true,
+	}
+}
+
+func (proto ChangesetsMergeConflict) TypeDescription() string {
+	return "Strategy to use when merging multiple changesets with git octopus merge."
+}
+
+func (proto ChangesetsMergeConflict) Decoder() dagql.InputDecoder {
+	return ChangesetsMergeConflictEnum
+}
+
+func (proto ChangesetsMergeConflict) ToLiteral() call.Literal {
+	return ChangesetsMergeConflictEnum.Literal(proto)
+}
+
+func mergeConflictsStrategyToCore(onConflict ChangesetsMergeConflict) core.WithChangesetsMergeConflict {
+	switch onConflict {
+	case FailEarlyOnMergeConflicts:
+		return core.FailEarlyOnConflicts
+	case FailOnMergeConflicts:
+		fallthrough
+	default:
+		return core.FailOnConflicts
+	}
+}
+
+type changesetWithChangesetArgs struct {
+	Changes    dagql.ID[*core.Changeset]
+	OnConflict ChangesetMergeConflict `default:"FAIL"`
+	DagOpInternalArgs
+}
+
+func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithChangesetMergeConflict {
+	switch onConflict {
+	case FailEarlyOnMergeConflict:
+		return core.FailEarlyOnConflict
+	case LeaveConflictMarkersOnMergeConflict:
+		return core.LeaveConflictMarkers
+	case PreferOursOnMergeConflict:
+		return core.PreferOursOnConflict
+	case PreferTheirsOnMergeConflict:
+		return core.PreferTheirsOnConflict
+	case FailOnMergeConflict:
+		fallthrough
+	default:
+		return core.FailOnConflict
+	}
+}
+
+func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (*core.Changeset, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	change, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
+
+	return parent.Self().WithChangeset(ctx, change.Self(), onConflictStrategy)
+}
+
+type changesetWithChangesetsArgs struct {
+	Changes    dagql.ArrayInput[dagql.ID[*core.Changeset]]
+	OnConflict ChangesetsMergeConflict `default:"FAIL"`
+	DagOpInternalArgs
+}
+
+func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Changeset, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	changes := make([]*core.Changeset, len(args.Changes))
+	for i, changeID := range args.Changes {
+		change, err := changeID.Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("load changeset %d: %w", i, err)
+		}
+		changes[i] = change.Self()
+	}
+
+	onConflictStrategy := mergeConflictsStrategyToCore(args.OnConflict)
+
+	return parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
 }
 
 type dirDockerBuildArgs struct {

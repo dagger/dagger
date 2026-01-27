@@ -13,6 +13,7 @@ import (
 	"slices"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
@@ -61,7 +62,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
 			),
 
-		dagql.NodeFunc("from", s.from).
+		dagql.NodeFuncWithCacheKey("from", s.from, s.fromCacheKey).
 			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
 			Args(
 				dagql.Arg("address").Doc(
@@ -799,9 +800,41 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 
 type containerFromArgs struct {
 	Address string
+
+	ContainerDagOpInternalArgs
 }
 
-func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.Result[*core.Container], _ error) {
+func (s *containerSchema) fromCacheKey(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerFromArgs,
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	refName, err := reference.ParseNormalizedNamed(args.Address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
+	}
+
+	var imageRef string
+	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
+		imageRef = "digest:" + string(refName.Digest())
+	} else {
+		imageRef = args.Address
+	}
+
+	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+	resp.CacheKey.CallKey = hashutil.HashStrings(
+		parent.ID().Digest().String(),
+		imageRef,
+	).String()
+	return resp, nil
+}
+
+func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql server: %w", err)
+	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -820,12 +853,35 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		ctr, err := parent.Self().FromCanonicalRef(ctx, refName, nil)
+		if args.InDagOp() {
+			ctr, err := parent.Self().FromCanonicalRef(ctx, refName, nil)
+			if err != nil {
+				return inst, err
+			}
+			return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+		}
+
+		ctr, err := DagOpContainer(ctx, srv, parent.Self(), args, s.from)
 		if err != nil {
 			return inst, err
 		}
 
-		return dagql.NewResultForCurrentID(ctx, ctr)
+		// Note that this must be done outside the dagop context, otherwise the image config data will be lost
+		ctr.FromCanonicalRefUpdateConfig(ctx, refName, nil)
+
+		if ctr.FS.Self().Dir == "" {
+			// FIXME The dir is set under FromCanonicalRef; however it's done inside a dagop, which doesn't propigate back here
+			// As a result, if FromCanonicalRef sets it to anything besides a "/", it will preemptively return an error.
+			// Ideally, we should simply return an error here when this is empty (indicating it failed to propigate)
+			// however, for the time being we will just set it to the root dir.
+			ctr.FS.Self().Dir = "/"
+		}
+
+		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	}
+
+	if args.InDagOp() {
+		return inst, fmt.Errorf("container.from called in a dagop context but without canonical image name, this shouldnt happen")
 	}
 
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical
@@ -845,10 +901,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
 	}
 
-	srv, err := query.Server.Server(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get server: %w", err)
-	}
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("from %s", refName),
+		telemetry.Internal(),
+	)
+	defer telemetry.EndWithCause(span, nil)
+
 	err = srv.Select(ctx, parent, &inst,
 		dagql.Selector{
 			Field: "from",
@@ -1010,7 +1067,6 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	}
 
 	if args.SkipEntrypoint != nil {
-		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
 		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
 

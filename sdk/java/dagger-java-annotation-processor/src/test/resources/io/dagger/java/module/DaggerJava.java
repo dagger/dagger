@@ -8,6 +8,7 @@ import io.dagger.client.Container;
 import io.dagger.client.Directory;
 import io.dagger.client.Platform;
 import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.module.annotation.Check;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Enum;
@@ -164,5 +165,15 @@ public class DaggerJava {
   @Function
   public String printSeverity(Severity severity) {
     return severity.name();
+  }
+
+  /** Validates the module configuration */
+  @Function
+  @Check
+  public void validate() {
+    // Validation logic - throws exception on failure
+    if (version == null || version.isEmpty()) {
+      throw new IllegalStateException("Version must be set");
+    }
   }
 }

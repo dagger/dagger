@@ -41,7 +41,7 @@ func (i *Introspector) AsEntrypoint(
 	// Synthesize a minimal @dagger.io/dagger package so TS can resolve the bare import.
 	sdkPkg := dag.Directory().
 		WithFile("client.gen.ts", clientBindings).
-		WithNewFile("index.ts", tsutils.StaticBundleIndexTS).
+		WithNewFile("index.ts", tsutils.StaticBundleModuleIndexTS).
 		WithNewFile("core.d.ts", tsutils.StaticBundleCoreDTS).
 		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS)
 

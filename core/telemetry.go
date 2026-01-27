@@ -28,7 +28,7 @@ func collectDefs(ctx context.Context, val dagql.AnyResult) []*pb.Definition {
 	if hasPBs, ok := dagql.UnwrapAs[HasPBDefinitions](val); ok {
 		ctx := dagql.ContextWithID(ctx, val.ID())
 		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
-			slog.Warn("failed to get LLB definitions", "err", err)
+			slog.WarnContext(ctx, "failed to get LLB definitions", "err", err)
 			return nil
 		} else {
 			return defs
@@ -61,9 +61,14 @@ func AroundFunc(
 	}
 	spanName := fmt.Sprintf("%s.%s", base, id.Field())
 
+	slog.InfoContext(ctx, "start call",
+		"field", spanName,
+		"digest", id.Digest().String(),
+	)
+
 	callAttr, err := id.Call().Encode()
 	if err != nil {
-		slog.Warn("failed to encode call", "id", id.DisplaySelf(), "err", err)
+		slog.WarnContext(ctx, "failed to encode call", "id", id.DisplaySelf(), "err", err)
 		return ctx, dagql.NoopDone
 	}
 	attrs := []attribute.KeyValue{
@@ -103,7 +108,7 @@ func AroundFunc(
 	}
 
 	if idInputs, err := id.Inputs(); err != nil {
-		slog.Warn("failed to compute inputs(id)", "id", id.DisplaySelf(), "err", err)
+		slog.WarnContext(ctx, "failed to compute inputs(id)", "id", id.DisplaySelf(), "err", err)
 	} else {
 		inputs := make([]string, len(idInputs))
 		for i, input := range idInputs {
@@ -119,8 +124,13 @@ func AroundFunc(
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
+		slog.InfoContext(ctx, "end call",
+			"field", spanName,
+			"digest", id.Digest().String(),
+		)
+
 		defer telemetry.EndWithCause(span, err)
-		recordStatus(ctx, res, span, cached, err, id)
+		recordStatus(ctx, res, span, cached, id)
 		logResult(ctx, res, self, id)
 		collectEffects(ctx, res, span, self)
 	}
@@ -233,7 +243,7 @@ func normalizeRef(ref string) string {
 }
 
 // recordStatus records the status of a call on a span.
-func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, err *error, id *call.ID) {
+func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, id *call.ID) {
 	if cached {
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
@@ -260,15 +270,6 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 			objDigest := obj.ID().Digest()
 			span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
 		}
-	}
-
-	if err != nil && *err != nil {
-		var receiver *string
-		if id.Receiver() != nil {
-			recv := id.Receiver().Type().ToAST().String()
-			receiver = &recv
-		}
-		slog.Warn("error resolving", "receiver", receiver, "field", id.Field(), "error", err)
 	}
 }
 
@@ -326,7 +327,7 @@ func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, s
 			var pbOp pb.Op
 			err := pbOp.Unmarshal(opBytes)
 			if err != nil {
-				slog.Warn("failed to unmarshal LLB", "err", err)
+				slog.WarnContext(ctx, "failed to unmarshal LLB", "err", err)
 				continue
 			}
 			if pbOp.Op == nil {

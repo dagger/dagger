@@ -615,6 +615,9 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 	)
 	content, err := file.Contents(ctx, nil, nil)
 	if err != nil {
+		if errors.Is(err, errEmptyResultRef) {
+			return "", ErrNoCommand
+		}
 		return "", err
 	}
 	return string(content), nil
