@@ -99,6 +99,7 @@ func NewBridge(opt Opt) (network.Provider, error) {
 				"bridge": "%s",
 				"isDefaultGateway": true,
 				"ipMasq": true,
+				"ipMasqBackend": "nftables",
 				"ipam": {
 				  "type": "%s",
 				  "ranges": [

@@ -901,6 +901,10 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		return nil, fmt.Errorf("bridge from cidr: %w", err)
 	}
 
+	if err := netinst.EnsureIptablesSymlinks(ctx); err != nil {
+		return nil, fmt.Errorf("ensure iptables symlinks: %w", err)
+	}
+
 	// NB: this is needed for the Dagger shim worker at the moment for host alias
 	// resolution
 	err = netinst.InstallResolvconf(netName, bridge.String())
@@ -913,7 +917,7 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		return nil, fmt.Errorf("install dnsmasq: %w", err)
 	}
 
-	cniConfigPath, err := netinst.InstallCNIConfig(netName, netCIDR)
+	cniConfigPath, err := netinst.InstallCNIConfig(ctx, netName, netCIDR)
 	if err != nil {
 		return nil, fmt.Errorf("install cni: %w", err)
 	}
