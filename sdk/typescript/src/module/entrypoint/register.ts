@@ -189,7 +189,11 @@ export class Register {
         }
 
         // Check if both values are used, return an error if so.
-        if ([arg.defaultValue, arg.defaultPath].filter((v) => v).length > 1) {
+        if (
+          [arg.defaultValue, arg.defaultPath, arg.defaultAddress].filter(
+            (v) => v,
+          ).length > 1
+        ) {
           throw new Error("cannot set multiple defaults")
         }
 
@@ -212,6 +216,10 @@ export class Register {
         // If the argument is a contextual argument, it becomes optional.
         if (arg.defaultPath) {
           opts.defaultPath = arg.defaultPath
+        }
+
+        if (arg.defaultAddress) {
+          opts.defaultAddress = arg.defaultAddress
         }
 
         if (arg.ignore) {

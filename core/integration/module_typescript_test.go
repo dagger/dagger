@@ -2077,19 +2077,15 @@ func (TypescriptSuite) TestContainerDefaultValue(ctx context.Context, t *testctx
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=test", "--sdk=typescript")).
-		With(sdkSource("typescript", `import { dag, Container, object, func } from "@dagger.io/dagger"
+		With(sdkSource("typescript", `import { Container, object, func, argument } from "@dagger.io/dagger"
 
 @object()
 class Test {
-  ctr: Container
-
-  constructor(ctr?: Container) {
-    this.ctr = ctr ?? dag.container().from("alpine:3.19")
-  }
-
   @func()
-  async version(): Promise<string> {
-    return this.ctr.withExec(["cat", "/etc/alpine-release"]).stdout()
+  async version(
+    @argument({ defaultAddress: "alpine:3.19" }) ctr: Container,
+  ): Promise<string> {
+    return ctr.withExec(["cat", "/etc/alpine-release"]).stdout()
   }
 }
 `))
@@ -2099,7 +2095,7 @@ class Test {
 	require.Contains(t, out, "3.19") // Alpine version contains "3.19"
 
 	// Test that we can override the default via constructor
-	out2, err := modGen.With(daggerCall("--ctr=alpine:3.18", "version")).Stdout(ctx)
+	out2, err := modGen.With(daggerCall("version", "--ctr=alpine:3.18")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out2, "3.18")
 }
