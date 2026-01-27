@@ -321,12 +321,17 @@ func (class Class[T]) Call(
 		onRelease = onReleaser.OnRelease
 	}
 
-	return &CacheValWithCallbacks{
+	retVal := &CacheValWithCallbacks{
 		Value:              val,
 		PostCall:           postCall,
 		OnRelease:          onRelease,
 		SafeToPersistCache: safeToPersistCache,
-	}, nil
+	}
+	if val != nil && val.ID() != nil {
+		retVal.ContentDigestKey = string(val.ID().ContentDigest())
+		retVal.ResultCallKey = string(val.ID().Digest())
+	}
+	return retVal, nil
 }
 
 type Result[T Typed] struct {
@@ -408,6 +413,15 @@ func (r Result[T]) WithDigest(customDigest digest.Digest) Result[T] {
 	}
 }
 
+func (r Result[T]) WithContentDigest(customDigest digest.Digest) Result[T] {
+	return Result[T]{
+		constructor:        r.constructor.With(call.WithContentDigest(customDigest)),
+		self:               r.self,
+		postCall:           r.postCall,
+		safeToPersistCache: r.safeToPersistCache,
+	}
+}
+
 // String returns the instance in Class@sha256:... format.
 func (r Result[T]) String() string {
 	return fmt.Sprintf("%s@%s", r.self.Type().Name(), r.constructor.Digest())
@@ -419,6 +433,15 @@ func (r Result[T]) GetPostCall() cache.PostCallFunc {
 
 func (r Result[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.ID())
+}
+
+func (r Result[T]) WithID(id *call.ID) AnyResult {
+	return Result[T]{
+		constructor:        id,
+		self:               r.self,
+		postCall:           r.postCall,
+		safeToPersistCache: r.safeToPersistCache,
+	}
 }
 
 type ObjectResult[T Typed] struct {
@@ -452,11 +475,42 @@ func (r ObjectResult[T]) ObjectType() ObjectType {
 func (r ObjectResult[T]) WithObjectDigest(customDigest digest.Digest) ObjectResult[T] {
 	return ObjectResult[T]{
 		Result: Result[T]{
-			constructor: r.constructor.WithDigest(customDigest),
-			self:        r.self,
+			constructor:        r.constructor.WithDigest(customDigest),
+			self:               r.self,
+			postCall:           r.postCall,
+			safeToPersistCache: r.safeToPersistCache,
 		},
 		class: r.class,
 	}
+}
+
+func (r ObjectResult[T]) WithContentDigest(customDigest digest.Digest) ObjectResult[T] {
+	return ObjectResult[T]{
+		Result: Result[T]{
+			constructor:        r.constructor.With(call.WithContentDigest(customDigest)),
+			self:               r.self,
+			postCall:           r.postCall,
+			safeToPersistCache: r.safeToPersistCache,
+		},
+		class: r.class,
+	}
+}
+
+func (r ObjectResult[T]) WithID(id *call.ID) AnyResult {
+	return ObjectResult[T]{
+		Result: Result[T]{
+			constructor:        id,
+			self:               r.self,
+			postCall:           r.postCall,
+			safeToPersistCache: r.safeToPersistCache,
+		},
+		class: r.class,
+	}
+}
+
+func (r ObjectResult[T]) ObjectResultWithPostCall(fn cache.PostCallFunc) ObjectResult[T] {
+	r.postCall = fn
+	return r
 }
 
 func NoopDone(res AnyResult, cached bool, rerr *error) {}
@@ -612,9 +666,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 
 func newCacheKey(ctx context.Context, id *call.ID, fieldSpec *FieldSpec) CacheKey {
 	cacheKey := CacheKey{
-		CallKey:    string(id.Digest()),
-		TTL:        fieldSpec.TTL,
-		DoNotCache: fieldSpec.DoNotCache != "",
+		CallKey:          string(id.Digest()),
+		TTL:              fieldSpec.TTL,
+		DoNotCache:       fieldSpec.DoNotCache != "",
+		ContentDigestKey: string(id.ContentDigest()),
 	}
 
 	// dedupe concurrent calls only if the ID digest is the same and if the two calls are from the same client
@@ -734,6 +789,8 @@ func (r ObjectResult[T]) call(
 			PostCall:           valWithCallbacks.PostCall,
 			OnRelease:          valWithCallbacks.OnRelease,
 			SafeToPersistCache: valWithCallbacks.SafeToPersistCache,
+			ContentDigestKey:   string(val.ID().ContentDigest()),
+			ResultCallKey:      string(val.ID().Digest()),
 		}, nil
 	}, opts...)
 
@@ -744,35 +801,12 @@ func (r ObjectResult[T]) call(
 		return nil, fmt.Errorf("post-call error: %w", err)
 	}
 	val := res.Result()
-
-	// If the returned val is IDable and has a different digest than the original, then
-	// add that different digest as a cache key for this val.
-	// This enables APIs to return new object instances with overridden purity and/or digests, e.g. returning
-	// values that have a pure content-based cache key different from the call-chain ID digest.
-	if idable, ok := val.(IDable); ok && idable != nil && !cacheKey.DoNotCache {
-		valID := idable.ID()
-		if valID == nil {
-			return nil, fmt.Errorf("impossible: nil ID returned for value: %+v (%T)", val, val)
-		}
-
-		// only need to add a new cache key if the returned val has a different custom digest than the original
-		digestChanged := valID.Digest() != newID.Digest()
-
-		// Corner case: the `id` field on an object returns an IDable value (IDs are themselves both values and IDable).
-		// However, if we cached `val` in this case, we would be caching <id digest> -> <id value>, which isn't what we
-		// want. Instead, we only want to cache <id digest> -> <actual object value>.
-		// To avoid this, we check that the returned IDable type is the actual object type.
-		matchesType := valID.Type().ToAST().Name() == val.Type().Name()
-
-		if digestChanged && matchesType {
-			newID = valID
-			_, err := s.Cache.GetOrInitializeValue(ctx, cache.CacheKey[CacheKeyType]{
-				CallKey: string(valID.Digest()),
-			}, val)
-			if err != nil {
-				return nil, err
-			}
-		}
+	// if the cache hit was only due to a matching content digest, rather than recipe,
+	// keep using the same ID as the input. This ensures that the client keeps seeing
+	// the recipe they expected rather than a different random one that happened to
+	// have the same content, which still allowing the underlying result be re-used.
+	if res.HitContentDigestCache() {
+		val = val.WithID(newID)
 	}
 
 	return val, nil

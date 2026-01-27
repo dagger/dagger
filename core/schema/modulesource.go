@@ -962,8 +962,8 @@ func (s *moduleSourceSchema) contextDirectory(
 	// FIXME:(sipsma) this is not ideal since contextual loaded dirs will have
 	// different cache keys than normally loaded host dirs. Support for multiple
 	// cache keys per result should help fix this.
-	dgst := hashutil.HashStrings(dir.ID().Digest().String(), "contextualDir")
-	inst = inst.WithObjectDigest(dgst)
+	dgst := hashutil.HashStrings(dir.ID().ContentDigest().String(), "contextualDir")
+	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
 
@@ -1003,8 +1003,8 @@ func (s *moduleSourceSchema) contextFile(
 	// FIXME:(sipsma) this is not ideal since contextual loaded files will have
 	// different cache keys than normally loaded host files. Support for multiple
 	// cache keys per result should help fix this.
-	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualFile")
-	inst = inst.WithObjectDigest(dgst)
+	dgst := hashutil.HashStrings(f.ID().ContentDigest().String(), "contextualFile")
+	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
 
@@ -1040,7 +1040,7 @@ func (s *moduleSourceSchema) contextGitRepository(
 	// can lead function calls encountering cached results that include contextual
 	// file loads from older sessions to load from the wrong path
 	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualGitRepository")
-	inst = inst.WithObjectDigest(dgst)
+	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
 
@@ -1086,7 +1086,7 @@ func (s *moduleSourceSchema) contextGitRef(
 	// can lead function calls encountering cached results that include contextual
 	// file loads from older sessions to load from the wrong path
 	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualGitRef")
-	inst = inst.WithObjectDigest(dgst)
+	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
 

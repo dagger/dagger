@@ -15,7 +15,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -182,7 +181,7 @@ type gitArgs struct {
 }
 
 //nolint:gocyclo
-func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Query], args gitArgs) (inst dagql.Result[*core.GitRepository], _ error) {
+func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Query], args gitArgs) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -190,27 +189,101 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 	remote, err := gitutil.ParseURL(args.URL)
 	if errors.Is(err, gitutil.ErrUnknownProtocol) {
-		id := dagql.CurrentID(ctx)
-		try := []*call.ID{
-			id.WithArgument(call.NewArgument("url", call.NewLiteralString("https://"+args.URL), false)),
-			id.WithArgument(call.NewArgument("url", call.NewLiteralString("ssh://"+args.URL), false)),
-			// NOTE: no http! it's valid, but sending credentials unencrypted
-			// is very bad, so if users *really* want that, we need them to be explicit
+		try := [][]dagql.NamedInput{
+			{
+				{Name: "url", Value: dagql.NewString("https://" + args.URL)},
+			},
+			{
+				{Name: "url", Value: dagql.NewString("ssh://" + args.URL)},
+			},
+		}
+		if args.Commit != "" {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "commit",
+					Value: dagql.NewString(args.Commit),
+				})
+			}
+		}
+		if args.Ref != "" {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "ref",
+					Value: dagql.NewString(args.Ref),
+				})
+			}
+		}
+		if args.KeepGitDir.Valid {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "keepGitDir",
+					Value: dagql.Opt(args.KeepGitDir.Value),
+				})
+			}
+		}
+		if args.ExperimentalServiceHost.Valid {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "experimentalServiceHost",
+					Value: dagql.Opt(dagql.NewID[*core.Service](args.ExperimentalServiceHost.Value.ID())),
+				})
+			}
+		}
+		if args.SSHKnownHosts != "" {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "sshKnownHosts",
+					Value: dagql.NewString(args.SSHKnownHosts),
+				})
+			}
+		}
+		if args.SSHAuthSocket.Valid {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "sshAuthSocket",
+					Value: dagql.Opt(dagql.NewID[*core.Socket](args.SSHAuthSocket.Value.ID())),
+				})
+			}
+		}
+		if args.HTTPAuthUsername != "" {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "httpAuthUsername",
+					Value: dagql.NewString(args.HTTPAuthUsername),
+				})
+			}
+		}
+		if args.HTTPAuthToken.Valid {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "httpAuthToken",
+					Value: dagql.Opt(dagql.NewID[*core.Secret](args.HTTPAuthToken.Value.ID())),
+				})
+			}
+		}
+		if args.HTTPAuthHeader.Valid {
+			for i := range try {
+				try[i] = append(try[i], dagql.NamedInput{
+					Name:  "httpAuthHeader",
+					Value: dagql.Opt(dagql.NewID[*core.Secret](args.HTTPAuthHeader.Value.ID())),
+				})
+			}
 		}
 
-		for _, id := range try {
-			res, err := srv.Load(ctx, id)
+		for _, selectArgs := range try {
+			var repo dagql.ObjectResult[*core.GitRepository]
+			err := srv.Select(ctx, parent, &repo, dagql.Selector{
+				Field: "git",
+				Args:  selectArgs,
+				View:  dagql.CurrentID(ctx).View(),
+			})
 			if err != nil {
 				if errors.Is(err, gitutil.ErrGitAuthFailed) {
 					continue
 				}
 				return inst, err
 			}
-			repo, ok := res.(dagql.ObjectResult[*core.GitRepository])
-			if !ok {
-				return inst, fmt.Errorf("expected ObjectResult, got %T", res)
-			}
-			return repo.Result, nil
+			return repo, nil
 		}
 
 		return inst, fmt.Errorf("failed to determine Git URL protocol")
@@ -347,7 +420,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			// For HTTP refs, try to load client credentials from the git helper
 			parentClientMetadata, err := parent.Self().NonModuleParentClientMetadata(ctx)
 			if err != nil {
-				return inst, fmt.Errorf("failed to retrieve non-module parent client metadata: %w", err)
+				return inst, err
 			}
 			if clientMetadata.ClientID != parentClientMetadata.ClientID {
 				// only handle PAT auth if we're the main client
@@ -496,9 +569,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	repo.Remote.Head = head
 	repo.DiscardGitDir = discardGitDir
 
-	inst, err = dagql.NewResultForCurrentID(ctx, repo)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, repo)
 	if err != nil {
-		return inst, fmt.Errorf("failed to create GitRepository instance: %w", err)
+		return inst, err
 	}
 
 	dgstInputs := []string{
@@ -527,13 +600,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
 		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthHeader.ID()})
 	}
-	inst = inst.WithDigest(hashutil.HashStrings(dgstInputs...))
+	inst = inst.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
 	if len(resourceIDs) > 0 {
 		postCall, err := core.ResourceTransferPostCall(ctx, parent.Self(), clientMetadata.ClientID, resourceIDs...)
 		if err != nil {
 			return inst, fmt.Errorf("failed to create post call: %w", err)
 		}
-		inst = inst.ResultWithPostCall(postCall)
+		inst = inst.ObjectResultWithPostCall(postCall)
 	}
 	return inst, nil
 }
@@ -872,7 +945,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 			if err != nil {
 				return inst, fmt.Errorf("failed to get content hash: %w", err)
 			}
-			inst = inst.WithObjectDigest(hashutil.HashStrings(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
+			inst = inst.WithContentDigest(hashutil.HashStrings(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
 		}
 	}
 

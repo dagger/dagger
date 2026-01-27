@@ -247,6 +247,11 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	ref := workerRef.ImmutableRef
 	if ref != nil {
 		idDgst := obj.ID().Digest().String()
+		// prefer content hash
+		if obj.ID().ContentDigest() != "" {
+			idDgst = obj.ID().ContentDigest().String()
+		}
+
 		if err := ref.SetString(keyDaggerDigest, idDgst, daggerDigestIdx+idDgst); err != nil {
 			return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
 		}
@@ -629,12 +634,18 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				llb = dirMnt.Self().LLB
 				res = dirMnt.Self().Result
 				dgst = dirMnt.ID().Digest()
+				if dirMnt.ID().ContentDigest() != "" {
+					dgst = dirMnt.ID().ContentDigest()
+				}
 			},
 			func(fileMnt *dagql.ObjectResult[*File]) {
 				mount.Selector = fileMnt.Self().File
 				llb = fileMnt.Self().LLB
 				res = fileMnt.Self().Result
 				dgst = fileMnt.ID().Digest()
+				if fileMnt.ID().ContentDigest() != "" {
+					dgst = fileMnt.ID().ContentDigest()
+				}
 			},
 			func(cache *CacheMountSource) {
 				mount.Selector = cache.BasePath
@@ -888,7 +899,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 	getResult := func(
 		def *pb.Definition,
 		ref bkcache.ImmutableRef,
-		dgst digest.Digest,
+		id *call.ID,
 	) (solver.Result, error) {
 		switch {
 		case ref != nil:
@@ -910,9 +921,17 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 			return worker.NewWorkerRefResult(nil, wkr), nil
 		}
 
-		if ref != nil && dgst != "" {
-			if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {
-				return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
+		if ref != nil && id != nil {
+			dgst := id.Digest()
+			// prefer content digest if available
+			if id.ContentDigest() != "" {
+				dgst = id.ContentDigest()
+			}
+
+			if dgst != "" {
+				if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {
+					return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
+				}
 			}
 		}
 
@@ -931,7 +950,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 			ref, err = getResult(
 				container.FS.Self().LLB,
 				container.FS.Self().Result,
-				container.FS.ID().Digest(),
+				container.FS.ID(),
 			)
 		case 1:
 			var llb *pb.Definition
@@ -940,7 +959,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 				llb = container.Meta.LLB
 				res = container.Meta.Result
 			}
-			ref, err = getResult(llb, res, "")
+			ref, err = getResult(llb, res, nil)
 		default:
 			mnt := container.Mounts[mountIdx-2]
 			switch {
@@ -948,13 +967,13 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 				ref, err = getResult(
 					mnt.DirectorySource.Self().LLB,
 					mnt.DirectorySource.Self().Result,
-					mnt.DirectorySource.ID().Digest(),
+					mnt.DirectorySource.ID(),
 				)
 			case mnt.FileSource != nil:
 				ref, err = getResult(
 					mnt.FileSource.Self().LLB,
 					mnt.FileSource.Self().Result,
-					mnt.FileSource.ID().Digest(),
+					mnt.FileSource.ID(),
 				)
 			default:
 				err = fmt.Errorf("mount %d has no source", mountIdx)

@@ -53,6 +53,7 @@ type Result[K KeyType, V any] interface {
 	Release(context.Context) error
 	PostCall(context.Context) error
 	HitCache() bool
+	HitContentDigestCache() bool
 }
 
 type KeyType = interface {
@@ -79,6 +80,10 @@ type CacheKey[K KeyType] struct {
 
 	// DoNotCache indicates that this call should not be cached at all, simply ran.
 	DoNotCache bool
+
+	// An optional separate key representing the content digest of the result. The CallKey is preferred
+	// for cache hits, but the content digest key is checked as a secondary fallback if it is set.
+	ContentDigestKey K
 }
 
 type PostCallFunc = func(context.Context) error
@@ -98,6 +103,14 @@ type ValueWithCallbacks[V any] struct {
 	// If true, indicates that it is safe to persist this value in the cache db (i.e. does not have
 	// any in-memory only data).
 	SafeToPersistCache bool
+
+	// An optional separate key representing the content digest of the result.
+	ContentDigestKey string
+
+	// An optional separate call key for the result. This may be set for instance when a call returns a result from
+	// a separate call, in which case ResultCallKey would be the call key of that separate call.
+	// e.g. address("/foo").directory may return a result with ResultCallKey for the call host.directory("/foo")
+	ResultCallKey string
 }
 
 type ctxStorageKey struct{}
@@ -179,7 +192,10 @@ type cache[K KeyType, V any] struct {
 	ongoingCalls map[callConcurrencyKeys]*result[K, V]
 
 	// calls that have completed successfully and are cached, keyed by the storage key
-	completedCalls map[string]*result[K, V]
+	completedCalls map[string]*resultList[K, V]
+
+	// calls that have completed successfully and are cached, keyed by content digest key
+	completedCallsByContent map[string]*resultList[K, V]
 
 	// db for persistence; currently only used for metadata supporting ttl-based expiration
 	db *cachedb.Queries
@@ -202,6 +218,11 @@ type result[K KeyType, V any] struct {
 	err                error
 	safeToPersistCache bool
 
+	// optional content digest key set on the result
+	contentDigestKey K
+	// optional result call key set on the result (see ValueWithCallbacks.ResultCallKey)
+	resultCallKey K
+
 	persistToDB func(context.Context) error
 	postCall    PostCallFunc
 	onRelease   OnReleaseFunc
@@ -219,11 +240,18 @@ type result[K KeyType, V any] struct {
 type perCallResult[K KeyType, V any] struct {
 	*result[K, V]
 
+	// whether there was a cache hit for this call
 	hitCache bool
+	// whether there was a content digest cache hit specifically for this call
+	hitContentDigestCache bool
 }
 
 func (r *perCallResult[K, V]) HitCache() bool {
 	return r.hitCache
+}
+
+func (r *perCallResult[K, V]) HitContentDigestCache() bool {
+	return r.hitContentDigestCache
 }
 
 var _ Result[string, string] = &perCallResult[string, string]{}
@@ -255,7 +283,14 @@ func (c *cache[K, V]) Size() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	return len(c.ongoingCalls) + len(c.completedCalls)
+	total := len(c.ongoingCalls)
+	for _, lst := range c.completedCalls {
+		total += lst.len()
+	}
+	for _, lst := range c.completedCallsByContent {
+		total += lst.len()
+	}
+	return total
 }
 
 func (c *cache[K, V]) GetOrInitializeValue(
@@ -395,16 +430,35 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		c.ongoingCalls = make(map[callConcurrencyKeys]*result[K, V])
 	}
 	if c.completedCalls == nil {
-		c.completedCalls = make(map[string]*result[K, V])
+		c.completedCalls = make(map[string]*resultList[K, V])
+	}
+	if c.completedCallsByContent == nil {
+		c.completedCallsByContent = make(map[string]*resultList[K, V])
 	}
 
-	if res, ok := c.completedCalls[storageKey]; ok {
-		res.refCount++
-		c.mu.Unlock()
-		return &perCallResult[K, V]{
-			result:   res,
-			hitCache: true,
-		}, nil
+	if lst, ok := c.completedCalls[storageKey]; ok {
+		if res := lst.first(); res != nil {
+			res.refCount++
+			c.mu.Unlock()
+			return &perCallResult[K, V]{
+				result:   res,
+				hitCache: true,
+			}, nil
+		}
+	}
+
+	if key.ContentDigestKey != "" {
+		if lst, ok := c.completedCallsByContent[string(key.ContentDigestKey)]; ok {
+			if res := lst.first(); res != nil {
+				res.refCount++
+				c.mu.Unlock()
+				return &perCallResult[K, V]{
+					result:                res,
+					hitCache:              true,
+					hitContentDigestCache: true,
+				}, nil
+			}
+		}
 	}
 
 	var zeroKey K
@@ -446,6 +500,8 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 			res.postCall = valWithCallbacks.PostCall
 			res.onRelease = valWithCallbacks.OnRelease
 			res.safeToPersistCache = valWithCallbacks.SafeToPersistCache
+			res.contentDigestKey = K(valWithCallbacks.ContentDigestKey)
+			res.resultCallKey = K(valWithCallbacks.ResultCallKey)
 		}
 	}()
 
@@ -492,10 +548,37 @@ func (c *cache[K, V]) wait(ctx context.Context, res *result[K, V], isFirstCaller
 
 	if err == nil {
 		delete(c.ongoingCalls, res.callConcurrencyKeys)
-		if existingRes, ok := c.completedCalls[res.storageKey]; ok {
-			res = existingRes
+		lst, ok := c.completedCalls[res.storageKey]
+		if ok {
+			if existing := lst.first(); existing != nil {
+				res = existing
+			} else {
+				lst.add(res)
+			}
 		} else {
-			c.completedCalls[res.storageKey] = res
+			lst = newResultList[K, V]()
+			lst.add(res)
+			c.completedCalls[res.storageKey] = lst
+		}
+
+		if res.resultCallKey != "" && res.resultCallKey != K(res.storageKey) {
+			resultKey := string(res.resultCallKey)
+			lst := c.completedCalls[resultKey]
+			if lst == nil {
+				lst = newResultList[K, V]()
+				c.completedCalls[resultKey] = lst
+			}
+			lst.add(res)
+		}
+
+		if res.contentDigestKey != "" {
+			contentKey := string(res.contentDigestKey)
+			lst := c.completedCallsByContent[contentKey]
+			if lst == nil {
+				lst = newResultList[K, V]()
+				c.completedCallsByContent[contentKey] = lst
+			}
+			lst.add(res)
 		}
 
 		res.refCount++
@@ -517,7 +600,12 @@ func (c *cache[K, V]) wait(ctx context.Context, res *result[K, V], isFirstCaller
 	if res.refCount == 0 && res.waiters == 0 {
 		// error happened and no refs left, delete it now
 		delete(c.ongoingCalls, res.callConcurrencyKeys)
-		delete(c.completedCalls, res.storageKey)
+		if lst := c.completedCalls[res.storageKey]; lst != nil {
+			lst.remove(res)
+			if lst.empty() {
+				delete(c.completedCalls, res.storageKey)
+			}
+		}
 	}
 
 	c.mu.Unlock()
@@ -544,7 +632,30 @@ func (res *result[K, V]) Release(ctx context.Context) error {
 	if res.refCount == 0 && res.waiters == 0 {
 		// no refs left and no one waiting on it, delete from cache
 		delete(res.cache.ongoingCalls, res.callConcurrencyKeys)
-		delete(res.cache.completedCalls, res.storageKey)
+		if lst := res.cache.completedCalls[res.storageKey]; lst != nil {
+			lst.remove(res)
+			if lst.empty() {
+				delete(res.cache.completedCalls, res.storageKey)
+			}
+		}
+		if res.resultCallKey != "" && res.resultCallKey != K(res.storageKey) {
+			key := string(res.resultCallKey)
+			if lst := res.cache.completedCalls[key]; lst != nil {
+				lst.remove(res)
+				if lst.empty() {
+					delete(res.cache.completedCalls, key)
+				}
+			}
+		}
+		if res.contentDigestKey != "" {
+			key := string(res.contentDigestKey)
+			if lst := res.cache.completedCallsByContent[key]; lst != nil {
+				lst.remove(res)
+				if lst.empty() {
+					delete(res.cache.completedCallsByContent, key)
+				}
+			}
+		}
 		onRelease = res.onRelease
 	}
 	res.cache.mu.Unlock()

@@ -456,7 +456,7 @@ func currentIDForRawDagOp(
 	var err error
 	for _, arg := range args {
 		newID = newID.WithArgument(arg)
-		h, err = call.AppendArgumentBytes(arg.PB(), h)
+		h, err = call.AppendArgumentBytes(arg, h)
 		if err != nil {
 			h.Close()
 			return nil, err
@@ -505,7 +505,7 @@ func currentIDForFSDagOp(
 	var err error
 	for _, arg := range args {
 		newID = newID.WithArgument(arg)
-		h, err = call.AppendArgumentBytes(arg.PB(), h)
+		h, err = call.AppendArgumentBytes(arg, h)
 		if err != nil {
 			h.Close()
 			return nil, err
@@ -541,7 +541,7 @@ func currentIDForContainerDagOp(
 	var err error
 	for _, arg := range args {
 		newID = newID.WithArgument(arg)
-		h, err = call.AppendArgumentBytes(arg.PB(), h)
+		h, err = call.AppendArgumentBytes(arg, h)
 		if err != nil {
 			h.Close()
 			return nil, err
