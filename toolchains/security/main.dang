@@ -10,6 +10,13 @@ type Security {
     withWorkdir("/home/trivy")
 
   """
+  The base trivy container
+  """
+  pub baseContainer(): Container {
+    trivyBase
+  }
+
+  """
   Scan the source repository for security vulnerabilities
   """
   pub scanSource(source: Directory! @defaultPath(path: "/")): Void @check {
