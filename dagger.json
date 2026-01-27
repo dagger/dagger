@@ -127,7 +127,8 @@
     "sdk/typescript/runtime/**/*",
     "go.mod",
     "go.sum",
-    "util/parallel"
+    "util/parallel",
+    "engine/distconsts"
   ],
   "dependencies": [
     {
