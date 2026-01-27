@@ -388,6 +388,7 @@ func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		WithExec([]string{"find", "engine/ebpf", "-name", "*_bpfel.o", "-delete"}).
+		WithExec([]string{"go", "test", "./dagql", "-update"}).
 		Directory(".")
 	changes := changes(base, withGoGenerate, []string{"github.com"})
 	return changes, nil
