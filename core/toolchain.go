@@ -70,62 +70,6 @@ func (r *ToolchainRegistry) Entries() []*ToolchainEntry {
 	return entries
 }
 
-// WalkChecks walks all toolchain modules for checks, applying ignore patterns
-// and prepending the toolchain name to check paths.
-func (r *ToolchainRegistry) WalkChecks(ctx context.Context, include []string) ([]*Check, error) {
-	var checks []*Check
-	objChecksCache := map[string][]*Check{}
-
-	// Walk each toolchain module's checks
-	for _, entry := range r.entries {
-		tcMod := entry.Module
-		tcMainObj, ok := tcMod.MainObject()
-		if !ok {
-			continue // skip toolchains without a main object
-		}
-
-		// Walk the toolchain module's checks
-		for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache) {
-			// Check if this check should be ignored (before prepending toolchain name)
-			// This allows ignoreChecks patterns to be scoped to the toolchain without needing the prefix
-			ignored := false
-			if len(entry.IgnoreChecks) > 0 {
-				// Check against ignore patterns using the check path WITHOUT the toolchain prefix
-				for _, ignorePattern := range entry.IgnoreChecks {
-					checkMatch, err := check.Match([]string{ignorePattern})
-					if err != nil {
-						return nil, err
-					}
-					if checkMatch {
-						ignored = true
-						break
-					}
-				}
-			}
-
-			if ignored {
-				continue // Skip this check
-			}
-
-			// Prepend the toolchain name to the check path
-			check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
-
-			// Set the check's source
-			check.Source = tcMod.GetSource()
-
-			match, err := check.Match(include)
-			if err != nil {
-				return nil, err
-			}
-			if match {
-				checks = append(checks, check)
-			}
-		}
-	}
-
-	return checks, nil
-}
-
 // CreateProxyField creates a dagql.Field that proxies calls to a toolchain module.
 // This consolidates the toolchainProxyFunction logic from object.go.
 func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Module, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
