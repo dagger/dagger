@@ -7437,6 +7437,7 @@ class Function(Type):
         ignore: list[str] | None = None,
         source_map: "SourceMap | None" = None,
         deprecated: str | None = None,
+        default_address: str | None = "",
     ) -> Self:
         """Returns the function with the provided argument
 
@@ -7460,6 +7461,7 @@ class Function(Type):
             The source map for the argument definition.
         deprecated:
             If deprecated, the reason or migration path.
+        default_address:
         """
         _args = [
             Arg("name", name),
@@ -7470,6 +7472,7 @@ class Function(Type):
             Arg("ignore", [] if ignore is None else ignore, []),
             Arg("sourceMap", source_map, None),
             Arg("deprecated", deprecated, None),
+            Arg("defaultAddress", default_address, ""),
         ]
         _ctx = self._select("withArg", _args)
         return Function(_ctx)
@@ -7558,6 +7561,28 @@ class FunctionArg(Type):
     """An argument accepted by a function.  This is a specification for an
     argument at function definition time, not an argument passed at
     function call time."""
+
+    async def default_address(self) -> str:
+        """Only applies to arguments of type Container. If the argument is not
+        set, load it from the given address (e.g. alpine:latest)
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("defaultAddress", _args)
+        return await _ctx.execute(str)
 
     async def default_path(self) -> str:
         """Only applies to arguments of type File or Directory. If the argument

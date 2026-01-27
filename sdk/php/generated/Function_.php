@@ -90,6 +90,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         ?array $ignore = null,
         SourceMapId|SourceMap|null $sourceMap = null,
         ?string $deprecated = null,
+        ?string $defaultAddress = '',
     ): Function_ {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArg');
         $innerQueryBuilder->setArgument('name', $name);
@@ -111,6 +112,9 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $deprecated) {
         $innerQueryBuilder->setArgument('deprecated', $deprecated);
+        }
+        if (null !== $defaultAddress) {
+        $innerQueryBuilder->setArgument('defaultAddress', $defaultAddress);
         }
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

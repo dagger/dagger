@@ -27,6 +27,7 @@ from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, Pyth
 from dagger.mod._utils import (
     get_alt_constructor,
     get_alt_name,
+    get_default_address,
     get_default_path,
     get_deprecated,
     get_doc,
@@ -174,6 +175,7 @@ class Function(Generic[P, R]):
             doc=get_doc(annotated_type),
             ignore=get_ignore(annotated_type),
             default_path=get_default_path(annotated_type),
+            default_address=get_default_address(annotated_type),
             deprecated=get_deprecated(annotated_type),
             conv=self.converter,
         )

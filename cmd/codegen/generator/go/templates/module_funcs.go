@@ -239,6 +239,10 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 			argOpts.DefaultPath = argSpec.defaultPath
 		}
 
+		if argSpec.defaultAddress != "" {
+			argOpts.DefaultAddress = argSpec.defaultAddress
+		}
+
 		if argSpec.deprecated != nil {
 			argOpts.Deprecated = *argSpec.deprecated
 		}
@@ -390,6 +394,14 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		}
 		optional = true // If defaultPath is set, the argument becomes optional
 	}
+	defaultAddress := ""
+	if v, ok := pragmas["defaultAddress"]; ok {
+		defaultAddress, ok = v.(string)
+		if !ok {
+			return paramSpec{}, fmt.Errorf("defaultAddress pragma %q, must be a valid string", v)
+		}
+		optional = true // If defaultAddress is set, the argument becomes optional
+	}
 	var deprecated *string
 	if v, ok := pragmas["deprecated"]; ok {
 		reason := ""
@@ -440,6 +452,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		hasDefaultValue: hasDefaultValue,
 		description:     comment,
 		defaultPath:     defaultPath,
+		defaultAddress:  defaultAddress,
 		deprecated:      deprecated,
 		ignore:          ignore,
 	}, nil
@@ -475,6 +488,10 @@ type paramSpec struct {
 	// Only applies to arguments of type File or Directory.
 	// If the argument is not set, load it from the given path in the context directory
 	defaultPath string
+
+	// Only applies to arguments of type Container.
+	// If the argument is not set, load it from the given address (e.g. "alpine:latest")
+	defaultAddress string
 
 	// Only applies to arguments of type Directory.
 	// The ignore patterns are applied to the input directory, and

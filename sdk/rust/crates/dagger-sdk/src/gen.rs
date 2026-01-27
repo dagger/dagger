@@ -8721,6 +8721,8 @@ pub struct Function {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithArgOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub default_address: Option<&'a str>,
     /// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
     #[builder(setter(into, strip_option), default)]
     pub default_path: Option<&'a str>,
@@ -8863,6 +8865,9 @@ impl Function {
         if let Some(deprecated) = opts.deprecated {
             query = query.arg("deprecated", deprecated);
         }
+        if let Some(default_address) = opts.default_address {
+            query = query.arg("defaultAddress", default_address);
+        }
         Function {
             proc: self.proc.clone(),
             selection: query,
@@ -8986,6 +8991,11 @@ pub struct FunctionArg {
     pub graphql_client: DynGraphQLClient,
 }
 impl FunctionArg {
+    /// Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+    pub async fn default_address(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("defaultAddress");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
     pub async fn default_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("defaultPath");

@@ -1921,3 +1921,41 @@ func (p *Playground) SayHello() string {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
 }
+
+func (GoSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+// TestWithDefaultContainer uses alpine:latest when no container is provided
+func (t *Test) TestWithDefaultContainer(
+	ctx context.Context,
+	// +defaultAddress="alpine:3.19"
+	ctr *dagger.Container,
+) (string, error) {
+	// Should receive alpine:latest container by default
+	return ctr.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
+}
+`,
+		)
+
+	out, err := modGen.With(daggerCall("test-with-default-container")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "3.19") // Alpine version contains a dot like "3.19.0"
+
+	// Test that we can override the default
+	out2, err := modGen.With(daggerCall("test-with-default-container", "--ctr=alpine:3.18")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out2, "3.18")
+}

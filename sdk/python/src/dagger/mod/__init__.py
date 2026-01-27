@@ -1,5 +1,6 @@
 from typing_extensions import Doc
 
+from dagger.mod._arguments import DefaultAddress
 from dagger.mod._arguments import DefaultPath
 from dagger.mod._arguments import Deprecated
 from dagger.mod._arguments import Ignore
@@ -24,6 +25,7 @@ def default_module() -> Module:
 
 
 __all__ = [
+    "DefaultAddress",
     "DefaultPath",
     "Deprecated",
     "Doc",  # Only re-exported because it's in `typing_extensions`.

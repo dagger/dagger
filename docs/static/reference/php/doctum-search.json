@@ -3897,6 +3897,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\FunctionArg::defaultAddress",
+			"p": "Dagger/FunctionArg.html#method_defaultAddress",
+			"d": "<p>Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\FunctionArg::defaultPath",
 			"p": "Dagger/FunctionArg.html#method_defaultPath",
 			"d": "<p>Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory</p>"
