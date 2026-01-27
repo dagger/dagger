@@ -156,5 +156,11 @@
       "source": "toolchains/cli-dev"
     }
   ],
-  "source": ".dagger"
+  "source": ".dagger",
+  "clients": [
+    {
+      "generator": "go",
+      "directory": "./internal/testutil/dagger"
+    }
+  ]
 }
