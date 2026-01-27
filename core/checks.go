@@ -117,8 +117,9 @@ func markdownTable(headers []string, rows ...[]string) string {
 func (r *CheckGroup) Clone() *CheckGroup {
 	cp := *r
 	cp.Node = cp.Node.Clone()
+	cp.Checks = make([]*Check, len(r.Checks))
 	for i := range cp.Checks {
-		cp.Checks[i] = cp.Checks[i].Clone()
+		cp.Checks[i] = r.Checks[i].Clone()
 	}
 	return &cp
 }
