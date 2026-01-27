@@ -224,6 +224,7 @@ class Module:
                         description=param.doc,
                         default_value=param.default_value,
                         default_path=param.default_path,
+                        default_address=param.default_address,
                         ignore=param.ignore,
                         deprecated=param.deprecated,
                     )

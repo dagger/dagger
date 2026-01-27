@@ -1926,21 +1926,19 @@ func (PythonSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) 
 	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
+from typing import Annotated
 import dataclasses
 import dagger
-from dagger import dag, function, object_type
+from dagger import function, object_type
 
 @object_type
 class Test:
-    ctr: dagger.Container = dataclasses.field(
-        default_factory=lambda: dag.container().from_("alpine:3.19")
-    )
-
     @function
-    async def version(self) -> str:
-        return await self.ctr.with_exec(
-            ["/bin/sh", "-c", "cat /etc/alpine-release"]
-        ).stdout()
+    async def version(
+        self,
+        ctr: Annotated[dagger.Container, dagger.DefaultAddress("alpine:3.19")],
+    ) -> str:
+        return await ctr.with_exec(["cat", "/etc/alpine-release"]).stdout()
 `)
 
 	out, err := modGen.With(daggerCall("version")).Stdout(ctx)
@@ -1948,7 +1946,7 @@ class Test:
 	require.Contains(t, out, "3.19") // Alpine version contains "3.19.0"
 
 	// Test that we can override the default via constructor
-	out2, err := modGen.With(daggerCall("--ctr=alpine:3.18", "version")).Stdout(ctx)
+	out2, err := modGen.With(daggerCall("version", "--ctr=alpine:3.18")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out2, "3.18")
 }
