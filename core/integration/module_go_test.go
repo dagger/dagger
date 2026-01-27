@@ -1906,7 +1906,7 @@ type Test struct{}
 // TestWithDefaultContainer uses alpine:latest when no container is provided
 func (t *Test) TestWithDefaultContainer(
 	ctx context.Context,
-	// +defaultAddress="alpine:latest"
+	// +defaultAddress="alpine:3.19"
 	ctr *dagger.Container,
 ) (string, error) {
 	// Should receive alpine:latest container by default
@@ -1917,10 +1917,10 @@ func (t *Test) TestWithDefaultContainer(
 
 	out, err := modGen.With(daggerCall("test-with-default-container")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, ".") // Alpine version contains a dot like "3.19.0"
+	require.Contains(t, out, "3.19") // Alpine version contains a dot like "3.19.0"
 
 	// Test that we can override the default
 	out2, err := modGen.With(daggerCall("test-with-default-container", "--ctr=alpine:3.18")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out2, ".")
+	require.Contains(t, out2, "3.18")
 }
