@@ -3532,6 +3532,9 @@ func (s *moduleSourceSchema) integrateToolchains(
 	return mod, nil
 }
 
+// Context key for tracking if this is the parent module (not a dependency)
+type isParentModuleKey struct{}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3550,6 +3553,12 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	if src.Self().ModuleName == "" {
 		return inst, fmt.Errorf("module name must be set")
+	}
+
+	// Mark this as the parent module if not already set (nil means not yet set)
+	// This ensures only the top-level module (not dependencies) loads toolchains
+	if ctx.Value(isParentModuleKey{}) == nil {
+		ctx = context.WithValue(ctx, isParentModuleKey{}, true)
 	}
 
 	// Check engine version compatibility
@@ -3655,22 +3664,32 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
+	// Check if this is the parent module
+	isParentModule := ctx.Value(isParentModuleKey{}) == true
+
+	// Create a context without the parent module flag for loading dependencies and toolchains
+	// This ensures nested modules don't load their own toolchains
+	depCtx := context.WithValue(ctx, isParentModuleKey{}, false)
+
 	var eg errgroup.Group
 	depMods := make([]dagql.Result[*core.Module], len(src.Self().Dependencies))
 	for i, depSrc := range src.Self().Dependencies {
 		eg.Go(func() error {
-			return dag.Select(ctx, depSrc, &depMods[i],
+			return dag.Select(depCtx, depSrc, &depMods[i],
 				dagql.Selector{Field: "asModule"},
 			)
 		})
 	}
 
-	// Load all toolchains as dependencies
-	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
-	if len(src.Self().Toolchains) > 0 {
+	// Only load toolchains if this is the parent module
+	// Toolchains should only be loaded for the top-level module, not for dependencies
+	var tcMods []dagql.Result[*core.Module]
+	if isParentModule && len(src.Self().Toolchains) > 0 {
+		tcMods = make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
 		for i, tcSrc := range src.Self().Toolchains {
 			eg.Go(func() error {
-				err := dag.Select(ctx, tcSrc, &tcMods[i],
+				// Use depCtx so toolchains don't load their own toolchains
+				err := dag.Select(depCtx, tcSrc, &tcMods[i],
 					dagql.Selector{Field: "asModule"},
 				)
 				return err
@@ -3690,22 +3709,25 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
 	}
-	for i, tcMod := range tcMods {
-		clone := tcMod.Self().Clone()
-		clone.IsToolchain = true
-		clone.ContextSource = dagql.NonNull(src)
+	// Only process toolchain modules if they were loaded
+	if tcMods != nil {
+		for i, tcMod := range tcMods {
+			clone := tcMod.Self().Clone()
+			clone.IsToolchain = true
+			clone.ContextSource = dagql.NonNull(src)
 
-		// Apply argument configurations from the parent module's toolchain config
-		// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
-		if i < len(src.Self().ConfigToolchains) {
-			tcCfg := src.Self().ConfigToolchains[i]
-			if len(tcCfg.Customizations) > 0 {
-				// Apply configurations to the toolchain module's functions, including chained functions
-				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
+			// Apply argument configurations from the parent module's toolchain config
+			// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
+			if i < len(src.Self().ConfigToolchains) {
+				tcCfg := src.Self().ConfigToolchains[i]
+				if len(tcCfg.Customizations) > 0 {
+					// Apply configurations to the toolchain module's functions, including chained functions
+					applyArgumentConfigsToModule(clone, tcCfg.Customizations)
+				}
 			}
-		}
 
-		deps = deps.Append(clone)
+			deps = deps.Append(clone)
+		}
 	}
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
