@@ -82,6 +82,8 @@ Defined in `cmd/codegen/generator/go/templates/functions.go:54`:
 | `FormatName(s)` | GraphQL → Go name |
 | `FormatReturnType(f)` | Field → return type |
 | `ModuleMainSrc()` | Generate main() + invoke() |
+| `IsArgOptional(arg)` | Check if argument is optional (has default OR nullable type) |
+| `HasOptionals(args)` | Check if any argument in list is optional |
 
 ## Common Mistakes
 
@@ -89,3 +91,4 @@ Defined in `cmd/codegen/generator/go/templates/functions.go:54`:
 2. **Forgot IsPartial** - main() only generates on pass 1
 3. **Import confusion** - Standalone clients alias SDK as `dagClient`
 4. **Template caching** - Must rebuild `cmd/codegen` after changes
+5. **Wrong optionality check** - Use `IsArgOptional $arg` not `$arg.TypeRef.IsOptional`. The latter only checks if the type is nullable, missing arguments with default values. Similarly, use `HasOptionals $field.Args` not `$field.Args.HasOptionals` for consistency with the helper function.
