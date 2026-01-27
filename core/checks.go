@@ -28,9 +28,11 @@ func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGr
 	}
 
 	var exclude []string
-	for toolchainName, toolchainIgnorePatterns := range mod.ToolchainIgnoreChecks {
-		for _, ignorePattern := range toolchainIgnorePatterns {
-			exclude = append(exclude, toolchainName+":"+ignorePattern)
+	if mod.Toolchains != nil {
+		for _, entry := range mod.Toolchains.Entries() {
+			for _, ignorePattern := range entry.IgnoreChecks {
+				exclude = append(exclude, entry.FieldName+":"+ignorePattern)
+			}
 		}
 	}
 	checkNodes, err := rootNode.RollupChecks(ctx, include, exclude)

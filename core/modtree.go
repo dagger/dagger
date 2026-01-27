@@ -149,9 +149,11 @@ func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, erro
 		}
 	}
 	// Install toolchains
-	for _, tcMod := range mod.ToolchainModules {
-		if err := tcMod.Install(ctx, srv); err != nil {
-			return nil, fmt.Errorf("%q: serve toolchain module %q: %w", mod.Name(), tcMod.Name(), err)
+	if mod.Toolchains != nil {
+		for _, entry := range mod.Toolchains.Entries() {
+			if err := entry.Module.Install(ctx, srv); err != nil {
+				return nil, fmt.Errorf("%q: serve toolchain module %q: %w", mod.Name(), entry.Module.Name(), err)
+			}
 		}
 	}
 	// Install the main module
