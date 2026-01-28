@@ -706,15 +706,15 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 }
 
 func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) (rerr error) {
-	var changesetID string
+	var changeset *dagger.Changeset
 	switch v := response.(type) {
 	case string:
-		changesetID = v
+		changeset = dag.LoadChangesetFromID(dagger.ChangesetID(v))
+	case *dagger.Changeset:
+		changeset = v
 	default:
 		return fmt.Errorf("unexpected response type for changeset: %T", v)
 	}
-
-	changeset := dag.LoadChangesetFromID(dagger.ChangesetID(changesetID))
 
 	var summary strings.Builder
 	var noChanges bool
