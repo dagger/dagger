@@ -3705,6 +3705,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
 	}
+
 	deps := core.NewModDeps(query, defaultDeps.Mods)
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
@@ -3727,6 +3728,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 
 		deps = deps.Append(clone)
 	}
+
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core
