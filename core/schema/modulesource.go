@@ -962,7 +962,11 @@ func (s *moduleSourceSchema) contextDirectory(
 	// FIXME:(sipsma) this is not ideal since contextual loaded dirs will have
 	// different cache keys than normally loaded host dirs. Support for multiple
 	// cache keys per result should help fix this.
-	dgst := hashutil.HashStrings(dir.ID().ContentDigest().String(), "contextualDir")
+	dirDgst := dir.ID().ContentDigest()
+	if dirDgst == "" {
+		dirDgst = dir.ID().Digest()
+	}
+	dgst := hashutil.HashStrings(dirDgst.String(), "contextualDir")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
@@ -1003,7 +1007,11 @@ func (s *moduleSourceSchema) contextFile(
 	// FIXME:(sipsma) this is not ideal since contextual loaded files will have
 	// different cache keys than normally loaded host files. Support for multiple
 	// cache keys per result should help fix this.
-	dgst := hashutil.HashStrings(f.ID().ContentDigest().String(), "contextualFile")
+	fDgst := f.ID().ContentDigest()
+	if fDgst == "" {
+		fDgst = f.ID().Digest()
+	}
+	dgst := hashutil.HashStrings(fDgst.String(), "contextualFile")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
@@ -1039,7 +1047,11 @@ func (s *moduleSourceSchema) contextGitRepository(
 	// mix-in a constant string to avoid collisions w/ normal host file loads, which
 	// can lead function calls encountering cached results that include contextual
 	// file loads from older sessions to load from the wrong path
-	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualGitRepository")
+	fDgst := f.ID().ContentDigest()
+	if fDgst == "" {
+		fDgst = f.ID().Digest()
+	}
+	dgst := hashutil.HashStrings(fDgst.String(), "contextualGitRepository")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
@@ -1085,7 +1097,11 @@ func (s *moduleSourceSchema) contextGitRef(
 	// mix-in a constant string to avoid collisions w/ normal host file loads, which
 	// can lead function calls encountering cached results that include contextual
 	// file loads from older sessions to load from the wrong path
-	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualGitRef")
+	fDgst := f.ID().ContentDigest()
+	if fDgst == "" {
+		fDgst = f.ID().Digest()
+	}
+	dgst := hashutil.HashStrings(fDgst.String(), "contextualGitRef")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }

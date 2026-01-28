@@ -600,7 +600,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
 		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthHeader.ID()})
 	}
-	inst = inst.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
+	inst = inst.WithContentDigest(hashutil.HashStrings(dgstInputs...))
 	if len(resourceIDs) > 0 {
 		postCall, err := core.ResourceTransferPostCall(ctx, parent.Self(), clientMetadata.ClientID, resourceIDs...)
 		if err != nil {
@@ -682,7 +682,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
 		}
 	}
-	inst = inst.WithDigest(hashutil.HashStrings(dgstInputs...))
+	inst = inst.WithContentDigest(hashutil.HashStrings(dgstInputs...))
 	return inst, nil
 }
 

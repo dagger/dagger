@@ -1507,10 +1507,6 @@ func maintainContentHashing[A any](
 			return res, err
 		}
 
-		// in practice right now, a custom digest is always a content hash
-		// *unless* it's been manually rewritten using hashutil.HashStrings (e.g. in
-		// the case of GitRef.tree - that case is manually rewritten to avoid
-		// accidental collisions later)
 		if parent.ID().ContentDigest() != "" {
 			query, err := core.CurrentQuery(ctx)
 			if err != nil {
@@ -1524,7 +1520,7 @@ func maintainContentHashing[A any](
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
 			}
-			if res.ID().Digest() == parent.ID().Digest() { // if this didn't change anything, return the parent, making this a no-op
+			if res.ID().ContentDigest() == parent.ID().ContentDigest() { // if this didn't change anything, return the parent, making this a no-op
 				return parent, nil
 			}
 		}
