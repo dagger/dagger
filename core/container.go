@@ -1862,9 +1862,6 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	ctx, span := Tracer(ctx).Start(ctx, "evaling", telemetry.Internal())
-	defer span.End()
-
 	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: def.ToPB(),
