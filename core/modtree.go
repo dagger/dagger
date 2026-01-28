@@ -2,12 +2,15 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"go.opentelemetry.io/otel/attribute"
@@ -55,18 +58,24 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 }
 
 func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) (rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
-		telemetry.Reveal(),
-		trace.WithAttributes(
-			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-			attribute.String(telemetry.CheckNameAttr, node.PathString()),
-		),
-	)
-	defer func() {
-		span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
-		telemetry.EndWithCause(span, &rerr)
-	}()
+	clientMD, _ := engine.ClientMetadataFromContext(ctx)
+
+	// Only create telemetry span if we're NOT a scale-out target (to avoid duplication)
+	var span trace.Span
+	if clientMD == nil || clientMD.CloudScaleOutEngineID == "" {
+		ctx, span = Tracer(ctx).Start(ctx, node.PathString(),
+			telemetry.Reveal(),
+			trace.WithAttributes(
+				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+				attribute.String(telemetry.CheckNameAttr, node.PathString()),
+			),
+		)
+		defer func() {
+			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
+			telemetry.EndWithCause(span, &rerr)
+		}()
+	}
 
 	if node.IsCheck {
 		return node.runLeafCheck(ctx)
@@ -100,29 +109,99 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 }
 
 func (node *ModTreeNode) runLeafCheck(ctx context.Context) error {
-	return func() error {
-		var status dagql.AnyResult
-		if err := node.DagqlValue(ctx, &status); err != nil {
+	clientMD, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Try scale-out if enabled (will be false for scaled-out sessions)
+	if clientMD.EnableCloudScaleOut {
+		if ok, err := node.tryScaleOut(ctx); ok {
 			return err
 		}
-		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
-			// If the check returns a syncable type, sync it
-			srv := node.DagqlServer
-			if syncField, has := obj.ObjectType().FieldSpec("sync", srv.View); has {
-				if !syncField.Args.HasRequired(srv.View) {
-					if err := srv.Select(
-						dagql.WithNonInternalTelemetry(ctx),
-						obj,
-						&status,
-						dagql.Selector{Field: "sync"},
-					); err != nil {
-						return err
-					}
+	}
+
+	return node.runLeafCheckLocally(ctx)
+}
+
+func (node *ModTreeNode) runLeafCheckLocally(ctx context.Context) error {
+	var status dagql.AnyResult
+	if err := node.DagqlValue(ctx, &status); err != nil {
+		return err
+	}
+	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
+		// If the check returns a syncable type, sync it
+		srv := node.DagqlServer
+		if syncField, has := obj.ObjectType().FieldSpec("sync", srv.View); has {
+			if !syncField.Args.HasRequired(srv.View) {
+				if err := srv.Select(
+					dagql.WithNonInternalTelemetry(ctx),
+					obj,
+					&status,
+					dagql.Selector{Field: "sync"},
+				); err != nil {
+					return err
 				}
 			}
 		}
-		return nil
+	}
+	return nil
+}
+
+func (node *ModTreeNode) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return true, err
+	}
+
+	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
+		node.RootAddress(),
+		node.PathString(),
+		nil,
+	)
+	if err != nil {
+		return true, fmt.Errorf("engine-to-engine connect: %w", err)
+	}
+	if !useCloud {
+		return false, nil
+	}
+	defer func() {
+		rerr = errors.Join(rerr, cloudClient.Close())
 	}()
+
+	query := cloudClient.Dagger().QueryBuilder()
+
+	// Load the module based on its source kind
+	modSrc := node.Module.Source.Value.Self()
+	switch modSrc.Kind {
+	case ModuleSourceKindLocal:
+		query = query.Select("moduleSource").
+			Arg("refString", filepath.Join(
+				modSrc.Local.ContextDirectoryPath,
+				modSrc.SourceRootSubpath,
+			))
+	case ModuleSourceKindGit:
+		query = query.Select("moduleSource").
+			Arg("refString", modSrc.AsString()).
+			Arg("refPin", modSrc.Git.Commit).
+			Arg("requireKind", modSrc.Kind)
+	case ModuleSourceKindDir:
+		dirIDEnc, err := modSrc.DirSrc.OriginalContextDir.ID().Encode()
+		if err != nil {
+			return true, fmt.Errorf("encode dir ID: %w", err)
+		}
+		query = query.Select("loadDirectoryFromID").Arg("id", dirIDEnc)
+		query = query.Select("asModuleSource").
+			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
+	}
+
+	query = query.Select("asModule")
+	query = query.Select("check").Arg("name", node.PathString())
+	query = query.Select("run")
+	query = query.SelectMultiple("completed", "passed")
+
+	var res struct{ Completed, Passed bool }
+	return true, query.Bind(&res).Execute(ctx)
 }
 
 // Initialize a standalone dagql server for querying the given module
@@ -187,9 +266,9 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// lists
 	// FIXME: as an optimization, one-shot when possible?
 	srv := node.DagqlServer
-	// 1. Are we the root?
+	// 1. Are we the root? Select the module's main object from Query root.
 	if node.Parent == nil {
-		return srv.Select(ctx, srv.Root(), dest)
+		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(node.Module.Name())})
 	}
 	// 2. Is parent an object?
 	if parentObjType := node.Parent.ObjectType(); parentObjType != nil {
