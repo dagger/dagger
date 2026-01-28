@@ -370,17 +370,16 @@ func (p ModTreePath) Equals(ctx context.Context, other ModTreePath) (result bool
 }
 
 func (p ModTreePath) Glob(ctx context.Context, pattern string) (bool, error) {
-	slashPattern := strings.ReplaceAll(pattern, ":", "/")
-	for _, pathVariant := range [][]string{p.APICase(), p.CliCase()} {
-		slashPath := strings.Join(pathVariant, "/")
-		if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
-			return false, err
-		} else if match {
-			debugTrace(ctx, "%q.Glob(%q) -> MATCH", slashPath, slashPattern)
-			return true, nil
-		}
-		debugTrace(ctx, "%q.Glob(%q) -> no match", slashPath, slashPattern)
+	// Normalize both pattern and path to CLI case (kebab-case) for consistent matching
+	slashPattern := strings.Join(NewModTreePath(pattern).CliCase(), "/")
+	slashPath := strings.Join(p.CliCase(), "/")
+	if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
+		return false, err
+	} else if match {
+		debugTrace(ctx, "%q.Glob(%q) -> MATCH", slashPath, slashPattern)
+		return true, nil
 	}
+	debugTrace(ctx, "%q.Glob(%q) -> no match", slashPath, slashPattern)
 	return false, nil
 }
 
