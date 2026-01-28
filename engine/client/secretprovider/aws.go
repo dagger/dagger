@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -24,9 +23,7 @@ var (
 	awsCache                = make(map[string][]byte)
 )
 
-// AWS provider for SecretProvider
-// Auto-detects between Secrets Manager and Parameter Store based on path format
-func awsProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
+func awsParameterStoreProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 	awsMutex.Lock()
 	defer awsMutex.Unlock()
 
@@ -44,40 +41,61 @@ func awsProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 	path := parsed.Path
 	query := parsed.Query()
 
-	// Get optional region parameter
-	region := query.Get("region")
-	if region == "" {
-		region = os.Getenv("AWS_REGION")
-		if region == "" {
-			return nil, fmt.Errorf("AWS_REGION environment variable not set and no region parameter provided")
-		}
-	}
-
 	// Initialize AWS clients if needed
-	if err := initAWSClients(ctx, region); err != nil {
+	if err := initAWSClients(ctx, query); err != nil {
 		return nil, err
 	}
 
 	var data []byte
 
-	// Auto-detect service based on path format
-	// Parameter Store paths must start with "/"
-	if strings.HasPrefix(path, "/") {
-		data, err = awsParameterStoreGet(ctx, path)
-	} else {
-		// Secrets Manager parameters
-		version := query.Get("version")
-		stage := query.Get("stage")
-		field := query.Get("field")
-
-		// Validate that version and stage are not both specified
-		if version != "" && stage != "" {
-			return nil, fmt.Errorf("cannot specify both version and stage parameters")
-		}
-
-		data, err = awsSecretsManagerGet(ctx, path, version, stage, field)
+	// parameter store names must start with /
+	data, err = awsParameterStoreGet(ctx, "/"+path)
+	if err != nil {
+		return nil, err
 	}
 
+	// Cache the result
+	awsCache[pathWithQuery] = data
+	return data, nil
+}
+
+func awsSecretManagerProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
+	awsMutex.Lock()
+	defer awsMutex.Unlock()
+
+	// Check cache first (cache key is the full pathWithQuery including params)
+	if cached, ok := awsCache[pathWithQuery]; ok {
+		return cached, nil
+	}
+
+	// Parse the URI
+	parsed, err := url.Parse(pathWithQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse aws:// URI: %w", err)
+	}
+
+	path := parsed.Path
+	query := parsed.Query()
+
+	// Initialize AWS clients if needed
+	if err := initAWSClients(ctx, query); err != nil {
+		return nil, err
+	}
+
+	var data []byte
+
+	// check if scheme is secrets manager or parameter store
+	// Secrets Manager parameters
+	version := query.Get("version")
+	stage := query.Get("stage")
+	field := query.Get("field")
+
+	// Validate that version and stage are not both specified
+	if version != "" && stage != "" {
+		return nil, fmt.Errorf("cannot specify both version and stage parameters")
+	}
+
+	data, err = awsSecretsManagerGet(ctx, path, version, stage, field)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +107,15 @@ func awsProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 }
 
 // Initialize AWS clients with the default credential chain
-func initAWSClients(ctx context.Context, region string) error {
+func initAWSClients(ctx context.Context, query url.Values) error {
+	// Get optional region parameter
+	region := query.Get("region")
+	if region == "" {
+		region = os.Getenv("AWS_REGION")
+		if region == "" {
+			return fmt.Errorf("AWS_REGION environment variable not set and no region parameter provided")
+		}
+	}
 	// Skip if already initialized
 	if awsSecretsManagerClient != nil && awsSSMClient != nil {
 		return nil
@@ -183,7 +209,6 @@ func awsParameterStoreGet(ctx context.Context, parameterName string) ([]byte, er
 	return []byte(*result.Parameter.Value), nil
 }
 
-// Extract a specific field from a JSON secret
 func extractJSONField(data []byte, field string) ([]byte, error) {
 	var jsonData map[string]interface{}
 	if err := json.Unmarshal(data, &jsonData); err != nil {
@@ -211,7 +236,6 @@ func extractJSONField(data []byte, field string) ([]byte, error) {
 	}
 }
 
-// Map AWS SDK errors to user-friendly messages
 func mapAWSError(err error, name, resourceType string) error {
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {

@@ -189,7 +189,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 }
 
 func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
-	var baseContainer = func(c *dagger.Client, vault *dagger.Service) *dagger.Container {
+	baseContainer := func(c *dagger.Client, vault *dagger.Service) *dagger.Container {
 		return c.Container().
 			From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -199,7 +199,7 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 			WithServiceBinding("vault", vault)
 	}
 
-	var verifySecretFromVault = func(ctx context.Context, base *dagger.Container, secretURL string, tcname string) (string, error) {
+	verifySecretFromVault := func(ctx context.Context, base *dagger.Container, secretURL string, tcname string) (string, error) {
 		return base.
 			WithWorkdir("/work").
 			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
@@ -212,10 +212,10 @@ import (
 	"time"
 )
 
-type Foo struct{}	
+type Foo struct{}
 
 // This function sets the value of secret in vault, gets its plaintext value. Then
-// this function updates the value of secret in vault (to simulate expired or changed secret), and sleeps for 5s to allow for ttl (if any) 
+// this function updates the value of secret in vault (to simulate expired or changed secret), and sleeps for 5s to allow for ttl (if any)
 // to expire. It then gets its plaintext value again.
 // After that it returns both the values as string, which our tescase then verifies.
 func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *dagger.Secret, tc string) (string, error) {
@@ -368,7 +368,8 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
 		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
 		WithEnvVariable("AWS_REGION", "us-east-1").
-		WithExec([]string{"sh", "-c", "sleep 10 && curl -v http://localstack:4566/_localstack/health || true"}) // Wait and test LocalStack
+		WithExec([]string{"sh", "-c", "sleep 10 && curl -v http://localstack:4566/_localstack/health || true"}). // Wait and test LocalStack
+		WithEnvVariable("NOCACHE", time.Now().String())
 
 	// Create test secrets in Secrets Manager
 	secretValue := "secret" + identity.NewID()
@@ -412,13 +413,14 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
 		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
 		WithEnvVariable("AWS_REGION", "us-east-1").
-		WithEnvVariable("AWS_ENDPOINT_URL", "http://localstack:4566")
+		WithEnvVariable("AWS_ENDPOINT_URL", "http://localstack:4566").
+		WithEnvVariable("NOCACHE", time.Now().String())
 
 	// Test 1: Secrets Manager string secret
 	out, err := fetchSecret(
 		ctx,
 		ctr,
-		"aws://test/string-secret",
+		"aws+sm://test/string-secret",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
@@ -428,7 +430,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	out, err = fetchSecret(
 		ctx,
 		ctr,
-		"aws://test/json-secret?field=password",
+		"aws+sm://test/json-secret?field=password",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
@@ -438,7 +440,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	out, err = fetchSecret(
 		ctx,
 		ctr,
-		"aws:///test/parameter",
+		"aws+ps://test/parameter",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
@@ -448,7 +450,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = fetchSecret(
 		ctx,
 		ctr,
-		"aws://nonexistent/secret",
+		"aws+sm://nonexistent/secret",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "secret not found")
@@ -457,7 +459,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = fetchSecret(
 		ctx,
 		ctr,
-		"aws:///nonexistent/parameter",
+		"aws+ps://nonexistent/parameter",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "parameter not found")
@@ -466,7 +468,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = fetchSecret(
 		ctx,
 		ctr,
-		"aws://test/json-secret?field=nonexistent",
+		"aws+sm://test/json-secret?field=nonexistent",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "not found in JSON secret")
@@ -475,14 +477,14 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	out1, err := fetchSecret(
 		ctx,
 		ctr,
-		"aws://test/string-secret",
+		"aws+sm://test/string-secret",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	out2, err := fetchSecret(
 		ctx,
 		ctr,
-		"aws://test/string-secret",
+		"aws+sm://test/string-secret",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
