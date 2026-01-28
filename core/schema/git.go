@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
+	"github.com/opencontainers/go-digest"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
@@ -916,7 +917,55 @@ func (s *gitSchema) repoResolve(
 	}
 	resolved.Resolved = true
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
+	result, err := dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
+	if err != nil {
+		return zero, err
+	}
+
+	// Set canonical digest for URL convergence.
+	// Different URL spellings (github.com/foo vs https://github.com/foo) will
+	// converge to the same canonical digest, enabling cache sharing for
+	// downstream operations like tree().
+	canonicalDigest := s.computeCanonicalRepoDigest(remoteClone, repo.DiscardGitDir)
+	return result.WithObjectDigest(canonicalDigest), nil
+}
+
+// computeCanonicalRepoDigest computes a canonical digest for a resolved git repository.
+// This enables URL convergence: different URL spellings that resolve to the same
+// repo will have the same canonical digest, allowing downstream ops to share cache.
+//
+// Auth is tracked as booleans (whether auth method is used), not SecretID digests.
+// This allows cross-session cache sharing - the tree content is the same regardless
+// of which specific valid token was used. Security is maintained because __resolve
+// validates auth via ls-remote every session before cache access.
+func (s *gitSchema) computeCanonicalRepoDigest(remote *core.RemoteGitRepository, discardGitDir bool) digest.Digest {
+	parts := []string{"gitrepo/v1"}
+
+	// URL (already canonical after redirect resolution)
+	if remote.URL != nil {
+		parts = append(parts, remote.URL.Remote())
+	}
+
+	// Auth method indicators (booleans, not IDs - enables cross-session cache sharing)
+	if remote.SSHAuthSocket.Valid {
+		parts = append(parts, "sshAuthSock:true")
+	}
+	if remote.AuthToken.Valid {
+		parts = append(parts, "authToken:true")
+	}
+	if remote.AuthHeader.Valid {
+		parts = append(parts, "authHeader:true")
+	}
+	if remote.AuthUsername != "" {
+		parts = append(parts, "authUsername:"+remote.AuthUsername)
+	}
+
+	// Config that affects behavior
+	if discardGitDir {
+		parts = append(parts, "discardGitDir")
+	}
+
+	return digest.Digest(hashutil.HashStrings(parts...))
 }
 
 // hasExplicitAuth returns true if auth is explicitly set on the remote.
@@ -1197,5 +1246,34 @@ func (s *gitSchema) refResolve(
 	}
 	ref.Resolved = true
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ref)
+	result, err := dagql.NewObjectResultForCurrentID(ctx, srv, ref)
+	if err != nil {
+		return zero, err
+	}
+
+	// Set canonical digest for URL convergence.
+	// Different URL spellings converge to the same canonical digest,
+	// enabling cache sharing for downstream operations like tree().
+	canonicalDigest := s.computeCanonicalRefDigest(resolvedRepo, ref)
+	return result.WithObjectDigest(canonicalDigest), nil
+}
+
+// computeCanonicalRefDigest computes a canonical digest for a resolved git ref.
+// Builds on the repo's canonical digest and adds the resolved commit SHA.
+func (s *gitSchema) computeCanonicalRefDigest(repo dagql.ObjectResult[*core.GitRepository], ref *core.GitRef) digest.Digest {
+	parts := []string{"gitref/v1"}
+
+	// Include repo's canonical digest (from its content digest if set)
+	if repo.ID().ContentDigest() != "" {
+		parts = append(parts, "repo:"+repo.ID().ContentDigest().String())
+	} else {
+		parts = append(parts, "repo:"+repo.ID().Digest().String())
+	}
+
+	// Include resolved commit SHA - this is the key identifier for the ref
+	if ref.Ref != nil && ref.Ref.SHA != "" {
+		parts = append(parts, "sha:"+ref.Ref.SHA)
+	}
+
+	return digest.Digest(hashutil.HashStrings(parts...))
 }
