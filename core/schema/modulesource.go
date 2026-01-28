@@ -3709,7 +3709,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
 	}
-	// Only process toolchain modules if they were loaded
+
 	for i, tcMod := range tcMods {
 		clone := tcMod.Self().Clone()
 		clone.IsToolchain = true
