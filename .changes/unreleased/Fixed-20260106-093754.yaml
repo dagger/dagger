@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix parsing of module SSH URLs using non-default ports.
+time: 2026-01-06T09:37:54.926726777+01:00
+custom:
+    Author: Wytse Vellema
+    PR: "11628"
