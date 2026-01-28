@@ -3710,24 +3710,22 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		deps = deps.Append(depMod.Self())
 	}
 	// Only process toolchain modules if they were loaded
-	if tcMods != nil {
-		for i, tcMod := range tcMods {
-			clone := tcMod.Self().Clone()
-			clone.IsToolchain = true
-			clone.ContextSource = dagql.NonNull(src)
+	for i, tcMod := range tcMods {
+		clone := tcMod.Self().Clone()
+		clone.IsToolchain = true
+		clone.ContextSource = dagql.NonNull(src)
 
-			// Apply argument configurations from the parent module's toolchain config
-			// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
-			if i < len(src.Self().ConfigToolchains) {
-				tcCfg := src.Self().ConfigToolchains[i]
-				if len(tcCfg.Customizations) > 0 {
-					// Apply configurations to the toolchain module's functions, including chained functions
-					applyArgumentConfigsToModule(clone, tcCfg.Customizations)
-				}
+		// Apply argument configurations from the parent module's toolchain config
+		// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
+		if i < len(src.Self().ConfigToolchains) {
+			tcCfg := src.Self().ConfigToolchains[i]
+			if len(tcCfg.Customizations) > 0 {
+				// Apply configurations to the toolchain module's functions, including chained functions
+				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
 			}
-
-			deps = deps.Append(clone)
 		}
+
+		deps = deps.Append(clone)
 	}
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {

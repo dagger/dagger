@@ -612,5 +612,4 @@ func (ToolchainSuite) TestToolchainDependency(ctx context.Context, t *testctx.T)
 		_, err := modGen.Sync(ctx)
 		require.NoError(t, err)
 	})
-
 }
