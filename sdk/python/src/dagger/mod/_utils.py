@@ -21,7 +21,7 @@ from cattrs.cols import is_sequence
 from graphql.pyutils import snake_to_camel
 
 from dagger.client.base import Type
-from dagger.mod._arguments import DefaultPath, Deprecated, Ignore, Name
+from dagger.mod._arguments import DefaultAddress, DefaultPath, Deprecated, Ignore, Name
 from dagger.mod._types import ContextPath
 
 asyncify = anyio.to_thread.run_sync
@@ -118,6 +118,12 @@ def get_default_path(obj: Any) -> ContextPath | None:
     """Get the last DefaultPath() of an annotated type."""
     meta = get_meta(obj, DefaultPath)
     return meta.from_context if meta else None
+
+
+def get_default_address(obj: Any) -> str | None:
+    """Get the last DefaultAddress() of an annotated type."""
+    meta = get_meta(obj, DefaultAddress)
+    return meta.address if meta else None
 
 
 def get_alt_name(annotation: type) -> str | None:

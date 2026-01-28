@@ -78,8 +78,8 @@ func (t *TypescriptSdk) ModuleTypes(
 	}
 
 	// TODO(TomChv): Update the TypeScript Codegen so it doesn't rely on moduleSourcePath anymore.
-	clientBindings := NewLibGenerator(t.SDKSourceDir).
-		GenerateBindings(introspectionJSON, cfg.name, cfg.modulePath(), Bundle)
+	clientBindings := NewLibGenerator(t.SDKSourceDir, cfg.libGeneratorOpts()).
+		GenerateBindings(introspectionJSON, Bundle, ModSourceDirPath)
 
 	return NewIntrospector(t.SDKSourceDir).
 		AsEntrypoint(outputFilePath,
@@ -156,9 +156,9 @@ func (t *TypescriptSdk) Codegen(
 // Returns the list of files that are copied from the host when generating the client.
 func (t *TypescriptSdk) RequiredClientGenerationFiles() []string {
 	return []string{
-		"./package.json",
-		"./tsconfig.json",
-		"./deno.json",
+		"**/package.json",
+		"**/tsconfig.json",
+		"**/deno.json",
 	}
 }
 
@@ -170,7 +170,7 @@ func (t *TypescriptSdk) GenerateClient(
 	introspectionJSON *dagger.File,
 	outputDir string,
 ) (*dagger.Directory, error) {
-	cfg, err := analyzeModuleConfig(ctx, modSource)
+	cfg, err := analyzeClientConfig(ctx, modSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
@@ -180,9 +180,60 @@ func (t *TypescriptSdk) GenerateClient(
 		return nil, fmt.Errorf("failed to get module source id: %w", err)
 	}
 
-	return clientGenBaseContainer(cfg, t.SDKSourceDir).
-		withBundledSDK().
-		withGeneratedClient(introspectionJSON, moduleSourceID, outputDir).
-		withUpdatedEnvironment(outputDir).
-		GeneratedDirectory(), nil
+	result := dag.Directory()
+
+	libGenerator := NewLibGenerator(t.SDKSourceDir, &LibGeneratorOpts{
+		moduleSourceID:    string(moduleSourceID),
+		genClient:         true,
+		coexistWithModule: cfg.sdk != "" && cfg.subPath == ".",
+	})
+
+	if cfg.sdkLibOrigin == Remote {
+		result = result.WithDirectory(
+			outputDir,
+			libGenerator.GenerateRemoteLibrary(introspectionJSON, outputDir),
+			dagger.DirectoryWithDirectoryOpts{
+				Include: []string{"client.gen.ts"},
+			})
+	} else {
+		genDir := libGenerator.GenerateBundleLibrary(introspectionJSON, outputDir)
+
+		result = result.
+			WithDirectory("sdk", genDir, dagger.DirectoryWithDirectoryOpts{
+				Exclude: []string{"client.gen.ts"},
+			}).
+			WithDirectory(outputDir, genDir, dagger.DirectoryWithDirectoryOpts{
+				Include: []string{"client.gen.ts"},
+			})
+	}
+
+	if cfg.runtime != Deno {
+		tsconfig, err := CreateOrUpdateTSConfigForClient(ctx, cfg.source, cfg.sdkLibOrigin == Remote)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create or update tsconfig.json")
+		}
+
+		packageJSONFile := defaultPackageJSONFile()
+		if cfg.packageJSONConfig != nil {
+			packageJSONFile = cfg.source.File("package.json")
+		}
+
+		packageJSONFile, err = CreateOrUpdatePackageJSONForClient(ctx, packageJSONFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update package.json: %w", err)
+		}
+
+		result = result.
+			WithFile("tsconfig.json", tsconfig).
+			WithFile("package.json", packageJSONFile)
+	} else {
+		denojson, err := UpdateDenoJSONForClient(ctx, cfg.source.File("deno.json"), cfg.sdkLibOrigin == Remote)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update deno.json")
+		}
+
+		result = result.WithFile("deno.json", denojson)
+	}
+
+	return dag.Directory().WithDirectory(cfg.modPath, result), nil
 }

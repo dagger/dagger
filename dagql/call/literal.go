@@ -104,7 +104,11 @@ func (lit *LiteralID) ToAST() *ast.Value {
 }
 
 func (lit *LiteralID) pb() *callpbv1.Literal {
-	return &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: lit.id.pb.Digest}}
+	return &callpbv1.Literal{
+		Value: &callpbv1.Literal_CallDigest{
+			CallDigest: lit.id.pb.Digest,
+		},
+	}
 }
 
 func (lit *LiteralID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {

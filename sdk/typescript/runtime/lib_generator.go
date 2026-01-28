@@ -15,9 +15,19 @@ type LibGenerator struct {
 
 	//+private
 	StaticLocalLib *dagger.Directory
+
+	Opts *LibGeneratorOpts
 }
 
-func NewLibGenerator(sdkSourceDir *dagger.Directory) *LibGenerator {
+type LibGeneratorOpts struct {
+	moduleName        string
+	modulePath        string
+	moduleSourceID    string
+	genClient         bool
+	coexistWithModule bool
+}
+
+func NewLibGenerator(sdkSourceDir *dagger.Directory, opts *LibGeneratorOpts) *LibGenerator {
 	ctr := dag.
 		Container().
 		From(tsdistconsts.DefaultBunImageRef).
@@ -25,6 +35,7 @@ func NewLibGenerator(sdkSourceDir *dagger.Directory) *LibGenerator {
 
 	return &LibGenerator{
 		Ctr:             ctr,
+		Opts:            opts,
 		StaticBundleLib: sdkSourceDir.Directory("/bundled_lib"),
 		StaticLocalLib: sdkSourceDir.
 			WithoutDirectory("codegen").
@@ -39,34 +50,56 @@ func NewLibGenerator(sdkSourceDir *dagger.Directory) *LibGenerator {
 // GenerateBindings generates the client bindings for the given module.
 func (l *LibGenerator) GenerateBindings(
 	introspectionJSON *dagger.File,
-	moduleName string,
-	modulePath string,
 	libOrigin SDKLibOrigin,
+	outputDir string,
 ) *dagger.File {
-	codegenArgs := []string{
-		codegenBinPath,
-		"generate-module",
-		"--lang", "typescript",
-		"--output", ModSourceDirPath,
-		"--module-name", moduleName,
-		"--module-source-path", modulePath,
-		"--introspection-json-path", schemaPath,
+	ctr := l.Ctr
+
+	codegenArgs := []string{codegenBinPath}
+	if l.Opts.genClient {
+		codegenArgs = append(codegenArgs, "generate-client")
+	} else {
+		codegenArgs = append(codegenArgs, "generate-module")
 	}
 
-	if libOrigin == Bundle {
+	codegenArgs = append(codegenArgs,
+		"--lang", "typescript",
+		"--output", outputDir,
+		"--introspection-json-path", schemaPath,
+	)
+
+	if l.Opts.moduleName != "" {
+		codegenArgs = append(codegenArgs, "--module-name", l.Opts.moduleName)
+	}
+
+	if l.Opts.modulePath != "" {
+		codegenArgs = append(codegenArgs, "--module-source-path", l.Opts.modulePath)
+		ctr = ctr.WithWorkdir(l.Opts.modulePath)
+	}
+
+	if l.Opts.moduleSourceID != "" {
+		codegenArgs = append(codegenArgs, "--module-source-id", l.Opts.moduleSourceID)
+	}
+
+	if libOrigin == Bundle && !l.Opts.genClient {
 		codegenArgs = append(codegenArgs, "--bundle")
 	}
 
-	return l.Ctr.
-		WithWorkdir(modulePath).
+	ctr = ctr.
 		// Mount the introspection file.
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Execute the code generator using the given introspection file.
 		WithExec(codegenArgs, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-		}).
-		Directory(modulePath).
-		File("sdk/src/api/client.gen.ts")
+		})
+
+	if l.Opts.modulePath != "" {
+		return ctr.
+			Directory(l.Opts.modulePath).
+			File("sdk/src/api/client.gen.ts")
+	}
+
+	return ctr.Directory(outputDir).File("client.gen.ts")
 }
 
 // Add the bundle library (code.js & core.d.ts) to the sdk directory.
@@ -74,21 +107,28 @@ func (l *LibGenerator) GenerateBindings(
 // Generate the client.gen.ts file using the introspection file.
 func (l *LibGenerator) GenerateBundleLibrary(
 	introspectionJSON *dagger.File,
-	moduleName string,
-	modulePath string,
+	outputDir string,
 ) *dagger.Directory {
-	return l.StaticBundleLib.
-		WithNewFile("index.ts", tsutils.StaticBundleIndexTS).
+	result := l.StaticBundleLib.
 		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS).
 		WithFile(
 			"client.gen.ts",
 			l.GenerateBindings(
 				introspectionJSON,
-				moduleName,
-				modulePath,
 				Bundle,
+				outputDir,
 			),
 		)
+
+	// If we're generating a standalone client, we export a lighter
+	// version of the library.
+	if l.Opts.genClient && !l.Opts.coexistWithModule {
+		return result.
+			WithNewFile("index.ts", tsutils.StaticBundleClientIndexTS)
+	}
+
+	return result.
+		WithNewFile("index.ts", tsutils.StaticBundleModuleIndexTS)
 }
 
 // Copy the complete Typescript SDK directory
@@ -96,17 +136,27 @@ func (l *LibGenerator) GenerateBundleLibrary(
 // TODO(TomChv): We should deprecate local lib support in the future.
 func (l *LibGenerator) GenerateLocalLibrary(
 	introspectionJSON *dagger.File,
-	moduleName string,
-	modulePath string,
+	outputDir string,
 ) *dagger.Directory {
 	return l.StaticLocalLib.
 		WithFile(
 			"src/api/client.gen.ts",
 			l.GenerateBindings(
 				introspectionJSON,
-				moduleName,
-				modulePath,
 				Local,
+				outputDir,
 			),
+		)
+}
+
+func (l *LibGenerator) GenerateRemoteLibrary(
+	introspectionJSON *dagger.File,
+	outputDir string,
+) *dagger.Directory {
+	return dag.
+		Directory().
+		WithDirectory(outputDir,
+			dag.Directory().
+				WithFile("client.gen.ts", l.GenerateBindings(introspectionJSON, Remote, outputDir)),
 		)
 }

@@ -289,6 +289,19 @@ var coreDirectives = []DirectiveSpec{
 		},
 	},
 	{
+		Name:        "defaultAddress",
+		Description: FormatDescription(`Indicates that the argument defaults to a container address.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "address",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
 		Name:        "ignorePatterns",
 		Description: FormatDescription(`Filter directory contents using .gitignore-style glob patterns.`),
 		Args: NewInputSpecs(
@@ -980,7 +993,8 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		}
 
 		if rerr != nil {
-			rerr = gqlErr(rerr, append(idToPath(self.ID()), ast.PathName(sel.Name())))
+			queryPath := append(idToPath(self.ID()), ast.PathName(sel.Name()))
+			rerr = gqlErr(rerr, queryPath)
 		}
 	}()
 

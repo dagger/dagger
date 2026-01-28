@@ -1,20 +1,25 @@
 type TestSplit {
-		let testSpecific(run: [String!]!, ebpfProgs: [String!]): Void {
-				engineDev().test(race: true, run: run.join("|"), ebpfProgs: ebpfProgs)
+		let testSpecific(run: [String!]!, ebpfProgs: [String!], pkg: String! = "./core/integration", race: Boolean): Void {
+				engineDev().test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
 		}
 
-		let testSkip(skip: [String!]!, ebpfProgs: [String!]): Void {
-				engineDev().test(race: true, skip: skip.join("|"), ebpfProgs: ebpfProgs)
+		let testSkip(skip: [String!]!, ebpfProgs: [String!], pkg: String! = "./core/integration", race: Boolean): Void {
+				engineDev().test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
 		}
 
 		"""Test Base"""
 		pub testBase(): Void @check {
-				testSkip(["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD"])
+				testSkip(skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD"], pkg: "./...", race: true)
 		}
 
-		"""Test Cgroups"""
-		pub testCgroups(): Void @check {
-				testSpecific(["TestProvision", "TestTelemetry"])
+		"""Test Provision"""
+		pub testProvision(): Void @check {
+				testSpecific(["TestProvision"])
+		}
+
+		"""Test Telemetry"""
+		pub testTelemetry(): Void @check {
+				testSpecific(["TestTelemetry"], pkg: "./dagql/idtui")
 		}
 
 		"""Test Call and Shell"""

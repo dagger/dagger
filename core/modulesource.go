@@ -490,7 +490,7 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		src.ModuleOriginalName,
 		src.SourceRootSubpath,
 		src.SourceSubpath,
-		src.ContextDirectory.ID().Digest().String(),
+		src.ContextDirectory.ID().ContentDigest().String(),
 	}
 
 	if src.SDK != nil && src.SDK.Debug {
@@ -938,7 +938,6 @@ func (src *ModuleSource) LoadContextGit(
 				},
 			},
 		)
-
 		if err != nil {
 			return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
 		}

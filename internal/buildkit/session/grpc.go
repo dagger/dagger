@@ -26,7 +26,7 @@ func serve(ctx context.Context, grpcServer *grpc.Server, conn net.Conn) {
 		<-ctx.Done()
 		conn.Close()
 	}()
-	bklog.G(ctx).Debugf("serving grpc connection")
+	bklog.G(ctx).Tracef("serving grpc connection")
 	(&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{Handler: grpcServer})
 }
 
@@ -111,13 +111,13 @@ func monitorHealth(ctx context.Context, cc *grpc.ClientConn, cancelConn func(err
 				default:
 				}
 				if failedBefore {
-					bklog.G(ctx).Error("healthcheck failed fatally")
+					bklog.G(ctx).Debug("healthcheck failed fatally")
 					return
 				}
 
 				failedBefore = true
 				consecutiveSuccessful = 0
-				bklog.G(ctx).WithFields(logFields).Warn("healthcheck failed")
+				bklog.G(ctx).WithFields(logFields).Debug("healthcheck failed")
 			} else {
 				consecutiveSuccessful++
 

@@ -21,6 +21,7 @@ import io.dagger.client.TypeDef;
 import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.telemetry.Telemetry;
+import io.dagger.module.annotation.Check;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Enum;
@@ -71,6 +72,7 @@ import javax.lang.model.util.Elements;
   "io.dagger.module.annotation.Object",
   "io.dagger.module.annotation.Enum",
   "io.dagger.module.annotation.Function",
+  "io.dagger.module.annotation.Check",
   "io.dagger.module.annotation.Optional",
   "io.dagger.module.annotation.Default",
   "io.dagger.module.annotation.DefaultPath"
@@ -174,8 +176,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                             new TypeInfo(
                                 ((ExecutableElement) elt).getReturnType().toString(),
                                 ((ExecutableElement) elt).getReturnType().getKind().name()),
-                            parseParameters((ExecutableElement) elt)
-                                .toArray(new ParameterInfo[0])));
+                            parseParameters((ExecutableElement) elt).toArray(new ParameterInfo[0]),
+                            false)); // constructors are never checks
               } else if (constructorDefs.size() > 1) {
                 // There's more than one non-empty constructor, but Dagger only supports to expose a
                 // single one
@@ -230,13 +232,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
                           TypeMirror tm = ((ExecutableElement) elt).getReturnType();
                           TypeKind tk = tm.getKind();
+                          boolean isCheck = elt.getAnnotation(Check.class) != null;
                           FunctionInfo functionInfo =
                               new FunctionInfo(
                                   fName,
                                   fqName,
                                   parseFunctionDescription(elt),
                                   new TypeInfo(tm.toString(), tk.name()),
-                                  parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]));
+                                  parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]),
+                                  isCheck);
                           return functionInfo;
                         })
                     .toList();
@@ -705,6 +709,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     if (isNotBlank(fnInfo.description())) {
       code.add("\n                    .withDescription($S)", fnInfo.description());
     }
+    if (fnInfo.isCheck()) {
+      code.add("\n                    .withCheck()");
+    }
     for (var parameterInfo : fnInfo.parameters()) {
       code.add("\n                    .withArg($S, ", parameterInfo.name())
           .add(DaggerType.of(parameterInfo.type()).toDaggerTypeDef());
@@ -775,7 +782,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     if (javadocString == null) {
       return "";
     }
-    return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+    return StaticJavaParser.parseJavadoc(javadocString, false).getDescription().toText().trim();
   }
 
   private String parseModuleDescription(Element element) {
@@ -805,7 +812,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   private String parseJavaDocDescription(Element element) {
     String javadocString = elementUtils.getDocComment(element);
     if (javadocString != null) {
-      return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+      return StaticJavaParser.parseJavadoc(javadocString, false).getDescription().toText().trim();
     }
     return "";
   }
@@ -815,7 +822,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     if (javadocString == null) {
       return "";
     }
-    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString);
+    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString, false);
     Optional<JavadocBlockTag> blockTag =
         javadoc.getBlockTags().stream()
             .filter(tag -> tag.getType() == Type.PARAM)

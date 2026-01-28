@@ -1809,6 +1809,41 @@ func Foo() *dagger.Directory {
 	require.JSONEq(t, `{"minimal":{"hello":"hello world"}}`, out)
 }
 
+// Verify that we can use the released library in module.
+//
+// WARNING: this test can fail if we make a breaking change on the `telemetry` or
+// `querybuilder` package and use that changes in the go generated files.
+// If so, please disable that test until the release is done then re enable it.
+func (GoSuite) TestReleaseLibraryInModule(ctx context.Context, t *testctx.T) {
+	versions := []string{"v0.19.10", "v0.19.5"}
+
+	for _, version := range versions {
+		version := version
+
+		t.Run(fmt.Sprintf("use version %s", version), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+				return c.
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version)
+			}))
+
+			modCtr := engineClientContainer(ctx, t, c, devEngineSvc).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version).
+				WithWorkdir("/work").
+				With(daggerNonNestedExec("init", "--sdk=go", "--name=test", "--source=."))
+
+			goMod, err := modCtr.File("go.mod").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, goMod, fmt.Sprintf("dagger.io/dagger %s", version))
+
+			out, err := modCtr.With(daggerNonNestedExec("call", "container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, out, "hello\n")
+		})
+	}
+}
+
 func (GoSuite) TestNameCase(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1885,4 +1920,42 @@ func (p *Playground) SayHello() string {
 	out, err := ctr.With(daggerQuery(`{playground{sayHello, directory{entries}}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
+}
+
+func (GoSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+// TestWithDefaultContainer uses alpine:latest when no container is provided
+func (t *Test) TestWithDefaultContainer(
+	ctx context.Context,
+	// +defaultAddress="alpine:3.19"
+	ctr *dagger.Container,
+) (string, error) {
+	// Should receive alpine:latest container by default
+	return ctr.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
+}
+`,
+		)
+
+	out, err := modGen.With(daggerCall("test-with-default-container")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "3.19") // Alpine version contains a dot like "3.19.0"
+
+	// Test that we can override the default
+	out2, err := modGen.With(daggerCall("test-with-default-container", "--ctr=alpine:3.18")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out2, "3.18")
 }

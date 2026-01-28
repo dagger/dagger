@@ -114,6 +114,12 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("originalSubpath", s.moduleSourceOriginalSubpath).
 			Doc(`The original subpath used when instantiating this module source, relative to the context directory.`),
 
+		// NOTE: if/when this turns public, think about a less confusing and future proof name: `includes`, `includePaths`, `includePatterns`
+		// which would be relative to the context directory, while the same suggestions with an `original` prefix could mean the `Include` field
+		// as it was in the dagger.json.
+		dagql.Func("_rebasedIncludePaths", s.moduleSourceRebasedIncludePaths).
+			Doc(`List of include paths from dagger.json, relative to the context directory.`),
+
 		dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, dagql.CachePerClient).
 			Doc(`Update the module source with a new source subpath.`).
 			Args(
@@ -956,8 +962,8 @@ func (s *moduleSourceSchema) contextDirectory(
 	// FIXME:(sipsma) this is not ideal since contextual loaded dirs will have
 	// different cache keys than normally loaded host dirs. Support for multiple
 	// cache keys per result should help fix this.
-	dgst := hashutil.HashStrings(dir.ID().Digest().String(), "contextualDir")
-	inst = inst.WithObjectDigest(dgst)
+	dgst := hashutil.HashStrings(dir.ID().ContentDigest().String(), "contextualDir")
+	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
 
@@ -997,8 +1003,8 @@ func (s *moduleSourceSchema) contextFile(
 	// FIXME:(sipsma) this is not ideal since contextual loaded files will have
 	// different cache keys than normally loaded host files. Support for multiple
 	// cache keys per result should help fix this.
-	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualFile")
-	inst = inst.WithObjectDigest(dgst)
+	dgst := hashutil.HashStrings(f.ID().ContentDigest().String(), "contextualFile")
+	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
 
@@ -1034,7 +1040,7 @@ func (s *moduleSourceSchema) contextGitRepository(
 	// can lead function calls encountering cached results that include contextual
 	// file loads from older sessions to load from the wrong path
 	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualGitRepository")
-	inst = inst.WithObjectDigest(dgst)
+	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
 
@@ -1080,7 +1086,7 @@ func (s *moduleSourceSchema) contextGitRef(
 	// can lead function calls encountering cached results that include contextual
 	// file loads from older sessions to load from the wrong path
 	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualGitRef")
-	inst = inst.WithObjectDigest(dgst)
+	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
 
@@ -1271,6 +1277,14 @@ func (s *moduleSourceSchema) moduleSourceOriginalSubpath(
 	args struct{},
 ) (string, error) {
 	return src.OriginalSubpath, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceRebasedIncludePaths(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) ([]string, error) {
+	return src.RebasedIncludePaths, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
@@ -2997,19 +3011,6 @@ func (s *moduleSourceSchema) createBaseModule(
 		OriginalName:                  src.Self().ModuleOriginalName,
 		SDKConfig:                     sdk,
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
-		ToolchainModules:              make(map[string]*core.Module),
-		ToolchainArgumentConfigs:      make(map[string][]*modules.ModuleConfigArgument),
-		ToolchainIgnoreChecks:         make(map[string][]string),
-	}
-
-	// Load toolchain argument configurations from the original source
-	for _, tcCfg := range tcCtx.originalSrc.Self().ConfigToolchains {
-		if len(tcCfg.Customizations) > 0 {
-			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Customizations
-		}
-		if len(tcCfg.IgnoreChecks) > 0 {
-			mod.ToolchainIgnoreChecks[tcCfg.Name] = tcCfg.IgnoreChecks
-		}
 	}
 
 	// Load dependencies as modules
@@ -3161,6 +3162,11 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 				// Apply defaultPath if specified
 				if argCfg.DefaultPath != "" {
 					arg.DefaultPath = argCfg.DefaultPath
+				}
+
+				// Apply defaultAddress if specified
+				if argCfg.DefaultAddress != "" {
+					arg.DefaultAddress = argCfg.DefaultAddress
 				}
 
 				// Apply ignore patterns if specified
@@ -3372,9 +3378,11 @@ func addToolchainFieldsToObject(
 					}
 				}
 
-				// Apply argument configuration overrides if present
-				if argConfigs, ok := mod.ToolchainArgumentConfigs[originalName]; ok {
-					constructor = applyArgumentConfigToFunction(constructor, argConfigs, []string{})
+				// Apply argument configuration overrides if present (from registry)
+				if mod.Toolchains != nil {
+					if entry, ok := mod.Toolchains.Get(originalName); ok && entry.ArgumentConfigs != nil {
+						constructor = applyArgumentConfigToFunction(constructor, entry.ArgumentConfigs, []string{})
+					}
 				}
 
 				constructor.Name = fieldName
@@ -3388,7 +3396,6 @@ func addToolchainFieldsToObject(
 					return nil, fmt.Errorf("failed to add toolchain function %q: %w", fieldName, err)
 				}
 
-				mod.ToolchainModules[originalName] = tcMod
 				break
 			}
 		}
@@ -3471,9 +3478,34 @@ func (s *moduleSourceSchema) integrateToolchains(
 		return mod, nil
 	}
 
-	// Initialize toolchain modules map
-	if mod.ToolchainModules == nil {
-		mod.ToolchainModules = make(map[string]*core.Module)
+	// Initialize toolchain registry
+	mod.Toolchains = core.NewToolchainRegistry(mod)
+
+	// Register all toolchains in the registry
+	for _, tcMod := range toolchainMods {
+		originalName := tcMod.NameField
+		fieldName := strcase.ToLowerCamel(tcMod.NameField)
+
+		mod.Toolchains.Register(originalName, fieldName, tcMod)
+
+		// Apply configurations from config
+		if entry, ok := mod.Toolchains.Get(originalName); ok {
+			// Read configs from the module source
+			src := mod.GetSource()
+			if src != nil {
+				for _, tcCfg := range src.ConfigToolchains {
+					if tcCfg.Name == originalName {
+						if len(tcCfg.Customizations) > 0 {
+							entry.ArgumentConfigs = tcCfg.Customizations
+						}
+						if len(tcCfg.IgnoreChecks) > 0 {
+							entry.IgnoreChecks = tcCfg.IgnoreChecks
+						}
+						break
+					}
+				}
+			}
+		}
 	}
 
 	// Check if we have an SDK module (has object definitions)
@@ -3658,18 +3690,18 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
 	}
-	for _, tcMod := range tcMods {
+	for i, tcMod := range tcMods {
 		clone := tcMod.Self().Clone()
 		clone.IsToolchain = true
 		clone.ContextSource = dagql.NonNull(src)
 
 		// Apply argument configurations from the parent module's toolchain config
-		// Find matching config by toolchain name
-		for _, tcCfg := range src.Self().ConfigToolchains {
-			if tcCfg.Name == clone.OriginalName && len(tcCfg.Customizations) > 0 {
+		// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
+		if i < len(src.Self().ConfigToolchains) {
+			tcCfg := src.Self().ConfigToolchains[i]
+			if len(tcCfg.Customizations) > 0 {
 				// Apply configurations to the toolchain module's functions, including chained functions
 				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
-				break
 			}
 		}
 

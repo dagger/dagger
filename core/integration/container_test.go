@@ -5338,6 +5338,8 @@ func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.
 
 func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 	theTest := func(ctx context.Context, t *testctx.T, fileSelector func(*dagger.Client, string) *dagger.File) {
+		t.Helper()
+
 		dir := t.TempDir()
 		fileData := identity.NewID()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(fileData), 0o600))
@@ -5410,4 +5412,33 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 			}).File("rand1")
 		})
 	})
+}
+
+func (ContainerSuite) TestContainerCaching(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().From(alpineImage).WithNewFile("file", "data")
+
+	var err error
+	testRefs := make([]string, 2)
+	pushedRefs := make([]string, 2)
+	for i := 0; i < 2; i++ {
+		testRefs[i] = registryRef("container-caching")
+		pushedRefs[i], err = ctr.Publish(ctx, testRefs[i])
+		require.NoError(t, err)
+	}
+
+	require.NotEqual(t, testRefs[0], testRefs[1])
+	require.NotEqual(t, pushedRefs[0], pushedRefs[1])
+
+	output := make([]string, 2)
+	for i := 0; i < 2; i++ {
+		output[i], err = c.Container().From(testRefs[i]).
+			WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Len(t, output[i], 132) // test that 99 chars were randomly produced, this accounts for 4/3 times base64 bloat
+	}
+
+	require.Equal(t, output[0], output[1], "container exec was not cached")
 }

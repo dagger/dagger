@@ -204,17 +204,18 @@ func (fn *Function) WithCheck() *Function {
 	return fn
 }
 
-func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string, sourceMap *SourceMap, deprecated *string) *Function {
+func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore []string, sourceMap *SourceMap, deprecated *string) *Function {
 	fn = fn.Clone()
 	arg := &FunctionArg{
-		Name:         strcase.ToLowerCamel(name),
-		Description:  desc,
-		TypeDef:      typeDef,
-		DefaultValue: defaultValue,
-		OriginalName: name,
-		DefaultPath:  defaultPath,
-		Ignore:       ignore,
-		Deprecated:   deprecated,
+		Name:           strcase.ToLowerCamel(name),
+		Description:    desc,
+		TypeDef:        typeDef,
+		DefaultValue:   defaultValue,
+		OriginalName:   name,
+		DefaultPath:    defaultPath,
+		DefaultAddress: defaultAddress,
+		Ignore:         ignore,
+		Deprecated:     deprecated,
 	}
 	if sourceMap != nil {
 		arg.SourceMap = dagql.NonNull(sourceMap)
@@ -316,14 +317,15 @@ func (proto FunctionCachePolicy) ToLiteral() call.Literal {
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name         string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
-	Description  string                     `field:"true" doc:"A doc string for the argument, if any."`
-	SourceMap    dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
-	TypeDef      *TypeDef                   `field:"true" doc:"The type of the argument."`
-	DefaultValue JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
-	DefaultPath  string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
-	Ignore       []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
-	Deprecated   *string                    `field:"true" doc:"The reason this function is deprecated, if any."`
+	Name           string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
+	Description    string                     `field:"true" doc:"A doc string for the argument, if any."`
+	SourceMap      dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
+	TypeDef        *TypeDef                   `field:"true" doc:"The type of the argument."`
+	DefaultValue   JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	DefaultPath    string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
+	DefaultAddress string                     `field:"true" doc:"Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)"`
+	Ignore         []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
+	Deprecated     *string                    `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	// Below are not in public API
 
@@ -361,7 +363,7 @@ func (*FunctionArg) TypeDescription() string {
 }
 
 func (arg *FunctionArg) isContextual() bool {
-	return arg.DefaultPath != ""
+	return arg.DefaultPath != "" || arg.DefaultAddress != ""
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {
@@ -375,6 +377,20 @@ func (arg FunctionArg) Directives() []*ast.Directive {
 					Value: &ast.Value{
 						Kind: ast.StringValue,
 						Raw:  arg.DefaultPath,
+					},
+				},
+			},
+		})
+	}
+	if arg.DefaultAddress != "" {
+		directives = append(directives, &ast.Directive{
+			Name: "defaultAddress",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "address",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  arg.DefaultAddress,
 					},
 				},
 			},

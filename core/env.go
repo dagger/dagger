@@ -21,6 +21,10 @@ type Env struct {
 	// The full module dependency chain for the environment, including the core
 	// module and any dependencies from the environment's creator
 	deps *ModDeps
+
+	// The main module for this environment (the project being worked on)
+	MainModule *Module
+
 	// The modules explicitly installed into the environment, to be exposed as
 	// tools that implicitly call the constructor with the environment's workspace
 	installedModules []*Module
@@ -86,6 +90,13 @@ func (env *Env) WithWorkspace(dir dagql.ObjectResult[*Directory]) *Env {
 	cp := *env
 	cp.Workspace = dir
 	return &cp
+}
+
+func (env *Env) WithMainModule(mod *Module) *Env {
+	cp := env.Clone()
+	cp.MainModule = mod
+	cp.deps = cp.deps.Append(mod)
+	return cp
 }
 
 func (env *Env) WithModule(mod *Module) *Env {
@@ -181,6 +192,30 @@ func (env *Env) WithoutInput(key string) *Env {
 	env = env.Clone()
 	delete(env.inputsByName, key)
 	return env
+}
+
+// Checks returns a CheckGroup from the main module
+func (env *Env) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
+	if env.MainModule == nil {
+		return nil, fmt.Errorf("no main module set on environment")
+	}
+	return env.MainModule.Checks(ctx, include)
+}
+
+// Check returns a single check by name from the main module
+func (env *Env) Check(ctx context.Context, name string) (*Check, error) {
+	checkGroup, err := env.Checks(ctx, []string{name})
+	if err != nil {
+		return nil, err
+	}
+	switch len(checkGroup.Checks) {
+	case 1:
+		return checkGroup.Checks[0].Clone(), nil
+	case 0:
+		return nil, fmt.Errorf("check %q not found", name)
+	default:
+		return nil, fmt.Errorf("multiple checks found with name %q", name)
+	}
 }
 
 type Binding struct {

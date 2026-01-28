@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
-	"typescript-sdk/tsutils"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -50,8 +49,8 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		ctx, span := Tracer().Start(ctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir).
-			GenerateBundleLibrary(d.introspectionJSON, d.cfg.name, d.cfg.modulePath()).
+		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir, d.cfg.libGeneratorOpts()).
+			GenerateBundleLibrary(d.introspectionJSON, ModSourceDirPath).
 			Sync(ctx)
 		return err
 	})
@@ -106,8 +105,8 @@ func (d *DenoRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error
 		ctx, span := Tracer().Start(ctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir).
-			GenerateBundleLibrary(d.introspectionJSON, d.cfg.name, d.cfg.modulePath()).
+		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir, d.cfg.libGeneratorOpts()).
+			GenerateBundleLibrary(d.introspectionJSON, ModSourceDirPath).
 			Sync(ctx)
 		return err
 	})
@@ -138,18 +137,12 @@ func (d *DenoRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error
 }
 
 func (d *DenoRuntime) withDenoJSON(ctx context.Context) (*DenoRuntime, error) {
-	denoFileContent, err := d.cfg.source.File("deno.json").Contents(ctx)
+	denoJSONFile, err := UpdateDenoJSONForModule(ctx, d.cfg.source.File("deno.json"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read deno.json: %w", err)
+		return nil, err
 	}
 
-	// Update deno.json
-	denoFileContent, err = tsutils.UpdateDenoConfigForModule(denoFileContent)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update deno.json: %w", err)
-	}
-
-	d.ctr = d.ctr.WithNewFile("deno.json", denoFileContent)
+	d.ctr = d.ctr.WithFile("deno.json", denoJSONFile)
 
 	return d, nil
 }

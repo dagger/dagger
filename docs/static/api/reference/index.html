@@ -127,6 +127,8 @@
               <li><a href="#definition-CacheVolumeID">CacheVolumeID</a></li>
               <li><a href="#definition-Changeset">Changeset</a></li>
               <li><a href="#definition-ChangesetID">ChangesetID</a></li>
+              <li><a href="#definition-ChangesetMergeConflict">ChangesetMergeConflict</a></li>
+              <li><a href="#definition-ChangesetsMergeConflict">ChangesetsMergeConflict</a></li>
               <li><a href="#definition-Check">Check</a></li>
               <li><a href="#definition-CheckGroup">CheckGroup</a></li>
               <li><a href="#definition-CheckGroupID">CheckGroupID</a></li>
@@ -5143,6 +5145,55 @@
                         <td data-property-name=""><a class="property-name" id="Changeset-sync" href="#Changeset-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span> </td>
                         <td> Force evaluation in the engine. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Changeset-withChangeset" href="#Changeset-withChangeset"><code>withChangeset</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td>
+                          <p>Add changes to an existing changeset</p>
+                          <p>By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span></h6>
+                                <p>Changes to merge into the actual changeset</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>onConflict</code></span> - <span class="property-type"><a href="#definition-ChangesetMergeConflict"><code>ChangesetMergeConflict</code></a></span></h6>
+                                <p>What to do on a merge conflict</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Changeset-withChangesets" href="#Changeset-withChangesets"><code>withChangesets</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td>
+                          <p>Add changes from multiple changesets using git octopus merge strategy</p>
+                          <p>This is more efficient than chaining multiple withChangeset calls when merging many changesets.</p>
+                          <p>Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>[ChangesetID!]!</code></a></span></h6>
+                                <p>List of changesets to merge into the actual changeset</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>onConflict</code></span> - <span class="property-type"><a href="#definition-ChangesetsMergeConflict"><code>ChangesetsMergeConflict</code></a></span></h6>
+                                <p>What to do on a merge conflict</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -5159,6 +5210,116 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ChangesetMergeConflict" class="definition definition-enum" data-traverse-target="definition-ChangesetMergeConflict">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ChangesetMergeConflict</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Strategy to use when merging changesets with conflicting changes.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>FAIL_EARLY</code></p>
+                        </td>
+                        <td> Fail before attempting merge if file-level conflicts are detected </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FAIL</code></p>
+                        </td>
+                        <td> Attempt the merge and fail if git merge fails due to conflicts </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>LEAVE_CONFLICT_MARKERS</code></p>
+                        </td>
+                        <td> Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>PREFER_OURS</code></p>
+                        </td>
+                        <td> The conflict is resolved by applying the version of the calling changeset </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>PREFER_THEIRS</code></p>
+                        </td>
+                        <td> The conflict is resolved by applying the version of the other changeset </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"FAIL_EARLY"</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ChangesetsMergeConflict" class="definition definition-enum" data-traverse-target="definition-ChangesetsMergeConflict">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ChangesetsMergeConflict</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Strategy to use when merging multiple changesets with git octopus merge.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>FAIL_EARLY</code></p>
+                        </td>
+                        <td> Fail before attempting merge if file-level conflicts are detected between any changesets </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FAIL</code></p>
+                        </td>
+                        <td> Attempt the octopus merge and fail if git merge fails due to conflicts </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"FAIL_EARLY"</span>
+</code></pre>
                 </div>
               </div>
             </div>
@@ -8218,6 +8379,40 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-check" href="#Env-check"><code>check</code></a> - <span class="property-type"><a href="#definition-Check"><code>Check!</code></a></span> </td>
+                        <td> Return the check with the given name from the installed modules. Must match exactly one check. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the check to retrieve</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-checks" href="#Env-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
+                        <td> Return all checks defined by the installed modules </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include checks matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-id" href="#Env-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span> </td>
                         <td> A unique identifier for this Env. </td>
@@ -8914,10 +9109,30 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withModule" href="#Env-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Env-withMainModule" href="#Env-withMainModule"><code>withMainModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td>
+                          <p>Sets the main module for this environment (the project being worked on)</p>
+                          <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>module</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Env-withModule" href="#Env-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td>
                           <p>Installs a module into the environment, exposing its functions to the model</p>
                           <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
+                          <span class="deprecation-reason">Use withMainModule instead</span>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -10342,6 +10557,9 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>deprecated</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>If deprecated, the reason or migration path.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>defaultAddress</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -10450,6 +10668,10 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-defaultAddress" href="#FunctionArg-defaultAddress"><code>defaultAddress</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest) </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-defaultPath" href="#FunctionArg-defaultPath"><code>defaultPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory </td>

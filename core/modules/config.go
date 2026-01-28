@@ -226,6 +226,9 @@ type ModuleConfigArgument struct {
 	// The default path to use for File or Directory arguments.
 	DefaultPath string `json:"defaultPath,omitempty"`
 
+	// The default address to use for Container arguments.
+	DefaultAddress string `json:"defaultAddress,omitempty"`
+
 	// Ignore patterns for Directory arguments.
 	Ignore []string `json:"ignore,omitempty"`
 }

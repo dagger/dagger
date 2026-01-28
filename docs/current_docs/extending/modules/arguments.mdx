@@ -706,6 +706,10 @@ dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr=
 </TabItem>
 </Tabs>
 
+:::note
+Dagger allows you to set a default container image address for `Container` arguments using the `defaultAddress` pragma. Learn more in the [Container type documentation](../../getting-started/types/container.mdx#default-addresses).
+:::
+
 ## Secret arguments
 
 Dagger allows you to utilize confidential information, such as passwords, API keys, SSH keys and so on, in your Dagger [modules](../../introduction/features/reusability.mdx) and Dagger Functions, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache.

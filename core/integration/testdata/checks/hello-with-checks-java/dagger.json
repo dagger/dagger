@@ -1,0 +1,7 @@
+{
+  "name": "hello-with-checks-java",
+  "engineVersion": "v0.19.8",
+  "sdk": {
+    "source": "../../sdk/java"
+  }
+}

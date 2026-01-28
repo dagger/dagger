@@ -1659,6 +1659,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::withChangeset",
+			"p": "Dagger/Changeset.html#method_withChangeset",
+			"d": "<p>Add changes to an existing changeset</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::withChangesets",
+			"p": "Dagger/Changeset.html#method_withChangesets",
+			"d": "<p>Add changes from multiple changesets using git octopus merge strategy</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Check::completed",
 			"p": "Dagger/Check.html#method_completed",
 			"d": "<p>Whether the check completed</p>"
@@ -3285,6 +3297,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::check",
+			"p": "Dagger/Env.html#method_check",
+			"d": "<p>Return the check with the given name from the installed modules. Must match exactly one check.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::checks",
+			"p": "Dagger/Env.html#method_checks",
+			"d": "<p>Return all checks defined by the installed modules</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::id",
 			"p": "Dagger/Env.html#method_id",
 			"d": "<p>A unique identifier for this Env.</p>"
@@ -3486,6 +3510,12 @@
 			"n": "Dagger\\Env::withJSONValueOutput",
 			"p": "Dagger/Env.html#method_withJSONValueOutput",
 			"d": "<p>Declare a desired JSONValue output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withMainModule",
+			"p": "Dagger/Env.html#method_withMainModule",
+			"d": "<p>Sets the main module for this environment (the project being worked on)</p>"
 		},
 		{
 			"t": "M",
@@ -3864,6 +3894,12 @@
 			"n": "Dagger\\File::withTimestamps",
 			"p": "Dagger/File.html#method_withTimestamps",
 			"d": "<p>Retrieves this file with its created/modified timestamps set to the given time.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\FunctionArg::defaultAddress",
+			"p": "Dagger/FunctionArg.html#method_defaultAddress",
+			"d": "<p>Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)</p>"
 		},
 		{
 			"t": "M",

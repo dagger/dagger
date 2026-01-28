@@ -191,6 +191,27 @@ var scrubs = []scrubber{
 		idtui.IconCached + " container: Container! X.Xs CACHED",
 		idtui.IconSuccess + " container: Container! X.Xs",
 	},
+	// Container.from cache status depends on whether the ref is pinned or not (which may be a bug)
+	{
+		regexp.MustCompile(`✔ \.from\(address: "alpine"\): Container! X\.Xs`),
+		idtui.IconSuccess + ` .from(address: "alpine"): Container! X.Xs`,
+		idtui.IconCached + ` .from(address: "alpine"): Container! X.Xs CACHED`,
+	},
+	{
+		regexp.MustCompile(`✔ \.from\(address: "alpine:latest"\): Container! X\.Xs`),
+		idtui.IconSuccess + ` .from(address: "alpine:latest"): Container! X.Xs`,
+		idtui.IconCached + ` .from(address: "alpine:latest"): Container! X.Xs CACHED`,
+	},
+	{
+		regexp.MustCompile(`✔ Container\.from\(address: "alpine"\): Container! X\.Xs`),
+		idtui.IconSuccess + ` Container.from(address: "alpine"): Container! X.Xs`,
+		idtui.IconCached + ` Container.from(address: "alpine"): Container! X.Xs CACHED`,
+	},
+	{
+		regexp.MustCompile(`✔ Container\.from\(address: "alpine:latest"\): Container! X\.Xs`),
+		idtui.IconSuccess + ` Container.from(address: "alpine:latest"): Container! X.Xs`,
+		idtui.IconCached + ` Container.from(address: "alpine:latest"): Container! X.Xs CACHED`,
+	},
 	{
 		regexp.MustCompile(`, line \d+, in`),
 		"File \"/src/some/path/to/module.py\", line 386, in some_func",

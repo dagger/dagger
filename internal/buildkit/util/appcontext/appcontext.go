@@ -2,6 +2,7 @@ package appcontext
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -33,8 +34,10 @@ func Context() context.Context {
 
 		go func() {
 			for {
-				<-signals
+				s := <-signals
 				retries++
+				fmt.Printf("Received signal %s, retries: %d/%d\n", s.String(), retries, exitLimit)
+
 				err := errors.Errorf("got %d SIGTERM/SIGINTs, forcing shutdown", retries)
 				cancel(err)
 				if retries >= exitLimit {

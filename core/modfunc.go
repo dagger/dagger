@@ -584,11 +584,22 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 
 		for _, arg := range ctxArgVals {
-			dgstInputs = append(dgstInputs, arg.name, arg.val.ID().Digest().String())
+			id := arg.val.ID()
+			// prefer content digest if available
+			dgst := id.ContentDigest()
+			if dgst == "" {
+				dgst = id.Digest()
+			}
+			dgstInputs = append(dgstInputs, arg.name, dgst.String())
 		}
 		for _, arg := range userDefaultVals {
 			if arg != nil {
-				dgstInputs = append(dgstInputs, arg.name, arg.val.ID().Digest().String())
+				id := arg.val.ID()
+				dgst := id.ContentDigest()
+				if dgst == "" {
+					dgst = id.Digest()
+				}
+				dgstInputs = append(dgstInputs, arg.name, dgst.String())
 			}
 		}
 	}
@@ -963,10 +974,37 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	}
 }
 
-// loadContextualArg loads a contextual argument from the module context directory.
+// loadContainerFromAddress loads a Container from a given address using the Address API.
+func loadContainerFromAddress(ctx context.Context, dag *dagql.Server, address string) (dagql.IDType, error) {
+	var addr dagql.ObjectResult[*Address]
+	err := dag.Select(ctx, dag.Root(), &addr,
+		dagql.Selector{
+			Field: "address",
+			Args: []dagql.NamedInput{
+				{Name: "value", Value: dagql.String(address)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load address %q for container default: %w", address, err)
+	}
+
+	var ctr dagql.ObjectResult[*Container]
+	err = dag.Select(ctx, addr, &ctr,
+		dagql.Selector{Field: "container"},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load container from address %q: %w", address, err)
+	}
+
+	return dagql.NewID[*Container](ctr.ID()), nil
+}
+
+// loadContextualArg loads a contextual argument from the module context directory or address.
 //
 // For Directory, it will load the directory from the module context directory.
-// For file, it will loa the directory containing the file and then query the file ID from this directory.
+// For File, it will load the directory containing the file and then query the file ID from this directory.
+// For Container, it will load from the given address (e.g. "alpine:latest").
 //
 // This functions returns the ID of the loaded object.
 func (fn *ModuleFunction) loadContextualArg(
@@ -979,6 +1017,14 @@ func (fn *ModuleFunction) loadContextualArg(
 	}
 	if dag == nil {
 		return nil, fmt.Errorf("dagql server is nil but required for contextual argument %q", arg.OriginalName)
+	}
+
+	// Handle Container types with DefaultAddress
+	if arg.DefaultAddress != "" {
+		if arg.TypeDef.AsObject.Value.Name != "Container" {
+			return nil, fmt.Errorf("defaultAddress can only be used with Container type, not %s", arg.TypeDef.AsObject.Value.Name)
+		}
+		return loadContainerFromAddress(ctx, dag, arg.DefaultAddress)
 	}
 
 	if arg.DefaultPath == "" {

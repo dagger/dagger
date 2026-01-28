@@ -15,8 +15,9 @@ import (
 const (
 	phpSDKImage         = "php:8.3-cli-alpine"
 	phpSDKDigest        = "sha256:e4ffe0a17a6814009b5f0713a5444634a9c5b688ee34b8399e7d4f2db312c3b4"
-	phpSDKComposerImage = "composer:2@sha256:6d2b5386580c3ba67399c6ccfb50873146d68fcd7c31549f8802781559bed709"
-	phpSDKVersionFile   = "src/Connection/version.php"
+	phpSDKComposerImage = "composer/composer:2.8-bin" +
+		"@sha256:c735b6a52ea118693178babc601984dbbbd07f1d31ec87eaa881173622b467ed"
+	phpSDKVersionFile = "src/Connection/version.php"
 
 	phpDoctumVersion = "5.5.4"
 )
@@ -55,7 +56,7 @@ func (t PhpSdkDev) BaseContainer() *dagger.Container {
 	// - But we build the full dev container *lazily*, because we may have mutated our workspace with generated files
 	composerBinary := dag.Container().
 		From(phpSDKComposerImage).
-		File("/usr/bin/composer")
+		File("/composer")
 	return dag.Container().
 		From(phpSDKImage+"@"+phpSDKDigest).
 		WithMountedFile("/usr/bin/composer", composerBinary).

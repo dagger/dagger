@@ -11,6 +11,28 @@ namespace Dagger;
 class Env extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Return the check with the given name from the installed modules. Must match exactly one check.
+     */
+    public function check(string $name): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('check');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return all checks defined by the installed modules
+     */
+    public function checks(?array $include = null): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Env.
      */
     public function id(): EnvId
@@ -390,6 +412,18 @@ class Env extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withJSONValueOutput');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Sets the main module for this environment (the project being worked on)
+     *
+     * Contextual path arguments will be populated using the environment's workspace.
+     */
+    public function withMainModule(ModuleId|Module $module): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMainModule');
+        $innerQueryBuilder->setArgument('module', $module);
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

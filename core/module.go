@@ -15,7 +15,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -64,15 +63,8 @@ type Module struct {
 	// Toolchain modules are allowed to share types with the modules that depend on them.
 	IsToolchain bool
 
-	// ToolchainModules stores references to toolchain module instances by their field name
-	// This enables proxy field resolution to route calls to the toolchain's runtime
-	ToolchainModules map[string]*Module
-
-	// ToolchainArgumentConfigs stores argument configuration overrides for toolchains by their original name
-	ToolchainArgumentConfigs map[string][]*modules.ModuleConfigArgument
-
-	// ToolchainIgnoreChecks stores check patterns to ignore for each toolchain by their original name
-	ToolchainIgnoreChecks map[string][]string
+	// Toolchains manages all toolchain modules and their configuration.
+	Toolchains *ToolchainRegistry
 
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
@@ -99,6 +91,13 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+// isToolchainModule checks if a Mod is a toolchain Module.
+// This centralizes the validation logic that was scattered across the codebase.
+func isToolchainModule(m Mod) bool {
+	tcMod, ok := m.(*Module)
+	return ok && tcMod.IsToolchain
+}
+
 func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
 	mainObj, ok := mod.MainObject()
 	if !ok {
@@ -116,53 +115,14 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 			group.Checks = append(group.Checks, check)
 		}
 	}
-	// 2. Walk toolchain modules for checks
-	for _, dep := range mod.Deps.Mods {
-		if tcMod, ok := dep.(*Module); ok && tcMod.IsToolchain {
-			tcMainObj, ok := tcMod.MainObject()
-			if !ok {
-				continue // skip toolchains without a main object
-			}
-			// Get the ignore patterns for this toolchain
-			ignorePatterns := mod.ToolchainIgnoreChecks[tcMod.OriginalName]
 
-			// Walk the toolchain module's checks
-			for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache) {
-				// Check if this check should be ignored (before prepending toolchain name)
-				// This allows ignoreChecks patterns to be scoped to the toolchain without needing the prefix
-				ignored := false
-				if len(ignorePatterns) > 0 {
-					// Check against ignore patterns using the check path WITHOUT the toolchain prefix
-					for _, ignorePattern := range ignorePatterns {
-						checkMatch, err := check.Match([]string{ignorePattern})
-						if err != nil {
-							return nil, err
-						}
-						if checkMatch {
-							ignored = true
-							break
-						}
-					}
-				}
-
-				if ignored {
-					continue // Skip this check
-				}
-
-				// Prepend the toolchain name to the check path
-				check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
-
-				check.Source = tcMod.GetSource()
-
-				match, err := check.Match(include)
-				if err != nil {
-					return nil, err
-				}
-				if match {
-					group.Checks = append(group.Checks, check)
-				}
-			}
+	// 2. Delegate toolchain checks to registry
+	if mod.Toolchains != nil {
+		tcChecks, err := mod.Toolchains.WalkChecks(ctx, include)
+		if err != nil {
+			return nil, err
 		}
+		group.Checks = append(group.Checks, tcChecks...)
 	}
 
 	// set individual check Module field now so it's a consistent value between this
@@ -648,7 +608,7 @@ func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
+	slog.Trace("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
 	return nil, false
 }
 
@@ -662,7 +622,7 @@ func (mod *Module) modTypeForInterface(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
+	slog.Trace("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
 	return nil, false
 }
 
@@ -676,7 +636,7 @@ func (mod *Module) modTypeForEnum(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
+	slog.Trace("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
 	return nil, false
 }
 
@@ -723,7 +683,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			// other modules (unless the source module is a toolchain)
 			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 				// Allow types from toolchain modules
-				if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
+				if !isToolchainModule(sourceMod) {
 					return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
 						obj.OriginalName,
 						field.OriginalName,
@@ -749,7 +709,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 				// Allow types from toolchain modules
-				if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
+				if !isToolchainModule(sourceMod) {
 					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
 						obj.OriginalName,
 						fn.OriginalName,
@@ -770,7 +730,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			if ok {
 				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 					// Allow types from toolchain modules
-					if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
+					if !isToolchainModule(sourceMod) {
 						return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
 							obj.OriginalName,
 							fn.OriginalName,

@@ -318,6 +318,38 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.NoError(t, err)
 		require.Contains(t, out, "Greetings from Mars!")
 	})
+
+	t.Run("override container default with address", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello-with-container",
+      "customizations": [
+        {
+          "function": ["testWithDefaultContainer"],
+          "argument": "ctr",
+          "defaultAddress": "alpine:3.18"
+        }
+      ]
+    }
+  ]
+}
+				`)
+		// verify we can call a function with container default override
+		out, err := modGen.
+			With(daggerExec("call", "hello", "test-with-default-container")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		// Should get some alpine version - verifying Container default works at all
+		require.Contains(t, out, "3.18") // Alpine version contains a dot
+	})
 }
 
 func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.T) {

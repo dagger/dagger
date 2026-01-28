@@ -111,11 +111,148 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+export type ChangesetWithChangesetOpts = {
+  /**
+   * What to do on a merge conflict
+   */
+  onConflict?: ChangesetMergeConflict
+}
+
+export type ChangesetWithChangesetsOpts = {
+  /**
+   * What to do on a merge conflict
+   */
+  onConflict?: ChangesetsMergeConflict
+}
+
 /**
  * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
  */
 export type ChangesetID = string & { __ChangesetID: never }
 
+/**
+ * Strategy to use when merging changesets with conflicting changes.
+ */
+export enum ChangesetMergeConflict {
+  /**
+   * Attempt the merge and fail if git merge fails due to conflicts
+   */
+  Fail = "FAIL",
+
+  /**
+   * Fail before attempting merge if file-level conflicts are detected
+   */
+  FailEarly = "FAIL_EARLY",
+
+  /**
+   * Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.
+   */
+  LeaveConflictMarkers = "LEAVE_CONFLICT_MARKERS",
+
+  /**
+   * The conflict is resolved by applying the version of the calling changeset
+   */
+  PreferOurs = "PREFER_OURS",
+
+  /**
+   * The conflict is resolved by applying the version of the other changeset
+   */
+  PreferTheirs = "PREFER_THEIRS",
+}
+
+/**
+ * Utility function to convert a ChangesetMergeConflict value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ChangesetMergeConflictValueToName(
+  value: ChangesetMergeConflict,
+): string {
+  switch (value) {
+    case ChangesetMergeConflict.Fail:
+      return "FAIL"
+    case ChangesetMergeConflict.FailEarly:
+      return "FAIL_EARLY"
+    case ChangesetMergeConflict.LeaveConflictMarkers:
+      return "LEAVE_CONFLICT_MARKERS"
+    case ChangesetMergeConflict.PreferOurs:
+      return "PREFER_OURS"
+    case ChangesetMergeConflict.PreferTheirs:
+      return "PREFER_THEIRS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ChangesetMergeConflict name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ChangesetMergeConflictNameToValue(
+  name: string,
+): ChangesetMergeConflict {
+  switch (name) {
+    case "FAIL":
+      return ChangesetMergeConflict.Fail
+    case "FAIL_EARLY":
+      return ChangesetMergeConflict.FailEarly
+    case "LEAVE_CONFLICT_MARKERS":
+      return ChangesetMergeConflict.LeaveConflictMarkers
+    case "PREFER_OURS":
+      return ChangesetMergeConflict.PreferOurs
+    case "PREFER_THEIRS":
+      return ChangesetMergeConflict.PreferTheirs
+    default:
+      return name as ChangesetMergeConflict
+  }
+}
+/**
+ * Strategy to use when merging multiple changesets with git octopus merge.
+ */
+export enum ChangesetsMergeConflict {
+  /**
+   * Attempt the octopus merge and fail if git merge fails due to conflicts
+   */
+  Fail = "FAIL",
+
+  /**
+   * Fail before attempting merge if file-level conflicts are detected between any changesets
+   */
+  FailEarly = "FAIL_EARLY",
+}
+
+/**
+ * Utility function to convert a ChangesetsMergeConflict value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ChangesetsMergeConflictValueToName(
+  value: ChangesetsMergeConflict,
+): string {
+  switch (value) {
+    case ChangesetsMergeConflict.Fail:
+      return "FAIL"
+    case ChangesetsMergeConflict.FailEarly:
+      return "FAIL_EARLY"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ChangesetsMergeConflict name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ChangesetsMergeConflictNameToValue(
+  name: string,
+): ChangesetsMergeConflict {
+  switch (name) {
+    case "FAIL":
+      return ChangesetsMergeConflict.Fail
+    case "FAIL_EARLY":
+      return ChangesetsMergeConflict.FailEarly
+    default:
+      return name as ChangesetsMergeConflict
+  }
+}
 /**
  * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
  */
@@ -1055,6 +1192,13 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
+export type EnvChecksOpts = {
+  /**
+   * Only include checks matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type EnvFileGetOpts = {
   /**
    * Return the value exactly as written to the file. No quote removal or variable expansion
@@ -1355,6 +1499,7 @@ export type FunctionWithArgOpts = {
    * If deprecated, the reason or migration path.
    */
   deprecated?: string
+  defaultAddress?: string
 }
 
 export type FunctionWithCachePolicyOpts = {
@@ -3069,6 +3214,69 @@ export class Changeset extends BaseClient {
     const response: Awaited<ChangesetID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadChangesetFromID(response)
+  }
+
+  /**
+   * Add changes to an existing changeset
+   *
+   * By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+   * @param changes Changes to merge into the actual changeset
+   * @param opts.onConflict What to do on a merge conflict
+   */
+  withChangeset = (
+    changes: Changeset,
+    opts?: ChangesetWithChangesetOpts,
+  ): Changeset => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("withChangeset", {
+      changes,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Add changes from multiple changesets using git octopus merge strategy
+   *
+   * This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+   *
+   * Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+   * @param changes List of changesets to merge into the actual changeset
+   * @param opts.onConflict What to do on a merge conflict
+   */
+  withChangesets = (
+    changes: Changeset[],
+    opts?: ChangesetWithChangesetsOpts,
+  ): Changeset => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetsMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("withChangesets", {
+      changes,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Call the provided function with current Changeset.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Changeset) => Changeset) => {
+    return arg(this)
   }
 }
 
@@ -5953,6 +6161,26 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Return the check with the given name from the installed modules. Must match exactly one check.
+   * @param name The name of the check to retrieve
+   * @experimental
+   */
+  check = (name: string): Check => {
+    const ctx = this._ctx.select("check", { name })
+    return new Check(ctx)
+  }
+
+  /**
+   * Return all checks defined by the installed modules
+   * @param opts.include Only include checks matching the specified patterns
+   * @experimental
+   */
+  checks = (opts?: EnvChecksOpts): CheckGroup => {
+    const ctx = this._ctx.select("checks", { ...opts })
+    return new CheckGroup(ctx)
+  }
+
+  /**
    * Retrieves an input binding by name
    */
   input = (name: string): Binding => {
@@ -6382,9 +6610,22 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Sets the main module for this environment (the project being worked on)
+   *
+   * Contextual path arguments will be populated using the environment's workspace.
+   */
+  withMainModule = (module_: Module_): Env => {
+    const ctx = this._ctx.select("withMainModule", {
+      module: module_,
+    })
+    return new Env(ctx)
+  }
+
+  /**
    * Installs a module into the environment, exposing its functions to the model
    *
    * Contextual path arguments will be populated using the environment's workspace.
+   * @deprecated Use withMainModule instead
    */
   withModule = (module_: Module_): Env => {
     const ctx = this._ctx.select("withModule", {
@@ -7650,6 +7891,7 @@ export class Function_ extends BaseClient {
  */
 export class FunctionArg extends BaseClient {
   private readonly _id?: FunctionArgID = undefined
+  private readonly _defaultAddress?: string = undefined
   private readonly _defaultPath?: string = undefined
   private readonly _defaultValue?: JSON = undefined
   private readonly _deprecated?: string = undefined
@@ -7662,6 +7904,7 @@ export class FunctionArg extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: FunctionArgID,
+    _defaultAddress?: string,
     _defaultPath?: string,
     _defaultValue?: JSON,
     _deprecated?: string,
@@ -7671,6 +7914,7 @@ export class FunctionArg extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._defaultAddress = _defaultAddress
     this._defaultPath = _defaultPath
     this._defaultValue = _defaultValue
     this._deprecated = _deprecated
@@ -7689,6 +7933,21 @@ export class FunctionArg extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<FunctionArgID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+   */
+  defaultAddress = async (): Promise<string> => {
+    if (this._defaultAddress) {
+      return this._defaultAddress
+    }
+
+    const ctx = this._ctx.select("defaultAddress")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
