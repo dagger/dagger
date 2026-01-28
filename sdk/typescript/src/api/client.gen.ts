@@ -3420,14 +3420,6 @@ export class Check extends BaseClient {
   }
 
   /**
-   * The module source where the check is defined (i.e., toolchains)
-   */
-  source = (): ModuleSource => {
-    const ctx = this._ctx.select("source")
-    return new ModuleSource(ctx)
-  }
-
-  /**
    * Call the provided function with current Check.
    *
    * This is useful for reusability and readability by not breaking the calling chain.

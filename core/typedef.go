@@ -914,7 +914,7 @@ func (obj *ObjectTypeDef) FieldByOriginalName(name string) (*FieldTypeDef, bool)
 
 func (obj *ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
 	for _, fn := range obj.Functions {
-		if fn.Name == name {
+		if fn.Name == gqlFieldName(name) {
 			return fn, true
 		}
 	}
