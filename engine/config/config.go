@@ -33,6 +33,8 @@ type Config struct {
 	// Registries configures custom registry mirrors, root CAs, and
 	// insecure/HTTP access.
 	Registries map[string]RegistryConfig `json:"registries,omitempty"`
+
+	Proxy *Proxy `json:"proxy,omitempty"`
 }
 
 type LogLevel string
@@ -228,3 +230,13 @@ type Security struct {
 	// privileged, and is a basic form of security hardening.
 	InsecureRootCapabilities *bool `json:"insecureRootCapabilities,omitempty"`
 }
+
+
+type Proxy struct {
+	HTTPProxy string `json:"httpProxy,omitempty"`
+	HTTPSProxy string `json:"httpsProxy,omitempty"`
+	NoProxy []string `json:"noProxy,omitempty"`
+	AllProxy string `json:"allProxy,omitempty"`
+	FTPProxy string `json:"ftpProxy,omitempty"`
+}
+
