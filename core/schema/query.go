@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -90,46 +91,8 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 	return engine.Version, nil
 }
 
-type schemaJSONArgs struct {
-	HiddenTypes []string `default:"[]"`
-
-	ExpectedView string `internal:"true" default:"unknown" name:"expectedView"`
-	RawDagOpInternalArgs
-}
-
-var (
-	uglyMu sync.Mutex
-	uglyM  map[string]string
-)
-
-func (s *querySchema) schemaJSONFile(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Query],
-	args schemaJSONArgs,
-) (inst dagql.ObjectResult[*core.File], rerr error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dagql server: %w", err)
-	}
-	const schemaJSONFilename = "schema.json"
-	const perm fs.FileMode = 0644
-
-	if args.InDagOp() {
-		var moduleSchemaJSON string
-		uglyMu.Lock()
-		moduleSchemaJSON = uglyM[args.ExpectedView]
-		uglyMu.Unlock()
-
-		f, err := core.NewFileWithContentsDagOp(ctx, schemaJSONFilename, []byte(moduleSchemaJSON), perm, nil, parent.Self().Platform())
-		if err != nil {
-			return inst, err
-		}
-
-		return dagql.NewObjectResultForCurrentID(ctx, srv, f)
-	}
-
-	view := s.srv.View
-	dagqlSchema := introspection.WrapSchema(s.srv.SchemaForView(view))
+func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]byte, error) {
+	dagqlSchema := introspection.WrapSchema(srv.SchemaForView(view))
 
 	introspectionResponse := codegenintrospection.Response{
 		SchemaVersion: string(view),
@@ -137,6 +100,7 @@ func (s *querySchema) schemaJSONFile(
 	}
 	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {
 		introspectionResponse.Schema.QueryType.Name = *queryName
+		fmt.Printf("ACB setting queryName to %s\n", *queryName)
 	}
 	for _, dagqlType := range dagqlSchema.Types() {
 		introspectionResponse.Schema.Types = append(introspectionResponse.Schema.Types, dagqlToCodegenType(dagqlType))
@@ -149,30 +113,89 @@ func (s *querySchema) schemaJSONFile(
 		introspectionResponse.Schema.ScrubType(typed.Type().Name())
 		introspectionResponse.Schema.ScrubType(dagql.IDTypeNameFor(typed))
 	}
-	for _, rawType := range args.HiddenTypes {
+	for _, rawType := range hiddenTypes {
 		introspectionResponse.Schema.ScrubType(rawType)
 		introspectionResponse.Schema.ScrubType(dagql.IDTypeNameForRawType(rawType))
 	}
 
 	moduleSchemaJSON, err := json.Marshal(introspectionResponse)
 	if err != nil {
-		return inst, fmt.Errorf("failed to marshal introspection JSON: %w", err)
+		return nil, fmt.Errorf("failed to marshal introspection JSON: %w", err)
+	}
+	return moduleSchemaJSON, nil
+}
+
+type schemaJSONArgs struct {
+	HiddenTypes []string `default:"[]"`
+
+	ExpectedView string `internal:"true" default:"unknown" name:"expectedView"`
+	ExpectedDgst string `internal:"true" default:"unknown" name:"expectedDigest"`
+	RawDagOpInternalArgs
+}
+
+var (
+	uglyMu sync.Mutex
+	uglyM  map[string][]byte
+)
+
+func (s *querySchema) schemaJSONFile(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Query],
+	args schemaJSONArgs,
+) (inst dagql.ObjectResult[*core.File], rerr error) {
+	//srv, err := core.CurrentDagqlServer(ctx)
+	//if err != nil {
+	//	return inst, fmt.Errorf("failed to get dagql server: %w", err)
+	//}
+	const schemaJSONFilename = "schema.json"
+	const perm fs.FileMode = 0644
+
+	if args.InDagOp() {
+		var moduleSchemaJSON []byte
+		uglyMu.Lock()
+		moduleSchemaJSON = uglyM[args.ExpectedDgst]
+		uglyMu.Unlock()
+
+		moduleSchemaJSONReCalc, err := getSchemaJSON(args.HiddenTypes, call.View(args.ExpectedView), s.srv)
+		dgstRecalc := hashutil.HashStrings(string(moduleSchemaJSONReCalc))
+
+		if args.ExpectedDgst != string(dgstRecalc) {
+			fmt.Printf("ACB got: %s\nACB want: %s\n", base64.StdEncoding.EncodeToString(moduleSchemaJSON), base64.StdEncoding.EncodeToString(moduleSchemaJSONReCalc))
+			panic(fmt.Sprintf("diff found for %+v; s.srv.View is %s", args, s.srv.View))
+		}
+
+		f, err := core.NewFileWithContentsDagOp(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self().Platform())
+		if err != nil {
+			return inst, err
+		}
+
+		return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
 	}
 
+	view := s.srv.View
+	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, s.srv.View, s.srv)
 	dgst := hashutil.HashStrings(string(moduleSchemaJSON))
 
 	uglyMu.Lock()
 	uglyID := dgst.String()
 	if uglyM == nil {
-		uglyM = map[string]string{}
+		uglyM = map[string][]byte{}
 	}
-	uglyM[uglyID] = string(moduleSchemaJSON)
+	if _, ok := uglyM[uglyID]; !ok {
+		uglyM[uglyID] = moduleSchemaJSON
+		fmt.Printf("ACB uglyM len is %d; added %s %s\n", len(uglyM), uglyID, view)
+	}
 	uglyMu.Unlock()
 
 	// also mixin the checksum
 	newID := dagql.CurrentID(ctx).
 		WithArgument(call.NewArgument(
 			"expectedView",
+			call.NewLiteralString(view.String()),
+			false,
+		)).
+		WithArgument(call.NewArgument(
+			"expectedDigest",
 			call.NewLiteralString(uglyID), // TODO pass along s.srv.View.String() instead and get the schema inside the dagop
 			false,
 		)).
@@ -181,11 +204,16 @@ func (s *querySchema) schemaJSONFile(
 		))
 	ctxDagOp := dagql.ContextWithID(ctx, newID)
 
-	f, err := DagOpFile[*core.Query, schemaJSONArgs](ctxDagOp, srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
+	f, err := DagOpFile[*core.Query, schemaJSONArgs](ctxDagOp, s.srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
 	if err != nil {
 		return inst, err
 	}
-	dop, err := dagql.NewObjectResultForID[*core.File](f, srv, newID)
+
+	if _, err := f.Evaluate(ctx); err != nil {
+		return inst, err
+	}
+
+	dop, err := dagql.NewObjectResultForID[*core.File](f, s.srv, newID)
 	if err != nil {
 		return inst, err
 	}
