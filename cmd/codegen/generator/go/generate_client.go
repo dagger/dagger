@@ -202,38 +202,6 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	return genSt, nil
 }
 
-func (g *GoGenerator) daggerPackageReplacement(goMod *modfile.File) (string, bool, error) {
-	for _, replace := range goMod.Replace {
-		if replace.Old.Path == "dagger.io/dagger" {
-			// We need to exclude the first parent directory of the replaced path since it's the
-			// root of the generated directory (c.Config.OutputDir) and the overlays root is that
-			// path.
-			// FIXME(TomChv): This will disapear once I fix the overlays root to the module root instead
-			// of the client output directory.
-			replacedPath := replace.New.Path
-
-			if filepath.IsAbs(replacedPath) {
-				return "", false, fmt.Errorf("invalid go replace path %q not under %q", replacedPath, g.Config.OutputDir)
-			}
-
-			// Remove the output dir from the replace path and trim the leading slash to obtain
-			// a local path usable on overlay
-			// Example:
-			// - ./dagger/sdk generated in dagger -> sdk)
-			// - ./sdk generated in . -> sdk)
-			// - ./dagger/foo/bar generated in dagger -> foo/bar)
-			replacedPath = strings.TrimPrefix(
-				strings.TrimPrefix(filepath.Clean(replacedPath), filepath.Clean(g.Config.OutputDir)),
-				"/",
-			)
-
-			return replacedPath, true, nil
-		}
-	}
-
-	return "", false, nil
-}
-
 func (g *GoGenerator) readGoMod() (*modfile.File, bool, error) {
 	// First try to read go.mod from OutputDir
 	goModPath := filepath.Join(g.Config.OutputDir, "go.mod")

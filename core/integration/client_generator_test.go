@@ -61,7 +61,7 @@ func main() {
   }
 
   fmt.Println("result:", res)
-}`, defaultGenDir))
+}`))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					// Add SDK replace to client's go.mod for testing
@@ -177,7 +177,7 @@ main()`, defaultGenDir))
 
 			fmt.Println("result:", res)
 		}
-		`, defaultGenDir))
+		`))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					// Add SDK replace to client's go.mod for testing
@@ -323,7 +323,7 @@ main()
 
 			fmt.Println("result:", res)
 		}
-		`, defaultGenDir))
+		`))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					// Add SDK replace to client's go.mod for testing
@@ -460,7 +460,7 @@ func main() {
 
   fmt.Println("result:", res)
 }
-		`, defaultGenDir))
+		`))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					// Add SDK replace to client's go.mod for testing
@@ -587,7 +587,7 @@ func (ClientGeneratorTest) TestPersistence(ctx context.Context, t *testctx.T) {
 
 			fmt.Println("result:", res)
 		}
-		`, defaultGenDir))
+		`))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.WithoutDirectory("dagger")
@@ -725,7 +725,7 @@ main()
 
 				fmt.Println("result:", res)
 			}
-			`, defaultGenDir))
+			`))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					// Remove generated files so they can be regenerated using dagger develop
@@ -865,7 +865,7 @@ func main() {
   }
 
   fmt.Println("result:", res)
-}`, outputDir), "./"+outputDir))
+}`, outputDir)))
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
 				// Add SDK replace to client's go.mod for testing
@@ -998,7 +998,7 @@ func main() {
   }
 
   fmt.Println("result:", res)
-}`, "."))
+}`))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
@@ -1091,7 +1091,7 @@ func main() {
   }
 
   fmt.Println("result:", res)
-}`, "."))
+}`))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
@@ -1415,7 +1415,7 @@ func main() {
   }
 
   fmt.Println("result:", res)
-}`, defaultGenDir)).
+}`)).
 			With(daggerClientInstall("go")).
 			// Mount SDK so replace directive works
 			WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
@@ -1746,7 +1746,7 @@ func main() {
 	}
 
 	fmt.Println(result)
-}`, defaultGenDir))
+}`))
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
 				return ctr.
@@ -1847,8 +1847,7 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 
 			fmt.Println("result:", res)
 		}
-		`,
-			defaultGenDir)).
+		`)).
 		With(daggerClientInstall("go")).
 		With(func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
@@ -2001,7 +2000,7 @@ func main() {
 	})
 }
 
-func withGoSetup(content string, outputDir string) func(*dagger.Container) *dagger.Container {
+func withGoSetup(content string) func(*dagger.Container) *dagger.Container {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithExec([]string{"go", "mod", "init", "test.com/test"}).
