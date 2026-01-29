@@ -16,6 +16,8 @@ message Stat {
   int64 devmajor = 8;
   int64 devminor = 9;
   map<string, bytes> xattrs = 10;
+  // True if the path was excluded purely due to gitignore rules.
+  bool git_ignored = 11;
 }
 
 message Packet {

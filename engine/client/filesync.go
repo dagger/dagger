@@ -120,7 +120,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 			},
 		})
 		if opts.UseGitIgnore {
-			filteredFS, err = fsxutil.NewGitIgnoreFS(filteredFS, fsxutil.NewGitIgnoreMatcher(fs))
+			filteredFS, err = fsxutil.NewGitIgnoreMarkedFS(filteredFS, fsxutil.NewGitIgnoreMatcher(fs))
 			if err != nil {
 				return err
 			}
