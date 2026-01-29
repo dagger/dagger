@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,8 +23,8 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
-	"github.com/opencontainers/go-digest"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/opencontainers/go-digest"
 )
 
 func init() {
@@ -128,7 +129,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("header").Doc(`Secret used to populate the Authorization HTTP header`),
 			),
 
-		dagql.NodeFuncWithCacheKey("__resolve", s.repoResolve, dagql.CachePerSession).
+		dagql.NodeFuncWithCacheKey("__resolve", s.repoResolve, dagql.CachePerClient).
 			Doc(`(Internal-only) Resolves URL and auth for this repo.`),
 	}.Install(srv)
 
@@ -158,7 +159,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("other").Doc(`The other ref to compare against.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("__resolve", s.refResolve, dagql.CachePerSession).
+		dagql.NodeFuncWithCacheKey("__resolve", s.refResolve, dagql.CachePerClient).
 			Doc(`(Internal-only) Resolves repo + ref to SHA.`),
 	}.Install(srv)
 }
@@ -885,6 +886,15 @@ func (s *gitSchema) repoResolve(
 	repo := parent.Self()
 	remote, isRemote := repo.Backend.(*core.RemoteGitRepository)
 
+	fmt.Fprintf(os.Stderr, "🔍 repoResolve: parentID=%s isRemote=%v\n", parent.ID().Display(), isRemote)
+	if isRemote {
+		urlStr := "<nil>"
+		if remote.URL != nil {
+			urlStr = remote.URL.String()
+		}
+		fmt.Fprintf(os.Stderr, "🔍 repoResolve: URL=%s AuthToken.Valid=%v SSHAuthSocket.Valid=%v\n", urlStr, remote.AuthToken.Valid, remote.SSHAuthSocket.Valid)
+	}
+
 	// Local repo - just mark resolved and return
 	if !isRemote {
 		resolved := repo.Clone()
@@ -894,17 +904,23 @@ func (s *gitSchema) repoResolve(
 
 	// Case 1: Ambiguous URL (no protocol) - redirect to explicit URL variant
 	if remote.URL == nil {
+		fmt.Fprintf(os.Stderr, "🔀 repoResolve: Case 1 - ambiguous URL, redirecting\n")
 		return s.resolveAmbiguousURLViaRedirect(ctx, srv, parent, remote)
 	}
 
 	// Case 2: Explicit URL but no auth - redirect with auth from context
 	if !s.hasExplicitAuth(remote) {
+		fmt.Fprintf(os.Stderr, "🔑 repoResolve: Case 2 - no explicit auth, trying context auth\n")
 		if result, ok, err := s.resolveWithAuthFromContext(ctx, srv, parent, remote); err != nil {
 			return zero, err
 		} else if ok {
+			fmt.Fprintf(os.Stderr, "✅ repoResolve: Got auth from context, redirected\n")
 			return result, nil
 		}
+		fmt.Fprintf(os.Stderr, "⚠️ repoResolve: No auth from context, continuing without\n")
 		// No auth available from context, continue without auth (public repo)
+	} else {
+		fmt.Fprintf(os.Stderr, "🔐 repoResolve: Case 3 - has explicit auth\n")
 	}
 
 	// Case 3: Leaf case - explicit URL (and auth if needed), actually resolve
@@ -986,10 +1002,10 @@ func (s *gitSchema) resolveAmbiguousURLViaRedirect(
 
 	// If auth method is specified, we can infer the scheme
 	if remote.SSHAuthSocket.Valid {
-		return s.redirectToURL(ctx, srv, parent, "ssh://git@"+rawURL)
+		return s.redirectToURL(ctx, srv, parent, remote, "ssh://git@"+rawURL)
 	}
 	if remote.AuthToken.Valid || remote.AuthHeader.Valid {
-		return s.redirectToURL(ctx, srv, parent, "https://"+rawURL)
+		return s.redirectToURL(ctx, srv, parent, remote, "https://"+rawURL)
 	}
 
 	// No auth specified - try https first, then ssh
@@ -1000,7 +1016,7 @@ func (s *gitSchema) resolveAmbiguousURLViaRedirect(
 		err := srv.Select(ctx, srv.Root(), &result,
 			dagql.Selector{
 				Field: "git",
-				Args:  s.buildRedirectArgs(parent, candidateURL, nil),
+				Args:  s.buildRedirectArgs(parent, remote, candidateURL, nil),
 			},
 			dagql.Selector{Field: "__resolve"},
 		)
@@ -1057,7 +1073,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 		if err := srv.Select(ctx, srv.Root(), &result,
 			dagql.Selector{
 				Field: "git",
-				Args:  s.buildRedirectArgs(parent, remote.URL.String(), authArgs),
+				Args:  s.buildRedirectArgs(parent, remote, remote.URL.String(), authArgs),
 			},
 			dagql.Selector{Field: "__resolve"},
 		); err != nil {
@@ -1067,10 +1083,13 @@ func (s *gitSchema) resolveWithAuthFromContext(
 
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
 		// Try to get credentials from store
+		fmt.Fprintf(os.Stderr, "🔑 resolveWithAuthFromContext: trying credential store for %s\n", remote.URL.String())
 		token, username, err := s.getCredentialFromStore(ctx, srv, remote.URL)
 		if err != nil || token == nil {
+			fmt.Fprintf(os.Stderr, "🔑 resolveWithAuthFromContext: no credentials found\n")
 			return zero, false, nil // No credentials available
 		}
+		fmt.Fprintf(os.Stderr, "🔑 resolveWithAuthFromContext: GOT CREDENTIALS from store! username=%s\n", username)
 
 		// Redirect to git() with explicit httpAuthToken
 		authArgs := []dagql.NamedInput{
@@ -1086,7 +1105,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 		if err := srv.Select(ctx, srv.Root(), &result,
 			dagql.Selector{
 				Field: "git",
-				Args:  s.buildRedirectArgs(parent, remote.URL.String(), authArgs),
+				Args:  s.buildRedirectArgs(parent, remote, remote.URL.String(), authArgs),
 			},
 			dagql.Selector{Field: "__resolve"},
 		); err != nil {
@@ -1103,13 +1122,14 @@ func (s *gitSchema) redirectToURL(
 	ctx context.Context,
 	srv *dagql.Server,
 	parent dagql.ObjectResult[*core.GitRepository],
+	remote *core.RemoteGitRepository,
 	url string,
 ) (dagql.ObjectResult[*core.GitRepository], error) {
 	var result dagql.ObjectResult[*core.GitRepository]
 	err := srv.Select(ctx, srv.Root(), &result,
 		dagql.Selector{
 			Field: "git",
-			Args:  s.buildRedirectArgs(parent, url, nil),
+			Args:  s.buildRedirectArgs(parent, remote, url, nil),
 		},
 		dagql.Selector{Field: "__resolve"},
 	)
@@ -1120,15 +1140,47 @@ func (s *gitSchema) redirectToURL(
 // preserving relevant args from the parent and overriding URL and auth.
 func (s *gitSchema) buildRedirectArgs(
 	parent dagql.ObjectResult[*core.GitRepository],
+	remote *core.RemoteGitRepository,
 	url string,
 	authArgs []dagql.NamedInput,
 ) []dagql.NamedInput {
+	fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: url=%s authArgs=%d remote.AuthToken.Valid=%v\n", url, len(authArgs), remote.AuthToken.Valid)
+
 	args := []dagql.NamedInput{
 		{Name: "url", Value: dagql.NewString(url)},
 	}
 
-	// Add auth args if provided
+	// Add explicit auth args if provided (these override parent's auth)
 	args = append(args, authArgs...)
+
+	// If no explicit auth args, preserve auth from remote object
+	if len(authArgs) == 0 {
+		if remote.AuthToken.Valid {
+			fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: preserving AuthToken from remote\n")
+			args = append(args, dagql.NamedInput{
+				Name: "httpAuthToken", Value: dagql.Opt(dagql.NewID[*core.Secret](remote.AuthToken.Value.ID())),
+			})
+		}
+		if remote.AuthHeader.Valid {
+			fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: preserving AuthHeader from remote\n")
+			args = append(args, dagql.NamedInput{
+				Name: "httpAuthHeader", Value: dagql.Opt(dagql.NewID[*core.Secret](remote.AuthHeader.Value.ID())),
+			})
+		}
+		if remote.AuthUsername != "" {
+			args = append(args, dagql.NamedInput{
+				Name: "httpAuthUsername", Value: dagql.NewString(remote.AuthUsername),
+			})
+		}
+		if remote.SSHAuthSocket.Valid {
+			fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: preserving SSHAuthSocket from remote\n")
+			args = append(args, dagql.NamedInput{
+				Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](remote.SSHAuthSocket.Value.ID())),
+			})
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: final args count=%d\n", len(args))
 
 	// Preserve keepGitDir from parent if set
 	if keepGitDir := parent.ID().Arg("keepGitDir"); keepGitDir != nil {
@@ -1144,6 +1196,24 @@ func (s *gitSchema) buildRedirectArgs(
 		if v, ok := sshKnownHosts.Value().ToInput().(string); ok && v != "" {
 			args = append(args, dagql.NamedInput{
 				Name: "sshKnownHosts", Value: dagql.NewString(v),
+			})
+		}
+	}
+
+	// Preserve commit from parent if set (internal arg for pinning)
+	if commit := parent.ID().Arg("commit"); commit != nil {
+		if v, ok := commit.Value().ToInput().(string); ok && v != "" {
+			args = append(args, dagql.NamedInput{
+				Name: "commit", Value: dagql.NewString(v),
+			})
+		}
+	}
+
+	// Preserve ref from parent if set (internal arg for pinning)
+	if ref := parent.ID().Arg("ref"); ref != nil {
+		if v, ok := ref.Value().ToInput().(string); ok && v != "" {
+			args = append(args, dagql.NamedInput{
+				Name: "ref", Value: dagql.NewString(v),
 			})
 		}
 	}
