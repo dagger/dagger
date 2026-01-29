@@ -35,7 +35,6 @@ import (
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	"github.com/dagger/dagger/util/cleanups"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -329,7 +328,7 @@ func (m hostBindMountRef) Mount() ([]mount.Mount, func() error, error) {
 	}}, func() error { return nil }, nil
 }
 
-func (m hostBindMountRef) IdentityMapping() *idtools.IdentityMapping {
+func (m hostBindMountRef) IdentityMapping() *user.IdentityMapping {
 	return nil
 }
 

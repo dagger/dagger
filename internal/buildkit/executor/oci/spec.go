@@ -18,8 +18,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
 	traceexec "github.com/dagger/dagger/internal/buildkit/util/tracing/exec"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/mitchellh/hashstructure/v2"
+	"github.com/moby/sys/user"
 	"github.com/moby/sys/userns"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/selinux/go-selinux"
@@ -59,7 +59,7 @@ func (pm ProcessMode) String() string {
 
 // GenerateSpec generates spec using containerd functionality.
 // opts are ignored for s.Process, s.Hostname, and s.Mounts .
-func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mount, id, resolvConf, hostsFile string, namespace network.Namespace, cgroupParent string, processMode ProcessMode, idmap *idtools.IdentityMapping, apparmorProfile string, selinuxB bool, tracingSocket string, opts ...oci.SpecOpts) (*specs.Spec, func(), error) {
+func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mount, id, resolvConf, hostsFile string, namespace network.Namespace, cgroupParent string, processMode ProcessMode, idmap *user.IdentityMapping, apparmorProfile string, selinuxB bool, tracingSocket string, opts ...oci.SpecOpts) (*specs.Spec, func(), error) {
 	c := &containers.Container{
 		ID: id,
 	}

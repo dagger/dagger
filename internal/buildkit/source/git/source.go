@@ -627,9 +627,9 @@ func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out 
 	}
 
 	if idmap := mount.IdentityMapping(); idmap != nil {
-		u := idmap.RootPair()
+		uid, gid := idmap.RootPair()
 		err := filepath.WalkDir(gitDir, func(p string, _ os.DirEntry, _ error) error {
-			return os.Lchown(p, u.UID, u.GID)
+			return os.Lchown(p, uid, gid)
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to remap git checkout")

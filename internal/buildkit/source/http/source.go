@@ -25,7 +25,6 @@ import (
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
-	"github.com/docker/docker/pkg/idtools"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -362,15 +361,10 @@ func (hs *httpSourceHandler) save(ctx context.Context, resp *http.Response, s se
 	uid := hs.src.UID
 	gid := hs.src.GID
 	if idmap := mount.IdentityMapping(); idmap != nil {
-		identity, err := idmap.ToHost(idtools.Identity{
-			UID: int(uid),
-			GID: int(gid),
-		})
+		uid, gid, err = idmap.ToHost(int(uid), int(gid))
 		if err != nil {
 			return nil, "", err
 		}
-		uid = identity.UID
-		gid = identity.GID
 	}
 
 	if gid != 0 || uid != 0 {

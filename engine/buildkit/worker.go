@@ -20,7 +20,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/dagger/dagger/internal/buildkit/worker/base"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/moby/sys/user"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 )
@@ -54,7 +54,7 @@ type sharedWorkerState struct {
 	cgroupParent     string
 	networkProviders map[pb.NetMode]network.Provider
 	processMode      oci.ProcessMode
-	idmap            *idtools.IdentityMapping
+	idmap            *user.IdentityMapping
 	dns              *oci.DNSConfig
 	apparmorProfile  string
 	selinux          bool
@@ -89,7 +89,7 @@ type NewWorkerOpts struct {
 	Runc                *runc.Runc
 	DefaultCgroupParent string
 	ProcessMode         oci.ProcessMode
-	IDMapping           *idtools.IdentityMapping
+	IDMapping           *user.IdentityMapping
 	DNSConfig           *oci.DNSConfig
 	ApparmorProfile     string
 	SELinux             bool
