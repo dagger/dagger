@@ -7,11 +7,11 @@ import (
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/moby/sys/user"
 	"github.com/pkg/errors"
 )
 
-func NewSnapshotter(name string, snapshotter snapshots.Snapshotter, ns string, idmap *idtools.IdentityMapping) snapshot.Snapshotter {
+func NewSnapshotter(name string, snapshotter snapshots.Snapshotter, ns string, idmap *user.IdentityMapping) snapshot.Snapshotter {
 	return snapshot.FromContainerdSnapshotter(name, &nsSnapshotter{ns, snapshotter}, idmap)
 }
 

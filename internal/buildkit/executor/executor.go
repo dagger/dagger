@@ -9,7 +9,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/moby/sys/user"
 )
 
 type Meta struct {
@@ -32,7 +32,7 @@ type Meta struct {
 
 type MountableRef interface {
 	Mount() ([]mount.Mount, func() error, error)
-	IdentityMapping() *idtools.IdentityMapping
+	IdentityMapping() *user.IdentityMapping
 }
 
 type Mountable interface {
