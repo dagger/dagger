@@ -2,11 +2,9 @@ package schema
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"sync"
 
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
@@ -14,7 +12,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/util/hashutil"
 )
 
 type querySchema struct {
@@ -127,44 +124,20 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 
 type schemaJSONArgs struct {
 	HiddenTypes []string `default:"[]"`
-
-	ExpectedView string `internal:"true" default:"unknown" name:"expectedView"`
-	ExpectedDgst string `internal:"true" default:"unknown" name:"expectedDigest"`
+	Schema      string   `internal:"true" default:"" name:"schema"`
 	RawDagOpInternalArgs
 }
-
-var (
-	uglyMu sync.Mutex
-	uglyM  map[string][]byte
-)
 
 func (s *querySchema) schemaJSONFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args schemaJSONArgs,
 ) (inst dagql.ObjectResult[*core.File], rerr error) {
-	//srv, err := core.CurrentDagqlServer(ctx)
-	//if err != nil {
-	//	return inst, fmt.Errorf("failed to get dagql server: %w", err)
-	//}
 	const schemaJSONFilename = "schema.json"
 	const perm fs.FileMode = 0644
 
 	if args.InDagOp() {
-		var moduleSchemaJSON []byte
-		uglyMu.Lock()
-		moduleSchemaJSON = uglyM[args.ExpectedDgst]
-		uglyMu.Unlock()
-
-		moduleSchemaJSONReCalc, err := getSchemaJSON(args.HiddenTypes, call.View(args.ExpectedView), s.srv)
-		dgstRecalc := hashutil.HashStrings(string(moduleSchemaJSONReCalc))
-
-		if args.ExpectedDgst != string(dgstRecalc) {
-			fmt.Printf("ACB got: %s\nACB want: %s\n", base64.StdEncoding.EncodeToString(moduleSchemaJSON), base64.StdEncoding.EncodeToString(moduleSchemaJSONReCalc))
-			panic(fmt.Sprintf("diff found for %+v; s.srv.View is %s", args, s.srv.View))
-		}
-
-		f, err := core.NewFileWithContentsDagOp(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self().Platform())
+		f, err := core.NewFileWithContentsDagOp(ctx, schemaJSONFilename, []byte(args.Schema), perm, nil, parent.Self().Platform())
 		if err != nil {
 			return inst, err
 		}
@@ -172,39 +145,21 @@ func (s *querySchema) schemaJSONFile(
 		return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
 	}
 
-	view := s.srv.View
 	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, s.srv.View, s.srv)
-	dgst := hashutil.HashStrings(string(moduleSchemaJSON))
-
-	uglyMu.Lock()
-	uglyID := dgst.String()
-	if uglyM == nil {
-		uglyM = map[string][]byte{}
+	if err != nil {
+		return inst, err
 	}
-	if _, ok := uglyM[uglyID]; !ok {
-		uglyM[uglyID] = moduleSchemaJSON
-		fmt.Printf("ACB uglyM len is %d; added %s %s\n", len(uglyM), uglyID, view)
-	}
-	uglyMu.Unlock()
+	args.Schema = string(moduleSchemaJSON)
 
-	// also mixin the checksum
 	newID := dagql.CurrentID(ctx).
 		WithArgument(call.NewArgument(
-			"expectedView",
-			call.NewLiteralString(view.String()),
+			"schema",
+			call.NewLiteralString(args.Schema),
 			false,
-		)).
-		WithArgument(call.NewArgument(
-			"expectedDigest",
-			call.NewLiteralString(uglyID), // TODO pass along s.srv.View.String() instead and get the schema inside the dagop
-			false,
-		)).
-		WithDigest(hashutil.HashStrings(
-			dgst.String(),
 		))
 	ctxDagOp := dagql.ContextWithID(ctx, newID)
 
-	f, err := DagOpFile[*core.Query, schemaJSONArgs](ctxDagOp, s.srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
+	f, err := DagOpFile(ctxDagOp, s.srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
 	if err != nil {
 		return inst, err
 	}
@@ -213,11 +168,7 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	dop, err := dagql.NewObjectResultForID[*core.File](f, s.srv, newID)
-	if err != nil {
-		return inst, err
-	}
-	return dop, nil
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
 }
 
 func dagqlToCodegenType(dagqlType *introspection.Type) *codegenintrospection.Type {
