@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -98,12 +98,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("latestVersion", s.latestVersion).
 			Doc(`Returns details for the latest semver tag.`),
 
-		dagql.NodeFunc("tags", s.tags).
+		dagql.NodeFuncWithCacheKey("tags", s.tags, dagql.CachePerClient).
 			Doc(`tags that match any of the given glob patterns.`).
 			Args(
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
-		dagql.NodeFunc("branches", s.branches).
+		dagql.NodeFuncWithCacheKey("branches", s.branches, dagql.CachePerClient).
 			Doc(`branches that match any of the given glob patterns.`).
 			Args(
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
@@ -692,14 +692,6 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, err
 	}
 
-	remoteGitRepo, isRemote := ref.Repo.Self().Backend.(*core.RemoteGitRepository)
-	usedAuth := false
-	if isRemote {
-		usedAuth = remoteGitRepo.AuthToken.Valid ||
-			remoteGitRepo.AuthHeader.Valid ||
-			remoteGitRepo.SSHAuthSocket.Valid
-	}
-
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current query: %w", err)
@@ -716,6 +708,9 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, fmt.Errorf("failed to get content hash: %w", err)
 	}
 
+	// Content-based digest: security is maintained by CachePerClient on tree() and __resolve
+	// which validate auth every session. Auth is NOT included in the digest because
+	// the content is the same regardless of which auth method was used to access it.
 	scope := []string{contentDigest.String()}
 
 	if args.DiscardGitDir {
@@ -723,21 +718,6 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 	if args.Depth != 1 {
 		scope = append(scope, fmt.Sprintf("depth:%d", args.Depth))
-	}
-
-	if isRemote && usedAuth {
-		if remoteGitRepo.AuthToken.Valid && remoteGitRepo.AuthToken.Value.ID() != nil {
-			scope = append(scope, "authToken:"+remoteGitRepo.AuthToken.Value.ID().Digest().String())
-		}
-		if remoteGitRepo.AuthHeader.Valid && remoteGitRepo.AuthHeader.Value.ID() != nil {
-			scope = append(scope, "authHeader:"+remoteGitRepo.AuthHeader.Value.ID().Digest().String())
-		}
-		if remoteGitRepo.SSHAuthSocket.Valid && remoteGitRepo.SSHAuthSocket.Value.ID() != nil {
-			scope = append(scope, "sshAuthSock:"+remoteGitRepo.SSHAuthSocket.Value.ID().Digest().String())
-		}
-		if remoteGitRepo.AuthUsername != "" {
-			scope = append(scope, "authUser:"+remoteGitRepo.AuthUsername)
-		}
 	}
 
 	finalDigest := hashutil.HashStrings(scope...)
@@ -890,15 +870,6 @@ func (s *gitSchema) repoResolve(
 	repo := parent.Self()
 	remote, isRemote := repo.Backend.(*core.RemoteGitRepository)
 
-	fmt.Fprintf(os.Stderr, "🔍 repoResolve: parentID=%s isRemote=%v\n", parent.ID().Display(), isRemote)
-	if isRemote {
-		urlStr := "<nil>"
-		if remote.URL != nil {
-			urlStr = remote.URL.String()
-		}
-		fmt.Fprintf(os.Stderr, "🔍 repoResolve: URL=%s AuthToken.Valid=%v SSHAuthSocket.Valid=%v\n", urlStr, remote.AuthToken.Valid, remote.SSHAuthSocket.Valid)
-	}
-
 	// Local repo - just mark resolved and return
 	if !isRemote {
 		resolved := repo.Clone()
@@ -908,26 +879,23 @@ func (s *gitSchema) repoResolve(
 
 	// Case 1: Ambiguous URL (no protocol) - redirect to explicit URL variant
 	if remote.URL == nil {
-		fmt.Fprintf(os.Stderr, "🔀 repoResolve: Case 1 - ambiguous URL, redirecting\n")
 		return s.resolveAmbiguousURLViaRedirect(ctx, srv, parent, remote)
 	}
 
 	// Case 2: Explicit URL but no auth - redirect with auth from context
 	if !s.hasExplicitAuth(remote) {
-		fmt.Fprintf(os.Stderr, "🔑 repoResolve: Case 2 - no explicit auth, trying context auth\n")
 		if result, ok, err := s.resolveWithAuthFromContext(ctx, srv, parent, remote); err != nil {
 			return zero, err
 		} else if ok {
-			fmt.Fprintf(os.Stderr, "✅ repoResolve: Got auth from context, redirected\n")
 			return result, nil
 		}
-		fmt.Fprintf(os.Stderr, "⚠️ repoResolve: No auth from context, continuing without\n")
 		// No auth available from context, continue without auth (public repo)
-	} else {
-		fmt.Fprintf(os.Stderr, "🔐 repoResolve: Case 3 - has explicit auth\n")
 	}
 
 	// Case 3: Leaf case - explicit URL (and auth if needed), actually resolve
+	// Note: SSH URL without socket check is done in git() for explicit URLs.
+	// For ambiguous URLs that fall through to SSH, the ls-remote will fail naturally.
+
 	resolved := repo.Clone()
 	remoteClone := remote.Clone()
 	resolved.Backend = remoteClone
@@ -1051,10 +1019,17 @@ func (s *gitSchema) resolveWithAuthFromContext(
 
 	switch remote.URL.Scheme {
 	case gitutil.SSHProtocol:
+		// Default to git user for SSH, otherwise weird incorrect defaults
+		// like "root" can get applied in various places.
+		if remote.URL.User == nil {
+			remote.URL.User = url.User("git")
+		}
+
 		// Try to get SSH socket from client context
 		clientMD, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil || clientMD.SSHAuthSocketPath == "" {
-			return zero, false, nil // No SSH socket available
+			// No SSH socket available - return error for explicit SSH URLs
+			return zero, false, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
 		}
 
 		// Get the socket object
@@ -1065,7 +1040,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 				{Name: "path", Value: dagql.NewString(clientMD.SSHAuthSocketPath)},
 			}},
 		); err != nil {
-			return zero, false, nil // Can't get socket
+			return zero, false, fmt.Errorf("%w: failed to get SSH socket: %v", gitutil.ErrGitAuthFailed, err)
 		}
 
 		// Redirect to git() with explicit sshAuthSocket
@@ -1087,13 +1062,10 @@ func (s *gitSchema) resolveWithAuthFromContext(
 
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
 		// Try to get credentials from store
-		fmt.Fprintf(os.Stderr, "🔑 resolveWithAuthFromContext: trying credential store for %s\n", remote.URL.String())
 		token, username, err := s.getCredentialFromStore(ctx, srv, remote.URL)
 		if err != nil || token == nil {
-			fmt.Fprintf(os.Stderr, "🔑 resolveWithAuthFromContext: no credentials found\n")
 			return zero, false, nil // No credentials available
 		}
-		fmt.Fprintf(os.Stderr, "🔑 resolveWithAuthFromContext: GOT CREDENTIALS from store! username=%s\n", username)
 
 		// Redirect to git() with explicit httpAuthToken
 		authArgs := []dagql.NamedInput{
@@ -1148,8 +1120,6 @@ func (s *gitSchema) buildRedirectArgs(
 	url string,
 	authArgs []dagql.NamedInput,
 ) []dagql.NamedInput {
-	fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: url=%s authArgs=%d remote.AuthToken.Valid=%v\n", url, len(authArgs), remote.AuthToken.Valid)
-
 	args := []dagql.NamedInput{
 		{Name: "url", Value: dagql.NewString(url)},
 	}
@@ -1160,13 +1130,11 @@ func (s *gitSchema) buildRedirectArgs(
 	// If no explicit auth args, preserve auth from remote object
 	if len(authArgs) == 0 {
 		if remote.AuthToken.Valid {
-			fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: preserving AuthToken from remote\n")
 			args = append(args, dagql.NamedInput{
 				Name: "httpAuthToken", Value: dagql.Opt(dagql.NewID[*core.Secret](remote.AuthToken.Value.ID())),
 			})
 		}
 		if remote.AuthHeader.Valid {
-			fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: preserving AuthHeader from remote\n")
 			args = append(args, dagql.NamedInput{
 				Name: "httpAuthHeader", Value: dagql.Opt(dagql.NewID[*core.Secret](remote.AuthHeader.Value.ID())),
 			})
@@ -1177,14 +1145,11 @@ func (s *gitSchema) buildRedirectArgs(
 			})
 		}
 		if remote.SSHAuthSocket.Valid {
-			fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: preserving SSHAuthSocket from remote\n")
 			args = append(args, dagql.NamedInput{
 				Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](remote.SSHAuthSocket.Value.ID())),
 			})
 		}
 	}
-
-	fmt.Fprintf(os.Stderr, "📦 buildRedirectArgs: final args count=%d\n", len(args))
 
 	// Preserve keepGitDir from parent if set
 	if keepGitDir := parent.ID().Arg("keepGitDir"); keepGitDir != nil {
@@ -1257,7 +1222,10 @@ func (s *gitSchema) getCredentialFromStore(
 	}
 
 	creds, err := bk.GetCredential(authCtx, parsedURL.Scheme, parsedURL.Host, parsedURL.Path)
-	if err != nil || creds.Password == "" {
+	if err != nil {
+		return nil, "", nil
+	}
+	if creds.Password == "" {
 		return nil, "", nil
 	}
 
@@ -1328,23 +1296,24 @@ func (s *gitSchema) refResolve(
 	// Set canonical digest for URL convergence.
 	// Different URL spellings converge to the same canonical digest,
 	// enabling cache sharing for downstream operations like tree().
-	canonicalDigest := s.computeCanonicalRefDigest(resolvedRepo, ref)
+	canonicalDigest := s.computeCanonicalRefDigest(ref)
 	return result.WithObjectDigest(canonicalDigest), nil
 }
 
 // computeCanonicalRefDigest computes a canonical digest for a resolved git ref.
-// Builds on the repo's canonical digest and adds the resolved commit SHA.
-func (s *gitSchema) computeCanonicalRefDigest(repo dagql.ObjectResult[*core.GitRepository], ref *core.GitRef) digest.Digest {
+// The digest is content-based: ref name + commit SHA. This allows caching by content
+// regardless of which repo URL or auth method was used to access it.
+// Security is maintained because __resolve (CachePerClient) validates auth first.
+func (s *gitSchema) computeCanonicalRefDigest(ref *core.GitRef) digest.Digest {
 	parts := []string{"gitref/v1"}
 
-	// Include repo's canonical digest (from its content digest if set)
-	if repo.ID().ContentDigest() != "" {
-		parts = append(parts, "repo:"+repo.ID().ContentDigest().String())
-	} else {
-		parts = append(parts, "repo:"+repo.ID().Digest().String())
+	// Include resolved ref name - different refs (tags vs branches) are distinct identities
+	// even if they point to the same commit
+	if ref.Ref != nil && ref.Ref.Name != "" {
+		parts = append(parts, "name:"+ref.Ref.Name)
 	}
 
-	// Include resolved commit SHA - this is the key identifier for the ref
+	// Include resolved commit SHA - this IS the content identity
 	if ref.Ref != nil && ref.Ref.SHA != "" {
 		parts = append(parts, "sha:"+ref.Ref.SHA)
 	}
