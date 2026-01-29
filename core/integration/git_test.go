@@ -1323,11 +1323,11 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 		repo := c.Git("github.com/grouville/daggerverse-private.git")
 		err := checkAccess(ctx, repo)
 		require.Error(t, err)
-		requireErrOut(t, err, "failed to determine Git URL protocol")
+		requireErrOut(t, err, "failed to resolve git URL: tried https and ssh")
 
 		_, err = repo.URL(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "failed to determine Git URL protocol")
+		requireErrOut(t, err, "failed to resolve git URL: tried https and ssh")
 	})
 }
 
