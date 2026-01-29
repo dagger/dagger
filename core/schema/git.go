@@ -454,7 +454,7 @@ func (s *gitSchema) tags(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 
 		tagsSelector := dagql.Selector{Field: "tags"}
 		if args.Patterns.Valid {
-			tagsSelector.Args = []dagql.NamedInput{{Name: "patterns", Value: args.Patterns.Value}}
+			tagsSelector.Args = []dagql.NamedInput{{Name: "patterns", Value: args.Patterns}}
 		}
 
 		var result dagql.Array[dagql.String]
@@ -495,7 +495,7 @@ func (s *gitSchema) branches(ctx context.Context, parent dagql.ObjectResult[*cor
 
 		branchesSelector := dagql.Selector{Field: "branches"}
 		if args.Patterns.Valid {
-			branchesSelector.Args = []dagql.NamedInput{{Name: "patterns", Value: args.Patterns.Value}}
+			branchesSelector.Args = []dagql.NamedInput{{Name: "patterns", Value: args.Patterns}}
 		}
 
 		var result dagql.Array[dagql.String]
