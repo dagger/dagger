@@ -70,6 +70,10 @@
       "source": "toolchains/installers"
     },
     {
+      "name": "nushell-sdk",
+      "source": "toolchains/nushell-sdk-dev"
+    },
+    {
       "name": "java-sdk",
       "source": "toolchains/java-sdk-dev"
     },
