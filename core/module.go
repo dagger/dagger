@@ -99,42 +99,7 @@ func isToolchainModule(m Mod) bool {
 }
 
 func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	mainObj, ok := mod.MainObject()
-	if !ok {
-		return nil, fmt.Errorf("scan for checks: %q: can't load main object", mod.Name())
-	}
-	objChecksCache := map[string][]*Check{}
-	group := &CheckGroup{Module: mod}
-	// 1. Walk main module for checks
-	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
-		match, err := check.Match(include)
-		if err != nil {
-			return nil, err
-		}
-		if match {
-			group.Checks = append(group.Checks, check)
-		}
-	}
-
-	// 2. Delegate toolchain checks to registry
-	if mod.Toolchains != nil {
-		tcChecks, err := mod.Toolchains.WalkChecks(ctx, include)
-		if err != nil {
-			return nil, err
-		}
-		group.Checks = append(group.Checks, tcChecks...)
-	}
-
-	// set individual check Module field now so it's a consistent value between this
-	// mod and any toolchain mods
-	for _, check := range group.Checks {
-		check.Module = mod
-		// if toolchains didn't set ModuleSource, then the check is defined in mod.
-		if check.Source == nil {
-			check.Source = mod.GetSource()
-		}
-	}
-	return group, nil
+	return NewCheckGroup(ctx, mod, include)
 }
 
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
@@ -151,57 +116,6 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 		}
 	}
 	return nil, false
-}
-
-func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check { //nolint:unparam
-	if cached, ok := objChecksCache[obj.Name]; ok {
-		return cached
-	}
-	var checks []*Check
-	objChecksCache[obj.Name] = checks
-	subObjects := map[string]*ObjectTypeDef{}
-	for _, fn := range obj.Functions {
-		func() {
-			if functionRequiresArgs(fn) {
-				return
-			}
-			// 1. Scan object for checks
-			if fn.IsCheck {
-				checks = append(checks, &Check{
-					Path:        []string{gqlFieldName(fn.Name)},
-					Description: fn.Description,
-				})
-				return
-			}
-			// 2. Recursively scan reachable children objects
-			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
-				// avoid cycles (X.withFoo: X)
-				fn.ReturnType.ToType().Name() != obj.Name {
-				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
-				if ok {
-					subObjects[fn.Name] = subObj
-				}
-			}
-		}()
-	}
-	// Also walk fields for sub-checks
-	for _, field := range obj.Fields {
-		if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
-			subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
-			if ok {
-				subObjects[field.Name] = subObj
-			}
-		}
-	}
-	for key, subObj := range subObjects {
-		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache)
-		for _, subCheck := range subChecks {
-			subCheck.Path = append([]string{gqlFieldName(key)}, subCheck.Path...)
-		}
-		checks = append(checks, subChecks...)
-	}
-	objChecksCache[obj.Name] = checks
-	return checks
 }
 
 func functionRequiresArgs(fn *Function) bool {
