@@ -12,6 +12,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1720,6 +1722,94 @@ func TestParallelism(t *testing.T) {
 		assert.Equal(t, res.Pipe.Read, "one")
 		assert.Equal(t, res.Pipe.Write.Read, "two")
 	})
+}
+
+func TestArrayParallelism(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	points.Install[Query](srv)
+
+	// Barrier to detect parallel execution.
+	// The test creates 4 neighbors - if they're resolved in parallel,
+	// all 4 goroutines will reach the barrier and unblock together.
+	// If they're resolved serially, the first goroutine will block forever
+	// waiting for the others to arrive.
+	const numNeighbors = 4
+	var arrived atomic.Int32
+	allArrived := make(chan struct{})
+	var closeOnce sync.Once
+
+	// Add a field that blocks until all array elements have started resolving.
+	// This proves parallel execution without timing-based flakiness.
+	dagql.Fields[*points.Point]{
+		dagql.Func("barrierWait", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
+			// Signal that this goroutine has arrived at the barrier
+			count := arrived.Add(1)
+			if count == numNeighbors {
+				// Last one to arrive - unblock everyone
+				closeOnce.Do(func() { close(allArrived) })
+			}
+
+			// Wait for all goroutines to arrive (or timeout)
+			select {
+			case <-allArrived:
+				return self, nil
+			case <-time.After(5 * time.Second):
+				return nil, fmt.Errorf("timeout: only %d of %d goroutines arrived at barrier (serial execution detected)", arrived.Load(), numNeighbors)
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	var res struct {
+		Point struct {
+			X         int
+			Y         int
+			Neighbors []struct {
+				BarrierWait struct {
+					X int
+					Y int
+				}
+			}
+		}
+	}
+
+	// Query that fetches neighbors and calls barrierWait on each.
+	// If array elements are resolved in parallel, all 4 will reach the barrier
+	// and unblock. If serial, the first one will timeout waiting for the others.
+	req(t, gql, `query {
+		point(x: 6, y: 7) {
+			x
+			y
+			neighbors {
+				barrierWait {
+					x
+					y
+				}
+			}
+		}
+	}`, &res)
+
+	// Verify the query completed successfully (proves parallel execution)
+	assert.Equal(t, 6, res.Point.X)
+	assert.Equal(t, 7, res.Point.Y)
+	assert.Assert(t, cmp.Len(res.Point.Neighbors, numNeighbors))
+
+	// Verify all neighbors resolved correctly
+	assert.Equal(t, 5, res.Point.Neighbors[0].BarrierWait.X)
+	assert.Equal(t, 7, res.Point.Neighbors[0].BarrierWait.Y)
+	assert.Equal(t, 7, res.Point.Neighbors[1].BarrierWait.X)
+	assert.Equal(t, 7, res.Point.Neighbors[1].BarrierWait.Y)
+	assert.Equal(t, 6, res.Point.Neighbors[2].BarrierWait.X)
+	assert.Equal(t, 6, res.Point.Neighbors[2].BarrierWait.Y)
+	assert.Equal(t, 6, res.Point.Neighbors[3].BarrierWait.X)
+	assert.Equal(t, 8, res.Point.Neighbors[3].BarrierWait.Y)
+
+	// Verify all goroutines actually arrived (sanity check)
+	assert.Equal(t, int32(numNeighbors), arrived.Load())
 }
 
 type Builtins struct {
