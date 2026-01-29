@@ -14,7 +14,6 @@ import (
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -30,10 +29,6 @@ type LocalGitRef struct {
 }
 
 var _ GitRefBackend = (*LocalGitRef)(nil)
-
-func (repo *LocalGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return repo.Directory.Self().PBDefinitions(ctx)
-}
 
 func (repo *LocalGitRepository) Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error) {
 	return &LocalGitRef{
@@ -239,10 +234,6 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []Git
 
 func (ref *LocalGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error {
 	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
-}
-
-func (ref *LocalGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return ref.repo.PBDefinitions(ctx)
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {

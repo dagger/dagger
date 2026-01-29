@@ -60,7 +60,7 @@ Expected stderr:
 │   ┆ ): Directory!
 │   ): Container! X.Xs CACHED
 ├╴✔ .rootfs: Directory! X.Xs
-╰╴✔ .entries: [String!]! X.Xs
+╰╴$ .entries: [String!]! X.Xs CACHED
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

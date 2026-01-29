@@ -205,9 +205,9 @@ func DAGAttributes(op *OpDAG) []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
 		// TODO: consolidate? or do we need them to be distinct?
 		// track the "DAG digest" in the same way that we track Dagger digests
-		attribute.String(telemetry.DagDigestAttr, op.OpDigest.String()),
+		attribute.String(telemetry.DagDigestAttr, op.EffectID()),
 		// track the Buildkit effect-specific equivalent
-		attribute.String(telemetry.EffectIDAttr, op.OpDigest.String()),
+		attribute.String(telemetry.EffectIDAttr, op.EffectID()),
 	}
 	// track the inputs of the op
 	// NOTE: this points to DagDigestAttr
@@ -218,35 +218,5 @@ func DAGAttributes(op *OpDAG) []attribute.KeyValue {
 		}
 		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
 	}
-	// emit the deep dependencies of the op so the frontend can know that
-	// they're completed without needing a span for each
-	deps := opDeps(op, nil)
-	if len(deps) > 0 {
-		attrs = append(attrs,
-			attribute.StringSlice(
-				telemetry.EffectsCompletedAttr,
-				deps,
-			),
-		)
-	}
 	return attrs
-}
-
-func opDeps(dag *OpDAG, seen map[digest.Digest]bool) []string {
-	var doneEffects []string
-	_ = dag.Walk(func(op *OpDAG) error {
-		if op == dag {
-			return nil
-		}
-		if seen != nil {
-			if seen[*op.OpDigest] {
-				return nil
-			} else {
-				seen[*op.OpDigest] = true
-			}
-		}
-		doneEffects = append(doneEffects, op.OpDigest.String())
-		return nil
-	})
-	return doneEffects
 }

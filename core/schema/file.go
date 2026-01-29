@@ -16,7 +16,7 @@ var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.Func("file", s.file).
+		dagql.NodeFunc("file", DagOpFileWrapper(srv, s.file, WithPathFn(newFilePath))).
 			Doc(`Creates a file with the specified contents.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the new file. Example: "foo.txt"`),
@@ -108,12 +108,34 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 }
 
-func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
+type newFileArgs struct {
 	Name        string
 	Contents    string
 	Permissions int `default:"0644"`
-}) (*core.File, error) {
-	return core.NewFileWithContents(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Platform())
+
+	FSDagOpInternalArgs `json:"-"`
+}
+
+func newFilePath(ctx context.Context, _ *core.Query, args newFileArgs) (string, error) {
+	return args.Name, nil
+}
+
+func (s *fileSchema) file(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Query],
+	args newFileArgs,
+) (inst dagql.ObjectResult[*core.File], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	f, err := core.NewFileWithContentsDagOp(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Self().Platform())
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct {
@@ -186,7 +208,7 @@ type fileExportArgs struct {
 	Path               string
 	AllowParentDirPath bool `default:"false"`
 
-	FSDagOpInternalArgs
+	RawDagOpInternalArgs
 }
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {

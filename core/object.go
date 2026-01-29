@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -228,52 +227,6 @@ func (obj *ModuleObject) Type() *ast.Type {
 		NamedType: obj.TypeDef.Name,
 		NonNull:   true,
 	}
-}
-
-var _ HasPBDefinitions = (*ModuleObject)(nil)
-
-func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	defs := []*pb.Definition{}
-	objDef := obj.TypeDef
-	for _, field := range objDef.Fields {
-		// TODO: we skip over private fields, we can't convert them anyways (this is a bug)
-		name := field.OriginalName
-		val, ok := obj.Fields[name]
-		if !ok {
-			// missing field
-			continue
-		}
-		fieldType, ok, err := obj.Module.ModTypeFor(ctx, field.TypeDef, true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
-		}
-		if !ok {
-			return nil, fmt.Errorf("failed to find mod type for field %q", name)
-		}
-
-		curID := dagql.CurrentID(ctx)
-		fieldID := curID.Append(
-			field.TypeDef.ToType(),
-			field.Name,
-			call.WithView(curID.View()),
-			call.WithModule(curID.Module()),
-		)
-		ctx := dagql.ContextWithID(ctx, fieldID)
-
-		converted, err := fieldType.ConvertFromSDKResult(ctx, val)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert field %q: %w", name, err)
-		}
-		if converted == nil {
-			continue
-		}
-		fieldDefs, err := collectPBDefinitions(ctx, converted.Unwrap())
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, fieldDefs...)
-	}
-	return defs, nil
 }
 
 func (obj *ModuleObject) TypeDescription() string {

@@ -21,7 +21,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -218,20 +217,6 @@ var _ Evaluatable = (*Changeset)(nil)
 
 func (ch *Changeset) Evaluate(context.Context) (*buildkit.Result, error) {
 	return nil, nil
-}
-
-var _ HasPBDefinitions = (*Changeset)(nil)
-
-func (ch *Changeset) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	beforeDefs, err := ch.Before.Self().PBDefinitions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	afterDefs, err := ch.After.Self().PBDefinitions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return append(beforeDefs, afterDefs...), nil
 }
 
 const ChangesetPatchFilename = "diff.patch"

@@ -20,8 +20,8 @@ Expected stderr:
 ╰╴✔ .getFiles: [File!]! X.Xs
   ├╴$ file(name: "a", contents: "AAA"): File! X.Xs CACHED
   │
-  ├╴$ file(name: "b", contents: "BBB"): File! X.Xs CACHED
+  ├╴○ file(name: "b", contents: "BBB"): File! X.Xs
   │
-  ╰╴$ file(name: "c", contents: "CCC"): File! X.Xs CACHED
+  ╰╴○ file(name: "c", contents: "CCC"): File! X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

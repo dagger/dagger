@@ -914,11 +914,15 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
 
-	dir, err := DagOpDirectory(ctx, srv, parent.Self(), args, "", s.tree)
+	dir, effectID, err := DagOpDirectory(ctx, srv, parent.Self(), args, "", s.tree)
 	if err != nil {
 		return inst, err
 	}
-	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	resultID := dagql.CurrentID(ctx)
+	if effectID != "" && resultID != nil {
+		resultID = resultID.AppendEffectIDs(effectID)
+	}
+	inst, err = dagql.NewObjectResultForID(dir, srv, resultID)
 	if err != nil {
 		return inst, err
 	}

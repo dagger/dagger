@@ -1022,7 +1022,7 @@ func (s *directorySchema) changesetAsPatch(ctx context.Context, parent dagql.Obj
 type changesetExportArgs struct {
 	Path string
 
-	FSDagOpInternalArgs
+	RawDagOpInternalArgs
 }
 
 func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetExportArgs) (dagql.String, error) {
@@ -1046,7 +1046,7 @@ func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.Obje
 }
 
 func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct {
-	DagOpInternalArgs
+	RawDagOpInternalArgs
 }) (dagql.Boolean, error) {
 	isEmpty, err := parent.Self().IsEmpty(ctx)
 	if err != nil {
@@ -1056,7 +1056,7 @@ func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.Objec
 }
 
 type changesetPathsArgs struct {
-	DagOpInternalArgs
+	RawDagOpInternalArgs
 }
 
 func (s *directorySchema) changesetAddedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetPathsArgs) (dagql.Array[dagql.String], error) {
@@ -1087,7 +1087,7 @@ type dirExportArgs struct {
 	Path string
 	Wipe bool `default:"false"`
 
-	FSDagOpInternalArgs
+	RawDagOpInternalArgs
 }
 
 func (s *directorySchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirExportArgs) (dagql.String, error) {

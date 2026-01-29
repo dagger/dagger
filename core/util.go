@@ -63,49 +63,6 @@ type Evaluatable interface {
 	Evaluate(context.Context) (*buildkit.Result, error)
 }
 
-type HasPBDefinitions interface {
-	// PBDefinitions returns all the buildkit definitions that are part of a core type
-	PBDefinitions(context.Context) ([]*pb.Definition, error)
-}
-
-func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definition, error) {
-	switch x := value.(type) {
-	case dagql.String, dagql.Int, dagql.Boolean, dagql.Float:
-		// nothing to do
-		return nil, nil
-	case dagql.Enumerable: // dagql.Array
-		defs := []*pb.Definition{}
-		for i := 1; i < x.Len(); i++ {
-			val, err := x.Nth(i)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get nth value: %w", err)
-			}
-			elemDefs, err := collectPBDefinitions(ctx, val)
-			if err != nil {
-				return nil, fmt.Errorf("failed to link nth value dependency blobs: %w", err)
-			}
-			defs = append(defs, elemDefs...)
-		}
-		return defs, nil
-	case dagql.Derefable: // dagql.Nullable
-		if inner, ok := x.Deref(); ok {
-			return collectPBDefinitions(ctx, inner)
-		} else {
-			return nil, nil
-		}
-	case dagql.Wrapper: // dagql.Result
-		return collectPBDefinitions(ctx, x.Unwrap())
-	case HasPBDefinitions:
-		return x.PBDefinitions(ctx)
-	default:
-		// NB: being SUPER cautious for now, since this feels a bit spooky to drop
-		// on the floor. might be worth just implementing HasPBDefinitions for
-		// everything. (would be nice to just skip scalars though.)
-		slog.Debug("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
-		return nil, nil
-	}
-}
-
 type Digestable interface {
 	// Digest returns a content-digest of an object.
 	Digest() (digest.Digest, error)
@@ -510,9 +467,13 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 		optFn(&opt)
 	}
 
-	parentRef, err := getRefOrEvaluate(ctx, obj)
-	if err != nil {
-		return "", nil, err
+	var parentRef bkcache.ImmutableRef
+	if obj != nil {
+		var err error
+		parentRef, err = getRefOrEvaluate(ctx, obj)
+		if err != nil {
+			return "", nil, err
+		}
 	}
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
