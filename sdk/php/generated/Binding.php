@@ -110,6 +110,24 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type Generator
+     */
+    public function asGenerator(): Generator
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGenerator');
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type GeneratorGroup
+     */
+    public function asGeneratorGroup(): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGeneratorGroup');
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type GitRef
      */
     public function asGitRef(): GitRef
