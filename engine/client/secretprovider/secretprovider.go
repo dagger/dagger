@@ -22,6 +22,8 @@ var resolvers = map[string]SecretResolver{
 	"op":        opProvider,
 	"vault":     vaultProvider,
 	"libsecret": libsecretProvider,
+	"aws+sm":    awsSecretManagerProvider,
+	"aws+ps":    awsParameterStoreProvider,
 }
 
 func ResolverForID(id string) (SecretResolver, string, error) {
@@ -37,8 +39,7 @@ func ResolverForID(id string) (SecretResolver, string, error) {
 	return resolver, pathWithQuery, nil
 }
 
-type SecretProvider struct {
-}
+type SecretProvider struct{}
 
 func NewSecretProvider() SecretProvider {
 	return SecretProvider{}
