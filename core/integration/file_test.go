@@ -93,7 +93,7 @@ func (FileSuite) TestNewFileInvalid(ctx context.Context, t *testctx.T) {
 
 	file := c.File("dir/some-file", "some-content")
 
-	_, err := file.ID(ctx)
+	_, err := file.Sync(ctx)
 	require.ErrorContains(t, err, "not contain a directory")
 }
 

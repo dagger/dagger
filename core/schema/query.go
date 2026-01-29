@@ -158,7 +158,7 @@ func (s *querySchema) schemaJSONFile(
 		))
 	ctxDagOp := dagql.ContextWithID(ctx, newID)
 
-	f, err := DagOpFile(ctxDagOp, s.srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
+	f, effectID, err := DagOpFile(ctxDagOp, s.srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
 	if err != nil {
 		return inst, err
 	}
@@ -167,7 +167,11 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
+	curID := dagql.CurrentID(ctx)
+	if effectID != "" {
+		curID = curID.AppendEffectIDs(effectID)
+	}
+	return dagql.NewObjectResultForID(f, s.srv, curID)
 }
 
 func dagqlToCodegenType(dagqlType *introspection.Type) *codegenintrospection.Type {

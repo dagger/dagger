@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -918,34 +917,6 @@ type Mod interface {
 
 	// Source returns the ModuleSource for this module
 	GetSource() *ModuleSource
-}
-
-var _ HasPBDefinitions = (*Module)(nil)
-
-func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var defs []*pb.Definition
-	if mod.Source.Valid && mod.Source.Value.Self() != nil {
-		dirDefs, err := mod.Source.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	if mod.ContextSource.Valid && mod.ContextSource.Value.Self() != nil {
-		dirDefs, err := mod.ContextSource.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	if mod.Runtime.Valid && mod.Runtime.Value.Self() != nil {
-		dirDefs, err := mod.Runtime.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	return defs, nil
 }
 
 func (mod Module) Clone() *Module {

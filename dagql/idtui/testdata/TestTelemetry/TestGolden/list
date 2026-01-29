@@ -71,7 +71,7 @@ Expected stderr:
 ┃ vterm.go
 ┃ vterm_lite.go
 ┃ vterm_lite_test.go
-╰╴✔ Directory.entries: [String!]! X.Xs
+╰╴$ Directory.entries: [String!]! X.Xs CACHED
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
