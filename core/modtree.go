@@ -25,6 +25,7 @@ type ModTreeNode struct {
 	Module      *Module
 	Type        *TypeDef
 	IsCheck     bool
+	IsGenerator bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -57,7 +58,22 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 	}, nil
 }
 
-func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) (rerr error) {
+func (node *ModTreeNode) Run(
+	ctx context.Context,
+	// should return true if that's a leaf we need to execute
+	// for instance if we want to run a check, return true if IsCheck is true
+	isLeaf func(*ModTreeNode) bool,
+	// run the right function on the leaf. For instance run as a check, or run as a generator
+	// clientMetadata is used to know if we want to try to scale out
+	// this callback is used to keep this function generic and allow to return different values
+	runLeaf func(context.Context, *ModTreeNode, *engine.ClientMetadata) error,
+	// called inside a defer. Used to set properties to traces, for instance the CheckPassed attribute for checks.
+	// if there's an error, it's already added to the telemetry, no need to do it here
+	onDefer func(trace.Span, error),
+	// telemetry attribute to set with the name of the node
+	telemetryNameAttr string,
+	include, exclude []string,
+) (rerr error) {
 	clientMD, _ := engine.ClientMetadataFromContext(ctx)
 
 	// Only create telemetry span if we're NOT a scale-out target (to avoid duplication)
@@ -68,18 +84,19 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 			trace.WithAttributes(
 				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				attribute.String(telemetry.CheckNameAttr, node.PathString()),
+				attribute.String(telemetryNameAttr, node.PathString()),
 			),
 		)
 		defer func() {
-			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
+			onDefer(span, rerr)
 			telemetry.EndWithCause(span, &rerr)
 		}()
 	}
 
-	if node.IsCheck {
-		return node.runLeafCheck(ctx)
+	if isLeaf(node) {
+		return runLeaf(ctx, node, clientMD)
 	}
+
 	children, err := node.Children(ctx)
 	if err != nil {
 		return err
@@ -102,26 +119,44 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 			}
 		}
 		jobs = jobs.WithJob(child.Name, func(ctx context.Context) error {
-			return child.RunCheck(ctx, nil, nil)
+			return child.Run(ctx, isLeaf, runLeaf, onDefer, telemetryNameAttr, nil, nil)
 		})
 	}
 	return jobs.Run(ctx) // don't suppress the error. That can be handled by the top-level caller if necessary
 }
 
-func (node *ModTreeNode) runLeafCheck(ctx context.Context) error {
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return err
-	}
+func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
+	return node.Run(ctx,
+		func(n *ModTreeNode) bool { return n.IsCheck },
+		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) error {
+			// Try scale-out if enabled (will be false for scaled-out sessions)
+			if clientMD != nil && clientMD.EnableCloudScaleOut {
+				if ok, err := node.tryRunCheckScaleOut(ctx); ok {
+					return err
+				}
+			}
+			return n.runLeafCheckLocally(ctx)
+		},
+		func(span trace.Span, err error) {
+			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, err == nil))
+		},
+		telemetry.CheckNameAttr,
+		include, exclude)
+}
 
-	// Try scale-out if enabled (will be false for scaled-out sessions)
-	if clientMD.EnableCloudScaleOut {
-		if ok, err := node.tryScaleOut(ctx); ok {
+func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {
+	var cs *Changeset
+	err := node.Run(ctx,
+		func(n *ModTreeNode) bool { return n.IsGenerator },
+		func(ctx context.Context, n *ModTreeNode, _ *engine.ClientMetadata) error {
+			changes, err := n.runLeafGeneratorLocally(ctx)
+			cs = changes
 			return err
-		}
-	}
-
-	return node.runLeafCheckLocally(ctx)
+		},
+		func(_ trace.Span, _ error) {},
+		telemetry.GeneratorNameAttr,
+		include, exclude)
+	return cs, err
 }
 
 func (node *ModTreeNode) runLeafCheckLocally(ctx context.Context) error {
@@ -148,7 +183,15 @@ func (node *ModTreeNode) runLeafCheckLocally(ctx context.Context) error {
 	return nil
 }
 
-func (node *ModTreeNode) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
+func (node *ModTreeNode) runLeafGeneratorLocally(ctx context.Context) (*Changeset, error) {
+	var changes dagql.ObjectResult[*Changeset]
+	if err := node.DagqlValue(ctx, &changes); err != nil {
+		return nil, err
+	}
+	return changes.Self(), nil
+}
+
+func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return true, err
@@ -289,13 +332,13 @@ func debugTrace(ctx context.Context, msg string, args ...any) {
 		Run(ctx)
 }
 
-// Walk the tree and return all check nodes, with include and exclude filters applied.
-func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
-	var checks []*ModTreeNode
+// Walk the tree and return all matching nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeNode) bool, include []string, exclude []string) ([]*ModTreeNode, error) {
+	var res []*ModTreeNode
 	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) (bool, error) {
 		// FIXME: prune the search tree more aggressively, for efficiency
 		// BUT be careful to not break matching!
-		if n.IsCheck {
+		if matches(n) {
 			if len(include) > 0 {
 				if match, err := n.Match(ctx, include); err != nil {
 					return false, err
@@ -311,12 +354,26 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 					return false, nil
 				}
 			}
-			checks = append(checks, n)
-			return false, nil // checks are always leaves - no point in trying to walk
+			res = append(res, n)
+			return false, nil // always looking for leaves - no point in trying to walk
 		}
 		return true, nil
 	})
-	return checks, err
+	return res, err
+}
+
+// Walk the tree and return all check nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
+		return n.IsCheck
+	}, include, exclude)
+}
+
+// Walk the tree and return all generator nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
+		return n.IsGenerator
+	}, include, exclude)
 }
 
 type ModTreePath []string
@@ -445,6 +502,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Module:      node.Module,
 				Type:        fn.ReturnType,
 				IsCheck:     fn.IsCheck,
+				IsGenerator: fn.IsGenerator,
 				Description: fn.Description,
 			})
 		}
@@ -456,6 +514,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Module:      node.Module,
 				Type:        field.TypeDef,
 				IsCheck:     false,
+				IsGenerator: false,
 				Description: field.Description,
 			})
 		}

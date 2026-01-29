@@ -21,10 +21,11 @@ type ToolchainRegistry struct {
 
 // ToolchainEntry represents a single toolchain module with its configuration.
 type ToolchainEntry struct {
-	Module          *Module
-	FieldName       string
-	ArgumentConfigs []*modules.ModuleConfigArgument
-	IgnoreChecks    []string
+	Module           *Module
+	FieldName        string
+	ArgumentConfigs  []*modules.ModuleConfigArgument
+	IgnoreChecks     []string
+	IgnoreGenerators []string
 }
 
 // NewToolchainRegistry creates a new registry for the given parent module.

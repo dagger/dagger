@@ -253,6 +253,9 @@ type SpanSnapshot struct {
 	CheckName   string `json:",omitempty"`
 	CheckPassed bool   `json:",omitempty"`
 
+	// Generator name
+	GeneratorName string `json:",omitempty"`
+
 	ActorEmoji  string `json:",omitempty"`
 	Message     string `json:",omitempty"`
 	ContentType string `json:",omitempty"`
@@ -347,6 +350,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.CheckPassedAttr:
 		// TODO: redundant with span status?
 		snapshot.CheckPassed = val.(bool)
+
+	case telemetry.GeneratorNameAttr:
+		snapshot.GeneratorName = val.(string)
 
 	case telemetry.LLMRoleAttr:
 		snapshot.LLMRole = val.(string)
