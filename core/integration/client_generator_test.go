@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -63,7 +64,12 @@ func main() {
 }`, defaultGenDir))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
-					return ctr
+					// Add SDK replace to client's go.mod for testing
+					// This is test-specific - production code doesn't need this
+					return ctr.
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+						WithExec([]string{"go", "mod", "tidy"})
 				},
 			},
 			{
@@ -102,8 +108,14 @@ main()`, defaultGenDir))
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
 					With(tc.setup).
-					With(daggerClientInstall(tc.generator)).
-					With(tc.postSetup)
+					With(daggerClientInstall(tc.generator))
+
+				// Mount SDK for go generator tests so SDK replace directives work
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				}
+
+				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -168,7 +180,12 @@ main()`, defaultGenDir))
 		`, defaultGenDir))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
-					return ctr
+					// Add SDK replace to client's go.mod for testing
+					// This is test-specific - production code doesn't need this
+					return ctr.
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+						WithExec([]string{"go", "mod", "tidy"})
 				},
 				isolateSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
@@ -219,8 +236,14 @@ main()
 					With(daggerNonNestedExec("init")).
 					With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 					With(tc.setup).
-					With(daggerClientInstall(tc.generator)).
-					With(tc.postSetup)
+					With(daggerClientInstall(tc.generator))
+
+				// Mount SDK for go generator tests so SDK replace directives work
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				}
+
+				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -303,7 +326,12 @@ main()
 		`, defaultGenDir))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
-					return ctr
+					// Add SDK replace to client's go.mod for testing
+					// This is test-specific - production code doesn't need this
+					return ctr.
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+						WithExec([]string{"go", "mod", "tidy"})
 				},
 			},
 			{
@@ -354,8 +382,14 @@ main()
 					With(daggerNonNestedExec("init")).
 					With(daggerNonNestedExec("install", "./dep")).
 					With(tc.setup).
-					With(daggerClientInstall(tc.generator)).
-					With(tc.postSetup)
+					With(daggerClientInstall(tc.generator))
+
+				// Mount SDK for go generator tests so SDK replace directives work
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				}
+
+				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -429,7 +463,12 @@ func main() {
 		`, defaultGenDir))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
-					return ctr
+					// Add SDK replace to client's go.mod for testing
+					// This is test-specific - production code doesn't need this
+					return ctr.
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+						WithExec([]string{"go", "mod", "tidy"})
 				},
 			},
 			{
@@ -479,8 +518,14 @@ main()
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(tc.setup).
-					With(daggerClientInstall(tc.generator)).
-					With(tc.postSetup)
+					With(daggerClientInstall(tc.generator))
+
+				// Mount SDK for go generator tests so SDK replace directives work
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				}
+
+				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
@@ -587,8 +632,14 @@ main()
 					With(daggerNonNestedExec("init")).
 					With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 					With(tc.setup).
-					With(daggerClientInstall(tc.generator)).
-					With(tc.postSetup)
+					With(daggerClientInstall(tc.generator))
+
+				// Mount SDK for go generator tests so SDK replace directives work
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				}
+
+				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				modCfgContents, err := moduleSrc.
 					File("dagger.json").
@@ -602,8 +653,20 @@ main()
 				require.Equal(t, "dagger", modCfg.Clients[0].Directory)
 
 				// Execute module after regeneration
-				out, err := moduleSrc.
-					With(daggerNonNestedExec("develop")).
+				regeneratedSrc := moduleSrc.With(daggerNonNestedExec("develop"))
+
+				// Re-mount SDK after regeneration for go tests
+				// The SDK was removed by WithoutDirectory earlier
+				if tc.generator == "go" {
+					regeneratedSrc = regeneratedSrc.
+						WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
+						// Add SDK replace directive to regenerated client
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+						WithExec([]string{"go", "mod", "tidy"})
+				}
+
+				out, err := regeneratedSrc.
 					With(daggerNonNestedRun(tc.callCmd...)).
 					Stdout(ctx)
 
@@ -718,8 +781,14 @@ main()
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(tc.setup).
-					With(daggerClientInstall(tc.generator)).
-					With(tc.postSetup)
+					With(daggerClientInstall(tc.generator))
+
+				// Mount SDK for go generator tests so SDK replace directives work
+				if tc.generator == "go" {
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				}
+
+				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				modCfgContents, err := moduleSrc.
 					File("dagger.json").
@@ -733,8 +802,19 @@ main()
 				require.Equal(t, "dagger", modCfg.Clients[0].Directory)
 
 				// Execute module after regeneration
-				out, err := moduleSrc.
-					With(daggerNonNestedExec("develop")).
+				regeneratedSrc := moduleSrc.With(daggerNonNestedExec("develop"))
+
+				// Re-mount SDK after regeneration for go tests
+				if tc.generator == "go" {
+					regeneratedSrc = regeneratedSrc.
+						WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
+						// Add SDK replace directive to regenerated client
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
+						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+						WithExec([]string{"go", "mod", "tidy"})
+				}
+
+				out, err := regeneratedSrc.
 					With(daggerNonNestedRun(tc.callCmd...)).
 					Stdout(ctx)
 
@@ -788,7 +868,12 @@ func main() {
 }`, outputDir), "./"+outputDir))
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
-				return ctr
+				// Add SDK replace to client's go.mod for testing
+				// This is test-specific - production code doesn't need this
+				return ctr.
+					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", outputDir)}).
+					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", outputDir)}).
+					WithExec([]string{"go", "mod", "tidy"})
 			},
 		}
 	}
@@ -856,8 +941,14 @@ main()`, "./"+outputDir))
 						With(nonNestedDevEngine(c)).
 						With(daggerNonNestedExec("init")).
 						With(ts.setup).
-						With(daggerClientInstallAt(ts.generator, ts.outputDir)).
-						With(ts.postSetup)
+						With(daggerClientInstallAt(ts.generator, ts.outputDir))
+
+					// Mount SDK for go generator tests so SDK replace directives work
+					if ts.generator == "go" {
+						moduleSrc = moduleSrc.WithDirectory(filepath.Join(ts.outputDir, "sdk"), c.Host().Directory("../../sdk/go"))
+					}
+
+					moduleSrc = moduleSrc.With(ts.postSetup)
 
 					t.Run(fmt.Sprintf("dagger run %s", strings.Join(ts.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 						out, err := moduleSrc.With(daggerNonNestedRun(ts.callCmd...)).
@@ -1154,10 +1245,12 @@ func (ClientGeneratorTest) TestMultipleClient(ctx context.Context, t *testctx.T)
 			With(nonNestedDevEngine(c)).
 			With(daggerNonNestedExec("init")).
 			WithExec([]string{"go", "mod", "init", "test.com/test"}).
-			WithExec([]string{"go", "mod", "edit", "-replace", "dagger.io/dagger=./dagger/sdk"}).
 			// Install both client
 			With(daggerClientInstallAt("go", "client1")).
 			With(daggerClientInstallAt("go", "client2")).
+			// Mount SDK for both clients so their replace directives work
+			WithDirectory("client1/sdk", c.Host().Directory("../../sdk/go")).
+			WithDirectory("client2/sdk", c.Host().Directory("../../sdk/go")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -1195,7 +1288,17 @@ func main() {
 
   fmt.Println("result 2:", res2)
 }
-`)
+`).
+			With(func(ctr *dagger.Container) *dagger.Container {
+				// Add SDK replace to clients' go.mod for testing
+				// This is test-specific - production code doesn't need this
+				return ctr.
+					WithExec([]string{"sh", "-c", "cd client1 && go mod edit -replace dagger.io/dagger=./sdk"}).
+					WithExec([]string{"sh", "-c", "cd client2 && go mod edit -replace dagger.io/dagger=./sdk"}).
+					WithExec([]string{"sh", "-c", "cd client1 && go mod tidy"}).
+					WithExec([]string{"sh", "-c", "cd client2 && go mod tidy"}).
+					WithExec([]string{"go", "mod", "tidy"})
+			})
 
 		t.Run("dagger run go run main.go", func(ctx context.Context, t *testctx.T) {
 			out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "main.go")).
@@ -1313,7 +1416,17 @@ func main() {
 
   fmt.Println("result:", res)
 }`, defaultGenDir)).
-			With(daggerClientInstall("go"))
+			With(daggerClientInstall("go")).
+			// Mount SDK so replace directive works
+			WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
+			With(func(ctr *dagger.Container) *dagger.Container {
+				// Add SDK replace to client's go.mod for testing
+				// This is test-specific - production code doesn't need this
+				return ctr.
+					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
+					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+					WithExec([]string{"go", "mod", "tidy"})
+			})
 
 		t.Run("dagger run go run .", func(ctx context.Context, t *testctx.T) {
 			out, err := moduleSrc.With(daggerNonNestedRun("go", "run", ".")).
@@ -1381,13 +1494,25 @@ func main() {
 		With(daggerNonNestedExec("init")).
 		With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 		WithExec([]string{"go", "mod", "init", "test.com/test"}).
-		WithExec([]string{"go", "mod", "edit", "-replace", "dagger.io/dagger=./dagger/sdk"}).
 		// We cannot directly import both clients because path will not be
 		// recognized during post client operation like go mod tidy.
 		WithNewFile("main.go", `package main`).
 		With(daggerClientInstallAt("go", "./dagger")).
 		With(daggerClientInstallAt("go", "./dagger2")).
-		WithNewFile("main.go", mainGoFile)
+		// Mount SDK for both clients so their replace directives work
+		WithDirectory("dagger/sdk", c.Host().Directory("../../sdk/go")).
+		WithDirectory("dagger2/sdk", c.Host().Directory("../../sdk/go")).
+		WithNewFile("main.go", mainGoFile).
+		With(func(ctr *dagger.Container) *dagger.Container {
+			// Add SDK replace to clients' go.mod for testing
+			// This is test-specific - production code doesn't need this
+			return ctr.
+				WithExec([]string{"sh", "-c", "cd dagger && go mod edit -replace dagger.io/dagger=./sdk"}).
+				WithExec([]string{"sh", "-c", "cd dagger2 && go mod edit -replace dagger.io/dagger=./sdk"}).
+				WithExec([]string{"sh", "-c", "cd dagger && go mod tidy"}).
+				WithExec([]string{"sh", "-c", "cd dagger2 && go mod tidy"}).
+				WithExec([]string{"go", "mod", "tidy"})
+		})
 
 	t.Run("execute two differents clients in one session", func(ctx context.Context, t *testctx.T) {
 		out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
@@ -1624,7 +1749,9 @@ func main() {
 }`, defaultGenDir))
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
-				return ctr
+				return ctr.
+					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+					WithExec([]string{"go", "mod", "tidy"})
 			},
 			expected: "[file1.txt]\n",
 		},
@@ -1664,7 +1791,14 @@ main()`, defaultGenDir))
 				With(nonNestedDevEngine(c)).
 				With(daggerNonNestedExec("init")).
 				With(tc.setup).
-				With(daggerClientInstall(tc.generator)).
+				With(daggerClientInstall(tc.generator))
+
+			// Mount SDK for go generator tests so SDK replace directives work
+			if tc.generator == "go" {
+				moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+			}
+
+			moduleSrc = moduleSrc.
 				With(tc.postSetup).
 				WithDirectory("files", c.Directory().WithNewFile("file1.txt", "hello world"))
 
@@ -1716,6 +1850,11 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 		`,
 			defaultGenDir)).
 		With(daggerClientInstall("go")).
+		With(func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
+				WithExec([]string{"go", "mod", "tidy"})
+		}).
 		WithExec([]string{"apk", "add", "jq"}).
 		// Update the dagger.json manually to not rettrigger the generation so we can verify that it triggers an error
 		// on execute
@@ -1736,6 +1875,7 @@ func (ClientGeneratorTest) TestNoGoProjectSetup(ctx context.Context, t *testctx.
 			WithWorkdir("/work").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			With(nonNestedDevEngine(c)).
+			WithExec([]string{"go", "mod", "init", "test"}).
 			With(daggerNonNestedExec("init", "--name=test")).
 			With(daggerClientInstall("go"))
 
@@ -1765,7 +1905,8 @@ func main() {
 
 	fmt.Println("result:", res)
 }
-`)
+`).
+			WithExec([]string{"go", "mod", "tidy"})
 
 		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1784,10 +1925,9 @@ func main() {
 			WithWorkdir("/work/lib").
 			With(daggerNonNestedExec("init", "--name=testlib")).
 			With(daggerClientInstall("go")).
+			// Mount SDK for client so replace directive works
+			WithDirectory("dagger/sdk", c.Host().Directory("../../sdk/go")).
 			WithWorkdir("/work").
-			// Add the generated client to the parent go.mod
-			WithExec([]string{"go", "mod", "edit", "-require", "testlib@v0.0.0"}).
-			WithExec([]string{"go", "mod", "edit", "-replace", "testlib=./lib"}).
 			WithNewFile("main.go", `package main
 import (
 	"context"
@@ -1806,6 +1946,16 @@ func main() {
 
 	fmt.Println("result:", res)
 }`).
+			// Add require+replace to parent go.mod for the client module
+			// The automatic require+replace doesn't work here because the parent go.mod
+			// is outside the dagger module scope (at /work vs /work/lib)
+			// The client module name is based on the dagger module name "testlib"
+			WithExec([]string{"go", "mod", "edit", "-require=testlib/dagger@v0.0.0"}).
+			WithExec([]string{"go", "mod", "edit", "-replace=testlib/dagger=./lib/dagger"}).
+			// Add SDK replace to client's go.mod for testing
+			// This is test-specific - production code doesn't need this
+			WithExec([]string{"sh", "-c", "cd lib/dagger && go mod edit -replace dagger.io/dagger=./sdk"}).
+			WithExec([]string{"sh", "-c", "cd lib/dagger && go mod tidy"}).
 			WithExec([]string{"go", "mod", "tidy"})
 
 		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
@@ -1842,7 +1992,8 @@ func main() {
 
 	fmt.Println("result:", res)
 }
-`)
+`).
+			WithExec([]string{"go", "mod", "tidy"})
 
 		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1854,7 +2005,6 @@ func withGoSetup(content string, outputDir string) func(*dagger.Container) *dagg
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithExec([]string{"go", "mod", "init", "test.com/test"}).
-			WithExec([]string{"go", "mod", "edit", "-replace", fmt.Sprintf("dagger.io/dagger=%s/sdk", outputDir)}).
 			WithNewFile("main.go", content)
 	}
 }
@@ -1875,4 +2025,33 @@ func withTypeScriptSetup(content string, outputDir string) func(*dagger.Containe
   }
 }`, outputDir))
 	}
+}
+
+func (ClientGeneratorTest) TestSeparateGoMod(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modCtr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		With(nonNestedDevEngine(c)).
+		WithExec([]string{"go", "mod", "init", "example.com/myapp"}).
+		With(daggerNonNestedExec("init", "--name=mytest")).
+		With(daggerClientInstall("go"))
+
+	// Verify client has its own go.mod with correct module name
+	clientGoMod, err := modCtr.File("dagger/go.mod").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, clientGoMod, "module example.com/myapp/dagger", "client go.mod should have module name parent+subpath")
+	require.Contains(t, clientGoMod, "go 1.", "client go.mod should have go version")
+	require.Contains(t, clientGoMod, "require", "client go.mod should have dependencies")
+	require.Contains(t, clientGoMod, "dagger.io/dagger", "client go.mod should require dagger.io/dagger")
+
+	// Verify parent go.mod has require + replace for client
+	parentGoMod, err := modCtr.File("go.mod").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, parentGoMod, "module example.com/myapp", "parent go.mod should exist")
+	require.Contains(t, parentGoMod, "require example.com/myapp/dagger", "parent should require client module")
+	require.Contains(t, parentGoMod, "replace example.com/myapp/dagger", "parent should have replace directive for client")
+	require.Contains(t, parentGoMod, "./dagger", "parent replace should point to client directory")
 }
