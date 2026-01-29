@@ -406,7 +406,7 @@ func (b *bindMount) Mount() ([]mount.Mount, func() error, error) {
 		Options: []string{"bind", "ro", "nosuid", "nodev", "noexec"},
 	}}, func() error { return nil }, nil
 }
-func (b *bindMount) IdentityMapping() *idtools.IdentityMapping {
+func (b *bindMount) IdentityMapping() *user.IdentityMapping {
 	return nil
 }
 

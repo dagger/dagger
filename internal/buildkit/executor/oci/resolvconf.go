@@ -8,7 +8,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/docker/docker/libnetwork/resolvconf"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/moby/sys/user"
 	"github.com/pkg/errors"
 )
 
@@ -36,7 +36,7 @@ type DNSConfig struct {
 	SearchDomains []string
 }
 
-func GetResolvConf(ctx context.Context, stateDir string, idmap *idtools.IdentityMapping, dns *DNSConfig, netMode pb.NetMode) (string, error) {
+func GetResolvConf(ctx context.Context, stateDir string, idmap *user.IdentityMapping, dns *DNSConfig, netMode pb.NetMode) (string, error) {
 	p := filepath.Join(stateDir, "resolv.conf")
 	if netMode == pb.NetMode_HOST {
 		p = filepath.Join(stateDir, "resolv-host.conf")
@@ -116,8 +116,8 @@ func GetResolvConf(ctx context.Context, stateDir string, idmap *idtools.Identity
 		}
 
 		if idmap != nil {
-			root := idmap.RootPair()
-			if err := os.Chown(tmpPath, root.UID, root.GID); err != nil {
+			uid, gid := idmap.RootPair()
+			if err := os.Chown(tmpPath, uid, gid); err != nil {
 				return struct{}{}, errors.WithStack(err)
 			}
 		}
