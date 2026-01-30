@@ -885,7 +885,7 @@ func (s *gitSchema) repoResolve(
 	}
 
 	// Case 3: Leaf case - explicit URL (and auth if needed), actually resolve
-	// Note: SSH URL without socket check is done in git() for explicit URLs.
+	// Note: SSH URL without socket check is done in git() for explicit URLs. --> todo(remove as it's wrong now)
 	// For ambiguous URLs that fall through to SSH, the ls-remote will fail naturally.
 
 	resolved := repo.Clone()
@@ -1099,7 +1099,7 @@ func (s *gitSchema) buildRedirectArgs(
 	if keepGitDir := parent.ID().Arg("keepGitDir"); keepGitDir != nil {
 		if v, ok := keepGitDir.Value().ToInput().(bool); ok && v {
 			args = append(args, dagql.NamedInput{
-				Name: "keepGitDir", Value: dagql.NewBoolean(true),
+				Name: "keepGitDir", Value: dagql.Opt(dagql.Boolean(true)),
 			})
 		}
 	}
@@ -1128,6 +1128,17 @@ func (s *gitSchema) buildRedirectArgs(
 			args = append(args, dagql.NamedInput{
 				Name: "ref", Value: dagql.NewString(v),
 			})
+		}
+	}
+
+	// Preserve experimentalServiceHost from parent if set
+	if remote.Services != nil {
+		if svcArg := parent.ID().Arg("experimentalServiceHost"); svcArg != nil {
+			if litID, ok := svcArg.Value().(*call.LiteralID); ok {
+				args = append(args, dagql.NamedInput{
+					Name: "experimentalServiceHost", Value: dagql.Opt(dagql.NewID[*core.Service](litID.Value())),
+				})
+			}
 		}
 	}
 
