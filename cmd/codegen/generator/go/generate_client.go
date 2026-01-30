@@ -116,6 +116,13 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	clientGoMod := new(modfile.File)
 	clientGoMod.AddModuleStmt(clientModuleName)
 	clientGoMod.AddGoStmt(goVersion)
+	// Set dagger.io/dagger version to match the engineVersion from dagger.json
+	// Only for released versions (not dev, not empty) - go mod tidy will fail for unreleased versions
+	// (replace directives added by tests/users will override this)
+	engineVersion := g.Config.ClientConfig.EngineVersion
+	if engineVersion != "" && !strings.Contains(engineVersion, "-dev") {
+		clientGoMod.AddRequire("dagger.io/dagger", engineVersion)
+	}
 
 	clientModBody, err := clientGoMod.Format()
 	if err != nil {
@@ -146,6 +153,8 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		postCmds = append(postCmds, parentEditCmd)
 
 		// Run go mod tidy in the client directory to populate dependencies on install
+		// The require statement for dagger.io/dagger is only added for released versions,
+		// so go mod tidy won't try to download unreleased versions
 		tidyCmd := exec.Command("sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientAbsPath))
 		postCmds = append(postCmds, tidyCmd)
 

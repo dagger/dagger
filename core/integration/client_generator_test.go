@@ -1946,6 +1946,69 @@ func main() {
 	})
 }
 
+func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *testctx.T) {
+	t.Run("released version gets pinned in go.mod", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create a module with a released engine version
+		moduleSrc := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			With(nonNestedDevEngine(c)).
+			// Override dagger.json to set a released version
+			WithNewFile("dagger.json", `{
+  "name": "test",
+  "engineVersion": "v0.19.9"
+}`).
+			With(daggerClientInstall("go"))
+
+		// Mount SDK for go generator tests so SDK replace directives work
+		moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+
+		// Read the generated go.mod
+		goModContents, err := moduleSrc.
+			File(filepath.Join(defaultGenDir, "go.mod")).
+			Contents(ctx)
+		require.NoError(t, err)
+
+		// Verify it contains the pinned version
+		require.Contains(t, goModContents, "dagger.io/dagger v0.19.9")
+		t.Logf("Generated go.mod correctly pins engine version:\n%s", goModContents)
+	})
+
+	t.Run("dev version does not get pinned in go.mod", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create a module with a dev engine version
+		moduleSrc := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			With(nonNestedDevEngine(c)).
+			// Override dagger.json to set a dev version
+			WithNewFile("dagger.json", `{
+  "name": "test",
+  "engineVersion": "v0.19.11-20260130182559-dev-1cb7c318e320"
+}`).
+			With(daggerClientInstall("go"))
+
+		// Mount SDK for go generator tests so SDK replace directives work
+		moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+
+		// Read the generated go.mod
+		goModContents, err := moduleSrc.
+			File(filepath.Join(defaultGenDir, "go.mod")).
+			Contents(ctx)
+		require.NoError(t, err)
+
+		// Verify it does NOT contain a dagger.io/dagger dependency
+		// (dev versions shouldn't be pinned since they don't exist in the registry)
+		require.NotContains(t, goModContents, "dagger.io/dagger v0.19.11")
+		t.Logf("Generated go.mod correctly omits dev version:\n%s", goModContents)
+	})
+}
+
 // addSDKReplaceToClient adds SDK replace directive and runs go mod tidy for testing.
 // This is test-specific - production code doesn't need this.
 func addSDKReplaceToClient(clientDir string) func(*dagger.Container) *dagger.Container {
