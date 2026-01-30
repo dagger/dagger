@@ -188,7 +188,6 @@ type gitArgs struct {
 	Ref    string `default:"" internal:"true"`
 }
 
-//nolint:gocyclo
 func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Query], args gitArgs) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -712,9 +711,8 @@ func (s *gitSchema) treeInternal(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return inst, err
 	}
-	// The DagOpDirectoryWrapper handles all the buildkit caching.
-	// CurrentID(ctx) now correctly includes the socket because we're called via
-	// Select from the resolved parent (which has the socket in its ID chain).
+	// The DagOpDirectoryWrapper handles buildkit caching and content hashing.
+	// WithHashContentDir ensures same tree content = same content digest.
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
@@ -984,7 +982,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 				{Name: "path", Value: dagql.NewString(clientMD.SSHAuthSocketPath)},
 			}},
 		); err != nil {
-			return zero, false, fmt.Errorf("%w: failed to get SSH socket: %v", gitutil.ErrGitAuthFailed, err)
+			return zero, false, fmt.Errorf("%w: failed to get SSH socket: %w", gitutil.ErrGitAuthFailed, err)
 		}
 
 		// Redirect to git() with explicit sshAuthSocket
@@ -1006,8 +1004,8 @@ func (s *gitSchema) resolveWithAuthFromContext(
 
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
 		// Try to get credentials from store
-		token, username, err := s.getCredentialFromStore(ctx, srv, remote.URL)
-		if err != nil || token == nil {
+		token, username := s.getCredentialFromStore(ctx, srv, remote.URL)
+		if token == nil {
 			return zero, false, nil // No credentials available
 		}
 
@@ -1146,42 +1144,43 @@ func (s *gitSchema) buildRedirectArgs(
 }
 
 // getCredentialFromStore retrieves credentials from the client's credential store.
+// Returns nil for the token if credentials are not available (for any reason).
 func (s *gitSchema) getCredentialFromStore(
 	ctx context.Context,
 	srv *dagql.Server,
 	parsedURL *gitutil.GitURL,
-) (*dagql.ObjectResult[*core.Secret], string, error) {
+) (*dagql.ObjectResult[*core.Secret], string) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, "", nil
+		return nil, ""
 	}
 
 	parentMD, err := query.NonModuleParentClientMetadata(ctx)
 	if err != nil {
-		return nil, "", nil
+		return nil, ""
 	}
 
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, "", nil
+		return nil, ""
 	}
 
 	if clientMD.ClientID != parentMD.ClientID {
-		return nil, "", nil
+		return nil, ""
 	}
 
 	authCtx := engine.ContextWithClientMetadata(ctx, parentMD)
 	bk, err := query.Buildkit(authCtx)
 	if err != nil {
-		return nil, "", nil
+		return nil, ""
 	}
 
 	creds, err := bk.GetCredential(authCtx, parsedURL.Scheme, parsedURL.Host, parsedURL.Path)
 	if err != nil {
-		return nil, "", nil
+		return nil, ""
 	}
 	if creds.Password == "" {
-		return nil, "", nil
+		return nil, ""
 	}
 
 	// Create a secret for the token
@@ -1198,10 +1197,10 @@ func (s *gitSchema) getCredentialFromStore(
 			},
 		},
 	); err != nil {
-		return nil, "", nil // Don't fail, just skip
+		return nil, "" // Don't fail, just skip
 	}
 
-	return &token, creds.Username, nil
+	return &token, creds.Username
 }
 
 // refResolve implements GitRef.__resolve.
@@ -1240,6 +1239,7 @@ func (s *gitSchema) refResolve(
 	// Build new ID: git(url-with-auth).ref(name).__resolve
 	// This ensures auth is in the ID chain for subsequent operations (like tree)
 	// Use Receiver() to get the repo's ID (without __resolve suffix)
+	// We return the updated ID so that the dagOp system can retrieve the correct object.
 	repoID := resolvedRepo.ID().Receiver()
 	newID := repoID.
 		Append(ref.Type(), "ref", call.WithArgs(
