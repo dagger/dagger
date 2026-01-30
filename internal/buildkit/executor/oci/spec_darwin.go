@@ -5,7 +5,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
@@ -26,7 +26,7 @@ func generateProcessModeOpts(mode ProcessMode) ([]oci.SpecOpts, error) {
 	return nil, nil
 }
 
-func generateIDmapOpts(idmap *idtools.IdentityMapping) ([]oci.SpecOpts, error) {
+func generateIDmapOpts(idmap *user.IdentityMapping) ([]oci.SpecOpts, error) {
 	if idmap == nil {
 		return nil, nil
 	}

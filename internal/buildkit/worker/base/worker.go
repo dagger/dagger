@@ -45,8 +45,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	"github.com/dagger/dagger/internal/buildkit/util/progress/controller"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/hashicorp/go-multierror"
+	"github.com/moby/sys/user"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -75,7 +75,7 @@ type WorkerOpt struct {
 	Differ           diff.Comparer
 	ImageStore       images.Store // optional
 	RegistryHosts    docker.RegistryHosts
-	IdentityMapping  *idtools.IdentityMapping
+	IdentityMapping  *user.IdentityMapping
 	LeaseManager     *leaseutil.Manager
 	GarbageCollect   func(context.Context) (gc.Stats, error)
 	ParallelismSem   *semaphore.Weighted

@@ -96,7 +96,7 @@ linters:
 
       - linters:
           - staticcheck
-        text: "idtools.IdentityMapping"
+        text: "user.IdentityMapping"
 
       - linters:
           - gocyclo
