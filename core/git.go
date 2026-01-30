@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
@@ -28,8 +27,6 @@ type GitRepository struct {
 }
 
 type GitRepositoryBackend interface {
-	HasPBDefinitions
-
 	// Remote returns information about the git remote.
 	Remote(ctx context.Context) (*gitutil.Remote, error)
 	// Get returns a reference to a specific git ref (branch, tag, or commit).
@@ -51,8 +48,6 @@ type GitRef struct {
 }
 
 type GitRefBackend interface {
-	HasPBDefinitions
-
 	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int) (checkout *Directory, err error)
 
 	mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error
@@ -87,10 +82,6 @@ func (*GitRepository) TypeDescription() string {
 	return "A git repository."
 }
 
-func (repo *GitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return repo.Backend.PBDefinitions(ctx)
-}
-
 func (*GitRef) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "GitRef",
@@ -100,10 +91,6 @@ func (*GitRef) Type() *ast.Type {
 
 func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
-}
-
-func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return ref.Backend.PBDefinitions(ctx)
 }
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {

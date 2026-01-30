@@ -24,7 +24,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/moby/sys/mount"
@@ -62,10 +61,6 @@ type RemoteGitRef struct {
 }
 
 var _ GitRefBackend = (*RemoteGitRef)(nil)
-
-func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return nil, nil
-}
 
 func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Remote, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git remote metadata", telemetry.Internal())
@@ -502,10 +497,6 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 	}
 
 	return fn(dir)
-}
-
-func (ref *RemoteGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return nil, nil
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {

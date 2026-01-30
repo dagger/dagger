@@ -141,6 +141,73 @@ func (id *ID) ContentDigest() digest.Digest {
 	return digest.Digest(id.pb.ContentDigest)
 }
 
+// EffectIDs returns the effect IDs directly attached to this call.
+func (id *ID) EffectIDs() []string {
+	if id == nil {
+		return nil
+	}
+	return slices.Clone(id.pb.EffectIds)
+}
+
+// AllEffectIDs returns the effect IDs attached to this call and any of its inputs.
+func (id *ID) AllEffectIDs() []string {
+	if id == nil {
+		return nil
+	}
+	seenCalls := map[digest.Digest]struct{}{}
+	seenEffects := map[string]struct{}{}
+	var out []string
+	var walk func(*ID)
+	walkLiteral := func(lit Literal) {}
+	walkLiteral = func(lit Literal) {
+		if lit == nil {
+			return
+		}
+		switch v := lit.(type) {
+		case *LiteralID:
+			walk(v.id)
+		case *LiteralList:
+			for _, val := range v.values {
+				walkLiteral(val)
+			}
+		case *LiteralObject:
+			for _, arg := range v.values {
+				if arg == nil {
+					continue
+				}
+				walkLiteral(arg.value)
+			}
+		}
+	}
+	walk = func(cur *ID) {
+		if cur == nil {
+			return
+		}
+		if _, ok := seenCalls[cur.Digest()]; ok {
+			return
+		}
+		seenCalls[cur.Digest()] = struct{}{}
+		for _, effect := range cur.pb.EffectIds {
+			if _, ok := seenEffects[effect]; ok {
+				continue
+			}
+			seenEffects[effect] = struct{}{}
+			out = append(out, effect)
+		}
+		if cur.receiver != nil {
+			walk(cur.receiver)
+		}
+		for _, arg := range cur.args {
+			if arg == nil {
+				continue
+			}
+			walkLiteral(arg.value)
+		}
+	}
+	walk(id)
+	return out
+}
+
 // Inputs returns the ID digests referenced by this ID, starting with the
 // receiver, if any.
 func (id *ID) Inputs() ([]digest.Digest, error) {
@@ -309,6 +376,21 @@ func WithContentDigest(dig digest.Digest) IDOpt {
 	}
 }
 
+func WithEffectIDs(effectIDs []string) IDOpt {
+	return func(id *ID) {
+		id.pb.EffectIds = slices.Clone(effectIDs)
+	}
+}
+
+// AppendEffectIDs returns a new ID with the given effect IDs appended.
+func (id *ID) AppendEffectIDs(effectIDs ...string) *ID {
+	if id == nil || len(effectIDs) == 0 {
+		return id
+	}
+	merged := mergeEffectIDs(id.pb.EffectIds, effectIDs)
+	return id.With(WithEffectIDs(merged))
+}
+
 func WithArgs(args ...*Argument) IDOpt {
 	return func(id *ID) {
 		id.args = args
@@ -464,6 +546,7 @@ func (id *ID) shallowClone() *ID {
 		View:           cp.pb.View,
 		IsCustomDigest: cp.pb.IsCustomDigest,
 		ContentDigest:  cp.pb.ContentDigest,
+		EffectIds:      cp.pb.EffectIds,
 	}
 	return &cp
 }
@@ -750,4 +833,27 @@ func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, erro
 	}
 	h = h.WithDelim()
 	return h, nil
+}
+
+func mergeEffectIDs(existing []string, extra []string) []string {
+	if len(existing) == 0 && len(extra) == 0 {
+		return nil
+	}
+	merged := make([]string, 0, len(existing)+len(extra))
+	seen := make(map[string]struct{}, len(existing)+len(extra))
+	for _, id := range existing {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		merged = append(merged, id)
+	}
+	for _, id := range extra {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		merged = append(merged, id)
+	}
+	return merged
 }

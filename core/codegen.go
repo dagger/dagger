@@ -1,10 +1,8 @@
 package core
 
 import (
-	"context"
 	"slices"
 
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -55,10 +53,4 @@ func (code *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	}
 
 	return code
-}
-
-var _ HasPBDefinitions = (*GeneratedCode)(nil)
-
-func (code *GeneratedCode) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return code.Code.Self().PBDefinitions(ctx)
 }

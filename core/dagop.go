@@ -70,7 +70,11 @@ func NewDirectoryDagOp(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current query: %w", err)
 	}
-	return NewDirectorySt(ctx, st, dagop.Path, query.Platform(), nil)
+	dir, err := NewDirectorySt(ctx, st, dagop.Path, query.Platform(), nil)
+	if err != nil {
+		return nil, err
+	}
+	return dir, nil
 }
 
 // NewFileDagOp takes a target ID for a File, and returns a File for it,
@@ -192,6 +196,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
 	ctx = ContextWithQuery(ctx, query)
+
 	obj, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
@@ -989,7 +994,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 }
 
 func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inputs []llb.State) (llb.State, error) {
-	return buildkit.NewCustomLLB(ctx, dagOp, inputs,
+	return buildkit.NewCustomLLB(ctx, id, dagOp, inputs,
 		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
 		buildkit.WithTracePropagation(ctx),
 		buildkit.WithPassthrough(),
