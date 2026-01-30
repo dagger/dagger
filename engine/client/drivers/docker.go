@@ -144,8 +144,8 @@ func (d docker) ContainerExists(ctx context.Context, name string) (bool, error) 
 	return false, err
 }
 
-func (d docker) ContainerLs(ctx context.Context) ([]string, error) {
-	cmd := exec.CommandContext(ctx, d.cmd, "ps", "-a", "--format", "{{.Names}}")
+func (d docker) ContainerLs(ctx context.Context) ([]container, error) {
+	cmd := exec.CommandContext(ctx, d.cmd, "ps", "-a", "--format", "{{.Names}} {{.State}}")
 	stdout, _, err := traceexec.ExecOutput(ctx, cmd)
 	if err != nil {
 		return nil, err
@@ -153,7 +153,16 @@ func (d docker) ContainerLs(ctx context.Context) ([]string, error) {
 	if stdout == "" {
 		return nil, err
 	}
-	return strings.Split(stdout, "\n"), nil
+	lines := strings.Split(stdout, "\n")
+	containers := make([]container, len(lines))
+	for i, line := range lines {
+		parts := strings.SplitN(line, " ", 2)
+		containers[i].name = parts[0]
+		if len(parts) == 2 {
+			containers[i].running = parts[1] == "running"
+		}
+	}
+	return containers, nil
 }
 
 func isContainerAlreadyInUseOutput(output string) bool {
