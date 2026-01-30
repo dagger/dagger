@@ -21,7 +21,6 @@ import (
 	"github.com/dagger/dagger/internal/fsutil"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/fsutil/types"
-	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/dagger/dagger/util/hashutil"
 	digest "github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
@@ -75,13 +74,12 @@ type localFS struct {
 
 	// filterFS is the fs that applies the include/exclude patterns to our view of the current
 	// cache filesystem at <rootPath>/<subdir>
-	filterFS     fsutil.FS
-	includes     []string // the include patterns we're using for this sync
-	excludes     []string // the exclude patterns we're using for this sync
-	useGitignore bool     // whether we're using gitignore rules or not
+	filterFS fsutil.FS
+	includes []string // the include patterns we're using for this sync
+	excludes []string // the exclude patterns we're using for this sync
 }
 
-func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string, useGitIgnore bool, copyPath string) (*localFS, error) {
+func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string, copyPath string) (*localFS, error) {
 	baseFS, err := fsutil.NewFS(filepath.Join(sharedState.rootPath, subdir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
@@ -94,12 +92,6 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 	if err != nil {
 		return nil, fmt.Errorf("failed to create filter fs: %w", err)
 	}
-	if useGitIgnore {
-		filterFS, err = fsxutil.NewGitIgnoreFS(filterFS, fsxutil.NewGitIgnoreMatcher(baseFS))
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	return &localFS{
 		localFSSharedState: sharedState,
@@ -107,7 +99,6 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 		filterFS:           filterFS,
 		includes:           includes,
 		excludes:           excludes,
-		useGitignore:       useGitIgnore,
 		copyPath:           copyPath,
 	}, nil
 }
@@ -184,6 +175,23 @@ func (local *localFS) Sync( //nolint:gocyclo
 	}()
 
 	only := map[string]struct{}{}
+	ignoredDirs := map[string]struct{}{}
+	isIgnoredPath := func(path string) bool {
+		for {
+			if _, ok := ignoredDirs[path]; ok {
+				return true
+			}
+			if path == "." || path == string(os.PathSeparator) {
+				break
+			}
+			next := filepath.Dir(path)
+			if next == path {
+				break
+			}
+			path = next
+		}
+		return false
+	}
 
 	// We assert if we find a file/dir in the given relative path to correctly return
 	// an error if nothing exist in there.
@@ -240,6 +248,12 @@ func (local *localFS) Sync( //nolint:gocyclo
 	}()
 
 	doubleWalkDiff(egCtx, eg, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
+		if upperStat != nil && upperStat.GitIgnored {
+			if upperStat.IsDir() {
+				ignoredDirs[path] = struct{}{}
+			}
+			return nil
+		}
 		switch kind {
 		case ChangeKindAdd, ChangeKindModify:
 			switch {
@@ -355,6 +369,23 @@ func (local *localFS) Sync( //nolint:gocyclo
 			}
 
 		case ChangeKindDelete:
+			/*
+				Deletes don't have upperStat, so we can't consult GitIgnored directly.
+
+				Example:
+				- .gitignore contains "tmp/"
+				- mirror previously has tmp/a
+				- client deletes tmp/a
+				- remote walk includes tmp/ (GitIgnored) but not tmp/a (gone)
+				- diff emits a delete for tmp/a
+
+				We skip deletes under ignored prefixes to avoid mutating the shared mirror
+				and to keep `only`/conflict tracking consistent with "ignored paths are inert."
+			*/
+			if isIgnoredPath(path) {
+				return nil
+			}
+
 			appliedChange, err := local.RemoveAll(egCtx, path)
 			if err != nil {
 				return err
