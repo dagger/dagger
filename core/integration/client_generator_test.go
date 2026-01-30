@@ -63,14 +63,7 @@ func main() {
   fmt.Println("result:", res)
 }`))
 				},
-				postSetup: func(ctr *dagger.Container) *dagger.Container {
-					// Add SDK replace to client's go.mod for testing
-					// This is test-specific - production code doesn't need this
-					return ctr.
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-						WithExec([]string{"go", "mod", "tidy"})
-				},
+				postSetup: addSDKReplaceToClient(defaultGenDir),
 			},
 			{
 				baseImage: nodeImage,
@@ -179,14 +172,7 @@ main()`, defaultGenDir))
 		}
 		`))
 				},
-				postSetup: func(ctr *dagger.Container) *dagger.Container {
-					// Add SDK replace to client's go.mod for testing
-					// This is test-specific - production code doesn't need this
-					return ctr.
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-						WithExec([]string{"go", "mod", "tidy"})
-				},
+				postSetup: addSDKReplaceToClient(defaultGenDir),
 				isolateSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
 						WithExec([]string{"go", "build", "-o", "/bin/test"}).
@@ -325,14 +311,7 @@ main()
 		}
 		`))
 				},
-				postSetup: func(ctr *dagger.Container) *dagger.Container {
-					// Add SDK replace to client's go.mod for testing
-					// This is test-specific - production code doesn't need this
-					return ctr.
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-						WithExec([]string{"go", "mod", "tidy"})
-				},
+				postSetup: addSDKReplaceToClient(defaultGenDir),
 			},
 			{
 				baseImage: nodeImage,
@@ -462,14 +441,7 @@ func main() {
 }
 		`))
 				},
-				postSetup: func(ctr *dagger.Container) *dagger.Container {
-					// Add SDK replace to client's go.mod for testing
-					// This is test-specific - production code doesn't need this
-					return ctr.
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-						WithExec([]string{"go", "mod", "tidy"})
-				},
+				postSetup: addSDKReplaceToClient(defaultGenDir),
 			},
 			{
 				baseImage: nodeImage,
@@ -661,9 +633,7 @@ main()
 					regeneratedSrc = regeneratedSrc.
 						WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
 						// Add SDK replace directive to regenerated client
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-						WithExec([]string{"go", "mod", "tidy"})
+						With(addSDKReplaceToClient(defaultGenDir))
 				}
 
 				out, err := regeneratedSrc.
@@ -809,9 +779,7 @@ main()
 					regeneratedSrc = regeneratedSrc.
 						WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
 						// Add SDK replace directive to regenerated client
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
-						WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-						WithExec([]string{"go", "mod", "tidy"})
+						With(addSDKReplaceToClient(defaultGenDir))
 				}
 
 				out, err := regeneratedSrc.
@@ -867,14 +835,7 @@ func main() {
   fmt.Println("result:", res)
 }`, outputDir)))
 			},
-			postSetup: func(ctr *dagger.Container) *dagger.Container {
-				// Add SDK replace to client's go.mod for testing
-				// This is test-specific - production code doesn't need this
-				return ctr.
-					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", outputDir)}).
-					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", outputDir)}).
-					WithExec([]string{"go", "mod", "tidy"})
-			},
+			postSetup: addSDKReplaceToClient(outputDir),
 		}
 	}
 
@@ -1293,11 +1254,8 @@ func main() {
 				// Add SDK replace to clients' go.mod for testing
 				// This is test-specific - production code doesn't need this
 				return ctr.
-					WithExec([]string{"sh", "-c", "cd client1 && go mod edit -replace dagger.io/dagger=./sdk"}).
-					WithExec([]string{"sh", "-c", "cd client2 && go mod edit -replace dagger.io/dagger=./sdk"}).
-					WithExec([]string{"sh", "-c", "cd client1 && go mod tidy"}).
-					WithExec([]string{"sh", "-c", "cd client2 && go mod tidy"}).
-					WithExec([]string{"go", "mod", "tidy"})
+					With(addSDKReplaceToClient("client1")).
+					With(addSDKReplaceToClient("client2"))
 			})
 
 		t.Run("dagger run go run main.go", func(ctx context.Context, t *testctx.T) {
@@ -1419,14 +1377,7 @@ func main() {
 			With(daggerClientInstall("go")).
 			// Mount SDK so replace directive works
 			WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
-			With(func(ctr *dagger.Container) *dagger.Container {
-				// Add SDK replace to client's go.mod for testing
-				// This is test-specific - production code doesn't need this
-				return ctr.
-					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", defaultGenDir)}).
-					WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", defaultGenDir)}).
-					WithExec([]string{"go", "mod", "tidy"})
-			})
+			With(addSDKReplaceToClient(defaultGenDir))
 
 		t.Run("dagger run go run .", func(ctx context.Context, t *testctx.T) {
 			out, err := moduleSrc.With(daggerNonNestedRun("go", "run", ".")).
@@ -1507,11 +1458,8 @@ func main() {
 			// Add SDK replace to clients' go.mod for testing
 			// This is test-specific - production code doesn't need this
 			return ctr.
-				WithExec([]string{"sh", "-c", "cd dagger && go mod edit -replace dagger.io/dagger=./sdk"}).
-				WithExec([]string{"sh", "-c", "cd dagger2 && go mod edit -replace dagger.io/dagger=./sdk"}).
-				WithExec([]string{"sh", "-c", "cd dagger && go mod tidy"}).
-				WithExec([]string{"sh", "-c", "cd dagger2 && go mod tidy"}).
-				WithExec([]string{"go", "mod", "tidy"})
+				With(addSDKReplaceToClient("dagger")).
+				With(addSDKReplaceToClient("dagger2"))
 		})
 
 	t.Run("execute two differents clients in one session", func(ctx context.Context, t *testctx.T) {
@@ -1953,9 +1901,7 @@ func main() {
 			WithExec([]string{"go", "mod", "edit", "-replace=testlib/dagger=./lib/dagger"}).
 			// Add SDK replace to client's go.mod for testing
 			// This is test-specific - production code doesn't need this
-			WithExec([]string{"sh", "-c", "cd lib/dagger && go mod edit -replace dagger.io/dagger=./sdk"}).
-			WithExec([]string{"sh", "-c", "cd lib/dagger && go mod tidy"}).
-			WithExec([]string{"go", "mod", "tidy"})
+			With(addSDKReplaceToClient("lib/dagger"))
 
 		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1998,6 +1944,17 @@ func main() {
 		require.NoError(t, err)
 		require.Contains(t, out, "result: hello\n")
 	})
+}
+
+// addSDKReplaceToClient adds SDK replace directive and runs go mod tidy for testing.
+// This is test-specific - production code doesn't need this.
+func addSDKReplaceToClient(clientDir string) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod edit -replace dagger.io/dagger=./sdk", clientDir)}).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientDir)}).
+			WithExec([]string{"go", "mod", "tidy"})
+	}
 }
 
 func withGoSetup(content string) func(*dagger.Container) *dagger.Container {
