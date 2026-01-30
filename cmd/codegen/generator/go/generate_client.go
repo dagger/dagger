@@ -56,28 +56,10 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	// respect existing package import path if a package is set
 	if goModFile.Module != nil {
-		// Calculate the client directory relative to the parent module root
-		clientAbsPath := filepath.Join(g.Config.OutputDir, g.Config.ClientConfig.ClientDir)
-
-		// Find the parent module directory
-		parentGoModDir := g.Config.OutputDir
-		dir := g.Config.OutputDir
-		for {
-			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-				parentGoModDir = dir
-				break
-			}
-			parentDir := filepath.Dir(dir)
-			if parentDir == dir {
-				break
-			}
-			dir = parentDir
-		}
-
-		// Get the relative path from parent module to client
-		clientRelPath, err := filepath.Rel(parentGoModDir, clientAbsPath)
+		// Find parent go.mod directory and relative path to client
+		_, clientRelPath, err := g.findParentGoModDir()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get relative path for package import: %w", err)
+			return nil, fmt.Errorf("failed to find parent go.mod: %w", err)
 		}
 
 		packageImport = filepath.Join(goModFile.Module.Mod.Path, clientRelPath)
@@ -150,42 +132,20 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	// On install (first time), update parent's go.mod with require + replace
 	if isInstall && goModFile != nil {
-		// Calculate the relative path from parent go.mod to client directory
-		// This handles cases where OutputDir is a subdirectory of the parent module
-		clientAbsPath := filepath.Join(g.Config.OutputDir, g.Config.ClientConfig.ClientDir)
-		parentGoModDir := g.Config.OutputDir
-
-		// If we found a parent go.mod by walking up, find its directory
-		if goModFile.Module != nil {
-			// Walk up to find where the go.mod actually is
-			dir := g.Config.OutputDir
-			for {
-				if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-					parentGoModDir = dir
-					break
-				}
-				parentDir := filepath.Dir(dir)
-				if parentDir == dir {
-					break
-				}
-				dir = parentDir
-			}
-		}
-
-		clientRelPath, err := filepath.Rel(parentGoModDir, clientAbsPath)
+		// Find parent go.mod directory and relative path to client
+		parentGoModDir, clientRelPath, err := g.findParentGoModDir()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get relative path: %w", err)
+			return nil, fmt.Errorf("failed to find parent go.mod: %w", err)
 		}
+		clientAbsPath := filepath.Join(g.Config.OutputDir, g.Config.ClientConfig.ClientDir)
 
 		// Add require and replace to parent's go.mod for the client module
-		// Use shell command with cd because codegen.go will overwrite cmd.Dir
 		parentEditCmd := exec.Command("sh", "-c",
 			fmt.Sprintf("cd %s && go mod edit -require=%s@v0.0.0 && go mod edit -replace=%s=./%s",
 				parentGoModDir, clientModuleName, clientModuleName, clientRelPath))
 		postCmds = append(postCmds, parentEditCmd)
 
 		// Run go mod tidy in the client directory to populate dependencies on install
-		// Use shell command with cd because codegen.go will overwrite cmd.Dir
 		tidyCmd := exec.Command("sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientAbsPath))
 		postCmds = append(postCmds, tidyCmd)
 
@@ -200,6 +160,36 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	}
 
 	return genSt, nil
+}
+
+// findParentGoModDir walks up from OutputDir to find the parent go.mod directory
+// and returns both the parent directory and the relative path from parent to client.
+func (g *GoGenerator) findParentGoModDir() (parentDir string, clientRelPath string, err error) {
+	clientAbsPath := filepath.Join(g.Config.OutputDir, g.Config.ClientConfig.ClientDir)
+	parentGoModDir := g.Config.OutputDir
+
+	// Walk up to find where the go.mod actually is
+	dir := g.Config.OutputDir
+	for {
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			parentGoModDir = dir
+			break
+		}
+		parentDir := filepath.Dir(dir)
+		if parentDir == dir {
+			// Reached root without finding go.mod
+			break
+		}
+		dir = parentDir
+	}
+
+	// Get the relative path from parent module to client
+	clientRelPath, err = filepath.Rel(parentGoModDir, clientAbsPath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get relative path for client: %w", err)
+	}
+
+	return parentGoModDir, clientRelPath, nil
 }
 
 func (g *GoGenerator) readGoMod() (*modfile.File, bool, error) {
