@@ -128,6 +128,10 @@ func (c *Check) Path() []string {
 	return c.Node.Path()
 }
 
+func (c *Check) Source() *ModuleSource {
+	return c.Node.OriginalModule.GetSource()
+}
+
 func (c *Check) Description() string {
 	return c.Node.Description
 }

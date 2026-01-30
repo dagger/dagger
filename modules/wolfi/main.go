@@ -35,7 +35,7 @@ func (w *Wolfi) Container(
 		ExtraRepositories: extraRepositories,
 		ExtraKeyUrls:      extraKeyURLs,
 	})
-	ctr := config.Container()
+	ctr := config.Container().WithDirectory("/usr/local/bin", dag.Directory())
 	for _, overlay := range overlays {
 		ctr = ctr.WithDirectory("/", overlay.Rootfs())
 	}

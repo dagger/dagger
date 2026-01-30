@@ -31,6 +31,8 @@ func (s checksSchema) Install(srv *dagql.Server) {
 			Doc("The description of the check"),
 		dagql.Func("path", s.path).
 			Doc("The path of the check within its module"),
+		dagql.Func("source", s.source).
+			Doc("The module source where the check is defined (i.e., toolchains)"),
 
 		dagql.Func("resultEmoji", s.resultEmoji).
 			Doc("An emoji representing the result of the check"),
@@ -49,6 +51,10 @@ func (s checksSchema) description(_ context.Context, parent *core.Check, args st
 
 func (s checksSchema) path(_ context.Context, parent *core.Check, args struct{}) ([]string, error) {
 	return parent.Path(), nil
+}
+
+func (s checksSchema) source(_ context.Context, parent *core.Check, args struct{}) (*core.ModuleSource, error) {
+	return parent.Source(), nil
 }
 
 func (s checksSchema) resultEmoji(_ context.Context, parent *core.Check, args struct{}) (string, error) {

@@ -18,13 +18,14 @@ import (
 )
 
 type ModTreeNode struct {
-	Parent      *ModTreeNode
-	Name        string
-	Description string
-	DagqlServer *dagql.Server
-	Module      *Module
-	Type        *TypeDef
-	IsCheck     bool
+	Parent         *ModTreeNode
+	Name           string
+	Description    string
+	DagqlServer    *dagql.Server
+	Module         *Module
+	OriginalModule *Module
+	Type           *TypeDef
+	IsCheck        bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -438,7 +439,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 			if functionRequiresArgs(fn) {
 				continue
 			}
-			children = append(children, &ModTreeNode{
+			n := &ModTreeNode{
 				Parent:      node,
 				Name:        fn.Name,
 				DagqlServer: node.DagqlServer,
@@ -446,10 +447,21 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Type:        fn.ReturnType,
 				IsCheck:     fn.IsCheck,
 				Description: fn.Description,
-			})
+			}
+			// if objType is associated with a Module
+			if objType.SourceModuleName != "" {
+				tc, ok := node.Module.Toolchains.Get(objType.SourceModuleName)
+				if ok {
+					n.OriginalModule = tc.Module
+				}
+			}
+			if n.OriginalModule == nil {
+				n.OriginalModule = node.Module
+			}
+			children = append(children, n)
 		}
 		for _, field := range objType.Fields {
-			children = append(children, &ModTreeNode{
+			n := &ModTreeNode{
 				Parent:      node,
 				Name:        field.Name,
 				DagqlServer: node.DagqlServer,
@@ -457,7 +469,18 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Type:        field.TypeDef,
 				IsCheck:     false,
 				Description: field.Description,
-			})
+			}
+			// if objType is associated with a Module
+			if objType.SourceModuleName != "" {
+				tc, ok := node.Module.Toolchains.Get(objType.SourceModuleName)
+				if ok {
+					n.OriginalModule = tc.Module
+				}
+			}
+			if n.OriginalModule == nil {
+				n.OriginalModule = node.Module
+			}
+			children = append(children, n)
 		}
 	}
 	return children, nil
