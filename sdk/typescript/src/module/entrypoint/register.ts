@@ -168,6 +168,10 @@ export class Register {
       fnDef = fnDef.withCheck()
     }
 
+    if ((fct as Method).isGenerator) {
+      fnDef = fnDef.withGenerator()
+    }
+
     return fnDef
   }
 

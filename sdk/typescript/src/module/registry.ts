@@ -149,6 +149,21 @@ export class Registry {
     ) => {}
   }
 
+  /**
+   * The definition of @generate decorator that marks a function as a generator.
+   */
+  generate = (): ((
+    target: object,
+    propertyKey: string | symbol,
+    descriptor?: PropertyDescriptor,
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor?: PropertyDescriptor,
+    ) => {}
+  }
+
   argument = (
     opts?: ArgumentOptions,
   ): ((
