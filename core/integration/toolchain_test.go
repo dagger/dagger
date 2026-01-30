@@ -593,3 +593,23 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		t.Logf("Successfully called dev toolchain with customized defaultPath: %s", out)
 	})
 }
+
+func (ToolchainSuite) TestToolchainDependency(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("install a module that has a toolchain", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			// mount a toolchain
+			WithDirectory("/toolchain", c.Host().Directory("./testdata/checks/hello-with-checks")).
+			// install the toolchain in the hello module
+			WithWorkdir("/hello").
+			With(daggerExec("toolchain", "install", "/toolchain")).
+			// install hello as a dependency and require codegen
+			WithWorkdir("/app").
+			With(daggerExec("init", "--sdk", "go")).
+			With(daggerExec("install", "/hello"))
+
+		_, err := modGen.Sync(ctx)
+		require.NoError(t, err)
+	})
+}
