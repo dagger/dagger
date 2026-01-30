@@ -52,8 +52,9 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 	if moduleSourceID != "" {
 		var res struct {
 			Source struct {
-				Name         string `json:"moduleOriginalName"`
-				Dependencies []generator.ModuleSourceDependency
+				Name          string `json:"moduleOriginalName"`
+				EngineVersion string `json:"engineVersion"`
+				Dependencies  []generator.ModuleSourceDependency
 			}
 		}
 
@@ -73,6 +74,7 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 		}
 
 		clientConfig.ModuleName = res.Source.Name
+		clientConfig.EngineVersion = res.Source.EngineVersion
 		clientConfig.ModuleDependencies = res.Source.Dependencies
 	}
 
