@@ -17,11 +17,15 @@ import (
 )
 
 var (
-	generateListMode bool
+	generateListMode       bool
+	enableGenerateScaleOut bool
 )
 
 func init() {
 	generateCmd.Flags().BoolVarP(&generateListMode, "list", "l", false, "List available generators")
+
+	generateCmd.Flags().BoolVar(&enableGenerateScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
+	generateCmd.Flags().MarkHidden("scale-out")
 }
 
 var generateCmd = &cobra.Command{
@@ -39,7 +43,9 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(
 			cmd.Context(),
-			client.Params{},
+			client.Params{
+				EnableCloudScaleOut: enableGenerateScaleOut,
+			},
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
 				mod, err := loadModule(ctx, dag)

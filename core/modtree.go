@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"go.opentelemetry.io/otel/attribute"
@@ -135,7 +137,7 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 					return err
 				}
 			}
-			return n.runLeafCheckLocally(ctx)
+			return n.runCheckLocally(ctx)
 		},
 		func(span trace.Span, err error) {
 			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, err == nil))
@@ -144,22 +146,7 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 		include, exclude)
 }
 
-func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {
-	var cs *Changeset
-	err := node.Run(ctx,
-		func(n *ModTreeNode) bool { return n.IsGenerator },
-		func(ctx context.Context, n *ModTreeNode, _ *engine.ClientMetadata) error {
-			changes, err := n.runLeafGeneratorLocally(ctx)
-			cs = changes
-			return err
-		},
-		func(_ trace.Span, _ error) {},
-		telemetry.GeneratorNameAttr,
-		include, exclude)
-	return cs, err
-}
-
-func (node *ModTreeNode) runLeafCheckLocally(ctx context.Context) error {
+func (node *ModTreeNode) runCheckLocally(ctx context.Context) error {
 	var status dagql.AnyResult
 	if err := node.DagqlValue(ctx, &status); err != nil {
 		return err
@@ -183,14 +170,6 @@ func (node *ModTreeNode) runLeafCheckLocally(ctx context.Context) error {
 	return nil
 }
 
-func (node *ModTreeNode) runLeafGeneratorLocally(ctx context.Context) (*Changeset, error) {
-	var changes dagql.ObjectResult[*Changeset]
-	if err := node.DagqlValue(ctx, &changes); err != nil {
-		return nil, err
-	}
-	return changes.Self(), nil
-}
-
 func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
 	q, err := CurrentQuery(ctx)
 	if err != nil {
@@ -212,9 +191,96 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 		rerr = errors.Join(rerr, cloudClient.Close())
 	}()
 
-	query := cloudClient.Dagger().QueryBuilder()
+	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
+	if err != nil {
+		return true, err
+	}
 
-	// Load the module based on its source kind
+	query = query.Select("check").Arg("name", node.PathString())
+	query = query.Select("run")
+	query = query.SelectMultiple("completed", "passed")
+
+	var res struct{ Completed, Passed bool }
+	return true, query.Bind(&res).Execute(ctx)
+}
+
+func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {
+	var cs *Changeset
+	err := node.Run(ctx,
+		func(n *ModTreeNode) bool { return n.IsGenerator },
+		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) error {
+			// Try scale-out if enabled (will be false for scaled-out sessions)
+			if clientMD != nil && clientMD.EnableCloudScaleOut {
+				if ok, changes, err := node.tryRunGeneratorScaleOut(ctx); ok {
+					cs = changes
+					return err
+				}
+			}
+			changes, err := n.runGeneratorLocally(ctx)
+			cs = changes
+			return err
+		},
+		func(_ trace.Span, _ error) {},
+		telemetry.GeneratorNameAttr,
+		include, exclude)
+	return cs, err
+}
+
+func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (*Changeset, error) {
+	var changes dagql.ObjectResult[*Changeset]
+	if err := node.DagqlValue(ctx, &changes); err != nil {
+		return nil, err
+	}
+	return changes.Self(), nil
+}
+
+func (node *ModTreeNode) tryRunGeneratorScaleOut(ctx context.Context) (_ bool, _ *Changeset, rerr error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return true, nil, err
+	}
+
+	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
+		node.RootAddress(),
+		node.PathString(),
+		nil,
+	)
+	if err != nil {
+		return true, nil, fmt.Errorf("engine-to-engine connect: %w", err)
+	}
+	if !useCloud {
+		return false, nil, nil
+	}
+	defer func() {
+		rerr = errors.Join(rerr, cloudClient.Close())
+	}()
+
+	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
+	if err != nil {
+		return true, nil, err
+	}
+
+	query = query.Select("generator").Arg("name", node.PathString())
+	query = query.Select("run")
+	query = query.Select("changes")
+
+	var cs Changeset
+	if err := query.Bind(&cs).Execute(ctx); err != nil {
+		return true, nil, err
+	}
+
+	// ResolveRefs to load Directory objects from IDs
+	if err := cs.ResolveRefs(ctx, node.DagqlServer); err != nil {
+		return true, nil, fmt.Errorf("resolve changeset refs: %w", err)
+	}
+
+	return true, &cs, nil
+}
+
+// buildScaleOutModuleQuery builds a query to load a module for scale-out execution.
+// It handles all module source kinds (Local, Git, Dir) and returns a query
+// positioned at the "asModule" selection, ready for check/generator-specific queries.
+func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection) (*querybuilder.Selection, error) {
 	modSrc := node.Module.Source.Value.Self()
 	switch modSrc.Kind {
 	case ModuleSourceKindLocal:
@@ -231,20 +297,13 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 	case ModuleSourceKindDir:
 		dirIDEnc, err := modSrc.DirSrc.OriginalContextDir.ID().Encode()
 		if err != nil {
-			return true, fmt.Errorf("encode dir ID: %w", err)
+			return nil, fmt.Errorf("encode dir ID: %w", err)
 		}
 		query = query.Select("loadDirectoryFromID").Arg("id", dirIDEnc)
 		query = query.Select("asModuleSource").
 			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
 	}
-
-	query = query.Select("asModule")
-	query = query.Select("check").Arg("name", node.PathString())
-	query = query.Select("run")
-	query = query.SelectMultiple("completed", "passed")
-
-	var res struct{ Completed, Passed bool }
-	return true, query.Bind(&res).Execute(ctx)
+	return query.Select("asModule"), nil
 }
 
 // Initialize a standalone dagql server for querying the given module
