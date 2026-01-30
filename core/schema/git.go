@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
@@ -24,7 +25,6 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/opencontainers/go-digest"
 )
 
 func init() {
@@ -148,6 +148,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sshAuthSocket").
 					View(BeforeVersion("v0.12.0")).
 					Doc("This option should be passed to `git` instead.").Deprecated(),
+			),
+		dagql.NodeFunc("__tree", DagOpDirectoryWrapper(srv, s.treeInternal)).
+			Doc(`(Internal) Tree computation after auth validation.`).
+			Args(
+				dagql.Arg("discardGitDir"),
+				dagql.Arg("depth"),
 			),
 		dagql.NodeFunc("commit", s.fetchCommit).
 			Doc(`The resolved commit id at this ref.`),
@@ -627,8 +633,6 @@ type treeArgs struct {
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
-
-	DagOpInternalArgs
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -646,9 +650,8 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	// If not resolved, select through __resolve and then tree
-	if !ref.Resolved {
-		treeSelector := dagql.Selector{Field: "tree"}
+	// Build args for selectors
+	buildTreeArgs := func() []dagql.NamedInput {
 		treeArgs := []dagql.NamedInput{}
 		if args.DiscardGitDir {
 			treeArgs = append(treeArgs, dagql.NamedInput{Name: "discardGitDir", Value: dagql.Boolean(true)})
@@ -656,7 +659,13 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if args.Depth != 1 {
 			treeArgs = append(treeArgs, dagql.NamedInput{Name: "depth", Value: dagql.Int(args.Depth)})
 		}
-		if len(treeArgs) > 0 {
+		return treeArgs
+	}
+
+	// If not resolved, select through __resolve and then tree (recursion)
+	if !ref.Resolved {
+		treeSelector := dagql.Selector{Field: "tree"}
+		if treeArgs := buildTreeArgs(); len(treeArgs) > 0 {
 			treeSelector.Args = treeArgs
 		}
 
@@ -670,60 +679,43 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return result, nil
 	}
 
-	// Resolved - do the actual tree operation
-	if args.IsDagOp {
-		dir, err := ref.Tree(ctx, srv, args.DiscardGitDir, args.Depth)
-		if err != nil {
-			return inst, err
-		}
-		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	// Resolved - call __tree on parent
+	// The parent's ID now includes auth (due to redirect in refResolve),
+	// so __tree's CurrentID will also include auth in the chain
+	treeSelector := dagql.Selector{Field: "__tree"}
+	if treeArgs := buildTreeArgs(); len(treeArgs) > 0 {
+		treeSelector.Args = treeArgs
 	}
 
-	dir, effectID, err := DagOpDirectory(ctx, srv, ref, args, "", s.tree)
+	var result dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent, &result, treeSelector); err != nil {
+		return inst, err
+	}
+	return result, nil
+}
+
+type treeInternalArgs struct {
+	DiscardGitDir bool `default:"false"`
+	Depth         int  `default:"1"`
+	DagOpInternalArgs
+}
+
+func (s *gitSchema) treeInternal(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeInternalArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	ref := parent.Self()
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	// Do the actual tree fetch
+	dir, err := ref.Tree(ctx, srv, args.DiscardGitDir, args.Depth)
 	if err != nil {
 		return inst, err
 	}
-	resultID := dagql.CurrentID(ctx)
-	if effectID != "" && resultID != nil {
-		resultID = resultID.AppendEffectIDs(effectID)
-	}
-	inst, err = dagql.NewObjectResultForID(dir, srv, resultID)
-	if err != nil {
-		return inst, err
-	}
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get current query: %w", err)
-	}
-
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	excludes := []string{".git", ".git/**"}
-	contentDigest, err := core.GetContentHashFromDirectoryFiltered(ctx, bk, inst, excludes, false)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get content hash: %w", err)
-	}
-
-	// Content-based digest: security is maintained by CachePerClient on tree() and __resolve
-	// which validate auth every session. Auth is NOT included in the digest because
-	// the content is the same regardless of which auth method was used to access it.
-	scope := []string{contentDigest.String()}
-
-	if args.DiscardGitDir {
-		scope = append(scope, "discardGitDir:true")
-	}
-	if args.Depth != 1 {
-		scope = append(scope, fmt.Sprintf("depth:%d", args.Depth))
-	}
-
-	finalDigest := hashutil.HashStrings(scope...)
-	inst = inst.WithObjectDigest(finalDigest)
-
-	return inst, nil
+	// The DagOpDirectoryWrapper handles all the buildkit caching.
+	// CurrentID(ctx) now correctly includes the socket because we're called via
+	// Select from the resolved parent (which has the socket in its ID chain).
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *gitSchema) fetchCommit(
@@ -905,55 +897,7 @@ func (s *gitSchema) repoResolve(
 	}
 	resolved.Resolved = true
 
-	result, err := dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
-	if err != nil {
-		return zero, err
-	}
-
-	// Set canonical digest for URL convergence.
-	// Different URL spellings (github.com/foo vs https://github.com/foo) will
-	// converge to the same canonical digest, enabling cache sharing for
-	// downstream operations like tree().
-	canonicalDigest := s.computeCanonicalRepoDigest(remoteClone, repo.DiscardGitDir)
-	return result.WithObjectDigest(canonicalDigest), nil
-}
-
-// computeCanonicalRepoDigest computes a canonical digest for a resolved git repository.
-// This enables URL convergence: different URL spellings that resolve to the same
-// repo will have the same canonical digest, allowing downstream ops to share cache.
-//
-// Auth is tracked as booleans (whether auth method is used), not SecretID digests.
-// This allows cross-session cache sharing - the tree content is the same regardless
-// of which specific valid token was used. Security is maintained because __resolve
-// validates auth via ls-remote every session before cache access.
-func (s *gitSchema) computeCanonicalRepoDigest(remote *core.RemoteGitRepository, discardGitDir bool) digest.Digest {
-	parts := []string{"gitrepo/v1"}
-
-	// URL (already canonical after redirect resolution)
-	if remote.URL != nil {
-		parts = append(parts, remote.URL.Remote())
-	}
-
-	// Auth method indicators (booleans, not IDs - enables cross-session cache sharing)
-	if remote.SSHAuthSocket.Valid {
-		parts = append(parts, "sshAuthSock:true")
-	}
-	if remote.AuthToken.Valid {
-		parts = append(parts, "authToken:true")
-	}
-	if remote.AuthHeader.Valid {
-		parts = append(parts, "authHeader:true")
-	}
-	if remote.AuthUsername != "" {
-		parts = append(parts, "authUsername:"+remote.AuthUsername)
-	}
-
-	// Config that affects behavior
-	if discardGitDir {
-		parts = append(parts, "discardGitDir")
-	}
-
-	return digest.Digest(hashutil.HashStrings(parts...))
+	return dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
 }
 
 // hasExplicitAuth returns true if auth is explicitly set on the remote.
@@ -1251,10 +1195,8 @@ func (s *gitSchema) getCredentialFromStore(
 
 // refResolve implements GitRef.__resolve.
 //
-// Resolves the ref by:
-// 1. Resolving the underlying repo via Select (gets canonical resolved repo via redirect)
-// 2. Rebinding the ref to the resolved repo
-// 3. Resolving the ref itself (canonicalizes name/SHA, initializes backend)
+// Resolves the ref and returns it with a new ID rooted at the resolved repo,
+// ensuring auth (sshAuthSocket, httpAuthToken) is in the ID chain.
 func (s *gitSchema) refResolve(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRef],
@@ -1267,11 +1209,7 @@ func (s *gitSchema) refResolve(
 		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	// Clone the ref before mutating - never mutate parent.Self() directly
-	ref := parent.Self().Clone()
-
-	// Resolve the repo via Select - this returns the canonical resolved repo
-	// (the redirect pattern ensures the repo ID is already canonical)
+	// Resolve the repo via Select - returns canonical repo with auth in ID
 	var resolvedRepo dagql.ObjectResult[*core.GitRepository]
 	if err := srv.Select(ctx, parent.Self().Repo, &resolvedRepo,
 		dagql.Selector{Field: "__resolve"},
@@ -1279,44 +1217,24 @@ func (s *gitSchema) refResolve(
 		return zero, fmt.Errorf("failed to resolve repo: %w", err)
 	}
 
-	// Rebind to the resolved repo
+	// Clone and resolve the ref
+	ref := parent.Self().Clone()
 	ref.Repo = resolvedRepo
 
-	// Now resolve the ref itself (canonicalizes name/SHA, initializes backend)
 	if err := ref.Resolve(ctx); err != nil {
 		return zero, err
 	}
 	ref.Resolved = true
 
-	result, err := dagql.NewObjectResultForCurrentID(ctx, srv, ref)
-	if err != nil {
-		return zero, err
-	}
+	// Build new ID: git(url-with-auth).ref(name).__resolve
+	// This ensures auth is in the ID chain for subsequent operations (like tree)
+	// Use Receiver() to get the repo's ID (without __resolve suffix)
+	repoID := resolvedRepo.ID().Receiver()
+	newID := repoID.
+		Append(ref.Type(), "ref", call.WithArgs(
+			call.NewArgument("name", call.NewLiteralString(parent.Self().Ref.Name), false),
+		)).
+		Append(ref.Type(), "__resolve")
 
-	// Set canonical digest for URL convergence.
-	// Different URL spellings converge to the same canonical digest,
-	// enabling cache sharing for downstream operations like tree().
-	canonicalDigest := s.computeCanonicalRefDigest(ref)
-	return result.WithObjectDigest(canonicalDigest), nil
-}
-
-// computeCanonicalRefDigest computes a canonical digest for a resolved git ref.
-// The digest is content-based: ref name + commit SHA. This allows caching by content
-// regardless of which repo URL or auth method was used to access it.
-// Security is maintained because __resolve (CachePerClient) validates auth first.
-func (s *gitSchema) computeCanonicalRefDigest(ref *core.GitRef) digest.Digest {
-	parts := []string{"gitref/v1"}
-
-	// Include resolved ref name - different refs (tags vs branches) are distinct identities
-	// even if they point to the same commit
-	if ref.Ref != nil && ref.Ref.Name != "" {
-		parts = append(parts, "name:"+ref.Ref.Name)
-	}
-
-	// Include resolved commit SHA - this IS the content identity
-	if ref.Ref != nil && ref.Ref.SHA != "" {
-		parts = append(parts, "sha:"+ref.Ref.SHA)
-	}
-
-	return digest.Digest(hashutil.HashStrings(parts...))
+	return dagql.NewObjectResultForID(ref, srv, newID)
 }
