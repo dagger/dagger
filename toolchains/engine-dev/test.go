@@ -240,6 +240,68 @@ func (dev *EngineDev) test(
 		WithExec(args)
 }
 
+// Build and start a dev instance of the dagger engine, suitable
+// as a dependency for [engine integration tests](core/integration).
+func (dev *EngineDev) TestEngine(
+	ctx context.Context,
+	ebpfProgs []string, // +optional
+) (*dagger.Service, error) {
+	// Build the dev engine container with configured eBPF programs and buildkit settings
+	// (copied from testContainer lines 247-263)
+	devEngine, err := dev.
+		WithEBPFProgs(ebpfProgs).
+		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
+		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
+		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+		Container(
+			ctx,
+			"",    // platform
+			false, // gpuSupport
+			"",    // version
+			"",    // tag
+		)
+	if err != nil {
+		return nil, err
+	}
+
+	// Mitigation for https://github.com/dagger/dagger/issues/8031 during test suite
+	// (copied from testContainer lines 265-267)
+	devEngine = devEngine.
+		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
+
+	// Create cache volume for engine runtime data
+	// (copied from testContainer line 283)
+	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + rand.Text())
+
+	// Create registry service for the engine
+	// (copied from testContainer line 284)
+	registrySvc := registry()
+
+	// Configure and start the dev engine as a service with exposed ports,
+	// mounted caches, and service bindings
+	// (copied from testContainer lines 285-301)
+	devEngineSvc := devEngine.
+		WithServiceBinding("registry", registrySvc).
+		WithServiceBinding("privateregistry", privateRegistry()).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+rand.Text())).
+		WithMountedCache("/run", engineRunVol).
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{
+				"--addr", "unix:///run/dagger-engine.sock",
+				"--addr", "tcp://0.0.0.0:1234",
+				"--network-name", "dagger-dev",
+				"--network-cidr", "10.88.0.0/16",
+				"--debugaddr", "0.0.0.0:6060",
+			},
+			UseEntrypoint:            true,
+			InsecureRootCapabilities: true,
+		})
+	// NOTE: removed manual start, in the hope of making tests orchestration more lazy & efficient.
+	// FIXME: double-check this doesn't introduce subtle bugs
+	return devEngineSvc, err
+}
+
 // Build an ephemeral test environment ready to run core engine tests
 // Also return the URL of a pprof debug endpoint, to dump profiling data from the tested engine
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
