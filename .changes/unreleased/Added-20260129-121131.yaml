@@ -1,0 +1,6 @@
+kind: Added
+body: 'Support for AWS Secret Manager and Parameter Store in secret providers '
+time: 2026-01-29T12:11:31.133618188-03:00
+custom:
+    Author: Kyle Penfound
+    PR: "11728"
