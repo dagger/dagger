@@ -134,7 +134,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
-		dagql.NodeFunc("tree", s.tree).
+		dagql.NodeFuncWithCacheKey("tree", s.tree, dagql.CachePerClient).
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			Args(
