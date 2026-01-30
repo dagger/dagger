@@ -410,6 +410,7 @@ const InstrumentationLibrary = "dagger.io/cli"
 var opts dagui.FrontendOpts
 
 func main() {
+	// Say hello at start
 	fmt.Fprintf(os.Stderr, "HELLO INTUIT\n")
 	parseGlobalFlags()
 	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
