@@ -44,6 +44,11 @@ const (
 	// this span.
 	UIBoundaryAttr = "dagger.io/ui.boundary"
 
+	// Indicate that any telemetry beneath this span is user-supplied. Allows us
+	// to distinguish user's "custom spans" from regular spans without having to
+	// add an attribute to all of them.
+	UserBoundaryAttr = "dagger.io/user.boundary"
+
 	// An emoji representing the conceptual source of the span.
 	//
 	// Example: 🧑, 🤖
