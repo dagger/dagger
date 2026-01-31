@@ -61,10 +61,17 @@ func AroundFunc(
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
 
+	if id.Call().Module == nil && id.Call().Field == "withExec" {
+		// TODO: better way to flag this
+		attrs = append(attrs, attribute.Bool(telemetry.UserBoundaryAttr, true))
+	}
+
 	// if inside a module call, add call trace metadata. this is useful
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls
 	if q, err := CurrentQuery(ctx); id.Call().Module != nil && err == nil {
+		attrs = append(attrs, attribute.Bool(telemetry.UserBoundaryAttr, true))
+
 		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, id)
 
 		if callerRef != nil && calleeRef != nil {

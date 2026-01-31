@@ -722,17 +722,6 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
 	}
 
-	ctx, span := Tracer(ctx).Start(ctx, "[user telemetry boundary]",
-		trace.WithAttributes(
-			attribute.Bool(telemetry.UserBoundaryAttr, true),
-			// attribute.Bool(telemetry.UIPassthroughAttr, true),
-		),
-	)
-	state.cleanups.Add("end user telemetry boundary span", func() error {
-		span.End()
-		return nil
-	})
-
 	var destSession string
 	var destClientID string
 	if w.execMD != nil && w.execMD.SessionID != "" {
