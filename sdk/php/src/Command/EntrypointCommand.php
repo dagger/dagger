@@ -62,6 +62,14 @@ class EntrypointCommand extends Command
                 $daggerObject->description,
             );
 
+            foreach ($daggerObject->daggerFields as $daggerField) {
+                $objectTypeDef = $objectTypeDef->withField(
+                    $daggerField->name,
+                    $this->getTypeDef($daggerField->type),
+                    $daggerField->description,
+                );
+            }
+
             foreach ($daggerObject->daggerFunctions as $daggerFunction) {
                 $func = dag()->function(
                     $daggerFunction->name,
