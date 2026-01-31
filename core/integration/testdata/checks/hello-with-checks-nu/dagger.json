@@ -1,0 +1,6 @@
+{
+  "name": "hello-with-checks-nu",
+  "sdk": {
+    "source": "nushell"
+  }
+}
