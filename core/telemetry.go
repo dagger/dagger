@@ -61,8 +61,7 @@ func AroundFunc(
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
 
-	if id.Call().Module == nil && id.Call().Field == "withExec" {
-		// TODO: better way to flag this
+	if isUserBoundary(id) {
 		attrs = append(attrs, attribute.Bool(telemetry.UserBoundaryAttr, true))
 	}
 
@@ -70,8 +69,6 @@ func AroundFunc(
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls
 	if q, err := CurrentQuery(ctx); id.Call().Module != nil && err == nil {
-		attrs = append(attrs, attribute.Bool(telemetry.UserBoundaryAttr, true))
-
 		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, id)
 
 		if callerRef != nil && calleeRef != nil {
@@ -393,6 +390,21 @@ func isMeta(id *call.ID) bool {
 	default:
 		return false
 	}
+}
+
+// isUserBoundary returns true if telemetry beneath this call comes from user
+// code, i.e. produced from a container exec's native OTel integration, or from
+// a module function call.
+func isUserBoundary(id *call.ID) bool {
+	if id.Call().Module != nil {
+		return true
+	}
+	if id.Receiver() != nil &&
+		id.Receiver().Type().NamedType() == "Container" &&
+		id.Field() == "withExec" {
+		return true
+	}
+	return false
 }
 
 func isDagOp(id *call.ID) bool {
