@@ -94,6 +94,7 @@ type Span struct {
 	FailedLinks   SpanSet `json:"-"`
 	CanceledLinks SpanSet `json:"-"`
 	RevealedSpans SpanSet `json:"-"`
+	UserSpans     SpanSet `json:"-"`
 	ErrorOrigins  SpanSet `json:"-"`
 
 	callCache *callpbv1.Call
@@ -470,7 +471,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	if span.ParentSpan.UserBoundary {
 		for parent := range span.Parents {
 			// TODO
-			parent.RevealedSpans.Add(span)
+			parent.UserSpans.Add(span)
 		}
 	}
 

@@ -78,7 +78,9 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	}
 	var spans iter.Seq[*Span]
 	if view.Zoomed != nil {
-		if len(view.Zoomed.RevealedSpans.Order) > 0 &&
+		if len(view.Zoomed.UserSpans.Order) > 0 {
+			spans = view.Zoomed.UserSpans.Iter()
+		} else if len(view.Zoomed.RevealedSpans.Order) > 0 &&
 			// Revealed spans bubble up all the way to the root span. By default, we
 			// want to preserve the top-level context (i.e. spans immediately beneath
 			// root). So, we only prioritize revealed spans if the zoomed span is also
