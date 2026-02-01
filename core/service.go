@@ -497,6 +497,7 @@ func (svc *Service) startContainer(
 		ctx,
 		// Match naming scheme of normal exec span.
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
+		// TODO: user boundaries?
 		// This span continues the original withExec, by linking to it.
 		telemetry.Resume(trace.ContextWithSpanContext(ctx, svc.Creator)),
 	)

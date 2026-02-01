@@ -94,6 +94,7 @@ type Span struct {
 	FailedLinks   SpanSet `json:"-"`
 	CanceledLinks SpanSet `json:"-"`
 	RevealedSpans SpanSet `json:"-"`
+	UserSpans     SpanSet `json:"-"`
 	ErrorOrigins  SpanSet `json:"-"`
 
 	callCache *callpbv1.Call
@@ -274,6 +275,8 @@ type SpanSnapshot struct {
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
+	UserBoundary bool `json:",omitempty"`
+
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
 
@@ -381,6 +384,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)
 
+	case telemetry.UserBoundaryAttr:
+		snapshot.UserBoundary = val.(bool)
+
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their
 		// parent failed, since some happy paths might involve _expected_ failures
@@ -459,6 +465,13 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			if propagate(parent, false, true) {
 				span.db.update(parent)
 			}
+		}
+	}
+
+	if span.ParentSpan.UserBoundary && span.Call() == nil && !span.Passthrough {
+		for parent := range span.Parents {
+			// TODO
+			parent.UserSpans.Add(span)
 		}
 	}
 

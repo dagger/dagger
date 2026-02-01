@@ -76,6 +76,10 @@ func AroundFunc(
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
 
+	if isUserBoundary(id) {
+		attrs = append(attrs, attribute.Bool(telemetry.UserBoundaryAttr, true))
+	}
+
 	// if inside a module call, add call trace metadata. this is useful
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls
@@ -408,6 +412,21 @@ func isMeta(id *call.ID) bool {
 	default:
 		return false
 	}
+}
+
+// isUserBoundary returns true if telemetry beneath this call comes from user
+// code, i.e. produced from a container exec's native OTel integration, or from
+// a module function call.
+func isUserBoundary(id *call.ID) bool {
+	if id.Call().Module != nil {
+		return true
+	}
+	if id.Receiver() != nil &&
+		id.Receiver().Type().NamedType() == "Container" &&
+		id.Field() == "withExec" {
+		return true
+	}
+	return false
 }
 
 func isDagOp(id *call.ID) bool {
