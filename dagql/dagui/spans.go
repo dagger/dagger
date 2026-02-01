@@ -468,7 +468,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 	}
 
-	if span.ParentSpan.UserBoundary {
+	if span.ParentSpan.UserBoundary && span.Call() == nil && !span.Passthrough {
 		for parent := range span.Parents {
 			// TODO
 			parent.UserSpans.Add(span)
