@@ -468,13 +468,6 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 	}
 
-	if span.ParentSpan.UserBoundary && span.Call() == nil && !span.Passthrough {
-		for parent := range span.Parents {
-			// TODO
-			parent.UserSpans.Add(span)
-		}
-	}
-
 	// Handle revealed spans propagation separately to stop at revealed parents
 	if span.Reveal {
 		for parent := range span.Parents {
@@ -483,6 +476,23 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			}
 
 			if parent.Boundary || parent.Encapsulate || parent.Reveal {
+				break
+			}
+		}
+	}
+
+	// Propagate user-supplied spans up, similar to revealing, except not based on
+	// an attribute on the span itself
+	if span.ParentSpan != nil && span.ParentSpan.UserBoundary &&
+		span.Call() == nil &&
+		!span.Passthrough &&
+		!span.Internal {
+		for parent := range span.Parents {
+			if parent.UserSpans.Add(span) {
+				span.db.update(parent)
+			}
+
+			if parent.Boundary || parent.Encapsulate {
 				break
 			}
 		}
