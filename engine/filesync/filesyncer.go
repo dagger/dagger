@@ -22,7 +22,6 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
@@ -300,13 +299,9 @@ func (ls *FileSyncer) getRef(
 			return nil, nil, fmt.Errorf("failed to mount: %w", err)
 		}
 
-		changeCache, err := cache.NewCache[string, *ChangeWithStat](ctx, "") // in-memory only
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create change cache: %w", err)
-		}
 		ref.sharedState = &localFSSharedState{
 			rootPath:    ref.mntPath,
-			changeCache: changeCache,
+			changeCache: newChangeCache(),
 		}
 
 		ls.mu.Lock()

@@ -31,13 +31,11 @@ import (
 	"golang.org/x/sys/unix"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/contenthash"
 )
 
 const (
-	hashXattrKey        = "user.daggerContentHash"
-	cacheConcurrencyKey = "y" // arbitrary non-"" value
+	hashXattrKey = "user.daggerContentHash"
 )
 
 // localFSSharedState is the state shared between all syncs for a given client
@@ -48,8 +46,7 @@ type localFSSharedState struct {
 
 	// changeCache is the cache we use to dedupe/cache changes made to the local fs across
 	// different syncs (see docs on localFS.Sync for more info)
-	// changeCache SingleflightGroup[string, *ChangeWithStat]
-	changeCache cache.Cache[string, *ChangeWithStat]
+	changeCache *changeCache
 }
 
 type ChangeWithStat struct {
@@ -57,7 +54,7 @@ type ChangeWithStat struct {
 	stat *HashedStatInfo
 }
 
-type CachedChange = cache.Result[string, *ChangeWithStat]
+type CachedChange = *cachedChange
 
 // localFS holds the state for a single sync of a client's fs into our cache
 type localFS struct {
@@ -168,9 +165,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 	var cachedResultsMu sync.Mutex
 	defer func() {
 		for _, cachedResult := range cachedResults {
-			if err := cachedResult.Release(ctx); err != nil {
-				rerr = errors.Join(rerr, fmt.Errorf("failed to release cached result: %w", err))
-			}
+			cachedResult.release()
 		}
 	}()
 
@@ -273,7 +268,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 				}
 				if doHandle {
 					relPathFound = true
-					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
+					applied := appliedChange.result()
+					if err := cacheCtx.HandleChange(applied.kind, path, applied.stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
 					}
 				}
@@ -302,7 +298,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 				}
 				if doHandle {
 					relPathFound = true
-					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
+					applied := appliedChange.result()
+					if err := cacheCtx.HandleChange(applied.kind, path, applied.stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
 					}
 				}
@@ -367,7 +364,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 					}
 					if doHandle {
 						relPathFound = true
-						if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
+						applied := appliedChange.result()
+						if err := cacheCtx.HandleChange(applied.kind, path, applied.stat, nil); err != nil {
 							return fmt.Errorf("failed to handle change in content hasher: %w", err)
 						}
 					}
@@ -422,7 +420,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 			}
 			if doHandle {
 				relPathFound = true
-				if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
+				applied := appliedChange.result()
+				if err := cacheCtx.HandleChange(applied.kind, path, applied.stat, nil); err != nil {
 					return fmt.Errorf("failed to handle change in content hasher: %w", err)
 				}
 			}
@@ -454,7 +453,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}
 		if doHandle {
 			relPathFound = true
-			if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
+			applied := appliedChange.result()
+			if err := cacheCtx.HandleChange(applied.kind, path, applied.stat, nil); err != nil {
 				return nil, fmt.Errorf("failed to handle change in content hasher: %w", err)
 			}
 		}
@@ -606,11 +606,8 @@ func (local *localFS) toRootPath(path string) string {
 }
 
 // the cache key to use for an operation on a given path (where path is relative to local.subdir)
-func (local *localFS) cacheKey(path string) cache.CacheKey[string] {
-	return cache.CacheKey[string]{
-		CallKey:        local.toRootPath(path),
-		ConcurrencyKey: cacheConcurrencyKey,
-	}
+func (local *localFS) cacheKey(path string) string {
+	return local.toRootPath(path)
 }
 
 // GetPreviousChange is called when the differ identifies that our cache and the client's filesystem match at this path.
@@ -624,7 +621,7 @@ func (local *localFS) cacheKey(path string) cache.CacheKey[string] {
 //
 // Unlike other methods below, we don't need to verifyExpectedChange since there was no change applied to the path.
 func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *types.Stat) (CachedChange, error) {
-	return local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(_ context.Context) (*ChangeWithStat, error) {
+	return local.changeCache.getOrInit(ctx, local.cacheKey(path), func(_ context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 
 		isRegular := stat.Mode&uint32(os.ModeType) == 0
@@ -653,7 +650,7 @@ func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *
 }
 
 func (local *localFS) RemoveAll(ctx context.Context, path string) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.getOrInit(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 		if err := os.RemoveAll(fullPath); err != nil {
 			return nil, err
@@ -664,15 +661,15 @@ func (local *localFS) RemoveAll(ctx context.Context, path string) (CachedChange,
 		return nil, err
 	}
 
-	if err := verifyExpectedChange(path, appliedChange.Result(), ChangeKindDelete, nil); err != nil {
-		err = errors.Join(err, appliedChange.Release(ctx))
+	if err := verifyExpectedChange(path, appliedChange.result(), ChangeKindDelete, nil); err != nil {
+		appliedChange.release()
 		return nil, err
 	}
 	return appliedChange, nil
 }
 
 func (local *localFS) Mkdir(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.getOrInit(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 
 		lowerStat, err := os.Lstat(fullPath)
@@ -711,15 +708,15 @@ func (local *localFS) Mkdir(ctx context.Context, expectedChangeKind ChangeKind, 
 		return nil, err
 	}
 
-	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
-		err = errors.Join(err, appliedChange.Release(ctx))
+	if err := verifyExpectedChange(path, appliedChange.result(), expectedChangeKind, upperStat); err != nil {
+		appliedChange.release()
 		return nil, err
 	}
 	return appliedChange, nil
 }
 
 func (local *localFS) Symlink(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.getOrInit(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 
 		lowerStat, err := os.Lstat(fullPath)
@@ -751,15 +748,15 @@ func (local *localFS) Symlink(ctx context.Context, expectedChangeKind ChangeKind
 		return nil, err
 	}
 
-	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
-		err = errors.Join(err, appliedChange.Release(ctx))
+	if err := verifyExpectedChange(path, appliedChange.result(), expectedChangeKind, upperStat); err != nil {
+		appliedChange.release()
 		return nil, err
 	}
 	return appliedChange, nil
 }
 
 func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.getOrInit(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 
 		lowerStat, err := os.Lstat(fullPath)
@@ -791,8 +788,8 @@ func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKin
 		return nil, err
 	}
 
-	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
-		err = errors.Join(err, appliedChange.Release(ctx))
+	if err := verifyExpectedChange(path, appliedChange.result(), expectedChangeKind, upperStat); err != nil {
+		appliedChange.release()
 		return nil, err
 	}
 	return appliedChange, nil
@@ -807,7 +804,7 @@ var copyBufferPool = &sync.Pool{
 
 func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat, upperFS ReadFS) (CachedChange, int64, error) {
 	var writtenBytes int64
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.getOrInit(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		reader, err := upperFS.ReadFile(ctx, path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %q: %w", path, err)
@@ -870,8 +867,8 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 		return nil, 0, err
 	}
 
-	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
-		err = errors.Join(err, appliedChange.Release(ctx))
+	if err := verifyExpectedChange(path, appliedChange.result(), expectedChangeKind, upperStat); err != nil {
+		appliedChange.release()
 		return nil, 0, err
 	}
 	return appliedChange, writtenBytes, nil
