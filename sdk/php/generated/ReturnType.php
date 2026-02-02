@@ -16,9 +16,9 @@ enum ReturnType: string
     /** A successful execution (exit code 0) */
     case SUCCESS = 'SUCCESS';
 
-    /** A failed execution (exit codes 1-127) */
+    /** A failed execution (exit codes 1-127 and 192-255) */
     case FAILURE = 'FAILURE';
 
-    /** Any execution (exit codes 0-127) */
+    /** Any execution (exit codes 0-127 and 192-255) */
     case ANY = 'ANY';
 }
