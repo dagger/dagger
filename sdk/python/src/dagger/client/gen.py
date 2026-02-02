@@ -443,10 +443,10 @@ class ReturnType(Enum):
     """Expected return type of an execution"""
 
     ANY = "ANY"
-    """Any execution (exit codes 0-127)"""
+    """Any execution (exit codes 0-127 and 192-255)"""
 
     FAILURE = "FAILURE"
-    """A failed execution (exit codes 1-127)"""
+    """A failed execution (exit codes 1-127 and 192-255)"""
 
     SUCCESS = "SUCCESS"
     """A successful execution (exit code 0)"""
