@@ -78,7 +78,7 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	}
 	var spans iter.Seq[*Span]
 	if view.Zoomed != nil {
-		if len(view.Zoomed.UserSpans.Order) > 0 {
+		if len(view.Zoomed.UserSpans.Order) > 0 && opts.Verbosity < ShowFullTraceVerbosity {
 			spans = view.Zoomed.UserSpans.Iter()
 		} else if len(view.Zoomed.RevealedSpans.Order) > 0 &&
 			// Revealed spans bubble up all the way to the root span. By default, we

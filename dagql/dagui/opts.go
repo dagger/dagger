@@ -71,6 +71,7 @@ const (
 	HideErrorsVerbosity       = -1
 	HideCompletedVerbosity    = 0
 	ShowCompletedVerbosity    = 1
+	ShowFullTraceVerbosity    = 2
 	ShowInternalVerbosity     = 3
 	ShowEncapsulatedVerbosity = 3
 	ShowSpammyVerbosity       = 4
