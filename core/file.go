@@ -63,27 +63,6 @@ func (file *File) setResult(ref bkcache.ImmutableRef) {
 	file.Result = ref
 }
 
-var _ HasPBDefinitions = (*File)(nil)
-
-func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var defs []*pb.Definition
-	if file.LLB != nil {
-		defs = append(defs, file.LLB)
-	}
-	for _, bnd := range file.Services {
-		ctr := bnd.Service.Self().Container
-		if ctr == nil {
-			continue
-		}
-		ctrDefs, err := ctr.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, ctrDefs...)
-	}
-	return defs, nil
-}
-
 var _ dagql.OnReleaser = (*File)(nil)
 
 func (file *File) OnRelease(ctx context.Context) error {
@@ -135,7 +114,8 @@ func NewFileWithContentsDagOp(
 	if dir, _ := filepath.Split(name); dir != "" {
 		return nil, fmt.Errorf("file name %q must not contain a directory", name)
 	}
-	dir, err := NewScratchDirectory(ctx, platform)
+
+	dir, err := NewScratchDirectoryDagOp(ctx, platform)
 	if err != nil {
 		return nil, err
 	}

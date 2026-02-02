@@ -71,27 +71,6 @@ func (dir *Directory) IsRootDir() bool {
 	return dir.Dir == "" || dir.Dir == "/"
 }
 
-var _ HasPBDefinitions = (*Directory)(nil)
-
-func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var defs []*pb.Definition
-	if dir.LLB != nil {
-		defs = append(defs, dir.LLB)
-	}
-	for _, bnd := range dir.Services {
-		ctr := bnd.Service.Self().Container
-		if ctr == nil {
-			continue
-		}
-		ctrDefs, err := ctr.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, ctrDefs...)
-	}
-	return defs, nil
-}
-
 func NewDirectory(def *pb.Definition, dir string, platform Platform, services ServiceBindings) *Directory {
 	return &Directory{
 		LLB:      def,
@@ -103,6 +82,13 @@ func NewDirectory(def *pb.Definition, dir string, platform Platform, services Se
 
 func NewScratchDirectory(ctx context.Context, platform Platform) (*Directory, error) {
 	return NewDirectorySt(ctx, llb.Scratch(), "/", platform, nil)
+}
+
+func NewScratchDirectoryDagOp(ctx context.Context, platform Platform) (*Directory, error) {
+	return &Directory{
+		Dir:      "/",
+		Platform: platform,
+	}, nil
 }
 
 func NewDirectorySt(ctx context.Context, st llb.State, dir string, platform Platform, services ServiceBindings) (*Directory, error) {

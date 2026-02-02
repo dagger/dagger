@@ -119,52 +119,6 @@ func (*Container) TypeDescription() string {
 	return "An OCI-compatible container, also known as a Docker container."
 }
 
-var _ HasPBDefinitions = (*Container)(nil)
-
-func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	if container == nil {
-		return nil, nil
-	}
-	var defs []*pb.Definition
-	if fs := container.FS; fs != nil && fs.Self().LLB != nil {
-		defs = append(defs, fs.Self().LLB)
-	} else {
-		defs = append(defs, nil)
-	}
-	for _, mnt := range container.Mounts {
-		handleMount(mnt,
-			func(dir *dagql.ObjectResult[*Directory]) {
-				if dir.Self().LLB != nil {
-					defs = append(defs, dir.Self().LLB)
-				}
-			},
-			func(file *dagql.ObjectResult[*File]) {
-				if file.Self().LLB != nil {
-					defs = append(defs, file.Self().LLB)
-				}
-			},
-			func(cache *CacheMountSource) {
-				if cache.Base != nil {
-					defs = append(defs, cache.Base)
-				}
-			},
-			func(tmpfs *TmpfsMountSource) {},
-		)
-	}
-	for _, bnd := range container.Services {
-		ctr := bnd.Service.Self().Container
-		if ctr == nil {
-			continue
-		}
-		ctrDefs, err := ctr.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, ctrDefs...)
-	}
-	return defs, nil
-}
-
 func NewContainer(platform Platform) *Container {
 	return &Container{Platform: platform}
 }

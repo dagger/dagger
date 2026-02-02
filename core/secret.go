@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/secrets"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/grpc/codes"
@@ -45,10 +44,6 @@ func (*Secret) TypeDescription() string {
 func (secret *Secret) Clone() *Secret {
 	cp := *secret
 	return &cp
-}
-
-func (*Secret) PBDefinitions(context.Context) ([]*pb.Definition, error) {
-	return nil, nil
 }
 
 type SecretStore struct {

@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -245,28 +244,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 	copy(src.ConfigClients, oriConfigClients)
 
 	return &src
-}
-
-func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var pbDefs []*pb.Definition
-	if src.ContextDirectory.Self() != nil {
-		defs, err := src.ContextDirectory.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		pbDefs = append(pbDefs, defs...)
-	}
-	for _, dep := range src.Dependencies {
-		if dep.Self() == nil {
-			continue
-		}
-		defs, err := dep.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		pbDefs = append(pbDefs, defs...)
-	}
-	return pbDefs, nil
 }
 
 func (src *ModuleSource) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -1026,13 +1003,6 @@ func (src GitModuleSource) Link(filepath string, line int, column int) (string, 
 
 func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
-}
-
-func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	if src.UnfilteredContextDir.Self() == nil {
-		return nil, nil
-	}
-	return src.UnfilteredContextDir.Self().PBDefinitions(ctx)
 }
 
 type SchemeType int
