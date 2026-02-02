@@ -80,10 +80,7 @@ const (
 )
 
 func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
-	verbosity := opts.Verbosity
-	if v, ok := opts.SpanVerbosity[span.ID]; ok {
-		verbosity = v
-	}
+	verbosity := span.Verbosity(opts)
 	if opts.Debug {
 		// debug reveals all
 		return true
