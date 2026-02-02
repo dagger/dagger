@@ -76,7 +76,7 @@ func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error)
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	ctx, span := Tracer().Start(ctx, "load "+modRef)
+	ctx, span := Tracer().Start(ctx, "load "+modRef, telemetry.Encapsulate())
 	defer span.End()
 	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
