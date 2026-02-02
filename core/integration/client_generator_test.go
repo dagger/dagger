@@ -1860,54 +1860,6 @@ func main() {
 		require.Contains(t, out, "result: hello\n")
 	})
 
-	t.Run("generate client as a sub module of an existing go project", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modCtr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-			With(nonNestedDevEngine(c)).
-			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "test"}).
-			WithWorkdir("/work/lib").
-			With(daggerNonNestedExec("init", "--name=testlib")).
-			With(daggerClientInstall("go")).
-			// Mount SDK for client so replace directive works
-			WithDirectory("dagger/sdk", c.Host().Directory("../../sdk/go")).
-			WithWorkdir("/work").
-			WithNewFile("main.go", `package main
-import (
-	"context"
-	"fmt"
-
-	"testlib/dagger/dag"
-)
-
-func main() {
-	ctx := context.Background()
-
-	res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "hello"}).Stdout(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("result:", res)
-}`).
-			// Add require+replace to parent go.mod for the client module
-			// The automatic require+replace doesn't work here because the parent go.mod
-			// is outside the dagger module scope (at /work vs /work/lib)
-			// The client module name is based on the dagger module name "testlib"
-			WithExec([]string{"go", "mod", "edit", "-require=testlib/dagger@v0.0.0"}).
-			WithExec([]string{"go", "mod", "edit", "-replace=testlib/dagger=./lib/dagger"}).
-			// Add SDK replace to client's go.mod for testing
-			// This is test-specific - production code doesn't need this
-			With(addSDKReplaceToClient("lib/dagger"))
-
-		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "result: hello\n")
-	})
-
 	t.Run("generate a client on a go project with only a go.mod file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

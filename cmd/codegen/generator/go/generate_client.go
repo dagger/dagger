@@ -29,24 +29,28 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	}
 
 	if !exist {
-		// If no go.mod is found, we will generate a go.mod
-		goMod := new(modfile.File)
-		goMod.AddModuleStmt(strings.ToLower(g.Config.ClientConfig.ModuleName))
-		goMod.AddGoStmt(goVersion)
+		// Only create a root go.mod for legacy/standalone client mode (ClientDir == ".")
+		// For separate client modules, we don't create a parent go.mod - just the client's
+		if g.Config.ClientConfig.ClientDir == "." {
+			goMod := new(modfile.File)
+			goMod.AddModuleStmt(strings.ToLower(g.Config.ClientConfig.ModuleName))
+			goMod.AddGoStmt(goVersion)
 
-		modBody, err := goMod.Format()
-		if err != nil {
-			return nil, fmt.Errorf("failed to format go.mod: %w", err)
+			modBody, err := goMod.Format()
+			if err != nil {
+				return nil, fmt.Errorf("failed to format go.mod: %w", err)
+			}
+
+			if err := mfs.WriteFile("go.mod", modBody, 0600); err != nil {
+				return nil, fmt.Errorf("failed to write go.mod: %w", err)
+			}
+
+			return &generator.GeneratedState{
+				Overlay:        layerfs.New(mfs),
+				NeedRegenerate: true,
+			}, nil
 		}
-
-		if err := mfs.WriteFile("go.mod", modBody, 0600); err != nil {
-			return nil, fmt.Errorf("failed to write go.mod: %w", err)
-		}
-
-		return &generator.GeneratedState{
-			Overlay:        layerfs.New(mfs),
-			NeedRegenerate: true,
-		}, nil
+		// For separate client modules without a parent go.mod, continue with nil goModFile
 	}
 
 	packageImport := filepath.Join(
@@ -54,8 +58,8 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		g.Config.ClientConfig.ClientDir,
 	)
 
-	// respect existing package import path if a package is set
-	if goModFile.Module != nil {
+	// respect existing package import path if a parent go.mod exists
+	if goModFile != nil && goModFile.Module != nil {
 		// Find parent go.mod directory and relative path to client
 		_, clientRelPath, err := g.findParentGoModDir()
 		if err != nil {
@@ -136,6 +140,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	// Post commands
 	var postCmds []*exec.Cmd
+	clientAbsPath := filepath.Join(g.Config.OutputDir, g.Config.ClientConfig.ClientDir)
 
 	// On install (first time), update parent's go.mod with require + replace
 	if isInstall && goModFile != nil {
@@ -144,23 +149,34 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		if err != nil {
 			return nil, fmt.Errorf("failed to find parent go.mod: %w", err)
 		}
-		clientAbsPath := filepath.Join(g.Config.OutputDir, g.Config.ClientConfig.ClientDir)
 
-		// Add require and replace to parent's go.mod for the client module
-		parentEditCmd := exec.Command("sh", "-c",
-			fmt.Sprintf("cd %s && go mod edit -require=%s@v0.0.0 && go mod edit -replace=%s=./%s",
-				parentGoModDir, clientModuleName, clientModuleName, clientRelPath))
-		postCmds = append(postCmds, parentEditCmd)
+		// Check if parent go.mod is at OutputDir or above it
+		// If at OutputDir, we can write directly to overlay
+		// If above OutputDir, we can't write to overlay (would be outside OutputDir), so skip this
+		if parentGoModDir == g.Config.OutputDir {
+			// Add require and replace to parent's go.mod
+			goModFile.AddRequire(clientModuleName, "v0.0.0")
+			goModFile.AddReplace(clientModuleName, "", "./"+clientRelPath, "")
 
-		// Run go mod tidy in the client directory to populate dependencies on install
-		// The require statement for dagger.io/dagger is only added for released versions,
-		// so go mod tidy won't try to download unreleased versions
+			updatedParentGoMod, err := goModFile.Format()
+			if err != nil {
+				return nil, fmt.Errorf("failed to format parent go.mod: %w", err)
+			}
+
+			if err := mfs.WriteFile("go.mod", updatedParentGoMod, 0600); err != nil {
+				return nil, fmt.Errorf("failed to write updated parent go.mod: %w", err)
+			}
+		}
+		// If parent go.mod is outside OutputDir, we can't update it via overlay
+		// The user will need to manually add require/replace directives
+
+		// Run go mod tidy in the client directory to populate dependencies
 		tidyCmd := exec.Command("sh", "-c", fmt.Sprintf("cd %s && go mod tidy", clientAbsPath))
 		postCmds = append(postCmds, tidyCmd)
 
 		// Note: We don't run go mod tidy on the parent here because it would remove
 		// the require directive if the parent doesn't actually import the client yet.
-		// The user should run go mod tidy themselves when they're ready.
+		// The user should run go mod tidy on the parent when they're ready.
 	}
 
 	genSt := &generator.GeneratedState{
