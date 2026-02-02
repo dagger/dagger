@@ -130,7 +130,7 @@ func (s *fileSchema) file(
 		return inst, err
 	}
 
-	f, err := core.NewFileWithContentsDagOp(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Self().Platform())
+	f, err := core.NewFileWithContents(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Self().Platform())
 	if err != nil {
 		return inst, err
 	}

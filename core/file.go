@@ -92,28 +92,6 @@ func NewFileWithContents(
 	if dir, _ := filepath.Split(name); dir != "" {
 		return nil, fmt.Errorf("file name %q must not contain a directory", name)
 	}
-	dir, err := NewScratchDirectory(ctx, platform)
-	if err != nil {
-		return nil, err
-	}
-	dir, err = dir.WithNewFile(ctx, name, content, permissions, ownership)
-	if err != nil {
-		return nil, err
-	}
-	return dir.File(ctx, name)
-}
-
-func NewFileWithContentsDagOp(
-	ctx context.Context,
-	name string,
-	content []byte,
-	permissions fs.FileMode,
-	ownership *Ownership,
-	platform Platform,
-) (*File, error) {
-	if dir, _ := filepath.Split(name); dir != "" {
-		return nil, fmt.Errorf("file name %q must not contain a directory", name)
-	}
 
 	dir, err := NewScratchDirectoryDagOp(ctx, platform)
 	if err != nil {

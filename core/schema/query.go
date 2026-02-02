@@ -136,7 +136,7 @@ func (s *querySchema) schemaJSONFile(
 	const perm fs.FileMode = 0644
 
 	if args.InDagOp() {
-		f, err := core.NewFileWithContentsDagOp(ctx, schemaJSONFilename, []byte(args.Schema), perm, nil, parent.Self().Platform())
+		f, err := core.NewFileWithContents(ctx, schemaJSONFilename, []byte(args.Schema), perm, nil, parent.Self().Platform())
 		if err != nil {
 			return inst, err
 		}
