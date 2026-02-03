@@ -8,6 +8,8 @@ description: Control how Dagger caches module function results between runs.
 
 Dagger can persist the results of your module functions so repeated calls skip work when the inputs have not changed. This page explains how to tune that behavior, opt out when needed, and understand the trade-offs of each caching mode.
 
+For a broader overview of Dagger caching, see [Built-In Caching](../../introduction/features/caching.mdx). For layer cache-busting patterns, see [Invalidate cache](../../cookbook/builds.mdx#invalidate-cache).
+
 ## Configure caching per function
 
 ### Default behavior
