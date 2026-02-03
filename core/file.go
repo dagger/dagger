@@ -669,25 +669,3 @@ func (file *File) Chown(ctx context.Context, owner string) (*File, error) {
 		return nil
 	}, withSavedSnapshot("chown %s %s", file.File, owner))
 }
-
-// bkRef returns the buildkit reference from the solved def.
-func bkRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkgw.Reference, error) {
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: def,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	if ref == nil {
-		// empty file, i.e. llb.Scratch()
-		return nil, fmt.Errorf("empty reference")
-	}
-
-	return ref, nil
-}
