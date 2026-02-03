@@ -317,16 +317,24 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	for _, record := range logs {
 		// Check if this log is marked as verbose
 		isVerbose := false
+		isDefault := false
 		record.WalkAttributes(func(kv log.KeyValue) bool {
 			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
 				isVerbose = true
-				return false // stop walking
+			}
+			if kv.Key == telemetry.DefaultModuleAttr {
+				isDefault = true
 			}
 			return true // continue walking
 		})
 
 		// Skip verbose logs in the plain frontend
 		if isVerbose {
+			continue
+		}
+
+		// Don't print user default usage with -s
+		if isDefault && fe.Silent {
 			continue
 		}
 
