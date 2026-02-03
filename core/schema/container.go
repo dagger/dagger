@@ -976,6 +976,7 @@ func (s *containerSchema) build(ctx context.Context, parent dagql.ObjectResult[*
 		secrets,
 		secretStore,
 		args.NoInit,
+		nil,
 	)
 }
 

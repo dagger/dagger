@@ -5370,6 +5370,11 @@ pub struct DirectoryDockerBuildOpts<'a> {
     /// They will be mounted at /run/secrets/[secret-name].
     #[builder(setter(into, strip_option), default)]
     pub secrets: Option<Vec<SecretId>>,
+    /// A socket to use for SSH authentication during the build
+    /// (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+    /// Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
+    #[builder(setter(into, strip_option), default)]
+    pub ssh: Option<SocketId>,
     /// Target build stage to build.
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
@@ -5692,6 +5697,9 @@ impl Directory {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
+        }
+        if let Some(ssh) = opts.ssh {
+            query = query.arg("ssh", ssh);
         }
         Container {
             proc: self.proc.clone(),

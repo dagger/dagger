@@ -641,6 +641,7 @@ func (container *Container) Build(
 	secrets []dagql.ObjectResult[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
+	sshSocket *Socket,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -708,6 +709,12 @@ func (container *Container) Build(
 		return llbID, nil
 	})
 
+	if sshSocket != nil {
+		solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
+			return sshSocket.LLBID(), nil
+		})
+	}
+
 	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
@@ -770,7 +777,6 @@ func (container *Container) Build(
 				buildkit.DaggerNoInitEnv+"=true",
 			)
 		}
-
 		dag.Metadata.Description = desc
 		return nil
 	}); err != nil {

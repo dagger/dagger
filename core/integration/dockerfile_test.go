@@ -2,7 +2,11 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net"
+	"path/filepath"
 	"testing"
 
 	"dagger.io/dagger"
@@ -371,4 +375,119 @@ EXPOSE 8080
 			t.Fatalf("unexpected port %d", p.Port)
 		}
 	}
+}
+
+func (DockerfileSuite) TestDockerBuildSSH(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a local unix socket echo server
+	tmp := t.TempDir()
+	sock := filepath.Join(tmp, "test.sock")
+
+	l, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	t.Cleanup(func() { l.Close() })
+
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					t.Logf("accept: %s", err)
+					panic(err)
+				}
+				return
+			}
+
+			n, err := io.Copy(conn, conn)
+			if err != nil {
+				t.Logf("copy: %s", err)
+				panic(err)
+			}
+
+			t.Logf("copied %d bytes", n)
+
+			err = conn.Close()
+			if err != nil {
+				t.Logf("close: %s", err)
+				panic(err)
+			}
+		}
+	}()
+
+	sockID, err := c.Host().UnixSocket(sock).ID(ctx)
+	require.NoError(t, err)
+
+	dockerfile := `FROM ` + alpineImage + `
+RUN apk add netcat-openbsd
+RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /result'
+`
+
+	t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", dockerfile)
+		dirID, err := dir.ID(ctx)
+		require.NoError(t, err)
+
+		res, err := testutil.QueryWithClient[struct {
+			LoadDirectoryFromID struct {
+				DockerBuild struct {
+					File struct {
+						Contents string
+					}
+				}
+			} `json:"loadDirectoryFromID"`
+		}](c, t, `query Test($dir: DirectoryID!, $sock: SocketID!) {
+			loadDirectoryFromID(id: $dir) {
+				dockerBuild(ssh: $sock) {
+					file(path: "/result") {
+						contents
+					}
+				}
+			}
+		}`, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"dir":  dirID,
+				"sock": sockID,
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "hello", res.LoadDirectoryFromID.DockerBuild.File.Contents)
+	})
+
+	t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
+		dirID, err := dir.ID(ctx)
+		require.NoError(t, err)
+
+		res, err := testutil.QueryWithClient[struct {
+			LoadDirectoryFromID struct {
+				DockerBuild struct {
+					File struct {
+						Contents string
+					}
+				}
+			} `json:"loadDirectoryFromID"`
+		}](c, t, `query Test($dir: DirectoryID!, $sock: SocketID!) {
+			loadDirectoryFromID(id: $dir) {
+				dockerBuild(ssh: $sock) {
+					file(path: "/result") {
+						contents
+					}
+				}
+			}
+		}`, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"dir":  dirID,
+				"sock": sockID,
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "hello", res.LoadDirectoryFromID.DockerBuild.File.Contents)
+	})
+
+	t.Run("without ssh socket fails", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", dockerfile)
+		_, err := dir.DockerBuild().Sync(ctx)
+		require.Error(t, err)
+	})
 }
