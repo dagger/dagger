@@ -1683,13 +1683,13 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Con
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	var dir *core.Directory
+	var dir dagql.ObjectResult[*core.Directory]
 	if args.Source.Valid {
-		inst, err := args.Source.Value.Load(ctx, srv)
+		var err error
+		dir, err = args.Source.Value.Load(ctx, srv)
 		if err != nil {
 			return nil, err
 		}
-		dir = inst.Self()
 	}
 
 	cache, err := args.Cache.Load(ctx, srv)

@@ -653,8 +653,10 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				}
 			},
 			func(cache *CacheMountSource) {
-				mount.Selector = cache.BasePath
-				llb = cache.Base
+				if cache.Base != nil && cache.Base.Self() != nil {
+					mount.Selector = cache.Base.Self().Dir
+					llb = cache.Base.Self().LLB
+				}
 				mount.Output = pb.SkipOutput
 				mount.MountType = pb.MountType_CACHE
 				mount.CacheOpt = &pb.CacheOpt{
