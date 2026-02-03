@@ -223,6 +223,9 @@ func (db *DB) Begin() (*sql.Tx, error) {
 }
 
 func (db *DB) Close() (rerr error) {
+	if db == nil {
+		return nil
+	}
 	lg := slog.Default().With("clientID", db.clientID)
 	db.dbs.perDBLock.Lock(db.clientID)
 	defer db.dbs.perDBLock.Unlock(db.clientID)
