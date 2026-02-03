@@ -275,7 +275,7 @@ type SpanSnapshot struct {
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
-	UserBoundary bool `json:",omitempty"`
+	UserBoundary string `json:",omitempty"`
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
@@ -385,7 +385,7 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 		snapshot.ContentType = val.(string)
 
 	case telemetry.UserBoundaryAttr:
-		snapshot.UserBoundary = val.(bool)
+		snapshot.UserBoundary = val.(string)
 
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their
@@ -483,16 +483,32 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 
 	// Propagate user-supplied spans up, similar to revealing, except not based on
 	// an attribute on the span itself
-	if span.ParentSpan != nil && span.ParentSpan.UserBoundary &&
+	if span.ParentSpan != nil && span.ParentSpan.UserBoundary != "" &&
 		span.Call() == nil &&
 		!span.Passthrough &&
 		!span.Internal {
 		for parent := range span.Parents {
+			if parent.UserBoundary != "" && parent.UserBoundary != span.ParentSpan.UserBoundary {
+				// do not propagate into a different boundary
+				//
+				// if my module calls another functin within my module (future-proofing
+				// for self calls), we *do* want to propagate those spans, since it
+				// might just be a higher level refactored function
+				//
+				// but if my module calls another module, and that module has spans, we
+				// *don't* want them mixed with mine
+				break
+			}
+
 			if parent.UserSpans.Add(span) {
 				span.db.update(parent)
 			}
 
-			if parent.Boundary || parent.Encapsulate {
+			if parent.Boundary ||
+				parent.Encapsulate ||
+				parent.Reveal ||
+				parent.RollUpSpans ||
+				parent.RollUpLogs {
 				break
 			}
 		}
