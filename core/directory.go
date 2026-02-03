@@ -348,46 +348,6 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 		permissions = 0o644
 	}
 
-	// be sure to create the file under the working directory
-	dest = path.Join(dir.Dir, dest)
-
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	parent, _ := path.Split(dest)
-	if parent != "" {
-		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)))
-	}
-
-	opts := []llb.MkfileOption{}
-	if ownership != nil {
-		opts = append(opts, ownership.Opt())
-	}
-
-	st = st.File(llb.Mkfile(dest, permissions, content, opts...))
-
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	return dir, nil
-}
-
-func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
-	dir = dir.Clone()
-
-	err := validateFileName(dest)
-	if err != nil {
-		return nil, err
-	}
-
-	if permissions == 0 {
-		permissions = 0o644
-	}
-
 	return execInMount(ctx, dir, func(root string) error {
 		resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
 		if err != nil {

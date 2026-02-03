@@ -221,10 +221,6 @@ type Ownership struct {
 	GID int
 }
 
-func (owner Ownership) Opt() llb.ChownOption {
-	return llb.WithUIDGID(owner.UID, owner.GID)
-}
-
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
