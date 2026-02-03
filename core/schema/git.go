@@ -1277,5 +1277,18 @@ func (s *gitSchema) refResolve(
 		return zero, err
 	}
 
+	// Set an auth-independent ObjectDigest on the ref so that __tree's dagop
+	// cache key is the same regardless of how auth was injected. The tree
+	// content is determined by commit SHA + URL + discardGitDir, not by auth.
+	remote, isRemote := resolvedRepo.Self().Backend.(*core.RemoteGitRepository)
+	if isRemote && remote.URL != nil && ref.Ref != nil && ref.Ref.SHA != "" {
+		dgstInputs := []string{
+			remote.URL.String(),
+			ref.Ref.SHA,
+			strconv.FormatBool(resolvedRepo.Self().DiscardGitDir),
+		}
+		result = result.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
+	}
+
 	return result, nil
 }

@@ -1847,22 +1847,23 @@ func main() {
 
 // TestGitFunctionCacheInvalidation verifies that module function results are
 // properly cache-invalidated when the remote Git repository changes.
-// This tests the lazy git resolution + function caching integration.
+// Each call uses a separate session (via dev engine) so the ls-remote cache
+// is fresh, testing true cross-session invalidation.
 func (GitSuite) TestGitFunctionCacheInvalidation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Create a git service we can push to
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	gitSvc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
-	svc, err := svc.Start(ctx)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, err := svc.Stop(ctx)
-		require.NoError(t, err)
-	})
+	// Spin up a dev engine with the git service bound so that client containers
+	// running against this engine can reach the git service hostname.
+	devEngine := devEngineContainerAsService(devEngineContainer(c,
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithServiceBinding("git-server", gitSvc)
+		},
+	))
 
-	// Create a module that returns the current unix timestamp when called.
-	// This lets us verify whether the function was executed again or served from cache.
+	// Build module source using the outer engine, then extract the directory
 	modSrc := `package main
 
 import (
@@ -1884,18 +1885,34 @@ func (m *Test) GetTime(ctx context.Context, repo *dagger.GitRepository) (string,
 }
 `
 
-	modGen := goGitBase(t, c).
+	modDir := goGitBase(t, c).
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", modSrc)
+		WithNewFile("main.go", modSrc).
+		Directory("/work")
+
+	// Each clientCtr() creates a fresh client container connecting to the dev
+	// engine — a new session with a fresh ls-remote cache.
+	clientCtr := func() *dagger.Container {
+		return engineClientContainer(ctx, t, c, devEngine).
+			WithDirectory("/work", modDir).
+			WithWorkdir("/work")
+	}
 
 	// First call - should execute the function
-	time1, err := modGen.With(daggerCall("get-time", "--repo", url)).Stdout(ctx)
+	// Each call uses a unique CACHEBUSTER to prevent the outer buildkit from
+	// caching the container execution (we want the inner dagger call to run).
+	time1, err := clientCtr().
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		With(daggerNonNestedExec("call", "get-time", "--repo", url)).Stdout(ctx)
 	require.NoError(t, err)
 	time1 = strings.TrimSpace(time1)
 	require.NotEmpty(t, time1)
 
-	// Second call - same repo state, should get cached result (same timestamp)
-	time2, err := modGen.With(daggerCall("get-time", "--repo", url)).Stdout(ctx)
+	// Second call - new session, same repo state → function should still be
+	// cached at the buildkit level (same dagop cache key).
+	time2, err := clientCtr().
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		With(daggerNonNestedExec("call", "get-time", "--repo", url)).Stdout(ctx)
 	require.NoError(t, err)
 	time2 = strings.TrimSpace(time2)
 	require.Equal(t, time1, time2, "second call should return cached result")
@@ -1905,14 +1922,18 @@ func (m *Test) GetTime(ctx context.Context, repo *dagger.GitRepository) (string,
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
+		WithServiceBinding("git-server", gitSvc).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "clone", url, "."}).
 		WithExec([]string{"sh", "-c", `touch newfile && git add newfile && git commit -m "new commit" && git push origin main`}).
 		Sync(ctx)
 	require.NoError(t, err)
 
-	// Third call - repo changed, should execute the function again (new timestamp)
-	time3, err := modGen.With(daggerCall("get-time", "--repo", url)).Stdout(ctx)
+	// Third call - new session, repo changed → ls-remote returns new refs,
+	// resolved ID differs, function cache key changes → function re-executes.
+	time3, err := clientCtr().
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		With(daggerNonNestedExec("call", "get-time", "--repo", url)).Stdout(ctx)
 	require.NoError(t, err)
 	time3 = strings.TrimSpace(time3)
 	require.NotEqual(t, time1, time3, "third call should return new result after remote change")
@@ -1924,16 +1945,16 @@ func (GitSuite) TestGitRefFunctionCacheInvalidation(ctx context.Context, t *test
 	c := connect(ctx, t)
 
 	// Create a git service we can push to
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	gitSvc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
-	svc, err := svc.Start(ctx)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, err := svc.Stop(ctx)
-		require.NoError(t, err)
-	})
+	// Spin up a dev engine with the git service bound
+	devEngine := devEngineContainerAsService(devEngineContainer(c,
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithServiceBinding("git-server", gitSvc)
+		},
+	))
 
-	// Create a module that returns the commit SHA when called.
+	// Build module source using the outer engine
 	modSrc := `package main
 
 import (
@@ -1949,18 +1970,31 @@ func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error
 }
 `
 
-	modGen := goGitBase(t, c).
+	modDir := goGitBase(t, c).
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", modSrc)
+		WithNewFile("main.go", modSrc).
+		Directory("/work")
+
+	clientCtr := func() *dagger.Container {
+		return engineClientContainer(ctx, t, c, devEngine).
+			WithDirectory("/work", modDir).
+			WithWorkdir("/work")
+	}
 
 	// First call - should return initial commit SHA
-	sha1, err := modGen.With(daggerCall("get-commit", "--ref", url)).Stdout(ctx)
+	// Each call uses a unique CACHEBUSTER to prevent the outer buildkit from
+	// caching the container execution (we want the inner dagger call to run).
+	sha1, err := clientCtr().
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		With(daggerNonNestedExec("call", "get-commit", "--ref", url)).Stdout(ctx)
 	require.NoError(t, err)
 	sha1 = strings.TrimSpace(sha1)
 	require.Regexp(t, `^[a-f0-9]{40}$`, sha1)
 
-	// Second call - same repo state, should get cached result (same SHA)
-	sha2, err := modGen.With(daggerCall("get-commit", "--ref", url)).Stdout(ctx)
+	// Second call - new session, same repo state → should return same SHA
+	sha2, err := clientCtr().
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		With(daggerNonNestedExec("call", "get-commit", "--ref", url)).Stdout(ctx)
 	require.NoError(t, err)
 	sha2 = strings.TrimSpace(sha2)
 	require.Equal(t, sha1, sha2, "second call should return cached result")
@@ -1970,14 +2004,17 @@ func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
+		WithServiceBinding("git-server", gitSvc).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "clone", url, "."}).
 		WithExec([]string{"sh", "-c", `touch newfile && git add newfile && git commit -m "new commit" && git push origin main`}).
 		Sync(ctx)
 	require.NoError(t, err)
 
-	// Third call - repo changed, should return new commit SHA
-	sha3, err := modGen.With(daggerCall("get-commit", "--ref", url)).Stdout(ctx)
+	// Third call - new session, repo changed → should return new commit SHA
+	sha3, err := clientCtr().
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		With(daggerNonNestedExec("call", "get-commit", "--ref", url)).Stdout(ctx)
 	require.NoError(t, err)
 	sha3 = strings.TrimSpace(sha3)
 	require.NotEqual(t, sha1, sha3, "third call should return new result after remote change")
