@@ -52,7 +52,8 @@
             "dagql/idtui/viztest/broken/**",
             "modules/evals/**",
             "**/broken*/**",
-            "core/integration/testdata/checks/hello-with-checks/"
+            "core/integration/testdata/checks/hello-with-checks/",
+            "core/integration/testdata/generators/hello-with-generators/"
           ]
         }
       ]
@@ -98,9 +99,7 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": [
-            "scanSource"
-          ],
+          "function": ["scanSource"],
           "argument": "source",
           "ignore": [
             "bin",
