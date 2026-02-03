@@ -235,6 +235,21 @@ If a previous function call has been made with all of those inputs at the same v
 
 This also means that if any of those inputs change from what has been called previously, you will get a cache miss. For example, changing the source code of a module will invalidate all the cache for its functions.
 
+### Function caching vs. layer caching
+
+Function caching controls whether the function body runs at all. Layer caching still applies to the
+operations executed inside the function (such as `withExec`, `withFile`, `withDirectory`, and similar).
+
+This means:
+- A function cache hit skips the function entirely, so none of its internal steps run.
+- A function cache miss runs the function, but individual container/file steps inside it may still be
+  cache hits if their inputs are unchanged.
+- `cache="never"` guarantees the function runs on every call, but it does **not** disable layer caching
+  for the operations performed inside that function.
+
+If you need a specific step to always re-run, add a cache-busting input to that step (for example, a
+timestamp environment variable used only for that operation).
+
 ### Secrets and caching
 
 [Secrets](../../getting-started/types/secret.mdx) are never cached on disk by Dagger. Function calls that return Secrets or values that reference Secrets (e.g. a Container that has a secret set as an environment variable) *may* be cached provided that the Secret in question was sourced using a secret provider (e.g. `env://MY_SECRET`). In these cases, Dagger is able to cache the source of the secret without having to write the plaintext to disk, [instead using a securely derived hash of the secret plaintext](secrets.mdx#caching).
