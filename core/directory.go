@@ -1217,44 +1217,6 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	}, withSavedSnapshot("withNewDirectory %s", dest))
 }
 
-// DiffLLB is legacy and will be deleted once all ops are dagops
-func (dir *Directory) DiffLLB(ctx context.Context, other *Directory) (*Directory, error) {
-	dir = dir.Clone()
-
-	thisDirPath := dir.Dir
-	if thisDirPath == "" {
-		thisDirPath = "/"
-	}
-	otherDirPath := other.Dir
-	if otherDirPath == "" {
-		otherDirPath = "/"
-	}
-	if thisDirPath != otherDirPath {
-		// TODO(vito): work around with llb.Copy shenanigans?
-		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
-	}
-
-	lowerSt, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	upperSt, err := other.State()
-	if err != nil {
-		return nil, err
-	}
-
-	st := llb.
-		Diff(lowerSt, upperSt).
-		File(llb.Mkdir(dir.Dir, 0755, llb.WithParents(true)))
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	return dir, nil
-}
-
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
 	dir = dir.Clone()
 
