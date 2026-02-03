@@ -97,7 +97,7 @@ func NewFileWithContents(
 	if err != nil {
 		return nil, err
 	}
-	dir, err = dir.WithNewFileDagOp(ctx, name, content, permissions, ownership)
+	dir, err = dir.WithNewFile(ctx, name, content, permissions, ownership)
 	if err != nil {
 		return nil, err
 	}
