@@ -339,11 +339,10 @@ func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) erro
 	}
 	mntPath := filepath.Join("/mnt", name)
 	out, err := dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   consts.AlpineVersion,
+		Wolfi().
+		Container(dagger.WolfiContainerOpts{
 			Packages: []string{"file"},
 		}).
-		Container().
 		WithMountedFile(mntPath, bin).
 		WithExec([]string{"file", mntPath}).
 		Stdout(ctx)

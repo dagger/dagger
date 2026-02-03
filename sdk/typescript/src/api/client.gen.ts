@@ -2169,12 +2169,12 @@ export type ClientSecretOpts = {
  */
 export enum ReturnType {
   /**
-   * Any execution (exit codes 0-127)
+   * Any execution (exit codes 0-127 and 192-255)
    */
   Any = "ANY",
 
   /**
-   * A failed execution (exit codes 1-127)
+   * A failed execution (exit codes 1-127 and 192-255)
    */
   Failure = "FAILURE",
 
@@ -3417,14 +3417,6 @@ export class Check extends BaseClient {
   run = (): Check => {
     const ctx = this._ctx.select("run")
     return new Check(ctx)
-  }
-
-  /**
-   * The module source where the check is defined (i.e., toolchains)
-   */
-  source = (): ModuleSource => {
-    const ctx = this._ctx.select("source")
-    return new ModuleSource(ctx)
   }
 
   /**

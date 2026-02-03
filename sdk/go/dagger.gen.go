@@ -1288,15 +1288,6 @@ func (r *Check) Run() *Check {
 	}
 }
 
-// The module source where the check is defined (i.e., toolchains)
-func (r *Check) Source() *ModuleSource {
-	q := r.query.Select("source")
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
 type CheckGroup struct {
 	query *querybuilder.Selection
 
@@ -14167,10 +14158,10 @@ const (
 	// A successful execution (exit code 0)
 	ReturnTypeSuccess ReturnType = "SUCCESS"
 
-	// A failed execution (exit codes 1-127)
+	// A failed execution (exit codes 1-127 and 192-255)
 	ReturnTypeFailure ReturnType = "FAILURE"
 
-	// Any execution (exit codes 0-127)
+	// Any execution (exit codes 0-127 and 192-255)
 	ReturnTypeAny ReturnType = "ANY"
 )
 

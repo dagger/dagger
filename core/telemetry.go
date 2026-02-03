@@ -15,27 +15,12 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 )
 
 const (
 	// name of arg indicating whether the op should execute the "unlazy" dagop impl
 	IsDagOpArgName = "isDagOp"
 )
-
-func collectDefs(ctx context.Context, val dagql.AnyResult) []*pb.Definition {
-	if hasPBs, ok := dagql.UnwrapAs[HasPBDefinitions](val); ok {
-		ctx := dagql.ContextWithID(ctx, val.ID())
-		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
-			slog.WarnContext(ctx, "failed to get LLB definitions", "err", err)
-			return nil
-		} else {
-			return defs
-		}
-	}
-	return nil
-}
 
 var _ dagql.AroundFunc = AroundFunc
 
@@ -132,7 +117,7 @@ func AroundFunc(
 		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, id)
 		logResult(ctx, res, self, id)
-		collectEffects(ctx, res, span, self)
+		collectEffects(res, span, self)
 	}
 }
 
@@ -299,50 +284,43 @@ func logResult(ctx context.Context, res dagql.AnyResult, self dagql.AnyObjectRes
 //
 // Effects will become complete as spans appear from Buildkit with a
 // corresponding effect ID.
-func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, self dagql.AnyObjectResult) {
-	// Keep track of which effects were already installed prior to the call so we
-	// only see new ones.
-	seenEffects := make(map[digest.Digest]bool)
-	for _, def := range collectDefs(ctx, self) {
-		if def == nil {
-			continue
-		}
-		for _, op := range def.Def {
-			seenEffects[digest.FromBytes(op)] = true
-		}
+func collectEffects(res dagql.AnyResult, span trace.Span, self dagql.AnyObjectResult) {
+	var parentEffects []string
+	if self != nil && self.ID() != nil {
+		parentEffects = self.ID().AllEffectIDs()
 	}
 
-	var effectIDs []string
-	for _, def := range collectDefs(ctx, res) {
-		if def == nil {
+	if res == nil || res.ID() == nil {
+		if len(parentEffects) > 0 {
+			span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
+		}
+		return
+	}
+
+	allEffects := res.ID().AllEffectIDs()
+	if len(allEffects) == 0 && len(parentEffects) == 0 {
+		return
+	}
+
+	seen := make(map[string]bool, len(parentEffects))
+	for _, effect := range parentEffects {
+		seen[effect] = true
+	}
+
+	var newEffects []string
+	for _, effect := range allEffects {
+		if seen[effect] {
 			continue
 		}
-		for _, opBytes := range def.Def {
-			dig := digest.FromBytes(opBytes)
-			if seenEffects[dig] {
-				continue
-			}
-			seenEffects[dig] = true
-
-			var pbOp pb.Op
-			err := pbOp.Unmarshal(opBytes)
-			if err != nil {
-				slog.WarnContext(ctx, "failed to unmarshal LLB", "err", err)
-				continue
-			}
-			if pbOp.Op == nil {
-				// The last def should always be an empty op with the previous as
-				// an input. We never actually see a span for this, so skip it,
-				// otherwise the span will look like it still has pending
-				// effects.
-				continue
-			}
-
-			effectIDs = append(effectIDs, dig.String())
-		}
+		seen[effect] = true
+		newEffects = append(newEffects, effect)
 	}
-	if len(effectIDs) > 0 {
-		span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, effectIDs))
+
+	if len(newEffects) > 0 {
+		span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, newEffects))
+	}
+	if len(parentEffects) > 0 {
+		span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
 	}
 }
 

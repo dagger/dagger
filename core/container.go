@@ -119,52 +119,6 @@ func (*Container) TypeDescription() string {
 	return "An OCI-compatible container, also known as a Docker container."
 }
 
-var _ HasPBDefinitions = (*Container)(nil)
-
-func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	if container == nil {
-		return nil, nil
-	}
-	var defs []*pb.Definition
-	if fs := container.FS; fs != nil && fs.Self().LLB != nil {
-		defs = append(defs, fs.Self().LLB)
-	} else {
-		defs = append(defs, nil)
-	}
-	for _, mnt := range container.Mounts {
-		handleMount(mnt,
-			func(dir *dagql.ObjectResult[*Directory]) {
-				if dir.Self().LLB != nil {
-					defs = append(defs, dir.Self().LLB)
-				}
-			},
-			func(file *dagql.ObjectResult[*File]) {
-				if file.Self().LLB != nil {
-					defs = append(defs, file.Self().LLB)
-				}
-			},
-			func(cache *CacheMountSource) {
-				if cache.Base != nil {
-					defs = append(defs, cache.Base)
-				}
-			},
-			func(tmpfs *TmpfsMountSource) {},
-		)
-	}
-	for _, bnd := range container.Services {
-		ctr := bnd.Service.Self().Container
-		if ctr == nil {
-			continue
-		}
-		ctrDefs, err := ctr.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, ctrDefs...)
-	}
-	return defs, nil
-}
-
 func NewContainer(platform Platform) *Container {
 	return &Container{Platform: platform}
 }
@@ -2755,10 +2709,10 @@ var (
 		`A successful execution (exit code 0)`,
 	)
 	ReturnFailure = ReturnTypesEnum.Register("FAILURE",
-		`A failed execution (exit codes 1-127)`,
+		`A failed execution (exit codes 1-127 and 192-255)`,
 	)
 	ReturnAny = ReturnTypesEnum.Register("ANY",
-		`Any execution (exit codes 0-127)`,
+		`Any execution (exit codes 0-127 and 192-255)`,
 	)
 )
 
@@ -2783,21 +2737,28 @@ func (expect ReturnTypes) ToLiteral() call.Literal {
 
 // ReturnCodes gets the valid exit codes allowed for a specific return status
 //
-// NOTE: exit status codes above 128 are likely from exiting via a signal - we
-// shouldn't try and handle these.
+// NOTE: exit status codes 128-191 are likely from exiting via a signal - we
+// shouldn't try and handle these. Codes 192-255 are safe to handle to support
+// tools that return exit codes >127, such as AWS CLI.
 func (expect ReturnTypes) ReturnCodes() []int {
 	switch expect {
 	case ReturnSuccess:
 		return []int{0}
 	case ReturnFailure:
-		codes := make([]int, 0, 128)
-		for i := 1; i <= 128; i++ {
+		codes := make([]int, 0, 127+64)
+		for i := 1; i <= 127; i++ {
+			codes = append(codes, i)
+		}
+		for i := 192; i <= 255; i++ {
 			codes = append(codes, i)
 		}
 		return codes
 	case ReturnAny:
-		codes := make([]int, 0, 129)
-		for i := 0; i <= 128; i++ {
+		codes := make([]int, 0, 128+64)
+		for i := 0; i <= 127; i++ {
+			codes = append(codes, i)
+		}
+		for i := 192; i <= 255; i++ {
 			codes = append(codes, i)
 		}
 		return codes

@@ -408,8 +408,10 @@ func (r Result[T]) IsSafeToPersistCache() bool {
 // that won't be caputured by the default, call-chain derived digest.
 func (r Result[T]) WithDigest(customDigest digest.Digest) Result[T] {
 	return Result[T]{
-		constructor: r.constructor.WithDigest(customDigest),
-		self:        r.self,
+		constructor:        r.constructor.WithDigest(customDigest),
+		self:               r.self,
+		postCall:           r.postCall,
+		safeToPersistCache: r.safeToPersistCache,
 	}
 }
 
@@ -933,7 +935,6 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 			if res, ok := any(ret).(AnyResult); ok {
 				return res, nil
 			}
-
 			res, err := builtinOrTyped(ret)
 			if err != nil {
 				return nil, fmt.Errorf("expected %T to be a Typed value, got %T: %w", ret, ret, err)

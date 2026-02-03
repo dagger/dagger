@@ -117,7 +117,7 @@ func (dev *EngineDev) Playground(
 ) (*dagger.Container, error) {
 	ctr := base
 	if ctr == nil {
-		ctr = dag.Alpine().Container().WithEnvVariable("HOME", "/root")
+		ctr = dag.Wolfi().Container().WithEnvVariable("HOME", "/root")
 	}
 	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
 	svc, err := dev.Service(
@@ -298,7 +298,7 @@ func (dev *EngineDev) InstallClient(
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliPath, dag.DaggerCli().Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
-		WithExec([]string{"ln", "-s", cliPath, "/usr/local/bin/dagger"})
+		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
 		client = client.WithMountedSecret(
 			"${HOME}/.docker/config.json",

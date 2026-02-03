@@ -443,10 +443,10 @@ class ReturnType(Enum):
     """Expected return type of an execution"""
 
     ANY = "ANY"
-    """Any execution (exit codes 0-127)"""
+    """Any execution (exit codes 0-127 and 192-255)"""
 
     FAILURE = "FAILURE"
-    """A failed execution (exit codes 1-127)"""
+    """A failed execution (exit codes 1-127 and 192-255)"""
 
     SUCCESS = "SUCCESS"
     """A successful execution (exit code 0)"""
@@ -1397,12 +1397,6 @@ class Check(Type):
         _args: list[Arg] = []
         _ctx = self._select("run", _args)
         return Check(_ctx)
-
-    def source(self) -> "ModuleSource":
-        """The module source where the check is defined (i.e., toolchains)"""
-        _args: list[Arg] = []
-        _ctx = self._select("source", _args)
-        return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["Check"], "Check"]) -> "Check":
         """Call the provided callable with current Check.

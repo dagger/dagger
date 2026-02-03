@@ -631,7 +631,17 @@ func (*Viztest) CallBubblingDep(ctx context.Context) error {
 
 // +cache="session"
 func (*Viztest) TraceFunctionCalls(ctx context.Context) error {
-	dag.Dep().GetFiles(ctx)
+	files, err := dag.Dep().GetFiles(ctx)
+	if err != nil {
+		return err
+	}
+	// unlazy one of them to verify it shows up as cached
+	f := files[0]
+	_, err = f.Sync(ctx)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

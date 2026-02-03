@@ -15,8 +15,7 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-✘ .dockerBuildFail: Container! X.Xs ERROR
-! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
+✔ .dockerBuildFail: Container! X.Xs
 ├╴✔ withNewFile Dockerfile (contents: "FROM busybox:1.34\nRUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo im failing && false\n") X.Xs
 ╰╴✘ .dockerBuild: Container! X.Xs ERROR ✘ [4/4] RUN echo im failing && false ✔ 2 $ 1
   ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
@@ -28,7 +27,7 @@ Expected stderr:
   ╰╴✘ [4/4] RUN echo im failing && false X.Xs ERROR
     ┃ im failing
     ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-○ withExec echo hey X.Xs
+$ withExec echo hey X.Xs CACHED
 ✘ .stdout: String! X.Xs ERROR
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
 

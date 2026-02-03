@@ -123,6 +123,17 @@ func (dag *OpDAG) String() string {
 	return dag.toString(builder, "")
 }
 
+func (dag *OpDAG) EffectID() string {
+	if dag == nil || dag.Metadata == nil || dag.Metadata.Description == nil {
+		return dag.OpDigest.String()
+	}
+	desc := dag.Metadata.Description
+	if effectID, ok := desc["effectID"]; ok {
+		return effectID
+	}
+	return dag.OpDigest.String()
+}
+
 func (dag *OpDAG) toString(builder *strings.Builder, indent string) string {
 	fmt.Fprintf(builder, "%s%d %+v\n", indent, dag.outputIndex, dag.Op.Op)
 	for _, input := range dag.Inputs {
