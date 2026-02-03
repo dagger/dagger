@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -568,10 +569,56 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	if err := fe.db.LogExporter().Export(ctx, logs); err != nil {
 		return err
 	}
+	defaults := fe.logs.UserDefaults
+	beforeDefaults := len(defaults)
 	if err := fe.logs.Export(ctx, logs); err != nil {
 		return err
 	}
+	if len(defaults) > beforeDefaults {
+		// do this in a goroutine so we don't deadlock
+		go fe.updateUserDefaults(maps.Clone(defaults))
+	}
 	return nil
+}
+
+func (fe *frontendPretty) updateUserDefaults(defaults map[string]userDefault) {
+	fe.SetSidebarContent(SidebarSection{
+		Title: "User Defaults",
+		ContentFunc: func(width int) string {
+			var content string
+			// Group defaults by module.function
+			grouped := make(map[string][]userDefault)
+			for _, id := range slices.Sorted(maps.Keys(defaults)) {
+				def := defaults[id]
+				key := def.objType
+				if def.function != "" {
+					key += "." + def.function
+				}
+				grouped[key] = append(grouped[key], def)
+			}
+			// Render grouped defaults with ANSI colors
+			for i, key := range slices.Sorted(maps.Keys(grouped)) {
+				defs := grouped[key]
+				// Module.function header in cyan
+				content += fe.viewOut.String(key).Bold().String() + "(\n"
+				for _, def := range defs {
+					arg := fmt.Sprintf("  %s:", fe.viewOut.String(def.arg).Foreground(termenv.ANSICyan).String())
+					val := fe.viewOut.String(def.value).Foreground(termenv.ANSIYellow).String()
+					if 2+len(def.arg)+2+len(def.value) < width {
+						content += arg + " " + val
+					} else {
+						content += arg + "\n" + "    " + val
+					}
+					content += "\n"
+				}
+				content += ")\n"
+				if i+1 < len(grouped) {
+					content += "\n"
+				}
+			}
+			return content
+		},
+	})
 }
 
 type eofMsg struct{}
@@ -1057,12 +1104,12 @@ func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) 
 		Render(sidebarContent)
 
 	styledContent := lipgloss.NewStyle().
-		MaxWidth(fe.contentWidth).
+		Width(fe.contentWidth).
 		MaxHeight(fe.window.Height).
 		Render(contentView)
 
 	return lipgloss.JoinHorizontal(
-		lipgloss.Bottom,
+		lipgloss.Top,
 		styledContent,
 		styledSidebar,
 	)
@@ -2623,6 +2670,15 @@ type prettyLogs struct {
 	SawEOF        map[dagui.SpanID]bool
 	Profile       termenv.Profile
 	Output        TermOutput
+	UserDefaults  map[string]userDefault
+}
+
+type userDefault struct {
+	objType, function, arg, value string
+}
+
+func (def userDefault) ID() string {
+	return def.objType + ":" + def.function + ":" + def.arg
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
@@ -2634,6 +2690,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 		Profile:       profile,
 		SawEOF:        make(map[dagui.SpanID]bool),
 		Output:        termenv.NewOutput(io.Discard, termenv.WithProfile(profile)),
+		UserDefaults:  make(map[string]userDefault),
 	}
 }
 
@@ -2644,6 +2701,7 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		eof := false
 		verbose := false
 		global := false
+		var userDefault userDefault
 		for attr := range log.WalkAttributes {
 			switch attr.Key {
 			case telemetry.ContentTypeAttr:
@@ -2654,11 +2712,24 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 				global = attr.Value.AsBool()
 			case telemetry.LogsVerboseAttr:
 				verbose = attr.Value.AsBool()
+			case telemetry.DefaultTypeAttr:
+				userDefault.objType = attr.Value.AsString()
+			case telemetry.DefaultFunctionAttr:
+				userDefault.function = attr.Value.AsString()
+			case telemetry.DefaultArgAttr:
+				userDefault.arg = attr.Value.AsString()
+			case telemetry.DefaultValueAttr:
+				userDefault.value = attr.Value.AsString()
 			}
 		}
 
 		if eof && log.SpanID().IsValid() {
 			l.SawEOF[dagui.SpanID{SpanID: log.SpanID()}] = true
+			continue
+		}
+
+		if userDefault.arg != "" {
+			l.UserDefaults[userDefault.ID()] = userDefault
 			continue
 		}
 

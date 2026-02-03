@@ -159,6 +159,13 @@ const (
 	// filtered out in minimal frontends.
 	LogsVerboseAttr = "dagger.io/logs.verbose"
 
+	// Indicates that a user-supplied default was used for a function argument.
+	DefaultModuleAttr   = "dagger.io/default.module"
+	DefaultTypeAttr     = "dagger.io/default.type"
+	DefaultFunctionAttr = "dagger.io/default.function"
+	DefaultArgAttr      = "dagger.io/default.arg"
+	DefaultValueAttr    = "dagger.io/default.value"
+
 	// OTel metric attribute so we can correlate metrics with spans
 	MetricsSpanIDAttr = "dagger.io/metrics.span"
 

@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/log"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -232,7 +233,23 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		if fn.metadata.Name != "" {
 			uiFnName += "." + fn.metadata.Name
 		}
-		console(ctx, "user default: %s(%s=%q)", uiFnName, argName, argDefault.UserInput)
+		typeName := ""
+		if fn.objDef != nil {
+			typeName = fn.objDef.Name
+		}
+		fmt.Fprintf(
+			telemetry.GlobalWriter(ctx, InstrumentationLibrary,
+				log.String(telemetry.DefaultModuleAttr, fn.mod.Name()),
+				log.String(telemetry.DefaultTypeAttr, typeName),
+				log.String(telemetry.DefaultFunctionAttr, fn.metadata.Name),
+				log.String(telemetry.DefaultArgAttr, argName),
+				log.String(telemetry.DefaultValueAttr, argDefault.UserInput),
+			),
+			"user default: %s(%s=%q)\n",
+			uiFnName,
+			argName,
+			argDefault.UserInput,
+		)
 		if argDefault.IsObject() {
 			// FIXME (cosmetic): expose the user default value to the client, without
 			// breaking other things
@@ -246,14 +263,6 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// Print text directly on the user's console
-func console(ctx context.Context, msg string, args ...any) {
-	if !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
 }
 
 // A user-defined default value that is a primitive type (not an object)
