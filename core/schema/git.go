@@ -1254,16 +1254,28 @@ func (s *gitSchema) refResolve(
 	}
 	ref.Resolved = true
 
-	// Build new ID: git(url-with-auth).ref(name).__resolve
-	// This ensures auth is in the ID chain for subsequent operations (like tree)
-	// Use Receiver() to get the repo's ID (without __resolve suffix)
-	// We return the updated ID so that the dagOp system can retrieve the correct object.
+	// Build new ID: git(url-with-auth).ref(name, commit).__resolve
+	// Include the resolved commit SHA so cache naturally busts when the remote
+	// changes (different SHA = different ID = different cache key for __tree).
 	repoID := resolvedRepo.ID().Receiver()
+
+	refArgs := []*call.Argument{
+		call.NewArgument("name", call.NewLiteralString(parent.Self().Ref.Name), false),
+	}
+	if ref.Ref != nil && ref.Ref.SHA != "" {
+		refArgs = append(refArgs,
+			call.NewArgument("commit", call.NewLiteralString(ref.Ref.SHA), false),
+		)
+	}
+
 	newID := repoID.
-		Append(ref.Type(), "ref", call.WithArgs(
-			call.NewArgument("name", call.NewLiteralString(parent.Self().Ref.Name), false),
-		)).
+		Append(ref.Type(), "ref", call.WithArgs(refArgs...)).
 		Append(ref.Type(), "__resolve")
 
-	return dagql.NewObjectResultForID(ref, srv, newID)
+	result, err := dagql.NewObjectResultForID(ref, srv, newID)
+	if err != nil {
+		return zero, err
+	}
+
+	return result, nil
 }
