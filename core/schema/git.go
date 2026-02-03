@@ -273,14 +273,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		dgstInputs = append(dgstInputs, "authHeader", args.HTTPAuthHeader.Value.ID().Digest().String())
 	}
 
-	if head != nil {
-		dgstInputs = append(
-			dgstInputs,
-			"head-name:"+head.Name,
-			"head-sha:"+head.SHA,
-		)
-	}
-
+	// Note: head info is added by __resolve after ls-remote runs
 	inst = inst.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
 
 	// Resource transfer for secrets/sockets across client boundaries
@@ -895,7 +888,32 @@ func (s *gitSchema) repoResolve(
 	}
 	resolved.Resolved = true
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
+	result, err := dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
+	if err != nil {
+		return zero, err
+	}
+
+	// Include ls-remote result in the digest for cache invalidation
+	// Remote.Digest() includes all refs from ls-remote
+	if resolved.Remote != nil {
+		dgstInputs := []string{
+			remote.URL.String(),
+			strconv.FormatBool(resolved.DiscardGitDir),
+		}
+		if remote.SSHAuthSocket.Valid {
+			dgstInputs = append(dgstInputs, "sshAuthSock", remote.SSHAuthSocket.Value.ID().Digest().String())
+		}
+		if remote.AuthToken.Valid {
+			dgstInputs = append(dgstInputs, "authToken", remote.AuthToken.Value.ID().Digest().String())
+		}
+		if remote.AuthHeader.Valid {
+			dgstInputs = append(dgstInputs, "authHeader", remote.AuthHeader.Value.ID().Digest().String())
+		}
+		dgstInputs = append(dgstInputs, "remote", resolved.Remote.Digest().String())
+		result = result.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
+	}
+
+	return result, nil
 }
 
 // hasExplicitAuth returns true if auth is explicitly set on the remote.

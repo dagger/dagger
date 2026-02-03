@@ -1844,3 +1844,142 @@ func main() {
 		})
 	}
 }
+
+// TestGitFunctionCacheInvalidation verifies that module function results are
+// properly cache-invalidated when the remote Git repository changes.
+// This tests the lazy git resolution + function caching integration.
+func (GitSuite) TestGitFunctionCacheInvalidation(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a git service we can push to
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	// Create a module that returns the current unix timestamp when called.
+	// This lets us verify whether the function was executed again or served from cache.
+	modSrc := `package main
+
+import (
+	"context"
+	"time"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+// GetTime returns the current timestamp. Used to detect cache hits vs misses.
+func (m *Test) GetTime(ctx context.Context, repo *dagger.GitRepository) (string, error) {
+	// Force resolution by accessing the repo
+	_, err := repo.Head().Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	return time.Now().Format(time.RFC3339Nano), nil
+}
+`
+
+	modGen := goGitBase(t, c).
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", modSrc)
+
+	// First call - should execute the function
+	time1, err := modGen.With(daggerCall("get-time", "--repo", url)).Stdout(ctx)
+	require.NoError(t, err)
+	time1 = strings.TrimSpace(time1)
+	require.NotEmpty(t, time1)
+
+	// Second call - same repo state, should get cached result (same timestamp)
+	time2, err := modGen.With(daggerCall("get-time", "--repo", url)).Stdout(ctx)
+	require.NoError(t, err)
+	time2 = strings.TrimSpace(time2)
+	require.Equal(t, time1, time2, "second call should return cached result")
+
+	// Push a new commit to the remote repo
+	_, err = c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", `touch newfile && git add newfile && git commit -m "new commit" && git push origin main`}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	// Third call - repo changed, should execute the function again (new timestamp)
+	time3, err := modGen.With(daggerCall("get-time", "--repo", url)).Stdout(ctx)
+	require.NoError(t, err)
+	time3 = strings.TrimSpace(time3)
+	require.NotEqual(t, time1, time3, "third call should return new result after remote change")
+}
+
+// TestGitRefFunctionCacheInvalidation is similar to TestGitFunctionCacheInvalidation
+// but tests with GitRef argument instead of GitRepository.
+func (GitSuite) TestGitRefFunctionCacheInvalidation(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a git service we can push to
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	// Create a module that returns the commit SHA when called.
+	modSrc := `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+// GetCommit returns the commit SHA of the ref.
+func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error) {
+	return ref.Commit(ctx)
+}
+`
+
+	modGen := goGitBase(t, c).
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", modSrc)
+
+	// First call - should return initial commit SHA
+	sha1, err := modGen.With(daggerCall("get-commit", "--ref", url)).Stdout(ctx)
+	require.NoError(t, err)
+	sha1 = strings.TrimSpace(sha1)
+	require.Regexp(t, `^[a-f0-9]{40}$`, sha1)
+
+	// Second call - same repo state, should get cached result (same SHA)
+	sha2, err := modGen.With(daggerCall("get-commit", "--ref", url)).Stdout(ctx)
+	require.NoError(t, err)
+	sha2 = strings.TrimSpace(sha2)
+	require.Equal(t, sha1, sha2, "second call should return cached result")
+
+	// Push a new commit to the remote repo
+	_, err = c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", `touch newfile && git add newfile && git commit -m "new commit" && git push origin main`}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	// Third call - repo changed, should return new commit SHA
+	sha3, err := modGen.With(daggerCall("get-commit", "--ref", url)).Stdout(ctx)
+	require.NoError(t, err)
+	sha3 = strings.TrimSpace(sha3)
+	require.NotEqual(t, sha1, sha3, "third call should return new result after remote change")
+	require.Regexp(t, `^[a-f0-9]{40}$`, sha3)
+}
