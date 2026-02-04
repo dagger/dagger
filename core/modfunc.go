@@ -479,6 +479,7 @@ func (fn *ModuleFunction) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	return objDefaults.Namespace(ctx, fn.metadata.OriginalName)
 }
 
+//nolint:gocyclo
 func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,

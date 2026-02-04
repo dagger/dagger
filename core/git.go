@@ -103,7 +103,6 @@ func (repo *GitRepository) Clone() *GitRepository {
 	return &cp
 }
 
-
 func (*GitRef) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "GitRef",
@@ -125,7 +124,6 @@ func (ref *GitRef) Clone() *GitRef {
 	}
 	return &cp
 }
-
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {
 	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth)
