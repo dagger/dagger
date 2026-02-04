@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"dagger.io/dagger/querybuilder"
@@ -417,6 +418,9 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 			return false, nil // always looking for leaves - no point in trying to walk
 		}
 		return true, nil
+	})
+	slices.SortStableFunc(res, func(a, b *ModTreeNode) int {
+		return strings.Compare(a.PathString(), b.PathString())
 	})
 	return res, err
 }
