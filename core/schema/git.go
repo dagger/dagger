@@ -273,7 +273,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		dgstInputs = append(dgstInputs, "authHeader", args.HTTPAuthHeader.Value.ID().Digest().String())
 	}
 
-	// Note: head info is added by __resolve after ls-remote runs
+	if args.Ref != "" {
+		dgstInputs = append(dgstInputs, "pinnedRef", args.Ref)
+	}
+	if args.Commit != "" {
+		dgstInputs = append(dgstInputs, "pinnedCommit", args.Commit)
+	}
 	inst = inst.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
 
 	// Resource transfer for secrets/sockets across client boundaries
@@ -910,6 +915,14 @@ func (s *gitSchema) repoResolve(
 			dgstInputs = append(dgstInputs, "authHeader", remote.AuthHeader.Value.ID().Digest().String())
 		}
 		dgstInputs = append(dgstInputs, "remote", resolved.Remote.Digest().String())
+		if resolved.PinnedHead != nil {
+			if resolved.PinnedHead.Name != "" {
+				dgstInputs = append(dgstInputs, "pinnedRef", resolved.PinnedHead.Name)
+			}
+			if resolved.PinnedHead.SHA != "" {
+				dgstInputs = append(dgstInputs, "pinnedCommit", resolved.PinnedHead.SHA)
+			}
+		}
 		result = result.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
 	}
 
@@ -977,12 +990,14 @@ func (s *gitSchema) resolveWithAuthFromContext(
 ) (dagql.ObjectResult[*core.GitRepository], bool, error) {
 	var zero dagql.ObjectResult[*core.GitRepository]
 
-	switch remote.URL.Scheme {
+	r := remote.Clone() // we modify it in-place below
+
+	switch r.URL.Scheme {
 	case gitutil.SSHProtocol:
 		// Default to git user for SSH, otherwise weird incorrect defaults
 		// like "root" can get applied in various places.
-		if remote.URL.User == nil {
-			remote.URL.User = url.User("git")
+		if r.URL.User == nil {
+			r.URL.User = url.User("git")
 		}
 
 		// Try to get SSH socket from client context
@@ -1012,7 +1027,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 		if err := srv.Select(ctx, srv.Root(), &result,
 			dagql.Selector{
 				Field: "git",
-				Args:  s.buildRedirectArgs(parent, remote, remote.URL.String(), authArgs),
+				Args:  s.buildRedirectArgs(parent, r, r.URL.String(), authArgs),
 			},
 			dagql.Selector{Field: "__resolve"},
 		); err != nil {
@@ -1022,7 +1037,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
 		// Try to get credentials from store
-		token, username := s.getCredentialFromStore(ctx, srv, remote.URL)
+		token, username := s.getCredentialFromStore(ctx, srv, r.URL)
 		if token == nil {
 			return zero, false, nil // No credentials available
 		}
@@ -1041,7 +1056,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 		if err := srv.Select(ctx, srv.Root(), &result,
 			dagql.Selector{
 				Field: "git",
-				Args:  s.buildRedirectArgs(parent, remote, remote.URL.String(), authArgs),
+				Args:  s.buildRedirectArgs(parent, r, r.URL.String(), authArgs),
 			},
 			dagql.Selector{Field: "__resolve"},
 		); err != nil {
@@ -1284,6 +1299,10 @@ func (s *gitSchema) refResolve(
 	if isRemote && remote.URL != nil && ref.Ref != nil && ref.Ref.SHA != "" {
 		dgstInputs := []string{
 			remote.URL.String(),
+			// GitRef identity includes the ref name; the `.ref()` field depends on it.
+			// Without this, different refs pinned to the same commit collide in the dagql cache
+			// and return the wrong ref name (e.g. "main").
+			ref.Ref.Name, // canonical (refs/heads/..., refs/tags/...)
 			ref.Ref.SHA,
 			strconv.FormatBool(resolvedRepo.Self().DiscardGitDir),
 		}
