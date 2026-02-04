@@ -454,8 +454,12 @@ func (cr *cacheRecord) mount(ctx context.Context) (_ snapshot.Mountable, rerr er
 	return cr.mountCache, nil
 }
 
+// cr must be mutable
 func (cr *cacheRecord) hasDirtyVolatile(ctx context.Context) (_ bool, rerr error) {
-	mntable, err := cr.mount(ctx)
+	if !cr.mutable {
+		return false, errors.New("can only check dirty volatile on mutable cache records")
+	}
+	mntable, err := cr.mutableMount(ctx, false, nil)
 	if err != nil {
 		return false, err
 	}
@@ -1572,35 +1576,39 @@ func (sr *mutableRef) commit() (_ *immutableRef, rerr error) {
 func (sr *mutableRef) Mount(ctx context.Context, readonly bool, s session.Group) (_ snapshot.Mountable, rerr error) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
+	return sr.mutableMount(ctx, readonly, s)
+}
 
-	if sr.mountCache != nil {
+// caller must hold cacheRecord.mu
+func (cr *cacheRecord) mutableMount(ctx context.Context, readonly bool, s session.Group) (_ snapshot.Mountable, rerr error) {
+	if cr.mountCache != nil {
 		if readonly {
-			return setReadonly(sr.mountCache), nil
+			return setReadonly(cr.mountCache), nil
 		}
-		return sr.mountCache, nil
+		return cr.mountCache, nil
 	}
 
 	var mnt snapshot.Mountable
-	if sr.cm.Snapshotter.Name() == "stargz" && sr.layerParent != nil {
-		if err := sr.layerParent.withRemoteSnapshotLabelsStargzMode(ctx, s, func() {
-			mnt, rerr = sr.mount(ctx)
+	if cr.cm.Snapshotter.Name() == "stargz" && cr.layerParent != nil {
+		if err := cr.layerParent.withRemoteSnapshotLabelsStargzMode(ctx, s, func() {
+			mnt, rerr = cr.mount(ctx)
 		}); err != nil {
 			return nil, err
 		}
 	} else {
-		mnt, rerr = sr.mount(ctx)
+		mnt, rerr = cr.mount(ctx)
 	}
 	if rerr != nil {
 		return nil, rerr
 	}
 
-	if sr.GetRecordType() == client.UsageRecordTypeCacheMount {
+	if cr.GetRecordType() == client.UsageRecordTypeCacheMount {
 		// Make the mounts sharable. We don't do this for immutableRef mounts because
 		// it requires the raw []mount.Mount for computing diff on overlayfs.
-		mnt = sr.cm.mountPool.setSharable(mnt)
+		mnt = cr.cm.mountPool.setSharable(mnt)
 	}
 
-	sr.mountCache = mnt
+	cr.mountCache = mnt
 	if readonly {
 		mnt = setReadonly(mnt)
 	}
@@ -1848,9 +1856,7 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 
 		sm.count--
 		if sm.count < 0 {
-			if v := os.Getenv("BUILDKIT_DEBUG_PANIC_ON_ERROR"); v == "1" {
-				panic("release of released mount")
-			}
+			return fmt.Errorf("release of released mount %s", sm.curMountPoint)
 		} else if sm.count > 0 {
 			return nil
 		}
