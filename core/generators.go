@@ -120,7 +120,7 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 func (gg *GeneratorGroup) Changes(ctx context.Context, conflictStrategy WithChangesetsMergeConflict) (*Changeset, error) {
 	switch len(gg.Generators) {
 	case 0:
-		return nil, nil
+		return NewEmptyChangeset(ctx)
 	case 1:
 		return gg.Generators[0].Changes, nil
 	}
