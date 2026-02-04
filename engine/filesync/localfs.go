@@ -267,8 +267,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 				only[path] = struct{}{}
 				cachedResultsMu.Unlock()
 
-				path, ok := strings.CutPrefix(path, local.copyPath)
-				if cacheCtx != nil && ok {
+				doHandle := cacheCtx != nil
+				if local.copyPath != "" {
+					path, doHandle = strings.CutPrefix(path, local.copyPath)
+				}
+				if doHandle {
 					relPathFound = true
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
@@ -293,8 +296,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 				only[path] = struct{}{}
 				cachedResultsMu.Unlock()
 
-				path, ok := strings.CutPrefix(path, local.copyPath)
-				if cacheCtx != nil && ok {
+				doHandle := cacheCtx != nil
+				if local.copyPath != "" {
+					path, doHandle = strings.CutPrefix(path, local.copyPath)
+				}
+				if doHandle {
 					relPathFound = true
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
@@ -355,8 +361,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 					only[path] = struct{}{}
 					cachedResultsMu.Unlock()
 
-					path, ok := strings.CutPrefix(path, local.copyPath)
-					if cacheCtx != nil && ok {
+					doHandle := cacheCtx != nil
+					if local.copyPath != "" {
+						path, doHandle = strings.CutPrefix(path, local.copyPath)
+					}
+					if doHandle {
 						relPathFound = true
 						if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 							return fmt.Errorf("failed to handle change in content hasher: %w", err)
@@ -407,8 +416,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 			only[path] = struct{}{}
 			cachedResultsMu.Unlock()
 
-			path, ok := strings.CutPrefix(path, local.copyPath)
-			if cacheCtx != nil && ok {
+			doHandle := cacheCtx != nil
+			if local.copyPath != "" {
+				path, doHandle = strings.CutPrefix(path, local.copyPath)
+			}
+			if doHandle {
 				relPathFound = true
 				if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 					return fmt.Errorf("failed to handle change in content hasher: %w", err)
@@ -435,8 +447,12 @@ func (local *localFS) Sync( //nolint:gocyclo
 		only[hardlink.path] = struct{}{}
 		cachedResultsMu.Unlock()
 
-		path, ok := strings.CutPrefix(hardlink.path, local.copyPath)
-		if cacheCtx != nil && ok {
+		doHandle := cacheCtx != nil
+		path := hardlink.path
+		if local.copyPath != "" {
+			path, doHandle = strings.CutPrefix(path, local.copyPath)
+		}
+		if doHandle {
 			relPathFound = true
 			if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 				return nil, fmt.Errorf("failed to handle change in content hasher: %w", err)
