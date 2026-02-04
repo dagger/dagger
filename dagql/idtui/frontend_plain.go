@@ -72,6 +72,9 @@ type frontendPlain struct {
 	// msgPreFinalRender contains messages to display on the final render
 	msgPreFinalRender strings.Builder
 
+	// userDefaults tracks user defaults that have been printed to deduplicate
+	userDefaults map[string]userDefault
+
 	// ticker keeps a constant frame rate
 	ticker *time.Ticker
 
@@ -119,6 +122,7 @@ func NewPlain(w io.Writer) Frontend {
 		output:         NewOutput(w),
 		contextHold:    1 * time.Second,
 		contextHoldMax: 10 * time.Second,
+		userDefaults:   make(map[string]userDefault),
 
 		done:   make(chan struct{}),
 		ticker: time.NewTicker(50 * time.Millisecond),
@@ -315,15 +319,23 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 		return err
 	}
 	for _, record := range logs {
-		// Check if this log is marked as verbose
+		// Check if this log is marked as verbose and extract user default info
 		isVerbose := false
-		isDefault := false
+		var userDefault userDefault
 		record.WalkAttributes(func(kv log.KeyValue) bool {
-			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
-				isVerbose = true
-			}
-			if kv.Key == telemetry.DefaultModuleAttr {
-				isDefault = true
+			switch kv.Key {
+			case telemetry.LogsVerboseAttr:
+				if kv.Value.AsBool() {
+					isVerbose = true
+				}
+			case telemetry.DefaultTypeAttr:
+				userDefault.objType = kv.Value.AsString()
+			case telemetry.DefaultFunctionAttr:
+				userDefault.function = kv.Value.AsString()
+			case telemetry.DefaultArgAttr:
+				userDefault.arg = kv.Value.AsString()
+			case telemetry.DefaultValueAttr:
+				userDefault.value = kv.Value.AsString()
 			}
 			return true // continue walking
 		})
@@ -333,8 +345,20 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 			continue
 		}
 
-		// Don't print user default usage with -s
-		if isDefault && fe.Silent {
+		// Handle user defaults with deduplication
+		if userDefault.arg != "" {
+			// Don't print user default usage with -s (silent mode)
+			if fe.Silent {
+				continue
+			}
+			// Check if we've already printed this user default
+			id := userDefault.ID()
+			if _, seen := fe.userDefaults[id]; seen {
+				continue // already printed, skip duplicate
+			}
+			fe.userDefaults[id] = userDefault
+			// Print the user default message
+			fe.printUserDefault(userDefault)
 			continue
 		}
 
@@ -377,6 +401,20 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 		}
 	}
 	return nil
+}
+
+// printUserDefault prints a formatted user default message
+func (fe *frontendPlain) printUserDefault(def userDefault) {
+	fnName := def.objType
+	if def.function != "" {
+		fnName += "." + def.function
+	}
+	msg := fmt.Sprintf("user default: %s(%s: %s)",
+		fe.output.String(fnName).Bold(),
+		fe.output.String(def.arg).Foreground(termenv.ANSICyan),
+		fe.output.String(fmt.Sprintf("%q", def.value)).Foreground(termenv.ANSIYellow),
+	)
+	fmt.Fprintln(fe.output, msg)
 }
 
 func (fe *frontendPlain) ForceFlush(context.Context) error {

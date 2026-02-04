@@ -245,7 +245,7 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 				log.String(telemetry.DefaultArgAttr, argName),
 				log.String(telemetry.DefaultValueAttr, argDefault.UserInput),
 			),
-			"user default: %s(%s=%q)\n",
+			"user default: %s(%s: %q)\n",
 			uiFnName,
 			argName,
 			argDefault.UserInput,

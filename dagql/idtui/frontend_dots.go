@@ -37,6 +37,9 @@ type frontendDots struct {
 	reporter    *frontendPretty
 	prefixW     *multiprefixw.Writer
 	pendingLogs map[dagui.SpanID][]sdklog.Record
+
+	// userDefaults tracks user defaults that have been printed to deduplicate
+	userDefaults map[string]userDefault
 }
 
 // NewDots creates a new dots-style frontend that outputs green dots for
@@ -68,8 +71,9 @@ func NewDots(output io.Writer) Frontend {
 		db:       db,
 		reporter: reporter,
 
-		prefixW:     multiprefixw.New(out),
-		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
+		prefixW:      multiprefixw.New(out),
+		userDefaults: make(map[string]userDefault),
+		pendingLogs:  make(map[dagui.SpanID][]sdklog.Record),
 	}
 }
 
@@ -81,9 +85,12 @@ func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	fe.opts = opts
 	return fe.reporter.Run(ctx, opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cleanup, err := f(ctx)
+		// NB: this awkward dance is necessary for the double linebreak spacing to
+		// actually show up in the right spot (after all the dots come out)
+		cleanupErr := cleanup()
 		fmt.Fprintln(fe.out)
 		fmt.Fprintln(fe.out)
-		return cleanup, err
+		return func() error { return cleanupErr }, err
 	})
 }
 
@@ -264,6 +271,32 @@ func (e *dotsLogsExporter) Export(ctx context.Context, records []sdklog.Record) 
 	// Group records by span and either flush immediately if span exists, or store for later
 	spanGroups := make(map[dagui.SpanID][]sdklog.Record)
 	for _, record := range records {
+		// Check for user defaults and handle with deduplication
+		var userDefault userDefault
+		record.WalkAttributes(func(kv log.KeyValue) bool {
+			switch kv.Key {
+			case telemetry.DefaultTypeAttr:
+				userDefault.objType = kv.Value.AsString()
+			case telemetry.DefaultFunctionAttr:
+				userDefault.function = kv.Value.AsString()
+			case telemetry.DefaultArgAttr:
+				userDefault.arg = kv.Value.AsString()
+			case telemetry.DefaultValueAttr:
+				userDefault.value = kv.Value.AsString()
+			}
+			return true
+		})
+
+		if userDefault.arg != "" {
+			// This is a user default log - deduplicate
+			id := userDefault.ID()
+			if _, seen := e.userDefaults[id]; !seen {
+				e.userDefaults[id] = userDefault
+				e.printUserDefault(userDefault)
+			}
+			continue
+		}
+
 		spanID := dagui.SpanID{SpanID: record.SpanID()}
 		spanGroups[spanID] = append(spanGroups[spanID], record)
 	}
@@ -281,6 +314,22 @@ func (e *dotsLogsExporter) Export(ctx context.Context, records []sdklog.Record) 
 	}
 
 	return nil
+}
+
+// printUserDefault prints a formatted user default message
+func (e *frontendDots) printUserDefault(def userDefault) {
+	fnName := def.objType
+	if def.function != "" {
+		fnName += "." + def.function
+	}
+	msg := fmt.Sprintf("%s(%s: %s)\n",
+		e.out.String(fnName).Bold(),
+		e.out.String(def.arg).Foreground(termenv.ANSICyan),
+		e.out.String(fmt.Sprintf("%q", def.value)).Foreground(termenv.ANSIYellow),
+	)
+	// Use the prefix writer with a simple prefix for user defaults
+	e.prefixW.Prefix = e.out.String(CaretDownFilled).Foreground(termenv.ANSIBrightBlack).String() + " " + e.out.String("user defaults").Bold().String() + "\n"
+	fmt.Fprint(e.prefixW, msg)
 }
 
 func (e *dotsLogsExporter) ForceFlush(ctx context.Context) error {
