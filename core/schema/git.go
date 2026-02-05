@@ -704,14 +704,40 @@ func (s *gitSchema) treeInternal(ctx context.Context, parent dagql.ObjectResult[
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	// Do the actual tree fetch
+	// Effective discard matches core.GitRef.Tree() behavior.
+	effectiveDiscard := ref.Repo.Self().DiscardGitDir || args.DiscardGitDir
+
+	// Compute the actual checkout directory (may include `.git`).
 	dir, err := ref.Tree(ctx, srv, args.DiscardGitDir, args.Depth)
 	if err != nil {
 		return inst, err
 	}
-	// The DagOpDirectoryWrapper handles buildkit caching and content hashing.
-	// WithHashContentDir ensures same tree content = same content digest.
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+
+	out, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	if err != nil {
+		return inst, err
+	}
+
+	// IMPORTANT: Git trees must be identified by *tree content*, not by `.git` bytes.
+	// `.git` is intentionally excluded because it can vary based on fetch/pack implementation
+	// and incidental repo metadata, even when the checked-out working tree is identical.
+	//
+	// This matches TestGitTreeDigestTracksContent:
+	// - tracks tracked content changes: commit SHA changes => digest changes
+	// - checksum options (depth): depth changes => digest changes
+	// - ignores .git changes: `.git` noise must not affect digest
+	if ref.Ref == nil || ref.Ref.SHA == "" {
+		return inst, fmt.Errorf("internal: treeInternal called before ref was resolved to a commit SHA")
+	}
+
+	out = out.WithObjectDigest(hashutil.HashStrings(
+		"git-tree",
+		ref.Ref.SHA,
+		strconv.Itoa(args.Depth),
+		strconv.FormatBool(effectiveDiscard),
+	))
+
+	return out, nil
 }
 
 func (s *gitSchema) fetchCommit(
@@ -1294,17 +1320,20 @@ func (s *gitSchema) refResolve(
 
 	// Set an auth-independent ObjectDigest on the ref so that __tree's dagop
 	// cache key is the same regardless of how auth was injected. The tree
-	// content is determined by commit SHA + URL + discardGitDir, not by auth.
-	remote, isRemote := resolvedRepo.Self().Backend.(*core.RemoteGitRepository)
-	if isRemote && remote.URL != nil && ref.Ref != nil && ref.Ref.SHA != "" {
+	// content is determined by commit SHA + ref name + discardGitDir, not by auth.
+	// For local repos, the commit SHA is content-addressed so URL is not needed.
+	if ref.Ref != nil && ref.Ref.SHA != "" {
 		dgstInputs := []string{
-			remote.URL.String(),
 			// GitRef identity includes the ref name; the `.ref()` field depends on it.
 			// Without this, different refs pinned to the same commit collide in the dagql cache
 			// and return the wrong ref name (e.g. "main").
 			ref.Ref.Name, // canonical (refs/heads/..., refs/tags/...)
 			ref.Ref.SHA,
 			strconv.FormatBool(resolvedRepo.Self().DiscardGitDir),
+		}
+		// For remote repos, include the URL to scope caching per-repo
+		if remote, isRemote := resolvedRepo.Self().Backend.(*core.RemoteGitRepository); isRemote && remote.URL != nil {
+			dgstInputs = append([]string{remote.URL.String()}, dgstInputs...)
 		}
 		result = result.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
 	}
