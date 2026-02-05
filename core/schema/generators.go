@@ -19,11 +19,8 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 		dagql.Func("run", s.run).
 			Doc("Execute all selected generators"),
 
-		dagql.NodeFunc("isEmpty", s.groupIsEmpty).
-			Doc("Whether the generated changeset is empty or not").
-			Args(
-				dagql.Arg("onConflict").Doc(`Strategy to apply on conflicts between generators`),
-			),
+		dagql.NodeFunc("isEmpty", DagOpWrapper(srv, s.groupIsEmpty)).
+			Doc("Whether the generated changeset is empty or not"),
 
 		dagql.NodeFunc("changes", DagOpChangesetWrapper(srv, s.groupChanges)).
 			Doc(`The combined changes from the generators execution`,
@@ -58,30 +55,13 @@ func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, 
 	return parent.Run(ctx)
 }
 
-func (s generatorsSchema) groupIsEmpty(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args struct {
-	OnConflict ChangesetsMergeConflict `default:"FAIL_EARLY"`
-}) (dagql.Boolean, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return false, err
-	}
+type generatorsGroupIsEmptyArgs struct {
+	DagOpInternalArgs
+}
 
-	var empty dagql.Boolean
-	if err := srv.Select(ctx, parent, &empty,
-		dagql.Selector{
-			Field: "changes",
-			Args: []dagql.NamedInput{
-				{Name: "onConflict", Value: dagql.NewString(string(args.OnConflict))},
-			},
-		},
-		dagql.Selector{
-			Field: "isEmpty",
-		},
-	); err != nil {
-		return false, err
-	}
-
-	return empty, nil
+func (s generatorsSchema) groupIsEmpty(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupIsEmptyArgs) (dagql.Boolean, error) {
+	empty, err := parent.Self().IsEmpty(ctx)
+	return dagql.NewBoolean(empty), err
 }
 
 type generatorsGroupChangesArgs struct {

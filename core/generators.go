@@ -117,6 +117,19 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 	return gg, nil
 }
 
+func (gg *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
+	for _, g := range gg.Generators {
+		if g.Changes != nil {
+			if empty, err := g.Changes.IsEmpty(ctx); err != nil {
+				return false, err
+			} else if !empty {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
 func (gg *GeneratorGroup) Changes(ctx context.Context, conflictStrategy WithChangesetsMergeConflict) (*Changeset, error) {
 	switch len(gg.Generators) {
 	case 0:
