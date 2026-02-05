@@ -20,7 +20,7 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 			Doc("Execute all selected generators"),
 
 		dagql.NodeFunc("isEmpty", s.groupIsEmpty).
-			Doc("Wether changeset from the generator execution is empty or not").
+			Doc("Whether the generated changeset is empty or not").
 			Args(
 				dagql.Arg("onConflict").Doc(`Strategy to apply on conflicts between generators`),
 			),
