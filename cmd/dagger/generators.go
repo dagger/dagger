@@ -24,7 +24,7 @@ var (
 func init() {
 	generateCmd.Flags().BoolVarP(&generateListMode, "list", "l", false, "List available generators")
 
-	generateCmd.Flags().BoolVar(&enableGenerateScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
+	generateCmd.Flags().BoolVar(&enableGenerateScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each generate executed")
 	generateCmd.Flags().MarkHidden("scale-out")
 }
 
