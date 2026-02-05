@@ -1229,13 +1229,16 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		src.SourceRootSubpath + "/" + modules.Filename,
 	}
 
-	if src.SourceSubpath != "" {
+	if src.SourceSubpath == "." {
+		// "." ends up matching nothing, so we convert it to "*"
+		fullIncludePaths = append(fullIncludePaths, "*")
+	} else if src.SourceSubpath != "" {
 		// load the source dir if set
-		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath+"/**/*")
+		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath)
 	} else {
 		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
 		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
-		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**/*")
+		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath)
 	}
 
 	switch src.Kind {
@@ -2682,6 +2685,9 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	clientGeneratorImpl, ok := sdk.AsClientGenerator()
 	if !ok {
+		if srcInst.Self() == nil || srcInst.Self().SDK == nil {
+			return genDirInst, fmt.Errorf("module source has no SDK configured")
+		}
 		return genDirInst, ErrSDKClientGeneratorNotImplemented{SDK: srcInst.Self().SDK.Source}
 	}
 
