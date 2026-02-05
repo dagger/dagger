@@ -69,6 +69,7 @@ var (
 	web                      bool
 	noExit                   bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
+	enableScaleOut           bool
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -346,6 +347,10 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	// all those functions will run in a remote cloud engine which gets created at execution time
 	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
 	flags.Lookup("cloud").Hidden = true
+
+	// this flag enables scale-out for a few commands, e.g. checks, generate
+	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check or generate executed")
+	flags.Lookup("scale-out").Hidden = true
 
 	for _, fl := range []string{
 		"workdir",

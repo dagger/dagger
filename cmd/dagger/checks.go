@@ -19,15 +19,11 @@ import (
 )
 
 var (
-	checksListMode       bool
-	enableChecksScaleOut bool
+	checksListMode bool
 )
 
 func init() {
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
-
-	checksCmd.Flags().BoolVar(&enableChecksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
-	checksCmd.Flags().MarkHidden("scale-out")
 }
 
 var checksCmd = &cobra.Command{
@@ -47,7 +43,7 @@ Examples:
 		return withEngine(
 			cmd.Context(),
 			client.Params{
-				EnableCloudScaleOut: enableChecksScaleOut,
+				EnableCloudScaleOut: enableScaleOut,
 			},
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()

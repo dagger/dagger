@@ -17,15 +17,11 @@ import (
 )
 
 var (
-	generateListMode       bool
-	enableGenerateScaleOut bool
+	generateListMode bool
 )
 
 func init() {
 	generateCmd.Flags().BoolVarP(&generateListMode, "list", "l", false, "List available generators")
-
-	generateCmd.Flags().BoolVar(&enableGenerateScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each generate executed")
-	generateCmd.Flags().MarkHidden("scale-out")
 }
 
 var generateCmd = &cobra.Command{
@@ -44,7 +40,7 @@ Examples:
 		return withEngine(
 			cmd.Context(),
 			client.Params{
-				EnableCloudScaleOut: enableGenerateScaleOut,
+				EnableCloudScaleOut: enableScaleOut,
 			},
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
