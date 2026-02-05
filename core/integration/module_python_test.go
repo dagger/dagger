@@ -8,11 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	dagger "github.com/dagger/dagger/internal/testutil"
+
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"dagger.io/dagger"
 )
 
 // Group all tests that are specific to Python only.

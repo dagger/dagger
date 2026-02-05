@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"time"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
+	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -274,7 +274,7 @@ func (*Test) Fn(ctx context.Context, rand string) (string, error) {
 
 		err = mod1.Serve(ctx)
 		require.NoError(t, err)
-		res1, err := testutil.QueryWithClient[struct {
+		res1, err := QueryWithClient[struct {
 			Test struct {
 				Fn string
 			}
@@ -285,7 +285,7 @@ func (*Test) Fn(ctx context.Context, rand string) (string, error) {
 		err = mod2.Serve(ctx)
 		require.NoError(t, err)
 
-		res2A, err := testutil.QueryWithClient[struct {
+		res2A, err := QueryWithClient[struct {
 			Test struct {
 				Fn string
 			}
@@ -300,7 +300,7 @@ func (*Test) Fn(ctx context.Context, rand string) (string, error) {
 		require.NoError(t, err)
 
 		rand = identity.NewID()
-		res2B, err := testutil.QueryWithClient[struct {
+		res2B, err := QueryWithClient[struct {
 			Test struct {
 				Fn string
 			}
@@ -604,7 +604,7 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 	require.NoError(t, err)
 	sockID1, err := c1.Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
-	res1, err := testutil.QueryWithClient[struct {
+	res1, err := QueryWithClient[struct {
 		Test struct {
 			Fn string
 		}
@@ -617,7 +617,7 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 	require.NoError(t, err)
 	sockID2, err := c2.Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
-	res2, err := testutil.QueryWithClient[struct {
+	res2, err := QueryWithClient[struct {
 		Test struct {
 			Fn string
 		}
@@ -627,7 +627,7 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 
 	require.NoError(t, c1.Close())
 
-	res2b, err := testutil.QueryWithClient[struct {
+	res2b, err := QueryWithClient[struct {
 		Test struct {
 			Fn string
 		}
@@ -767,7 +767,7 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 		secretID1, err := c1.Secret("cmd://echo -n foo").ID(ctx)
 		require.NoError(t, err)
 
-		res1, err := testutil.QueryWithClient[struct {
+		res1, err := QueryWithClient[struct {
 			Test struct {
 				Fn struct {
 					ID dagger.ContainerID
@@ -790,7 +790,7 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 		secretID2, err := c2.Secret("cmd://echo -n foo").ID(ctx)
 		require.NoError(t, err)
 
-		res2, err := testutil.QueryWithClient[struct {
+		res2, err := QueryWithClient[struct {
 			Test struct {
 				Fn struct {
 					ID dagger.ContainerID
@@ -979,7 +979,7 @@ func (o *Obj) Ents(ctx context.Context) ([]string, error) {
 	err = mod2.Serve(ctx)
 	require.NoError(t, err)
 
-	res1, err := testutil.QueryWithClient[struct {
+	res1, err := QueryWithClient[struct {
 		Test struct {
 			Nop string
 		}
@@ -987,7 +987,7 @@ func (o *Obj) Ents(ctx context.Context) ([]string, error) {
 	require.NoError(t, err)
 	require.Equal(t, "nop", res1.Test.Nop)
 
-	res2, err := testutil.QueryWithClient[struct {
+	res2, err := QueryWithClient[struct {
 		Test struct {
 			Nop2 string
 		}
@@ -998,7 +998,7 @@ func (o *Obj) Ents(ctx context.Context) ([]string, error) {
 	require.NoError(t, c1.Close())
 	time.Sleep(1 * time.Second)
 
-	res3, err := testutil.QueryWithClient[struct {
+	res3, err := QueryWithClient[struct {
 		Test struct {
 			Obj struct {
 				Ents []string
@@ -1054,7 +1054,7 @@ func (o *Obj) Foo(ctx context.Context) (string, error) {
 	err = mod1.Serve(ctx)
 	require.NoError(t, err)
 
-	res1, err := testutil.QueryWithClient[struct {
+	res1, err := QueryWithClient[struct {
 		Test struct {
 			Obj struct {
 				Foo string
@@ -1073,7 +1073,7 @@ func (o *Obj) Foo(ctx context.Context) (string, error) {
 	err = mod2.Serve(ctx)
 	require.NoError(t, err)
 
-	res2, err := testutil.QueryWithClient[struct {
+	res2, err := QueryWithClient[struct {
 		Test struct {
 			Obj struct {
 				Foo string
@@ -1119,7 +1119,7 @@ func (*Test) Rand(
 	err = mod1.Serve(ctx)
 	require.NoError(t, err)
 
-	res1, err := testutil.QueryWithClient[struct {
+	res1, err := QueryWithClient[struct {
 		Test struct {
 			Rand string
 		}
@@ -1133,7 +1133,7 @@ func (*Test) Rand(
 	err = mod2.Serve(ctx)
 	require.NoError(t, err)
 
-	res2, err := testutil.QueryWithClient[struct {
+	res2, err := QueryWithClient[struct {
 		Test struct {
 			Rand string
 		}
@@ -1151,7 +1151,7 @@ func (*Test) Rand(
 	err = mod3.Serve(ctx)
 	require.NoError(t, err)
 
-	res3, err := testutil.QueryWithClient[struct {
+	res3, err := QueryWithClient[struct {
 		Test struct {
 			Rand string
 		}
@@ -1189,8 +1189,8 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 	require.NoError(t, err)
 
 	t.Run("default plaintext based cache key", func(ctx context.Context, t *testctx.T) {
-		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
-		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
+		c1 := connect(ctx, t, daggerio.WithEnvironmentVariable("FOO", "1"))
+		c2 := connect(ctx, t, daggerio.WithEnvironmentVariable("FOO", "2"))
 
 		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
 		require.NoError(t, err)
@@ -1202,7 +1202,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 		s1id, err := s1.ID(ctx)
 		require.NoError(t, err)
 		{
-			res, err := testutil.QueryWithClient[struct {
+			res, err := QueryWithClient[struct {
 				Test struct {
 					Fn string
 				}
@@ -1211,7 +1211,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 			require.Equal(t, "1", res.Test.Fn)
 		}
 		{
-			res, err := testutil.QueryWithClient[struct {
+			res, err := QueryWithClient[struct {
 				Test struct {
 					Fn2 struct {
 						Stdout string
@@ -1228,7 +1228,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 		s2id, err := s2.ID(ctx)
 		require.NoError(t, err)
 		{
-			res, err := testutil.QueryWithClient[struct {
+			res, err := QueryWithClient[struct {
 				Test struct {
 					Fn string
 				}
@@ -1237,7 +1237,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 			require.Equal(t, "2", res.Test.Fn)
 		}
 		{
-			res, err := testutil.QueryWithClient[struct {
+			res, err := QueryWithClient[struct {
 				Test struct {
 					Fn2 struct {
 						Stdout string
@@ -1252,8 +1252,8 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 	})
 
 	t.Run("custom cache key", func(ctx context.Context, t *testctx.T) {
-		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
-		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
+		c1 := connect(ctx, t, daggerio.WithEnvironmentVariable("FOO", "1"))
+		c2 := connect(ctx, t, daggerio.WithEnvironmentVariable("FOO", "2"))
 
 		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
 		require.NoError(t, err)
@@ -1267,7 +1267,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 		s1id, err := s1.ID(ctx)
 		require.NoError(t, err)
 		{
-			res, err := testutil.QueryWithClient[struct {
+			res, err := QueryWithClient[struct {
 				Test struct {
 					Fn string
 				}
@@ -1276,7 +1276,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 			require.Equal(t, "1", res.Test.Fn)
 		}
 		{
-			res, err := testutil.QueryWithClient[struct {
+			res, err := QueryWithClient[struct {
 				Test struct {
 					Fn2 struct {
 						Stdout string
@@ -1293,7 +1293,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 		s2id, err := s2.ID(ctx)
 		require.NoError(t, err)
 		{
-			res, err := testutil.QueryWithClient[struct {
+			res, err := QueryWithClient[struct {
 				Test struct {
 					Fn string
 				}
@@ -1302,7 +1302,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 			require.Equal(t, "1", res.Test.Fn)
 		}
 		{
-			res, err := testutil.QueryWithClient[struct {
+			res, err := QueryWithClient[struct {
 				Test struct {
 					Fn2 struct {
 						Stdout string
@@ -1644,7 +1644,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 		0644,
 	)
 	require.NoError(t, err)
-	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile1))
+	c1 := connect(ctx, t, daggerio.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile1))
 
 	err = c1.ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
@@ -1653,7 +1653,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 	require.NoError(t, err)
 
 	rand1 := rand.Text()
-	res1, err := testutil.QueryWithClient[struct {
+	res1, err := QueryWithClient[struct {
 		Test struct {
 			Fn []string
 		}
@@ -1668,7 +1668,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 		0644,
 	)
 	require.NoError(t, err)
-	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile2))
+	c2 := connect(ctx, t, daggerio.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile2))
 
 	err = c2.ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
@@ -1677,7 +1677,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 	require.NoError(t, err)
 
 	rand2 := rand.Text()
-	res2, err := testutil.QueryWithClient[struct {
+	res2, err := QueryWithClient[struct {
 		Test struct {
 			Fn []string
 		}

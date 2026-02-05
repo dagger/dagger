@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"testing"
 
+	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"dagger.io/dagger"
 )
 
 type TypeSuite struct{}
@@ -864,7 +864,7 @@ func (m *Test) UpperReq(
 `
 
 	var logs safeBuffer
-	c := connect(ctx, t, dagger.WithLogOutput(&logs))
+	c := connect(ctx, t, daggerio.WithLogOutput(&logs))
 	modGen := modInit(t, c, "go", src)
 
 	out, err := modGen.With(daggerQuery(`{test{upperOpt(a: null)}}`)).Stdout(ctx)
@@ -1632,7 +1632,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 
 		t.Run("bool", func(ctx context.Context, t *testctx.T) {
 			var logs safeBuffer
-			c := connect(ctx, t, dagger.WithLogOutput(&logs))
+			c := connect(ctx, t, daggerio.WithLogOutput(&logs))
 
 			modGen := modInit(t, c, "go", src).
 				With(withModInitAt("./dep", "go", depSrc)).
@@ -1645,7 +1645,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 
 		t.Run("null", func(ctx context.Context, t *testctx.T) {
 			var logs safeBuffer
-			c := connect(ctx, t, dagger.WithLogOutput(&logs))
+			c := connect(ctx, t, daggerio.WithLogOutput(&logs))
 
 			modGen := modInit(t, c, "go", src).
 				With(withModInitAt("./dep", "go", depSrc)).

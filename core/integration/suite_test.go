@@ -10,18 +10,18 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/testutil/dagger"
-	"github.com/dagger/dagger/internal/testutil/dagger/dag"
+	"github.com/dagger/dagger/internal/testutil/dag"
 	"github.com/stretchr/testify/require"
 
+	dagger "github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/testutil"
 
 	// Import generated dagger client with toolchain bindings
 
@@ -35,18 +35,34 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	engine := dag.EngineDev().TestEngine()
 	ctx := context.Background()
+
+	// Generate and export the dagger CLI binary
+	cliBinary := dag.Cli().Binary()
+	cliPath, err := cliBinary.Export(ctx, "/tmp/dagger-cli-test")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Export dagger CLI: %v\n", err)
+		os.Exit(1)
+	}
+	os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath)
+	os.Setenv("_TEST_DAGGER_CLI_LINUX_BIN", cliPath)
+
+	// Start inner test engine for isolated test sessions
+	engine := dag.EngineDev().TestEngine()
 	go engine.Up(ctx)
 	engineEndpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Connect to test engine: %w", err)
+		fmt.Fprintf(os.Stderr, "Connect to test engine: %v\n", err)
 		os.Exit(1)
 	}
 
-	// After this point, privileges are dropped: we are bricked out of the "outer" engine
-	// New clients will connect to the dev engine instead
+	// Point tests to the inner engine
 	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint)
+
+	// Unset DAGGER_SESSION_PORT so tests create fresh sessions in the inner engine
+	// instead of reusing the outer engine's session
+	os.Unsetenv("DAGGER_SESSION_PORT")
+	os.Unsetenv("DAGGER_SESSION_TOKEN")
 
 	// Run tests
 	res := oteltest.Main(m)
@@ -62,7 +78,7 @@ func Middleware() []testctx.Middleware[*testing.T] {
 		testctx.WithParallel(),
 		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.T]{
-				StartOptions: testutil.SpanOpts[*testing.T],
+				StartOptions: SpanOpts[*testing.T],
 			},
 		),
 		oteltest.WithLogging[*testing.T](),
@@ -73,7 +89,7 @@ func BenchMiddleware() []testctx.Middleware[*testing.B] {
 	return []testctx.Middleware[*testing.B]{
 		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.B]{
-				StartOptions: testutil.SpanOpts[*testing.B],
+				StartOptions: SpanOpts[*testing.B],
 			},
 		),
 		oteltest.WithLogging[*testing.B](),
@@ -91,8 +107,9 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 	return client
 }
 
+
 func newCache(t *testctx.T) core.CacheVolumeID {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		CacheVolume struct {
 			ID core.CacheVolumeID
 		}
@@ -102,7 +119,7 @@ func newCache(t *testctx.T) core.CacheVolumeID {
 				id
 			}
 		}
-	`, &testutil.QueryOptions{Variables: map[string]any{
+	`, &QueryOptions{Variables: map[string]any{
 		"key": identity.NewID(),
 	}})
 	require.NoError(t, err)
@@ -111,7 +128,7 @@ func newCache(t *testctx.T) core.CacheVolumeID {
 }
 
 func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
@@ -124,7 +141,7 @@ func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
 					id
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"path":     path,
 			"contents": contents,
 		}})
@@ -134,7 +151,7 @@ func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
 }
 
 func newFile(t *testctx.T, path, contents string) core.FileID {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
@@ -151,7 +168,7 @@ func newFile(t *testctx.T, path, contents string) core.FileID {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"path":     path,
 			"contents": contents,
 		}})

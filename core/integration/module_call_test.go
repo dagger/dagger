@@ -18,7 +18,8 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
+	daggerio "dagger.io/dagger"
 )
 
 type CallSuite struct{}
@@ -2358,7 +2359,7 @@ func (m *Foo) Fn(ctx context.Context) (string, error) {
 func (CallSuite) TestFindup(ctx context.Context, t *testctx.T) {
 	prep := func(t *testctx.T) (*dagger.Client, *safeBuffer, *dagger.Container) {
 		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+		c := connect(ctx, t, daggerio.WithLogOutput(&logs))
 
 		mod := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).

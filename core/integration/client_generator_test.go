@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"

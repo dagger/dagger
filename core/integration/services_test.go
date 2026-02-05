@@ -37,8 +37,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil"
+	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/testctx"
 	"mvdan.cc/sh/v3/syntax"
@@ -836,7 +836,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 		} `json:"loadContainerFromID"`
 	}
 
-	res, err := testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err := QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -866,7 +866,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	withoutTCP := withPorts.WithoutExposedPort(8000)
 	cid, err = withoutTCP.ID(ctx)
 	require.NoError(t, err)
-	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err = QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -893,7 +893,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
-	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err = QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -2173,7 +2173,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	// verify that even if the engine doesn't have any search domains to propagate to execs, we still
 	// set search domains in those execs
 
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t)))
+	c, err := dagger.Connect(ctx, daggerio.WithLogOutput(NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -2214,8 +2214,8 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	})
 
 	c2, err := dagger.Connect(ctx,
-		dagger.WithRunnerHost("tcp://127.0.0.1:32132"),
-		dagger.WithLogOutput(testutil.NewTWriter(t)))
+		daggerio.WithRunnerHost("tcp://127.0.0.1:32132"),
+		daggerio.WithLogOutput(NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 

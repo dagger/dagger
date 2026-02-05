@@ -12,9 +12,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -25,7 +24,7 @@ func TestDirectory(t *testing.T) {
 }
 
 func (DirectorySuite) TestEmpty(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			ID      core.DirectoryID
 			Entries []string
@@ -106,7 +105,7 @@ func (DirectorySuite) TestScratch(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID      core.DirectoryID
@@ -128,7 +127,7 @@ func (DirectorySuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -151,7 +150,7 @@ func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -174,7 +173,7 @@ func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestDirectory(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -201,7 +200,7 @@ func (DirectorySuite) TestDirectory(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestDirectoryWithNewFile(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -808,13 +807,13 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 			}
 		}`
 		c := connect(ctx, t)
-		res, err := testutil.QueryWithClient[struct {
+		res, err := QueryWithClient[struct {
 			Directory struct {
 				Diff struct {
 					Entries []string
 				}
 			} `json:"loadDirectoryFromID"`
-		}](c, t, diff, &testutil.QueryOptions{
+		}](c, t, diff, &QueryOptions{
 			Variables: map[string]any{
 				"id":    aID,
 				"other": bID,
@@ -824,13 +823,13 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 
 		require.Equal(t, []string{"b-file"}, res.Directory.Diff.Entries)
 
-		res, err = testutil.QueryWithClient[struct {
+		res, err = QueryWithClient[struct {
 			Directory struct {
 				Diff struct {
 					Entries []string
 				}
 			} `json:"loadDirectoryFromID"`
-		}](c, t, diff, &testutil.QueryOptions{
+		}](c, t, diff, &QueryOptions{
 			Variables: map[string]any{
 				"id":    bID,
 				"other": aID,
@@ -895,7 +894,7 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 
 		This might be fixed once we update Buildkit.
 
-		err = testutil.Query(diff, &res, &testutil.QueryOptions{
+		err = Query(diff, &res, &QueryOptions{
 			Variables: map[string]any{
 				"id":    aID,
 				"other": aID,
@@ -963,7 +962,7 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestWithNewFileExceedingLength(ctx context.Context, t *testctx.T) {
-	_, err := testutil.Query[struct {
+	_, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
@@ -982,7 +981,7 @@ func (DirectorySuite) TestWithNewFileExceedingLength(ctx context.Context, t *tes
 }
 
 func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testctx.T) {
-	_, err := testutil.Query[struct {
+	_, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				file struct {

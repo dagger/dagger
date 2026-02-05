@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	daggerio "dagger.io/dagger"
 )
 
 type TelemetrySuite struct{}
@@ -23,7 +23,7 @@ func (TelemetrySuite) TestInternalVertexes(ctx context.Context, t *testctx.T) {
 
 	t.Run("merge pipeline", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+		c := connect(ctx, t, daggerio.WithLogOutput(&logs))
 
 		dirA := c.Directory().WithNewFile("/foo", "foo")
 		dirB := c.Directory().WithNewFile("/bar", "bar")

@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	dagClient "dagger.io/dagger"
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
 )
 
 var client *dagger.Client
@@ -149,7 +149,7 @@ func ElixirSDK(opts ...dagger.ElixirSDKOpts) *dagger.ElixirSDK {
 
 func EngineDev(opts ...dagger.EngineDevOpts) *dagger.EngineDev {
 	client := initClient()
-	return client.EngineDev(subnetNumber, opts...)
+	return client.EngineDev(opts...)
 }
 
 // Initializes a new environment
@@ -718,12 +718,12 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 // Develop the Dagger PHP SDK (experimental)
 func PhpSDK(opts ...dagger.PhpSDKOpts) *dagger.PhpSDK {
 	client := initClient()
-	return client.PhpSDK(sourcePath, doctumConfigPath, opts...)
+	return client.PhpSDK(opts...)
 }
 
 func PythonSDK(opts ...dagger.PythonSDKOpts) *dagger.PythonSDK {
 	client := initClient()
-	return client.PythonSDK(sourcePath, opts...)
+	return client.PythonSDK(opts...)
 }
 
 func Release() *dagger.Release {
@@ -733,7 +733,7 @@ func Release() *dagger.Release {
 
 func RustSDK(opts ...dagger.RustSDKOpts) *dagger.RustSDK {
 	client := initClient()
-	return client.RustSDK(sourcePath, opts...)
+	return client.RustSDK(opts...)
 }
 
 func Sdks() *dagger.Sdks {

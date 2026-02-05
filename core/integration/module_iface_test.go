@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	daggerio "dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
 )
 
 type InterfaceSuite struct{}
@@ -46,7 +46,7 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 	t.Run("no dagger object embed", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+		c := connect(ctx, t, daggerio.WithLogOutput(&logs))
 
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).

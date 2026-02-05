@@ -20,7 +20,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
+	daggerio "dagger.io/dagger"
 	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/testctx"
@@ -907,7 +908,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
 		require.NoError(t, err)
 
-		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
+		c := connect(ctx, t, daggerio.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
 			c.Directory().WithNewFile("README.md", "Hello, user!"),
@@ -934,7 +935,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
 		require.NoError(t, err)
 
-		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
+		c := connect(ctx, t, daggerio.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
 			c.Directory().WithNewFile("README.md", "Hello, bad username!"),
@@ -961,7 +962,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
 		require.NoError(t, err)
 
-		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
+		c := connect(ctx, t, daggerio.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
 			c.Directory().WithNewFile("README.md", "Hello, bad password!"),

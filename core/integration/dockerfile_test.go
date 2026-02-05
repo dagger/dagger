@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -338,7 +337,7 @@ EXPOSE 8080
 	cid, err := testCtr.ID(ctx)
 	require.NoError(t, err)
 
-	res, err := testutil.QueryWithClient[struct {
+	res, err := QueryWithClient[struct {
 		Container struct {
 			ExposedPorts []core.Port
 		} `json:"loadContainerFromID"`
@@ -352,7 +351,7 @@ EXPOSE 8080
                 }
             }
         }`,
-		&testutil.QueryOptions{
+		&QueryOptions{
 			Variables: map[string]any{
 				"id": cid,
 			},

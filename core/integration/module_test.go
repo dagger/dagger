@@ -28,13 +28,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
+	daggerio "dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -1480,7 +1480,7 @@ export class Test {
 		} {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				var logs safeBuffer
-				c := connect(ctx, t, dagger.WithLogOutput(&logs))
+				c := connect(ctx, t, daggerio.WithLogOutput(&logs))
 
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2438,8 +2438,8 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 		addr := "127.0.0.1:12456"
 		listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--listen", addr)
 		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
-		listenCmd.Stdout = testutil.NewTWriter(t)
-		listenCmd.Stderr = testutil.NewTWriter(t)
+		listenCmd.Stdout = NewTWriter(t)
+		listenCmd.Stderr = NewTWriter(t)
 		require.NoError(t, listenCmd.Start())
 
 		backoff.Retry(func() error {
@@ -2455,7 +2455,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 
 		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "container-echo", "--string-arg=hi", "stdout")
 		callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
-		callCmd.Stderr = testutil.NewTWriter(t)
+		callCmd.Stderr = NewTWriter(t)
 		out, err := callCmd.Output()
 		require.NoError(t, err)
 		lines := strings.Split(string(out), "\n")
@@ -2479,7 +2479,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
-				callCmd.Stderr = testutil.NewTWriter(t)
+				callCmd.Stderr = NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.Output()
 				if err == nil {
@@ -2503,7 +2503,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
-				callCmd.Stderr = testutil.NewTWriter(t)
+				callCmd.Stderr = NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.Output()
 				if err == nil {
@@ -3201,7 +3201,7 @@ func (t *Test) GetEncoded(ctx context.Context) (string, error) {
 		// writing secrets with the same name
 
 		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+		c := connect(ctx, t, daggerio.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
@@ -3283,7 +3283,7 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 		// even when we know the underlying IDs
 
 		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+		c := connect(ctx, t, daggerio.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
@@ -6748,7 +6748,7 @@ query ModuleIntrospection($path: String!) {
 
 			c := connect(ctx, t)
 
-			res, err := testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			res, err := QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			require.NoError(t, err)
@@ -7008,7 +7008,7 @@ class Test:
 
 			c := connect(ctx, t)
 
-			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			_, err = QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			require.Error(t, err)
@@ -7137,7 +7137,7 @@ class Test:
 
 			c := connect(ctx, t)
 
-			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			_, err = QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			if err != nil {
@@ -7350,7 +7350,7 @@ func (m *Test) ReadFile(
 		err = c.ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		res1, err := testutil.QueryWithClient[struct {
+		res1, err := QueryWithClient[struct {
 			Test struct {
 				ReadFile string
 			}
@@ -7362,7 +7362,7 @@ func (m *Test) ReadFile(
 		err = os.WriteFile(testFilePath, []byte(newContent), 0o644)
 		require.NoError(t, err)
 
-		res2, err := testutil.QueryWithClient[struct {
+		res2, err := QueryWithClient[struct {
 			Test struct {
 				ReadFile string
 			}
@@ -7411,7 +7411,7 @@ func (m *Test) RunNoisy(ctx context.Context) error {
 	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
 
-	_, err = testutil.QueryWithClient[struct {
+	_, err = QueryWithClient[struct {
 		Test struct {
 			RunNoisy any
 		}

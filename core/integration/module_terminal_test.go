@@ -13,7 +13,6 @@ import (
 	"github.com/Netflix/go-expect"
 	"github.com/containerd/continuity/fs"
 	"github.com/creack/pty"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
@@ -446,7 +445,7 @@ type Test struct {
 		"context"
 		"fmt"
 
-		"dagger.io/dagger"
+		dagger "github.com/dagger/dagger/internal/testutil"
 	)
 
 	func main() {
@@ -701,7 +700,7 @@ type tuiConsole struct {
 func newTUIConsole(t *testctx.T, expectLineTimeout time.Duration) (*tuiConsole, error) {
 	output := bytes.NewBuffer(nil)
 	console, err := expect.NewConsole(
-		expect.WithStdout(io.MultiWriter(testutil.NewTWriter(t), output)),
+		expect.WithStdout(io.MultiWriter(NewTWriter(t), output)),
 		expect.WithDefaultTimeout(expectLineTimeout),
 	)
 	if err != nil {

@@ -1298,6 +1298,14 @@ type Changeset struct {
 	isEmpty *bool
 	sync    *ChangesetID
 }
+type WithChangesetFunc func(r *Changeset) *Changeset
+
+// With calls the provided function with current Changeset.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Changeset) With(f WithChangesetFunc) *Changeset {
+	return f(r)
+}
 
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
 	return &Changeset{
@@ -1451,6 +1459,61 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 	}, nil
 }
 
+// ChangesetWithChangesetOpts contains options for Changeset.WithChangeset
+type ChangesetWithChangesetOpts struct {
+	// What to do on a merge conflict
+	//
+	// Default: FAIL
+	OnConflict ChangesetMergeConflict
+}
+
+// Add changes to an existing changeset
+//
+// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+func (r *Changeset) WithChangeset(changes *Changeset, opts ...ChangesetWithChangesetOpts) *Changeset {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChangeset")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// ChangesetWithChangesetsOpts contains options for Changeset.WithChangesets
+type ChangesetWithChangesetsOpts struct {
+	// What to do on a merge conflict
+	//
+	// Default: FAIL
+	OnConflict ChangesetsMergeConflict
+}
+
+// Add changes from multiple changesets using git octopus merge strategy
+//
+// This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+//
+// Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithChangesetsOpts) *Changeset {
+	q := r.query.Select("withChangesets")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 type Check struct {
 	query *querybuilder.Selection
 
@@ -1596,15 +1659,6 @@ func (r *Check) Run() *Check {
 	q := r.query.Select("run")
 
 	return &Check{
-		query: q,
-	}
-}
-
-// The module source where the check is defined (i.e., toolchains)
-func (r *Check) Source() *ModuleSource {
-	q := r.query.Select("source")
-
-	return &ModuleSource{
 		query: q,
 	}
 }
@@ -4348,7 +4402,7 @@ type DaggerDevGoOpts struct {
 	// Go version
 	//
 	//
-	// Default: "1.25.5"
+	// Default: "1.25.6"
 	Version string // go (../../toolchains/go/main.go:31:2)
 	//
 	// Use a custom module cache
@@ -5591,7 +5645,7 @@ func (r *Docs) WithGraphQLQuery(q *querybuilder.Selection) *Docs {
 }
 
 // Bump the Go SDK's Engine dependency
-func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../toolchains/docs-dev/main.go:145:1)
+func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../toolchains/docs-dev/main.go:146:1)
 	q := r.query.Select("bump")
 	q = q.Arg("engineVersion", engineVersion)
 
@@ -5601,7 +5655,7 @@ func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../toolchains
 }
 
 // Deploys a current build of the docs.
-func (r *Docs) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs (../../toolchains/docs-dev/main.go:160:1)
+func (r *Docs) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs (../../toolchains/docs-dev/main.go:161:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -5621,11 +5675,11 @@ type DocsGenerateOpts struct {
 	//
 	// Dagger version to generate API docs for
 	//
-	Version string // docs (../../toolchains/docs-dev/main.go:100:2)
+	Version string // docs (../../toolchains/docs-dev/main.go:101:2)
 }
 
 // Regenerate the API schema and CLI reference docs
-func (r *Docs) Generate(opts ...DocsGenerateOpts) *Changeset { // docs (../../toolchains/docs-dev/main.go:97:1)
+func (r *Docs) Generate(opts ...DocsGenerateOpts) *Changeset { // docs (../../toolchains/docs-dev/main.go:98:1)
 	q := r.query.Select("generate")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -5681,7 +5735,7 @@ func (r *Docs) MarshalJSON() ([]byte, error) {
 
 // DocsLintMarkdownOpts contains options for Docs.LintMarkdown
 type DocsLintMarkdownOpts struct {
-	MarkdownFiles *Directory // docs (../../toolchains/docs-dev/main.go:85:2)
+	MarkdownFiles *Directory // docs (../../toolchains/docs-dev/main.go:86:2)
 }
 
 // Lint documentation files
@@ -5702,11 +5756,11 @@ func (r *Docs) LintMarkdown(ctx context.Context, opts ...DocsLintMarkdownOpts) e
 
 // DocsPublishOpts contains options for Docs.Publish
 type DocsPublishOpts struct {
-	Deployment string // docs (../../toolchains/docs-dev/main.go:193:2)
+	Deployment string // docs (../../toolchains/docs-dev/main.go:194:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *Docs) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsPublishOpts) error { // docs (../../toolchains/docs-dev/main.go:189:1)
+func (r *Docs) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsPublishOpts) error { // docs (../../toolchains/docs-dev/main.go:190:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -6267,17 +6321,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../toolchains/engine-dev/main.go:462:2)
+	Image string // engine-dev (../../toolchains/engine-dev/main.go:463:2)
 
-	DryRun bool // engine-dev (../../toolchains/engine-dev/main.go:467:2)
+	DryRun bool // engine-dev (../../toolchains/engine-dev/main.go:468:2)
 
-	RegistryUsername string // engine-dev (../../toolchains/engine-dev/main.go:470:2)
+	RegistryUsername string // engine-dev (../../toolchains/engine-dev/main.go:471:2)
 
-	RegistryPassword *Secret // engine-dev (../../toolchains/engine-dev/main.go:472:2)
+	RegistryPassword *Secret // engine-dev (../../toolchains/engine-dev/main.go:473:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../toolchains/engine-dev/main.go:457:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../toolchains/engine-dev/main.go:458:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -6305,7 +6359,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../toolchains/engine-dev/main.go:443:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../toolchains/engine-dev/main.go:444:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -7036,6 +7090,41 @@ func (r *Env) With(f WithEnvFunc) *Env {
 
 func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
 	return &Env{
+		query: q,
+	}
+}
+
+// Return the check with the given name from the installed modules. Must match exactly one check.
+//
+// Experimental: Checks API is highly experimental and may be removed or replaced entirely.
+func (r *Env) Check(name string) *Check {
+	q := r.query.Select("check")
+	q = q.Arg("name", name)
+
+	return &Check{
+		query: q,
+	}
+}
+
+// EnvChecksOpts contains options for Env.Checks
+type EnvChecksOpts struct {
+	// Only include checks matching the specified patterns
+	Include []string
+}
+
+// Return all checks defined by the installed modules
+//
+// Experimental: Checks API is highly experimental and may be removed or replaced entirely.
+func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
+	q := r.query.Select("checks")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &CheckGroup{
 		query: q,
 	}
 }
@@ -7825,9 +7914,24 @@ func (r *Env) WithJavaSDKOutput(name string, description string) *Env {
 	}
 }
 
+// Sets the main module for this environment (the project being worked on)
+//
+// Contextual path arguments will be populated using the environment's workspace.
+func (r *Env) WithMainModule(module *Module) *Env {
+	assertNotNil("module", module)
+	q := r.query.Select("withMainModule")
+	q = q.Arg("module", module)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Installs a module into the environment, exposing its functions to the model
 //
 // Contextual path arguments will be populated using the environment's workspace.
+//
+// Deprecated: Use withMainModule instead
 func (r *Env) WithModule(module *Module) *Env {
 	assertNotNil("module", module)
 	q := r.query.Select("withModule")
@@ -9566,6 +9670,8 @@ type FunctionWithArgOpts struct {
 	SourceMap *SourceMap
 	// If deprecated, the reason or migration path.
 	Deprecated string
+
+	DefaultAddress string
 }
 
 // Returns the function with the provided argument
@@ -9596,6 +9702,10 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		// `deprecated` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
 			q = q.Arg("deprecated", opts[i].Deprecated)
+		}
+		// `defaultAddress` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DefaultAddress) {
+			q = q.Arg("defaultAddress", opts[i].DefaultAddress)
 		}
 	}
 	q = q.Arg("name", name)
@@ -9685,18 +9795,32 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 type FunctionArg struct {
 	query *querybuilder.Selection
 
-	defaultPath  *string
-	defaultValue *JSON
-	deprecated   *string
-	description  *string
-	id           *FunctionArgID
-	name         *string
+	defaultAddress *string
+	defaultPath    *string
+	defaultValue   *JSON
+	deprecated     *string
+	description    *string
+	id             *FunctionArgID
+	name           *string
 }
 
 func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	return &FunctionArg{
 		query: q,
 	}
+}
+
+// Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+func (r *FunctionArg) DefaultAddress(ctx context.Context) (string, error) {
+	if r.defaultAddress != nil {
+		return *r.defaultAddress, nil
+	}
+	q := r.query.Select("defaultAddress")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
@@ -15862,7 +15986,7 @@ type GoOpts struct {
 	// Go version
 	//
 	//
-	// Default: "1.25.5"
+	// Default: "1.25.6"
 	Version string // go (../../toolchains/go/main.go:31:2)
 	//
 	// Use a custom module cache
@@ -18664,6 +18788,15 @@ func (r *Security) WithGraphQLQuery(q *querybuilder.Selection) *Security {
 	}
 }
 
+// The base trivy container
+func (r *Security) BaseContainer() *Container {
+	q := r.query.Select("baseContainer")
+
+	return &Container{
+		query: q,
+	}
+}
+
 // A unique identifier for this Security.
 func (r *Security) ID(ctx context.Context) (SecurityID, error) {
 	if r.id != nil {
@@ -20337,6 +20470,141 @@ const (
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
 )
 
+// Strategy to use when merging changesets with conflicting changes.
+type ChangesetMergeConflict string
+
+func (ChangesetMergeConflict) IsEnum() {}
+
+func (v ChangesetMergeConflict) Name() string {
+	switch v {
+	case ChangesetMergeConflictFailEarly:
+		return "FAIL_EARLY"
+	case ChangesetMergeConflictFail:
+		return "FAIL"
+	case ChangesetMergeConflictLeaveConflictMarkers:
+		return "LEAVE_CONFLICT_MARKERS"
+	case ChangesetMergeConflictPreferOurs:
+		return "PREFER_OURS"
+	case ChangesetMergeConflictPreferTheirs:
+		return "PREFER_THEIRS"
+	default:
+		return ""
+	}
+}
+
+func (v ChangesetMergeConflict) Value() string {
+	return string(v)
+}
+
+func (v *ChangesetMergeConflict) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ChangesetMergeConflict) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAIL":
+		*v = ChangesetMergeConflictFail
+	case "FAIL_EARLY":
+		*v = ChangesetMergeConflictFailEarly
+	case "LEAVE_CONFLICT_MARKERS":
+		*v = ChangesetMergeConflictLeaveConflictMarkers
+	case "PREFER_OURS":
+		*v = ChangesetMergeConflictPreferOurs
+	case "PREFER_THEIRS":
+		*v = ChangesetMergeConflictPreferTheirs
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Fail before attempting merge if file-level conflicts are detected
+	ChangesetMergeConflictFailEarly ChangesetMergeConflict = "FAIL_EARLY"
+
+	// Attempt the merge and fail if git merge fails due to conflicts
+	ChangesetMergeConflictFail ChangesetMergeConflict = "FAIL"
+
+	// Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.
+	ChangesetMergeConflictLeaveConflictMarkers ChangesetMergeConflict = "LEAVE_CONFLICT_MARKERS"
+
+	// The conflict is resolved by applying the version of the calling changeset
+	ChangesetMergeConflictPreferOurs ChangesetMergeConflict = "PREFER_OURS"
+
+	// The conflict is resolved by applying the version of the other changeset
+	ChangesetMergeConflictPreferTheirs ChangesetMergeConflict = "PREFER_THEIRS"
+)
+
+// Strategy to use when merging multiple changesets with git octopus merge.
+type ChangesetsMergeConflict string
+
+func (ChangesetsMergeConflict) IsEnum() {}
+
+func (v ChangesetsMergeConflict) Name() string {
+	switch v {
+	case ChangesetsMergeConflictFailEarly:
+		return "FAIL_EARLY"
+	case ChangesetsMergeConflictFail:
+		return "FAIL"
+	default:
+		return ""
+	}
+}
+
+func (v ChangesetsMergeConflict) Value() string {
+	return string(v)
+}
+
+func (v *ChangesetsMergeConflict) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ChangesetsMergeConflict) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAIL":
+		*v = ChangesetsMergeConflictFail
+	case "FAIL_EARLY":
+		*v = ChangesetsMergeConflictFailEarly
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Fail before attempting merge if file-level conflicts are detected between any changesets
+	ChangesetsMergeConflictFailEarly ChangesetsMergeConflict = "FAIL_EARLY"
+
+	// Attempt the octopus merge and fail if git merge fails due to conflicts
+	ChangesetsMergeConflictFail ChangesetsMergeConflict = "FAIL"
+)
+
 // File type.
 type ExistsType string
 
@@ -20908,10 +21176,10 @@ const (
 	// A successful execution (exit code 0)
 	ReturnTypeSuccess ReturnType = "SUCCESS"
 
-	// A failed execution (exit codes 1-127)
+	// A failed execution (exit codes 1-127 and 192-255)
 	ReturnTypeFailure ReturnType = "FAILURE"
 
-	// Any execution (exit codes 0-127)
+	// Any execution (exit codes 0-127 and 192-255)
 	ReturnTypeAny ReturnType = "ANY"
 )
 
@@ -21106,7 +21374,37 @@ type Client struct {
 	client graphql.Client
 }
 
-func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
+// ClientOpt holds a client option
+type ClientOpt = dagger.ClientOpt
+
+// Request contains all the values required to build queries executed by the graphql.Client
+type Request = dagger.Request
+
+// Response contains data returned by the GraphQL API
+type Response = dagger.Response
+
+// WithWorkdir sets the engine workdir
+var WithWorkdir = dagger.WithWorkdir
+
+// WithLogOutput sets the progress writer
+var WithLogOutput = dagger.WithLogOutput
+
+// WithConn sets the engine connection explicitly
+var WithConn = dagger.WithConn
+
+// WithVersionOverride requests a specific schema version from the engine
+var WithVersionOverride = dagger.WithVersionOverride
+
+// WithVerbosity sets the verbosity level for the progress output
+var WithVerbosity = dagger.WithVerbosity
+
+// WithRunnerHost sets the runner host URL
+var WithRunnerHost = dagger.WithRunnerHost
+
+// WithEnvironmentVariable sets an environment variable in the CLI subprocess
+var WithEnvironmentVariable = dagger.WithEnvironmentVariable
+
+func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	dag, err := dagger.Connect(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -21127,6 +21425,21 @@ func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
 
 func (c *Client) Close() error {
 	return c.dag.Close()
+}
+
+// GraphQLClient returns the underlying graphql.Client
+func (c *Client) GraphQLClient() graphql.Client {
+	return c.client
+}
+
+// QueryBuilder returns the underlying query builder
+func (c *Client) QueryBuilder() *querybuilder.Selection {
+	return c.query
+}
+
+// Do executes a raw GraphQL request using the client's session
+func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
+	return c.dag.Do(ctx, req, resp)
 }
 
 // serveModuleDependencies services all dependencies of the module.

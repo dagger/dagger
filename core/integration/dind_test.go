@@ -5,12 +5,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
 func (ContainerSuite) TestDIND(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				WithExec struct {

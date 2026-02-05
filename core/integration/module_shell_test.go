@@ -8,9 +8,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	dagger "github.com/dagger/dagger/internal/testutil"
 	"time"
 
-	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )

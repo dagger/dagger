@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/testctx"
@@ -130,7 +130,6 @@ func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
 
 func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
-
 	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 	t.Run("new file", func(ctx context.Context, t *testctx.T) {
@@ -1154,7 +1153,7 @@ func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
 // regression test for https://github.com/dagger/dagger/issues/11552
 func (FileSuite) TestFileCachingContents(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
-	c := connect(ctx, t, dagger.WithWorkdir(wd))
+	c := connect(ctx, t)
 
 	var eg errgroup.Group
 	startCh := make(chan struct{})
@@ -1166,7 +1165,7 @@ func (FileSuite) TestFileCachingContents(ctx context.Context, t *testctx.T) {
 
 		eg.Go(func() error {
 			<-startCh
-			file := c.Host().Directory(".").File(filename)
+			file := c.Host().Directory(wd).File(filename)
 
 			actualContents, err := c.Directory().
 				WithFile("the-file", file).

@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/dag"
+	dagger "github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/internal/testutil/dag"
+	daggerio "dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -212,7 +213,7 @@ func (UserDefaultsSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) {
 		`DEFAULTS_MESSAGE_NAME="tout le monde"`,
 		`UNRELATED=yo`,
 	)
-	c := connect(ctx, t, dagger.WithWorkdir(tmp))
+	c := connect(ctx, t, daggerio.WithWorkdir(tmp))
 	src := c.Host().
 		Directory(testModule(t, "go", "defaults")).
 		AsModuleSource()

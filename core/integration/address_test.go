@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
+	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -74,7 +75,7 @@ func (AddressSuite) TestService(ctx context.Context, t *testctx.T) {
 
 func (AddressSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 	tmp := t.TempDir()
-	c := connect(ctx, t, dagger.WithWorkdir(tmp))
+	c := connect(ctx, t, daggerio.WithWorkdir(tmp))
 	err := os.WriteFile(tmp+"/hello.txt", []byte("hello there"), 0644)
 	require.NoError(t, err)
 	// Absolute file path
@@ -91,7 +92,7 @@ func (AddressSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 
 func (AddressSuite) TestLocalDirectory(ctx context.Context, t *testctx.T) {
 	tmp := t.TempDir()
-	c := connect(ctx, t, dagger.WithWorkdir(tmp))
+	c := connect(ctx, t, daggerio.WithWorkdir(tmp))
 	err := os.WriteFile(tmp+"/hello.txt", []byte("hello there"), 0644)
 	require.NoError(t, err)
 	// Absolute directory path

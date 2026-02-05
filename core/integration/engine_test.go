@@ -20,11 +20,10 @@ import (
 	"github.com/pelletier/go-toml"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +59,7 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 		ctr = with(ctr)
 	}
 
-	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
+	deviceName, cidr := GetUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).

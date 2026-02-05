@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil"
+	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/koron-go/prefixw"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -38,7 +38,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	newClient := func(ctx context.Context, name string) (*dagger.Client, *safeBuffer) {
 		out := new(safeBuffer)
 		c, err := dagger.Connect(ctx,
-			dagger.WithLogOutput(io.MultiWriter(prefixw.New(testutil.NewTWriter(t), name+": "), out)))
+			daggerio.WithLogOutput(io.MultiWriter(prefixw.New(NewTWriter(t), name+": "), out)))
 		require.NoError(t, err)
 		t.Cleanup(func() { c.Close() })
 		return c, out
@@ -151,9 +151,9 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 // We use this in tests to do quick-and-easy checks against the schemas served
 // (without needing to do fancy module manipulation).
 func (ClientSuite) TestQuerySchemaVersion(ctx context.Context, t *testctx.T) {
-	v, err := testutil.Query[struct {
+	v, err := Query[struct {
 		SchemaVersion string `json:"__schemaVersion"`
-	}](t, `{ __schemaVersion }`, nil, dagger.WithVersionOverride("v123.456.789"))
+	}](t, `{ __schemaVersion }`, nil, daggerio.WithVersionOverride("v123.456.789"))
 	require.NoError(t, err)
 	require.Equal(t, "v123.456.789", v.SchemaVersion)
 }
