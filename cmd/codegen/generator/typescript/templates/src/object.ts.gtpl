@@ -7,11 +7,9 @@
 			{{- if .Description }}
 				{{- /* Split comment string into a slice of one line per element. */ -}}
 				{{- $desc := CommentToLines .Description -}}
-/**
 				{{- range $desc }}
- * {{ . }}
+// {{ . }}
 				{{- end }}
- */
 			{{- end }}
 {{""}}
 
