@@ -9478,12 +9478,6 @@ pub struct GeneratorGroupChangesOpts {
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<ChangesetsMergeConflict>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct GeneratorGroupIsEmptyOpts {
-    /// Strategy to apply on conflicts between generators
-    #[builder(setter(into, strip_option), default)]
-    pub on_conflict: Option<ChangesetsMergeConflict>,
-}
 impl GeneratorGroup {
     /// The combined changes from the generators execution
     /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
@@ -9523,28 +9517,9 @@ impl GeneratorGroup {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Wether changeset from the generator execution is empty or not
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    /// Whether the generated changeset is empty or not
     pub async fn is_empty(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("isEmpty");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Wether changeset from the generator execution is empty or not
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn is_empty_opts(
-        &self,
-        opts: GeneratorGroupIsEmptyOpts,
-    ) -> Result<bool, DaggerError> {
-        let mut query = self.selection.select("isEmpty");
-        if let Some(on_conflict) = opts.on_conflict {
-            query = query.arg("onConflict", on_conflict);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Return a list of individual generators and their details

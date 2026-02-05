@@ -3493,11 +3493,8 @@ type GeneratorGroup {
   """A unique identifier for this GeneratorGroup."""
   id: GeneratorGroupID!
 
-  """Wether changeset from the generator execution is empty or not"""
-  isEmpty(
-    """Strategy to apply on conflicts between generators"""
-    onConflict: ChangesetsMergeConflict = FAIL_EARLY
-  ): Boolean!
+  """Whether the generated changeset is empty or not"""
+  isEmpty: Boolean!
 
   """Return a list of individual generators and their details"""
   list: [Generator!]!

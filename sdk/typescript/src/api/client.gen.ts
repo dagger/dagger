@@ -1599,13 +1599,6 @@ export type GeneratorGroupChangesOpts = {
   onConflict?: ChangesetsMergeConflict
 }
 
-export type GeneratorGroupIsEmptyOpts = {
-  /**
-   * Strategy to apply on conflicts between generators
-   */
-  onConflict?: ChangesetsMergeConflict
-}
-
 /**
  * The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
  */
@@ -8653,22 +8646,14 @@ export class GeneratorGroup extends BaseClient {
   }
 
   /**
-   * Wether changeset from the generator execution is empty or not
-   * @param opts.onConflict Strategy to apply on conflicts between generators
+   * Whether the generated changeset is empty or not
    */
-  isEmpty = async (opts?: GeneratorGroupIsEmptyOpts): Promise<boolean> => {
+  isEmpty = async (): Promise<boolean> => {
     if (this._isEmpty) {
       return this._isEmpty
     }
 
-    const metadata = {
-      onConflict: {
-        is_enum: true,
-        value_to_name: ChangesetsMergeConflictValueToName,
-      },
-    }
-
-    const ctx = this._ctx.select("isEmpty", { ...opts, __metadata: metadata })
+    const ctx = this._ctx.select("isEmpty")
 
     const response: Awaited<boolean> = await ctx.execute()
 

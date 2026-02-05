@@ -36,14 +36,11 @@ class GeneratorGroup extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Wether changeset from the generator execution is empty or not
+     * Whether the generated changeset is empty or not
      */
-    public function isEmpty(?ChangesetsMergeConflict $onConflict = null): bool
+    public function isEmpty(): bool
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isEmpty');
-        if (null !== $onConflict) {
-        $leafQueryBuilder->setArgument('onConflict', $onConflict);
-        }
         return (bool)$this->queryLeaf($leafQueryBuilder, 'isEmpty');
     }
 

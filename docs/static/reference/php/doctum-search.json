@@ -4281,7 +4281,7 @@
 			"t": "M",
 			"n": "Dagger\\GeneratorGroup::isEmpty",
 			"p": "Dagger/GeneratorGroup.html#method_isEmpty",
-			"d": "<p>Wether changeset from the generator execution is empty or not</p>"
+			"d": "<p>Whether the generated changeset is empty or not</p>"
 		},
 		{
 			"t": "M",

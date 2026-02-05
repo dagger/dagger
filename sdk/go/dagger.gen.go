@@ -8020,26 +8020,12 @@ func (r *GeneratorGroup) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// GeneratorGroupIsEmptyOpts contains options for GeneratorGroup.IsEmpty
-type GeneratorGroupIsEmptyOpts struct {
-	// Strategy to apply on conflicts between generators
-	//
-	// Default: FAIL_EARLY
-	OnConflict ChangesetsMergeConflict
-}
-
-// Wether changeset from the generator execution is empty or not
-func (r *GeneratorGroup) IsEmpty(ctx context.Context, opts ...GeneratorGroupIsEmptyOpts) (bool, error) {
+// Whether the generated changeset is empty or not
+func (r *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
 	if r.isEmpty != nil {
 		return *r.isEmpty, nil
 	}
 	q := r.query.Select("isEmpty")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `onConflict` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
-			q = q.Arg("onConflict", opts[i].OnConflict)
-		}
-	}
 
 	var response bool
 

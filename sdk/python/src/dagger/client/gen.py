@@ -8380,18 +8380,8 @@ class GeneratorGroup(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(GeneratorGroupID)
 
-    async def is_empty(
-        self,
-        *,
-        on_conflict: ChangesetsMergeConflict
-        | None = ChangesetsMergeConflict.FAIL_EARLY,
-    ) -> bool:
-        """Wether changeset from the generator execution is empty or not
-
-        Parameters
-        ----------
-        on_conflict:
-            Strategy to apply on conflicts between generators
+    async def is_empty(self) -> bool:
+        """Whether the generated changeset is empty or not
 
         Returns
         -------
@@ -8405,9 +8395,7 @@ class GeneratorGroup(Type):
         QueryError
             If the API returns an error.
         """
-        _args = [
-            Arg("onConflict", on_conflict, ChangesetsMergeConflict.FAIL_EARLY),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("isEmpty", _args)
         return await _ctx.execute(bool)
 
