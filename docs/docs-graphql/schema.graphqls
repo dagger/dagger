@@ -100,6 +100,12 @@ type Binding {
   """Retrieve the binding value, as type File"""
   asFile: File!
 
+  """Retrieve the binding value, as type Generator"""
+  asGenerator: Generator!
+
+  """Retrieve the binding value, as type GeneratorGroup"""
+  asGeneratorGroup: GeneratorGroup!
+
   """Retrieve the binding value, as type GitRef"""
   asGitRef: GitRef!
 
@@ -1560,6 +1566,12 @@ type CurrentModule {
   """
   generatedContextDirectory: Directory!
 
+  """Return all generators defined by the module"""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """A unique identifier for this CurrentModule."""
   id: CurrentModuleID!
 
@@ -2491,6 +2503,50 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type GeneratorGroup in the environment"""
+  withGeneratorGroupInput(
+    """The name of the binding"""
+    name: String!
+
+    """The GeneratorGroup value to assign to the binding"""
+    value: GeneratorGroupID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired GeneratorGroup output to be assigned in the environment
+  """
+  withGeneratorGroupOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Generator in the environment"""
+  withGeneratorInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Generator value to assign to the binding"""
+    value: GeneratorID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Generator output to be assigned in the environment"""
+  withGeneratorOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type GitRef in the environment"""
   withGitRefInput(
     """The name of the binding"""
@@ -3243,6 +3299,9 @@ type Function {
     description: String!
   ): Function!
 
+  """Returns the function with a flag indicating it's a generator."""
+  withGenerator: Function!
+
   """Returns the function with the given source map."""
   withSourceMap(
     """The source map for the function definition."""
@@ -3401,6 +3460,67 @@ type GeneratedCode {
 The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
 """
 scalar GeneratedCodeID
+
+type Generator {
+  """The generated changeset"""
+  changes: Changeset!
+
+  """Whether the generator complete"""
+  completed: Boolean!
+
+  """Return the description of the generator"""
+  description: String!
+
+  """A unique identifier for this Generator."""
+  id: GeneratorID!
+
+  """Wether changeset from the generator execution is empty or not"""
+  isEmpty: Boolean!
+
+  """Return the fully qualified name of the generator"""
+  name: String!
+
+  """Execute the generator"""
+  run: Generator!
+}
+
+type GeneratorGroup {
+  """
+  The combined changes from the generators execution
+
+  If any conflict occurs, for instance if the same file is modified by multiple
+  generators, or if a file is both modified and deleted, an error is raised and
+  the merge of the changesets will failed.
+
+  Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+  """
+  changes(
+    """Strategy to apply on conflicts between generators"""
+    onConflict: ChangesetsMergeConflict = FAIL_EARLY
+  ): Changeset!
+
+  """A unique identifier for this GeneratorGroup."""
+  id: GeneratorGroupID!
+
+  """Whether the generated changeset is empty or not"""
+  isEmpty: Boolean!
+
+  """Return a list of individual generators and their details"""
+  list: [Generator!]!
+
+  """Execute all selected generators"""
+  run: GeneratorGroup!
+}
+
+"""
+The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
+"""
+scalar GeneratorGroupID
+
+"""
+The `GeneratorID` scalar type represents an identifier for an object of type Generator.
+"""
+scalar GeneratorID
 
 """A git ref (tag, branch, or commit)."""
 type GitRef {
@@ -3954,6 +4074,20 @@ type Module {
   The generated files and directories made on top of the module source's context directory.
   """
   generatedContextDirectory: Directory!
+
+  """
+  Return the generator defined by the module with the given name. Must match to exactly one generator.
+  """
+  generator(
+    """The name of the generator to retrieve"""
+    name: String!
+  ): Generator! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
+  """Return all generators defined by the module"""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Module."""
   id: ModuleID!
@@ -4695,6 +4829,12 @@ type Query {
 
   """Load a GeneratedCode from its ID."""
   loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
+
+  """Load a Generator from its ID."""
+  loadGeneratorFromID(id: GeneratorID!): Generator!
+
+  """Load a GeneratorGroup from its ID."""
+  loadGeneratorGroupFromID(id: GeneratorGroupID!): GeneratorGroup!
 
   """Load a GitRef from its ID."""
   loadGitRefFromID(id: GitRefID!): GitRef!

@@ -164,6 +164,15 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns the function with a flag indicating it's a generator.
+     */
+    public function withGenerator(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGenerator');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the function with the given source map.
      */
     public function withSourceMap(SourceMapId|SourceMap $sourceMap): Function_

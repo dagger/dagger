@@ -26,6 +26,12 @@ export const func = registry.func
 export const check = registry.check
 
 /**
+ * The definition of @generate decorator that marks a function as a generator.
+ * Generators are functions that return a Changeset representing changes to be applied.
+ */
+export const generate = registry.generate
+
+/**
  * The definition of @field decorator that should be on top of any
  * class' property that must be exposed to the Dagger API.
  *

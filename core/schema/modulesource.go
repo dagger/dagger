@@ -3523,6 +3523,9 @@ func (s *moduleSourceSchema) integrateToolchains(
 						if len(tcCfg.IgnoreChecks) > 0 {
 							entry.IgnoreChecks = tcCfg.IgnoreChecks
 						}
+						if len(tcCfg.IgnoreGenerators) > 0 {
+							entry.IgnoreGenerators = tcCfg.IgnoreGenerators
+						}
 						break
 					}
 				}

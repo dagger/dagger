@@ -1,0 +1,10 @@
+kind: Added
+body: |-
+  dagger generate command
+
+  Functions can be marked as 'generate' (`// +generate` in Go, `@generate()` in typescript, `@generate` in python). Those functions must expose a Changeset.
+  By marking them as generate functions means they will be available under the `dagger generate` command. This command will run all of them and merge the resulting changesets before to apply it.
+time: 2026-02-04T15:27:05.849005+01:00
+custom:
+  Author: eunomie
+  PR: "11779"

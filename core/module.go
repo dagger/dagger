@@ -101,6 +101,10 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	return NewCheckGroup(ctx, mod, include)
 }
 
+func (mod *Module) Generators(ctx context.Context, include []string) (*GeneratorGroup, error) {
+	return NewGeneratorGroup(ctx, mod, include)
+}
+
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	return mod.ObjectByName(mod.Name())
 }

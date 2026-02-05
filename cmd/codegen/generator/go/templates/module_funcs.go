@@ -46,6 +46,17 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		}
 	}
 
+	if v, ok := docPragmas["generate"]; ok {
+		if v == nil {
+			spec.isGenerator = true
+		} else {
+			spec.isGenerator, ok = v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("generate pragma %q, must be a valid boolean", v)
+			}
+		}
+	}
+
 	if v, ok := docPragmas["deprecated"]; ok {
 		if v == nil {
 			spec.deprecated = nil
@@ -126,6 +137,7 @@ type funcTypeSpec struct {
 	sourceMap   *sourceMap
 	cachePolicy string
 	isCheck     bool
+	isGenerator bool
 
 	argSpecs []paramSpec
 
@@ -190,6 +202,9 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 	}
 	if spec.isCheck {
 		fnTypeDef = fnTypeDef.WithCheck()
+	}
+	if spec.isGenerator {
+		fnTypeDef = fnTypeDef.WithGenerator()
 	}
 
 	for _, argSpec := range spec.argSpecs {

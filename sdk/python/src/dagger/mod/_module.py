@@ -54,6 +54,7 @@ OBJECT_DEF_KEY: typing.Final[str] = "__dagger_object__"
 FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
 CHECK_DEF_KEY: typing.Final[str] = "__dagger_check__"
+GENERATOR_DEF_KEY: typing.Final[str] = "__dagger_generate__"
 MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
 MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
 TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
@@ -208,6 +209,8 @@ class Module:
                     func_def = func_def.with_deprecated(reason=deprecated)
                 if func.check:
                     func_def = func_def.with_check()
+                if func.generate:
+                    func_def = func_def.with_generator()
 
                 for param in func.parameters.values():
                     arg_def = to_typedef(
@@ -644,6 +647,39 @@ class Module:
 
         return wrapper(func) if func else wrapper
 
+    def generate(
+        self,
+        func: Func[P, R] | None = None,
+    ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
+        """Mark a function as a generator.
+
+        Generators are functions that return a Changeset representing
+        changes to be applied. This decorator can be combined with
+        :py:meth:`function`.
+
+        Example usage::
+
+            @object_type
+            class MyModule:
+                @function
+                @generate
+                def codegen(self) -> dagger.Changeset:
+                    # Generate code and return changeset
+                    ...
+
+        Parameters
+        ----------
+        func:
+            The function to mark as a generator. Should be an instance method in a
+            class decorated with :py:meth:`object_type`.
+        """
+
+        def wrapper(fn: Func[P, R]) -> Func[P, R]:
+            setattr(fn, GENERATOR_DEF_KEY, True)
+            return fn
+
+        return wrapper(func) if func else wrapper
+
     @overload
     def function(
         self,
@@ -704,8 +740,9 @@ class Module:
             # TODO: Use beartype to validate
             assert callable(func), f"Expected a callable, got {type(func)}."
 
-            # Check if function is marked as a check
+            # Check if function is marked as a check or generator
             check = getattr(func, CHECK_DEF_KEY, False)
+            generator = getattr(func, GENERATOR_DEF_KEY, False)
 
             meta = FunctionDefinition(
                 name=name,
@@ -713,6 +750,7 @@ class Module:
                 cache=cache,
                 deprecated=deprecated,
                 check=check,
+                generator=generator,
             )
 
             if inspect.isclass(func):
