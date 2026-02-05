@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/testctx"

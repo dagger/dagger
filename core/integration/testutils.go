@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"

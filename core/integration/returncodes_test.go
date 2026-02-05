@@ -7,7 +7,7 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 type ReturnCodesSuite struct{}

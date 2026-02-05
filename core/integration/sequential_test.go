@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
 	"github.com/google/uuid"

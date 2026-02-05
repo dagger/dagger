@@ -445,7 +445,7 @@ type Test struct {
 		"context"
 		"fmt"
 
-		dagger "github.com/dagger/dagger/internal/testutil"
+		dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	)
 
 	func main() {

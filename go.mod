@@ -5,11 +5,13 @@ go 1.24.4
 require (
 	dagger.io/dagger v0.19.10
 	github.com/dagger/dagger/engine/distconsts v0.19.10
+	github.com/dagger/dagger/internal/testutil/dagger v0.0.0
 )
 
 replace (
 	dagger.io/dagger => ./sdk/go
 	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
+	github.com/dagger/dagger/internal/testutil/dagger => ./internal/testutil/dagger
 )
 
 require (

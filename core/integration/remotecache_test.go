@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 const cliBinPath = "/.dagger-cli"

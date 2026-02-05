@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/koron-go/prefixw"

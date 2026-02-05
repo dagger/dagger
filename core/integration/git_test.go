@@ -20,7 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	daggerio "dagger.io/dagger"
 	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/util/gitutil"

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"

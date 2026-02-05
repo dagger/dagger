@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/testctx"

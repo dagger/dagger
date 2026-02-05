@@ -18,7 +18,7 @@ import (
 	"github.com/goproxy/goproxy"
 	"github.com/stretchr/testify/require"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 type proxyTest struct {

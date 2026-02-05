@@ -20,7 +20,7 @@ import (
 	"github.com/pelletier/go-toml"
 	"golang.org/x/sync/errgroup"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"

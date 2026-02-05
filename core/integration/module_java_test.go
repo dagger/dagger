@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"

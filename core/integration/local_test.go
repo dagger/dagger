@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"

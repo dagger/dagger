@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"time"
 
 	"github.com/dagger/testctx"

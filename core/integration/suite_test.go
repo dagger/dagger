@@ -10,17 +10,16 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/testutil/dag"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/stretchr/testify/require"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/core"
 
 	// Import generated dagger client with toolchain bindings

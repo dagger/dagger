@@ -21377,11 +21377,41 @@ type Client struct {
 // ClientOpt holds a client option
 type ClientOpt = dagger.ClientOpt
 
-// Request contains all the values required to build queries executed by the graphql.Client
-type Request = dagger.Request
+// Request contains all the values required to build queries executed by
+// the graphql.Client.
+//
+// Typically, GraphQL APIs will accept a JSON payload of the form
+//
+//	{"query": "query myQuery { ... }", "variables": {...}}`
+//
+// and Request marshals to this format.
+type Request struct {
+	// The literal string representing the GraphQL query, e.g.
+	// `query myQuery { myField }`.
+	Query string `json:"query"`
+	// A JSON-marshalable value containing the variables to be sent
+	// along with the query, or nil if there are none.
+	Variables interface{} `json:"variables,omitempty"`
+	// The GraphQL operation name. The server typically doesn't
+	// require this unless there are multiple queries in the
+	// document, but genqlient sets it unconditionally anyway.
+	OpName string `json:"operationName"`
+}
 
-// Response contains data returned by the GraphQL API
-type Response = dagger.Response
+// Response that contains data returned by the GraphQL API.
+//
+// Typically, GraphQL APIs will return a JSON payload of the form
+//
+//	{"data": {...}, "errors": {...}}
+//
+// It may additionally contain a key named "extensions", that
+// might hold GraphQL protocol extensions. Extensions and Errors
+// are optional, depending on the values returned by the server.
+type Response struct {
+	Data       interface{}            `json:"data"`
+	Extensions map[string]interface{} `json:"extensions,omitempty"`
+	Errors     gqlerror.List          `json:"errors,omitempty"`
+}
 
 // WithWorkdir sets the engine workdir
 var WithWorkdir = dagger.WithWorkdir
@@ -21439,7 +21469,26 @@ func (c *Client) QueryBuilder() *querybuilder.Selection {
 
 // Do executes a raw GraphQL request using the client's session
 func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
-	return c.dag.Do(ctx, req, resp)
+	// Convert to dagger types
+	daggerReq := &dagger.Request{
+		Query:     req.Query,
+		Variables: req.Variables,
+		OpName:    req.OpName,
+	}
+	daggerResp := &dagger.Response{
+		Data:       resp.Data,
+		Extensions: resp.Extensions,
+		Errors:     resp.Errors,
+	}
+
+	err := c.dag.Do(ctx, daggerReq, daggerResp)
+
+	// Copy response back
+	resp.Data = daggerResp.Data
+	resp.Extensions = daggerResp.Extensions
+	resp.Errors = daggerResp.Errors
+
+	return err
 }
 
 // serveModuleDependencies services all dependencies of the module.

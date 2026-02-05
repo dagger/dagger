@@ -37,7 +37,6 @@
           "argument": "source",
           "ignore": [
             "bin",
-            ".git/objects/**",
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",

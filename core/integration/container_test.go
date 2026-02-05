@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"

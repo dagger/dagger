@@ -10,7 +10,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 )
 

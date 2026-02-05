@@ -31,7 +31,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/util/scrub"
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"

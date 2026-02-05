@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/testctx"

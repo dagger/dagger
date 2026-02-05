@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/testctx"

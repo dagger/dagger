@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/testctx"

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	daggerio "dagger.io/dagger"
 	"github.com/creack/pty"
 	"github.com/dagger/testctx"

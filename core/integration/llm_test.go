@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/internal/testutil/dag"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"

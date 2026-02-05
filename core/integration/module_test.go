@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	daggerio "dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/introspection"

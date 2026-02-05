@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	dagger "github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
