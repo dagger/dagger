@@ -3,16 +3,18 @@
 import importlib
 import importlib.metadata
 import importlib.util
+import json
 import logging
 import os
 import typing
+from pathlib import Path
 
 import anyio
 
 import dagger
 from dagger import telemetry
 from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
-from dagger.mod._module import MAIN_OBJECT, Module
+from dagger.mod._module import MAIN_OBJECT, MODULE_NAME, TYPE_DEF_FILE, Module
 
 logger = logging.getLogger(__package__)
 
@@ -37,10 +39,13 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
     # should be logged and the traceback shown on the function's stderr output.
     async with await dagger.connect():
         try:
+            if register:
+                # Use AST-based registration (doesn't require importing module)
+                return await register_with_ast()
+
+            # For invocation, we need to load the module
             if mod is None:
                 mod = load_module()
-            if register:
-                return await mod.register()
             return await mod.serve()
         except (ModuleError, dagger.QueryError) as e:
             await record_exception(e)
@@ -49,6 +54,104 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
             logger.exception("Unhandled exception")
             await record_exception(e)
             return 1
+
+
+async def register_with_ast() -> int | None:
+    """Register module types using AST analysis.
+
+    This analyzes Python source files without importing them,
+    allowing registration when dependencies are not available.
+    """
+    from dagger.mod._analyzer import analyze_module
+    from dagger.mod._analyzer.errors import AnalysisError
+    from dagger.mod._analyzer.registration import register_from_metadata
+
+    try:
+        # Find source files
+        source_files = find_source_files()
+        if not source_files:
+            raise ModuleLoadError(
+                "No Python source files found for module. "
+                f"Looking for package: {IMPORT_PKG}"
+            )
+
+        logger.debug("Found source files: %s", source_files)
+
+        # Analyze module
+        metadata = analyze_module(
+            source_files=source_files,
+            main_object_name=MAIN_OBJECT,
+            module_name=MODULE_NAME,
+        )
+
+        logger.debug(
+            "Analyzed module: %d objects, %d enums",
+            len(metadata.objects),
+            len(metadata.enums),
+        )
+
+        # Register with engine
+        module_id = await register_from_metadata(metadata)
+
+        # Write result to file
+        output = json.dumps(module_id)
+        await anyio.Path(TYPE_DEF_FILE).write_text(output)
+
+        logger.debug("Registration complete: %s", TYPE_DEF_FILE)
+        return None
+
+    except AnalysisError as e:
+        logger.exception("AST analysis failed")
+        raise ModuleLoadError(str(e)) from e
+
+
+def find_source_files() -> list[str]:
+    """Find Python source files for the module.
+
+    Returns a list of .py files in the module package.
+    """
+    import_pkg = IMPORT_PKG
+
+    # Try to find the package
+    spec = importlib.util.find_spec(import_pkg)
+    if spec is None:
+        # Fallback to "main" package
+        import_pkg = "main"
+        spec = importlib.util.find_spec(import_pkg)
+
+    if spec is None or spec.submodule_search_locations is None:
+        return []
+
+    # Get the package directory
+    search_locations = spec.submodule_search_locations
+    if not search_locations:
+        # Single-file module
+        if spec.origin and spec.origin.endswith(".py"):
+            return [spec.origin]
+        return []
+
+    # Find all .py files in the package
+    source_files = []
+    for location in search_locations:
+        pkg_path = Path(location)
+        if pkg_path.is_dir():
+            # Add __init__.py first if it exists
+            init_file = pkg_path / "__init__.py"
+            if init_file.exists():
+                source_files.append(str(init_file))
+
+            # Add other .py files
+            for py_file in pkg_path.glob("*.py"):
+                if py_file.name != "__init__.py":
+                    source_files.append(str(py_file))
+
+            # Add files from subdirectories (one level deep)
+            for subdir in pkg_path.iterdir():
+                if subdir.is_dir() and not subdir.name.startswith("_"):
+                    for py_file in subdir.glob("*.py"):
+                        source_files.append(str(py_file))
+
+    return source_files
 
 
 def load_module() -> Module:
