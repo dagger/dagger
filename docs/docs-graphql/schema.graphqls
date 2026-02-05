@@ -1718,6 +1718,15 @@ type Directory {
     behavior.
     """
     noInit: Boolean = false
+
+    """
+    A socket to use for SSH authentication during the build
+
+    (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+
+    Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
+    """
+    ssh: SocketID
   ): Container!
 
   """Returns a list of files and directories at the given path."""

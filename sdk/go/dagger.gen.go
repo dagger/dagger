@@ -3665,6 +3665,12 @@ type DirectoryDockerBuildOpts struct {
 	//
 	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
 	NoInit bool
+	// A socket to use for SSH authentication during the build
+	//
+	// (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+	//
+	// Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
+	SSH *Socket
 }
 
 // Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
@@ -3694,6 +3700,10 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 		// `noInit` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoInit) {
 			q = q.Arg("noInit", opts[i].NoInit)
+		}
+		// `ssh` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SSH) {
+			q = q.Arg("ssh", opts[i].SSH)
 		}
 	}
 

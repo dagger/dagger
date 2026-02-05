@@ -952,6 +952,15 @@ export type DirectoryDockerBuildOpts = {
    * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   noInit?: boolean
+
+  /**
+   * A socket to use for SSH authentication during the build
+   *
+   * (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+   *
+   * Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
+   */
+  ssh?: Socket
 }
 
 export type DirectoryEntriesOpts = {
@@ -5097,6 +5106,11 @@ export class Directory extends BaseClient {
    * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
    *
    * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * @param opts.ssh A socket to use for SSH authentication during the build
+   *
+   * (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+   *
+   * Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
    */
   dockerBuild = (opts?: DirectoryDockerBuildOpts): Container => {
     const ctx = this._ctx.select("dockerBuild", { ...opts })

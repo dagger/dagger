@@ -3837,6 +3837,7 @@ class Directory(Type):
         target: str | None = "",
         secrets: "list[Secret] | None" = None,
         no_init: bool | None = False,
+        ssh: "Socket | None" = None,
     ) -> Container:
         """Use Dockerfile compatibility to build a container from this directory.
         Only use this function for Dockerfile compatibility. Otherwise use the
@@ -3862,6 +3863,11 @@ class Directory(Type):
             This should only be used if the user requires that their exec
             processes be the pid 1 process in the container. Otherwise it may
             result in unexpected behavior.
+        ssh:
+            A socket to use for SSH authentication during the build
+            (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+            Typically obtained via host.unixSocket() pointing to the
+            SSH_AUTH_SOCK.
         """
         _args = [
             Arg("dockerfile", dockerfile, "Dockerfile"),
@@ -3870,6 +3876,7 @@ class Directory(Type):
             Arg("target", target, ""),
             Arg("secrets", [] if secrets is None else secrets, []),
             Arg("noInit", no_init, False),
+            Arg("ssh", ssh, None),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)

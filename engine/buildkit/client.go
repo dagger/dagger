@@ -188,10 +188,13 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	// include upstream cache imports, if any
 	req.CacheImports = c.UpstreamCacheImports
 
-	// handle secret translation
+	// handle secret and SSH translation
 	gw := newFilterGateway(c, req)
 	if v := SecretTranslatorFromContext(ctx); v != nil {
 		gw.secretTranslator = v
+	}
+	if v := SSHTranslatorFromContext(ctx); v != nil {
+		gw.sshTranslator = v
 	}
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
@@ -974,6 +977,11 @@ type filteringGateway struct {
 	// in the secret store.
 	secretTranslator SecretTranslator
 
+	// sshTranslator is a function to convert SSH mount ids. Frontends may
+	// reference SSH agents by name (e.g. "default"), but they need to be
+	// mapped to the actual socket IDs in the socket store.
+	sshTranslator SSHTranslator
+
 	// client is the top-most client that is owning the filtering process
 	client *Client
 
@@ -1001,7 +1009,7 @@ func newFilterGateway(client *Client, req bkgw.SolveRequest) *filteringGateway {
 func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveRequest, sid string) (*bkfrontend.Result, error) {
 	switch {
 	case req.Definition != nil && req.Definition.Def != nil:
-		if gw.secretTranslator != nil {
+		if gw.secretTranslator != nil || gw.sshTranslator != nil {
 			dag, err := DefToDAG(req.Definition)
 			if err != nil {
 				return nil, err
@@ -1017,20 +1025,28 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 					return nil
 				}
 
-				for _, secret := range execOp.ExecOp.GetSecretenv() {
-					secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
-					if err != nil {
-						return err
+				if gw.secretTranslator != nil {
+					for _, secret := range execOp.ExecOp.GetSecretenv() {
+						secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
+						if err != nil {
+							return err
+						}
 					}
 				}
 				for _, mount := range execOp.ExecOp.GetMounts() {
-					if mount.MountType != bksolverpb.MountType_SECRET {
-						continue
-					}
-					secret := mount.SecretOpt
-					secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
-					if err != nil {
-						return err
+					switch {
+					case mount.MountType == bksolverpb.MountType_SECRET && gw.secretTranslator != nil:
+						secret := mount.SecretOpt
+						secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
+						if err != nil {
+							return err
+						}
+					case mount.MountType == bksolverpb.MountType_SSH && gw.sshTranslator != nil:
+						ssh := mount.SSHOpt
+						ssh.ID, err = gw.sshTranslator(ssh.ID, ssh.Optional)
+						if err != nil {
+							return err
+						}
 					}
 				}
 				return nil
@@ -1107,6 +1123,22 @@ func SecretTranslatorFromContext(ctx context.Context) SecretTranslator {
 		return nil
 	}
 	return v.(SecretTranslator)
+}
+
+type sshTranslatorKey struct{}
+
+type SSHTranslator func(id string, optional bool) (string, error)
+
+func WithSSHTranslator(ctx context.Context, t SSHTranslator) context.Context {
+	return context.WithValue(ctx, sshTranslatorKey{}, t)
+}
+
+func SSHTranslatorFromContext(ctx context.Context) SSHTranslator {
+	v := ctx.Value(sshTranslatorKey{})
+	if v == nil {
+		return nil
+	}
+	return v.(SSHTranslator)
 }
 
 func ToEntitlementStrings(ents entitlements.Set) []string {
