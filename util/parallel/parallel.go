@@ -13,7 +13,6 @@ import (
 
 func New() parallelJobs {
 	return parallelJobs{
-		Tracing:  true, // Enable tracing by default
 		Internal: false,
 		Reveal:   false, // this used to be 'true', but it caused too many "hiding noisy spans" in web trace view
 
@@ -44,8 +43,6 @@ type parallelJobs struct {
 	RollupLogs bool
 	// Roll up child spans into this span for aggregated progress display.
 	RollupSpans bool
-	Tracing     bool // If set to false, tracing is completely disabled (no otel spans are created)
-
 }
 
 type Job struct {
@@ -57,17 +54,9 @@ type Job struct {
 	ContextualTracer bool
 	RollupLogs       bool
 	RollupSpans      bool
-	// If set to false, tracing is completely disabled (no otel spans are created)
-	Tracing bool
 }
 
 type JobFunc func(context.Context) error
-
-func (p parallelJobs) WithTracing(tracing bool) parallelJobs {
-	p = p.Clone()
-	p.Tracing = tracing
-	return p
-}
 
 func (p parallelJobs) WithInternal(internal bool) parallelJobs {
 	p = p.Clone()
@@ -101,7 +90,7 @@ func (p parallelJobs) WithRollupLogs(rollupLogs bool) parallelJobs {
 
 func (p parallelJobs) WithJob(name string, fn JobFunc, attributes ...attribute.KeyValue) parallelJobs {
 	p = p.Clone()
-	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal, p.ContextualTracer, p.RollupLogs, p.RollupSpans, p.Tracing})
+	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal, p.ContextualTracer, p.RollupLogs, p.RollupSpans})
 	return p
 }
 
@@ -143,21 +132,17 @@ func (job Job) Runner(ctx context.Context) func() error {
 	//  - Con: parallel jobs are run in random order
 	// If we start the span before the job runs, the pros and cons are switched.
 	// The clean solution is to reimplement errgroup.Group to get our cake and eat it too.
-	return func() (rerr error) {
-		var span trace.Span
-		if job.Tracing {
-			ctx, span = job.startSpan(ctx)
-			defer func() {
-				if rerr != nil {
-					span.SetStatus(codes.Error, rerr.Error())
-				}
-				span.End()
-			}()
-		}
+	return func() error {
+		ctx, span := job.startSpan(ctx)
+		defer span.End()
 		if job.Func == nil {
 			return nil
 		}
-		return job.Func(ctx)
+		err := job.Func(ctx)
+		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
+		}
+		return err
 	}
 }
 
