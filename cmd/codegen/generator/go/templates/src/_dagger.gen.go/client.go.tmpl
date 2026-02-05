@@ -9,6 +9,12 @@ type Client struct {
 // ClientOpt holds a client option
 type ClientOpt = dagger.ClientOpt
 
+// Request contains all the values required to build queries executed by the graphql.Client
+type Request = dagger.Request
+
+// Response contains data returned by the GraphQL API
+type Response = dagger.Response
+
 // WithWorkdir sets the engine workdir
 var WithWorkdir = dagger.WithWorkdir
 
@@ -66,7 +72,7 @@ func (c *Client) QueryBuilder() *querybuilder.Selection {
 }
 
 // Do executes a raw GraphQL request using the client's session
-func (c *Client) Do(ctx context.Context, req *dagger.Request, resp *dagger.Response) error {
+func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 	return c.dag.Do(ctx, req, resp)
 }
 
