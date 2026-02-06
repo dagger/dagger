@@ -157,8 +157,9 @@ func migrateProjectModule(
 // Returns the JSON bytes, count of rewritten dep paths, and count of rewritten include paths.
 func buildNewModuleJSON(cfg *LegacyConfig, newModulePath string) ([]byte, int, int, error) {
 	// Relative prefix to rewrite paths from the new module location back to project root.
-	// Per the design proposal, deps and includes use "../../" (from .dagger/modules/<name>/).
-	prefix := "../../"
+	// From .dagger/modules/<name>/, that's 3 levels up: ../../../
+	depth := len(strings.Split(newModulePath, "/"))
+	prefix := strings.Repeat("../", depth)
 
 	// Rewrite dependency paths
 	var deps []*LegacyDependency
