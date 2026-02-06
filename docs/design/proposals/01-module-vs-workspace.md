@@ -10,6 +10,9 @@
   - [Dependency Model](#dependency-model)
 - [Configure a Workspace](#configure-a-workspace)
   - [How Dagger Loads Configuration](#how-dagger-loads-configuration)
+    - [Workspace Detection](#workspace-detection-always-runs)
+    - [Module Loading](#module-loading-depends-on--m)
+    - [Design Rationale for -m](#design-rationale-for--m)
   - [Adding Modules](#adding-modules)
   - [Configuration Reference](#configuration-reference)
 - [Develop a Module](#develop-a-module)
@@ -83,27 +86,46 @@ A module added to a workspace is *not* the same as a module dependency. They liv
 
 ### How Dagger Loads Configuration
 
-When the CLI starts:
+Configuration loading happens in the **engine**, not the CLI. When the CLI connects to the engine, the engine detects the workspace and loads modules before the CLI issues any commands.
 
-1. **Find workspace**: Walk up from current directory looking for a `.dagger/` directory. The directory containing `.dagger/` is the **workspace root**.
+#### Workspace Detection (always runs)
 
-   - If not found: workspace is empty (no modules, no aliases). CLI still works — `dagger call -m` and core commands are available.
-   - If a `dagger.json` with legacy triggers is found instead: fail with migration error (see [No Runtime Compat Mode](#no-runtime-compat-mode)).
+1. **Find workspace**: Walk up from the client's working directory looking for a `.dagger/` directory. The directory containing `.dagger/` is the **workspace root**.
+
+   - If not found: check for `dagger.json` with legacy triggers → fail with migration error (see [No Runtime Compat Mode](#no-runtime-compat-mode)). Otherwise, fall back to `.git` directory or current directory as workspace root.
 
 2. **Parse config**: Read `.dagger/config.toml` if it exists. If `.dagger/` exists but has no `config.toml`, the workspace is valid but empty. Resolve all paths relative to the `.dagger/` directory.
 
-3. **Load modules**: For each entry in `[modules]`:
-   - Resolve the `source` to a module (local path or git reference)
-   - Apply `config.*` values as constructor argument defaults
-   - The module's name in the workspace is the table key (e.g., `go` from `[modules.go]`)
+Workspace detection always runs, regardless of other flags. The engine always knows the workspace root and config. This is important for the future workspace API (Part 2), where modules can access workspace context.
 
+#### Module Loading (depends on `-m`)
+
+After workspace detection, what gets loaded depends on whether `-m` was specified:
+
+**Without `-m`** (workspace mode):
+
+3. **Load workspace modules**: For each entry in `[modules]`, resolve the source to a module and install its constructor as a top-level function in the GraphQL schema.
 4. **Register aliases**: For each entry in `[aliases]`, register the array-encoded path as a top-level function alias.
+5. **Serve**: The CLI dispatches `dagger call <name> <function>` by looking up `<name>` in the schema — either a module constructor or an alias.
 
-5. **Build schema**: Each module's constructor is mounted as a top-level function in the GraphQL schema, keyed by its workspace name. Aliases add additional top-level entry points that resolve to the specified path.
+**With `-m <ref>`** (explicit module mode):
 
-6. **Serve**: The CLI dispatches `dagger call <name> <function>` by looking up `<name>` in the schema — either a module constructor or an alias.
+3. **Skip workspace modules**: Do not load modules from `[modules]` or `[aliases]`.
+4. **Load the explicit module**: Resolve `<ref>` to a module and install it on the schema. This module becomes the CLI's "focused" module — its functions appear as top-level commands.
+5. **Serve**: The CLI dispatches `dagger call <function>` against the focused module's main object.
 
-The CLI always operates in workspace context. There is no "module context" at the CLI level.
+The `-m` flag is passed to the engine as a connect-time parameter. The CLI doesn't branch on it — it simply reads whatever the engine served and builds commands from the schema's type definitions.
+
+#### Design Rationale for `-m`
+
+The `-m` flag provides:
+
+- **Backwards compatibility**: Existing CI scripts using `dagger call -m ./ci test` continue to work. The module loads in isolation, functions are top-level.
+- **Ad-hoc module usage**: Run any module by reference without installing it in the workspace: `dagger call -m github.com/foo/bar build`.
+- **No duplicate code paths**: Both modes use the same engine-side module loading pipeline. The CLI has a single initialization path — it never calls `Serve()` or manages module state.
+- **Workspace is always available**: Even with `-m`, the workspace has been detected. Today this is unused, but it enables a future where `-m` modules can access workspace context (e.g., reading workspace config, accessing workspace files toolchain-style).
+
+The CLI always operates in workspace context. There is no "module context" at the CLI level — `-m` simply changes which modules the engine loads.
 
 ### Adding Modules
 
@@ -507,7 +529,7 @@ The migrated `.env` entries should be removed or commented out to avoid duplicat
 |---------|---------|-----|
 | `dagger init` | Creates a module | Deprecated; use `dagger module init` |
 | `dagger call` in module dirs | Loads module from `dagger.json` | Only reads workspace config (`.dagger/config.toml`) |
-| `dagger call -m` | Specifies current module | Escape hatch: loads module in isolation, no workspace context |
+| `dagger call -m` | Specifies current module | Loads explicit module instead of workspace modules. Workspace is still detected (not loaded). Functions appear as top-level commands. |
 | `dagger install` | Adds code dependency to module | Adds module to workspace |
 | `dagger module dependency add` | (new) | Adds code dependency to a module's `dagger.json` |
 | `dagger migrate` | (new) | Migrates legacy project to workspace format |
@@ -608,7 +630,20 @@ generate = ["dagger-dev", "generate"]
 
 ## Status
 
-Design phase. Depends on team alignment on the workspace/module distinction.
+Prototype in progress on the `workspace` branch. Implemented so far:
+
+- Workspace detection (4-step fallback chain) — `core/workspace/`
+- Engine-side module loading from `config.toml` — `engine/server/session.go`
+- CLI workspace mode (`dagger call <module> <function>`) — `cmd/dagger/`
+- Migration error for legacy `dagger.json` with triggers
+
+Not yet implemented:
+
+- `-m` as engine connect-time parameter (currently CLI-side, to be moved)
+- Aliases (`[aliases]` in config.toml)
+- Module `config.*` values (constructor arg overrides)
+- `dagger install` creating/updating `config.toml`
+- `dagger module init` creating modules in `.dagger/modules/`
 
 ---
 
