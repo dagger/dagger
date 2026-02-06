@@ -11,27 +11,27 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func copyFile(source, target string) error {
+func (c *copier) copyFile(source, target string) (didHardlink bool, rerr error) {
 	if err := unix.Clonefileat(unix.AT_FDCWD, source, unix.AT_FDCWD, target, unix.CLONE_NOFOLLOW); err != nil {
 		if err != unix.EINVAL && err != unix.EXDEV {
-			return err
+			return false, err
 		}
 	} else {
-		return nil
+		return false, nil
 	}
 
 	src, err := os.Open(source)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open source %s", source)
+		return false, errors.Wrapf(err, "failed to open source %s", source)
 	}
 	defer src.Close()
 	tgt, err := os.Create(target)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open target %s", target)
+		return false, errors.Wrapf(err, "failed to open target %s", target)
 	}
 	defer tgt.Close()
 
-	return copyFileContent(tgt, src)
+	return false, copyFileContent(tgt, src)
 }
 
 func copyFileContent(dst, src *os.File) error {
