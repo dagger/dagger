@@ -2,6 +2,12 @@
 
 Branch: `workspace`
 
+## Context
+
+Dagger currently conflates project configuration and module definition in a single `dagger.json`. [Part 1: Module vs. Workspace](https://gist.github.com/shykes/e4778dc5ec17c9a8bbd3120f5c21ce73) proposes separating them: **workspaces** (`.dagger/config.toml`) configure which modules a project uses, while **modules** (`dagger.json`) remain self-contained packages of functions and types.
+
+This document covers the engine and CLI implementation of that proposal — specifically, moving module loading from the CLI into the engine, so that workspace modules are automatically available at connect time. The design doc (local copy at `docs/design/proposals/01-module-vs-workspace.md`) covers the full user-facing design including migration, aliases, and configuration. This document focuses on the implementation: what was built, what was decided along the way, and what remains.
+
 ## Original Implementation Plan
 
 Replace CLI-driven module loading (`ModuleSource().Serve()`, `initializeDefaultModule()`) with automatic workspace detection at engine connect time. Modules are loaded using the existing dagql pipeline. No more "main module" concept.
