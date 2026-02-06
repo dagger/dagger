@@ -1,34 +1,26 @@
 package schema
 
-// Git objects are lazy — git() and ref() do zero I/O. Content-accessing fields
+// Git objects are lazy: git() and ref() do zero I/O. Content-accessing fields
 // redirect through __resolve on first access:
 //
 //   tags()   → repo.__resolve → back to tags()
 //   commit() → ref.__resolve  → repo.__resolve → back to commit()
 //   tree()   → ref.__resolve  → repo.__resolve → __tree
 //
-// repo.__resolve creates a NEW git() call with explicit URL + auth in the args.
-// This makes auth part of the DAG ID. Since DagOp cache keys derive from the ID,
-// each client's auth path produces a distinct key — without this, one client could
-// get another's cached result without going through auth.
-//
-// ObjectDigest overrides control cache sharing at each level:
-//
-//   Client A (token1):  git("github.com/foo", token=t1)
-//   Client B (token2):  git("github.com/foo", token=t2)
-//   Client C (SSH):     git("git@github.com:foo", ssh=sock)
-//
-//   repo.__resolve:  hash(url, AUTH, ls-remote)  → A ≠ B ≠ C  (per-client)
-//     → tags, branches, url read from here — no further sharing
-//
-//   ref.__resolve:   hash(url, ref, sha)         → A = B ≠ C  (auth stripped)
-//     → commit, ref read from here — shared across tokens for same URL
-//
-//   __tree:          hash(sha, depth, discard)    → A = B = C  (URL stripped)
-//     → tree reads from here — shared across all protocols
+// repo.__resolve creates a NEW git() call with explicit URL + auth in the args
+// (the "redirect" pattern). This makes auth part of the DAG ID.
 //
 // CachePerClient on every field that triggers __resolve ensures each client
-// goes through its own auth path before touching data.
+// goes through its own auth path. But CachePerClient also mixes clientID into
+// the ID's recipe digest, making IDs unstable across sessions. This would break
+// module function caching for functions taking GitRepository/GitRef inputs.
+//
+// WithObjectDigest overrides the ID's recipe digest, stripping clientID back to
+// stable values. Each level controls what downstream operations cache on:
+//
+//   repo.__resolve:  hash(url, auth, ls-remote)  — stable across sessions
+//   ref.__resolve:   hash(url, ref, sha)         — also strips auth
+//   __tree:          hash(sha, depth, discard)   — also strips URL
 
 import (
 	"cmp"
@@ -285,30 +277,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	if err != nil {
 		return inst, err
 	}
-
-	// ObjectDigest: hash(url, auth, config) — the default ID digest includes
-	// Optional wrapper structure, so the same call with/without explicit defaults
-	// would get different digests. This normalizes to semantic values only.
-	dgstInputs := []string{
-		args.URL,
-		strconv.FormatBool(repo.DiscardGitDir),
-	}
-	if args.SSHAuthSocket.Valid {
-		dgstInputs = append(dgstInputs, "sshAuthSock", args.SSHAuthSocket.Value.ID().Digest().String())
-	}
-	if args.HTTPAuthToken.Valid {
-		dgstInputs = append(dgstInputs, "authToken", args.HTTPAuthToken.Value.ID().Digest().String())
-	}
-	if args.HTTPAuthHeader.Valid {
-		dgstInputs = append(dgstInputs, "authHeader", args.HTTPAuthHeader.Value.ID().Digest().String())
-	}
-	if args.Ref != "" {
-		dgstInputs = append(dgstInputs, "pinnedRef", args.Ref)
-	}
-	if args.Commit != "" {
-		dgstInputs = append(dgstInputs, "pinnedCommit", args.Commit)
-	}
-	inst = inst.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
 
 	// Secrets and sockets live in the client that created them. If this result
 	// gets served from cache to a different client, that client won't have the

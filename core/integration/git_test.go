@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -1993,9 +1994,9 @@ func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error
 }
 
 // TestGitTreeCacheAcrossProtocols verifies that two different URLs pointing at
-// the same commit produce the same tree ID. This proves that __tree's
-// ObjectDigest (keyed only on SHA + depth + discardGitDir) works: the expensive
-// git checkout is shared across different protocols/URLs.
+// the same commit produce the same tree content. This proves that __tree's
+// ObjectDigest (keyed only on SHA + depth + discardGitDir) shares the expensive
+// git checkout across different protocols/URLs.
 func (GitSuite) TestGitTreeCacheAcrossProtocols(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -2049,13 +2050,21 @@ server {
 	require.NoError(t, err)
 	require.Equal(t, gitCommit, httpCommit, "both protocols should resolve the same commit")
 
-	// Both should produce the same tree ID (proves __tree cache sharing).
+	// Both trees should share the same ObjectDigest (which is the DagOp cache
+	// key). The full serialized IDs differ (parent chain has different URLs),
+	// but the leaf digest — set by __tree's WithObjectDigest — should match.
+	// Same digest = same DagOp key = checkout shared across protocols.
 	gitTreeID, err := gitRepo.Head().Tree().ID(ctx)
 	require.NoError(t, err)
 
 	httpTreeID, err := httpRepo.Head().Tree().ID(ctx)
 	require.NoError(t, err)
-	require.Equal(t, gitTreeID, httpTreeID, "tree IDs should match across protocols (shared __tree ObjectDigest)")
+
+	var gitID, httpID call.ID
+	require.NoError(t, gitID.Decode(string(gitTreeID)))
+	require.NoError(t, httpID.Decode(string(httpTreeID)))
+	require.Equal(t, gitID.Digest(), httpID.Digest(),
+		"tree ObjectDigest should match across protocols (same DagOp cache key)")
 }
 
 // TestGitCachePerClientFields verifies that CachePerClient fields are cached
