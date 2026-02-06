@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"dagger/viztest/internal/dagger"
-	"dagger/viztest/internal/telemetry"
 
+	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -49,13 +49,13 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	// Scenario 1: UNSET span under ERROR span - should hoist
 	(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "failing outer span")
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 		(func() {
 			ctx, span := Tracer().Start(ctx, "unset middle span")
 			defer span.End() // UNSET
 			(func() (rerr error) {
 				ctx, span := Tracer().Start(ctx, "failing inner span")
-				defer telemetry.End(span, func() error { return rerr })
+				defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 				stdio := telemetry.SpanStdio(ctx, "")
 				fmt.Fprintln(stdio.Stdout, "this should be hoisted - ancestor failed")
 				return errors.New("inner failure")
@@ -67,13 +67,13 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	// Scenario 2: UNSET span under OK span - should NOT hoist
 	(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "succeeding outer span")
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 		(func() {
 			ctx, span := Tracer().Start(ctx, "unset middle span")
 			defer span.End() // UNSET
 			(func() (rerr error) {
 				ctx, span := Tracer().Start(ctx, "failing inner span")
-				defer telemetry.End(span, func() error { return rerr })
+				defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 				stdio := telemetry.SpanStdio(ctx, "")
 				fmt.Fprintln(stdio.Stdout, "this should NOT be hoisted - ancestor succeeded")
 				return errors.New("inner failure")
@@ -100,13 +100,13 @@ func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
 		trace.WithAttributes(
 			attribute.Bool("dagger.io/ui.rollup.spans", true),
 		))
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 	// NB: theoretically this would be from a concurrency pool or something but
 	// we'll simulate it instead to reduce randomness
 	return errors.Join(
 		func() (rerr error) {
 			ctx, span := Tracer().Start(ctx, "sub-thing 1")
-			defer telemetry.End(span, func() error { return rerr })
+			defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 			_, err := dag.Container().
 				From("alpine").
 				WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
@@ -115,7 +115,7 @@ func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
 		}(),
 		(func() (rerr error) {
 			ctx, span := Tracer().Start(ctx, "sub-thing 2")
-			defer telemetry.End(span, func() error { return rerr })
+			defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 			_, err := dag.Container().
 				From("alpine").
 				WithExec([]string{"sh", "-c", "echo this is another failing effect; exit 1"}).
@@ -157,7 +157,7 @@ func (*Viztest) ManyLines(n int) {
 // +cache="session"
 func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
 	ctx, span := Tracer().Start(ctx, "custom span")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
