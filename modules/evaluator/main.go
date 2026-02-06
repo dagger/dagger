@@ -19,12 +19,12 @@ package main
 import (
 	"context"
 	"dagger/botsbuildingbots/internal/dagger"
-	"dagger/botsbuildingbots/internal/telemetry"
 	_ "embed"
 	"errors"
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -213,7 +213,7 @@ func (m *Evaluator) EvalsAcrossModels(
 				// track model span ID so we can link to it
 				SpanID: modelSpan.SpanContext().SpanID().String(),
 			}
-			defer telemetry.End(modelSpan, report.Check)
+			defer telemetry.End(modelSpan, report.Check) //nolint:staticcheck
 			for _, name := range evals {
 				result := EvalResult{
 					Name: name,
@@ -222,7 +222,7 @@ func (m *Evaluator) EvalsAcrossModels(
 					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name),
 						telemetry.Reveal(),
 						telemetry.Encapsulate())
-					defer telemetry.End(evalSpan, func() error { return rerr })
+					defer telemetry.EndWithCause(evalSpan, &rerr)
 					stdio := telemetry.SpanStdio(ctx, "")
 					defer stdio.Close()
 					attempts := work.Evaluate(name, dagger.WorkspaceEvaluateOpts{

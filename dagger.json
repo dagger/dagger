@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.19.10",
+  "engineVersion": "v0.19.11",
   "sdk": {
     "source": "go"
   },
@@ -99,7 +99,9 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": ["scanSource"],
+          "function": [
+            "scanSource"
+          ],
           "argument": "source",
           "ignore": [
             "bin",
@@ -124,6 +126,7 @@
   ],
   "include": [
     "sdk/typescript/runtime/**/*",
+    "engine/distconsts",
     "go.mod",
     "go.sum",
     "util/parallel"

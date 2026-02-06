@@ -3,7 +3,7 @@ module dagger/engine-dev
 go 1.24.4
 
 require (
-	github.com/dagger/dagger/engine/distconsts v0.19.10
+	github.com/dagger/dagger/engine/distconsts v0.19.11
 	github.com/dagger/dagger/sdk/typescript/runtime v0.15.3
 )
 
@@ -27,6 +27,7 @@ require (
 )
 
 require (
+	dagger.io/dagger v0.19.11
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

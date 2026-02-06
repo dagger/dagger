@@ -3,10 +3,14 @@ module dagger/k-3-s
 go 1.24.0
 
 require (
-	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
-	github.com/vektah/gqlparser/v2 v2.5.30
 	go.opentelemetry.io/otel v1.38.0
+	go.opentelemetry.io/otel/trace v1.38.0
+)
+
+require (
+	github.com/99designs/gqlgen v0.17.81
+	github.com/vektah/gqlparser/v2 v2.5.30
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.14.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.38.0
@@ -14,13 +18,13 @@ require (
 	go.opentelemetry.io/otel/log v0.14.0
 	go.opentelemetry.io/otel/sdk v1.38.0
 	go.opentelemetry.io/otel/sdk/log v0.14.0
-	go.opentelemetry.io/otel/trace v1.38.0
 	go.opentelemetry.io/proto/otlp v1.8.0
 	golang.org/x/sync v0.17.0
 	google.golang.org/grpc v1.76.0
 )
 
 require (
+	dagger.io/dagger v0.19.11
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

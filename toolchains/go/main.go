@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/modules/go/internal/dagger"
-	"github.com/dagger/dagger/modules/go/internal/telemetry"
 	"github.com/dagger/dagger/util/parallel"
 )
 
