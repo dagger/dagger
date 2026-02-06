@@ -16,11 +16,15 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
+
+	// Import generated dagger client with toolchain bindings
+
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
 )
@@ -31,6 +35,20 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
+	engine := dag.EngineDev().TestEngine()
+	ctx := context.Background()
+	go engine.Up(ctx)
+	engineEndpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Connect to test engine: %w", err)
+		os.Exit(1)
+	}
+
+	// After this point, privileges are dropped: we are bricked out of the "outer" engine
+	// New clients will connect to the dev engine instead
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint)
+
+	// Run tests
 	res := oteltest.Main(m)
 
 	if origAuthSock != "" {
