@@ -58,13 +58,26 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")
 	}
-	modDef, err := initializeDefaultModule(ctx, engineClient.Dagger())
-	if err != nil && err != errModuleNotFound {
-		return err
+	var modDef *moduleDef
+	modRef, hasExplicit := getExplicitModuleSourceRef()
+	if hasExplicit {
+		var err error
+		modDef, err = initializeModule(ctx, engineClient.Dagger(), modRef, engineClient.Dagger().ModuleSource(modRef))
+		if err != nil {
+			return err
+		}
+	} else {
+		// Workspace modules are already loaded by the engine.
+		// For MCP, we use workspace mode (modDef stays nil if no explicit -m).
+		modDef, _ = initializeWorkspace(ctx, engineClient.Dagger())
+		// If no workspace modules are available and --core not specified, error
+		if modDef != nil && !modDef.HasModule() {
+			modDef = nil
+		}
 	}
 
-	if err == errModuleNotFound && !envPrivileged {
-		return fmt.Errorf("%w and --core not specified", errModuleNotFound)
+	if modDef == nil && !envPrivileged {
+		return fmt.Errorf("no module found and --env-privileged not specified")
 	}
 
 	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())

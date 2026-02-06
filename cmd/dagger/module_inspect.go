@@ -32,6 +32,17 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 	return def, nil
 }
 
+// initializeWorkspace loads type definitions from the workspace.
+// Modules are already served by the engine at connect time.
+// MainObject is the Query root — workspace module constructors appear as Query root fields.
+func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
+	def := &moduleDef{}
+	if err := def.loadTypeDefs(ctx, dag); err != nil {
+		return nil, err
+	}
+	return def, nil
+}
+
 // initializeDefaultModule loads the module referenced by the -m,--mod flag
 //
 // By default, looks for a module in the current directory, or above.
