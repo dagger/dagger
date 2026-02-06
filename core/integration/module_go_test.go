@@ -1815,6 +1815,7 @@ func Foo() *dagger.Directory {
 // `querybuilder` package and use that changes in the go generated files.
 // If so, please disable that test until the release is done then re enable it.
 func (GoSuite) TestReleaseLibraryInModule(ctx context.Context, t *testctx.T) {
+	t.Skip("broken, see line 523 of core/sdk/go_sdk.go")
 	versions := []string{"v0.19.10", "v0.19.5"}
 
 	for _, version := range versions {

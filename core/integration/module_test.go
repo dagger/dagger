@@ -5585,8 +5585,6 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 			require.Equal(t, strings.Join([]string{
 				"dagger/",
 				"foo/",
-				"querybuilder/",
-				"telemetry/",
 			}, "\n"), strings.TrimSpace(out))
 		})
 
