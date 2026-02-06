@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -47,6 +48,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -662,6 +664,13 @@ func (srv *Server) initializeDaggerClient(
 			client.deps = client.deps.Append(client.mod)
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	}
+
+	// Detect workspace and load modules for the main client
+	if opts.EncodedModuleID == "" {
+		if err := srv.loadWorkspace(ctx, client, coreMod.Dag); err != nil {
+			return fmt.Errorf("workspace loading: %w", err)
+		}
 	}
 
 	// configure OTel providers that export to SQLite
@@ -1367,6 +1376,71 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 	}
 
 	return true
+}
+
+// loadWorkspace detects the workspace from the client's working directory
+// and loads all configured modules onto the dagql server.
+func (srv *Server) loadWorkspace(ctx context.Context, client *daggerClient, dag *dagql.Server) error {
+	cwd, err := client.bkClient.AbsPath(ctx, ".")
+	if err != nil {
+		return fmt.Errorf("failed to get cwd: %w", err)
+	}
+
+	statFS := core.NewCallerStatFS(client.bkClient)
+	ws, err := workspace.Detect(ctx, statFS, client.bkClient.ReadCallerHostFile, cwd)
+	if err != nil {
+		return err
+	}
+
+	if ws.Config == nil || len(ws.Config.Modules) == 0 {
+		return nil
+	}
+
+	for name, entry := range ws.Config.Modules {
+		sourcePath := filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
+		if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath); err != nil {
+			return fmt.Errorf("loading workspace module %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// loadWorkspaceModule resolves a module through the dagql pipeline and serves it
+// to the client. This adds the module's constructor as a Query root field.
+func (srv *Server) loadWorkspaceModule(
+	ctx context.Context,
+	client *daggerClient,
+	dag *dagql.Server,
+	name, sourcePath string,
+) error {
+	var mod dagql.Instance[*core.Module]
+	err := dag.Select(ctx, dag.Root(), &mod,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(sourcePath)},
+				{Name: "disableFindUp", Value: dagql.Boolean(true)},
+			},
+		},
+		dagql.Selector{Field: "asModule"},
+	)
+	if err != nil {
+		return fmt.Errorf("resolving module source %q: %w", sourcePath, err)
+	}
+
+	// Serve module + dependencies (adds to client.deps, installs on dagql server)
+	client.stateMu.Lock()
+	defer client.stateMu.Unlock()
+
+	if err := srv.serveModule(client, mod.Self()); err != nil {
+		return err
+	}
+	for _, depMod := range mod.Self().Deps.Mods {
+		if err := srv.serveModule(client, depMod); err != nil {
+			return fmt.Errorf("serving dependency %s: %w", depMod.Name(), err)
+		}
+	}
+	return nil
 }
 
 // If the current client is coming from a function, return the module that function is from
