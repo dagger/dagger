@@ -18,18 +18,14 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+// GitRepository is a lazy handle to a git repository.
+// Starts unresolved — resolution happens via __resolve in core/schema/git.go.
 type GitRepository struct {
-	Backend GitRepositoryBackend
-	Remote  *gitutil.Remote
-
+	Backend       GitRepositoryBackend
+	Remote        *gitutil.Remote // ls-remote result, nil until resolved
 	DiscardGitDir bool
-
-	// Internal per-repo pinned HEAD (ref/commit)
-	PinnedHead *gitutil.Ref `internal:"true"`
-
-	// Resolved indicates that lazy resolution has completed for this repo.
-	// When true: URL scheme is explicit, auth is injected, remote metadata is initialized.
-	Resolved bool `internal:"true"`
+	PinnedHead    *gitutil.Ref `internal:"true"` // set by git(ref:, commit:) args
+	Resolved      bool         `internal:"true"`
 }
 
 type GitRepositoryBackend interface {
@@ -47,14 +43,13 @@ type GitRepositoryBackend interface {
 	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
 }
 
+// GitRef is a lazy handle to a git ref (branch, tag, or commit).
+// Starts unresolved — resolution happens via __resolve in core/schema/git.go.
 type GitRef struct {
-	Repo    dagql.ObjectResult[*GitRepository]
-	Backend GitRefBackend
-	Ref     *gitutil.Ref
-
-	// Resolved indicates that lazy resolution has completed for this ref.
-	// When true: underlying repo is resolved, ref is canonicalized to full name + SHA, backend is initialized.
-	Resolved bool `internal:"true"`
+	Repo     dagql.ObjectResult[*GitRepository]
+	Backend  GitRefBackend  // nil until resolved
+	Ref      *gitutil.Ref   // Name is user input before resolution, canonical after
+	Resolved bool           `internal:"true"`
 }
 
 type GitRefBackend interface {
@@ -80,20 +75,6 @@ func (*GitRepository) TypeDescription() string {
 	return "A git repository."
 }
 
-// Resolve fetches remote metadata. Mutates in place: only call from `__resolve`.
-func (repo *GitRepository) Resolve(ctx context.Context) error {
-	if repo.Remote == nil {
-		remote, err := repo.Backend.Remote(ctx)
-		if err != nil {
-			return err
-		}
-		repo.Remote = remote
-	}
-	return nil
-}
-
-// Clone returns a shallow copy of the GitRepository.
-// Use this before mutating to preserve dagql's immutability invariant.
 func (repo *GitRepository) Clone() *GitRepository {
 	cp := *repo
 	if repo.PinnedHead != nil {
@@ -114,8 +95,6 @@ func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
 }
 
-// Clone returns a shallow copy of the GitRef.
-// Use this before mutating to preserve dagql's immutability invariant.
 func (ref *GitRef) Clone() *GitRef {
 	cp := *ref
 	if ref.Ref != nil {
@@ -129,37 +108,6 @@ func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bo
 	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth)
 }
 
-// Resolve canonicalizes SHA/name and initializes backend. Mutates in place: only call from `__resolve`.
-func (ref *GitRef) Resolve(ctx context.Context) error {
-	repo := ref.Repo.Self()
-
-	if err := repo.Resolve(ctx); err != nil {
-		return err
-	}
-
-	if ref.Ref.Name != "" {
-		resolvedRefInfo, err := repo.Remote.Lookup(ref.Ref.Name)
-		if err != nil {
-			return err
-		}
-		if ref.Ref.SHA == "" {
-			ref.Ref.SHA = resolvedRefInfo.SHA
-		}
-		if resolvedRefInfo.Name != "" {
-			ref.Ref.Name = resolvedRefInfo.Name
-		}
-	}
-
-	if ref.Backend == nil {
-		refBackend, err := repo.Backend.Get(ctx, ref.Ref)
-		if err != nil {
-			return err
-		}
-		ref.Backend = refBackend
-	}
-
-	return nil
-}
 
 // doGitCheckout performs a git checkout using the given git helper.
 //

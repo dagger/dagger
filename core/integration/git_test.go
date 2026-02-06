@@ -1849,22 +1849,39 @@ func main() {
 // properly cache-invalidated when the remote Git repository changes.
 // Each call uses a separate session (via dev engine) so the ls-remote cache
 // is fresh, testing true cross-session invalidation.
+// pushToGitService pushes a new commit to a git service. Used to trigger
+// cache invalidation in tests.
+func pushToGitService(ctx context.Context, t *testctx.T, c *dagger.Client, gitSvc *dagger.Service, url string) {
+	t.Helper()
+	_, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithServiceBinding("git-server", gitSvc).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", `touch newfile && git add newfile && git commit -m "new commit" && git push origin main`}).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
+// TestGitFunctionCacheInvalidation tests cross-session caching with a module
+// function that takes a GitRepository argument. Each session gets a fresh
+// ls-remote cache, but the DagOp-level cache persists across sessions.
 func (GitSuite) TestGitFunctionCacheInvalidation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// Create a git service we can push to
 	gitSvc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
-	// Spin up a dev engine with the git service bound so that client containers
-	// running against this engine can reach the git service hostname.
 	devEngine := devEngineContainerAsService(devEngineContainer(c,
 		func(ctr *dagger.Container) *dagger.Container {
 			return ctr.WithServiceBinding("git-server", gitSvc)
 		},
 	))
 
-	// Build module source using the outer engine, then extract the directory
-	modSrc := `package main
+	modDir := goGitBase(t, c).
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
 
 import (
 	"context"
@@ -1874,88 +1891,63 @@ import (
 
 type Test struct {}
 
-// GetTime returns the current timestamp. Used to detect cache hits vs misses.
 func (m *Test) GetTime(ctx context.Context, repo *dagger.GitRepository) (string, error) {
-	// Force resolution by accessing the repo
 	_, err := repo.Head().Commit(ctx)
 	if err != nil {
 		return "", err
 	}
 	return time.Now().Format(time.RFC3339Nano), nil
 }
-`
-
-	modDir := goGitBase(t, c).
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", modSrc).
+`).
 		Directory("/work")
 
-	// Each clientCtr() creates a fresh client container connecting to the dev
-	// engine — a new session with a fresh ls-remote cache.
-	clientCtr := func() *dagger.Container {
-		return engineClientContainer(ctx, t, c, devEngine).
+	// Each call creates a new session (fresh ls-remote cache) but shares
+	// the DagOp cache. CACHEBUSTER bypasses the outer BuildKit cache.
+	callFn := func() string {
+		out, err := engineClientContainer(ctx, t, c, devEngine).
 			WithDirectory("/work", modDir).
-			WithWorkdir("/work")
+			WithWorkdir("/work").
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerNonNestedExec("call", "get-time", "--repo", url)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
 	}
 
-	// First call - should execute the function
-	// Each call uses a unique CACHEBUSTER to prevent the outer buildkit from
-	// caching the container execution (we want the inner dagger call to run).
-	time1, err := clientCtr().
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		With(daggerNonNestedExec("call", "get-time", "--repo", url)).Stdout(ctx)
-	require.NoError(t, err)
-	time1 = strings.TrimSpace(time1)
-	require.NotEmpty(t, time1)
+	t.Run("cache hit across sessions", func(ctx context.Context, t *testctx.T) {
+		time1 := callFn()
+		require.NotEmpty(t, time1)
 
-	// Second call - new session, same repo state → function should still be
-	// cached at the buildkit level (same dagop cache key).
-	time2, err := clientCtr().
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		With(daggerNonNestedExec("call", "get-time", "--repo", url)).Stdout(ctx)
-	require.NoError(t, err)
-	time2 = strings.TrimSpace(time2)
-	require.Equal(t, time1, time2, "second call should return cached result")
+		time2 := callFn()
+		require.Equal(t, time1, time2, "same repo state across sessions should hit DagOp cache")
+	})
 
-	// Push a new commit to the remote repo
-	_, err = c.Container().
-		From(alpineImage).
-		WithExec([]string{"apk", "add", "git"}).
-		With(gitUserConfig).
-		WithServiceBinding("git-server", gitSvc).
-		WithWorkdir("/src").
-		WithExec([]string{"git", "clone", url, "."}).
-		WithExec([]string{"sh", "-c", `touch newfile && git add newfile && git commit -m "new commit" && git push origin main`}).
-		Sync(ctx)
-	require.NoError(t, err)
+	t.Run("invalidation on push", func(ctx context.Context, t *testctx.T) {
+		timeBefore := callFn()
 
-	// Third call - new session, repo changed → ls-remote returns new refs,
-	// resolved ID differs, function cache key changes → function re-executes.
-	time3, err := clientCtr().
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		With(daggerNonNestedExec("call", "get-time", "--repo", url)).Stdout(ctx)
-	require.NoError(t, err)
-	time3 = strings.TrimSpace(time3)
-	require.NotEqual(t, time1, time3, "third call should return new result after remote change")
+		pushToGitService(ctx, t, c, gitSvc, url)
+
+		timeAfter := callFn()
+		require.NotEqual(t, timeBefore, timeAfter, "ls-remote changes should bust cache")
+	})
 }
 
-// TestGitRefFunctionCacheInvalidation is similar to TestGitFunctionCacheInvalidation
-// but tests with GitRef argument instead of GitRepository.
+// TestGitRefFunctionCacheInvalidation is the same as
+// TestGitFunctionCacheInvalidation but with a GitRef argument.
 func (GitSuite) TestGitRefFunctionCacheInvalidation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// Create a git service we can push to
 	gitSvc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
-	// Spin up a dev engine with the git service bound
 	devEngine := devEngineContainerAsService(devEngineContainer(c,
 		func(ctr *dagger.Container) *dagger.Container {
 			return ctr.WithServiceBinding("git-server", gitSvc)
 		},
 	))
 
-	// Build module source using the outer engine
-	modSrc := `package main
+	modDir := goGitBase(t, c).
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
 
 import (
 	"context"
@@ -1964,42 +1956,134 @@ import (
 
 type Test struct {}
 
-// GetCommit returns the commit SHA of the ref.
 func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error) {
 	return ref.Commit(ctx)
 }
-`
-
-	modDir := goGitBase(t, c).
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", modSrc).
+`).
 		Directory("/work")
 
-	clientCtr := func() *dagger.Container {
-		return engineClientContainer(ctx, t, c, devEngine).
+	callFn := func() string {
+		out, err := engineClientContainer(ctx, t, c, devEngine).
 			WithDirectory("/work", modDir).
-			WithWorkdir("/work")
+			WithWorkdir("/work").
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerNonNestedExec("call", "get-commit", "--ref", url)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
 	}
 
-	// First call - should return initial commit SHA
-	// Each call uses a unique CACHEBUSTER to prevent the outer buildkit from
-	// caching the container execution (we want the inner dagger call to run).
-	sha1, err := clientCtr().
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		With(daggerNonNestedExec("call", "get-commit", "--ref", url)).Stdout(ctx)
+	t.Run("cache hit across sessions", func(ctx context.Context, t *testctx.T) {
+		sha1 := callFn()
+		require.Regexp(t, `^[a-f0-9]{40}$`, sha1)
+
+		sha2 := callFn()
+		require.Equal(t, sha1, sha2, "same repo state across sessions should hit DagOp cache")
+	})
+
+	t.Run("invalidation on push", func(ctx context.Context, t *testctx.T) {
+		shaBefore := callFn()
+
+		pushToGitService(ctx, t, c, gitSvc, url)
+
+		shaAfter := callFn()
+		require.NotEqual(t, shaBefore, shaAfter, "ls-remote changes should bust cache")
+		require.Regexp(t, `^[a-f0-9]{40}$`, shaAfter)
+	})
+}
+
+// TestGitTreeCacheAcrossProtocols verifies that two different URLs pointing at
+// the same commit produce the same tree ID. This proves that __tree's
+// ObjectDigest (keyed only on SHA + depth + discardGitDir) works: the expensive
+// git checkout is shared across different protocols/URLs.
+func (GitSuite) TestGitTreeCacheAcrossProtocols(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create one bare repo, served via two different protocols.
+	content := c.Directory().WithNewFile("README.md", "cache test "+identity.NewID())
+	repoDir := makeGitDir(c, content, "main")
+
+	// git:// protocol (git-daemon on port 9418)
+	gitDaemon := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		WithDirectory("/root/srv", repoDir).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
+		AsService()
+
+	gitHost, err := gitDaemon.Hostname(ctx)
 	require.NoError(t, err)
-	sha1 = strings.TrimSpace(sha1)
+	gitURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	// HTTP protocol (nginx + dumb HTTP, reuses the same bare repo)
+	httpSvc := c.Container().
+		From("nginx").
+		WithNewFile("/etc/nginx/conf.d/default.conf", `
+server {
+	listen       80;
+	server_name  localhost;
+	location / {
+		root   /usr/share/nginx/html;
+		autoindex on;
+	}
+}
+`).
+		WithMountedDirectory("/usr/share/nginx/html", repoDir).
+		WithExposedPort(80).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	httpHost, err := httpSvc.Hostname(ctx)
+	require.NoError(t, err)
+	httpURL := fmt.Sprintf("http://%s/repo.git", httpHost)
+
+	// Both protocols should resolve the same commit.
+	gitRepo := c.Git(gitURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	httpRepo := c.Git(httpURL, dagger.GitOpts{ExperimentalServiceHost: httpSvc})
+
+	gitCommit, err := gitRepo.Head().Commit(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, gitCommit)
+
+	httpCommit, err := httpRepo.Head().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, gitCommit, httpCommit, "both protocols should resolve the same commit")
+
+	// Both should produce the same tree ID (proves __tree cache sharing).
+	gitTreeID, err := gitRepo.Head().Tree().ID(ctx)
+	require.NoError(t, err)
+
+	httpTreeID, err := httpRepo.Head().Tree().ID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, gitTreeID, httpTreeID, "tree IDs should match across protocols (shared __tree ObjectDigest)")
+}
+
+// TestGitCachePerClientFields verifies that CachePerClient fields are cached
+// within a session. We resolve fields, then push changes to the remote, then
+// query the same fields again. Because the dagql cache hits (same ID + same
+// clientID), the resolver doesn't re-run and we get stale pre-push data.
+// Stale data = proof of cache hit.
+func (GitSuite) TestGitCachePerClientFields(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := c.Directory().WithNewFile("README.md", "cache test "+identity.NewID())
+	gitSvc, url := gitService(ctx, t, c, content)
+	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: gitSvc})
+
+	// Step 1: Resolve all CachePerClient fields (populates dagql cache).
+	sha1, err := repo.Head().Commit(ctx)
+	require.NoError(t, err)
 	require.Regexp(t, `^[a-f0-9]{40}$`, sha1)
 
-	// Second call - new session, same repo state → should return same SHA
-	sha2, err := clientCtr().
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		With(daggerNonNestedExec("call", "get-commit", "--ref", url)).Stdout(ctx)
+	branches1, err := repo.Branches(ctx)
 	require.NoError(t, err)
-	sha2 = strings.TrimSpace(sha2)
-	require.Equal(t, sha1, sha2, "second call should return cached result")
+	require.NotEmpty(t, branches1)
 
-	// Push a new commit to the remote repo
+	tags1, err := repo.Tags(ctx)
+	require.NoError(t, err)
+
+	// Step 2: Push a new commit + branch + tag to the remote.
+	// This changes server state but does NOT invalidate the dagql cache.
 	_, err = c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
@@ -2007,16 +2091,37 @@ func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error
 		WithServiceBinding("git-server", gitSvc).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "clone", url, "."}).
-		WithExec([]string{"sh", "-c", `touch newfile && git add newfile && git commit -m "new commit" && git push origin main`}).
+		WithExec([]string{"sh", "-c", strings.Join([]string{
+			"touch newfile",
+			"git add newfile",
+			`git commit -m "new commit"`,
+			"git push origin main",
+			"git checkout -b feature",
+			"git push origin feature",
+			"git tag v1.0",
+			"git push origin v1.0",
+		}, " && ")}).
 		Sync(ctx)
 	require.NoError(t, err)
 
-	// Third call - new session, repo changed → should return new commit SHA
-	sha3, err := clientCtr().
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		With(daggerNonNestedExec("call", "get-commit", "--ref", url)).Stdout(ctx)
-	require.NoError(t, err)
-	sha3 = strings.TrimSpace(sha3)
-	require.NotEqual(t, sha1, sha3, "third call should return new result after remote change")
-	require.Regexp(t, `^[a-f0-9]{40}$`, sha3)
+	// Step 3: Same session — dagql cache should still return pre-push values.
+	// If CachePerClient caching works, the resolver doesn't re-run and we get
+	// stale data. If caching is broken, ls-remote re-runs and picks up changes.
+	t.Run("commit cached", func(ctx context.Context, t *testctx.T) {
+		sha2, err := repo.Head().Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, sha1, sha2, "same session should return cached commit")
+	})
+
+	t.Run("branches cached", func(ctx context.Context, t *testctx.T) {
+		branches2, err := repo.Branches(ctx)
+		require.NoError(t, err)
+		require.Equal(t, branches1, branches2, "same session should return cached branches")
+	})
+
+	t.Run("tags cached", func(ctx context.Context, t *testctx.T) {
+		tags2, err := repo.Tags(ctx)
+		require.NoError(t, err)
+		require.Equal(t, tags1, tags2, "same session should return cached tags")
+	})
 }
