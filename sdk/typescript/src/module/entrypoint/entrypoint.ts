@@ -3,7 +3,7 @@ import type { JSON } from "../../api/client.gen.js"
 import { ExecError } from "../../common/errors/ExecError.js"
 import { GraphQLRequestError } from "../../common/errors/GraphQLRequestError.js"
 import { connection } from "../../connect.js"
-import * as telemetry from "../../telemetry/telemetry.js"
+import * as telemetry from "../../telemetry/index.js"
 import { Executor, Args } from "../executor.js"
 import { scan } from "../introspector/index.js"
 import { invoke } from "./invoke.js"
@@ -54,7 +54,7 @@ export async function entrypoint(files: string[]) {
           // Closing telemetry here since the process is shutdown after
           // so any parent's finally will not be executed.
           // That way, we guarantee that the spans are flushed.
-          await telemetry.close()
+          await telemetry.shutdown()
 
           process.exit(1)
         }
