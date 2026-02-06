@@ -730,9 +730,15 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 
 		// find the lines with metrics we care about testing
 		soughtMetrics := map[string]struct{}{
-			"dagger_connected_clients":                 {},
-			"dagger_local_cache_total_disk_size_bytes": {},
-			"dagger_local_cache_entries":               {},
+			"dagger_connected_clients":                              {},
+			"dagger_dagql_cache_entries":                            {},
+			"dagger_dagql_cache_ongoing_calls_entries":              {},
+			"dagger_dagql_cache_completed_calls_entries":            {},
+			"dagger_dagql_cache_completed_calls_by_content_entries": {},
+			"dagger_dagql_cache_ongoing_arbitrary_entries":          {},
+			"dagger_dagql_cache_completed_arbitrary_entries":        {},
+			"dagger_local_cache_total_disk_size_bytes":              {},
+			"dagger_local_cache_entries":                            {},
 		}
 		foundMetrics := map[string]int{}
 		for _, line := range strings.Split(out, "\n") {
@@ -770,6 +776,36 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 					t.Logf("expected dagger_connected_clients = 1, got %d", num)
 					validatedAll = false
 				}
+			case "dagger_dagql_cache_entries":
+				if num < 0 {
+					t.Logf("expected dagger_dagql_cache_entries >= 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_dagql_cache_ongoing_calls_entries":
+				if num < 0 {
+					t.Logf("expected dagger_dagql_cache_ongoing_calls_entries >= 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_dagql_cache_completed_calls_entries":
+				if num < 0 {
+					t.Logf("expected dagger_dagql_cache_completed_calls_entries >= 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_dagql_cache_completed_calls_by_content_entries":
+				if num < 0 {
+					t.Logf("expected dagger_dagql_cache_completed_calls_by_content_entries >= 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_dagql_cache_ongoing_arbitrary_entries":
+				if num < 0 {
+					t.Logf("expected dagger_dagql_cache_ongoing_arbitrary_entries >= 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_dagql_cache_completed_arbitrary_entries":
+				if num < 0 {
+					t.Logf("expected dagger_dagql_cache_completed_arbitrary_entries >= 0, got %d", num)
+					validatedAll = false
+				}
 			case "dagger_local_cache_total_disk_size_bytes":
 				if num <= 0 {
 					t.Logf("expected dagger_local_cache_total_disk_size_bytes > 0, got %d", num)
@@ -797,6 +833,167 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 
 	clientCancel()
 	require.NoError(t, eg.Wait(), "error from client exec")
+}
+
+func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "1s").
+			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
+				Protocol: dagger.NetworkProtocolTcp,
+			})
+	}))
+
+	metricsCtr := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngine).
+		WithExec([]string{"apk", "add", "curl"})
+
+	getMetrics := func() (map[string]float64, error) {
+		out, err := metricsCtr.
+			WithEnvVariable("CACHEBUST", rand.Text()).
+			WithExec([]string{"sh", "-c", "curl -s http://dev-engine:9090/metrics"}).
+			Stdout(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		sought := map[string]struct{}{
+			"dagger_connected_clients":                              {},
+			"dagger_dagql_cache_entries":                            {},
+			"dagger_dagql_cache_ongoing_calls_entries":              {},
+			"dagger_dagql_cache_completed_calls_entries":            {},
+			"dagger_dagql_cache_completed_calls_by_content_entries": {},
+			"dagger_dagql_cache_ongoing_arbitrary_entries":          {},
+			"dagger_dagql_cache_completed_arbitrary_entries":        {},
+		}
+		found := map[string]float64{}
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			for metricName := range sought {
+				numStr, ok := strings.CutPrefix(line, metricName+" ")
+				if !ok {
+					continue
+				}
+				num, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
+				if err != nil {
+					return nil, fmt.Errorf("parse metric %s=%q: %w", metricName, numStr, err)
+				}
+				found[metricName] = num
+				delete(sought, metricName)
+				break
+			}
+			if len(sought) == 0 {
+				break
+			}
+		}
+		if len(sought) > 0 {
+			return nil, fmt.Errorf("missing metrics: %v", sought)
+		}
+		return found, nil
+	}
+
+	var (
+		baselineReady bool
+		baselineDagql float64
+	)
+	for attempt := 1; attempt <= 20; attempt++ {
+		metrics, err := getMetrics()
+		if err != nil {
+			t.Logf("baseline attempt %d: failed to fetch metrics: %v", attempt, err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if metrics["dagger_connected_clients"] == 0 {
+			baselineDagql = metrics["dagger_dagql_cache_entries"]
+			baselineReady = true
+			break
+		}
+		t.Logf(
+			"baseline attempt %d: waiting for connected clients to drain (connected=%v dagql_cache=%v)",
+			attempt,
+			metrics["dagger_connected_clients"],
+			metrics["dagger_dagql_cache_entries"],
+		)
+		time.Sleep(500 * time.Millisecond)
+	}
+	require.True(t, baselineReady, "failed to capture baseline dagql cache metrics")
+
+	// Do meaningful dagql work: load a Go module with a Python dependency.
+	_, err := engineClientContainer(ctx, t, c, devEngine).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+rm -rf /tmp/main
+mkdir -p /tmp/main
+cd /tmp/main
+
+dagger init --name main --sdk=go >/dev/null
+
+mkdir -p dep
+cd dep
+dagger init --name dep --sdk=python >/dev/null
+
+cd /tmp/main
+dagger install ./dep >/dev/null
+
+# Load module + dependency schema a few times to exercise cache lifecycle.
+for i in $(seq 1 4); do
+  dagger functions >/dev/null
+done
+			`}).Sync(ctx)
+	require.NoError(t, err)
+
+	// Give any async session/cache-release paths a moment to run before polling.
+	time.Sleep(2 * time.Second)
+
+	var (
+		settled     bool
+		lastClient  float64
+		lastDagql   float64
+		lastMetrics map[string]float64
+	)
+	for attempt := 1; attempt <= 24; attempt++ {
+		metrics, err := getMetrics()
+		if err != nil {
+			t.Logf("attempt %d: failed to fetch metrics: %v", attempt, err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		lastMetrics = metrics
+		lastClient = metrics["dagger_connected_clients"]
+		lastDagql = metrics["dagger_dagql_cache_entries"]
+		if lastClient == 0 && lastDagql == baselineDagql {
+			settled = true
+			break
+		}
+		t.Logf(
+			"attempt %d: waiting for metrics to settle (connected=%v dagql_cache=%v baseline=%v)",
+			attempt,
+			lastClient,
+			lastDagql,
+			baselineDagql,
+		)
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	require.Truef(
+		t,
+		settled,
+		"dagql cache entries did not return to baseline after clients closed (connected_clients=%v dagql_cache_entries=%v baseline=%v ongoing_calls=%v completed_calls=%v completed_calls_by_content=%v ongoing_arbitrary=%v completed_arbitrary=%v)",
+		lastClient,
+		lastDagql,
+		baselineDagql,
+		lastMetrics["dagger_dagql_cache_ongoing_calls_entries"],
+		lastMetrics["dagger_dagql_cache_completed_calls_entries"],
+		lastMetrics["dagger_dagql_cache_completed_calls_by_content_entries"],
+		lastMetrics["dagger_dagql_cache_ongoing_arbitrary_entries"],
+		lastMetrics["dagger_dagql_cache_completed_arbitrary_entries"],
+	)
 }
 
 func (EngineSuite) TestClientMetadataReuse(ctx context.Context, t *testctx.T) {

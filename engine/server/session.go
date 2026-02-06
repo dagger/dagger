@@ -404,9 +404,16 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
 
+	beforeDagqlEntries := srv.baseDagqlCache.Size()
 	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
 		slog.Error("error releasing dagql cache", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	}
+	afterDagqlEntries := srv.baseDagqlCache.Size()
+	if afterDagqlEntries != beforeDagqlEntries {
+		slog.Debug("released dagql cache refs for session", "beforeEntries", beforeDagqlEntries, "afterEntries", afterDagqlEntries)
+	} else {
+		slog.Debug("session dagql cache release did not change base cache size", "entries", afterDagqlEntries)
 	}
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint

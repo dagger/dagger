@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
@@ -182,19 +182,12 @@ func ResourceTransferPostCall(
 				// cache results such that a function call return value result inherently results in any referenced
 				// secrets also staying in cache.
 				secretDigest := SecretDigest(secret.inst)
-				cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-					CallKey: string(secretDigest),
-				}
-				_, err = destDag.Cache.GetOrInitializeWithCallbacks(ctx, cacheKey,
-					func(ctx context.Context) (*dagql.CacheValWithCallbacks, error) {
-						return &dagql.CacheValWithCallbacks{
-							Value:            secret.inst,
-							PostCall:         postCall,
-							ContentDigestKey: string(secretDigest),
-							ResultCallKey:    string(secret.inst.ID().Digest()),
-						}, nil
-					},
-				)
+				cacheKeyID := secret.inst.ID().
+					WithDigest(secretDigest).
+					With(call.WithContentDigest(secretDigest))
+				_, err = destDag.Cache.GetOrInitCall(ctx, dagql.CacheKey{ID: cacheKeyID}, func(context.Context) (dagql.AnyResult, error) {
+					return secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall), nil
+				})
 				if err != nil {
 					return fmt.Errorf("failed to cache secret: %w", err)
 				}

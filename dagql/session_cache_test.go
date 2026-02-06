@@ -3,153 +3,325 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
+	"gotest.tools/v3/assert"
+	is "gotest.tools/v3/assert/cmp"
 )
 
 func TestSessionCacheReleaseAndClose(t *testing.T) {
+	t.Parallel()
+
 	t.Run("basic", func(t *testing.T) {
 		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		base := cacheIface.(*cache)
 
-		c, err := cache.NewCache[string, AnyResult](ctx, "")
-		require.NoError(t, err)
-		sc1 := NewSessionCache(c)
-		sc2 := NewSessionCache(c)
+		sc1 := NewSessionCache(base)
+		sc2 := NewSessionCache(base)
 
-		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "1"}, nil)
-		require.NoError(t, err)
+		key1 := cacheTestID("session-1")
+		key2 := cacheTestID("session-2")
+		key3 := cacheTestID("session-3")
 
-		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "2"}, nil)
-		require.NoError(t, err)
+		_, err = sc1.GetOrInitCall(ctx, CacheKey{ID: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
+		assert.NilError(t, err)
+		_, err = sc1.GetOrInitCall(ctx, CacheKey{ID: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
+		assert.NilError(t, err)
+		assert.Equal(t, 2, base.Size())
 
-		require.Equal(t, 2, c.Size())
-
-		_, err = sc2.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "2"}, nil)
-		require.NoError(t, err)
-
-		_, err = sc2.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "3"}, nil)
-		require.NoError(t, err)
-
-		require.Equal(t, 3, c.Size())
+		_, err = sc2.GetOrInitCall(ctx, CacheKey{ID: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
+		assert.NilError(t, err)
+		_, err = sc2.GetOrInitCall(ctx, CacheKey{ID: key3}, ValueFunc(cacheTestIntResult(key3, 3)))
+		assert.NilError(t, err)
+		assert.Equal(t, 3, base.Size())
 
 		err = sc1.ReleaseAndClose(ctx)
-		require.NoError(t, err)
+		assert.NilError(t, err)
+		assert.Equal(t, 2, base.Size())
 
-		require.Equal(t, 2, c.Size())
-
-		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "x"}, nil)
-		require.Error(t, err)
-
-		require.Equal(t, 2, c.Size())
+		_, err = sc1.GetOrInitCall(ctx, CacheKey{ID: cacheTestID("closed-session")}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(cacheTestID("closed-session"), 9), nil
+		})
+		assert.ErrorContains(t, err, "session cache is closed")
+		assert.Equal(t, 2, base.Size())
 
 		err = sc2.ReleaseAndClose(ctx)
-		require.NoError(t, err)
-
-		require.Equal(t, 0, c.Size())
+		assert.NilError(t, err)
+		assert.Equal(t, 0, base.Size())
 	})
 
 	t.Run("close while running", func(t *testing.T) {
 		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		base := cacheIface.(*cache)
+		sc := NewSessionCache(base)
 
-		c, err := cache.NewCache[string, AnyResult](ctx, "")
-		require.NoError(t, err)
-		sc := NewSessionCache(c)
+		key1 := cacheTestID("close-running-1")
+		key2 := cacheTestID("close-running-2")
+		_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
+		assert.NilError(t, err)
+		assert.Equal(t, 1, base.Size())
 
-		_, err = sc.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "1"}, nil)
-		require.NoError(t, err)
-		require.Equal(t, 1, c.Size())
-
-		var eg errgroup.Group
 		startCh := make(chan struct{})
 		stopCh := make(chan struct{})
-		eg.Go(func() error {
-			_, err := sc.GetOrInitialize(ctx, cache.CacheKey[string]{CallKey: "2"}, func(ctx context.Context) (AnyResult, error) {
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := sc.GetOrInitCall(ctx, CacheKey{ID: key2}, func(context.Context) (AnyResult, error) {
 				close(startCh)
 				<-stopCh
-				return nil, nil
+				return cacheTestIntResult(key2, 2), nil
 			})
-			return err
-		})
+			errCh <- err
+		}()
 
 		select {
 		case <-startCh:
-		case <-time.After(10 * time.Second): // just don't block forever if there's a bug
-			t.Fatal("timeout waiting for goroutine to start")
-			return
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for running call")
 		}
 
 		err = sc.ReleaseAndClose(ctx)
-		require.NoError(t, err)
+		assert.NilError(t, err)
 		close(stopCh)
 
-		err = eg.Wait()
-		require.Error(t, err, "expected error when closing session cache while a call is running")
-
-		require.Equal(t, 0, c.Size())
+		runErr := <-errCh
+		assert.ErrorContains(t, runErr, "session cache was closed during execution")
+		assert.Equal(t, 0, base.Size())
 	})
 }
 
 func TestSessionCacheErrorThenSuccessIsCached(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-
-	base, err := cache.NewCache[CacheKeyType, AnyResult](ctx, "")
-	require.NoError(t, err)
-
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
 	sc := NewSessionCache(base)
-	key := cache.CacheKey[CacheKeyType]{CallKey: "session-cache-error-then-success"}
 
-	// We simulate this sequence for a single CallKey:
-	//  1) error
-	//  2) error
-	//  3) success
-	//  4) (must be served from cache, NOT call the underlying fn)
-	type step struct {
-		err error
+	key := cacheTestID("session-error-then-success")
+	steps := []error{
+		fmt.Errorf("boom 1"),
+		fmt.Errorf("boom 2"),
+		nil,
+		fmt.Errorf("should not run"),
 	}
-	steps := []step{
-		{err: fmt.Errorf("boom 1")},
-		{err: fmt.Errorf("boom 2")},
-		{err: nil}, // first success
-		{err: fmt.Errorf("should never be used if caching works")},
-	}
-
 	callCount := 0
-	fn := func(ctx context.Context) (*CacheValWithCallbacks, error) {
-		require.Less(t, callCount, len(steps), "underlying fn called too many times")
-		s := steps[callCount]
+	fn := func(context.Context) (AnyResult, error) {
+		assert.Assert(t, callCount < len(steps))
+		stepErr := steps[callCount]
 		callCount++
-		if s.err != nil {
-			return nil, s.err
+		if stepErr != nil {
+			return nil, stepErr
 		}
-		// Successful call: we don't care about the actual value for this test,
-		// only that the SessionCache / engine cache will reuse it.
-		return &CacheValWithCallbacks{Value: nil}, nil
+		return cacheTestIntResult(key, 99), nil
 	}
 
-	// 1) First call: error, underlying fn must run once.
-	_, err = sc.GetOrInitializeWithCallbacks(ctx, key, fn)
-	require.Error(t, err)
-	require.Equal(t, 1, callCount)
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, fn)
+	assert.ErrorContains(t, err, "boom 1")
+	assert.Equal(t, 1, callCount)
 
-	// 2) Second call: another error, underlying fn must run again.
-	_, err = sc.GetOrInitializeWithCallbacks(ctx, key, fn)
-	require.Error(t, err)
-	require.Equal(t, 2, callCount)
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, fn)
+	assert.ErrorContains(t, err, "boom 2")
+	assert.Equal(t, 2, callCount)
 
-	// 3) Third call: first success, underlying fn must run a third time.
-	_, err = sc.GetOrInitializeWithCallbacks(ctx, key, fn)
-	require.NoError(t, err)
-	require.Equal(t, 3, callCount)
+	res, err := sc.GetOrInitCall(ctx, CacheKey{ID: key}, fn)
+	assert.NilError(t, err)
+	assert.Equal(t, 3, callCount)
+	assert.Assert(t, !res.HitCache())
+	assert.Equal(t, 99, cacheTestUnwrapInt(t, res))
 
-	// 4) Fourth call: MUST hit cache, not run fn again.
-	// If caching is broken, this call will increment
-	// callCount to 4 and return an error.
-	_, err = sc.GetOrInitializeWithCallbacks(ctx, key, fn)
-	require.NoError(t, err, "after a successful call for a key, subsequent calls must reuse the cached success")
-	require.Equal(t, 3, callCount, "underlying fn should not be called again after success is cached")
+	res, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, fn)
+	assert.NilError(t, err)
+	assert.Equal(t, 3, callCount)
+	assert.Assert(t, res.HitCache())
+	assert.Equal(t, 99, cacheTestUnwrapInt(t, res))
+	assert.Equal(t, 1, base.Size())
+
+	assert.NilError(t, sc.ReleaseAndClose(ctx))
+	assert.Equal(t, 0, base.Size())
+}
+
+func TestSessionCacheTelemetryBehavior(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	key := cacheTestID("telemetry")
+
+	var beginCalls atomic.Int32
+	var doneCalls atomic.Int32
+	var cachedValsMu sync.Mutex
+	var cachedVals []bool
+	telemetryOpt := WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+		beginCalls.Add(1)
+		return ctx, func(_ AnyResult, cached bool, _ *error) {
+			doneCalls.Add(1)
+			cachedValsMu.Lock()
+			cachedVals = append(cachedVals, cached)
+			cachedValsMu.Unlock()
+		}
+	})
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt)
+	assert.NilError(t, err)
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected initializer call")
+	}, telemetryOpt)
+	assert.NilError(t, err)
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{
+		ID:         key,
+		DoNotCache: true,
+	}, ValueFunc(cacheTestIntResult(key, 2)), telemetryOpt)
+	assert.NilError(t, err)
+
+	repeatedCtx := WithRepeatedTelemetry(ctx)
+	_, err = sc.GetOrInitCall(repeatedCtx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected initializer call")
+	}, telemetryOpt)
+	assert.NilError(t, err)
+
+	assert.Equal(t, int32(3), beginCalls.Load())
+	assert.Equal(t, int32(3), doneCalls.Load())
+	assert.DeepEqual(t, []bool{false, false, true}, cachedVals)
+}
+
+func TestSessionCacheDoNotCacheResultNotTrackedOnClose(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	key := cacheTestID("session-donotcache-untracked")
+	var releaseCalls atomic.Int32
+	res, err := sc.GetOrInitCall(ctx, CacheKey{
+		ID:         key,
+		DoNotCache: true,
+	}, ValueFunc(cacheTestIntResultWithOnRelease(key, 1, func(context.Context) error {
+		releaseCalls.Add(1)
+		return nil
+	})))
+	assert.NilError(t, err)
+	assert.Assert(t, is.Equal(int32(0), releaseCalls.Load()))
+
+	assert.NilError(t, sc.ReleaseAndClose(ctx))
+	assert.Assert(t, is.Equal(int32(0), releaseCalls.Load()))
+
+	assert.NilError(t, res.Release(ctx))
+	assert.Assert(t, is.Equal(int32(1), releaseCalls.Load()))
+}
+
+func TestSessionCacheReleaseAndCloseWithNilResult(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	key := cacheTestID("session-nil-result")
+	res, err := sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		return nil, nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res == nil)
+
+	assert.NilError(t, sc.ReleaseAndClose(ctx))
+	assert.Equal(t, 0, base.Size())
+}
+
+func TestSessionCacheArbitraryReleaseAndClose(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+
+	sc1 := NewSessionCache(base)
+	sc2 := NewSessionCache(base)
+
+	res, err := sc1.GetOrInitArbitrary(ctx, "session-arbitrary-1", ArbitraryValueFunc("a"))
+	assert.NilError(t, err)
+	assert.Assert(t, !res.HitCache())
+	assert.Equal(t, "a", res.Value())
+
+	res, err = sc1.GetOrInitArbitrary(ctx, "session-arbitrary-2", ArbitraryValueFunc("b"))
+	assert.NilError(t, err)
+	assert.Assert(t, !res.HitCache())
+	assert.Equal(t, "b", res.Value())
+	assert.Equal(t, 2, base.Size())
+
+	res, err = sc2.GetOrInitArbitrary(ctx, "session-arbitrary-2", ArbitraryValueFunc("ignored"))
+	assert.NilError(t, err)
+	assert.Assert(t, res.HitCache())
+	assert.Equal(t, "b", res.Value())
+
+	res, err = sc2.GetOrInitArbitrary(ctx, "session-arbitrary-3", ArbitraryValueFunc("c"))
+	assert.NilError(t, err)
+	assert.Assert(t, !res.HitCache())
+	assert.Equal(t, "c", res.Value())
+	assert.Equal(t, 3, base.Size())
+
+	assert.NilError(t, sc1.ReleaseAndClose(ctx))
+	assert.Equal(t, 2, base.Size())
+
+	_, err = sc1.GetOrInitArbitrary(ctx, "session-arbitrary-closed", ArbitraryValueFunc("x"))
+	assert.ErrorContains(t, err, "session cache is closed")
+	assert.Equal(t, 2, base.Size())
+
+	assert.NilError(t, sc2.ReleaseAndClose(ctx))
+	assert.Equal(t, 0, base.Size())
+}
+
+func TestSessionCacheArbitraryCloseWhileRunning(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	_, err = sc.GetOrInitArbitrary(ctx, "session-arbitrary-base", ArbitraryValueFunc("base"))
+	assert.NilError(t, err)
+	assert.Equal(t, 1, base.Size())
+
+	startCh := make(chan struct{})
+	stopCh := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := sc.GetOrInitArbitrary(ctx, "session-arbitrary-running", func(context.Context) (any, error) {
+			close(startCh)
+			<-stopCh
+			return "running", nil
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-startCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for running call")
+	}
+
+	assert.NilError(t, sc.ReleaseAndClose(ctx))
+	close(stopCh)
+
+	runErr := <-errCh
+	assert.ErrorContains(t, runErr, "session cache was closed during execution")
+	assert.Equal(t, 0, base.Size())
 }
