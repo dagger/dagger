@@ -43,21 +43,6 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, e
 	return def, nil
 }
 
-// initializeDefaultModule loads the module referenced by the -m,--mod flag
-//
-// By default, looks for a module in the current directory, or above.
-// Returns an error if the module is not found or invalid.
-func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
-	if moduleNoURL {
-		return nil, fmt.Errorf("cannot load module when --no-mod is specified")
-	}
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
-	}
-	return initializeModule(ctx, dag, modRef, dag.ModuleSource(modRef))
-}
-
 // initializeModule loads the module at the given source ref
 //
 // Returns an error if the module is not found or invalid.
