@@ -8,7 +8,7 @@ import (
 
 // generateConfigTOML builds the .dagger/config.toml content as a string.
 // It uses hand-built TOML for precise control over warning comments.
-func generateConfigTOML(cfg *LegacyConfig, warnings []warning) string {
+func generateConfigTOML(cfg *LegacyConfig, warnings []warning, aliases []aliasEntry, constructorArgs map[string][]constructorArg) string {
 	var b strings.Builder
 
 	// Build warning lookup by toolchain name
@@ -33,23 +33,48 @@ func generateConfigTOML(cfg *LegacyConfig, warnings []warning) string {
 		}
 		// Source paths are relative to .dagger/, so prepend ../ to the original path
 		fmt.Fprintf(&b, "%s.source = \"../%s\"\n", tc.Name, tc.Source)
-		// Add migrated constructor config values
+		// Add migrated constructor config values from customizations
 		for _, cust := range tc.Customizations {
 			if cust.IsConstructor() && cust.Default != "" {
 				fmt.Fprintf(&b, "%s.config.%s = %q\n", tc.Name, cust.Argument, cust.Default)
 			}
 		}
+		// Add commented-out constructor args (from introspection)
+		if args, ok := constructorArgs[tc.Name]; ok {
+			for _, arg := range args {
+				// Skip args that already have a customization (already emitted above or as a warning)
+				if hasCustomization(tc, arg.Name) {
+					continue
+				}
+				if arg.DefaultValue != "" && arg.DefaultValue != "null" {
+					fmt.Fprintf(&b, "# %s.config.%s = %s\n", tc.Name, arg.Name, arg.DefaultValue)
+				} else {
+					fmt.Fprintf(&b, "# %s.config.%s = \"\" # %s\n", tc.Name, arg.Name, arg.TypeName)
+				}
+			}
+		}
 	}
 
-	// Aliases section (skeleton with TODO)
+	// Aliases section
 	b.WriteString("\n[aliases]\n")
-	if cfg.SDK != nil && cfg.SDK.Source != "" {
-		fmt.Fprintf(&b, "# TODO: Migrated from project module %q.\n", cfg.Name)
-		b.WriteString("# Aliases require module introspection to enumerate functions.\n")
-		b.WriteString("# Run `dagger migrate --aliases` after engine support is available.\n")
+	if len(aliases) > 0 {
+		fmt.Fprintf(&b, "# Migrated from project module %q.\n", cfg.Name)
+		for _, a := range aliases {
+			fmt.Fprintf(&b, "%s = [\"%s\", \"%s\"]\n", a.FunctionName, a.ModuleName, a.FunctionName)
+		}
 	}
 
 	return b.String()
+}
+
+// hasCustomization checks if a toolchain already has a customization for the given arg name.
+func hasCustomization(tc *LegacyDependency, argName string) bool {
+	for _, cust := range tc.Customizations {
+		if cust.Argument == argName {
+			return true
+		}
+	}
+	return false
 }
 
 // warning represents a migration warning for a toolchain customization.

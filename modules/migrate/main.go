@@ -23,6 +23,9 @@ func (m *Migrate) Migrate(
 	// +defaultPath="/"
 	// +ignore=["*", "!**/dagger.json", "!**/.dagger"]
 	source *dagger.Directory,
+	// The full project root (unfiltered), used for module introspection.
+	// +defaultPath="/"
+	fullSource *dagger.Directory,
 ) (*dagger.Changeset, error) {
 	// 1. Parse dagger.json
 	configJSON, err := source.File("dagger.json").Contents(ctx)
@@ -59,6 +62,19 @@ func (m *Migrate) Migrate(
 	warnings := analyzeCustomizations(cfg.Toolchains)
 	report.setWarnings(warnings)
 
+	// Introspect modules for aliases and constructor args
+	var aliases []aliasEntry
+	if needsProjectModuleMigration {
+		aliases, err = introspectProjectModule(ctx, fullSource, &cfg)
+		if err != nil {
+			fmt.Printf("WARNING: could not introspect project module for aliases: %v\n", err)
+		}
+	}
+	constructorArgs, err := introspectToolchainConstructors(ctx, fullSource, cfg.Toolchains)
+	if err != nil {
+		fmt.Printf("WARNING: could not introspect toolchain constructors: %v\n", err)
+	}
+
 	// Project module migration
 	if needsProjectModuleMigration {
 		after, err = migrateProjectModule(ctx, after, &cfg, report)
@@ -72,7 +88,7 @@ func (m *Migrate) Migrate(
 	report.addRemovedFile("dagger.json")
 
 	// Generate .dagger/config.toml
-	tomlContent := generateConfigTOML(&cfg, warnings)
+	tomlContent := generateConfigTOML(&cfg, warnings, aliases, constructorArgs)
 	after = after.WithNewFile(".dagger/config.toml", tomlContent)
 
 	// Record toolchain entries in the report
