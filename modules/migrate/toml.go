@@ -11,37 +11,38 @@ import (
 func generateConfigTOML(cfg *LegacyConfig, warnings []warning) string {
 	var b strings.Builder
 
+	// Build warning lookup by toolchain name
+	warningsByTC := make(map[string][]warning)
+	for _, w := range warnings {
+		warningsByTC[w.toolchain] = append(warningsByTC[w.toolchain], w)
+	}
+
+	// All module entries use compact dotted-key form under a single [modules] header
+	b.WriteString("[modules]\n")
+
 	// Project module entry (if there is an SDK)
 	if cfg.SDK != nil && cfg.SDK.Source != "" {
-		fmt.Fprintf(&b, "[modules.%s]\n", cfg.Name)
-		fmt.Fprintf(&b, "source = \"modules/%s\"\n", cfg.Name)
-		b.WriteString("\n")
+		fmt.Fprintf(&b, "%s.source = \"modules/%s\"\n", cfg.Name, cfg.Name)
 	}
 
 	// Toolchain entries
 	for _, tc := range cfg.Toolchains {
-		fmt.Fprintf(&b, "[modules.%s]\n", tc.Name)
+		// Add warning comments before the entry
+		for _, w := range warningsByTC[tc.Name] {
+			b.WriteString(w.tomlComment())
+		}
 		// Source paths are relative to .dagger/, so prepend ../ to the original path
-		fmt.Fprintf(&b, "source = \"../%s\"\n", tc.Source)
-
+		fmt.Fprintf(&b, "%s.source = \"../%s\"\n", tc.Name, tc.Source)
 		// Add migrated constructor config values
 		for _, cust := range tc.Customizations {
 			if cust.IsConstructor() && cust.Default != "" {
-				fmt.Fprintf(&b, "config.%s = %q\n", cust.Argument, cust.Default)
+				fmt.Fprintf(&b, "%s.config.%s = %q\n", tc.Name, cust.Argument, cust.Default)
 			}
 		}
-
-		// Add warning comments for this toolchain
-		for _, w := range warnings {
-			if w.toolchain == tc.Name {
-				b.WriteString(w.tomlComment())
-			}
-		}
-		b.WriteString("\n")
 	}
 
 	// Aliases section (skeleton with TODO)
-	b.WriteString("[aliases]\n")
+	b.WriteString("\n[aliases]\n")
 	if cfg.SDK != nil && cfg.SDK.Source != "" {
 		fmt.Fprintf(&b, "# TODO: Migrated from project module %q.\n", cfg.Name)
 		b.WriteString("# Aliases require module introspection to enumerate functions.\n")
