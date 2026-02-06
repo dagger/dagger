@@ -1,0 +1,7 @@
+{
+  "name": "migrate",
+  "engineVersion": "v0.19.11",
+  "sdk": {
+    "source": "go"
+  }
+}
