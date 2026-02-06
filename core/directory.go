@@ -80,10 +80,6 @@ func NewDirectory(def *pb.Definition, dir string, platform Platform, services Se
 	}
 }
 
-func NewScratchDirectory(ctx context.Context, platform Platform) (*Directory, error) {
-	return NewDirectorySt(ctx, llb.Scratch(), "/", platform, nil)
-}
-
 func NewScratchDirectoryDagOp(ctx context.Context, platform Platform) (*Directory, error) {
 	return &Directory{
 		Dir:      "/",

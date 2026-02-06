@@ -26,7 +26,7 @@ var _ SchemaResolvers = &directorySchema{}
 
 func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.Func("directory", s.directory).
+		dagql.NodeFunc("directory", DagOpDirectoryWrapper(srv, s.directory)).
 			Doc(`Creates an empty directory.`),
 		dagql.NodeFunc("__immutableRef", DagOpDirectoryWrapper(srv, s.immutableRef)).
 			Doc(`Returns a directory backed by a pre-existing immutable ref.`).
@@ -358,7 +358,7 @@ func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return res, fmt.Errorf("failed to get immutable ref %q: %w", args.Ref, err)
 	}
-	dir, err := core.NewScratchDirectory(ctx, query.Platform())
+	dir, err := core.NewScratchDirectoryDagOp(ctx, query.Platform())
 	if err != nil {
 		return res, fmt.Errorf("failed to create scratch directory: %w", err)
 	}
@@ -371,9 +371,17 @@ func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, 
 	return parent, nil
 }
 
-func (s *directorySchema) directory(ctx context.Context, parent *core.Query, _ struct{}) (*core.Directory, error) {
-	platform := parent.Platform()
-	return core.NewScratchDirectory(ctx, platform)
+func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Query], _ DagOpInternalArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	platform := parent.Self().Platform()
+	dir, err := core.NewScratchDirectoryDagOp(ctx, platform)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type subdirectoryArgs struct {

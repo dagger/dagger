@@ -214,11 +214,13 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		if err != nil {
 			return nil, err
 		}
-		ref, err := res.Ref.Result(ctx)
-		if err != nil {
-			return nil, err
+		if res != nil && res.Ref != nil {
+			ref, err := res.Ref.Result(ctx)
+			if err != nil {
+				return nil, err
+			}
+			solverRes = ref
 		}
-		solverRes = ref
 
 	case *File:
 		if inst.Result != nil {
