@@ -6,8 +6,38 @@ type Client struct {
 	client graphql.Client
 }
 
+// ClientOpt holds a client option
+type ClientOpt = dagger.ClientOpt
 
-func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
+// Request contains all the values required to build queries executed by the graphql.Client
+type Request = dagger.Request
+
+// Response contains data returned by the GraphQL API
+type Response = dagger.Response
+
+// WithWorkdir sets the engine workdir
+var WithWorkdir = dagger.WithWorkdir
+
+// WithLogOutput sets the progress writer
+var WithLogOutput = dagger.WithLogOutput
+
+// WithConn sets the engine connection explicitly
+var WithConn = dagger.WithConn
+
+// WithVersionOverride requests a specific schema version from the engine
+var WithVersionOverride = dagger.WithVersionOverride
+
+// WithVerbosity sets the verbosity level for the progress output
+var WithVerbosity = dagger.WithVerbosity
+
+// WithRunnerHost sets the runner host URL
+var WithRunnerHost = dagger.WithRunnerHost
+
+// WithEnvironmentVariable sets an environment variable in the CLI subprocess
+var WithEnvironmentVariable = dagger.WithEnvironmentVariable
+
+
+func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	dag, err := dagger.Connect(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -29,6 +59,21 @@ func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
 {{/*  The standalone client in not dev mode needs to expose a close method for the global client to work */ -}}
 func (c *Client) Close() error {
 	return c.dag.Close()
+}
+
+// GraphQLClient returns the underlying graphql.Client
+func (c *Client) GraphQLClient() graphql.Client {
+	return c.client
+}
+
+// QueryBuilder returns the underlying query builder
+func (c *Client) QueryBuilder() *querybuilder.Selection {
+	return c.query
+}
+
+// Do executes a raw GraphQL request using the client's session
+func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
+	return c.dag.Do(ctx, req, resp)
 }
 
 // serveModuleDependencies services all dependencies of the module.
