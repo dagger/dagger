@@ -1,13 +1,8 @@
 {
   "name": "registry-config",
-  "engineVersion": "v0.19.10",
+  "engineVersion": "v0.19.11",
   "sdk": {
     "source": "go"
   },
-  "include": [
-    "!../.direnv",
-    "!../.devenv",
-    "!../go.work",
-    "!../go.work.sum"
-  ]
+  "include": ["!../.direnv", "!../.devenv", "!../go.work", "!../go.work.sum"]
 }

@@ -2,6 +2,6 @@
   "name": "cmd-test",
   "engineVersion": "v0.19.9",
   "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk@b6d0d2aa62a17bb75ce063fd729186bcc0b7b8bf"
+    "source": "github.com/vito/dang/dagger-sdk@d56ca8d99b397a936363bbfaeab1bfef084901d8"
   }
 }

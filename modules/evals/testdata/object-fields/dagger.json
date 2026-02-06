@@ -1,7 +1,7 @@
 {
   "name": "object-fields",
-  "engineVersion": "v0.19.10",
+  "engineVersion": "v0.19.11",
   "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk@e91e64a947436ac9342257de9f845b7f5dfa7639"
+    "source": "github.com/vito/dang/dagger-sdk@d56ca8d99b397a936363bbfaeab1bfef084901d8"
   }
 }
