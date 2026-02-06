@@ -16,13 +16,10 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/testutil/dagger/dag"
+	"github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/stretchr/testify/require"
 
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/core"
-
-	// Import generated dagger client with toolchain bindings
 
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
@@ -34,34 +31,9 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	ctx := context.Background()
-
-	// Generate and export the dagger CLI binary
-	cliBinary := dag.Cli().Binary()
-	cliPath, err := cliBinary.Export(ctx, "/tmp/dagger-cli-test")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Export dagger CLI: %v\n", err)
-		os.Exit(1)
-	}
-	os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath)
-	os.Setenv("_TEST_DAGGER_CLI_LINUX_BIN", cliPath)
-
-	// Start inner test engine for isolated test sessions
-	engine := dag.EngineDev().TestEngine()
-	go engine.Up(ctx)
-	engineEndpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Connect to test engine: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Point tests to the inner engine
-	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint)
-
-	// Unset DAGGER_SESSION_PORT so tests create fresh sessions in the inner engine
-	// instead of reusing the outer engine's session
-	os.Unsetenv("DAGGER_SESSION_PORT")
-	os.Unsetenv("DAGGER_SESSION_TOKEN")
+	// Create a minimal dagger.json to satisfy the SDK
+	// The SDK checks for this file even though we're not loading a module
+	os.WriteFile("/app/dagger.json", []byte(`{"name": "dagger", "sdk": "go"}`), 0644)
 
 	// Run tests
 	res := oteltest.Main(m)
@@ -96,6 +68,12 @@ func BenchMiddleware() []testctx.Middleware[*testing.B] {
 }
 
 func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagger.Client {
+	// Change to /app where dagger.json exists (created in TestMain)
+	// The SDK requires dagger.json to be present even when using it as a client library
+	origWd, _ := os.Getwd()
+	os.Chdir("/app")
+	t.Cleanup(func() { os.Chdir(origWd) })
+
 	opts = append([]dagger.ClientOpt{
 		// FIXME: test spans are easier to read in the TUI when this is silenced
 		dagger.WithLogOutput(io.Discard),
