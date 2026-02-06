@@ -1406,7 +1406,7 @@ func (srv *Server) loadWorkspaceModule(
 	dag *dagql.Server,
 	name, sourcePath string,
 ) error {
-	var mod dagql.Instance[*core.Module]
+	var mod dagql.ObjectResult[*core.Module]
 	err := dag.Select(ctx, dag.Root(), &mod,
 		dagql.Selector{
 			Field: "moduleSource",
