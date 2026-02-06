@@ -1,0 +1,7 @@
+{
+  "name": "hello-with-generators-py",
+  "engineVersion": "v0.19.10",
+  "sdk": {
+    "source": "python"
+  }
+}

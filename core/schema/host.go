@@ -300,6 +300,12 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 			continue
 		}
 		include = filepath.Join(relPathFromRoot, include)
+		if include == "." {
+			// we were told to include the directory itself, but include
+			// filters seem to ignore ".", so we replace it with the intention
+			// of "*"
+			include = "*"
+		}
 		if negative {
 			include = "!" + include
 		}
@@ -313,6 +319,12 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 			continue
 		}
 		exclude = filepath.Join(relPathFromRoot, exclude)
+		if exclude == "." {
+			// we were told to exclude the directory itself, but exclude
+			// filters seem to ignore ".", so we replace it with the intention
+			// of "*"
+			exclude = "*"
+		}
 		if negative {
 			exclude = "!" + exclude
 		}

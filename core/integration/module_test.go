@@ -2916,26 +2916,26 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 			// Set up the base generator module
 			ctr = ctr.
 				WithWorkdir("/work/keychain/generator").
-				With(daggerExec("init", "--name=generator", "--sdk=go", "--source=.")).
+				With(daggerExec("init", "--name=generator-module", "--sdk=go", "--source=.")).
 				WithNewFile("main.go", `package main
 
 import (
     "context"
-    "dagger/generator/internal/dagger"
+    "dagger/generator-module/internal/dagger"
 )
 
-type Generator struct {
+type GeneratorModule struct {
     // +private
     Password *dagger.Secret
 }
 
-func New() *Generator {
-    return &Generator{
+func New() *GeneratorModule {
+    return &GeneratorModule{
         Password: dag.SetSecret("pass", "admin"),
     }
 }
 
-func (m *Generator) Gen(ctx context.Context, name string) error {
+func (m *GeneratorModule) Gen(ctx context.Context, name string) error {
     _, err := m.Password.Plaintext(ctx)
     return err
 }
@@ -2955,7 +2955,7 @@ import (
 type Keychain struct{}
 
 func (m *Keychain) Get(ctx context.Context, name string) error {
-    return dag.Generator().Gen(ctx, name)
+    return dag.GeneratorModule().Gen(ctx, name)
 }
 `)
 
@@ -5585,8 +5585,6 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 			require.Equal(t, strings.Join([]string{
 				"dagger/",
 				"foo/",
-				"querybuilder/",
-				"telemetry/",
 			}, "\n"), strings.TrimSpace(out))
 		})
 

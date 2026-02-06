@@ -222,6 +222,10 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`This should only be used if the user requires that their exec processes be the
 				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 				),
+				dagql.Arg("ssh").Doc(
+					`A socket to use for SSH authentication during the build`,
+					`(e.g., for Dockerfile RUN --mount=type=ssh instructions).`,
+					`Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.`),
 			),
 		dagql.NodeFunc("withTimestamps", DagOpDirectoryWrapper(srv, s.withTimestamps, WithPathFn(keepParentDir[dirWithTimestampsArgs]))).
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
@@ -674,7 +678,7 @@ func (s *directorySchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	dir, err := parent.Self().WithNewFileDagOp(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), nil)
+	dir, err := parent.Self().WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), nil)
 	if err != nil {
 		return inst, err
 	}
@@ -1278,6 +1282,7 @@ type dirDockerBuildArgs struct {
 	BuildArgs  []dagql.InputObject[core.BuildArg] `default:"[]"`
 	Secrets    []core.SecretID                    `default:"[]"`
 	NoInit     bool                               `default:"false"`
+	SSH        dagql.Optional[core.SocketID]
 }
 
 func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*core.Directory], filename string) ([]byte, error) {
@@ -1374,6 +1379,15 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 
+	var sshSocket *core.Socket
+	if args.SSH.Valid {
+		sshSocketResult, err := args.SSH.Value.Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load SSH socket: %w", err)
+		}
+		sshSocket = sshSocketResult.Self()
+	}
+
 	return ctr.Build(
 		ctx,
 		parent.Self(),
@@ -1384,6 +1398,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		secrets,
 		secretStore,
 		args.NoInit,
+		sshSocket,
 	)
 }
 

@@ -118,15 +118,15 @@ func NewManager(opt ManagerOpt) (Manager, error) {
 		records:         make(map[string]*cacheRecord),
 	}
 
-	if err := cm.init(context.TODO()); err != nil {
-		return nil, err
-	}
-
 	p, err := newSharableMountPool(opt.MountPoolRoot)
 	if err != nil {
 		return nil, err
 	}
 	cm.mountPool = p
+
+	if err := cm.init(context.TODO()); err != nil {
+		return nil, err
+	}
 
 	// cm.scheduleGC(5 * time.Minute)
 
@@ -327,32 +327,12 @@ func (cm *cacheManager) init(ctx context.Context) error {
 	}
 
 	for _, si := range items {
-		cr, err := cm.getRecord(ctx, si.ID())
+		_, err := cm.getRecord(ctx, si.ID())
 		if err != nil {
 			bklog.G(ctx).Debugf("could not load snapshot %s: %+v", si.ID(), err)
 			cm.MetadataStore.Clear(si.ID())
 			cm.LeaseManager.Delete(ctx, leases.Lease{ID: si.ID()})
 			cm.LeaseManager.Delete(ctx, leases.Lease{ID: si.ID() + "-variants"})
-			continue
-		}
-
-		// check if the engine had a hard crash and left an overlay volatile dir over, in which
-		// case we should just remove the cache record
-		if cr.mutable {
-			dirtyVolatile, err := cr.hasDirtyVolatile(ctx)
-			if err != nil {
-				return err
-			}
-			if dirtyVolatile {
-				if cr.equalImmutable != nil {
-					if err := cr.equalImmutable.remove(ctx, false); err != nil {
-						return err
-					}
-				}
-				if err := cr.remove(ctx, true); err != nil {
-					return err
-				}
-			}
 		}
 	}
 	return nil
@@ -520,6 +500,18 @@ func (cm *cacheManager) getRecord(ctx context.Context, id string, opts ...RefOpt
 				return nil, errors.Wrap(err, "failed to remove mutable rec with missing snapshot")
 			}
 			return nil, errors.Wrap(errNotFound, rec.ID())
+		}
+		// check if the engine had a hard crash and left an overlay volatile dir over, in which
+		// case we should just remove the cache record
+		dirtyVolatile, err := rec.hasDirtyVolatile(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if dirtyVolatile {
+			if err := rec.remove(ctx, true); err != nil {
+				return nil, err
+			}
+			return nil, errors.Wrapf(errNotFound, "failed to get record %s with dirty volatile overlay", id)
 		}
 	}
 

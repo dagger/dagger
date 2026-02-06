@@ -10,7 +10,11 @@ import {
   resolveTypeDef,
 } from "../typescript_module/index.js"
 import { DaggerArgument, DaggerArguments } from "./argument.js"
-import { CHECK_DECORATOR, FUNCTION_DECORATOR } from "./decorator.js"
+import {
+  CHECK_DECORATOR,
+  FUNCTION_DECORATOR,
+  GENERATOR_DECORATOR,
+} from "./decorator.js"
 import { Locatable } from "./locatable.js"
 import { References } from "./reference.js"
 
@@ -26,6 +30,7 @@ export class DaggerFunction extends Locatable {
   public alias: string | undefined
   public cache: string | undefined
   public isCheck: boolean = false
+  public isGenerator: boolean = false
 
   private signature: ts.Signature
   private symbol: ts.Symbol
@@ -60,6 +65,11 @@ export class DaggerFunction extends Locatable {
     // Parse @check decorator
     if (this.ast.isNodeDecoratedWith(this.node, CHECK_DECORATOR)) {
       this.isCheck = true
+    }
+
+    // Parse @generate decorator
+    if (this.ast.isNodeDecoratedWith(this.node, GENERATOR_DECORATOR)) {
+      this.isGenerator = true
     }
 
     for (const parameter of this.node.parameters) {

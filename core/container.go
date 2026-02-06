@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -222,10 +221,6 @@ type Ownership struct {
 	GID int
 }
 
-func (owner Ownership) Opt() llb.ChownOption {
-	return llb.WithUIDGID(owner.UID, owner.GID)
-}
-
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
@@ -291,10 +286,7 @@ type ContainerMount struct {
 
 type CacheMountSource struct {
 	// The base layers underneath the cache mount, if any
-	Base *pb.Definition
-
-	// The path from the Base to use, if any
-	BasePath string
+	Base *dagql.ObjectResult[*Directory]
 
 	// The ID of the cache mount
 	ID string
@@ -408,7 +400,9 @@ func (mnt *ContainerMount) GetLLB() *pb.Definition {
 			}
 		},
 		func(cacheMount *CacheMountSource) {
-			llb = cacheMount.Base
+			if cacheMount != nil && cacheMount.Base != nil && cacheMount.Base.Self() != nil {
+				llb = cacheMount.Base.Self().LLB
+			}
 		},
 		func(tmpMount *TmpfsMountSource) {
 			// no LLB
@@ -647,6 +641,7 @@ func (container *Container) Build(
 	secrets []dagql.ObjectResult[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
+	sshSocket *Socket,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -714,6 +709,12 @@ func (container *Container) Build(
 		return llbID, nil
 	})
 
+	if sshSocket != nil {
+		solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
+			return sshSocket.LLBID(), nil
+		})
+	}
+
 	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
@@ -776,7 +777,6 @@ func (container *Container) Build(
 				buildkit.DaggerNoInitEnv+"=true",
 			)
 		}
-
 		dag.Metadata.Description = desc
 		return nil
 	}); err != nil {
@@ -1270,11 +1270,16 @@ func (container *Container) WithMountedCache(
 	ctx context.Context,
 	target string,
 	cache *CacheVolume,
-	source *Directory,
+	source dagql.ObjectResult[*Directory],
 	sharingMode CacheSharingMode,
 	owner string,
 ) (*Container, error) {
 	container = container.Clone()
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -1290,25 +1295,25 @@ func (container *Container) WithMountedCache(
 		},
 	}
 
-	if source != nil {
-		mount.CacheSource.Base = source.LLB
-		mount.CacheSource.BasePath = source.Dir
-	}
-
 	if owner != "" {
+		if source.Self() == nil {
+			// create a scratch directory for chownDir to operate on
+			err = srv.Select(ctx, srv.Root(), &source,
+				dagql.Selector{
+					Field: "directory",
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
 		var err error
-		mount.CacheSource.Base, mount.CacheSource.BasePath, err = container.chownLLB(
-			ctx,
-			mount.CacheSource.Base,
-			mount.CacheSource.BasePath,
-			owner,
-			llb.Platform(container.Platform.Spec()),
-		)
+		source, err = container.chownDir(ctx, source, owner)
 		if err != nil {
 			return nil, err
 		}
 	}
-
+	mount.CacheSource.Base = &source
 	container.Mounts = container.Mounts.With(mount)
 
 	// set image ref to empty string
@@ -1680,92 +1685,6 @@ func (container *Container) chownFile(
 	}
 
 	return res, nil
-}
-
-func (container *Container) chownLLB(
-	ctx context.Context,
-	srcDef *pb.Definition,
-	srcPath string,
-	owner string,
-	opts ...llb.ConstraintsOpt,
-) (*pb.Definition, string, error) {
-	ownership, err := container.ownership(ctx, owner)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if ownership == nil {
-		return srcDef, srcPath, nil
-	}
-
-	var srcSt llb.State
-	if srcDef == nil {
-		// e.g. empty cache mount
-		srcSt = llb.Scratch().File(
-			llb.Mkdir("/chown", 0o755, ownership.Opt()),
-		)
-
-		srcPath = "/chown"
-	} else {
-		srcSt, err = defToState(srcDef)
-		if err != nil {
-			return nil, "", err
-		}
-
-		def, err := srcSt.Marshal(ctx, opts...)
-		if err != nil {
-			return nil, "", err
-		}
-
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return nil, "", err
-		}
-		bk, err := query.Buildkit(ctx)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get buildkit client: %w", err)
-		}
-		ref, err := bkRef(ctx, bk, def.ToPB())
-		if err != nil {
-			return nil, "", err
-		}
-
-		stat, err := ref.StatFile(ctx, bkgw.StatRequest{
-			Path: srcPath,
-		})
-		if err != nil {
-			return nil, "", err
-		}
-
-		if stat.IsDir() {
-			chowned := "/chown"
-
-			// NB(vito): need to create intermediate directory with correct ownership
-			// to handle the directory case, otherwise the mount will be owned by
-			// root
-			srcSt = llb.Scratch().File(
-				llb.Mkdir(chowned, os.FileMode(stat.Mode), ownership.Opt()).
-					Copy(srcSt, srcPath, chowned, &llb.CopyInfo{
-						CopyDirContentsOnly: true,
-					}, ownership.Opt()),
-			)
-
-			srcPath = chowned
-		} else {
-			srcSt = llb.Scratch().File(
-				llb.Copy(srcSt, srcPath, ".", ownership.Opt()),
-			)
-
-			srcPath = filepath.Base(srcPath)
-		}
-	}
-
-	def, err := srcSt.Marshal(ctx, opts...)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return def.ToPB(), srcPath, nil
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {

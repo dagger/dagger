@@ -34,6 +34,23 @@ func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directo
 	}, nil
 }
 
+// NewEmptyChangeset creates a changeset with no changes (before and after are the same empty directory).
+func NewEmptyChangeset(ctx context.Context) (*Changeset, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var emptyDir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &emptyDir,
+		dagql.Selector{Field: "directory"},
+	); err != nil {
+		return nil, fmt.Errorf("create empty directory: %w", err)
+	}
+
+	return NewChangeset(ctx, emptyDir, emptyDir)
+}
+
 type ChangesetPaths struct {
 	Added      []string
 	Modified   []string

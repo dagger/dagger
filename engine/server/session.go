@@ -832,10 +832,17 @@ func (srv *Server) getOrInitClient(
 		sess.clients[clientID] = client
 
 		// initialize SQLite DB early so we can subscribe to it immediately
-		var err error
-		client.keepAliveTelemetryDB, err = srv.clientDBs.Open(ctx, client.clientID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open client DB: %w", err)
+		if db, err := srv.clientDBs.Open(ctx, client.clientID); err != nil {
+			slog.Warn("failed to open client DB; continuing without keepalive",
+				"sessionID", sessionID,
+				"clientID", client.clientID,
+				"error", err,
+			)
+		} else {
+			client.keepAliveTelemetryDB = db
+			failureCleanups.Add("close client telemetry DB", func() error {
+				return db.Close()
+			})
 		}
 
 		parent, parentExists := sess.clients[opts.CallerClientID]

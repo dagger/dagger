@@ -970,6 +970,76 @@ impl GeneratedCodeId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct GeneratorGroupId(pub String);
+impl From<&str> for GeneratorGroupId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for GeneratorGroupId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<GeneratorGroupId> for GeneratorGroup {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GeneratorGroupId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<GeneratorGroupId> for GeneratorGroupId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GeneratorGroupId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<GeneratorGroupId, DaggerError>(self) })
+    }
+}
+impl GeneratorGroupId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct GeneratorId(pub String);
+impl From<&str> for GeneratorId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for GeneratorId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<GeneratorId> for Generator {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GeneratorId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<GeneratorId> for GeneratorId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GeneratorId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<GeneratorId, DaggerError>(self) })
+    }
+}
+impl GeneratorId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct GitRefId(pub String);
 impl From<&str> for GitRefId {
     fn from(value: &str) -> Self {
@@ -2193,6 +2263,24 @@ impl Binding {
     pub fn as_file(&self) -> File {
         let query = self.selection.select("asFile");
         File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Generator
+    pub fn as_generator(&self) -> Generator {
+        let query = self.selection.select("asGenerator");
+        Generator {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type GeneratorGroup
+    pub fn as_generator_group(&self) -> GeneratorGroup {
+        let query = self.selection.select("asGeneratorGroup");
+        GeneratorGroup {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -5224,6 +5312,12 @@ pub struct CurrentModule {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct CurrentModuleGeneratorsOpts<'a> {
+    /// Only include generators matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct CurrentModuleWorkdirOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -5249,6 +5343,35 @@ impl CurrentModule {
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");
         Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all generators defined by the module
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generators(&self) -> GeneratorGroup {
+        let query = self.selection.select("generators");
+        GeneratorGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all generators defined by the module
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generators_opts<'a>(&self, opts: CurrentModuleGeneratorsOpts<'a>) -> GeneratorGroup {
+        let mut query = self.selection.select("generators");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        GeneratorGroup {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -5370,6 +5493,11 @@ pub struct DirectoryDockerBuildOpts<'a> {
     /// They will be mounted at /run/secrets/[secret-name].
     #[builder(setter(into, strip_option), default)]
     pub secrets: Option<Vec<SecretId>>,
+    /// A socket to use for SSH authentication during the build
+    /// (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+    /// Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
+    #[builder(setter(into, strip_option), default)]
+    pub ssh: Option<SocketId>,
     /// Target build stage to build.
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
@@ -5692,6 +5820,9 @@ impl Directory {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
+        }
+        if let Some(ssh) = opts.ssh {
+            query = query.arg("ssh", ssh);
         }
         Container {
             proc: self.proc.clone(),
@@ -7341,6 +7472,104 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type GeneratorGroup in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The GeneratorGroup value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_generator_group_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<GeneratorGroupId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withGeneratorGroupInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired GeneratorGroup output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_generator_group_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withGeneratorGroupOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Generator in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Generator value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_generator_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<GeneratorId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withGeneratorInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Generator output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_generator_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withGeneratorOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type GitRef in the environment
     ///
     /// # Arguments
@@ -8954,6 +9183,15 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Returns the function with a flag indicating it's a generator.
+    pub fn with_generator(&self) -> Function {
+        let query = self.selection.select("withGenerator");
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Returns the function with the given source map.
     ///
     /// # Arguments
@@ -9179,6 +9417,132 @@ impl GeneratedCode {
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
+pub struct Generator {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Generator {
+    /// The generated changeset
+    pub fn changes(&self) -> Changeset {
+        let query = self.selection.select("changes");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Whether the generator complete
+    pub async fn completed(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("completed");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return the description of the generator
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Generator.
+    pub async fn id(&self) -> Result<GeneratorId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Wether changeset from the generator execution is empty or not
+    pub async fn is_empty(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isEmpty");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return the fully qualified name of the generator
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Execute the generator
+    pub fn run(&self) -> Generator {
+        let query = self.selection.select("run");
+        Generator {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
+pub struct GeneratorGroup {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GeneratorGroupChangesOpts {
+    /// Strategy to apply on conflicts between generators
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<ChangesetsMergeConflict>,
+}
+impl GeneratorGroup {
+    /// The combined changes from the generators execution
+    /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
+    /// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn changes(&self) -> Changeset {
+        let query = self.selection.select("changes");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The combined changes from the generators execution
+    /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
+    /// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn changes_opts(&self, opts: GeneratorGroupChangesOpts) -> Changeset {
+        let mut query = self.selection.select("changes");
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this GeneratorGroup.
+    pub async fn id(&self) -> Result<GeneratorGroupId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the generated changeset is empty or not
+    pub async fn is_empty(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isEmpty");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return a list of individual generators and their details
+    pub fn list(&self) -> Vec<Generator> {
+        let query = self.selection.select("list");
+        vec![Generator {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// Execute all selected generators
+    pub fn run(&self) -> GeneratorGroup {
+        let query = self.selection.select("run");
+        GeneratorGroup {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -10320,6 +10684,12 @@ pub struct ModuleChecksOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ModuleGeneratorsOpts<'a> {
+    /// Only include generators matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ModuleServeOpts {
     /// Expose the dependencies of this module to the client
     #[builder(setter(into, strip_option), default)]
@@ -10396,6 +10766,49 @@ impl Module {
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");
         Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return the generator defined by the module with the given name. Must match to exactly one generator.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the generator to retrieve
+    pub fn generator(&self, name: impl Into<String>) -> Generator {
+        let mut query = self.selection.select("generator");
+        query = query.arg("name", name.into());
+        Generator {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all generators defined by the module
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generators(&self) -> GeneratorGroup {
+        let query = self.selection.select("generators");
+        GeneratorGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all generators defined by the module
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generators_opts<'a>(&self, opts: ModuleGeneratorsOpts<'a>) -> GeneratorGroup {
+        let mut query = self.selection.select("generators");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        GeneratorGroup {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -12212,6 +12625,41 @@ impl Query {
             }),
         );
         GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Generator from its ID.
+    pub fn load_generator_from_id(&self, id: impl IntoID<GeneratorId>) -> Generator {
+        let mut query = self.selection.select("loadGeneratorFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Generator {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a GeneratorGroup from its ID.
+    pub fn load_generator_group_from_id(
+        &self,
+        id: impl IntoID<GeneratorGroupId>,
+    ) -> GeneratorGroup {
+        let mut query = self.selection.select("loadGeneratorGroupFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        GeneratorGroup {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

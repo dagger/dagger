@@ -1135,16 +1135,16 @@ func (ClientGeneratorTest) TestCustomClientGenerator(ctx context.Context, t *tes
 
 import (
 	"context"
-	"dagger/generator/internal/dagger"
+	"dagger/generator-module/internal/dagger"
 )
 
-type Generator struct{}
+type GeneratorModule struct{}
 
-func (g *Generator) RequiredClientGenerationFiles() []string{
+func (g *GeneratorModule) RequiredClientGenerationFiles() []string{
   return []string{}
 }
 
-func (g *Generator) GenerateClient(
+func (g *GeneratorModule) GenerateClient(
   ctx context.Context,
   modSource *dagger.ModuleSource,
   introspectionJSON *dagger.File,
@@ -1158,7 +1158,7 @@ func (g *Generator) GenerateClient(
 			generatorSource: `import { dag, Directory, object, func, ModuleSource, File } from "@dagger.io/dagger"
 
 @object()
-export class Generator {
+export class GeneratorModule {
   @func()
   requiredClientGenerationFiles(): string[] {
     return []
@@ -1182,7 +1182,7 @@ export class Generator {
 			moduleSrc := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/generator").
-				With(daggerExec("init", "--name=generator", fmt.Sprintf("--sdk=%s", tc.generatorSDK), "--source=.")).
+				With(daggerExec("init", "--name=generator-module", fmt.Sprintf("--sdk=%s", tc.generatorSDK), "--source=.")).
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
 				WithWorkdir("/work").
 				With(daggerExec("init")).

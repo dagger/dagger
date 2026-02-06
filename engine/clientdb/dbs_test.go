@@ -1,6 +1,7 @@
 package clientdb
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -68,4 +69,19 @@ func TestDBRefCount(t *testing.T) {
 	require.Nil(t, d2a.inner)
 	require.Nil(t, d2a.Queries)
 	require.Equal(t, d2a.refCount, 0)
+}
+
+func TestDBCloseNil(t *testing.T) {
+	var db *DB
+	require.NoError(t, db.Close())
+}
+
+func TestOpenWithNonDirRoot(t *testing.T) {
+	root := t.TempDir()
+	blocker := root + "/not-a-dir"
+	require.NoError(t, os.WriteFile(blocker, []byte("nope"), 0600))
+
+	dbs := NewDBs(blocker)
+	_, err := dbs.Open(t.Context(), "client1")
+	require.Error(t, err)
 }

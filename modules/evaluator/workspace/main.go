@@ -9,7 +9,6 @@ package main
 import (
 	"context"
 	"dagger/workspace/internal/dagger"
-	"dagger/workspace/internal/telemetry"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -18,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"dagger.io/dagger/telemetry"
 )
 
 type Workspace struct {
@@ -224,7 +225,7 @@ func (w *Workspace) Evaluate(
 			ctx, span := Tracer().Start(ctx,
 				fmt.Sprintf("%s: attempt %d", name, attempt+1),
 				telemetry.Reveal())
-			defer telemetry.End(span, func() error { return rerr })
+			defer telemetry.EndWithCause(span, &rerr)
 			stdio := telemetry.SpanStdio(ctx, "")
 			defer stdio.Close()
 

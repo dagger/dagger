@@ -748,6 +748,46 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Generator",
+			"p": "Dagger/Generator.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GeneratorGroup",
+			"p": "Dagger/GeneratorGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GeneratorGroupId",
+			"p": "Dagger/GeneratorGroupId.html",
+			"d": "<p>The <code>GeneratorGroupID</code> scalar type represents an identifier for an object of type GeneratorGroup.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GeneratorId",
+			"p": "Dagger/GeneratorId.html",
+			"d": "<p>The <code>GeneratorID</code> scalar type represents an identifier for an object of type Generator.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GitRef",
 			"p": "Dagger/GitRef.html",
 			"d": "<p>A git ref (tag, branch, or commit).</p>",
@@ -1473,6 +1513,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asGenerator",
+			"p": "Dagger/Binding.html#method_asGenerator",
+			"d": "<p>Retrieve the binding value, as type Generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asGeneratorGroup",
+			"p": "Dagger/Binding.html#method_asGeneratorGroup",
+			"d": "<p>Retrieve the binding value, as type GeneratorGroup</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asGitRef",
 			"p": "Dagger/Binding.html#method_asGitRef",
 			"d": "<p>Retrieve the binding value, as type GitRef</p>"
@@ -2040,6 +2092,18 @@
 			"n": "Dagger\\Client::loadGeneratedCodeFromID",
 			"p": "Dagger/Client.html#method_loadGeneratedCodeFromID",
 			"d": "<p>Load a GeneratedCode from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadGeneratorFromID",
+			"p": "Dagger/Client.html#method_loadGeneratorFromID",
+			"d": "<p>Load a Generator from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadGeneratorGroupFromID",
+			"p": "Dagger/Client.html#method_loadGeneratorGroupFromID",
+			"d": "<p>Load a GeneratorGroup from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2829,6 +2893,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\CurrentModule::generators",
+			"p": "Dagger/CurrentModule.html#method_generators",
+			"d": "<p>Return all generators defined by the module</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CurrentModule::id",
 			"p": "Dagger/CurrentModule.html#method_id",
 			"d": "<p>A unique identifier for this CurrentModule.</p>"
@@ -3471,6 +3541,30 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withGeneratorGroupInput",
+			"p": "Dagger/Env.html#method_withGeneratorGroupInput",
+			"d": "<p>Create or update a binding of type GeneratorGroup in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withGeneratorGroupOutput",
+			"p": "Dagger/Env.html#method_withGeneratorGroupOutput",
+			"d": "<p>Declare a desired GeneratorGroup output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withGeneratorInput",
+			"p": "Dagger/Env.html#method_withGeneratorInput",
+			"d": "<p>Create or update a binding of type Generator in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withGeneratorOutput",
+			"p": "Dagger/Env.html#method_withGeneratorOutput",
+			"d": "<p>Declare a desired Generator output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withGitRefInput",
 			"p": "Dagger/Env.html#method_withGitRefInput",
 			"d": "<p>Create or update a binding of type GitRef in the environment</p>"
@@ -4083,6 +4177,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withGenerator",
+			"p": "Dagger/Function_.html#method_withGenerator",
+			"d": "<p>Returns the function with a flag indicating it's a generator.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withSourceMap",
 			"p": "Dagger/Function_.html#method_withSourceMap",
 			"d": "<p>Returns the function with the given source map.</p>"
@@ -4122,6 +4222,78 @@
 			"n": "Dagger\\GeneratedCode::withVCSIgnoredPaths",
 			"p": "Dagger/GeneratedCode.html#method_withVCSIgnoredPaths",
 			"d": "<p>Set the list of paths to ignore in version control.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::changes",
+			"p": "Dagger/Generator.html#method_changes",
+			"d": "<p>The generated changeset</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::completed",
+			"p": "Dagger/Generator.html#method_completed",
+			"d": "<p>Whether the generator complete</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::description",
+			"p": "Dagger/Generator.html#method_description",
+			"d": "<p>Return the description of the generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::id",
+			"p": "Dagger/Generator.html#method_id",
+			"d": "<p>A unique identifier for this Generator.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::isEmpty",
+			"p": "Dagger/Generator.html#method_isEmpty",
+			"d": "<p>Wether changeset from the generator execution is empty or not</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::name",
+			"p": "Dagger/Generator.html#method_name",
+			"d": "<p>Return the fully qualified name of the generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::run",
+			"p": "Dagger/Generator.html#method_run",
+			"d": "<p>Execute the generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::changes",
+			"p": "Dagger/GeneratorGroup.html#method_changes",
+			"d": "<p>The combined changes from the generators execution</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::id",
+			"p": "Dagger/GeneratorGroup.html#method_id",
+			"d": "<p>A unique identifier for this GeneratorGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::isEmpty",
+			"p": "Dagger/GeneratorGroup.html#method_isEmpty",
+			"d": "<p>Whether the generated changeset is empty or not</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::list",
+			"p": "Dagger/GeneratorGroup.html#method_list",
+			"d": "<p>Return a list of individual generators and their details</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::run",
+			"p": "Dagger/GeneratorGroup.html#method_run",
+			"d": "<p>Execute all selected generators</p>"
 		},
 		{
 			"t": "M",
@@ -4656,6 +4828,18 @@
 			"n": "Dagger\\Module::generatedContextDirectory",
 			"p": "Dagger/Module.html#method_generatedContextDirectory",
 			"d": "<p>The generated files and directories made on top of the module source's context directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Module::generator",
+			"p": "Dagger/Module.html#method_generator",
+			"d": "<p>Return the generator defined by the module with the given name. Must match to exactly one generator.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Module::generators",
+			"p": "Dagger/Module.html#method_generators",
+			"d": "<p>Return all generators defined by the module</p>"
 		},
 		{
 			"t": "M",

@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.19.10",
+  "engineVersion": "v0.19.11",
   "sdk": {
     "source": "go"
   },
@@ -51,7 +51,8 @@
             "dagql/idtui/viztest/broken/**",
             "modules/evals/**",
             "**/broken*/**",
-            "core/integration/testdata/checks/hello-with-checks/"
+            "core/integration/testdata/checks/hello-with-checks/",
+            "core/integration/testdata/generators/hello-with-generators/"
           ]
         }
       ]
@@ -124,6 +125,7 @@
   ],
   "include": [
     "sdk/typescript/runtime/**/*",
+    "engine/distconsts",
     "go.mod",
     "go.sum",
     "util/parallel",

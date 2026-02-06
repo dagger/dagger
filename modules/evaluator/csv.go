@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"dagger/botsbuildingbots/internal/dagger"
-	"dagger/botsbuildingbots/internal/telemetry"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -111,7 +111,7 @@ func (m *Evaluator) Compare(
 			attribute.String(telemetry.UIMessageAttr, "received"),
 			attribute.String(telemetry.UIActorEmojiAttr, "📝"),
 		))
-	defer telemetry.End(span, func() error { return nil })
+	defer telemetry.End(span, func() error { return nil }) //nolint:staticcheck
 
 	stdio := telemetry.SpanStdio(ctx, "", log.String(telemetry.ContentTypeAttr, "text/markdown"))
 
