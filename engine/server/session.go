@@ -1380,26 +1380,90 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 
 // loadWorkspace detects the workspace from the client's working directory
 // and loads all configured modules onto the dagql server.
+// It also loads any extra modules specified in the client metadata.
 func (srv *Server) loadWorkspace(ctx context.Context, client *daggerClient, dag *dagql.Server) error {
-	cwd, err := client.bkClient.AbsPath(ctx, ".")
-	if err != nil {
-		return fmt.Errorf("failed to get cwd: %w", err)
+	clientMD := client.clientMetadata
+
+	// 1. Load workspace modules (unless skipped)
+	if clientMD == nil || !clientMD.SkipWorkspaceModules {
+		cwd, err := client.bkClient.AbsPath(ctx, ".")
+		if err != nil {
+			// The caller session may not be available during client initialization
+			// (e.g. nested dagger execution inside a container — the HTTP handler
+			// runs before the CLI's buildkit session is established, and blocking
+			// would deadlock). In that case there's no host workspace to detect.
+			slog.Debug("skipping workspace detection: caller session not available", "error", err)
+		} else {
+			statFS := core.NewCallerStatFS(client.bkClient)
+			ws, err := workspace.Detect(ctx, statFS, client.bkClient.ReadCallerHostFile, cwd)
+			if err != nil {
+				return err
+			}
+
+			if ws.Config != nil && len(ws.Config.Modules) > 0 {
+				for name, entry := range ws.Config.Modules {
+					sourcePath := filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
+					if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath); err != nil {
+						return fmt.Errorf("loading workspace module %q: %w", name, err)
+					}
+				}
+			}
+		}
 	}
 
-	statFS := core.NewCallerStatFS(client.bkClient)
-	ws, err := workspace.Detect(ctx, statFS, client.bkClient.ReadCallerHostFile, cwd)
+	// 2. Load extra modules (e.g. from -m flag)
+	if clientMD != nil {
+		for _, extra := range clientMD.ExtraModules {
+			if err := srv.loadExtraModule(ctx, client, dag, extra); err != nil {
+				return fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// loadExtraModule resolves an extra module (e.g. from -m flag) and serves it.
+// Unlike workspace modules, it does not set disableFindUp (supports relative paths,
+// `.`, git URLs). If Alias is true, the module's AutoAlias flag is set so that
+// its functions are aliased to the Query root.
+func (srv *Server) loadExtraModule(
+	ctx context.Context,
+	client *daggerClient,
+	dag *dagql.Server,
+	extra engine.ExtraModule,
+) error {
+	var mod dagql.ObjectResult[*core.Module]
+	err := dag.Select(ctx, dag.Root(), &mod,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(extra.Ref)},
+			},
+		},
+		dagql.Selector{Field: "asModule"},
+	)
 	if err != nil {
+		return fmt.Errorf("resolving module source %q: %w", extra.Ref, err)
+	}
+
+	if extra.Name != "" {
+		mod.Self().NameField = extra.Name
+	}
+	if extra.Alias {
+		mod.Self().AutoAlias = true
+	}
+
+	// Serve module + dependencies
+	client.stateMu.Lock()
+	defer client.stateMu.Unlock()
+
+	if err := srv.serveModule(client, mod.Self()); err != nil {
 		return err
 	}
-
-	if ws.Config == nil || len(ws.Config.Modules) == 0 {
-		return nil
-	}
-
-	for name, entry := range ws.Config.Modules {
-		sourcePath := filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
-		if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath); err != nil {
-			return fmt.Errorf("loading workspace module %q: %w", name, err)
+	for _, depMod := range mod.Self().Deps.Mods {
+		if err := srv.serveModule(client, depMod); err != nil {
+			return fmt.Errorf("serving dependency %s: %w", depMod.Name(), err)
 		}
 	}
 	return nil

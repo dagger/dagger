@@ -57,14 +57,9 @@ available functions.
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) (rerr error) {
-			var mod *moduleDef
-			var err error
-			modRef, hasExplicit := getExplicitModuleSourceRef()
-			if hasExplicit {
-				mod, err = initializeModule(ctx, engineClient.Dagger(), modRef, engineClient.Dagger().ModuleSource(modRef))
-			} else {
-				mod, err = initializeWorkspace(ctx, engineClient.Dagger())
-			}
+			// -m is now handled at engine connect time (ExtraModules with AutoAlias),
+			// so the CLI always uses initializeWorkspace — no branching needed.
+			mod, err := initializeWorkspace(ctx, engineClient.Dagger())
 			if err != nil {
 				return err
 			}
@@ -94,7 +89,10 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			isWorkspace := !hasExplicit && mod.Name == ""
+			// When -m is used, the module is loaded with auto-aliases at root.
+			// Don't apply workspace filtering — show all functions including aliases.
+			_, hasExplicit := getExplicitModuleSourceRef()
+			isWorkspace := mod.Name == "" && !hasExplicit
 			return functionListRun(o, cmd.OutOrStdout(), isWorkspace)
 		})
 	},

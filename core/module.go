@@ -70,6 +70,10 @@ type Module struct {
 	// If true, disable the new default function caching behavior for this module. Functions will
 	// instead default to the old behavior of per-session caching.
 	DisableDefaultFunctionCaching bool
+
+	// AutoAlias causes the module's functions to be aliased to the Query root,
+	// so they can be called directly without going through the module constructor.
+	AutoAlias bool
 }
 
 func (*Module) Type() *ast.Type {
