@@ -1915,22 +1915,18 @@ func (m *Test) GetTime(ctx context.Context, repo *dagger.GitRepository) (string,
 		return strings.TrimSpace(out)
 	}
 
-	t.Run("cache hit across sessions", func(ctx context.Context, t *testctx.T) {
-		time1 := callFn()
-		require.NotEmpty(t, time1)
+	// Keep this as one deterministic flow: integration test middleware runs tests
+	// in parallel, and sibling subtests can race on the shared git remote state.
+	firstTime := callFn()
+	require.NotEmpty(t, firstTime)
 
-		time2 := callFn()
-		require.Equal(t, time1, time2, "same repo state across sessions should hit DagOp cache")
-	})
+	cachedTime := callFn()
+	require.Equal(t, firstTime, cachedTime, "same repo state across sessions should hit DagOp cache")
 
-	t.Run("invalidation on push", func(ctx context.Context, t *testctx.T) {
-		timeBefore := callFn()
+	pushToGitService(ctx, t, c, gitSvc, url)
 
-		pushToGitService(ctx, t, c, gitSvc, url)
-
-		timeAfter := callFn()
-		require.NotEqual(t, timeBefore, timeAfter, "ls-remote changes should bust cache")
-	})
+	updatedTime := callFn()
+	require.NotEqual(t, cachedTime, updatedTime, "ls-remote changes should bust cache")
 }
 
 // TestGitRefFunctionCacheInvalidation is the same as
@@ -1974,23 +1970,19 @@ func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error
 		return strings.TrimSpace(out)
 	}
 
-	t.Run("cache hit across sessions", func(ctx context.Context, t *testctx.T) {
-		sha1 := callFn()
-		require.Regexp(t, `^[a-f0-9]{40}$`, sha1)
+	// Keep this as one deterministic flow: integration test middleware runs tests
+	// in parallel, and sibling subtests can race on the shared git remote state.
+	firstSHA := callFn()
+	require.Regexp(t, `^[a-f0-9]{40}$`, firstSHA)
 
-		sha2 := callFn()
-		require.Equal(t, sha1, sha2, "same repo state across sessions should hit DagOp cache")
-	})
+	cachedSHA := callFn()
+	require.Equal(t, firstSHA, cachedSHA, "same repo state across sessions should hit DagOp cache")
 
-	t.Run("invalidation on push", func(ctx context.Context, t *testctx.T) {
-		shaBefore := callFn()
+	pushToGitService(ctx, t, c, gitSvc, url)
 
-		pushToGitService(ctx, t, c, gitSvc, url)
-
-		shaAfter := callFn()
-		require.NotEqual(t, shaBefore, shaAfter, "ls-remote changes should bust cache")
-		require.Regexp(t, `^[a-f0-9]{40}$`, shaAfter)
-	})
+	updatedSHA := callFn()
+	require.NotEqual(t, cachedSHA, updatedSHA, "ls-remote changes should bust cache")
+	require.Regexp(t, `^[a-f0-9]{40}$`, updatedSHA)
 }
 
 // TestGitTreeCacheAcrossProtocols verifies that two different URLs pointing at

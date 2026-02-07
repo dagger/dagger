@@ -849,9 +849,10 @@ func (s *gitSchema) resolveRepository(
 	if !isRemote {
 		resolved := repo.Clone()
 		lsRemote, err := resolved.Backend.Remote(ctx)
-		if err == nil {
-			resolved.Remote = lsRemote
+		if err != nil {
+			return zero, err
 		}
+		resolved.Remote = lsRemote
 		resolved.Resolved = true
 		return dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
 	}
