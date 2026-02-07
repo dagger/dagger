@@ -94,6 +94,7 @@ type Span struct {
 	FailedLinks   SpanSet `json:"-"`
 	CanceledLinks SpanSet `json:"-"`
 	RevealedSpans SpanSet `json:"-"`
+	UserSpans     SpanSet `json:"-"`
 	ErrorOrigins  SpanSet `json:"-"`
 
 	callCache *callpbv1.Call
@@ -277,6 +278,8 @@ type SpanSnapshot struct {
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
+	UserBoundary string `json:",omitempty"`
+
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
 
@@ -387,6 +390,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)
 
+	case telemetry.UserBoundaryAttr:
+		snapshot.UserBoundary = val.(string)
+
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their
 		// parent failed, since some happy paths might involve _expected_ failures
@@ -476,6 +482,39 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			}
 
 			if parent.Boundary || parent.Encapsulate || parent.Reveal {
+				break
+			}
+		}
+	}
+
+	// Propagate user-supplied spans up, similar to revealing, except not based on
+	// an attribute on the span itself
+	if span.ParentSpan != nil && span.ParentSpan.UserBoundary != "" &&
+		span.Call() == nil &&
+		!span.Passthrough &&
+		!span.Internal {
+		for parent := range span.Parents {
+			if parent.UserBoundary != "" && parent.UserBoundary != span.ParentSpan.UserBoundary {
+				// do not propagate into a different boundary
+				//
+				// if my module calls another functin within my module (future-proofing
+				// for self calls), we *do* want to propagate those spans, since it
+				// might just be a higher level refactored function
+				//
+				// but if my module calls another module, and that module has spans, we
+				// *don't* want them mixed with mine
+				break
+			}
+
+			if parent.UserSpans.Add(span) {
+				span.db.update(parent)
+			}
+
+			if parent.Boundary ||
+				parent.Encapsulate ||
+				parent.Reveal ||
+				parent.RollUpSpans ||
+				parent.RollUpLogs {
 				break
 			}
 		}
@@ -616,18 +655,6 @@ func (span *Span) RollUpState() *RollUpState {
 	return span.rollUpState
 }
 
-func (span *Span) ChildOrRevealedSpans(opts FrontendOpts) (SpanSet, bool) {
-	verbosity := opts.Verbosity
-	if v, ok := opts.SpanVerbosity[span.ID]; ok {
-		verbosity = v
-	}
-	if len(span.RevealedSpans.Order) > 0 && !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity {
-		return span.RevealedSpans, true
-	} else {
-		return span.ChildSpans, false
-	}
-}
-
 func (span *Span) IsOK() bool {
 	return span.Status.Code == codes.Ok
 }
@@ -638,6 +665,13 @@ func (span *Span) IsFailed() bool {
 
 func (span *Span) IsUnset() bool {
 	return span.Status.Code == codes.Unset
+}
+
+func (span *Span) Verbosity(opts FrontendOpts) int {
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		return v
+	}
+	return opts.Verbosity
 }
 
 // Errors returns the individual errored spans contributing to the span's
@@ -738,10 +772,7 @@ func (span *Span) Parents(f func(*Span) bool) {
 }
 
 func (span *Span) Hidden(opts FrontendOpts) bool {
-	verbosity := opts.Verbosity
-	if v, ok := opts.SpanVerbosity[span.ID]; ok {
-		verbosity = v
-	}
+	verbosity := span.Verbosity(opts)
 	if span.IsInternal() && verbosity < ShowInternalVerbosity {
 		// internal spans are hidden by default
 		return true
