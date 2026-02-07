@@ -258,6 +258,11 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
+		if mod.AutoAlias {
+			if err := obj.installAutoAliases(ctx, dag); err != nil {
+				return fmt.Errorf("failed to install auto-aliases: %w", err)
+			}
+		}
 	}
 	fields := obj.fields()
 
@@ -347,6 +352,41 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		},
 	)
 
+	return nil
+}
+
+// installAutoAliases installs alias fields on the Query root that delegate
+// to the module's constructor followed by the function call. This allows
+// module functions to be called directly from the Query root without
+// explicitly going through the constructor.
+func (obj *ModuleObject) installAutoAliases(ctx context.Context, dag *dagql.Server) error {
+	mod := obj.Module
+	constructorName := gqlFieldName(mod.Name())
+
+	for _, fun := range obj.TypeDef.Functions {
+		spec, err := fun.FieldSpec(ctx, mod)
+		if err != nil {
+			return fmt.Errorf("failed to get field spec for alias %q: %w", fun.Name, err)
+		}
+		spec.Module = mod.IDModule()
+
+		funcName := fun.Name
+		dag.Root().ObjectType().Extend(
+			spec,
+			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				namedInputs := make([]dagql.NamedInput, 0, len(args))
+				for k, v := range args {
+					namedInputs = append(namedInputs, dagql.NamedInput{Name: k, Value: v})
+				}
+				var result dagql.AnyResult
+				err := dag.Select(ctx, self.(dagql.AnyObjectResult), &result,
+					dagql.Selector{Field: constructorName},
+					dagql.Selector{Field: funcName, Args: namedInputs},
+				)
+				return result, err
+			},
+		)
+	}
 	return nil
 }
 

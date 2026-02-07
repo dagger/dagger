@@ -288,14 +288,9 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	if fc.DisableModuleLoad || moduleNoURL {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
-		modRef, hasExplicit := getExplicitModuleSourceRef()
-		if hasExplicit {
-			// -m specified: serve the module on top of workspace, then inspect
-			mod, err = initializeModule(ctx, fc.c.Dagger(), modRef, fc.c.Dagger().ModuleSource(modRef))
-		} else {
-			// No -m: workspace modules already loaded by engine
-			mod, err = initializeWorkspace(ctx, fc.c.Dagger())
-		}
+		// -m is now handled at engine connect time (ExtraModules with AutoAlias),
+		// so the CLI always uses initializeWorkspace — no branching needed.
+		mod, err = initializeWorkspace(ctx, fc.c.Dagger())
 	}
 	if err != nil {
 		return err
@@ -518,8 +513,15 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 // isWorkspaceRoot returns true if we're in workspace mode and the given type
 // is the Query root type. In workspace mode, only module constructors should
 // be shown as top-level sub-commands.
+// When -m is used (explicit module with auto-alias), this returns false so
+// that aliased functions at Query root are shown as sub-commands.
 func (fc *FuncCommand) isWorkspaceRoot(typeDef *modTypeDef) bool {
 	if fc.DisableModuleLoad {
+		return false
+	}
+	// When -m is used, the module is loaded with auto-aliases at root.
+	// Don't filter — show all functions including aliases.
+	if _, hasExplicit := getExplicitModuleSourceRef(); hasExplicit {
 		return false
 	}
 	// Workspace mode: no explicit module loaded (Name == ""), MainObject is Query root

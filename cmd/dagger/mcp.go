@@ -42,10 +42,18 @@ var mcpCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		cmd.SetContext(idtui.WithPrintTraceLink(ctx, true))
-		return withEngine(ctx, client.Params{
+		params := client.Params{
 			Stdin:  stdin,
 			Stdout: stdout,
-		}, mcpStart)
+		}
+		// Pass -m to engine so the module is loaded at connect time
+		if !moduleNoURL {
+			modRef, _ := getExplicitModuleSourceRef()
+			if modRef != "" {
+				params.Module = modRef
+			}
+		}
+		return withEngine(ctx, params, mcpStart)
 	},
 	Hidden: true,
 	Annotations: map[string]string{
@@ -58,22 +66,13 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")
 	}
-	var modDef *moduleDef
-	modRef, hasExplicit := getExplicitModuleSourceRef()
-	if hasExplicit {
-		var err error
-		modDef, err = initializeModule(ctx, engineClient.Dagger(), modRef, engineClient.Dagger().ModuleSource(modRef))
-		if err != nil {
-			return err
-		}
-	} else {
-		// Workspace modules are already loaded by the engine.
-		// For MCP, we use workspace mode (modDef stays nil if no explicit -m).
-		modDef, _ = initializeWorkspace(ctx, engineClient.Dagger())
-		// If no workspace modules are available and --core not specified, error
-		if modDef != nil && !modDef.HasModule() {
-			modDef = nil
-		}
+	// -m is now handled at engine connect time (ExtraModules with AutoAlias),
+	// so the CLI always uses initializeWorkspace — no branching needed.
+	modDef, _ := initializeWorkspace(ctx, engineClient.Dagger())
+	if modDef != nil && !modDef.HasModule() {
+		// When -m is used with auto-alias, modDef.Name is "" but the module
+		// constructor is at Query root. Find it.
+		modDef = findAutoAliasedModule(modDef)
 	}
 
 	if modDef == nil && !envPrivileged {
@@ -129,5 +128,33 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return fmt.Errorf("error starting MCP server: %w", err)
 	}
 
+	return nil
+}
+
+// findAutoAliasedModule detects a module loaded with auto-alias at Query root.
+// When -m is used, the module's constructor appears as a Query root function
+// whose return type has a non-empty SourceModuleName. If exactly one such
+// constructor is found, return a moduleDef pointing to it as the main object.
+func findAutoAliasedModule(def *moduleDef) *moduleDef {
+	if def == nil || def.MainObject == nil {
+		return nil
+	}
+	fp := def.MainObject.AsFunctionProvider()
+	if fp == nil {
+		return nil
+	}
+	for _, fn := range fp.GetFunctions() {
+		if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
+			// Found a module constructor — set up modDef to point to this module
+			return &moduleDef{
+				Name:       fn.ReturnType.AsObject.SourceModuleName,
+				MainObject: fn.ReturnType,
+				Objects:    def.Objects,
+				Interfaces: def.Interfaces,
+				Enums:      def.Enums,
+				Inputs:     def.Inputs,
+			}
+		}
+	}
 	return nil
 }
