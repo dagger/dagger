@@ -101,7 +101,9 @@ available functions.
 func functionListRun(o functionProvider, writer io.Writer, workspaceMode bool) error {
 	fns, skipped := GetSupportedFunctions(o)
 
-	// In workspace mode, only show workspace module constructors
+	// In workspace mode, only show workspace module constructors.
+	// If no module constructors are found, fall back to showing all
+	// functions (core API) so the user gets useful output.
 	if workspaceMode {
 		filtered := make([]*modFunction, 0, len(fns))
 		for _, fn := range fns {
@@ -109,7 +111,9 @@ func functionListRun(o functionProvider, writer io.Writer, workspaceMode bool) e
 				filtered = append(filtered, fn)
 			}
 		}
-		fns = filtered
+		if len(filtered) > 0 {
+			fns = filtered
+		}
 	}
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
