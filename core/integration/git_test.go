@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -1324,11 +1324,11 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 		repo := c.Git("github.com/grouville/daggerverse-private.git")
 		err := checkAccess(ctx, repo)
 		require.Error(t, err)
-		requireErrOut(t, err, "failed to determine Git URL protocol")
+		requireErrOut(t, err, "failed to resolve git URL: tried https and ssh")
 
 		_, err = repo.URL(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "failed to determine Git URL protocol")
+		requireErrOut(t, err, "failed to resolve git URL: tried https and ssh")
 	})
 }
 
@@ -1339,34 +1339,6 @@ func decodeAndTrimPAT(encoded string) (string, error) {
 		return "", fmt.Errorf("failed to decode PAT: %w", err)
 	}
 	return strings.TrimSpace(string(decodedPAT)), nil
-}
-
-// Ensure IsRemotePublic correctly detects repo visibility (see dagger/dagger#11112)
-func (GitSuite) TestIsRemotePublic(ctx context.Context, t *testctx.T) {
-	vc := append([]vcsTestCase{
-		{
-			name:                "Azure DevOps private",
-			expectedBaseHTMLURL: "dev.azure.com/daggere2e/private/_git/dagger-test-modules.git",
-			isPrivateRepo:       true,
-		},
-	}, vcsTestCases...)
-
-	for _, v := range vc {
-		t.Run(v.name, func(ctx context.Context, t *testctx.T) {
-			remoteURL := v.expectedBaseHTMLURL
-			if !strings.Contains(remoteURL, "://") {
-				remoteURL = "https://" + remoteURL
-			}
-
-			remote, err := gitutil.ParseURL(remoteURL)
-			require.NoError(t, err)
-
-			isRemotePublic, err := schema.IsRemotePublic(ctx, remote)
-			require.NoError(t, err)
-
-			require.Equalf(t, !v.isPrivateRepo, isRemotePublic, "Expected public=%v for repo %q", !v.isPrivateRepo, v.name)
-		})
-	}
 }
 
 func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
@@ -1392,6 +1364,65 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 	commit2, err := repo2.Head().Commit(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, commit2)
+}
+
+func (GitSuite) TestGitTreeDigestTracksContent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	git := goGitBase(t, c)
+
+	// first commit with a shallow tree
+	git = git.
+		WithNewFile("file.txt", "one").
+		WithExec([]string{"git", "add", "file.txt"}).
+		WithExec([]string{"git", "commit", "-m", "first"})
+	sha1Out, err := git.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	sha1 := strings.TrimSpace(sha1Out)
+
+	repo := git.Directory(".").AsGit()
+	baseID, err := repo.Commit(sha1).Tree().ID(ctx)
+	require.NoError(t, err)
+
+	t.Run("stable same commit", func(ctx context.Context, t *testctx.T) {
+		idAgain, err := repo.Commit(sha1).Tree().ID(ctx)
+		require.NoError(t, err)
+		require.Equal(t, baseID, idAgain)
+	})
+
+	t.Run("ignores .git changes", func(ctx context.Context, t *testctx.T) {
+		modGit := git.WithNewFile(".git/extra", "noise")
+		modRepo := modGit.Directory(".").AsGit()
+		gitDirID, err := modRepo.Commit(sha1).Tree().ID(ctx)
+		require.NoError(t, err)
+		require.Equal(t, baseID, gitDirID)
+	})
+
+	// second commit adds tracked content (and a nested file for depth)
+	git = git.
+		WithNewFile("file.txt", "two").
+		WithNewFile("deep/nested.txt", "deep").
+		WithExec([]string{"git", "add", "file.txt", "deep/nested.txt"}).
+		WithExec([]string{"git", "commit", "-m", "second"})
+	sha2Out, err := git.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	sha2 := strings.TrimSpace(sha2Out)
+
+	repo2 := git.Directory(".").AsGit()
+	id2, err := repo2.Commit(sha2).Tree().ID(ctx)
+	require.NoError(t, err)
+
+	t.Run("tracks tracked content changes", func(ctx context.Context, t *testctx.T) {
+		require.NotEqual(t, baseID, id2)
+	})
+
+	t.Run("checksum options (depth) change digest", func(ctx context.Context, t *testctx.T) {
+		depth1, err := repo2.Commit(sha2).Tree(dagger.GitRefTreeOpts{Depth: 1}).ID(ctx)
+		require.NoError(t, err)
+		depth2, err := repo2.Commit(sha2).Tree(dagger.GitRefTreeOpts{Depth: 2}).ID(ctx)
+		require.NoError(t, err)
+		require.NotEqual(t, depth1, depth2)
+	})
 }
 
 func (GitSuite) TestGitUncommittedRemote(ctx context.Context, t *testctx.T) {
@@ -1813,4 +1844,296 @@ func main() {
 			require.Equal(t, tt.expectedReason, wrapper.Result.Error.Message)
 		})
 	}
+}
+
+// TestGitFunctionCacheInvalidation verifies that module function results are
+// properly cache-invalidated when the remote Git repository changes.
+// Each call uses a separate session (via dev engine) so the ls-remote cache
+// is fresh, testing true cross-session invalidation.
+// pushToGitService pushes a new commit to a git service. Used to trigger
+// cache invalidation in tests.
+func pushToGitService(ctx context.Context, t *testctx.T, c *dagger.Client, gitSvc *dagger.Service, url string) {
+	t.Helper()
+	_, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithServiceBinding("git-server", gitSvc).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", `touch newfile && git add newfile && git commit -m "new commit" && git push origin main`}).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
+// TestGitFunctionCacheInvalidation tests cross-session caching with a module
+// function that takes a GitRepository argument. Each session gets a fresh
+// ls-remote cache, but the DagOp-level cache persists across sessions.
+func (GitSuite) TestGitFunctionCacheInvalidation(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	gitSvc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+
+	devEngine := devEngineContainerAsService(devEngineContainer(c,
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithServiceBinding("git-server", gitSvc)
+		},
+	))
+
+	modDir := goGitBase(t, c).
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"time"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) GetTime(ctx context.Context, repo *dagger.GitRepository) (string, error) {
+	_, err := repo.Head().Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	return time.Now().Format(time.RFC3339Nano), nil
+}
+`).
+		Directory("/work")
+
+	// Each call creates a new session (fresh ls-remote cache) but shares
+	// the DagOp cache. CACHEBUSTER bypasses the outer BuildKit cache.
+	callFn := func() string {
+		out, err := engineClientContainer(ctx, t, c, devEngine).
+			WithDirectory("/work", modDir).
+			WithWorkdir("/work").
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerNonNestedExec("call", "get-time", "--repo", url)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+
+	// Keep this as one deterministic flow: integration test middleware runs tests
+	// in parallel, and sibling subtests can race on the shared git remote state.
+	firstTime := callFn()
+	require.NotEmpty(t, firstTime)
+
+	cachedTime := callFn()
+	require.Equal(t, firstTime, cachedTime, "same repo state across sessions should hit DagOp cache")
+
+	pushToGitService(ctx, t, c, gitSvc, url)
+
+	updatedTime := callFn()
+	require.NotEqual(t, cachedTime, updatedTime, "ls-remote changes should bust cache")
+}
+
+// TestGitRefFunctionCacheInvalidation is the same as
+// TestGitFunctionCacheInvalidation but with a GitRef argument.
+func (GitSuite) TestGitRefFunctionCacheInvalidation(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	gitSvc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+
+	devEngine := devEngineContainerAsService(devEngineContainer(c,
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithServiceBinding("git-server", gitSvc)
+		},
+	))
+
+	modDir := goGitBase(t, c).
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error) {
+	return ref.Commit(ctx)
+}
+`).
+		Directory("/work")
+
+	callFn := func() string {
+		out, err := engineClientContainer(ctx, t, c, devEngine).
+			WithDirectory("/work", modDir).
+			WithWorkdir("/work").
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerNonNestedExec("call", "get-commit", "--ref", url)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+
+	// Keep this as one deterministic flow: integration test middleware runs tests
+	// in parallel, and sibling subtests can race on the shared git remote state.
+	firstSHA := callFn()
+	require.Regexp(t, `^[a-f0-9]{40}$`, firstSHA)
+
+	cachedSHA := callFn()
+	require.Equal(t, firstSHA, cachedSHA, "same repo state across sessions should hit DagOp cache")
+
+	pushToGitService(ctx, t, c, gitSvc, url)
+
+	updatedSHA := callFn()
+	require.NotEqual(t, cachedSHA, updatedSHA, "ls-remote changes should bust cache")
+	require.Regexp(t, `^[a-f0-9]{40}$`, updatedSHA)
+}
+
+// TestGitTreeCacheAcrossProtocols verifies protocol-sensitive behavior with
+// .git preserved (default) and protocol-agnostic behavior when .git is
+// discarded. This keeps cache behavior explicit for both common call patterns.
+func (GitSuite) TestGitTreeCacheAcrossProtocols(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create one bare repo, served via two different protocols.
+	content := c.Directory().WithNewFile("README.md", "cache test "+identity.NewID())
+	repoDir := makeGitDir(c, content, "main")
+
+	// git:// protocol (git-daemon on port 9418)
+	gitDaemon := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		WithDirectory("/root/srv", repoDir).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
+		AsService()
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+	gitURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	// HTTP protocol (nginx + dumb HTTP, reuses the same bare repo)
+	httpSvc := c.Container().
+		From("nginx").
+		WithNewFile("/etc/nginx/conf.d/default.conf", `
+server {
+	listen       80;
+	server_name  localhost;
+	location / {
+		root   /usr/share/nginx/html;
+		autoindex on;
+	}
+}
+`).
+		WithMountedDirectory("/usr/share/nginx/html", repoDir).
+		WithExposedPort(80).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	httpHost, err := httpSvc.Hostname(ctx)
+	require.NoError(t, err)
+	httpURL := fmt.Sprintf("http://%s/repo.git", httpHost)
+
+	// Both protocols should resolve the same commit.
+	gitRepo := c.Git(gitURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	httpRepo := c.Git(httpURL, dagger.GitOpts{ExperimentalServiceHost: httpSvc})
+
+	gitCommit, err := gitRepo.Head().Commit(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, gitCommit)
+
+	httpCommit, err := httpRepo.Head().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, gitCommit, httpCommit, "both protocols should resolve the same commit")
+
+	// With default tree() (.git kept), digest should differ because checkout
+	// records remote origin in .git/config.
+	gitTreeID, err := gitRepo.Head().Tree().ID(ctx)
+	require.NoError(t, err)
+
+	httpTreeID, err := httpRepo.Head().Tree().ID(ctx)
+	require.NoError(t, err)
+
+	var gitID, httpID call.ID
+	require.NoError(t, gitID.Decode(string(gitTreeID)))
+	require.NoError(t, httpID.Decode(string(httpTreeID)))
+	require.NotEqual(t, gitID.Digest(), httpID.Digest(),
+		"tree ObjectDigest should differ across protocols when .git is preserved")
+
+	// With discardGitDir=true, tree identity should be protocol-agnostic:
+	// only commit content + depth + discard mode should affect the digest.
+	gitContentTreeID, err := gitRepo.Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).ID(ctx)
+	require.NoError(t, err)
+
+	httpContentTreeID, err := httpRepo.Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).ID(ctx)
+	require.NoError(t, err)
+
+	var gitContentID, httpContentID call.ID
+	require.NoError(t, gitContentID.Decode(string(gitContentTreeID)))
+	require.NoError(t, httpContentID.Decode(string(httpContentTreeID)))
+	require.Equal(t, gitContentID.Digest(), httpContentID.Digest(),
+		"tree ObjectDigest should match across protocols when .git is discarded")
+}
+
+// TestGitCachePerClientFields verifies that CachePerClient fields are cached
+// within a session. We resolve fields, then push changes to the remote, then
+// query the same fields again. Because the dagql cache hits (same ID + same
+// clientID), the resolver doesn't re-run and we get stale pre-push data.
+// Stale data = proof of cache hit.
+func (GitSuite) TestGitCachePerClientFields(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := c.Directory().WithNewFile("README.md", "cache test "+identity.NewID())
+	gitSvc, url := gitService(ctx, t, c, content)
+	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: gitSvc})
+
+	// Step 1: Resolve all CachePerClient fields (populates dagql cache).
+	sha1, err := repo.Head().Commit(ctx)
+	require.NoError(t, err)
+	require.Regexp(t, `^[a-f0-9]{40}$`, sha1)
+
+	branches1, err := repo.Branches(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, branches1)
+
+	tags1, err := repo.Tags(ctx)
+	require.NoError(t, err)
+
+	// Step 2: Push a new commit + branch + tag to the remote.
+	// This changes server state but does NOT invalidate the dagql cache.
+	_, err = c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithServiceBinding("git-server", gitSvc).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", strings.Join([]string{
+			"touch newfile",
+			"git add newfile",
+			`git commit -m "new commit"`,
+			"git push origin main",
+			"git checkout -b feature",
+			"git push origin feature",
+			"git tag v1.0",
+			"git push origin v1.0",
+		}, " && ")}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	// Step 3: Same session — dagql cache should still return pre-push values.
+	// If CachePerClient caching works, the resolver doesn't re-run and we get
+	// stale data. If caching is broken, ls-remote re-runs and picks up changes.
+	t.Run("commit cached", func(ctx context.Context, t *testctx.T) {
+		sha2, err := repo.Head().Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, sha1, sha2, "same session should return cached commit")
+	})
+
+	t.Run("branches cached", func(ctx context.Context, t *testctx.T) {
+		branches2, err := repo.Branches(ctx)
+		require.NoError(t, err)
+		require.Equal(t, branches1, branches2, "same session should return cached branches")
+	})
+
+	t.Run("tags cached", func(ctx context.Context, t *testctx.T) {
+		tags2, err := repo.Tags(ctx)
+		require.NoError(t, err)
+		require.Equal(t, tags1, tags2, "same session should return cached tags")
+	})
 }
