@@ -177,9 +177,10 @@ type daggerClient struct {
 	// it requires the client's buildkit session, which isn't available during
 	// initialization (the session attachables request is blocked on the same
 	// locks that initializeDaggerClient holds, causing a deadlock).
-	pendingExtraModules []engine.ExtraModule
-	extraModulesOnce    sync.Once
-	extraModulesErr     error
+	pendingExtraModules  []engine.ExtraModule
+	extraModulesMu       sync.Mutex
+	extraModulesLoaded   bool
+	extraModulesErr      error
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -973,22 +974,28 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	}
 
 	allowedLLMModules := execMD.AllowedLLMModules
+	var extraModules []engine.ExtraModule
+	var skipWorkspaceModules bool
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
+		extraModules = md.ExtraModules
+		skipWorkspaceModules = md.SkipWorkspaceModules
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
-			ClientID:          execMD.ClientID,
-			ClientVersion:     clientVersion,
-			ClientSecretToken: execMD.SecretToken,
-			SessionID:         execMD.SessionID,
-			ClientHostname:    execMD.Hostname,
-			ClientStableID:    execMD.ClientStableID,
-			Labels:            map[string]string{},
-			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
-			AllowedLLMModules: allowedLLMModules,
+			ClientID:             execMD.ClientID,
+			ClientVersion:        clientVersion,
+			ClientSecretToken:    execMD.SecretToken,
+			SessionID:            execMD.SessionID,
+			ClientHostname:       execMD.Hostname,
+			ClientStableID:       execMD.ClientStableID,
+			Labels:               map[string]string{},
+			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
+			AllowedLLMModules:    allowedLLMModules,
+			ExtraModules:         extraModules,
+			SkipWorkspaceModules: skipWorkspaceModules,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
@@ -1170,6 +1177,22 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
+	// turn panics into graphql errors — must be set up before any code that
+	// could panic (including ensureExtraModulesLoaded and schema loading).
+	defer func() {
+		if v := recover(); v != nil {
+			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+			switch v := v.(type) {
+			case error:
+				rerr = gqlErr(v, http.StatusInternalServerError)
+			case string:
+				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
+			default:
+				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
+			}
+		}
+	}()
+
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
 	if trace.SpanContextFromContext(ctx).IsValid() {
@@ -1221,21 +1244,6 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// 	slog.Debug("graphql response", "response", string(pl), "error", err)
 	// 	return res
 	// })
-
-	// turn panics into graphql errors
-	defer func() {
-		if v := recover(); v != nil {
-			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			switch v := v.(type) {
-			case error:
-				rerr = gqlErr(v, http.StatusInternalServerError)
-			case string:
-				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
-			default:
-				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
-			}
-		}
-	}()
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
@@ -1444,24 +1452,38 @@ func (srv *Server) loadWorkspace(ctx context.Context, client *daggerClient, dag 
 // during client initialization (deadlock: initializeDaggerClient holds locks
 // that block the session attachables request from registering the session).
 // By the time serveQuery runs, locks are released and the session can register.
+//
+// Uses a mutex+flag instead of sync.Once so that transient failures
+// (e.g. session not yet registered) can be retried on subsequent requests.
 func (srv *Server) ensureExtraModulesLoaded(ctx context.Context, client *daggerClient) error {
 	if len(client.pendingExtraModules) == 0 {
 		return nil
 	}
-	client.extraModulesOnce.Do(func() {
-		// Wait for the client's buildkit session to be available.
-		if _, err := client.getClientCaller(client.clientID); err != nil {
-			client.extraModulesErr = fmt.Errorf("waiting for client session: %w", err)
-			return
+
+	client.extraModulesMu.Lock()
+	defer client.extraModulesMu.Unlock()
+
+	if client.extraModulesLoaded {
+		return client.extraModulesErr
+	}
+
+	// Wait for the client's buildkit session to be available.
+	// Don't mark as loaded on failure — allow retry on next request.
+	if _, err := client.getClientCaller(client.clientID); err != nil {
+		return fmt.Errorf("waiting for client session: %w", err)
+	}
+
+	for _, extra := range client.pendingExtraModules {
+		if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
+			// Module loading failure is permanent — mark as loaded with error.
+			client.extraModulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
+			client.extraModulesLoaded = true
+			return client.extraModulesErr
 		}
-		for _, extra := range client.pendingExtraModules {
-			if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
-				client.extraModulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
-				return
-			}
-		}
-	})
-	return client.extraModulesErr
+	}
+
+	client.extraModulesLoaded = true
+	return nil
 }
 
 // loadExtraModule resolves an extra module (e.g. from -m flag) and serves it.
@@ -1533,10 +1555,8 @@ func (srv *Server) loadWorkspaceModule(
 		return fmt.Errorf("resolving module source %q: %w", sourcePath, err)
 	}
 
-	// Serve module + dependencies (adds to client.deps, installs on dagql server)
-	client.stateMu.Lock()
-	defer client.stateMu.Unlock()
-
+	// Serve module + dependencies (adds to client.deps, installs on dagql server).
+	// Note: caller (loadWorkspace → initializeDaggerClient) already holds client.stateMu.
 	if err := srv.serveModule(client, mod.Self()); err != nil {
 		return err
 	}
