@@ -64,13 +64,20 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		return err // if nil, that's fine, nothing more to do here
 	}
 
-	srcDag, err := srcClient.deps.Schema(ctx)
+	// Ensure the query context is set for schema building. The ctx from
+	// initializeDaggerClient may not have it (it's set later), but
+	// lazilyLoadSchema needs it for dag.Select operations like __schemaJSONFile.
+	schemaCtx := ctx
+	if srcClient.dagqlRoot != nil {
+		schemaCtx = core.ContextWithQuery(schemaCtx, srcClient.dagqlRoot)
+	}
+	srcDag, err := srcClient.deps.Schema(schemaCtx)
 	if err != nil {
 		return fmt.Errorf("failed to get source schema: %w", err)
 	}
 
 	if len(secretIDs) > 0 {
-		secrets, err := dagql.LoadIDResults(ctx, srcDag, secretIDs)
+		secrets, err := dagql.LoadIDResults(schemaCtx, srcDag, secretIDs)
 		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load secrets: %w", err)
 		}
@@ -88,7 +95,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 
 	if len(socketIDs) > 0 {
-		sockets, err := dagql.LoadIDs(ctx, srcDag, socketIDs)
+		sockets, err := dagql.LoadIDs(schemaCtx, srcDag, socketIDs)
 		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load sockets: %w", err)
 		}
