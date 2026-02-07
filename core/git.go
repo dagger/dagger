@@ -47,9 +47,9 @@ type GitRepositoryBackend interface {
 // Starts unresolved — resolution happens via __resolve in core/schema/git.go.
 type GitRef struct {
 	Repo     dagql.ObjectResult[*GitRepository]
-	Backend  GitRefBackend  // nil until resolved
-	Ref      *gitutil.Ref   // Name is user input before resolution, canonical after
-	Resolved bool           `internal:"true"`
+	Backend  GitRefBackend // nil until resolved
+	Ref      *gitutil.Ref  // Name is user input before resolution, canonical after
+	Resolved bool          `internal:"true"`
 }
 
 type GitRefBackend interface {
@@ -107,7 +107,6 @@ func (ref *GitRef) Clone() *GitRef {
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {
 	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth)
 }
-
 
 // doGitCheckout performs a git checkout using the given git helper.
 //

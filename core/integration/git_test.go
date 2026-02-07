@@ -1985,10 +1985,9 @@ func (m *Test) GetCommit(ctx context.Context, ref *dagger.GitRef) (string, error
 	require.Regexp(t, `^[a-f0-9]{40}$`, updatedSHA)
 }
 
-// TestGitTreeCacheAcrossProtocols verifies that two different URLs pointing at
-// the same commit produce the same tree content. This proves that __tree's
-// ObjectDigest (keyed only on SHA + depth + discardGitDir) shares the expensive
-// git checkout across different protocols/URLs.
+// TestGitTreeCacheAcrossProtocols verifies protocol-sensitive behavior with
+// .git preserved (default) and protocol-agnostic behavior when .git is
+// discarded. This keeps cache behavior explicit for both common call patterns.
 func (GitSuite) TestGitTreeCacheAcrossProtocols(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -2042,10 +2041,8 @@ server {
 	require.NoError(t, err)
 	require.Equal(t, gitCommit, httpCommit, "both protocols should resolve the same commit")
 
-	// Both trees should share the same ObjectDigest (which is the DagOp cache
-	// key). The full serialized IDs differ (parent chain has different URLs),
-	// but the leaf digest — set by __tree's WithObjectDigest — should match.
-	// Same digest = same DagOp key = checkout shared across protocols.
+	// With default tree() (.git kept), digest should differ because checkout
+	// records remote origin in .git/config.
 	gitTreeID, err := gitRepo.Head().Tree().ID(ctx)
 	require.NoError(t, err)
 
@@ -2055,8 +2052,22 @@ server {
 	var gitID, httpID call.ID
 	require.NoError(t, gitID.Decode(string(gitTreeID)))
 	require.NoError(t, httpID.Decode(string(httpTreeID)))
-	require.Equal(t, gitID.Digest(), httpID.Digest(),
-		"tree ObjectDigest should match across protocols (same DagOp cache key)")
+	require.NotEqual(t, gitID.Digest(), httpID.Digest(),
+		"tree ObjectDigest should differ across protocols when .git is preserved")
+
+	// With discardGitDir=true, tree identity should be protocol-agnostic:
+	// only commit content + depth + discard mode should affect the digest.
+	gitContentTreeID, err := gitRepo.Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).ID(ctx)
+	require.NoError(t, err)
+
+	httpContentTreeID, err := httpRepo.Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).ID(ctx)
+	require.NoError(t, err)
+
+	var gitContentID, httpContentID call.ID
+	require.NoError(t, gitContentID.Decode(string(gitContentTreeID)))
+	require.NoError(t, httpContentID.Decode(string(httpContentTreeID)))
+	require.Equal(t, gitContentID.Digest(), httpContentID.Digest(),
+		"tree ObjectDigest should match across protocols when .git is discarded")
 }
 
 // TestGitCachePerClientFields verifies that CachePerClient fields are cached

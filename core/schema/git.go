@@ -665,8 +665,24 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		treeSelector.Args = selectorArgs
 	}
 
+	// Semantics: with .git kept this is a checkout (content + repo metadata), so
+	// protocol remains part of identity; with .git discarded this is just tracked
+	// commit content, so we normalize GitRef identity for cross-protocol reuse.
+	parentForTree := parent
+	if ref.Ref != nil && ref.Ref.SHA != "" {
+		effectiveDiscard := ref.Repo.Self().DiscardGitDir || args.DiscardGitDir
+		if effectiveDiscard {
+			parentForTree = parent.WithObjectDigest(hashutil.HashStrings(
+				"git-ref-tree",
+				ref.Ref.Name,
+				ref.Ref.SHA,
+				"discard",
+			))
+		}
+	}
+
 	var result dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &result, treeSelector); err != nil {
+	if err := srv.Select(ctx, parentForTree, &result, treeSelector); err != nil {
 		return inst, err
 	}
 	return result, nil
