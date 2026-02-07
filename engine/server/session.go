@@ -172,6 +172,15 @@ type daggerClient struct {
 	meterProvider  *sdkmetric.MeterProvider
 	metricExporter sdkmetric.Exporter
 
+	// Extra modules (e.g. from -m flag) that need to be loaded lazily.
+	// Loading is deferred from initializeDaggerClient to serveQuery because
+	// it requires the client's buildkit session, which isn't available during
+	// initialization (the session attachables request is blocked on the same
+	// locks that initializeDaggerClient holds, causing a deadlock).
+	pendingExtraModules []engine.ExtraModule
+	extraModulesOnce    sync.Once
+	extraModulesErr     error
+
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
 	// This field exists to "keepalive" the db while the client
@@ -1191,6 +1200,13 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	r = r.WithContext(ctx)
 
+	// Load any pending extra modules (e.g. from -m flag). This is deferred
+	// from initializeDaggerClient because it needs the client's buildkit
+	// session, which only becomes available after the locks are released.
+	if err := srv.ensureExtraModulesLoaded(ctx, client); err != nil {
+		return gqlErr(fmt.Errorf("loading extra modules: %w", err), http.StatusInternalServerError)
+	}
+
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
 	schema, err := client.deps.Schema(ctx)
 	if err != nil {
@@ -1380,7 +1396,7 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 
 // loadWorkspace detects the workspace from the client's working directory
 // and loads all configured modules onto the dagql server.
-// It also loads any extra modules specified in the client metadata.
+// Extra modules (from -m flag) are stored for deferred loading in serveQuery.
 func (srv *Server) loadWorkspace(ctx context.Context, client *daggerClient, dag *dagql.Server) error {
 	clientMD := client.clientMetadata
 
@@ -1411,16 +1427,41 @@ func (srv *Server) loadWorkspace(ctx context.Context, client *daggerClient, dag 
 		}
 	}
 
-	// 2. Load extra modules (e.g. from -m flag)
-	if clientMD != nil {
-		for _, extra := range clientMD.ExtraModules {
-			if err := srv.loadExtraModule(ctx, client, dag, extra); err != nil {
-				return fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
-			}
-		}
+	// 2. Store extra modules for deferred loading (done in serveQuery).
+	// We cannot load them here because initializeDaggerClient holds locks
+	// that block the session attachables request, and module loading needs
+	// the client's buildkit session which is registered by that request.
+	if clientMD != nil && len(clientMD.ExtraModules) > 0 {
+		client.pendingExtraModules = clientMD.ExtraModules
 	}
 
 	return nil
+}
+
+// ensureExtraModulesLoaded loads any pending extra modules (from -m flag).
+// This is called from serveQuery, NOT from initializeDaggerClient, because
+// module loading requires the client's buildkit session which isn't available
+// during client initialization (deadlock: initializeDaggerClient holds locks
+// that block the session attachables request from registering the session).
+// By the time serveQuery runs, locks are released and the session can register.
+func (srv *Server) ensureExtraModulesLoaded(ctx context.Context, client *daggerClient) error {
+	if len(client.pendingExtraModules) == 0 {
+		return nil
+	}
+	client.extraModulesOnce.Do(func() {
+		// Wait for the client's buildkit session to be available.
+		if _, err := client.getClientCaller(client.clientID); err != nil {
+			client.extraModulesErr = fmt.Errorf("waiting for client session: %w", err)
+			return
+		}
+		for _, extra := range client.pendingExtraModules {
+			if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
+				client.extraModulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
+				return
+			}
+		}
+	})
+	return client.extraModulesErr
 }
 
 // loadExtraModule resolves an extra module (e.g. from -m flag) and serves it.
