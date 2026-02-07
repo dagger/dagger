@@ -143,10 +143,24 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 
 	dagintro.Install[*Query](dag)
 
+	// When user modules are present, skip core Query root fields so that
+	// dagger functions/call only shows module functions.
+	hasUserModules := false
+	for _, mod := range d.Mods {
+		if mod.Name() != ModuleName {
+			hasUserModules = true
+			break
+		}
+	}
+
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
 	for _, mod := range d.Mods {
+		if hasUserModules && mod.Name() == ModuleName {
+			dag.SkipRootFieldInstalls = true
+		}
 		err := mod.Install(ctx, dag)
+		dag.SkipRootFieldInstalls = false
 		if err != nil {
 			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}

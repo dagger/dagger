@@ -57,6 +57,12 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache *SessionCache
+
+	// SkipRootFieldInstalls, when true, causes Fields[T].Install to skip
+	// installing non-internal fields on the root type. Internal fields
+	// (prefixed with __) are still installed. This is used to hide core
+	// API functions from the Query root when user modules are loaded.
+	SkipRootFieldInstalls bool
 }
 
 type ServerSchema struct {
