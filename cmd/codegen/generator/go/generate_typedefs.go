@@ -34,7 +34,7 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	mfs := memfs.New()
 	var overlay fs.FS = layerfs.New(
 		mfs,
-		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
+		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, internalDir(moduleConfig.PortableDaggerAPI))},
 	)
 
 	res := &generator.GeneratedState{
@@ -46,8 +46,10 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
 
-	// Use the internal package when getting the typedef so we don't download it every time.
-	pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
+	if !moduleConfig.PortableDaggerAPI {
+		// Use the internal package when getting the typedef so we don't download it every time.
+		pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
+	}
 
 	if outDir != "." {
 		if err = mfs.MkdirAll(outDir, 0700); err != nil {
@@ -79,7 +81,7 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 
 	if len(initialGoFiles) == 0 {
 		// write an initial main.go if no main pkg exists yet
-		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
+		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName, moduleConfig.PortableDaggerAPI)), 0600); err != nil {
 			return nil, err
 		}
 
