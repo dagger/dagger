@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -64,12 +65,16 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		return err // if nil, that's fine, nothing more to do here
 	}
 
-	// Ensure the query context is set for schema building. The ctx from
-	// initializeDaggerClient may not have it (it's set later), but
-	// lazilyLoadSchema needs it for dag.Select operations like __schemaJSONFile.
+	// Build the source schema using the srcClient's context. We need both:
+	// - The query context (dagqlRoot) so dag.Select operations work
+	// - The client metadata so Buildkit(ctx) resolves to the srcClient
+	//   (not the partially-initialized destClient whose bkClient is nil)
 	schemaCtx := ctx
 	if srcClient.dagqlRoot != nil {
 		schemaCtx = core.ContextWithQuery(schemaCtx, srcClient.dagqlRoot)
+	}
+	if srcClient.clientMetadata != nil {
+		schemaCtx = engine.ContextWithClientMetadata(schemaCtx, srcClient.clientMetadata)
 	}
 	srcDag, err := srcClient.deps.Schema(schemaCtx)
 	if err != nil {
