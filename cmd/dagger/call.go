@@ -57,7 +57,9 @@ available functions.
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) (rerr error) {
-			mod, err := initializeDefaultModule(ctx, engineClient.Dagger())
+			// -m is now handled at engine connect time (ExtraModules with AutoAlias),
+			// so the CLI always uses initializeWorkspace — no branching needed.
+			mod, err := initializeWorkspace(ctx, engineClient.Dagger())
 			if err != nil {
 				return err
 			}
@@ -87,13 +89,32 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			return functionListRun(o, cmd.OutOrStdout())
+			// When -m is used, the module is loaded with auto-aliases at root.
+			// Don't apply workspace filtering — show all functions including aliases.
+			_, hasExplicit := getExplicitModuleSourceRef()
+			isWorkspace := mod.Name == "" && !hasExplicit
+			return functionListRun(o, cmd.OutOrStdout(), isWorkspace)
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer) error {
+func functionListRun(o functionProvider, writer io.Writer, workspaceMode bool) error {
 	fns, skipped := GetSupportedFunctions(o)
+
+	// In workspace mode, only show workspace module constructors.
+	// If no module constructors are found, fall back to showing all
+	// functions (core API) so the user gets useful output.
+	if workspaceMode {
+		filtered := make([]*modFunction, 0, len(fns))
+		for _, fn := range fns {
+			if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
+				filtered = append(filtered, fn)
+			}
+		}
+		if len(filtered) > 0 {
+			fns = filtered
+		}
+	}
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",

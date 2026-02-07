@@ -32,19 +32,15 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 	return def, nil
 }
 
-// initializeDefaultModule loads the module referenced by the -m,--mod flag
-//
-// By default, looks for a module in the current directory, or above.
-// Returns an error if the module is not found or invalid.
-func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
-	if moduleNoURL {
-		return nil, fmt.Errorf("cannot load module when --no-mod is specified")
+// initializeWorkspace loads type definitions from the workspace.
+// Modules are already served by the engine at connect time.
+// MainObject is the Query root — workspace module constructors appear as Query root fields.
+func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
+	def := &moduleDef{}
+	if err := def.loadTypeDefs(ctx, dag); err != nil {
+		return nil, err
 	}
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
-	}
-	return initializeModule(ctx, dag, modRef, dag.ModuleSource(modRef))
+	return def, nil
 }
 
 // initializeModule loads the module at the given source ref

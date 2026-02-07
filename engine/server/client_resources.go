@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -64,13 +65,24 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		return err // if nil, that's fine, nothing more to do here
 	}
 
-	srcDag, err := srcClient.deps.Schema(ctx)
+	// Build the source schema using the srcClient's context. We need both:
+	// - The query context (dagqlRoot) so dag.Select operations work
+	// - The client metadata so Buildkit(ctx) resolves to the srcClient
+	//   (not the partially-initialized destClient whose bkClient is nil)
+	schemaCtx := ctx
+	if srcClient.dagqlRoot != nil {
+		schemaCtx = core.ContextWithQuery(schemaCtx, srcClient.dagqlRoot)
+	}
+	if srcClient.clientMetadata != nil {
+		schemaCtx = engine.ContextWithClientMetadata(schemaCtx, srcClient.clientMetadata)
+	}
+	srcDag, err := srcClient.deps.Schema(schemaCtx)
 	if err != nil {
 		return fmt.Errorf("failed to get source schema: %w", err)
 	}
 
 	if len(secretIDs) > 0 {
-		secrets, err := dagql.LoadIDResults(ctx, srcDag, secretIDs)
+		secrets, err := dagql.LoadIDResults(schemaCtx, srcDag, secretIDs)
 		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load secrets: %w", err)
 		}
@@ -88,7 +100,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 
 	if len(socketIDs) > 0 {
-		sockets, err := dagql.LoadIDs(ctx, srcDag, socketIDs)
+		sockets, err := dagql.LoadIDs(schemaCtx, srcDag, socketIDs)
 		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load sockets: %w", err)
 		}

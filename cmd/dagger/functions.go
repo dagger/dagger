@@ -288,7 +288,9 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	if fc.DisableModuleLoad || moduleNoURL {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
-		mod, err = initializeDefaultModule(ctx, fc.c.Dagger())
+		// -m is now handled at engine connect time (ExtraModules with AutoAlias),
+		// so the CLI always uses initializeWorkspace — no branching needed.
+		mod, err = initializeWorkspace(ctx, fc.c.Dagger())
 	}
 	if err != nil {
 		return err
@@ -460,6 +462,13 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	fns, skipped := GetSupportedFunctions(fnProvider)
 
 	for _, fn := range fns {
+		// In workspace mode (MainObject == Query root, no module name),
+		// only show workspace module constructors on the Query root type.
+		if fc.isWorkspaceRoot(typeDef) {
+			if fn.ReturnType.AsObject == nil || fn.ReturnType.AsObject.SourceModuleName == "" {
+				continue // skip core API fields
+			}
+		}
 		subCmd := fc.makeSubCmd(ctx, fn)
 		cmd.AddCommand(subCmd)
 	}
@@ -499,6 +508,24 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 	newCmd.SetContext(ctx)
 
 	return newCmd
+}
+
+// isWorkspaceRoot returns true if we're in workspace mode and the given type
+// is the Query root type. In workspace mode, only module constructors should
+// be shown as top-level sub-commands.
+// When -m is used (explicit module with auto-alias), this returns false so
+// that aliased functions at Query root are shown as sub-commands.
+func (fc *FuncCommand) isWorkspaceRoot(typeDef *modTypeDef) bool {
+	if fc.DisableModuleLoad {
+		return false
+	}
+	// When -m is used, the module is loaded with auto-aliases at root.
+	// Don't filter — show all functions including aliases.
+	if _, hasExplicit := getExplicitModuleSourceRef(); hasExplicit {
+		return false
+	}
+	// Workspace mode: no explicit module loaded (Name == ""), MainObject is Query root
+	return fc.mod.Name == "" && typeDef.AsObject != nil && typeDef.AsObject.Name == "Query"
 }
 
 // selectFunc adds the function selection to the query.

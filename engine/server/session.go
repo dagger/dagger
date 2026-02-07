@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -47,6 +48,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -169,6 +171,16 @@ type daggerClient struct {
 
 	meterProvider  *sdkmetric.MeterProvider
 	metricExporter sdkmetric.Exporter
+
+	// Extra modules (e.g. from -m flag) that need to be loaded lazily.
+	// Loading is deferred from initializeDaggerClient to serveQuery because
+	// it requires the client's buildkit session, which isn't available during
+	// initialization (the session attachables request is blocked on the same
+	// locks that initializeDaggerClient holds, causing a deadlock).
+	pendingExtraModules  []engine.ExtraModule
+	extraModulesMu       sync.Mutex
+	extraModulesLoaded   bool
+	extraModulesErr      error
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -657,6 +669,13 @@ func (srv *Server) initializeDaggerClient(
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
+	// Detect workspace and load modules for the main client
+	if opts.EncodedModuleID == "" {
+		if err := srv.loadWorkspace(ctx, client, coreMod.Dag); err != nil {
+			return fmt.Errorf("workspace loading: %w", err)
+		}
+	}
+
 	// configure OTel providers that export to SQLite
 	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	tracerOpts := []sdktrace.TracerProviderOption{
@@ -948,22 +967,28 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	}
 
 	allowedLLMModules := execMD.AllowedLLMModules
+	var extraModules []engine.ExtraModule
+	var skipWorkspaceModules bool
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
+		extraModules = md.ExtraModules
+		skipWorkspaceModules = md.SkipWorkspaceModules
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
-			ClientID:          execMD.ClientID,
-			ClientVersion:     clientVersion,
-			ClientSecretToken: execMD.SecretToken,
-			SessionID:         execMD.SessionID,
-			ClientHostname:    execMD.Hostname,
-			ClientStableID:    execMD.ClientStableID,
-			Labels:            map[string]string{},
-			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
-			AllowedLLMModules: allowedLLMModules,
+			ClientID:             execMD.ClientID,
+			ClientVersion:        clientVersion,
+			ClientSecretToken:    execMD.SecretToken,
+			SessionID:            execMD.SessionID,
+			ClientHostname:       execMD.Hostname,
+			ClientStableID:       execMD.ClientStableID,
+			Labels:               map[string]string{},
+			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
+			AllowedLLMModules:    allowedLLMModules,
+			ExtraModules:         extraModules,
+			SkipWorkspaceModules: skipWorkspaceModules,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
@@ -1145,6 +1170,22 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
+	// turn panics into graphql errors — must be set up before any code that
+	// could panic (including ensureExtraModulesLoaded and schema loading).
+	defer func() {
+		if v := recover(); v != nil {
+			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+			switch v := v.(type) {
+			case error:
+				rerr = gqlErr(v, http.StatusInternalServerError)
+			case string:
+				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
+			default:
+				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
+			}
+		}
+	}()
+
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
 	if trace.SpanContextFromContext(ctx).IsValid() {
@@ -1175,6 +1216,13 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	r = r.WithContext(ctx)
 
+	// Load any pending extra modules (e.g. from -m flag). This is deferred
+	// from initializeDaggerClient because it needs the client's buildkit
+	// session, which only becomes available after the locks are released.
+	if err := srv.ensureExtraModulesLoaded(ctx, client); err != nil {
+		return gqlErr(fmt.Errorf("loading extra modules: %w", err), http.StatusInternalServerError)
+	}
+
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
 	schema, err := client.deps.Schema(ctx)
 	if err != nil {
@@ -1189,21 +1237,6 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// 	slog.Debug("graphql response", "response", string(pl), "error", err)
 	// 	return res
 	// })
-
-	// turn panics into graphql errors
-	defer func() {
-		if v := recover(); v != nil {
-			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			switch v := v.(type) {
-			case error:
-				rerr = gqlErr(v, http.StatusInternalServerError)
-			case string:
-				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
-			default:
-				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
-			}
-		}
-	}()
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
@@ -1360,6 +1393,172 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 	}
 
 	return true
+}
+
+// loadWorkspace detects the workspace from the client's working directory
+// and loads all configured modules onto the dagql server.
+// Extra modules (from -m flag) are stored for deferred loading in serveQuery.
+func (srv *Server) loadWorkspace(ctx context.Context, client *daggerClient, dag *dagql.Server) error {
+	clientMD := client.clientMetadata
+
+	// 1. Load workspace modules (unless skipped)
+	if clientMD == nil || !clientMD.SkipWorkspaceModules {
+		cwd, err := client.bkClient.AbsPath(ctx, ".")
+		if err != nil {
+			// The caller session may not be available during client initialization
+			// (e.g. nested dagger execution inside a container — the HTTP handler
+			// runs before the CLI's buildkit session is established, and blocking
+			// would deadlock). In that case there's no host workspace to detect.
+			slog.Debug("skipping workspace detection: caller session not available", "error", err)
+		} else {
+			statFS := core.NewCallerStatFS(client.bkClient)
+			ws, err := workspace.Detect(ctx, statFS, client.bkClient.ReadCallerHostFile, cwd)
+			if err != nil {
+				return err
+			}
+
+			if ws.Config != nil && len(ws.Config.Modules) > 0 {
+				for name, entry := range ws.Config.Modules {
+					sourcePath := filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
+					if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath); err != nil {
+						return fmt.Errorf("loading workspace module %q: %w", name, err)
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Store extra modules for deferred loading (done in serveQuery).
+	// We cannot load them here because initializeDaggerClient holds locks
+	// that block the session attachables request, and module loading needs
+	// the client's buildkit session which is registered by that request.
+	if clientMD != nil && len(clientMD.ExtraModules) > 0 {
+		client.pendingExtraModules = clientMD.ExtraModules
+	}
+
+	return nil
+}
+
+// ensureExtraModulesLoaded loads any pending extra modules (from -m flag).
+// This is called from serveQuery, NOT from initializeDaggerClient, because
+// module loading requires the client's buildkit session which isn't available
+// during client initialization (deadlock: initializeDaggerClient holds locks
+// that block the session attachables request from registering the session).
+// By the time serveQuery runs, locks are released and the session can register.
+//
+// Uses a mutex+flag instead of sync.Once so that transient failures
+// (e.g. session not yet registered) can be retried on subsequent requests.
+func (srv *Server) ensureExtraModulesLoaded(ctx context.Context, client *daggerClient) error {
+	if len(client.pendingExtraModules) == 0 {
+		return nil
+	}
+
+	client.extraModulesMu.Lock()
+	defer client.extraModulesMu.Unlock()
+
+	if client.extraModulesLoaded {
+		return client.extraModulesErr
+	}
+
+	// Wait for the client's buildkit session to be available.
+	// Don't mark as loaded on failure — allow retry on next request.
+	if _, err := client.getClientCaller(client.clientID); err != nil {
+		return fmt.Errorf("waiting for client session: %w", err)
+	}
+
+	for _, extra := range client.pendingExtraModules {
+		if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
+			// Module loading failure is permanent — mark as loaded with error.
+			client.extraModulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
+			client.extraModulesLoaded = true
+			return client.extraModulesErr
+		}
+	}
+
+	client.extraModulesLoaded = true
+	return nil
+}
+
+// loadExtraModule resolves an extra module (e.g. from -m flag) and serves it.
+// Unlike workspace modules, it does not set disableFindUp (supports relative paths,
+// `.`, git URLs). If Alias is true, the module's AutoAlias flag is set so that
+// its functions are aliased to the Query root.
+func (srv *Server) loadExtraModule(
+	ctx context.Context,
+	client *daggerClient,
+	dag *dagql.Server,
+	extra engine.ExtraModule,
+) error {
+	var mod dagql.ObjectResult[*core.Module]
+	err := dag.Select(ctx, dag.Root(), &mod,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(extra.Ref)},
+			},
+		},
+		dagql.Selector{Field: "asModule"},
+	)
+	if err != nil {
+		return fmt.Errorf("resolving module source %q: %w", extra.Ref, err)
+	}
+
+	if extra.Name != "" {
+		mod.Self().NameField = extra.Name
+	}
+	if extra.Alias {
+		mod.Self().AutoAlias = true
+	}
+
+	// Serve module + dependencies
+	client.stateMu.Lock()
+	defer client.stateMu.Unlock()
+
+	if err := srv.serveModule(client, mod.Self()); err != nil {
+		return err
+	}
+	for _, depMod := range mod.Self().Deps.Mods {
+		if err := srv.serveModule(client, depMod); err != nil {
+			return fmt.Errorf("serving dependency %s: %w", depMod.Name(), err)
+		}
+	}
+	return nil
+}
+
+// loadWorkspaceModule resolves a module through the dagql pipeline and serves it
+// to the client. This adds the module's constructor as a Query root field.
+func (srv *Server) loadWorkspaceModule(
+	ctx context.Context,
+	client *daggerClient,
+	dag *dagql.Server,
+	name, sourcePath string,
+) error {
+	var mod dagql.ObjectResult[*core.Module]
+	err := dag.Select(ctx, dag.Root(), &mod,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(sourcePath)},
+				{Name: "disableFindUp", Value: dagql.Boolean(true)},
+			},
+		},
+		dagql.Selector{Field: "asModule"},
+	)
+	if err != nil {
+		return fmt.Errorf("resolving module source %q: %w", sourcePath, err)
+	}
+
+	// Serve module + dependencies (adds to client.deps, installs on dagql server).
+	// Note: caller (loadWorkspace → initializeDaggerClient) already holds client.stateMu.
+	if err := srv.serveModule(client, mod.Self()); err != nil {
+		return err
+	}
+	for _, depMod := range mod.Self().Deps.Mods {
+		if err := srv.serveModule(client, depMod); err != nil {
+			return fmt.Errorf("serving dependency %s: %w", depMod.Name(), err)
+		}
+	}
+	return nil
 }
 
 // If the current client is coming from a function, return the module that function is from
