@@ -1379,7 +1379,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		remoteEngineID = c.connector.EngineID()
 	}
 
-	return engine.ClientMetadata{
+	md := engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
 		SessionID:                 c.SessionID,
@@ -1400,6 +1400,13 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
 	}
+
+	if c.Module != "" {
+		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Alias: true}}
+		md.SkipWorkspaceModules = true
+	}
+
+	return md
 }
 
 func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {
