@@ -4786,6 +4786,10 @@ class EngineCache(Type):
         self,
         *,
         use_default_policy: bool | None = False,
+        max_used_space: str | None = "",
+        reserved_space: str | None = "",
+        min_free_space: str | None = "",
+        target_space: str | None = "",
     ) -> Void | None:
         """Prune the cache of releaseable entries
 
@@ -4794,6 +4798,18 @@ class EngineCache(Type):
         use_default_policy:
             Use the engine-wide default pruning policy if true, otherwise
             prune the whole cache of any releasable entries.
+        max_used_space:
+            Override the maximum disk space to keep before pruning (e.g.
+            "200GB" or "80%").
+        reserved_space:
+            Override the minimum disk space to retain during pruning (e.g.
+            "500GB" or "10%").
+        min_free_space:
+            Override the minimum free disk space target during pruning (e.g.
+            "20GB" or "20%").
+        target_space:
+            Override the target disk space to keep after pruning (e.g. "200GB"
+            or "50%").
 
         Returns
         -------
@@ -4810,6 +4826,10 @@ class EngineCache(Type):
         """
         _args = [
             Arg("useDefaultPolicy", use_default_policy, False),
+            Arg("maxUsedSpace", max_used_space, ""),
+            Arg("reservedSpace", reserved_space, ""),
+            Arg("minFreeSpace", min_free_space, ""),
+            Arg("targetSpace", target_space, ""),
         ]
         _ctx = self._select("prune", _args)
         await _ctx.execute()

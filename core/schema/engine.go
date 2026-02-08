@@ -38,6 +38,10 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 			Doc("Prune the cache of releaseable entries").
 			Args(
 				dagql.Arg("useDefaultPolicy").Doc("Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries."),
+				dagql.Arg("maxUsedSpace").Doc("Override the maximum disk space to keep before pruning (e.g. \"200GB\" or \"80%\")."),
+				dagql.Arg("reservedSpace").Doc("Override the minimum disk space to retain during pruning (e.g. \"500GB\" or \"10%\")."),
+				dagql.Arg("minFreeSpace").Doc("Override the minimum free disk space target during pruning (e.g. \"20GB\" or \"20%\")."),
+				dagql.Arg("targetSpace").Doc("Override the target disk space to keep after pruning (e.g. \"200GB\" or \"50%\")."),
 			),
 	}.Install(srv)
 
@@ -126,7 +130,11 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectRes
 }
 
 func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache, args struct {
-	UseDefaultPolicy bool `default:"false"`
+	UseDefaultPolicy bool   `default:"false"`
+	MaxUsedSpace     string `default:""`
+	ReservedSpace    string `default:""`
+	MinFreeSpace     string `default:""`
+	TargetSpace      string `default:""`
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 	query, err := core.CurrentQuery(ctx)
@@ -137,7 +145,13 @@ func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache,
 		return void, err
 	}
 
-	_, err = query.PruneEngineLocalCacheEntries(ctx, args.UseDefaultPolicy)
+	_, err = query.PruneEngineLocalCacheEntries(ctx, core.EngineCachePruneOptions{
+		UseDefaultPolicy: args.UseDefaultPolicy,
+		MaxUsedSpace:     args.MaxUsedSpace,
+		ReservedSpace:    args.ReservedSpace,
+		MinFreeSpace:     args.MinFreeSpace,
+		TargetSpace:      args.TargetSpace,
+	})
 	if err != nil {
 		return void, fmt.Errorf("failed to prune cache entries: %w", err)
 	}

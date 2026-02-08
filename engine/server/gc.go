@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/engine/config"
@@ -46,9 +47,10 @@ func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCac
 	return set, nil
 }
 
-// Prune the local cache of releaseable entries. If useDefaultPolicy is true, use the engine-wide default pruning policy,
-// otherwise prune the whole cache of any releasable entries.
-func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, useDefaultPolicy bool) (*core.EngineCacheEntrySet, error) {
+// Prune the local cache of releaseable entries. If UseDefaultPolicy is true,
+// use the engine-wide default pruning policy, otherwise prune the whole cache
+// of any releasable entries.
+func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.EngineCachePruneOptions) (*core.EngineCacheEntrySet, error) {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 
@@ -70,11 +72,12 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, useDefaultP
 		}
 	}()
 
-	pruneOpts := []bkclient.PruneInfo{{All: true}}
-	if policy := srv.baseWorker.GCPolicy(); useDefaultPolicy && len(policy) > 0 {
-		pruneOpts = policy
+	dstat, _ := disk.GetDiskStat(srv.rootDir)
+	pruneOpts, err := resolveEngineLocalCachePruneOptions(srv.baseWorker.GCPolicy(), opts, dstat)
+	if err != nil {
+		return nil, err
 	}
-	err := srv.baseWorker.Prune(ctx, ch, pruneOpts...)
+	err = srv.baseWorker.Prune(ctx, ch, pruneOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("worker failed to prune local cache: %w", err)
 	}
@@ -111,6 +114,97 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, useDefaultP
 	set.EntryCount = len(set.EntriesList)
 
 	return set, nil
+}
+
+func trimmedPruneOpts(opts core.EngineCachePruneOptions) (maxUsedSpace, reservedSpace, minFreeSpace, targetSpace string) {
+	return strings.TrimSpace(opts.MaxUsedSpace),
+		strings.TrimSpace(opts.ReservedSpace),
+		strings.TrimSpace(opts.MinFreeSpace),
+		strings.TrimSpace(opts.TargetSpace)
+}
+
+func resolveEngineLocalCachePruneOptions(defaultPolicy []bkclient.PruneInfo, opts core.EngineCachePruneOptions, dstat disk.DiskStat) ([]bkclient.PruneInfo, error) {
+	pruneOpts := []bkclient.PruneInfo{{All: true}}
+	if opts.UseDefaultPolicy && len(defaultPolicy) > 0 {
+		// Copy to avoid mutating the worker policy if per-call overrides are set.
+		pruneOpts = append([]bkclient.PruneInfo(nil), defaultPolicy...)
+	}
+
+	maxUsedSpace, reservedSpace, minFreeSpace, targetSpace := trimmedPruneOpts(opts)
+	if maxUsedSpace != "" || reservedSpace != "" || minFreeSpace != "" || targetSpace != "" {
+		if err := applyEngineCachePruneSpaceOverrides(pruneOpts, dstat, maxUsedSpace, reservedSpace, minFreeSpace, targetSpace); err != nil {
+			return nil, err
+		}
+	}
+	return pruneOpts, nil
+}
+
+func applyEngineCachePruneSpaceOverrides(pruneOpts []bkclient.PruneInfo, dstat disk.DiskStat, maxUsedSpace, reservedSpace, minFreeSpace, targetSpace string) error {
+	var (
+		maxUsedSpaceBytes  int64
+		hasMaxUsedSpace    bool
+		reservedSpaceBytes int64
+		hasReservedSpace   bool
+		minFreeSpaceBytes  int64
+		hasMinFreeSpace    bool
+		targetSpaceBytes   int64
+		hasTargetSpace     bool
+		err                error
+	)
+
+	if maxUsedSpace != "" {
+		maxUsedSpaceBytes, err = parseEngineCacheDiskSpace("maxUsedSpace", maxUsedSpace, dstat)
+		if err != nil {
+			return err
+		}
+		hasMaxUsedSpace = true
+	}
+	if reservedSpace != "" {
+		reservedSpaceBytes, err = parseEngineCacheDiskSpace("reservedSpace", reservedSpace, dstat)
+		if err != nil {
+			return err
+		}
+		hasReservedSpace = true
+	}
+	if minFreeSpace != "" {
+		minFreeSpaceBytes, err = parseEngineCacheDiskSpace("minFreeSpace", minFreeSpace, dstat)
+		if err != nil {
+			return err
+		}
+		hasMinFreeSpace = true
+	}
+	if targetSpace != "" {
+		targetSpaceBytes, err = parseEngineCacheDiskSpace("targetSpace", targetSpace, dstat)
+		if err != nil {
+			return err
+		}
+		hasTargetSpace = true
+	}
+
+	for i := range pruneOpts {
+		if hasMaxUsedSpace {
+			pruneOpts[i].MaxUsedSpace = maxUsedSpaceBytes
+		}
+		if hasReservedSpace {
+			pruneOpts[i].ReservedSpace = reservedSpaceBytes
+		}
+		if hasMinFreeSpace {
+			pruneOpts[i].MinFreeSpace = minFreeSpaceBytes
+		}
+		if hasTargetSpace {
+			pruneOpts[i].TargetSpace = targetSpaceBytes
+		}
+	}
+
+	return nil
+}
+
+func parseEngineCacheDiskSpace(argName, argValue string, dstat disk.DiskStat) (int64, error) {
+	var diskSpace bkconfig.DiskSpace
+	if err := diskSpace.UnmarshalText([]byte(argValue)); err != nil {
+		return 0, fmt.Errorf("invalid %s value %q: %w", argName, argValue, err)
+	}
+	return diskSpace.AsBytes(dstat), nil
 }
 
 func (srv *Server) gc() {
