@@ -4,6 +4,8 @@ Branch: `workspace`
 
 ## What This Is
 
+Implementing part 1 of the "Dagger Workspaces" proposal: https://gist.github.com/shykes/e4778dc5ec17c9a8bbd3120f5c21ce73
+
 Engine-side workspace module loading. The engine loads modules at connect time — from `.dagger/config.toml` (workspace modules) or from `-m` flag (extra modules) — installs their constructors on the Query root, and optionally auto-aliases their functions to the root so the CLI doesn't need module-specific branching.
 
 ## Commit History
