@@ -9,13 +9,13 @@ import (
 // Config represents a parsed .dagger/config.toml workspace configuration.
 type Config struct {
 	Modules map[string]ModuleEntry `toml:"modules"`
-	Aliases map[string][]string    `toml:"aliases"`
 }
 
 // ModuleEntry represents a single module entry in the workspace config.
 type ModuleEntry struct {
 	Source string            `toml:"source"`
 	Config map[string]string `toml:"config"`
+	Alias  bool              `toml:"alias"`
 }
 
 // ParseConfig parses a config.toml file from raw bytes.
