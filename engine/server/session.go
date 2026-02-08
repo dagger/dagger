@@ -1427,7 +1427,7 @@ func (srv *Server) loadWorkspace(ctx context.Context, client *daggerClient, dag 
 			if ws.Config != nil && len(ws.Config.Modules) > 0 {
 				for name, entry := range ws.Config.Modules {
 					sourcePath := filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
-					if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath); err != nil {
+					if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias); err != nil {
 						return fmt.Errorf("loading workspace module %q: %w", name, err)
 					}
 				}
@@ -1539,6 +1539,7 @@ func (srv *Server) loadWorkspaceModule(
 	client *daggerClient,
 	dag *dagql.Server,
 	name, sourcePath string,
+	alias bool,
 ) error {
 	var mod dagql.ObjectResult[*core.Module]
 	err := dag.Select(ctx, dag.Root(), &mod,
@@ -1553,6 +1554,10 @@ func (srv *Server) loadWorkspaceModule(
 	)
 	if err != nil {
 		return fmt.Errorf("resolving module source %q: %w", sourcePath, err)
+	}
+
+	if alias {
+		mod.Self().AutoAlias = true
 	}
 
 	// Serve module + dependencies (adds to client.deps, installs on dagql server).
