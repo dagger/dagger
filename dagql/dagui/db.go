@@ -9,6 +9,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -242,15 +243,25 @@ type DBLogExporter struct {
 }
 
 func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
-	for _, log := range logs {
-		if log.Body().AsString() == "" {
+	for _, rec := range logs {
+		if rec.Body().AsString() == "" {
 			// eof; ignore
 			continue
 		}
-		spanID := SpanID{log.SpanID()}
+		spanID := SpanID{rec.SpanID()}
 		if spanID == db.PrimarySpan {
-			// buffer raw logs so we can replay them later
-			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
+			var isDefault bool
+			rec.WalkAttributes(func(attr log.KeyValue) bool {
+				if attr.Key == telemetry.DefaultArgAttr {
+					isDefault = true
+					return false
+				}
+				return true
+			})
+			if !isDefault {
+				// buffer raw logs so we can replay them later
+				db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], rec)
+			}
 		}
 		// flag that the span has received logs
 		db.initSpan(spanID).HasLogs = true
