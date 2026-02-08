@@ -37,7 +37,7 @@
           "argument": "source",
           "ignore": [
             "bin",
-            ".git",
+            ".git/objects/**",
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",
@@ -129,7 +129,8 @@
     "engine/distconsts",
     "go.mod",
     "go.sum",
-    "util/parallel"
+    "util/parallel",
+    "engine/distconsts"
   ],
   "dependencies": [
     {
@@ -157,5 +158,11 @@
       "source": "toolchains/cli-dev"
     }
   ],
-  "source": ".dagger"
+  "source": ".dagger",
+  "clients": [
+    {
+      "generator": "go",
+      "directory": "./internal/testutil/dagger"
+    }
+  ]
 }
