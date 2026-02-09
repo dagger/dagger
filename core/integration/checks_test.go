@@ -67,6 +67,8 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 			require.Contains(t, out, "failing-check")
 			require.Contains(t, out, "passing-container")
 			require.Contains(t, out, "failing-container")
+			require.Contains(t, out, "test:lint")
+			require.Contains(t, out, "test:unit")
 			// run a specific passing check
 			out, err = modGen.
 				With(daggerExec("--progress=report", "check", "passing*")).
