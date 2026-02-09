@@ -813,7 +813,7 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	if container.FS != nil {
 		return container.FS.Self(), nil
 	}
-	return NewScratchDirectory(ctx, container.Platform)
+	return NewScratchDirectoryDagOp(ctx, container.Platform)
 }
 
 func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResult[*Directory]) (*Container, error) {
@@ -1502,7 +1502,7 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 	switch {
 	case mnt == nil: // rootfs
 		if container.FS == nil {
-			dir, err = NewScratchDirectory(ctx, container.Platform)
+			dir, err = NewScratchDirectoryDagOp(ctx, container.Platform)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create scratch directory: %w", err)
 			}
