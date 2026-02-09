@@ -3,7 +3,6 @@ pub description = "Develop the Dagger Dotnet SDK (experimental)"
 type DotnetSdkDev {
   #####################################
   #### ### #### Constants #### ### ####
-
   """
   Base image to create a dev container for the Dotnet SDK
   """
@@ -11,7 +10,6 @@ type DotnetSdkDev {
 
   ################################################
   #### ### #### Implicit constructor #### ### ####
-
   """
   A directory with all the files needed to develop the SDK.
   """
@@ -24,7 +22,7 @@ type DotnetSdkDev {
       "!sdk/dotnet/sdk/Dagger.sln.DotSettings.user",
       "!sdk/dotnet/sdk/global.json",
       "!sdk/dotnet/sdk/**/*.cs",
-      "!sdk/dotnet/sdk/**/*.csproj"
+      "!sdk/dotnet/sdk/**/*.csproj",
     ])
 
   """
@@ -35,34 +33,33 @@ type DotnetSdkDev {
   let originalWorkspace: Directory! = workspace
 
   let baseContainer: Container! {
-    let ctr = container.
-      from(dotnetSdkImage).
-      withWorkdir("/src")
+    let ctr = container
+      .from(dotnetSdkImage)
+      .withWorkdir("/src")
 
-    ctr = daggerEngine().installClient(ctr)
+    ctr = daggerEngine.installClient(ctr)
   }
 
   ######################################
   #### ### #### Public API #### ### ####
-
   """
   Return the Dotnet SDK workspace mounted in a dev container,
   and working directory set to the SDK source.
   """
   pub devContainer: Container! {
-    baseContainer.
-      withMountedDirectory(".", workspace).
-      withWorkdir(sourcePath)
+    baseContainer
+      .withMountedDirectory(".", workspace)
+      .withWorkdir(sourcePath)
   }
 
   """
   Lint the Dotnet SDK with Csharpier (https://csharpier.com)
   """
   pub csharpier: Void! @check {
-    devContainer().
-      withExec(["dotnet", "tool", "restore"]).
-      withExec(["dotnet", "csharpier", "--check", "."]).
-      sync
+    devContainer
+      .withExec(["dotnet", "tool", "restore"])
+      .withExec(["dotnet", "csharpier", "--check", "."])
+      .sync
 
     null
   }
@@ -73,19 +70,19 @@ type DotnetSdkDev {
   """
   pub bump: Changeset! {
     print("bump() is currently a no-op in dotnet SDK")
-    directory().changes(directory())
+    directory.changes(directory)
   }
 
   """
   Run tests on the Dotnet SDK
   """
   pub test: Void! @check {
-    devContainer().
-      withFile("Dagger.SDK/introspection.json", daggerEngine().introspectionJson()).
-      withExec(["dotnet", "restore"]).
-      withExec(["dotnet", "build", "--no-restore"]).
-      withExec(["dotnet", "test", "--no-build"], experimentalPrivilegedNesting: true).
-      sync
+    devContainer
+      .withFile("Dagger.SDK/introspection.json", daggerEngine.introspectionJson)
+      .withExec(["dotnet", "restore"])
+      .withExec(["dotnet", "build", "--no-restore"])
+      .withExec(["dotnet", "test", "--no-build"], experimentalPrivilegedNesting: true)
+      .sync
 
     null
   }
@@ -100,16 +97,20 @@ type DotnetSdkDev {
   standard function does not need to exist.
   """
   pub install: Changeset! {
-    withInstall().changes()
+    withInstall.changes
   }
 
   pub withInstall: DotnetSdkDev! {
-    self.workspace = self.workspace.
-      withoutDirectory(sourcePath).
-      withDirectory(sourcePath, directory().withFile(
-        "Dagger.SDK/introspection.json",
-        daggerEngine().introspectionJson(),
-      ))
+    self.workspace = self
+      .workspace
+      .withoutDirectory(sourcePath)
+      .withDirectory(
+        sourcePath,
+        directory.withFile(
+          "Dagger.SDK/introspection.json",
+          daggerEngine.introspectionJson,
+        ),
+      )
 
     self
   }
@@ -119,12 +120,14 @@ type DotnetSdkDev {
   and save it back to the workspace.
   """
   pub withFormat: DotnetSdkDev! {
-    self.workspace=directory.
-      withDirectory("/", devContainer().
-        withExec(["dotnet", "tool", "restore"]).
-        withExec(["dotnet", "csharpier", "."]).
-        rootfs().
-        directory("/src"),
+    self.workspace = directory
+      .withDirectory(
+        "/",
+        devContainer
+          .withExec(["dotnet", "tool", "restore"])
+          .withExec(["dotnet", "csharpier", "."])
+          .rootfs
+          .directory("/src"),
       )
 
     self
