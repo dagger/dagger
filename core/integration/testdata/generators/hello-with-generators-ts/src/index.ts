@@ -37,4 +37,21 @@ export class HelloWithGeneratorsTs {
   changesetFailure(): Changeset {
     throw "could not generate the changeset";
   }
+
+  @func()
+  otherGenerators(): MetaGen {
+    return new MetaGen();
+  }
+}
+
+@object()
+class MetaGen {
+  @func()
+  @generate()
+  genThings(): Changeset {
+    return dag
+      .directory()
+      .withNewFile("meta-gen", "generated")
+      .changes(dag.directory());
+  }
 }

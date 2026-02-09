@@ -5,6 +5,18 @@ from dagger import dag, function, generate, object_type
 
 
 @object_type
+class MetaGen:
+    @function
+    @generate
+    def gen_things(self) -> dagger.Changeset:
+        return (
+            dag.directory()
+            .with_new_file("meta-gen", "generated")
+            .changes(dag.directory())
+        )
+
+
+@object_type
 class HelloWithGeneratorsPy:
     @function
     @generate
@@ -29,3 +41,7 @@ class HelloWithGeneratorsPy:
     def changeset_failure(self) -> dagger.Changeset:
         """Return an error"""
         raise Exception("could not generate the changeset")
+
+    @function
+    def other_generators(self) -> MetaGen:
+        return MetaGen()

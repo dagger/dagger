@@ -43,6 +43,7 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 				require.Contains(t, out, "generate-other-files")
 				require.Contains(t, out, "empty-changeset")
 				require.Contains(t, out, "changeset-failure")
+				require.Contains(t, out, "other-generators:gen-things")
 			})
 
 			t.Run("generate single", func(ctx context.Context, t *testctx.T) {

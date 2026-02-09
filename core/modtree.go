@@ -568,6 +568,23 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				IsGenerator: fn.IsGenerator,
 				Description: fn.Description,
 			})
+			// if the type returned by the function is an object, check the children of the return type
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
+				// avoid cycles (X.withFoo: X)
+				fn.ReturnType.ToType().Name() != node.Type.Type().Name() {
+				if subObj, ok := node.Module.ObjectByName(fn.ReturnType.ToType().Name()); ok {
+					children = append(children, &ModTreeNode{
+						Parent:      node,
+						Name:        fn.Name, // use the name of the function and not the name of the type as we want the chain
+						DagqlServer: node.DagqlServer,
+						Module:      node.Module,
+						Type:        &TypeDef{AsObject: dagql.NonNull(subObj)},
+						IsCheck:     false,
+						IsGenerator: false,
+						Description: subObj.Description,
+					})
+				}
+			}
 		}
 		for _, field := range objType.Fields {
 			children = append(children, &ModTreeNode{
