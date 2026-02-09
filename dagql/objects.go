@@ -523,6 +523,9 @@ func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (A
 	if err != nil {
 		return nil, err
 	}
+	if len(preselectResult.contextualArgs) > 0 {
+		ctx = WithContextualArgs(ctx, preselectResult.contextualArgs)
+	}
 	return r.call(ctx, s,
 		preselectResult.newID,
 		preselectResult.inputArgs,
@@ -531,9 +534,10 @@ func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (A
 }
 
 type preselectResult struct {
-	inputArgs map[string]Input
-	newID     *call.ID
-	cacheKey  CacheKey
+	inputArgs      map[string]Input
+	newID          *call.ID
+	cacheKey       CacheKey
+	contextualArgs map[string]struct{}
 }
 
 // sortArgsToSchema sorts the arguments to match the schema definition order.
@@ -610,6 +614,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	)
 
 	cacheKey := newCacheKey(ctx, newID, field.Spec)
+	var contextualArgs map[string]struct{}
 	if field.Spec.GetCacheConfig != nil {
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
@@ -657,12 +662,14 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 
 		cacheKey.TTL = cacheCfgResp.CacheKey.TTL
 		cacheKey.DoNotCache = cacheCfgResp.CacheKey.DoNotCache
+		contextualArgs = cacheCfgResp.ContextualArgs
 	}
 
 	return &preselectResult{
-		inputArgs: inputArgs,
-		newID:     newID,
-		cacheKey:  cacheKey,
+		inputArgs:      inputArgs,
+		newID:          newID,
+		cacheKey:       cacheKey,
+		contextualArgs: contextualArgs,
 	}, nil
 }
 
@@ -1360,8 +1367,9 @@ type GetCacheConfigRequest struct {
 }
 
 type GetCacheConfigResponse struct {
-	CacheKey    CacheKey
-	UpdatedArgs map[string]Input
+	CacheKey       CacheKey
+	UpdatedArgs    map[string]Input
+	ContextualArgs map[string]struct{}
 }
 
 // Field defines a field of an Object type.

@@ -95,6 +95,7 @@ type CallOpts struct {
 	ParentFields   map[string]any
 	SkipSelfSchema bool
 	Server         *dagql.Server
+	ContextualArgs map[string]struct{}
 
 	// If set, persistently cache the result of the function call using this
 	// key rather than the one provided to use through CurrentStorageKey(ctx)
@@ -160,10 +161,13 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 			return nil, fmt.Errorf("convert arg %q: %w", input.Name, err)
 		}
 
-		if len(arg.metadata.Ignore) > 0 && !arg.metadata.isContextual() { // contextual args already have ignore applied
-			converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
-			if err != nil {
-				return nil, fmt.Errorf("apply ignore pattern on arg %q: %w", input.Name, err)
+		if len(arg.metadata.Ignore) > 0 {
+			_, loadedFromContext := opts.ContextualArgs[normalizedName]
+			if !loadedFromContext {
+				converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
+				if err != nil {
+					return nil, fmt.Errorf("apply ignore pattern on arg %q: %w", input.Name, err)
+				}
 			}
 		}
 
@@ -523,6 +527,13 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			userDefaults = append(userDefaults, userDefault)
 		} else if argMetadata.isContextual() {
 			ctxArgs = append(ctxArgs, argMetadata)
+		}
+	}
+
+	if len(ctxArgs) > 0 {
+		cacheCfgResp.ContextualArgs = make(map[string]struct{}, len(ctxArgs))
+		for _, arg := range ctxArgs {
+			cacheCfgResp.ContextualArgs[arg.Name] = struct{}{}
 		}
 	}
 

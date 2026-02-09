@@ -5619,6 +5619,51 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 	})
 }
 
+func (ModuleSuite) TestIgnoreConstructor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		With(sdkSource("go", `
+package main
+
+import (
+  "context"
+  "dagger/test/internal/dagger"
+)
+
+type Test struct {
+  Source *dagger.Directory
+}
+
+func New(
+  // +defaultPath="."
+  // +ignore=["**","!dagger.json"]
+  source *dagger.Directory,
+) *Test {
+  return &Test{Source: source}
+}
+
+func (t *Test) SourceDir(ctx context.Context) *dagger.Directory {
+  return t.Source
+}
+`))
+
+	t.Run("default (no explicit arg)", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("source-dir", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dagger.json", strings.TrimSpace(out))
+	})
+
+	t.Run("explicit --source", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("--source", ".", "source-dir", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dagger.json", strings.TrimSpace(out))
+	})
+}
+
 func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
