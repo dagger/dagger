@@ -27,7 +27,7 @@ func New(
 	source *dagger.Directory,
 	// Go version
 	// +optional
-	// +default="1.25.6"
+	// +default="1.25.7"
 	version string,
 	// Use a custom module cache
 	// +optional
