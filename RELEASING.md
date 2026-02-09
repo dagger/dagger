@@ -141,6 +141,8 @@ to dagger.
   git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
   ```
 
+- [ ] Bump [Go SDK package commit](https://github.com/dagger/dagger/blob/becc3f0a6626cf6829ef96ded00d379d3126ecd4/core/sdk/go_sdk.go#L27) to the latest commit from the [dagger-go-sdk](https://github.com/dagger/dagger-go-sdk) repository.
+
 - [ ] Push to `dagger/dagger` - we need access to secrets that PRs coming from forks will not have. Open the PR as a draft and capture the PR number:
 
   ```console
@@ -170,7 +172,6 @@ to dagger.
 > [!NOTE]
 >
 > We need to rethink SDK-specific changelogs, they're not really used anymore other than bumping engine versions.
->
 
   ```console
   changie merge
@@ -211,7 +212,6 @@ to dagger.
 > [!NOTE]
 >
 > CI on main currently has the MacOS workflow failing, it needs fixing.
->
 
 ## 🚀 Release
 
@@ -229,7 +229,6 @@ to dagger.
 > [!NOTE]
 >
 > We should probably sign the git tag before pushing.
->
 
   This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml) which publishes:
   - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
@@ -259,7 +258,6 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 > [!NOTE]
 >
 > Checks in workflow should already handle verifying the new versions.
->
 
 - [ ] Double-check that all the above packages have been correctly published
       and updated to their latest versions.
@@ -337,7 +335,6 @@ find .github/ -type f -exec sed -i '' -e 's/0-19-1/0-19-2/g' -e 's/0\.19\.1/0\.1
 > [!NOTE]
 >
 > FIXME: For some reason, `dagger develop --recursive -m ./releaser` displays weird absolute-like paths such as Users/...
->
 
 - [ ] Open a PR with the title `chore: post-release $ENGINE_VERSION`
 

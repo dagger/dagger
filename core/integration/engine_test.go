@@ -519,11 +519,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 				devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 					return c.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.engineVersion).
-						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion).
-						// Required to use the bundled go SDK instead of the remote one
-						// This avoid breaking that test because of a breaking change on
-						// the generated files.
-						WithEnvVariable("_EXPERIMENTAL_DAGGER_DEV_ENGINE", "1")
+						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion)
 				})
 				devEngineSvc = devEngineContainerAsService(devEngine)
 				engines[devEngineSvcKey] = devEngineSvc

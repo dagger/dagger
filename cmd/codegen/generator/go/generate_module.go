@@ -22,6 +22,10 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+const (
+	daggerImportPath = "dagger.io/dagger"
+)
+
 func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	if g.Config.ModuleConfig == nil {
 		return nil, fmt.Errorf("generateModule is called but module config is missing")
@@ -48,16 +52,6 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	pkgInfo, partial, err := g.bootstrapMod(mfs, genSt, false)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
-	}
-
-	// If the module is generated from a dev engine, also generate internal telemetry and querybuilder
-	if moduleConfig.LibVersion == "" {
-		layers = append(layers,
-			&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
-			&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
-		)
-
-		pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
 	}
 
 	genSt.Overlay = layerfs.New(layers...)
@@ -201,8 +195,7 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 		// PackageName is unknown until we load the package
 		PackageImport: path.Join(goMod.Module.Mod.Path, packageImport),
 
-		// Assume the utility package are from the remote library but this
-		// will be overridden to packageImport is it's a dev engine.
+		// Set to the official dagger go SDK package.
 		UtilityPkgImport: "dagger.io/dagger",
 	}, needsRegen, nil
 }
@@ -251,9 +244,12 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 		}
 	}
 
-	// If the module uses a released version of the engine, we add it to the list of dependencies.
-	if g.Config.ModuleConfig.LibVersion != "" {
-		mod.AddRequire("dagger.io/dagger", g.Config.ModuleConfig.LibVersion)
+	// Check if the module go.mod replaces the dagger.io/dagger library with a custom path.
+	// If so, we keep it as is.
+	// Otherwise, we install the given dagger.io/dagger package version.
+	if !isDaggerPkgCustomReplaced(mod.Replace) {
+		genSt.PostCommands = append(genSt.PostCommands,
+			exec.Command("go", "get", "-u", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,
