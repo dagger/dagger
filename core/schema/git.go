@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -612,6 +613,23 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	if !ref.Resolved {
+		remote, isRemote := ref.Repo.Self().Backend.(*core.RemoteGitRepository)
+		effectiveDiscard := ref.Repo.Self().DiscardGitDir || args.DiscardGitDir
+		needsResolvedCommit := effectiveDiscard && treeCommit(ref) == ""
+
+		if !needsResolvedCommit && (!isRemote || remote.URL != nil) {
+			treeSelector := dagql.Selector{Field: "__tree"}
+			if len(selectorArgs) > 0 {
+				treeSelector.Args = selectorArgs
+			}
+
+			var result dagql.ObjectResult[*core.Directory]
+			if err := srv.Select(ctx, treeParentForCall(parent, ref, args.DiscardGitDir), &result, treeSelector); err == nil {
+				return result, nil
+			}
+			// Fall back to __resolve->tree to handle auth injection and symbolic refs.
+		}
+
 		treeSelector := dagql.Selector{Field: "tree"}
 		if len(selectorArgs) > 0 {
 			treeSelector.Args = selectorArgs
@@ -632,25 +650,50 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		treeSelector.Args = selectorArgs
 	}
 
-	// Keep protocol in identity when .git is present; normalize content-only trees.
-	parentForTree := parent
-	if ref.Ref != nil && ref.Ref.SHA != "" {
-		effectiveDiscard := ref.Repo.Self().DiscardGitDir || args.DiscardGitDir
-		if effectiveDiscard {
-			parentForTree = parent.WithObjectDigest(hashutil.HashStrings(
-				"git-ref-tree",
-				ref.Ref.Name,
-				ref.Ref.SHA,
-				"discard",
-			))
-		}
-	}
-
 	var result dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parentForTree, &result, treeSelector); err != nil {
+	if err := srv.Select(ctx, treeParentForCall(parent, ref, args.DiscardGitDir), &result, treeSelector); err != nil {
 		return inst, err
 	}
 	return result, nil
+}
+
+func treeCommit(ref *core.GitRef) string {
+	if ref.Ref == nil {
+		return ""
+	}
+	if ref.Ref.SHA != "" {
+		return ref.Ref.SHA
+	}
+	if gitutil.IsCommitSHA(ref.Ref.Name) {
+		return ref.Ref.Name
+	}
+	return ""
+}
+
+func treeParentForCall(parent dagql.ObjectResult[*core.GitRef], ref *core.GitRef, discardGitDir bool) dagql.ObjectResult[*core.GitRef] {
+	commit := treeCommit(ref)
+	if commit == "" {
+		return parent
+	}
+
+	effectiveDiscard := ref.Repo.Self().DiscardGitDir || discardGitDir
+	inputs := []string{
+		"git-ref-tree",
+		ref.Ref.Name,
+		commit,
+		strconv.FormatBool(effectiveDiscard),
+	}
+
+	// Keep transport semantics only when .git is preserved.
+	if !effectiveDiscard {
+		if remote, ok := ref.Repo.Self().Backend.(*core.RemoteGitRepository); ok && remote.URL != nil {
+			inputs = append(inputs, remote.URL.String())
+		} else {
+			inputs = append(inputs, "local")
+		}
+	}
+
+	return parent.WithObjectDigest(hashutil.HashStrings(inputs...))
 }
 
 type treeInternalArgs struct {
@@ -660,14 +703,46 @@ type treeInternalArgs struct {
 }
 
 func (s *gitSchema) checkoutTree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeInternalArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	ref := parent.Self()
+	ref := parent.Self().Clone()
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	if ref.Ref == nil || ref.Ref.SHA == "" {
-		return inst, fmt.Errorf("internal: checkoutTree called before ref was resolved")
+	if ref.Ref == nil {
+		return inst, fmt.Errorf("internal: checkoutTree called with nil ref")
+	}
+	if ref.Ref.SHA == "" && gitutil.IsCommitSHA(ref.Ref.Name) {
+		ref.Ref.SHA = ref.Ref.Name
+	}
+
+	if ref.Backend == nil {
+		repoBackend := ref.Repo.Self().Backend
+		if remote, ok := repoBackend.(*core.RemoteGitRepository); ok {
+			remote = remote.Clone()
+			if remote.URL != nil && remote.URL.Scheme == gitutil.SSHProtocol && remote.URL.User == nil {
+				remote.URL.User = url.User("git")
+			}
+			// tree() can run before repo.__resolve; inject parent-client HTTP auth here
+			// so the fast __tree path can fetch private refs without eager ls-remote.
+			if remote.URL != nil &&
+				(remote.URL.Scheme == gitutil.HTTPProtocol || remote.URL.Scheme == gitutil.HTTPSProtocol) &&
+				!remote.AuthToken.Valid && !remote.AuthHeader.Valid {
+				if token, username, ok := s.lookupParentClientHTTPAuth(ctx, srv, remote.URL); ok {
+					remote.AuthToken = dagql.Opt(token)
+					if remote.AuthUsername == "" {
+						remote.AuthUsername = username
+					}
+				}
+			}
+			repoBackend = remote
+		}
+
+		refBackend, err := repoBackend.Get(ctx, ref.Ref)
+		if err != nil {
+			return inst, err
+		}
+		ref.Backend = refBackend
 	}
 
 	effectiveDiscard := ref.Repo.Self().DiscardGitDir || args.DiscardGitDir
@@ -675,6 +750,9 @@ func (s *gitSchema) checkoutTree(ctx context.Context, parent dagql.ObjectResult[
 	dir, err := ref.Tree(ctx, srv, args.DiscardGitDir, args.Depth)
 	if err != nil {
 		return inst, err
+	}
+	if ref.Ref.SHA == "" {
+		return inst, fmt.Errorf("internal: checkoutTree could not resolve ref commit")
 	}
 
 	out, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)

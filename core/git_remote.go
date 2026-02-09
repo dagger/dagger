@@ -321,29 +321,31 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 
 			// skip fetch if commit already exists
 			doFetch := true
-			if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
-				return fmt.Errorf("failed to rev-parse: %w", err)
-			} else if strings.TrimSpace(string(res)) == ref.SHA {
-				doFetch = false
+			if ref.SHA != "" {
+				if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
+					return fmt.Errorf("failed to rev-parse: %w", err)
+				} else if strings.TrimSpace(string(res)) == ref.SHA {
+					doFetch = false
 
-				if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
-					// if shallow, check we have enough depth
-					if depth <= 0 {
-						doFetch = true
-					} else {
-						// HACK: this is a pretty terrible way to guess the depth,
-						// since it only traces *one* path.
-						res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.SHA)
-						if err != nil {
-							return fmt.Errorf("failed to rev-list: %w", err)
-						}
-						res = bytes.TrimSpace(res)
-						count, err := strconv.Atoi(string(res))
-						if err != nil {
-							return fmt.Errorf("failed to parse rev-list output: %w", err)
-						}
-						if count < depth {
+					if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+						// if shallow, check we have enough depth
+						if depth <= 0 {
 							doFetch = true
+						} else {
+							// HACK: this is a pretty terrible way to guess the depth,
+							// since it only traces *one* path.
+							res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.SHA)
+							if err != nil {
+								return fmt.Errorf("failed to rev-list: %w", err)
+							}
+							res = bytes.TrimSpace(res)
+							count, err := strconv.Atoi(string(res))
+							if err != nil {
+								return fmt.Errorf("failed to parse rev-list output: %w", err)
+							}
+							if count < depth {
+								doFetch = true
+							}
 						}
 					}
 				}
@@ -360,6 +362,20 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 		if err != nil {
 			return err
 		}
+		for _, ref := range fetchRefs {
+			if ref.SHA != "" {
+				continue
+			}
+			if ref.Name == "" {
+				return fmt.Errorf("invalid git ref: missing name and commit")
+			}
+
+			out, err := git.Run(ctx, "rev-parse", "--verify", fetchTrackingRef(ref.Name)+"^{commit}")
+			if err != nil {
+				return fmt.Errorf("failed to resolve fetched ref %q: %w", ref.Name, err)
+			}
+			ref.SHA = strings.TrimSpace(string(out))
+		}
 		_, err = git.Run(ctx, "reflog", "expire", "--all", "--expire=now")
 		if err != nil {
 			return fmt.Errorf("failed to expire reflog for remote %s: %w", repo.URL.Remote(), err)
@@ -370,6 +386,10 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 }
 
 func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []*RemoteGitRef) error {
+	if len(refs) == 0 {
+		return nil
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -382,9 +402,17 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 	var refSpecs []string
 	for _, ref := range refs {
-		// fetch by sha, since we've already done tag resolution
-		// TODO: may need fallback if git remote doesn't support fetching by commit
-		refSpecs = append(refSpecs, ref.SHA)
+		switch {
+		case ref.SHA != "":
+			// fetch by sha when available
+			refSpecs = append(refSpecs, ref.SHA)
+		case ref.Name != "":
+			// unresolved refs (branch/tag/HEAD) are fetched into a stable local ref
+			// so checkout can resolve the commit without an eager ls-remote.
+			refSpecs = append(refSpecs, ref.Name+":"+fetchTrackingRef(ref.Name))
+		default:
+			return fmt.Errorf("invalid git ref: missing name and commit")
+		}
 	}
 
 	args := []string{
@@ -428,6 +456,10 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}
 
 	return nil
+}
+
+func fetchTrackingRef(name string) string {
+	return "refs/dagger.fetch/" + hashutil.HashStrings(name).Encoded()
 }
 
 func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Group, fn func(string) error) (retErr error) {

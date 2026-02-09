@@ -139,17 +139,32 @@ func doGitCheckout(
 	// TODO: maybe this should use --no-tags by default, but that's a breaking change :(
 	// also, we currently don't do any special work to ensure that the fetched
 	// tags are consistent with the GitRepository.Remote (oops)
+	fetchTarget := ref.SHA
+	if fetchTarget == "" {
+		fetchTarget = ref.Name
+	}
+	if fetchTarget == "" {
+		return fmt.Errorf("invalid git ref: missing name and commit")
+	}
+
 	args := []string{"fetch", "-u"}
 	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}
 	args = append(args, cloneURL)
-	args = append(args, ref.SHA+":"+tmpref)
+	args = append(args, fetchTarget+":"+tmpref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
 		return err
 	}
-	if ref.Name == "" {
+	if ref.SHA == "" {
+		out, err := checkoutGit.Run(ctx, "rev-parse", "--verify", tmpref+"^{commit}")
+		if err != nil {
+			return fmt.Errorf("failed to resolve fetched ref: %w", err)
+		}
+		ref.SHA = strings.TrimSpace(string(out))
+	}
+	if ref.Name == "" || gitutil.IsCommitSHA(ref.Name) {
 		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
 		if err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
