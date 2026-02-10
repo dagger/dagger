@@ -16,9 +16,11 @@ Two testing modes: **playground** (ephemeral sandbox with dev engine and CLI bui
 
 The playground builds a fresh dev engine from source and drops you into an ephemeral container with the dev `dagger` CLI. It has no side effects and no dependencies other than your system dagger. You execute "inner commands" inside the playground — typically invoking the dev dagger CLI. Great for debugging engine crashes and validating new features interactively.
 
+By default, everything will be built from your local source checkout of dagger/dagger, including local changes. But, you may optionally set the DAGGER_MODULE env variable to point to a remote git ref, for example 'github.com/dagger/dagger@my-upstream-branch'. In that case, local source will be ignored (and in fact doesn't even need to exist) and all files will be pulled from the remote ref.
+
 ### Usage
 
-Run [with-playground.sh](with-playground.sh) with the inner command as argument:
+Run [with-playground.sh](with-playground.sh) with a single string argument containing the inner script:
 
 ```bash
 with-playground.sh "uname -a; which dagger; dagger version"
@@ -26,7 +28,20 @@ with-playground.sh "cd src/dagger && dagger functions"
 with-playground.sh "dagger -m github.com/dagger/jest call --help"
 ```
 
-The script builds the playground, mounts sample source code at `./src`, executes the command, and prints combined output.
+Multi-line scripts and heredocs work reliably:
+
+```bash
+with-playground.sh '
+mkdir -p /tmp/test/.dagger && cd /tmp/test
+cat > .dagger/config.toml <<TOML
+[modules.wolfi]
+source = "github.com/dagger/dagger/modules/wolfi"
+TOML
+dagger functions
+'
+```
+
+The script writes the inner command to a file inside the container, then executes it. This avoids quoting issues with special characters, newlines, and nested heredocs. The script builds the playground, mounts sample source code at `./src`, executes the command, and prints combined output.
 
 ### Environment variables
 

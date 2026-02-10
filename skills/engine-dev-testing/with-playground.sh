@@ -19,13 +19,16 @@ set -x
 
 # Build the dagger engine playground, using the installed system dagger,
 # with pre-downloaded sample source code for convenience,
-# then execute the given inner command and print the output
+# then execute the given inner command and print the output.
+# The inner command is written to a file inside the container to avoid
+# quoting issues with heredocs, newlines, and special characters.
 dagger --progress=plain call \
   engine-dev \
   playground \
   with-directory --path=src/dagger --source=https://github.com/dagger/dagger#main \
   with-directory --path=src/demo-react-app --source=https://github.com/kpenfound/demo-react-app#main \
-  with-exec --args=sh --args=-c --args="$*" \
+  with-new-file --path=/tmp/inner.sh --contents="$1" --permissions=0755 \
+  with-exec --args=sh --args=/tmp/inner.sh \
   combined-output &
 
 DAGGER_PID=$!
