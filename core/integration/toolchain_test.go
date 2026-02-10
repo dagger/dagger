@@ -504,15 +504,19 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 			"toolchain", "install", "--name", "jest-old",
 			"github.com/dagger/jest@9ad6b0b9811b93bf2293a9f3eb0ffcae4d10919d",
 		))
+		out, err := modGen.CombinedOutput(ctx)
+		require.NoError(t, err, "install jest-old failed:\n%s", out)
 
 		// will fail at name deduplication (both named "jest")
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install", "--name", "jest-new",
 			"github.com/dagger/jest@7e9d82b267c73bdb09dbc5e70a79e2cd020f7cc2",
 		))
+		out, err = modGen.CombinedOutput(ctx)
+		require.NoError(t, err, "install jest-new failed:\n%s", out)
 
 		// This should work if we use different names
-		out, err := modGen.With(daggerExec("toolchain", "list")).Stdout(ctx)
+		out, err = modGen.With(daggerExec("toolchain", "list")).Stdout(ctx)
 		require.NoError(t, err)
 
 		// Verify both toolchains are present

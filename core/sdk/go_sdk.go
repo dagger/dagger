@@ -520,12 +520,27 @@ func (sdk *goSDK) baseWithCodegen(
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
 
+	sdkSource := ""
+	if src.Self().SDK != nil {
+		sdkSource = src.Self().SDK.Source
+	}
+	toolchainDebug(
+		ctx,
+		"toolchain-debug go codegen start",
+		"module", src.Self().ModuleOriginalName,
+		"source", src.Self().AsString(),
+		"pin", src.Self().Pin(),
+		"sdk_source", sdkSource,
+		"config_exists", src.Self().ConfigExists,
+	)
+
 	/* FIXME: dev version handling is broken because it requires changing imports in code
 	if !engine.IsDevVersion(engine.Version) {
 		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engine.Version))
 	}
 	*/
 	codegenArgs = append(codegenArgs, "--lib-version", dagql.String("v0.19.11"))
+	toolchainDebug(ctx, "toolchain-debug go codegen forced lib-version", "lib_version", "v0.19.11")
 
 	selectors := []dagql.Selector{
 		{

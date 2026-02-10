@@ -64,6 +64,10 @@ type moduleSourceSchema struct{}
 
 var _ SchemaResolvers = &moduleSourceSchema{}
 
+func toolchainDebug(ctx context.Context, msg string, args ...any) {
+	slog.WarnContext(ctx, msg, args...)
+}
+
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, dagql.CachePerClient).
@@ -3671,6 +3675,22 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
+	sdkSource := ""
+	if src.Self().SDK != nil {
+		sdkSource = src.Self().SDK.Source
+	}
+	toolchainDebug(
+		ctx,
+		"toolchain-debug load dependency modules start",
+		"module", src.Self().ModuleOriginalName,
+		"source", src.Self().AsString(),
+		"pin", src.Self().Pin(),
+		"sdk_source", sdkSource,
+		"dependency_count", len(src.Self().Dependencies),
+		"toolchain_count", len(src.Self().Toolchains),
+		"engine_version", src.Self().EngineVersion,
+	)
+
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -3683,10 +3703,41 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	var eg errgroup.Group
 	depMods := make([]dagql.Result[*core.Module], len(src.Self().Dependencies))
 	for i, depSrc := range src.Self().Dependencies {
+		i := i
+		depSrc := depSrc
 		eg.Go(func() error {
-			return dag.Select(ctx, depSrc, &depMods[i],
+			toolchainDebug(
+				ctx,
+				"toolchain-debug dependency module load start",
+				"index", i,
+				"module", depSrc.Self().ModuleOriginalName,
+				"source", depSrc.Self().AsString(),
+				"pin", depSrc.Self().Pin(),
+			)
+			err := dag.Select(ctx, depSrc, &depMods[i],
 				dagql.Selector{Field: "asModule"},
 			)
+			if err != nil {
+				slog.WarnContext(
+					ctx,
+					"toolchain-debug dependency module load failed",
+					"index", i,
+					"module", depSrc.Self().ModuleOriginalName,
+					"source", depSrc.Self().AsString(),
+					"pin", depSrc.Self().Pin(),
+					"error", err,
+				)
+				return err
+			}
+			toolchainDebug(
+				ctx,
+				"toolchain-debug dependency module load success",
+				"index", i,
+				"module", depSrc.Self().ModuleOriginalName,
+				"source", depSrc.Self().AsString(),
+				"pin", depSrc.Self().Pin(),
+			)
+			return nil
 		})
 	}
 
@@ -3694,16 +3745,62 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
 	if len(src.Self().Toolchains) > 0 {
 		for i, tcSrc := range src.Self().Toolchains {
+			i := i
+			tcSrc := tcSrc
 			eg.Go(func() error {
+				tcSDKSource := ""
+				if tcSrc.Self().SDK != nil {
+					tcSDKSource = tcSrc.Self().SDK.Source
+				}
+				toolchainDebug(
+					ctx,
+					"toolchain-debug toolchain module load start",
+					"index", i,
+					"module", tcSrc.Self().ModuleOriginalName,
+					"source", tcSrc.Self().AsString(),
+					"pin", tcSrc.Self().Pin(),
+					"sdk_source", tcSDKSource,
+				)
 				err := dag.Select(ctx, tcSrc, &tcMods[i],
 					dagql.Selector{Field: "asModule"},
 				)
-				return err
+				if err != nil {
+					slog.WarnContext(
+						ctx,
+						"toolchain-debug toolchain module load failed",
+						"index", i,
+						"module", tcSrc.Self().ModuleOriginalName,
+						"source", tcSrc.Self().AsString(),
+						"pin", tcSrc.Self().Pin(),
+						"sdk_source", tcSDKSource,
+						"error", err,
+					)
+					return err
+				}
+				toolchainDebug(
+					ctx,
+					"toolchain-debug toolchain module load success",
+					"index", i,
+					"module", tcSrc.Self().ModuleOriginalName,
+					"source", tcSrc.Self().AsString(),
+					"pin", tcSrc.Self().Pin(),
+					"sdk_source", tcSDKSource,
+				)
+				return nil
 			})
 		}
 	}
 
 	if err := eg.Wait(); err != nil {
+		slog.WarnContext(
+			ctx,
+			"toolchain-debug load dependency modules failed",
+			"module", src.Self().ModuleOriginalName,
+			"source", src.Self().AsString(),
+			"pin", src.Self().Pin(),
+			"sdk_source", sdkSource,
+			"error", err,
+		)
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
@@ -3742,6 +3839,16 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 			deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}
+
+	toolchainDebug(
+		ctx,
+		"toolchain-debug load dependency modules success",
+		"module", src.Self().ModuleOriginalName,
+		"source", src.Self().AsString(),
+		"pin", src.Self().Pin(),
+		"sdk_source", sdkSource,
+		"loaded_mod_count", len(deps.Mods),
+	)
 
 	return deps, nil
 }
