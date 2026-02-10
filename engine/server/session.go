@@ -172,11 +172,18 @@ type daggerClient struct {
 	meterProvider  *sdkmetric.MeterProvider
 	metricExporter sdkmetric.Exporter
 
-	// Extra modules (e.g. from -m flag) that need to be loaded lazily.
-	// Loading is deferred from initializeDaggerClient to serveQuery because
-	// it requires the client's buildkit session, which isn't available during
-	// initialization (the session attachables request is blocked on the same
-	// locks that initializeDaggerClient holds, causing a deadlock).
+	// Workspace and extra module loading is deferred from initializeDaggerClient
+	// to serveQuery because it requires the client's buildkit session, which
+	// isn't available during initialization (the session attachables request
+	// is blocked on the same locks that initializeDaggerClient holds).
+
+	// Whether this client should attempt workspace detection and module loading.
+	// Set to true for main clients (not nested module function calls).
+	pendingWorkspaceLoad bool
+	workspaceMu          sync.Mutex
+	workspaceLoaded      bool
+	workspaceErr         error
+
 	pendingExtraModules  []engine.ExtraModule
 	extraModulesMu       sync.Mutex
 	extraModulesLoaded   bool
@@ -676,10 +683,12 @@ func (srv *Server) initializeDaggerClient(
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
-	// Detect workspace and load modules for the main client
+	// Mark main clients for deferred workspace + extra module loading.
+	// Actual loading happens in serveQuery once the buildkit session is available.
 	if opts.EncodedModuleID == "" {
-		if err := srv.loadWorkspace(ctx, client, coreMod.Dag); err != nil {
-			return fmt.Errorf("workspace loading: %w", err)
+		client.pendingWorkspaceLoad = true
+		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
+			client.pendingExtraModules = clientMD.ExtraModules
 		}
 	}
 
@@ -1223,9 +1232,13 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	r = r.WithContext(ctx)
 
-	// Load any pending extra modules (e.g. from -m flag). This is deferred
-	// from initializeDaggerClient because it needs the client's buildkit
-	// session, which only becomes available after the locks are released.
+	// Load workspace modules and extra modules (e.g. from -m flag). These are
+	// deferred from initializeDaggerClient because they need the client's
+	// buildkit session, which only becomes available after the session
+	// attachables handshake completes (after init locks are released).
+	if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil {
+		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
+	}
 	if err := srv.ensureExtraModulesLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading extra modules: %w", err), http.StatusInternalServerError)
 	}
@@ -1402,57 +1415,65 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 	return true
 }
 
-// loadWorkspace detects the workspace from the client's working directory
-// and loads all configured modules onto the dagql server.
-// Extra modules (from -m flag) are stored for deferred loading in serveQuery.
-func (srv *Server) loadWorkspace(ctx context.Context, client *daggerClient, dag *dagql.Server) error {
-	clientMD := client.clientMetadata
+// ensureWorkspaceLoaded detects the workspace from the client's working directory
+// and loads all configured modules onto the dagql server. Called from serveQuery
+// (not initializeDaggerClient) because it requires the client's buildkit session
+// to access the client's filesystem for workspace detection.
+func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClient) error {
+	if !client.pendingWorkspaceLoad {
+		return nil
+	}
 
-	// 1. Load workspace modules (unless skipped)
+	client.workspaceMu.Lock()
+	defer client.workspaceMu.Unlock()
+
+	if client.workspaceLoaded {
+		return client.workspaceErr
+	}
+
+	// Wait for the client's buildkit session to be available.
+	// Don't mark as loaded on failure — allow retry on next request.
+	if _, err := client.getClientCaller(client.clientID); err != nil {
+		return fmt.Errorf("waiting for client session: %w", err)
+	}
+
+	clientMD := client.clientMetadata
 	if clientMD == nil || !clientMD.SkipWorkspaceModules {
 		cwd, err := client.bkClient.AbsPath(ctx, ".")
 		if err != nil {
-			// The caller session may not be available during client initialization
-			// (e.g. nested dagger execution inside a container — the HTTP handler
-			// runs before the CLI's buildkit session is established, and blocking
-			// would deadlock). In that case there's no host workspace to detect.
-			slog.Debug("skipping workspace detection: caller session not available", "error", err)
-		} else {
-			statFS := core.NewCallerStatFS(client.bkClient)
-			ws, err := workspace.Detect(ctx, statFS, client.bkClient.ReadCallerHostFile, cwd)
-			if err != nil {
-				return err
-			}
+			// Workspace detection failure is permanent.
+			client.workspaceErr = fmt.Errorf("workspace detection: %w", err)
+			client.workspaceLoaded = true
+			return client.workspaceErr
+		}
 
-			if ws.Config != nil && len(ws.Config.Modules) > 0 {
-				for name, entry := range ws.Config.Modules {
-					sourcePath := filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
-					if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias); err != nil {
-						return fmt.Errorf("loading workspace module %q: %w", name, err)
-					}
+		statFS := core.NewCallerStatFS(client.bkClient)
+		ws, err := workspace.Detect(ctx, statFS, client.bkClient.ReadCallerHostFile, cwd)
+		if err != nil {
+			client.workspaceErr = err
+			client.workspaceLoaded = true
+			return client.workspaceErr
+		}
+
+		if ws.Config != nil && len(ws.Config.Modules) > 0 {
+			dag := client.dag
+			for name, entry := range ws.Config.Modules {
+				sourcePath := filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
+				if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias); err != nil {
+					client.workspaceErr = fmt.Errorf("loading workspace module %q: %w", name, err)
+					client.workspaceLoaded = true
+					return client.workspaceErr
 				}
 			}
 		}
 	}
 
-	// 2. Store extra modules for deferred loading (done in serveQuery).
-	// We cannot load them here because initializeDaggerClient holds locks
-	// that block the session attachables request, and module loading needs
-	// the client's buildkit session which is registered by that request.
-	if clientMD != nil && len(clientMD.ExtraModules) > 0 {
-		client.pendingExtraModules = clientMD.ExtraModules
-	}
-
+	client.workspaceLoaded = true
 	return nil
 }
 
 // ensureExtraModulesLoaded loads any pending extra modules (from -m flag).
-// This is called from serveQuery, NOT from initializeDaggerClient, because
-// module loading requires the client's buildkit session which isn't available
-// during client initialization (deadlock: initializeDaggerClient holds locks
-// that block the session attachables request from registering the session).
-// By the time serveQuery runs, locks are released and the session can register.
-//
+// Called from serveQuery after ensureWorkspaceLoaded.
 // Uses a mutex+flag instead of sync.Once so that transient failures
 // (e.g. session not yet registered) can be retried on subsequent requests.
 func (srv *Server) ensureExtraModulesLoaded(ctx context.Context, client *daggerClient) error {
@@ -1561,7 +1582,8 @@ func (srv *Server) loadWorkspaceModule(
 	}
 
 	// Serve module + dependencies (adds to client.deps, installs on dagql server).
-	// Note: caller (loadWorkspace → initializeDaggerClient) already holds client.stateMu.
+	client.stateMu.Lock()
+	defer client.stateMu.Unlock()
 	if err := srv.serveModule(client, mod.Self()); err != nil {
 		return err
 	}
