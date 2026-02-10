@@ -1981,6 +1981,14 @@
         "name": "experimental"
       },
       {
+        "args": [],
+        "description": "Indicates that this function is a generate function.",
+        "locations": [
+          "FIELD_DEFINITION"
+        ],
+        "name": "generate"
+      },
+      {
         "args": [
           {
             "defaultValue": null,
