@@ -736,7 +736,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	secretTransferPostCall, err := core.ResourceTransferPostCall(ctx, query.Self(), clientMetadata.ClientID, &resource.ID{
+	secretTransferPostCall, _, err := core.ResourceTransferPostCall(ctx, query.Self(), clientMetadata.ClientID, &resource.ID{
 		ID: *gitSrc.ContextDirectory.ID(),
 	})
 	if err != nil {
@@ -2520,17 +2520,18 @@ func (s *moduleSourceSchema) runCodegen(
 		return res, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
 
-	// cache the current source instance by it's digest before passing to codegen
-	// this scopes the cache key of codegen calls to an exact content hash detached
-	// from irrelevant details like specific host paths, specific git repos+commits, etc.
+	// cache the current source instance by its scoped content digest before passing
+	// to codegen so we preserve provenance for git sources while still collapsing
+	// irrelevant caller details.
+	scopedSourceDigest := srcInst.Self().ContentScopedDigest()
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: srcInst.Self().Digest,
+		CallKey: scopedSourceDigest,
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, srcInst)
 	if err != nil {
 		return res, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	srcInstContentHashed := srcInst.WithObjectDigest(digest.Digest(srcInst.Self().Digest))
+	srcInstContentHashed := srcInst.WithObjectDigest(digest.Digest(scopedSourceDigest))
 
 	generatedCodeImpl, ok := srcInst.Self().SDKImpl.AsCodeGenerator()
 	if !ok {
@@ -3052,15 +3053,17 @@ func (s *moduleSourceSchema) initializeSDKModule(
 	mod *core.Module,
 	dag *dagql.Server,
 ) (*core.Module, error) {
-	// Cache the source instance by digest
+	// Cache the source instance by scoped content digest so git provenance is
+	// preserved for same-content sources from different remotes.
+	scopedSourceDigest := src.Self().ContentScopedDigest()
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: src.Self().Digest,
+		CallKey: scopedSourceDigest,
 	}
 	_, err := dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
 
 	// Run SDK codegen
 	mod, err = s.runModuleDefInSDK(ctx, src, srcInstContentHashed, mod)

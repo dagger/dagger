@@ -160,15 +160,24 @@ func (mod *Module) GetContextSource() *ModuleSource {
 }
 
 func (mod *Module) ContentDigestCacheKey() cache.CacheKey[dagql.CacheKeyType] {
+	contextSource := mod.ContextSource.Value.Self()
+	contentDigest := ""
+	contentCacheScope := ""
+	if contextSource != nil {
+		contentDigest = contextSource.Digest
+		contentCacheScope = contextSource.ContentCacheScope()
+	}
+
 	return cache.CacheKey[dagql.CacheKeyType]{
 		CallKey: string(hashutil.HashStrings(
-			mod.ContextSource.Value.Self().Digest,
+			contentDigest,
+			contentCacheScope,
 			"asModule",
 		)),
 	}
 }
 
-// GetModuleFromContentDigest loads a module based on its content hashed key as saved
+// GetModuleFromContentDigest loads a module based on the same content+provenance key used
 // in ModuleSource.asModule. We sometimes can't directly load a Module because the current
 // caching logic will result in that Module being re-loaded by clients (due to it being
 // CachePerClient) and then possibly trying to load it from the wrong context (in the case
@@ -202,8 +211,8 @@ func GetModuleFromContentDigest(
 	return inst, nil
 }
 
-// CacheModuleByContentDigest caches the given module instance using its content digest + session ID, corresponding to
-// the getter above (GetModuleFromContentDigest).
+// CacheModuleByContentDigest caches the given module instance using its content+provenance
+// key + session ID, corresponding to the getter above (GetModuleFromContentDigest).
 func CacheModuleByContentDigest(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -216,6 +225,7 @@ func CacheModuleByContentDigest(
 	perSessionContentCacheKey := mod.Self().ContentDigestCacheKey()
 	perSessionContentCacheKey.CallKey = dagql.CacheKeyType(hashutil.HashStrings(perSessionContentCacheKey.CallKey, md.SessionID))
 	perSessionContentHashedInst := mod.WithObjectDigest(digest.Digest(perSessionContentCacheKey.CallKey))
+
 	_, err = dag.Cache.GetOrInitializeValue(ctx, perSessionContentCacheKey, perSessionContentHashedInst)
 	if err != nil {
 		return err
@@ -883,7 +893,8 @@ func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[
 	}
 
 	src = mod.Source.Value
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+	scopedSourceDigest := src.Self().ContentScopedDigest()
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
 	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return runtime, fmt.Errorf("failed to load runtime: %w", err)

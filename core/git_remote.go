@@ -144,16 +144,16 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	scope := make([]string, 0, 4)
 	if token := repo.AuthToken; token.Self() != nil && token.ID() != nil {
-		scope = append(scope, "token:"+token.ID().Digest().String())
+		scope = append(scope, "token:"+SecretIDDigest(token.ID()).String())
 	}
 	if header := repo.AuthHeader; header.Self() != nil && header.ID() != nil {
-		scope = append(scope, "header:"+header.ID().Digest().String())
+		scope = append(scope, "header:"+SecretIDDigest(header.ID()).String())
 	}
 	if repo.AuthUsername != "" {
 		scope = append(scope, "username:"+repo.AuthUsername)
 	}
 	if sshSock := repo.SSHAuthSocket; sshSock.Self() != nil {
-		scope = append(scope, "ssh-sock:"+sshSock.Self().IDDigest.String())
+		scope = append(scope, "ssh-auth-scope:"+sshSock.Self().IDDigest.String())
 	}
 	return scope
 }
@@ -257,7 +257,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
+		password, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(repo.AuthToken.ID()))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -267,7 +267,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(repo.AuthHeader.ID()))
 		if err != nil {
 			return nil, nil, err
 		}

@@ -1703,7 +1703,7 @@ func (m *Test) Secrets() []*dagger.Secret {
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.Regexp(t, `Secret@xxh3:[a-f0-9]{16}`, out)
+			require.Regexp(t, `Secret@[a-z0-9]{25}`, out)
 		})
 
 		t.Run("multiple", func(ctx context.Context, t *testctx.T) {
@@ -1712,7 +1712,7 @@ func (m *Test) Secrets() []*dagger.Secret {
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.Regexp(t, strings.Repeat(`- Secret@xxh3:[a-f0-9]{16}\n`, 2), out)
+			require.Regexp(t, strings.Repeat(`- Secret@[a-z0-9]{25}\n`, 2), out)
 		})
 	})
 
