@@ -18,6 +18,9 @@ directive @experimental(
   reason: String! = "Not stabilized"
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
+"""Indicates that this function is a generate function."""
+directive @generate on FIELD_DEFINITION
+
 """Filter directory contents using .gitignore-style glob patterns."""
 directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 

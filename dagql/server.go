@@ -323,6 +323,14 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationFieldDefinition,
 		},
 	},
+	{
+		Name:        "generate",
+		Description: FormatDescription(`Indicates that this function is a generate function.`),
+		Args:        NewInputSpecs(), // none
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
