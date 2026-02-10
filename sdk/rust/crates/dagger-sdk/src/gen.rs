@@ -6871,6 +6871,12 @@ pub struct EnvChecksOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EnvGeneratorsOpts<'a> {
+    /// Only include generators matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
 impl Env {
     /// Return the check with the given name from the installed modules. Must match exactly one check.
     ///
@@ -6910,6 +6916,49 @@ impl Env {
             query = query.arg("include", include);
         }
         CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return the generator with the given name from the installed modules. Must match exactly one generator.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the generator to retrieve
+    pub fn generator(&self, name: impl Into<String>) -> Generator {
+        let mut query = self.selection.select("generator");
+        query = query.arg("name", name.into());
+        Generator {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all generators defined by the installed modules
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generators(&self) -> GeneratorGroup {
+        let query = self.selection.select("generators");
+        GeneratorGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all generators defined by the installed modules
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generators_opts<'a>(&self, opts: EnvGeneratorsOpts<'a>) -> GeneratorGroup {
+        let mut query = self.selection.select("generators");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        GeneratorGroup {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

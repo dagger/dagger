@@ -2273,6 +2273,20 @@ type Env {
     include: [String!]
   ): CheckGroup! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
 
+  """
+  Return the generator with the given name from the installed modules. Must match exactly one generator.
+  """
+  generator(
+    """The name of the generator to retrieve"""
+    name: String!
+  ): Generator! @experimental(reason: "Generators API is highly experimental and may be removed or replaced entirely.")
+
+  """Return all generators defined by the installed modules"""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup! @experimental(reason: "Generators API is highly experimental and may be removed or replaced entirely.")
+
   """A unique identifier for this Env."""
   id: EnvID!
 

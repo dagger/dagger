@@ -5228,6 +5228,41 @@ func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
 	}
 }
 
+// Return the generator with the given name from the installed modules. Must match exactly one generator.
+//
+// Experimental: Generators API is highly experimental and may be removed or replaced entirely.
+func (r *Env) Generator(name string) *Generator {
+	q := r.query.Select("generator")
+	q = q.Arg("name", name)
+
+	return &Generator{
+		query: q,
+	}
+}
+
+// EnvGeneratorsOpts contains options for Env.Generators
+type EnvGeneratorsOpts struct {
+	// Only include generators matching the specified patterns
+	Include []string
+}
+
+// Return all generators defined by the installed modules
+//
+// Experimental: Generators API is highly experimental and may be removed or replaced entirely.
+func (r *Env) Generators(opts ...EnvGeneratorsOpts) *GeneratorGroup {
+	q := r.query.Select("generators")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &GeneratorGroup{
+		query: q,
+	}
+}
+
 // A unique identifier for this Env.
 func (r *Env) ID(ctx context.Context) (EnvID, error) {
 	if r.id != nil {

@@ -3373,6 +3373,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::generator",
+			"p": "Dagger/Env.html#method_generator",
+			"d": "<p>Return the generator with the given name from the installed modules. Must match exactly one generator.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::generators",
+			"p": "Dagger/Env.html#method_generators",
+			"d": "<p>Return all generators defined by the installed modules</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::id",
 			"p": "Dagger/Env.html#method_id",
 			"d": "<p>A unique identifier for this Env.</p>"

@@ -5366,6 +5366,47 @@ class Env(Type):
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
+    def generator(self, name: str) -> "Generator":
+        """Return the generator with the given name from the installed modules.
+        Must match exactly one generator.
+
+        .. caution::
+            Experimental: Generators API is highly experimental and may be
+            removed or replaced entirely.
+
+        Parameters
+        ----------
+        name:
+            The name of the generator to retrieve
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("generator", _args)
+        return Generator(_ctx)
+
+    def generators(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> "GeneratorGroup":
+        """Return all generators defined by the installed modules
+
+        .. caution::
+            Experimental: Generators API is highly experimental and may be
+            removed or replaced entirely.
+
+        Parameters
+        ----------
+        include:
+            Only include generators matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("generators", _args)
+        return GeneratorGroup(_ctx)
+
     async def id(self) -> EnvID:
         """A unique identifier for this Env.
 
