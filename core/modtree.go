@@ -79,22 +79,18 @@ func (node *ModTreeNode) Run(
 ) (rerr error) {
 	clientMD, _ := engine.ClientMetadataFromContext(ctx)
 
-	// Only create telemetry span if we're NOT a scale-out target (to avoid duplication)
-	var span trace.Span
-	if clientMD == nil || clientMD.CloudScaleOutEngineID == "" {
-		ctx, span = Tracer(ctx).Start(ctx, node.PathString(),
-			telemetry.Reveal(),
-			trace.WithAttributes(
-				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				attribute.String(telemetryNameAttr, node.PathString()),
-			),
-		)
-		defer func() {
-			onDefer(span, rerr)
-			telemetry.EndWithCause(span, &rerr)
-		}()
-	}
+	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.String(telemetryNameAttr, node.PathString()),
+		),
+	)
+	defer func() {
+		onDefer(span, rerr)
+		telemetry.EndWithCause(span, &rerr)
+	}()
 
 	if isLeaf(node) {
 		return runLeaf(ctx, node, clientMD)
