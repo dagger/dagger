@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,14 +11,18 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/dagger/dagger/util/grpcutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -46,6 +52,16 @@ func (socket *Socket) LLBID() string {
 		return ""
 	}
 	return socket.IDDigest.String()
+}
+
+func SocketIDDigest(id *call.ID) digest.Digest {
+	if id == nil {
+		return ""
+	}
+	if contentDigest := id.ContentDigest(); contentDigest != "" {
+		return contentDigest
+	}
+	return id.Digest()
 }
 
 func GetHostIPSocketAccessor(ctx context.Context, query *Query, upstreamHost string, port PortForward) (string, error) {
@@ -94,6 +110,23 @@ type storedSocket struct {
 
 var _ sshforward.SSHServer = &SocketStore{}
 
+func cloneSocket(sock *Socket) *Socket {
+	if sock == nil {
+		return nil
+	}
+	cp := *sock
+	return &cp
+}
+
+func cloneStoredSocket(sock *storedSocket) *storedSocket {
+	if sock == nil {
+		return nil
+	}
+	cp := *sock
+	cp.Socket = cloneSocket(sock.Socket)
+	return &cp
+}
+
 func (store *SocketStore) AddUnixSocket(sock *Socket, buildkitSessionID, hostPath string) error {
 	if sock == nil {
 		return errors.New("socket must not be nil")
@@ -105,7 +138,7 @@ func (store *SocketStore) AddUnixSocket(sock *Socket, buildkitSessionID, hostPat
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.sockets[sock.IDDigest] = &storedSocket{
-		Socket:            sock,
+		Socket:            cloneSocket(sock),
 		BuildkitSessionID: buildkitSessionID,
 		HostPath:          hostPath,
 	}
@@ -123,7 +156,7 @@ func (store *SocketStore) AddIPSocket(sock *Socket, buildkitSessionID, upstreamH
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.sockets[sock.IDDigest] = &storedSocket{
-		Socket:            sock,
+		Socket:            cloneSocket(sock),
 		BuildkitSessionID: buildkitSessionID,
 		HostEndpoint:      upstreamHost,
 		PortForward:       port,
@@ -132,6 +165,13 @@ func (store *SocketStore) AddIPSocket(sock *Socket, buildkitSessionID, upstreamH
 }
 
 func (store *SocketStore) AddSocketFromOtherStore(socket *Socket, otherStore *SocketStore) error {
+	if socket == nil {
+		return errors.New("socket must not be nil")
+	}
+	if socket.IDDigest == "" {
+		return errors.New("socket must have an ID digest")
+	}
+
 	otherStore.mu.RLock()
 	socketVals, ok := otherStore.sockets[socket.IDDigest]
 	otherStore.mu.RUnlock()
@@ -141,8 +181,93 @@ func (store *SocketStore) AddSocketFromOtherStore(socket *Socket, otherStore *So
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.sockets[socket.IDDigest] = socketVals
+	if _, ok := store.sockets[socket.IDDigest]; ok {
+		// Keep the destination's existing mapping; callers can always explicitly
+		// re-register a local socket via AddUnixSocket/AddIPSocket.
+		return nil
+	}
+	store.sockets[socket.IDDigest] = cloneStoredSocket(socketVals)
 	return nil
+}
+
+// AddSocketAlias registers a new socket ID that resolves to the same underlying
+// client resource mapping as an existing source socket ID.
+//
+// Example: host._sshAuthSocket computes a new digest scoped by SSH key fingerprints
+// and calls AddSocketAlias(scoped, sourceDigest). Later, MountSocket(scoped.IDDigest)
+// uses the source socket's session/path metadata to forward agent traffic.
+func (store *SocketStore) AddSocketAlias(alias *Socket, sourceIDDigest digest.Digest) error {
+	if alias == nil {
+		return errors.New("socket alias must not be nil")
+	}
+	if alias.IDDigest == "" {
+		return errors.New("socket alias must have an ID digest")
+	}
+	if sourceIDDigest == "" {
+		return errors.New("source socket digest must not be empty")
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if _, ok := store.sockets[alias.IDDigest]; ok {
+		return nil
+	}
+
+	source, ok := store.sockets[sourceIDDigest]
+	if !ok {
+		return fmt.Errorf("source socket %s not found", sourceIDDigest)
+	}
+
+	aliased := cloneStoredSocket(source)
+	aliased.Socket = cloneSocket(alias)
+	store.sockets[alias.IDDigest] = aliased
+	return nil
+}
+
+func (store *SocketStore) AgentFingerprints(ctx context.Context, idDgst digest.Digest) ([]string, error) {
+	sockPath, cleanup, err := store.MountSocket(ctx, idDgst)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	conn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to mounted SSH socket: %w", err)
+	}
+	defer conn.Close()
+
+	keys, err := agent.NewClient(conn).List()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list SSH agent identities: %w", err)
+	}
+
+	seen := map[string]struct{}{}
+	fingerprints := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key == nil {
+			continue
+		}
+		pub, err := ssh.ParsePublicKey(key.Blob)
+		if err != nil {
+			sum := sha256.Sum256(key.Blob)
+			fp := "sha256:" + hex.EncodeToString(sum[:])
+			if _, ok := seen[fp]; ok {
+				continue
+			}
+			seen[fp] = struct{}{}
+			fingerprints = append(fingerprints, fp)
+			continue
+		}
+		fp := ssh.FingerprintSHA256(pub)
+		if _, ok := seen[fp]; ok {
+			continue
+		}
+		seen[fp] = struct{}{}
+		fingerprints = append(fingerprints, fp)
+	}
+	slices.Sort(fingerprints)
+	return fingerprints, nil
 }
 
 func (store *SocketStore) HasSocket(idDgst digest.Digest) bool {
@@ -248,6 +373,11 @@ func (store *SocketStore) ConnectSocket(ctx context.Context, idDgst digest.Diges
 	if !ok {
 		return nil, fmt.Errorf("socket %s not found", idDgst)
 	}
+	if sock == nil {
+		// Defensive check: avoid panicking on malformed store state and surface
+		// a regular error path instead.
+		return nil, fmt.Errorf("socket %s has nil metadata", idDgst)
+	}
 
 	urlEncoded := store.getSocketURLEncoded(sock)
 
@@ -266,8 +396,18 @@ func (store *SocketStore) ConnectSocket(ctx context.Context, idDgst digest.Diges
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit session: %w", err)
 	}
+	if caller == nil {
+		// noWait=true allows Get to return nil when the session is gone; treat this
+		// as a normal lookup failure rather than dereferencing a nil caller.
+		return nil, fmt.Errorf("failed to get buildkit session: session %q is not active", buildkitSessionID)
+	}
 
-	forwardAgentClient, err := sshforward.NewSSHClient(caller.Conn()).ForwardAgent(ctx)
+	conn := caller.Conn()
+	if conn == nil {
+		return nil, fmt.Errorf("failed to get buildkit session: session %q has nil connection", buildkitSessionID)
+	}
+
+	forwardAgentClient, err := sshforward.NewSSHClient(conn).ForwardAgent(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get forward agent client: %w", err)
 	}

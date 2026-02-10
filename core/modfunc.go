@@ -869,18 +869,17 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		for _, id := range returnedIDs {
 			returnedIDsList = append(returnedIDsList, id)
 		}
-		secretTransferPostCall, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
+		resourceTransferPostCall, hasNamedSecrets, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
 		if err != nil {
 			return nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
-		if secretTransferPostCall != nil {
-			// this being non-nil indicates there were secrets created by direct SetSecret calls in the
-			// returned value. This means we cannot use a persistently cached result, so invalidate the
-			// cache for this call in the future.
+		if hasNamedSecrets {
+			// Named secrets indicate a direct SetSecret result in the returned value.
+			// Those cannot be persisted safely across sessions.
 			safeToPersistCache = false
 		}
 
-		returnValue = returnValue.WithPostCall(secretTransferPostCall)
+		returnValue = returnValue.WithPostCall(resourceTransferPostCall)
 	}
 	if returnValue != nil {
 		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)

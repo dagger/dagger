@@ -202,7 +202,7 @@ func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv) {
 	for _, secret := range container.Secrets {
 		if secret.EnvName != "" {
 			secretEnvs = append(secretEnvs, &pb.SecretEnv{
-				ID:   secret.Secret.ID().Digest().String(),
+				ID:   SecretIDDigest(secret.Secret.ID()).String(),
 				Name: secret.EnvName,
 			})
 		}

@@ -854,13 +854,7 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 			Field: "host",
 		},
 		dagql.Selector{
-			Field: "unixSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
-				},
-			},
+			Field: "_sshAuthSocket",
 		},
 	); err != nil {
 		return nil, nil, fmt.Errorf("failed to select internal socket: %w", err)

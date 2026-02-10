@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/testutil"
@@ -1931,4 +1932,32 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 	}](c2, t, `{test{fn(sock: "`+string(sockID2)+`", msg: "omg")}}`, nil)
 	require.NoError(t, err)
 	require.Equal(t, "omg", res2b.Test.Fn)
+}
+
+func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T) {
+	tc := getVCSTestCase(t, "git@bitbucket.org:dagger-modules/private-modules-test.git")
+	url := tc.gitTestRepoRef
+	ref := tc.gitTestRepoCommit
+
+	agentSockPath1, cleanup1 := setupPrivateRepoSSHAgent(t)
+	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath1))
+	ref1ID, err := c1.Git(url).Commit(ref).ID(ctx)
+	require.NoError(t, err)
+	var id1 call.ID
+	err = id1.Decode(string(ref1ID))
+	require.NoError(t, err)
+
+	agentSockPath2, _ := setupPrivateRepoSSHAgent(t)
+	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath2))
+	ref2ID, err := c2.Git(url).Commit(ref).ID(ctx)
+	require.NoError(t, err)
+	var id2 call.ID
+	err = id2.Decode(string(ref2ID))
+	require.NoError(t, err)
+
+	cleanup1()
+	require.NoError(t, c1.Close())
+
+	_, err = c2.LoadGitRefFromID(ref2ID).Tree().Sync(ctx)
+	require.NoError(t, err)
 }

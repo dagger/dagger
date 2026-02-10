@@ -782,7 +782,7 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 			Dest:      secret.MountPath,
 			MountType: pb.MountType_SECRET,
 			SecretOpt: &pb.SecretOpt{
-				ID:   secret.Secret.ID().Digest().String(),
+				ID:   SecretIDDigest(secret.Secret.ID()).String(),
 				Uid:  uint32(uid),
 				Gid:  uint32(gid),
 				Mode: uint32(secret.Mode),

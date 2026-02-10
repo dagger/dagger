@@ -647,15 +647,16 @@ func (container *Container) Build(
 
 	secretNameToLLBID := make(map[string]string)
 	for _, secret := range secrets {
-		secretName, ok := secretStore.GetSecretName(secret.ID().Digest())
+		secretDgst := SecretIDDigest(secret.ID())
+		secretName, ok := secretStore.GetSecretName(secretDgst)
 		if !ok {
-			return nil, fmt.Errorf("secret not found: %s", secret.ID().Digest())
+			return nil, fmt.Errorf("secret not found: %s", secretDgst)
 		}
 		container.Secrets = append(container.Secrets, ContainerSecret{
 			Secret:    secret,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
 		})
-		secretNameToLLBID[secretName] = secret.ID().Digest().String()
+		secretNameToLLBID[secretName] = secretDgst.String()
 	}
 
 	// set image ref to empty string
