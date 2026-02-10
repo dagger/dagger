@@ -99,9 +99,7 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": [
-            "scanSource"
-          ],
+          "function": ["scanSource"],
           "argument": "source",
           "ignore": [
             "bin",
@@ -131,31 +129,6 @@
     "go.sum",
     "util/parallel"
   ],
-  "dependencies": [
-    {
-      "name": "changelog",
-      "source": "toolchains/changelog"
-    },
-    {
-      "name": "docs",
-      "source": "toolchains/docs-dev"
-    },
-    {
-      "name": "helm",
-      "source": "toolchains/helm-dev"
-    },
-    {
-      "name": "sdks",
-      "source": "toolchains/all-sdks"
-    },
-    {
-      "name": "engine-dev",
-      "source": "toolchains/engine-dev"
-    },
-    {
-      "name": "cli",
-      "source": "toolchains/cli-dev"
-    }
-  ],
+  "dependencies": [],
   "source": ".dagger"
 }
