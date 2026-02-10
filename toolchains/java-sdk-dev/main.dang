@@ -23,7 +23,7 @@ type JavaSdkDev {
     "!sdk/java/README.md",
     "!sdk/java/pom.xml",
     "sdk/java/**/src/test",
-    "sdk/java/**/target"
+    "sdk/java/**/target",
   ])
 
   """
@@ -40,11 +40,12 @@ type JavaSdkDev {
   Build a container to run the java toolchain
   """
   let devContainer: Container! {
-    daggerEngine().
-      installClient(
-        mavenImage.
-          withDirectory(workspacePath, workspace).
-          withWorkdir(workspacePath+"/"+sourcePath))
+    daggerEngine
+      .installClient(
+        mavenImage
+          .withDirectory(workspacePath, workspace)
+          .withWorkdir(workspacePath + "/" + sourcePath),
+      )
   }
 
   pub name: String! {
@@ -58,10 +59,10 @@ type JavaSdkDev {
   """
   Test the Java SDK
   """
-  pub test(): Void @check {
-    devContainer.
-      withExec(["mvn", "clean", "verify", "-Ddaggerengine.version=local"]).
-      sync
+  pub test: Void @check {
+    devContainer
+      .withExec(["mvn", "clean", "verify", "-Ddaggerengine.version=local"])
+      .sync
 
     null
   }
@@ -69,10 +70,10 @@ type JavaSdkDev {
   """
   Lint the Java SDK
   """
-  pub lint(): Void @check {
-    devContainer.
-      withExec(["mvn", "fmt:check"]).
-      sync
+  pub lint: Void @check {
+    devContainer
+      .withExec(["mvn", "fmt:check"])
+      .sync
 
     null
   }
@@ -80,27 +81,29 @@ type JavaSdkDev {
   """
   Format the Java SDK
   """
-  pub fmt(): Changeset {
-    devContainer.
-        withExec(["mvn", "com.spotify.fmt:fmt-maven-plugin:format"]).
-        directory(workspacePath).
-        changes(devContainer.directory(workspacePath))
+  pub fmt: Changeset {
+    devContainer
+      .withExec(["mvn", "com.spotify.fmt:fmt-maven-plugin:format"])
+      .directory(workspacePath)
+      .changes(devContainer.directory(workspacePath))
   }
 
   """
   Check that releasing works, without actually releasing
   """
   pub releaseDryRun(
-    """Git tag to fake-release"""
+    """
+    Git tag to fake-release
+    """
     sourceTag: String! = "HEAD",
   ): Void @check {
-    let version = sourceTag.trimPrefix(sourcePath+"/v")
-    devContainer.
-      withExec(["apk", "add", "--no-cache", "gpg"]).
-      withExec(["mvn", "versions:set", "-DnewVersion="+version]).
-      withExec(["mvn", "clean", "deploy", "-Prelease", "-Dmaven.deploy.skip=true"]).
-      withExec(["find", ".", "-name", "*.jar"]).
-      sync
+    let version = sourceTag.trimPrefix(sourcePath + "/v")
+    devContainer
+      .withExec(["apk", "add", "--no-cache", "gpg"])
+      .withExec(["mvn", "versions:set", "-DnewVersion=" + version])
+      .withExec(["mvn", "clean", "deploy", "-Prelease", "-Dmaven.deploy.skip=true"])
+      .withExec(["find", ".", "-name", "*.jar"])
+      .sync
 
     null
   }
@@ -111,7 +114,9 @@ type JavaSdkDev {
   Java release not yet available, call dry run release
   """
   pub release(
-    """Source git tag to release"""
+    """
+    Source git tag to release
+    """
     sourceTag: String!,
   ): Void {
     releaseDryRun(sourceTag)
@@ -126,56 +131,56 @@ type JavaSdkDev {
     # if (!v.match(/^[0-9]+\.[0-9]+\.[0-9]+$/)) {
     #   v = v + "-SNAPSHOT"
     # }
-    let bumpCtr = devContainer.
-      withExec([
+    let bumpCtr = devContainer
+      .withExec([
         "mvn",
         "versions:set",
         "-DgenerateBackupPoms=false",
-        "-DnewVersion="+v,
-      ]).
-      withExec([
+        "-DnewVersion=" + v,
+      ])
+      .withExec([
         "mvn",
         "versions:set-property",
         "-DgenerateBackupPoms=false",
         "-Dproperty=daggerengine.version",
-        "-DnewVersion="+v,
-      ]).
-      withWorkdir("runtime/template").
-      withExec([
+        "-DnewVersion=" + v,
+      ])
+      .withWorkdir("runtime/template")
+      .withExec([
         "mvn",
         "versions:set-property",
         "-DgenerateBackupPoms=false",
         "-Dproperty=dagger.module.deps",
-        "-DnewVersion="+v+"-template-module",
+        "-DnewVersion=" + v + "-template-module",
       ])
 
     let initialState = directory
     let bumped = directory
     for (pom in [
-      sourcePath+"/dagger-codegen-maven-plugin/pom.xml",
-      sourcePath+"/dagger-java-annotation-processor/pom.xml",
-      sourcePath+"/dagger-java-sdk/pom.xml",
-      sourcePath+"/dagger-java-samples/pom.xml",
-      sourcePath+"/pom.xml",
-      sourcePath+"/runtime/template/pom.xml",
+      sourcePath + "/dagger-codegen-maven-plugin/pom.xml",
+      sourcePath + "/dagger-java-annotation-processor/pom.xml",
+      sourcePath + "/dagger-java-sdk/pom.xml",
+      sourcePath + "/dagger-java-samples/pom.xml",
+      sourcePath + "/pom.xml",
+      sourcePath + "/runtime/template/pom.xml",
     ]) {
       initialState = initialState.withFile(pom, workspace.file(pom))
-      bumped = bumped.withFile(pom, bumpCtr.file(workspacePath+"/"+pom))
+      bumped = bumped.withFile(pom, bumpCtr.file(workspacePath + "/" + pom))
     }
 
-    bumped.
-      changes(initialState)
+    bumped
+      .changes(initialState)
   }
 
   """
   Check dependencies in the Java SDK
   """
-  pub checkDeps(): Void {
-    let changes = bumpDeps().
-      asPatch().
-      contents()
+  pub checkDeps: Void {
+    let changes = bumpDeps
+      .asPatch
+      .contents
     if (changes != "") {
-      container.withError("Updates available for Java dependencies:\n\n"+changes).sync()
+      container.withError("Updates available for Java dependencies:\n\n" + changes).sync
     }
     null
   }
@@ -183,21 +188,21 @@ type JavaSdkDev {
   """
   Bump dependencies in the Java SDK
   """
-  pub bumpDeps(): Changeset! {
+  pub bumpDeps: Changeset! {
     let ctr = devContainer
     for (modPath in [
-      sourcePath+"/dagger-codegen-maven-plugin/",
-      sourcePath+"/dagger-java-annotation-processor",
-      sourcePath+"/dagger-java-sdk",
-      sourcePath+"/dagger-java-samples",
+      sourcePath + "/dagger-codegen-maven-plugin/",
+      sourcePath + "/dagger-java-annotation-processor",
+      sourcePath + "/dagger-java-sdk",
+      sourcePath + "/dagger-java-samples",
       sourcePath,
     ]) {
-      ctr = ctr.
-        withWorkdir(workspacePath+"/"+modPath).
-        withExec(["mvn", "versions:update-properties"])
+      ctr = ctr
+        .withWorkdir(workspacePath + "/" + modPath)
+        .withExec(["mvn", "versions:update-properties"])
     }
-    ctr.
-      directory(workspacePath).
-      changes(devContainer.directory(workspacePath))
+    ctr
+      .directory(workspacePath)
+      .changes(devContainer.directory(workspacePath))
   }
 }
