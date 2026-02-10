@@ -1,11 +1,11 @@
 package core
 
 import (
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"context"
 	"fmt"
 	"testing"
 
-	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -392,6 +392,7 @@ func (TypeSuite) TestReturnCompositeCore(ctx context.Context, t *testctx.T) {
 			source: `package main
 
 import (
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"dagger/test/internal/dagger"
 )
 
@@ -499,6 +500,7 @@ func (TypeSuite) TestReturnComplexThing(ctx context.Context, t *testctx.T) {
 			source: `package main
 
 import (
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"dagger/test/internal/dagger"
 )
 
@@ -864,7 +866,7 @@ func (m *Test) UpperReq(
 `
 
 	var logs safeBuffer
-	c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
 	modGen := modInit(t, c, "go", src)
 
 	out, err := modGen.With(daggerQuery(`{test{upperOpt(a: null)}}`)).Stdout(ctx)
@@ -1122,6 +1124,7 @@ export class Test {
 				source: `package main
 
 import (
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
   "dagger/test/internal/dagger"
 )
 
@@ -1482,6 +1485,7 @@ func (m *Dep) Invert(status Status) Status {
 				source: `package main
 
 import (
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"context"
 	"dagger/test/internal/dagger"
 )
@@ -1606,6 +1610,7 @@ func (m *Dep) Thing(f MyEnum) MyEnum {
 		src := `package main
 
 import (
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"context"
 	"fmt"
 	"dagger/test/internal/dagger"
@@ -1632,7 +1637,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 
 		t.Run("bool", func(ctx context.Context, t *testctx.T) {
 			var logs safeBuffer
-			c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+			c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 			modGen := modInit(t, c, "go", src).
 				With(withModInitAt("./dep", "go", depSrc)).
@@ -1645,7 +1650,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 
 		t.Run("null", func(ctx context.Context, t *testctx.T) {
 			var logs safeBuffer
-			c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+			c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 			modGen := modInit(t, c, "go", src).
 				With(withModInitAt("./dep", "go", depSrc)).

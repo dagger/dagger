@@ -20,7 +20,7 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 	t.Run("from local", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		sdkSrc, err := filepath.Abs("../../sdk/elixir/")
+		sdkSrc, err := filepath.Abs("sdk/elixir")
 		require.NoError(t, err)
 
 		out, err := goGitBase(t, c).
@@ -268,10 +268,10 @@ func (ElixirSuite) TestReqAdapter(ctx context.Context, t *testctx.T) {
 
 func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
-	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))
+	modSrc, err := filepath.Abs(filepath.Join("core/integration/testdata/modules/elixir", moduleName))
 	require.NoError(t, err)
 
-	sdkSrc, err := filepath.Abs("../../sdk/elixir")
+	sdkSrc, err := filepath.Abs("sdk/elixir")
 	require.NoError(t, err)
 
 	return goGitBase(t, c).

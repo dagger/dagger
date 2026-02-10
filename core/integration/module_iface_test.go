@@ -3,10 +3,11 @@ package core
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	daggerio "dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -25,16 +26,19 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 	}
 
 	for _, tc := range []testCase{
-		{sdk: "go", path: "./testdata/modules/go/ifaces"},
-		{sdk: "typescript", path: "./testdata/modules/typescript/ifaces"},
-		{sdk: "python", path: "./testdata/modules/python/ifaces"},
+		{sdk: "go", path: "core/integration/testdata/modules/go/ifaces"},
+		{sdk: "typescript", path: "core/integration/testdata/modules/typescript/ifaces"},
+		{sdk: "python", path: "core/integration/testdata/modules/python/ifaces"},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			_, err := c.Container().From(golangImage).
+			testdataPath, err := filepath.Abs(tc.path)
+			require.NoError(t, err)
+
+			_, err = c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithMountedDirectory("/work", c.Host().Directory(tc.path)).
+				WithMountedDirectory("/work", c.Host().Directory(testdataPath)).
 				WithWorkdir("/work").
 				With(daggerCall("test")).
 				Sync(ctx)
@@ -46,7 +50,7 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 	t.Run("no dagger object embed", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
-		c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).

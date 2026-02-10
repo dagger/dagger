@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -901,7 +900,7 @@ func (m *Minimal) ReadOptional(
 
 func (GoSuite) TestSignaturesUnexported(ctx context.Context, t *testctx.T) {
 	var logs safeBuffer
-	c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1000,7 +999,7 @@ func (b *bar) Hello(name string) string {
 
 func (GoSuite) TestSignaturesMixMatch(ctx context.Context, t *testctx.T) {
 	var logs safeBuffer
-	c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1024,7 +1023,7 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 
 func (GoSuite) TestSignaturesNameConflict(ctx context.Context, t *testctx.T) {
 	var logs safeBuffer
-	c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1498,7 +1497,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 
 	t.Run("in different mod name", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
-		c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -1518,7 +1517,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
-		c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -1538,7 +1537,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 
 func (GoSuite) TestBadCtx(ctx context.Context, t *testctx.T) {
 	var logs safeBuffer
-	c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1735,7 +1734,7 @@ func (m *Test) Fn() (*Obj, error) {
 
 func (GoSuite) TestUseDaggerTypesDirect(ctx context.Context, t *testctx.T) {
 	var logs safeBuffer
-	c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1773,7 +1772,7 @@ func (m *Minimal) Bar(dir *dagger.Directory) (*dagger.Directory) {
 
 func (GoSuite) TestUtilsPkg(ctx context.Context, t *testctx.T) {
 	var logs safeBuffer
-	c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).

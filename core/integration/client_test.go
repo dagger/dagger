@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/koron-go/prefixw"
 	"github.com/stretchr/testify/require"
@@ -38,7 +37,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	newClient := func(ctx context.Context, name string) (*dagger.Client, *safeBuffer) {
 		out := new(safeBuffer)
 		c, err := dagger.Connect(ctx,
-			daggerio.WithLogOutput(io.MultiWriter(prefixw.New(NewTWriter(t), name+": "), out)))
+			dagger.WithLogOutput(io.MultiWriter(prefixw.New(NewTWriter(t), name+": "), out)))
 		require.NoError(t, err)
 		t.Cleanup(func() { c.Close() })
 		return c, out
@@ -153,7 +152,7 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 func (ClientSuite) TestQuerySchemaVersion(ctx context.Context, t *testctx.T) {
 	v, err := Query[struct {
 		SchemaVersion string `json:"__schemaVersion"`
-	}](t, `{ __schemaVersion }`, nil, daggerio.WithVersionOverride("v123.456.789"))
+	}](t, `{ __schemaVersion }`, nil, dagger.WithVersionOverride("v123.456.789"))
 	require.NoError(t, err)
 	require.Equal(t, "v123.456.789", v.SchemaVersion)
 }
@@ -189,8 +188,8 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 	c := connect(ctx, t)
 
 	devEngine := devEngineContainerAsService(devEngineContainer(c))
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_TEST_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{
@@ -223,6 +222,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 
 	daggerCli := daggerCliFile(t, c)
 
+	var err error
 	_, err = withCode.
 		WithServiceBinding("dev-engine", devEngine).
 		WithMountedFile("/bin/dagger", daggerCli).

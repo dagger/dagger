@@ -29,7 +29,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
@@ -1480,7 +1479,7 @@ export class Test {
 		} {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				var logs safeBuffer
-				c := connect(ctx, t, daggerio.WithLogOutput(&logs))
+				c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1686,7 +1685,7 @@ export class Test {
 func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	moduleSrcPath, err := filepath.Abs("./testdata/modules/go/namespacing")
+	moduleSrcPath, err := filepath.Abs("core/integration/testdata/modules/go/namespacing")
 	require.NoError(t, err)
 
 	ctr := c.Container().From(alpineImage).
@@ -3201,7 +3200,7 @@ func (t *Test) GetEncoded(ctx context.Context) (string, error) {
 		// writing secrets with the same name
 
 		var logs safeBuffer
-		c := connect(ctx, t, daggerio.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
@@ -3283,7 +3282,7 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 		// even when we know the underlying IDs
 
 		var logs safeBuffer
-		c := connect(ctx, t, daggerio.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
@@ -8248,7 +8247,7 @@ func modInit(t *testctx.T, c *dagger.Client, sdk, contents string, extra ...stri
 		With(func(ctr *dagger.Container) *dagger.Container {
 			if sdk == "java" {
 				// use the local SDK so that we can test non-released changes
-				sdkSrc, err := filepath.Abs("../../sdk/java")
+				sdkSrc, err := filepath.Abs("sdk/java")
 				require.NoError(t, err)
 				ctr = ctr.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
 				sdk = "./sdk/java"

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -401,7 +400,7 @@ func (EnvFileSuite) TestSystemVariableCachePolicy(ctx context.Context, t *testct
 		`NAME=${MYNAME}`,
 	)
 	for _, userName := range []string{"user1", "user2"} {
-		c := connect(ctx, t, daggerio.WithWorkdir(tmp), daggerio.WithEnvironmentVariable("MYNAME", userName))
+		c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
 		s, err := c.Host().File(".env").AsEnvFile().Get(ctx, "NAME")
 		require.NoError(t, err)
 		require.Equal(t, userName, s)
@@ -415,7 +414,7 @@ func (EnvFileSuite) TestCaching(ctx context.Context, t *testctx.T) {
 	seenData := map[string]string{}
 	for i := 0; i < 2; i++ {
 		for _, userName := range []string{"user1", "user2"} {
-			c := connect(ctx, t, daggerio.WithWorkdir(tmp), daggerio.WithEnvironmentVariable("MYNAME", userName))
+			c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
 			ef := c.Host().File(".env").AsEnvFile()
 			s, err := c.Container().From(alpineImage).WithEnvFileVariables(ef).
 				WithExec([]string{"sh", "-c", "echo -n \"Hello $NAME here is some random data: \" && cat /dev/urandom | head -c 15 | base64 -w0"}).Stdout(ctx)
@@ -442,7 +441,7 @@ func (EnvFileSuite) TestCachingWithIndirectVar(ctx context.Context, t *testctx.T
 	seenData := map[string]string{}
 	for i := 0; i < 2; i++ {
 		for _, userName := range []string{"user1", "user2"} {
-			c := connect(ctx, t, daggerio.WithWorkdir(tmp), daggerio.WithEnvironmentVariable("MYNAME", userName))
+			c := connect(ctx, t, dagger.WithWorkdir(tmp), dagger.WithEnvironmentVariable("MYNAME", userName))
 			ef := c.Host().File(".env").AsEnvFile().WithVariable("NAME", "$MYNAME")
 			s, err := c.Container().From(alpineImage).WithEnvFileVariables(ef).
 				WithExec([]string{"sh", "-c", "echo -n \"Hello $NAME here is some random data: \" && cat /dev/urandom | head -c 15 | base64 -w0"}).Stdout(ctx)

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
@@ -17,12 +18,15 @@ func TestBlueprint(t *testing.T) {
 }
 
 func blueprintTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
+	testdataPath, err := filepath.Abs("core/integration/testdata/test-blueprint")
+	require.NoError(t, err)
+
 	return c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "init"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithDirectory(".", c.Host().Directory("./testdata/test-blueprint")).
+		WithDirectory(".", c.Host().Directory(testdataPath)).
 		WithDirectory("app", c.Directory())
 }
 

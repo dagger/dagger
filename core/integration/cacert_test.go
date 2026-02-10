@@ -9,7 +9,6 @@ import (
 	"time"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -585,7 +584,7 @@ func customCACertTests(
 	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
-	c2, err := dagger.Connect(ctx, daggerio.WithRunnerHost(endpoint), daggerio.WithLogOutput(NewTWriter(t)))
+	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 

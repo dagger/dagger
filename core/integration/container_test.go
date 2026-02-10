@@ -31,7 +31,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -2856,7 +2855,7 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c := connect(ctx, t, daggerio.WithWorkdir(wd))
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 	entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
 	ctr := c.Container().From(alpineImage).
@@ -4590,7 +4589,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 	t.Run("env variable is expanded in Export", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 
-		c := connect(ctx, t, daggerio.WithWorkdir(wd))
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 		entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
 		ctr := c.Container().From(alpineImage).

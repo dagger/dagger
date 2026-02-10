@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 )
 
 type HostSuite struct{}
@@ -29,7 +28,7 @@ func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
 		err := os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0o600)
 		require.NoError(t, err)
 
-		c := connect(ctx, t, daggerio.WithWorkdir(dir))
+		c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 		contents, err := c.Container().
 			From(alpineImage).
@@ -45,7 +44,7 @@ func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
 		err := os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0o600)
 		require.NoError(t, err)
 
-		c := connect(ctx, t, daggerio.WithWorkdir(dir))
+		c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 		contents, err := c.Container().
 			From(alpineImage).
@@ -76,7 +75,7 @@ func (HostSuite) TestWorkdirExcludeInclude(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "sub-file"), []byte("goodbye"), 0o600))
 
-	c := connect(ctx, t, daggerio.WithWorkdir(dir))
+	c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 	t.Run("exclude", func(ctx context.Context, t *testctx.T) {
 		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
@@ -157,7 +156,7 @@ func (HostSuite) TestDirectoryRelative(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "some-dir"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0o600))
 
-	c := connect(ctx, t, daggerio.WithWorkdir(dir))
+	c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 	t.Run(". is same as workdir", func(ctx context.Context, t *testctx.T) {
 		wdID1, err := c.Host().Directory(".").ID(ctx)
@@ -187,7 +186,7 @@ func (HostSuite) TestDirectoryAbsolute(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "some-dir"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0o600))
 
-	c := connect(ctx, t, daggerio.WithWorkdir(dir))
+	c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 	entries, err := c.Host().Directory(filepath.Join(dir, "some-dir")).Entries(ctx)
 	require.NoError(t, err)
@@ -205,7 +204,7 @@ func (HostSuite) TestDirectoryHome(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(home, subdir, "some-dir"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(home, subdir, "some-dir", "sub-file"), []byte("goodbye"), 0o600))
 
-	c := connect(ctx, t, daggerio.WithWorkdir("/tmp"))
+	c := connect(ctx, t, dagger.WithWorkdir("/tmp"))
 
 	entries, err := c.Host().Directory(filepath.Join("~", subdir, "some-dir")).Entries(ctx)
 	require.NoError(t, err)
@@ -533,7 +532,7 @@ func findupTestDir(t *testctx.T) string {
 
 func (HostSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	dir := findupTestDir(t)
-	c := connect(ctx, t, daggerio.WithWorkdir(filepath.Join(dir, "a", "b")))
+	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(dir, "a", "b")))
 
 	t.Run("find file in current directory", func(ctx context.Context, t *testctx.T) {
 		found, err := c.Host().FindUp(ctx, "other.txt")

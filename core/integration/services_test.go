@@ -38,7 +38,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/testctx"
 	"mvdan.cc/sh/v3/syntax"
@@ -1236,8 +1235,8 @@ func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_TEST_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -1268,8 +1267,8 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_TEST_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -1303,8 +1302,8 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_TEST_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -2173,7 +2172,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	// verify that even if the engine doesn't have any search domains to propagate to execs, we still
 	// set search domains in those execs
 
-	c, err := dagger.Connect(ctx, daggerio.WithLogOutput(NewTWriter(t)))
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -2214,8 +2213,8 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	})
 
 	c2, err := dagger.Connect(ctx,
-		daggerio.WithRunnerHost("tcp://127.0.0.1:32132"),
-		daggerio.WithLogOutput(NewTWriter(t)))
+		dagger.WithRunnerHost("tcp://127.0.0.1:32132"),
+		dagger.WithLogOutput(NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 

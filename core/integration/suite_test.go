@@ -17,6 +17,7 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
@@ -31,9 +32,50 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	// Create a minimal dagger.json to satisfy the SDK
-	// The SDK checks for this file even though we're not loading a module
-	os.WriteFile("/app/dagger.json", []byte(`{"name": "dagger", "sdk": "go"}`), 0644)
+	ctx := context.Background()
+
+	// Set repo path for tests to access via c.Host().Directory()
+	// Tests run from core/integration, so go up two levels to repo root
+	// With privileged nesting, we use "." which resolves to where dagger was invoked
+	os.Setenv("_TEST_REPO_PATH", ".")
+
+	// Export the dagger CLI binary using dag.Cli()
+	cliBinary := dag.Cli().Binary()
+	cliPath, err := cliBinary.Export(ctx, "/tmp/dagger-cli-test")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to export CLI binary: %v\n", err)
+		os.Exit(1)
+	}
+
+	os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath)
+	os.Setenv("_TEST_DAGGER_CLI_LINUX_BIN", cliPath)
+
+	// Export engine.tar for tests that need to spin up dev engines
+	engineContainer := dag.EngineDev().Container()
+	engineTar := engineContainer.AsTarball()
+	engineTarPath, err := engineTar.Export(ctx, "/tmp/dagger-test-engine.tar")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to export engine tar: %v\n", err)
+		os.Exit(1)
+	}
+	os.Setenv("_DAGGER_TESTS_ENGINE_TAR", engineTarPath)
+
+	// Start inner test engine for isolated test sessions
+	engine := dag.EngineDev().TestEngine()
+	go engine.Up(ctx)
+	engineEndpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Connect to test engine: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Point tests to the inner engine
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint)
+
+	// Unset DAGGER_SESSION_PORT so tests create fresh sessions in the inner engine
+	// instead of reusing the outer engine's session
+	os.Unsetenv("DAGGER_SESSION_PORT")
+	os.Unsetenv("DAGGER_SESSION_TOKEN")
 
 	// Run tests
 	res := oteltest.Main(m)

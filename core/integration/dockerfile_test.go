@@ -427,7 +427,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		dirID, err := dir.ID(ctx)
 		require.NoError(t, err)
 
-		res, err := testutil.QueryWithClient[struct {
+		res, err := QueryWithClient[struct {
 			LoadDirectoryFromID struct {
 				DockerBuild struct {
 					File struct {
@@ -443,7 +443,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{
+		}`, &QueryOptions{
 			Variables: map[string]any{
 				"dir":  dirID,
 				"sock": sockID,
@@ -458,7 +458,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		dirID, err := dir.ID(ctx)
 		require.NoError(t, err)
 
-		res, err := testutil.QueryWithClient[struct {
+		res, err := QueryWithClient[struct {
 			LoadDirectoryFromID struct {
 				DockerBuild struct {
 					File struct {
@@ -474,7 +474,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{
+		}`, &QueryOptions{
 			Variables: map[string]any{
 				"dir":  dirID,
 				"sock": sockID,

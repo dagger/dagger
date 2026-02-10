@@ -13,7 +13,6 @@ import (
 	"time"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	daggerio "dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/testctx"
@@ -1189,8 +1188,8 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 	require.NoError(t, err)
 
 	t.Run("default plaintext based cache key", func(ctx context.Context, t *testctx.T) {
-		c1 := connect(ctx, t, daggerio.WithEnvironmentVariable("FOO", "1"))
-		c2 := connect(ctx, t, daggerio.WithEnvironmentVariable("FOO", "2"))
+		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
+		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
 
 		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
 		require.NoError(t, err)
@@ -1252,8 +1251,8 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 	})
 
 	t.Run("custom cache key", func(ctx context.Context, t *testctx.T) {
-		c1 := connect(ctx, t, daggerio.WithEnvironmentVariable("FOO", "1"))
-		c2 := connect(ctx, t, daggerio.WithEnvironmentVariable("FOO", "2"))
+		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
+		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
 
 		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
 		require.NoError(t, err)
@@ -1644,7 +1643,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 		0644,
 	)
 	require.NoError(t, err)
-	c1 := connect(ctx, t, daggerio.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile1))
+	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile1))
 
 	err = c1.ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
@@ -1668,7 +1667,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 		0644,
 	)
 	require.NoError(t, err)
-	c2 := connect(ctx, t, daggerio.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile2))
+	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile2))
 
 	err = c2.ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
@@ -1901,7 +1900,7 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 	require.NoError(t, err)
 	sockID1, err := c1.Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
-	res1, err := testutil.QueryWithClient[struct {
+	res1, err := QueryWithClient[struct {
 		Test struct {
 			Fn string
 		}
@@ -1914,7 +1913,7 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 	require.NoError(t, err)
 	sockID2, err := c2.Host().UnixSocket(sock).ID(ctx)
 	require.NoError(t, err)
-	res2, err := testutil.QueryWithClient[struct {
+	res2, err := QueryWithClient[struct {
 		Test struct {
 			Fn string
 		}
@@ -1924,7 +1923,7 @@ func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, e
 
 	require.NoError(t, c1.Close())
 
-	res2b, err := testutil.QueryWithClient[struct {
+	res2b, err := QueryWithClient[struct {
 		Test struct {
 			Fn string
 		}
