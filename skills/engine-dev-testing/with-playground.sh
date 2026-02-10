@@ -5,6 +5,16 @@ if [ -n "$DAGGER_CLOUD_ENGINE" ] && [ "$DAGGER_CLOUD_ENGINE" != "0" ] && [ "$DAG
   echo "example: 'DAGGER_MODULE=github.com/dagger/dagger@upstream-branch $0 ...'"
 fi
 
+# Timeout in seconds (default: 5 minutes). Set PLAYGROUND_TIMEOUT=0 to disable.
+PLAYGROUND_TIMEOUT="${PLAYGROUND_TIMEOUT:-300}"
+
+# Clean up child processes on exit (Ctrl+C, timeout, or normal exit)
+cleanup() {
+  [ -n "$DAGGER_PID" ] && kill "$DAGGER_PID" 2>/dev/null
+  [ -n "$WATCHDOG_PID" ] && kill "$WATCHDOG_PID" 2>/dev/null
+}
+trap cleanup EXIT
+
 set -x
 
 # Build the dagger engine playground, using the installed system dagger,
@@ -16,4 +26,27 @@ dagger --progress=plain call \
   with-directory --path=src/dagger --source=https://github.com/dagger/dagger#main \
   with-directory --path=src/demo-react-app --source=https://github.com/kpenfound/demo-react-app#main \
   with-exec --args=sh --args=-c --args="$*" \
-  combined-output
+  combined-output &
+
+DAGGER_PID=$!
+
+# Start watchdog timer (unless timeout is disabled)
+if [ "$PLAYGROUND_TIMEOUT" -gt 0 ] 2>/dev/null; then
+  (sleep "$PLAYGROUND_TIMEOUT" && kill "$DAGGER_PID" 2>/dev/null) &
+  WATCHDOG_PID=$!
+fi
+
+# Wait for dagger to finish (or be killed by watchdog)
+wait "$DAGGER_PID"
+EXIT_CODE=$?
+
+set +x
+
+# 143 = 128 + 15 (SIGTERM) — the watchdog killed the process
+if [ "$EXIT_CODE" -eq 143 ]; then
+  echo ""
+  echo "TIMEOUT: playground command killed after ${PLAYGROUND_TIMEOUT}s (likely hung)"
+  exit 124
+fi
+
+exit "$EXIT_CODE"
