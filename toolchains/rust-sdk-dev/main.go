@@ -144,7 +144,8 @@ func (t *RustSdkDev) Test(ctx context.Context) error {
 }
 
 // Regenerate the Rust SDK API client.
-func (t *RustSdkDev) Generate() *dagger.Changeset {
+// +generate
+func (t *RustSdkDev) APIClient() *dagger.Changeset {
 	return t.WithGeneratedClient().Changes()
 }
 
