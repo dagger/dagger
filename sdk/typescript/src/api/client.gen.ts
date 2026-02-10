@@ -1176,6 +1176,26 @@ export type EngineCachePruneOpts = {
    * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
    */
   useDefaultPolicy?: boolean
+
+  /**
+   * Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+   */
+  maxUsedSpace?: string
+
+  /**
+   * Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+   */
+  reservedSpace?: string
+
+  /**
+   * Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+   */
+  minFreeSpace?: string
+
+  /**
+   * Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+   */
+  targetSpace?: string
 }
 
 /**
@@ -5699,6 +5719,10 @@ export class EngineCache extends BaseClient {
   /**
    * Prune the cache of releaseable entries
    * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   * @param opts.maxUsedSpace Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+   * @param opts.reservedSpace Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+   * @param opts.minFreeSpace Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+   * @param opts.targetSpace Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
    */
   prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {

@@ -4580,6 +4580,14 @@ func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
 type EngineCachePruneOpts struct {
 	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
 	UseDefaultPolicy bool
+	// Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+	MaxUsedSpace string
+	// Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+	ReservedSpace string
+	// Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+	MinFreeSpace string
+	// Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+	TargetSpace string
 }
 
 // Prune the cache of releaseable entries
@@ -4592,6 +4600,22 @@ func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) e
 		// `useDefaultPolicy` optional argument
 		if !querybuilder.IsZeroValue(opts[i].UseDefaultPolicy) {
 			q = q.Arg("useDefaultPolicy", opts[i].UseDefaultPolicy)
+		}
+		// `maxUsedSpace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxUsedSpace) {
+			q = q.Arg("maxUsedSpace", opts[i].MaxUsedSpace)
+		}
+		// `reservedSpace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReservedSpace) {
+			q = q.Arg("reservedSpace", opts[i].ReservedSpace)
+		}
+		// `minFreeSpace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MinFreeSpace) {
+			q = q.Arg("minFreeSpace", opts[i].MinFreeSpace)
+		}
+		// `targetSpace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TargetSpace) {
+			q = q.Arg("targetSpace", opts[i].TargetSpace)
 		}
 	}
 

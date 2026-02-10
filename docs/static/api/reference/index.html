@@ -8197,6 +8197,22 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>useDefaultPolicy</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>maxUsedSpace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override the maximum disk space to keep before pruning (e.g. &quot;200GB&quot; or &quot;80%&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>reservedSpace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override the minimum disk space to retain during pruning (e.g. &quot;500GB&quot; or &quot;10%&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>minFreeSpace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override the minimum free disk space target during pruning (e.g. &quot;20GB&quot; or &quot;20%&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>targetSpace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override the target disk space to keep after pruning (e.g. &quot;200GB&quot; or &quot;50%&quot;).</p>
+                              </div>
                             </div>
                           </div>
                         </td>
