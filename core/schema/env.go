@@ -88,6 +88,18 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc("The name of the check to retrieve"),
 			),
+		dagql.Func("generators", s.envGenerators).
+			Experimental("Generators API is highly experimental and may be removed or replaced entirely.").
+			Doc("Return all generators defined by the installed modules").
+			Args(
+				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+			),
+		dagql.Func("generator", s.envGenerator).
+			Experimental("Generators API is highly experimental and may be removed or replaced entirely.").
+			Doc("Return the generator with the given name from the installed modules. Must match exactly one generator.").
+			Args(
+				dagql.Arg("name").Doc("The name of the generator to retrieve"),
+			),
 	}.Install(srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).
@@ -329,4 +341,22 @@ func (s environmentSchema) envCheck(ctx context.Context, env *core.Env, args str
 	Name string
 }) (*core.Check, error) {
 	return env.Check(ctx, args.Name)
+}
+
+func (s environmentSchema) envGenerators(ctx context.Context, env *core.Env, args struct {
+	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+}) (*core.GeneratorGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	return env.Generators(ctx, include)
+}
+
+func (s environmentSchema) envGenerator(ctx context.Context, env *core.Env, args struct {
+	Name string
+}) (*core.Generator, error) {
+	return env.Generator(ctx, args.Name)
 }
