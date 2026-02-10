@@ -95,7 +95,7 @@ type TypescriptSdkDev {
   """
   Generate the Typescript client library
   """
-  pub generate: Changeset! {
+  pub clientLibrary: Changeset! @generate {
     let ctr = nodejsBase(nodeVersionPrevLts)
       .withMountedDirectory(".", workspace)
       .withExec(["yarn", "--cwd", sourcePath, "install"])
