@@ -24,6 +24,7 @@ var traceCmd = &cobra.Command{
 	},
 	Aliases: []string{"t"},
 	Short:   "View a Dagger trace from Dagger Cloud.",
+	GroupID: cloudGroup.ID,
 	Example: `dagger trace 2f123ba77bf7bd2d4db2f70ed20613e8`,
 	RunE:    Trace,
 }
