@@ -83,6 +83,10 @@ message Call {
 
   // Effect IDs associated with this call. These do not affect the call's digest.
   repeated string effectIds = 13;
+
+  // Additional digest labels associated with this call's cache identity.
+  // These are used by cache key logic and e-graph equivalence bookkeeping.
+  repeated string additionalDigests = 14;
 }
 
 // Module represents a self-contained logical module that can be dynamically

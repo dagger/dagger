@@ -141,6 +141,54 @@ func (id *ID) ContentDigest() digest.Digest {
 	return digest.Digest(id.pb.ContentDigest)
 }
 
+func (id *ID) AdditionalDigests() []digest.Digest {
+	if id == nil || len(id.pb.AdditionalDigests) == 0 {
+		return nil
+	}
+	digs := make([]digest.Digest, 0, len(id.pb.AdditionalDigests))
+	for _, dig := range id.pb.AdditionalDigests {
+		if dig == "" {
+			continue
+		}
+		digs = append(digs, digest.Digest(dig))
+	}
+	return digs
+}
+
+// CacheDigest returns the digest used to key cache entries for this call.
+// It is based on the call digest plus any additional cache-key digests.
+func (id *ID) CacheDigest() digest.Digest {
+	if id == nil {
+		return ""
+	}
+	extras := normalizedAdditionalDigestStrings(id.pb.AdditionalDigests)
+	if len(extras) == 0 {
+		return id.Digest()
+	}
+	ins := make([]string, 0, 1+len(extras))
+	ins = append(ins, id.Digest().String())
+	ins = append(ins, extras...)
+	return hashutil.HashStrings(ins...)
+}
+
+func (id *ID) inputDigest() digest.Digest {
+	if id == nil {
+		return ""
+	}
+	base := id.Digest()
+	if content := id.ContentDigest(); content != "" {
+		base = content
+	}
+	extras := normalizedAdditionalDigestStrings(id.pb.AdditionalDigests)
+	if len(extras) == 0 {
+		return base
+	}
+	ins := make([]string, 0, 1+len(extras))
+	ins = append(ins, base.String())
+	ins = append(ins, extras...)
+	return hashutil.HashStrings(ins...)
+}
+
 // EffectIDs returns the effect IDs directly attached to this call.
 func (id *ID) EffectIDs() []string {
 	if id == nil {
@@ -232,6 +280,91 @@ func (id *ID) Inputs() ([]digest.Digest, error) {
 		}
 	}
 	return inputs, nil
+}
+
+// SelfDigestAndInputs returns a digest of the call's "self" (excluding any ID
+// input digest values) and a list of input ID digests (receiver + ID literals).
+//
+// ID literals contribute only their type marker to the self digest; their digest
+// values are returned via the inputs slice.
+func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
+	if id == nil {
+		return "", nil, nil
+	}
+
+	var inputs []digest.Digest
+
+	h := hashutil.NewHasher()
+
+	// Receiver contributes to inputs, not the self digest.
+	if id.receiver != nil {
+		inputs = append(inputs, id.receiver.inputDigest())
+	}
+	for _, dig := range normalizedAdditionalDigestStrings(id.pb.AdditionalDigests) {
+		inputs = append(inputs, digest.Digest(dig))
+	}
+	h = h.WithDelim()
+
+	// Type
+	var curType *callpbv1.Type
+	for curType = id.pb.Type; curType != nil; curType = curType.Elem {
+		h = h.WithString(curType.NamedType)
+		if curType.NonNull {
+			h = h.WithByte(2)
+		} else {
+			h = h.WithByte(1)
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	// Field
+	h = h.WithString(id.pb.Field).
+		WithDelim()
+
+	// Args
+	for _, arg := range id.args {
+		if arg.isSensitive {
+			continue
+		}
+		var err error
+		h, inputs, err = appendArgumentSelfBytes(arg, h, inputs)
+		if err != nil {
+			h.Close()
+			return "", nil, err
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	// Nth
+	h = h.WithInt64(id.pb.Nth).
+		WithDelim()
+
+	// Module
+	if id.pb.Module != nil {
+		h = h.WithString(id.pb.Module.CallDigest).
+			WithString(id.pb.Module.Name).
+			WithString(id.pb.Module.Ref).
+			WithString(id.pb.Module.Pin)
+	}
+	h = h.WithDelim()
+
+	// View
+	h = h.WithString(id.pb.View).
+		WithDelim()
+
+	// Custom digest overrides are semantically part of cache identity and must
+	// participate in the call self digest.
+	if id.pb.IsCustomDigest {
+		h = h.WithByte(1).
+			WithString(id.pb.Digest)
+	} else {
+		h = h.WithByte(0)
+	}
+	h = h.WithDelim()
+
+	return digest.Digest(h.DigestAndClose()), inputs, nil
 }
 
 func (id *ID) Modules() []*Module {
@@ -370,9 +503,19 @@ func WithContentDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
 		if dig != "" {
 			id.pb.ContentDigest = dig.String()
+			id.pb.AdditionalDigests = appendAdditionalDigest(id.pb.AdditionalDigests, dig.String())
 		} else {
 			id.pb.ContentDigest = ""
 		}
+	}
+}
+
+func WithAdditionalDigest(dig digest.Digest) IDOpt {
+	return func(id *ID) {
+		if dig == "" {
+			return
+		}
+		id.pb.AdditionalDigests = appendAdditionalDigest(id.pb.AdditionalDigests, dig.String())
 	}
 }
 
@@ -536,17 +679,18 @@ func (id *ID) shallowClone() *ID {
 	// NB: this is finnicky, but shouldn't change much, seems worth avoiding
 	// reflection in proto.CloneOf
 	cp.pb = &callpbv1.Call{
-		ReceiverDigest: cp.pb.ReceiverDigest,
-		Type:           cp.pb.Type,
-		Field:          cp.pb.Field,
-		Args:           cp.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
-		Nth:            cp.pb.Nth,
-		Module:         cp.pb.Module,
-		Digest:         cp.pb.Digest,
-		View:           cp.pb.View,
-		IsCustomDigest: cp.pb.IsCustomDigest,
-		ContentDigest:  cp.pb.ContentDigest,
-		EffectIds:      cp.pb.EffectIds,
+		ReceiverDigest:    cp.pb.ReceiverDigest,
+		Type:              cp.pb.Type,
+		Field:             cp.pb.Field,
+		Args:              cp.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
+		Nth:               cp.pb.Nth,
+		Module:            cp.pb.Module,
+		Digest:            cp.pb.Digest,
+		View:              cp.pb.View,
+		IsCustomDigest:    cp.pb.IsCustomDigest,
+		ContentDigest:     cp.pb.ContentDigest,
+		EffectIds:         cp.pb.EffectIds,
+		AdditionalDigests: slices.Clone(cp.pb.AdditionalDigests),
 	}
 	return &cp
 }
@@ -672,10 +816,11 @@ func (id *ID) decode(
 	return nil
 }
 
-// calcDigest calculates the recipe digest for the ID. Does not include the
-// contentDigest field. For references to other IDs (e.g. receiver, arguments),
-// it prefers their content digest if available, otherwise falls back to their
-// regular digest.
+// calcDigest calculates the recipe digest for the ID.
+//
+// It excludes the content digest field, but includes additional cache-key
+// digests so calls that differ only by additional digests remain distinct in
+// serialized DAG form.
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
 		return "", nil
@@ -690,13 +835,10 @@ func (id *ID) calcDigest() (string, error) {
 	h := hashutil.NewHasher()
 
 	// ReceiverDigest
-	// prefer content digest if available, otherwise use regular digest
+	// Prefer content digest when available (legacy behavior), while still
+	// incorporating additional digests in the receiver's effective identity.
 	if id.receiver != nil {
-		if id.receiver.pb.ContentDigest != "" {
-			h = h.WithString(id.receiver.pb.ContentDigest)
-		} else {
-			h = h.WithString(id.receiver.pb.Digest)
-		}
+		h = h.WithString(id.receiver.inputDigest().String())
 	}
 	h = h.WithDelim()
 
@@ -748,6 +890,15 @@ func (id *ID) calcDigest() (string, error) {
 	h = h.WithString(id.pb.View).
 		WithDelim()
 
+	// Additional cache-key digests
+	if extras := normalizedAdditionalDigestStrings(id.pb.AdditionalDigests); len(extras) > 0 {
+		h = h.WithDelim()
+		for _, dig := range extras {
+			h = h.WithString(dig).
+				WithDelim()
+		}
+	}
+
 	return h.DigestAndClose(), nil
 }
 
@@ -763,6 +914,17 @@ func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, e
 	return h, nil
 }
 
+func appendArgumentSelfBytes(arg *Argument, h *hashutil.Hasher, inputs []digest.Digest) (*hashutil.Hasher, []digest.Digest, error) {
+	h = h.WithString(arg.pb.Name)
+
+	h, inputs, err := appendLiteralSelfBytes(arg.value, h, inputs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
+	}
+
+	return h, inputs, nil
+}
+
 // appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
 func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
@@ -770,13 +932,8 @@ func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, erro
 	switch v := lit.(type) {
 	case *LiteralID:
 		const prefix = '0'
-		h = h.WithByte(prefix)
-		// prefer content digest if available
-		if v.id.pb.ContentDigest != "" {
-			h = h.WithString(v.id.pb.ContentDigest)
-		} else {
-			h = h.WithString(v.id.pb.Digest)
-		}
+		h = h.WithByte(prefix).
+			WithString(v.id.inputDigest().String())
 	case *LiteralNull:
 		const prefix = '1'
 		h = h.WithByte(prefix)
@@ -835,6 +992,74 @@ func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, erro
 	return h, nil
 }
 
+// appendLiteralSelfBytes appends literal bytes while collecting ID literal
+// digests as explicit inputs instead of including them in the hash.
+func appendLiteralSelfBytes(lit Literal, h *hashutil.Hasher, inputs []digest.Digest) (*hashutil.Hasher, []digest.Digest, error) {
+	var err error
+	// we use a unique prefix byte for each type to avoid collisions
+	switch v := lit.(type) {
+	case *LiteralID:
+		const prefix = '0'
+		h = h.WithByte(prefix)
+		inputs = append(inputs, v.id.inputDigest())
+	case *LiteralNull:
+		const prefix = '1'
+		h = h.WithByte(prefix)
+		if v.pbVal.Null {
+			h = h.WithByte(1)
+		} else {
+			h = h.WithByte(2)
+		}
+	case *LiteralBool:
+		const prefix = '2'
+		h = h.WithByte(prefix)
+		if v.pbVal.Bool {
+			h = h.WithByte(1)
+		} else {
+			h = h.WithByte(2)
+		}
+	case *LiteralEnum:
+		const prefix = '3'
+		h = h.WithByte(prefix).
+			WithString(v.pbVal.Enum)
+	case *LiteralInt:
+		const prefix = '4'
+		h = h.WithByte(prefix).
+			WithInt64(v.pbVal.Int)
+	case *LiteralFloat:
+		const prefix = '5'
+		h = h.WithByte(prefix).
+			WithFloat64(v.pbVal.Float)
+	case *LiteralString:
+		const prefix = '6'
+		h = h.WithByte(prefix).
+			WithString(v.pbVal.String_)
+	case *LiteralList:
+		const prefix = '7'
+		h = h.WithByte(prefix)
+		for _, elem := range v.values {
+			h, inputs, err = appendLiteralSelfBytes(elem, h, inputs)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	case *LiteralObject:
+		const prefix = '8'
+		h = h.WithByte(prefix)
+		for _, arg := range v.values {
+			h, inputs, err = appendArgumentSelfBytes(arg, h, inputs)
+			if err != nil {
+				return nil, nil, err
+			}
+			h = h.WithDelim()
+		}
+	default:
+		return nil, nil, fmt.Errorf("unknown literal type %T", v)
+	}
+	h = h.WithDelim()
+	return h, inputs, nil
+}
+
 func mergeEffectIDs(existing []string, extra []string) []string {
 	if len(existing) == 0 && len(extra) == 0 {
 		return nil
@@ -856,4 +1081,38 @@ func mergeEffectIDs(existing []string, extra []string) []string {
 		merged = append(merged, id)
 	}
 	return merged
+}
+
+func appendAdditionalDigest(existing []string, dig string) []string {
+	if dig == "" {
+		return existing
+	}
+	for _, existingDig := range existing {
+		if existingDig == dig {
+			return existing
+		}
+	}
+	return append(existing, dig)
+}
+
+func normalizedAdditionalDigestStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(in))
+	for _, dig := range in {
+		if dig == "" {
+			continue
+		}
+		set[dig] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for dig := range set {
+		out = append(out, dig)
+	}
+	slices.Sort(out)
+	return out
 }

@@ -2167,6 +2167,57 @@ func TestIDFormat(t *testing.T) {
 	assert.Equal(t, lineAArg.Value.GetCallDigest(), pointADgst.String())
 }
 
+func TestIDAdditionalDigestsPreserveDistinctCallsInDAG(t *testing.T) {
+	base := call.New().Append(dagql.Int(0).Type(), "same")
+	idA := base.With(call.WithAdditionalDigest(digest.FromString("additional-a")))
+	idB := base.With(call.WithAdditionalDigest(digest.FromString("additional-b")))
+
+	assert.Check(t, idA.Digest() != idB.Digest())
+	assert.Check(t, idA.CacheDigest() != idB.CacheDigest())
+
+	root := call.New().Append(
+		dagql.Int(0).Type(),
+		"combine",
+		call.WithArgs(
+			call.NewArgument("a", call.NewLiteralID(idA), false),
+			call.NewArgument("b", call.NewLiteralID(idB), false),
+		),
+	)
+
+	pbDag, err := root.ToProto()
+	assert.NilError(t, err)
+
+	callAPB, ok := pbDag.CallsByDigest[idA.Digest().String()]
+	assert.Assert(t, ok)
+	callBPB, ok := pbDag.CallsByDigest[idB.Digest().String()]
+	assert.Assert(t, ok)
+	assert.DeepEqual(t, callAPB.AdditionalDigests, []string{digest.FromString("additional-a").String()})
+	assert.DeepEqual(t, callBPB.AdditionalDigests, []string{digest.FromString("additional-b").String()})
+	assert.Check(t, callAPB.Digest != callBPB.Digest)
+
+	var decoded call.ID
+	assert.NilError(t, decoded.FromProto(pbDag))
+	decodedDAG, err := decoded.ToProto()
+	assert.NilError(t, err)
+	_, ok = decodedDAG.CallsByDigest[idA.Digest().String()]
+	assert.Assert(t, ok)
+	_, ok = decodedDAG.CallsByDigest[idB.Digest().String()]
+	assert.Assert(t, ok)
+}
+
+func TestIDWithContentDigestAddsKnownDigest(t *testing.T) {
+	base := call.New().Append(dagql.Int(0).Type(), "same-content")
+	first := digest.FromString("content-digest-a")
+	second := digest.FromString("content-digest-b")
+
+	withContent := base.
+		With(call.WithContentDigest(first)).
+		With(call.WithContentDigest(second))
+
+	assert.Equal(t, withContent.ContentDigest().String(), second.String())
+	assert.DeepEqual(t, withContent.AdditionalDigests(), []digest.Digest{first, second})
+}
+
 func eqIDs(t *testing.T, actual, expected string) {
 	debugID(t, "actual  : %s", actual)
 	debugID(t, "expected: %s", expected)

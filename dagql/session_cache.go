@@ -113,7 +113,7 @@ func (c *SessionCache) GetOrInitCall(
 	if keys == nil {
 		keys = &c.seenKeys
 	}
-	callKey := key.ID.Digest().String()
+	callKey := key.ID.CacheDigest().String()
 	_, seen := keys.LoadOrStore(callKey, struct{}{})
 	if o.Telemetry != nil && (!seen || key.DoNotCache) {
 		// track keys globally in addition to any local key stores, otherwise we'll

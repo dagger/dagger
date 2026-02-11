@@ -177,8 +177,22 @@ type cache struct {
 	// calls that have completed successfully and are cached, keyed by the storage key
 	completedCalls map[string]*resultList
 
-	// calls that have completed successfully and are cached, keyed by content digest key
-	completedCallsByContent map[string]*resultList
+	// calls that have completed successfully and are cached, keyed by known digest key
+	// (e.g. content digests and additional digests attached to IDs/results).
+	completedCallsByKnownDigest map[string]*resultList
+
+	// e-graph index for call-result equivalence.
+	egraphDigestToClass map[string]eqClassID
+	egraphParents       []eqClassID
+	egraphRanks         []uint8
+
+	egraphClassTerms    map[eqClassID]map[egraphTermID]struct{}
+	egraphTerms         map[egraphTermID]*egraphTerm
+	egraphTermsByDigest map[string]map[egraphTermID]struct{}
+	egraphResultTerms   map[*sharedResult]map[egraphTermID]struct{}
+
+	nextEgraphClassID eqClassID
+	nextEgraphTermID  egraphTermID
 
 	// in-progress and completed opaque in-memory calls, keyed by call key
 	ongoingArbitraryCalls   map[string]*sharedArbitraryResult
@@ -205,6 +219,7 @@ type sharedResult struct {
 
 	storageKey          string              // key to cache.completedCalls
 	callConcurrencyKeys callConcurrencyKeys // key to cache.ongoingCalls
+	requestID           *call.ID            // original call ID requested for this cache entry
 
 	// Immutable payload shared by all per-call Result values.
 	constructor *call.ID
@@ -218,6 +233,7 @@ type sharedResult struct {
 
 	safeToPersistCache bool
 	contentDigestKey   string
+	knownDigestKeys    []string
 	resultCallKey      string
 	onRelease          OnReleaseFunc
 
@@ -336,15 +352,15 @@ func (res *sharedResult) release(ctx context.Context) error {
 				}
 			}
 		}
-		if res.contentDigestKey != "" {
-			key := res.contentDigestKey
-			if lst := res.cache.completedCallsByContent[key]; lst != nil {
+		for _, key := range res.knownDigestKeys {
+			if lst := res.cache.completedCallsByKnownDigest[key]; lst != nil {
 				lst.remove(res)
 				if lst.empty() {
-					delete(res.cache.completedCallsByContent, key)
+					delete(res.cache.completedCallsByKnownDigest, key)
 				}
 			}
 		}
+		res.cache.removeResultFromEgraphLocked(res)
 		onRelease = res.onRelease
 	}
 	res.cache.mu.Unlock()
@@ -677,7 +693,7 @@ func (c *cache) Size() int {
 	for _, lst := range c.completedCalls {
 		total += lst.len()
 	}
-	for _, lst := range c.completedCallsByContent {
+	for _, lst := range c.completedCallsByKnownDigest {
 		total += lst.len()
 	}
 	total += len(c.ongoingArbitraryCalls)
@@ -694,7 +710,7 @@ func (c *cache) EntryStats() CacheEntryStats {
 	for _, lst := range c.completedCalls {
 		stats.CompletedCalls += lst.len()
 	}
-	for _, lst := range c.completedCallsByContent {
+	for _, lst := range c.completedCallsByKnownDigest {
 		stats.CompletedCallsByContent += lst.len()
 	}
 	stats.OngoingArbitrary = len(c.ongoingArbitraryCalls)
@@ -822,7 +838,7 @@ func (c *cache) GetOrInitCall(
 		return perCall, nil
 	}
 
-	callKey := key.ID.Digest().String()
+	callKey := key.ID.CacheDigest().String()
 	callConcKeys := callConcurrencyKeys{
 		callKey:        callKey,
 		concurrencyKey: key.ConcurrencyKey,
@@ -906,7 +922,25 @@ func (c *cache) GetOrInitCall(
 		return nil, ErrCacheRecursiveCall
 	}
 
-	contentKey := key.ID.ContentDigest().String()
+	knownLookupKeys := make([]string, 0, 1+len(key.ID.AdditionalDigests()))
+	if contentKey := key.ID.ContentDigest().String(); contentKey != "" {
+		knownLookupKeys = append(knownLookupKeys, contentKey)
+	}
+	for _, dig := range key.ID.AdditionalDigests() {
+		if key := dig.String(); key != "" {
+			knownLookupKeys = append(knownLookupKeys, key)
+		}
+	}
+	var lookupTerm *callTermProto
+	if storageKey == callKey {
+		term, err := termProtoForID(key.ID)
+		if err != nil {
+			return nil, fmt.Errorf("derive call term: %w", err)
+		}
+		if len(term.inputDigests) > 0 {
+			lookupTerm = &term
+		}
+	}
 
 	c.mu.Lock()
 	if c.ongoingCalls == nil {
@@ -915,8 +949,8 @@ func (c *cache) GetOrInitCall(
 	if c.completedCalls == nil {
 		c.completedCalls = make(map[string]*resultList)
 	}
-	if c.completedCallsByContent == nil {
-		c.completedCallsByContent = make(map[string]*resultList)
+	if c.completedCallsByKnownDigest == nil {
+		c.completedCallsByKnownDigest = make(map[string]*resultList)
 	}
 
 	if lst, ok := c.completedCalls[storageKey]; ok {
@@ -947,10 +981,50 @@ func (c *cache) GetOrInitCall(
 		}
 	}
 
-	if contentKey != "" {
-		if lst, ok := c.completedCallsByContent[contentKey]; ok {
+	if lookupTerm != nil {
+		if res := c.lookupEquivalentResultLocked(*lookupTerm); res != nil {
+			res.refCount++
+			c.mu.Unlock()
+
+			hitEquivalent := res.constructor != nil && res.constructor.CacheDigest() != key.ID.CacheDigest()
+			var idOverride *call.ID
+			if hitEquivalent {
+				idOverride = key.ID
+			}
+
+			if !res.hasValue {
+				if shouldTrackNilResult(ctx) {
+					return Result[Typed]{
+						shared:                res,
+						idOverride:            idOverride,
+						hitCache:              true,
+						hitContentDigestCache: hitEquivalent,
+					}, nil
+				}
+				return nil, nil
+			}
+			retRes := Result[Typed]{
+				shared:                res,
+				idOverride:            idOverride,
+				hitCache:              true,
+				hitContentDigestCache: hitEquivalent,
+			}
+			if res.objType != nil {
+				retObjRes, err := res.objType.New(retRes)
+				if err != nil {
+					return nil, fmt.Errorf("reconstruct equivalent-hit object result from cache: %w", err)
+				}
+				return retObjRes, nil
+			}
+			return retRes, nil
+		}
+	}
+
+	for _, knownKey := range knownLookupKeys {
+		if lst, ok := c.completedCallsByKnownDigest[knownKey]; ok {
 			if res := lst.first(); res != nil {
 				res.refCount++
+				c.aliasRequestIDToResultLocked(key.ID, res)
 				c.mu.Unlock()
 				if !res.hasValue {
 					if shouldTrackNilResult(ctx) {
@@ -1002,6 +1076,7 @@ func (c *cache) GetOrInitCall(
 
 		storageKey:          storageKey,
 		callConcurrencyKeys: callConcKeys,
+		requestID:           key.ID,
 
 		persistToDB: persistToDB,
 
@@ -1042,8 +1117,26 @@ func (c *cache) GetOrInitCall(
 				res.objType = obj.ObjectType()
 			}
 			if res.constructor != nil {
+				if res.requestID != nil {
+					for _, extraDig := range res.requestID.AdditionalDigests() {
+						res.constructor = res.constructor.With(call.WithAdditionalDigest(extraDig))
+					}
+				}
 				res.contentDigestKey = res.constructor.ContentDigest().String()
-				res.resultCallKey = res.constructor.Digest().String()
+				knownDigestSet := map[string]struct{}{}
+				if res.contentDigestKey != "" {
+					knownDigestSet[res.contentDigestKey] = struct{}{}
+				}
+				for _, dig := range res.constructor.AdditionalDigests() {
+					if d := dig.String(); d != "" {
+						knownDigestSet[d] = struct{}{}
+					}
+				}
+				res.knownDigestKeys = make([]string, 0, len(knownDigestSet))
+				for knownDig := range knownDigestSet {
+					res.knownDigestKeys = append(res.knownDigestKeys, knownDig)
+				}
+				res.resultCallKey = res.constructor.CacheDigest().String()
 			}
 		}
 	}()
@@ -1107,15 +1200,16 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, isFirstCaller bool)
 			lst.add(res)
 		}
 
-		if res.contentDigestKey != "" {
-			contentKey := res.contentDigestKey
-			lst := c.completedCallsByContent[contentKey]
+		for _, knownDigestKey := range res.knownDigestKeys {
+			lst := c.completedCallsByKnownDigest[knownDigestKey]
 			if lst == nil {
 				lst = newResultList()
-				c.completedCallsByContent[contentKey] = lst
+				c.completedCallsByKnownDigest[knownDigestKey] = lst
 			}
 			lst.add(res)
 		}
+
+		c.indexResultInEgraphLocked(res)
 
 		res.refCount++
 		c.mu.Unlock()
