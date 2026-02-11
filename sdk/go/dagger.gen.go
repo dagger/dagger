@@ -311,6 +311,9 @@ type TypeDefID string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
+// The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
+type WorkspaceID string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -11348,9 +11351,21 @@ func (r *Client) CurrentModule() *CurrentModule {
 	}
 }
 
+// CurrentTypeDefsOpts contains options for Client.CurrentTypeDefs
+type CurrentTypeDefsOpts struct {
+	// Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
+	IncludeCore bool
+}
+
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+func (r *Client) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includeCore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeCore) {
+			q = q.Arg("includeCore", opts[i].IncludeCore)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -12226,6 +12241,16 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	}
 }
 
+// Load a Workspace from its ID.
+func (r *Client) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
+	q := r.query.Select("loadWorkspaceFromID")
+	q = q.Arg("id", id)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // Create a new module.
 func (r *Client) Module() *Module {
 	q := r.query.Select("module")
@@ -12343,6 +12368,27 @@ func (r *Client) Version(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// WorkspaceOpts contains options for Client.Workspace
+type WorkspaceOpts struct {
+	// If true, skip legacy dagger.json migration checks.
+	SkipMigrationCheck bool
+}
+
+// Detect and return the current workspace.
+func (r *Client) Workspace(opts ...WorkspaceOpts) *Workspace {
+	q := r.query.Select("workspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `skipMigrationCheck` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipMigrationCheck) {
+			q = q.Arg("skipMigrationCheck", opts[i].SkipMigrationCheck)
+		}
+	}
+
+	return &Workspace{
+		query: q,
+	}
 }
 
 // The SDK config of the module.
@@ -13884,6 +13930,162 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	return &TypeDef{
 		query: q,
 	}
+}
+
+// A Dagger workspace detected from the current working directory.
+type Workspace struct {
+	query *querybuilder.Selection
+
+	configPath *string
+	hasConfig  *bool
+	id         *WorkspaceID
+	install    *string
+	moduleInit *string
+	root       *string
+}
+
+func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Path to config.toml (empty string if no config exists).
+func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
+	if r.configPath != nil {
+		return *r.configPath, nil
+	}
+	q := r.query.Select("configPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether a config.toml file exists in the workspace.
+func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
+	if r.hasConfig != nil {
+		return *r.hasConfig, nil
+	}
+	q := r.query.Select("hasConfig")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Workspace.
+func (r *Workspace) ID(ctx context.Context) (WorkspaceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Workspace) XXX_GraphQLType() string {
+	return "Workspace"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Workspace) XXX_GraphQLIDType() string {
+	return "WorkspaceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Workspace) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Workspace) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// WorkspaceInstallOpts contains options for Workspace.Install
+type WorkspaceInstallOpts struct {
+	// Override name for the installed module entry.
+	Name string
+}
+
+// Install a module into the workspace, writing config.toml to the host.
+func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceInstallOpts) (string, error) {
+	if r.install != nil {
+		return *r.install, nil
+	}
+	q := r.query.Select("install")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+	}
+	q = q.Arg("ref", ref)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
+type WorkspaceModuleInitOpts struct {
+	// Source subpath within the module root.
+	Source string
+	// Additional include patterns for the module.
+	Include []string
+}
+
+// Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.
+func (r *Workspace) ModuleInit(ctx context.Context, name string, sdk string, opts ...WorkspaceModuleInitOpts) (string, error) {
+	if r.moduleInit != nil {
+		return *r.moduleInit, nil
+	}
+	q := r.query.Select("moduleInit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("sdk", sdk)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Absolute path to the workspace root directory.
+func (r *Workspace) Root(ctx context.Context) (string, error) {
+	if r.root != nil {
+		return *r.root, nil
+	}
+	q := r.query.Select("root")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Sharing mode of the cache volume.

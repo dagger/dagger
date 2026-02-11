@@ -99,9 +99,9 @@ func CurrentModule() *dagger.CurrentModule {
 }
 
 // The TypeDef representations of the objects currently being served in the session.
-func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
+func CurrentTypeDefs(ctx context.Context, opts ...dagger.CurrentTypeDefsOpts) ([]dagger.TypeDef, error) {
 	client := initClient()
-	return client.CurrentTypeDefs(ctx)
+	return client.CurrentTypeDefs(ctx, opts...)
 }
 
 // The default platform of the engine.
@@ -528,6 +528,12 @@ func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	return client.LoadTypeDefFromID(id)
 }
 
+// Load a Workspace from its ID.
+func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
+	client := initClient()
+	return client.LoadWorkspaceFromID(id)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()
@@ -570,4 +576,10 @@ func TypeDef() *dagger.TypeDef {
 func Version(ctx context.Context) (string, error) {
 	client := initClient()
 	return client.Version(ctx)
+}
+
+// Detect and return the current workspace.
+func Workspace(opts ...dagger.WorkspaceOpts) *dagger.Workspace {
+	client := initClient()
+	return client.Workspace(opts...)
 }
