@@ -77,6 +77,37 @@ var moduleCmd = &cobra.Command{
 	GroupID: moduleGroup.ID,
 }
 
+var workspaceCmd = &cobra.Command{
+	Use:     "workspace",
+	Short:   "Manage the current workspace",
+	GroupID: moduleGroup.ID,
+}
+
+var workspaceInfoCmd = &cobra.Command{
+	Use:   "info",
+	Short: "Show workspace information",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := pathutil.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+		ws, err := workspace.DetectLocal(cwd)
+		if err != nil {
+			return fmt.Errorf("failed to detect workspace: %w", err)
+		}
+
+		fmt.Fprintf(cmd.OutOrStdout(), "Root:   %s\n", ws.Root)
+		configPath := filepath.Join(ws.Root, workspace.WorkspaceDirName, workspace.ConfigFileName)
+		if ws.Config != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "Config: %s\n", configPath)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Config: none\n")
+		}
+		return nil
+	},
+}
+
 // if the source root path already has some files
 // then use `srcRootPath/.dagger` for source
 func inferSourcePathDir(srcRootPath string) (string, error) {
@@ -166,6 +197,9 @@ func init() {
 	moduleModInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK")
 	moduleModInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleModInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module")
+
+	// dagger workspace
+	workspaceCmd.AddCommand(workspaceInfoCmd)
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")

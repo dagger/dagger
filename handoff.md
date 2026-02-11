@@ -79,6 +79,12 @@
   - Old `dagger init` kept intact for backwards compatibility
 - **Files**: `cmd/dagger/module.go`, `cmd/dagger/main.go`
 
+### 14. `dagger workspace info` command
+- **What**: Added `dagger workspace` parent command with `info` subcommand.
+- **Output**: Shows workspace root path and config path (or `none` if no config.toml).
+- **Pure CLI-side**: Uses `workspace.DetectLocal()`, no engine connection needed.
+- **Files**: `cmd/dagger/module.go`, `cmd/dagger/main.go`
+
 ## Test results
 
 | Test | Status | Notes |
@@ -103,6 +109,9 @@
 | Module files generated (dagger.json, main.go) | PASS | SDK scaffolding created |
 | `dagger functions` after module init | PASS | Shows `ci` |
 | `dagger module init` without --sdk | PASS | Error: `--sdk is required` |
+| `dagger workspace info` with config | PASS | Shows root path and config path |
+| `dagger workspace info` empty .dagger/ | PASS | Shows root path, `Config: none` |
+| `dagger workspace info` bare directory | PASS | Falls back to cwd, `Config: none` |
 
 ## Implementation gaps (not yet addressed)
 
