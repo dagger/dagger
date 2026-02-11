@@ -129,6 +129,11 @@ type Params struct {
 
 	SkipWorkspaceModules bool
 
+	// RemoteWorkdir is a git ref string (e.g. "github.com/foo/bar@v1.0")
+	// for loading a workspace from a remote git repository instead of the
+	// client's local filesystem.
+	RemoteWorkdir string
+
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
 }
@@ -1409,6 +1414,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.SkipWorkspaceModules {
 		md.SkipWorkspaceModules = true
+	}
+	if c.RemoteWorkdir != "" {
+		md.RemoteWorkdir = c.RemoteWorkdir
 	}
 
 	return md
