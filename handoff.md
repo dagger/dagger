@@ -39,6 +39,11 @@
 - **Fix**: `Config.Ignore []string` field for parsing workspace ignore patterns. Enforcement not yet implemented.
 - **Files**: `core/workspace/config.go`
 
+### 9. Apply workspace config defaults as constructor args (commit f2e3bd7cd)
+- **Problem**: `[modules.NAME.config]` entries in config.toml were parsed into `ModuleEntry.Config` but never applied to the module's constructor arguments.
+- **Fix**: After loading a workspace module via dagql pipeline, `applyWorkspaceConfigDefaults()` iterates over the module's ObjectDefs, finds the constructor, and sets `DefaultValue` on matching arguments (case-insensitive match). Values are parsed as JSON if valid, otherwise treated as string literals.
+- **Files**: `engine/server/session.go`
+
 ## Test results
 
 | Test | Status | Notes |
@@ -50,12 +55,12 @@
 | Workspace with wolfi module - call --help | PASS | Pipeline help works |
 | Pipeline execution: wolfi container with-exec stdout | PASS | Prints "hello" |
 | dagger version | PASS | Engine starts correctly |
+| Config defaults + malformed TOML | PENDING | Testing with 600s timeout (engine rebuild needed) |
 
 ## Implementation gaps (not yet addressed)
 
-1. **config.* constructor defaults**: Parsed in config struct but not passed as constructor args when loading modules
-2. **dagger install**: Doesn't update `.dagger/config.toml` (still only updates `dagger.json`)
-3. **dagger module init**: Not implemented (no way to create a new module in a workspace)
-4. **IncludeCoreModule**: Not yet a connect-time client control parameter
-5. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
-6. **.dagger/lock file**: Not implemented
+1. **dagger install**: Doesn't update `.dagger/config.toml` (still only updates `dagger.json`)
+2. **dagger module init**: Not implemented (no way to create a new module in a workspace)
+3. **IncludeCoreModule**: Not yet a connect-time client control parameter
+4. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
+5. **.dagger/lock file**: Not implemented
