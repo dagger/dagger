@@ -35,10 +35,12 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 // initializeWorkspace loads type definitions from the workspace.
 // Modules are already served by the engine at connect time.
 // MainObject is the Query root — workspace module constructors appear as Query root fields.
-// Core types are excluded — only workspace module types are shown.
+// All types (including core) are loaded so the CLI can navigate pipelines
+// (e.g. dagger call wolfi container with-exec). The CLI's root-level filter
+// hides core constructors from the top-level command display.
 func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
 	def := &moduleDef{}
-	if err := def.loadTypeDefs(ctx, dag, false); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
 	}
 	return def, nil
@@ -79,7 +81,7 @@ func initializeModule(
 		return nil, err
 	}
 
-	if err := def.loadTypeDefs(ctx, dag, false); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
 	}
 
