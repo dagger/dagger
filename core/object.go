@@ -339,10 +339,11 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				})
 			}
 			return fn.Call(ctx, &CallOpts{
-				Inputs:       callInput,
-				ParentTyped:  nil,
-				ParentFields: nil,
-				Server:       dag,
+				Inputs:         callInput,
+				ParentTyped:    nil,
+				ParentFields:   nil,
+				Server:         dag,
+				ContextualArgs: dagql.ContextualArgsFromContext(ctx),
 			})
 		},
 	)
@@ -463,6 +464,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 				ParentFields:   obj.Self().Fields,
 				SkipSelfSchema: false,
 				Server:         dag,
+				ContextualArgs: dagql.ContextualArgsFromContext(ctx),
 			}
 			for name, val := range args {
 				opts.Inputs = append(opts.Inputs, CallInput{

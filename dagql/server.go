@@ -896,6 +896,17 @@ func CurrentDagqlServer(ctx context.Context) *Server {
 	return val.(*Server)
 }
 
+type contextualArgsCtx struct{}
+
+func WithContextualArgs(ctx context.Context, args map[string]struct{}) context.Context {
+	return context.WithValue(ctx, contextualArgsCtx{}, args)
+}
+
+func ContextualArgsFromContext(ctx context.Context) map[string]struct{} {
+	val, _ := ctx.Value(contextualArgsCtx{}).(map[string]struct{})
+	return val
+}
+
 // NewResultForCurrentID creates a new Result that's set to the current ID from
 // the given self value.
 func NewResultForCurrentID[T Typed](
