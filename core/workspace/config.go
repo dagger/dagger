@@ -9,6 +9,7 @@ import (
 // Config represents a parsed .dagger/config.toml workspace configuration.
 type Config struct {
 	Modules map[string]ModuleEntry `toml:"modules"`
+	Ignore  []string               `toml:"ignore"`
 }
 
 // ModuleEntry represents a single module entry in the workspace config.
