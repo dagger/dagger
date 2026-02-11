@@ -31,10 +31,10 @@ func (c *copier) copyFile(source, target string) (didHardlink bool, rerr error) 
 	}
 	defer tgt.Close()
 
-	return false, copyFileContent(tgt, src)
+	return false, CopyFileContent(tgt, src)
 }
 
-func copyFileContent(dst, src *os.File) error {
+func CopyFileContent(dst, src *os.File) error {
 	buf := bufferPool.Get().(*[]byte)
 	_, err := io.CopyBuffer(dst, src, *buf)
 	bufferPool.Put(buf)
