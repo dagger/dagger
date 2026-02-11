@@ -107,6 +107,7 @@ func withEngine(
 
 		params.DisableHostRW = disableHostRW
 		params.AllowedLLMModules = allowedLLMModules
+		params.RemoteWorkdir = remoteWorkdir
 
 		params.CloudURLCallback = Frontend.SetCloudURL
 
