@@ -922,14 +922,21 @@ func (c *cache) GetOrInitCall(
 		return nil, ErrCacheRecursiveCall
 	}
 
-	knownLookupKeys := make([]string, 0, 1+len(key.ID.AdditionalDigests()))
-	if contentKey := key.ID.ContentDigest().String(); contentKey != "" {
-		knownLookupKeys = append(knownLookupKeys, contentKey)
-	}
-	for _, dig := range key.ID.AdditionalDigests() {
-		if key := dig.String(); key != "" {
-			knownLookupKeys = append(knownLookupKeys, key)
+	knownLookupKeys := make([]string, 0, 1+len(key.ID.ExtraDigests()))
+	knownLookupSet := make(map[string]struct{}, cap(knownLookupKeys))
+	addKnownLookupKey := func(k string) {
+		if k == "" {
+			return
 		}
+		if _, ok := knownLookupSet[k]; ok {
+			return
+		}
+		knownLookupSet[k] = struct{}{}
+		knownLookupKeys = append(knownLookupKeys, k)
+	}
+	addKnownLookupKey(key.ID.ContentDigest().String())
+	for _, extra := range key.ID.ExtraDigests() {
+		addKnownLookupKey(extra.Digest.String())
 	}
 	var lookupTerm *callTermProto
 	if storageKey == callKey {
@@ -1118,8 +1125,8 @@ func (c *cache) GetOrInitCall(
 			}
 			if res.constructor != nil {
 				if res.requestID != nil {
-					for _, extraDig := range res.requestID.AdditionalDigests() {
-						res.constructor = res.constructor.With(call.WithAdditionalDigest(extraDig))
+					for _, extra := range res.requestID.ExtraDigests() {
+						res.constructor = res.constructor.With(call.WithExtraDigest(extra))
 					}
 				}
 				res.contentDigestKey = res.constructor.ContentDigest().String()
@@ -1127,8 +1134,8 @@ func (c *cache) GetOrInitCall(
 				if res.contentDigestKey != "" {
 					knownDigestSet[res.contentDigestKey] = struct{}{}
 				}
-				for _, dig := range res.constructor.AdditionalDigests() {
-					if d := dig.String(); d != "" {
+				for _, extra := range res.constructor.ExtraDigests() {
+					if d := extra.Digest.String(); d != "" {
 						knownDigestSet[d] = struct{}{}
 					}
 				}

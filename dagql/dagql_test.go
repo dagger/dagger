@@ -2167,12 +2167,12 @@ func TestIDFormat(t *testing.T) {
 	assert.Equal(t, lineAArg.Value.GetCallDigest(), pointADgst.String())
 }
 
-func TestIDAdditionalDigestsPreserveDistinctCallsInDAG(t *testing.T) {
+func TestIDAdditionalDigestsMergeOnSameRecipeCallInDAG(t *testing.T) {
 	base := call.New().Append(dagql.Int(0).Type(), "same")
 	idA := base.With(call.WithAdditionalDigest(digest.FromString("additional-a")))
 	idB := base.With(call.WithAdditionalDigest(digest.FromString("additional-b")))
 
-	assert.Check(t, idA.Digest() != idB.Digest())
+	assert.Check(t, idA.Digest() == idB.Digest())
 	assert.Check(t, idA.CacheDigest() != idB.CacheDigest())
 
 	root := call.New().Append(
@@ -2187,13 +2187,13 @@ func TestIDAdditionalDigestsPreserveDistinctCallsInDAG(t *testing.T) {
 	pbDag, err := root.ToProto()
 	assert.NilError(t, err)
 
-	callAPB, ok := pbDag.CallsByDigest[idA.Digest().String()]
+	callPB, ok := pbDag.CallsByDigest[idA.Digest().String()]
 	assert.Assert(t, ok)
-	callBPB, ok := pbDag.CallsByDigest[idB.Digest().String()]
-	assert.Assert(t, ok)
-	assert.DeepEqual(t, callAPB.AdditionalDigests, []string{digest.FromString("additional-a").String()})
-	assert.DeepEqual(t, callBPB.AdditionalDigests, []string{digest.FromString("additional-b").String()})
-	assert.Check(t, callAPB.Digest != callBPB.Digest)
+	assert.Equal(t, len(callPB.ExtraDigests), 2)
+	assert.Equal(t, callPB.ExtraDigests[0].Digest, digest.FromString("additional-a").String())
+	assert.Equal(t, callPB.ExtraDigests[1].Digest, digest.FromString("additional-b").String())
+	assert.Equal(t, callPB.ExtraDigests[0].Label, "")
+	assert.Equal(t, callPB.ExtraDigests[1].Label, "")
 
 	var decoded call.ID
 	assert.NilError(t, decoded.FromProto(pbDag))
@@ -2201,8 +2201,7 @@ func TestIDAdditionalDigestsPreserveDistinctCallsInDAG(t *testing.T) {
 	assert.NilError(t, err)
 	_, ok = decodedDAG.CallsByDigest[idA.Digest().String()]
 	assert.Assert(t, ok)
-	_, ok = decodedDAG.CallsByDigest[idB.Digest().String()]
-	assert.Assert(t, ok)
+	assert.Equal(t, len(decodedDAG.CallsByDigest), len(pbDag.CallsByDigest))
 }
 
 func TestIDWithContentDigestAddsKnownDigest(t *testing.T) {
@@ -2215,7 +2214,10 @@ func TestIDWithContentDigestAddsKnownDigest(t *testing.T) {
 		With(call.WithContentDigest(second))
 
 	assert.Equal(t, withContent.ContentDigest().String(), second.String())
-	assert.DeepEqual(t, withContent.AdditionalDigests(), []digest.Digest{first, second})
+	assert.DeepEqual(t, withContent.ExtraDigests(), []call.ExtraDigest{
+		{Digest: first, Label: "content"},
+		{Digest: second, Label: "content"},
+	})
 }
 
 func eqIDs(t *testing.T, actual, expected string) {

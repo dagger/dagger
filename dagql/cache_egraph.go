@@ -462,16 +462,16 @@ func (c *cache) outputEqClassForResultLocked(res *sharedResult) eqClassID {
 	if res.requestID != nil {
 		add(res.requestID.Digest().String())
 		add(res.requestID.CacheDigest().String())
-		for _, dig := range res.requestID.AdditionalDigests() {
-			add(dig.String())
+		for _, extra := range res.requestID.ExtraDigests() {
+			add(extra.Digest.String())
 		}
 	}
 	if res.constructor != nil {
 		add(res.constructor.Digest().String())
 		add(res.constructor.CacheDigest().String())
 		add(res.constructor.ContentDigest().String())
-		for _, dig := range res.constructor.AdditionalDigests() {
-			add(dig.String())
+		for _, extra := range res.constructor.ExtraDigests() {
+			add(extra.Digest.String())
 		}
 	}
 	add(res.resultCallKey)
@@ -516,8 +516,8 @@ func (c *cache) aliasRequestIDToResultLocked(requestID *call.ID, res *sharedResu
 	if dig := requestID.ContentDigest().String(); dig != "" {
 		outputEqID = c.mergeEqClassesLocked(outputEqID, c.ensureEqClassForDigestLocked(dig))
 	}
-	for _, dig := range requestID.AdditionalDigests() {
-		if d := dig.String(); d != "" {
+	for _, extra := range requestID.ExtraDigests() {
+		if d := extra.Digest.String(); d != "" {
 			outputEqID = c.mergeEqClassesLocked(outputEqID, c.ensureEqClassForDigestLocked(d))
 		}
 	}

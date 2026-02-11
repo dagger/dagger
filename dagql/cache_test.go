@@ -1204,7 +1204,7 @@ func TestCacheEgraphAliasesContentHitIDsForDownstreamTerms(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 0, g2InitCalls)
 	assert.Assert(t, g2Res.HitCache())
-	assert.Assert(t, g2Res.HitContentDigestCache())
+	assert.Assert(t, !g2Res.HitContentDigestCache())
 	assert.Equal(t, 111, cacheTestUnwrapInt(t, g2Res))
 	assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
 
@@ -1393,7 +1393,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	assert.Assert(t, c.completedCalls[storageKey] != nil)
 	assert.Assert(t, c.completedCalls[resultKey] != nil)
 	assert.Assert(t, c.completedCallsByKnownDigest[contentKey] != nil)
-	assert.Equal(t, 3, c.Size())
+	assert.Equal(t, 2+len(resultID.ExtraDigests()), c.Size())
 
 	assert.NilError(t, res.Release(ctx))
 	assert.Equal(t, 0, len(c.ongoingCalls))

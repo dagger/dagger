@@ -2,7 +2,6 @@ package call
 
 import (
 	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"slices"
 	"strings"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/zeebo/xxh3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -54,6 +52,16 @@ type ID struct {
 	args     []*Argument
 	module   *Module
 	typ      *Type
+}
+
+const (
+	extraDigestLabelContent = "content"
+	extraDigestLabelCustom  = "custom"
+)
+
+type ExtraDigest struct {
+	Digest digest.Digest
+	Label  string
 }
 
 type View string
@@ -138,21 +146,31 @@ func (id *ID) ContentDigest() digest.Digest {
 	if id == nil {
 		return ""
 	}
-	return digest.Digest(id.pb.ContentDigest)
-}
-
-func (id *ID) AdditionalDigests() []digest.Digest {
-	if id == nil || len(id.pb.AdditionalDigests) == 0 {
-		return nil
-	}
-	digs := make([]digest.Digest, 0, len(id.pb.AdditionalDigests))
-	for _, dig := range id.pb.AdditionalDigests {
-		if dig == "" {
+	var last digest.Digest
+	for _, extra := range id.pb.ExtraDigests {
+		if extra == nil || extra.Label != extraDigestLabelContent || extra.Digest == "" {
 			continue
 		}
-		digs = append(digs, digest.Digest(dig))
+		last = digest.Digest(extra.Digest)
 	}
-	return digs
+	return last
+}
+
+func (id *ID) ExtraDigests() []ExtraDigest {
+	if id == nil || len(id.pb.ExtraDigests) == 0 {
+		return nil
+	}
+	out := make([]ExtraDigest, 0, len(id.pb.ExtraDigests))
+	for _, extra := range id.pb.ExtraDigests {
+		if extra == nil || extra.Digest == "" {
+			continue
+		}
+		out = append(out, ExtraDigest{
+			Digest: digest.Digest(extra.Digest),
+			Label:  extra.Label,
+		})
+	}
+	return out
 }
 
 // CacheDigest returns the digest used to key cache entries for this call.
@@ -161,7 +179,7 @@ func (id *ID) CacheDigest() digest.Digest {
 	if id == nil {
 		return ""
 	}
-	extras := normalizedAdditionalDigestStrings(id.pb.AdditionalDigests)
+	extras := normalizedExtraDigestStrings(id.pb.ExtraDigests)
 	if len(extras) == 0 {
 		return id.Digest()
 	}
@@ -179,7 +197,7 @@ func (id *ID) inputDigest() digest.Digest {
 	if content := id.ContentDigest(); content != "" {
 		base = content
 	}
-	extras := normalizedAdditionalDigestStrings(id.pb.AdditionalDigests)
+	extras := normalizedExtraDigestStrings(id.pb.ExtraDigests)
 	if len(extras) == 0 {
 		return base
 	}
@@ -300,7 +318,7 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	if id.receiver != nil {
 		inputs = append(inputs, id.receiver.inputDigest())
 	}
-	for _, dig := range normalizedAdditionalDigestStrings(id.pb.AdditionalDigests) {
+	for _, dig := range normalizedExtraDigestStrings(id.pb.ExtraDigests) {
 		inputs = append(inputs, digest.Digest(dig))
 	}
 	h = h.WithDelim()
@@ -353,16 +371,6 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	// View
 	h = h.WithString(id.pb.View).
 		WithDelim()
-
-	// Custom digest overrides are semantically part of cache identity and must
-	// participate in the call self digest.
-	if id.pb.IsCustomDigest {
-		h = h.WithByte(1).
-			WithString(id.pb.Digest)
-	} else {
-		h = h.WithByte(0)
-	}
-	h = h.WithDelim()
 
 	return digest.Digest(h.DigestAndClose()), inputs, nil
 }
@@ -439,18 +447,11 @@ func (id *ID) Name() string {
 }
 
 // Return a new ID that's the selection of the nth element of the return value of the existing ID.
-// The new digest is derived from the existing ID's digest and the nth index.
 func (id *ID) SelectNth(nth int) *ID {
-	buf := []byte(id.Digest())
-	buf = binary.LittleEndian.AppendUint64(buf, uint64(nth))
-	h := xxh3.New()
-	h.Write(buf)
-	dgst := digest.NewDigest("xxh3", h)
 	return id.With(
 		WithReceiver(id),
 		WithNth(nth),
 		WithType(id.pb.Type.Elem.ToAST()),
-		WithCustomDigest(dgst),
 	)
 }
 
@@ -490,11 +491,9 @@ func WithView(view View) IDOpt {
 func WithCustomDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
 		if dig != "" {
-			id.pb.Digest = dig.String()
-			id.pb.IsCustomDigest = true
+			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelCustom)
 		} else {
-			id.pb.Digest = ""
-			id.pb.IsCustomDigest = false
+			id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extraDigestLabelCustom)
 		}
 	}
 }
@@ -502,10 +501,9 @@ func WithCustomDigest(dig digest.Digest) IDOpt {
 func WithContentDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
 		if dig != "" {
-			id.pb.ContentDigest = dig.String()
-			id.pb.AdditionalDigests = appendAdditionalDigest(id.pb.AdditionalDigests, dig.String())
+			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelContent)
 		} else {
-			id.pb.ContentDigest = ""
+			id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extraDigestLabelContent)
 		}
 	}
 }
@@ -515,7 +513,16 @@ func WithAdditionalDigest(dig digest.Digest) IDOpt {
 		if dig == "" {
 			return
 		}
-		id.pb.AdditionalDigests = appendAdditionalDigest(id.pb.AdditionalDigests, dig.String())
+		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), "")
+	}
+}
+
+func WithExtraDigest(extra ExtraDigest) IDOpt {
+	return func(id *ID) {
+		if extra.Digest == "" {
+			return
+		}
+		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, extra.Digest.String(), extra.Label)
 	}
 }
 
@@ -576,9 +583,8 @@ func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
 	return newID.apply(opts...)
 }
 
-// WithDigest returns a new ID that's the same as before except with the
-// given customDigest set as the ID's digest. If empty string, the default
-// digest for the call will be used (based on digest of encoded call pb).
+// WithDigest adds (or clears) the legacy "custom" extra digest used by cache
+// key rewriting logic.
 func (id *ID) WithDigest(customDigest digest.Digest) *ID {
 	return id.With(WithCustomDigest(customDigest))
 }
@@ -587,14 +593,20 @@ func (id *ID) HasCustomDigest() bool {
 	if id == nil {
 		return false
 	}
-	return id.pb.IsCustomDigest
+	for _, extra := range id.pb.ExtraDigests {
+		if extra == nil {
+			continue
+		}
+		if extra.Label == extraDigestLabelCustom && extra.Digest != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // WithArgument returns a new ID that's the same as before except with the
 // given argument added to the ID's arguments. If an argument with the same
-// name already exists, it will be replaced with the new one. The digest will
-// reset to the default "recipe-based" value, so any custom one needs to be
-// set after this call via WithDigest.
+// name already exists, it will be replaced with the new one.
 func (id *ID) WithArgument(arg *Argument) *ID {
 	if id == nil {
 		return nil
@@ -679,48 +691,32 @@ func (id *ID) shallowClone() *ID {
 	// NB: this is finnicky, but shouldn't change much, seems worth avoiding
 	// reflection in proto.CloneOf
 	cp.pb = &callpbv1.Call{
-		ReceiverDigest:    cp.pb.ReceiverDigest,
-		Type:              cp.pb.Type,
-		Field:             cp.pb.Field,
-		Args:              cp.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
-		Nth:               cp.pb.Nth,
-		Module:            cp.pb.Module,
-		Digest:            cp.pb.Digest,
-		View:              cp.pb.View,
-		IsCustomDigest:    cp.pb.IsCustomDigest,
-		ContentDigest:     cp.pb.ContentDigest,
-		EffectIds:         cp.pb.EffectIds,
-		AdditionalDigests: slices.Clone(cp.pb.AdditionalDigests),
+		ReceiverDigest: cp.pb.ReceiverDigest,
+		Type:           cp.pb.Type,
+		Field:          cp.pb.Field,
+		Args:           cp.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
+		Nth:            cp.pb.Nth,
+		Module:         cp.pb.Module,
+		Digest:         cp.pb.Digest,
+		View:           cp.pb.View,
+		EffectIds:      cp.pb.EffectIds,
+		ExtraDigests:   cloneExtraDigests(cp.pb.ExtraDigests),
 	}
 	return &cp
 }
 
 func (id *ID) apply(opts ...IDOpt) *ID {
-	origDgst := id.pb.Digest
-	origIsCustomDigest := id.pb.IsCustomDigest
-
-	// clear any existing digest; must be re-applied each time
-	id.pb.Digest = ""
-	id.pb.IsCustomDigest = false
 	for _, opt := range opts {
 		opt(id)
 	}
 
-	if !id.HasCustomDigest() {
-		if origIsCustomDigest {
-			// retain the original custom digest
-			id.pb.Digest = origDgst
-			id.pb.IsCustomDigest = true
-		} else {
-			// recompute automatic digest
-			var err error
-			id.pb.Digest, err = id.calcDigest()
-			if err != nil {
-				// something has to be deeply wrong if we can't
-				// marshal proto and hash the bytes
-				panic(err)
-			}
-		}
+	// recompute recipe digest
+	var err error
+	id.pb.Digest, err = id.calcDigest()
+	if err != nil {
+		// something has to be deeply wrong if we can't
+		// marshal proto and hash the bytes
+		panic(err)
 	}
 	return id
 }
@@ -730,9 +726,12 @@ func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 		return
 	}
 
-	if _, ok := callsByDigest[id.pb.Digest]; ok {
+	if existing, ok := callsByDigest[id.pb.Digest]; ok {
+		existing.EffectIds = mergeEffectIDs(existing.EffectIds, id.pb.EffectIds)
+		existing.ExtraDigests = mergeExtraDigests(existing.ExtraDigests, id.pb.ExtraDigests)
 		return
 	}
+	id.pb.ExtraDigests = normalizedExtraDigests(id.pb.ExtraDigests)
 	callsByDigest[id.pb.Digest] = id.pb
 	id.receiver.gatherCalls(callsByDigest)
 	id.module.gatherCalls(callsByDigest)
@@ -818,27 +817,19 @@ func (id *ID) decode(
 
 // calcDigest calculates the recipe digest for the ID.
 //
-// It excludes the content digest field, but includes additional cache-key
-// digests so calls that differ only by additional digests remain distinct in
-// serialized DAG form.
+// It includes only recipe data for this call (self + recipe identity of inputs).
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
 		return "", nil
-	}
-
-	if id.pb.Digest != "" {
-		return "", fmt.Errorf("call digest already set")
 	}
 
 	var err error
 
 	h := hashutil.NewHasher()
 
-	// ReceiverDigest
-	// Prefer content digest when available (legacy behavior), while still
-	// incorporating additional digests in the receiver's effective identity.
+	// ReceiverDigest (recipe identity only)
 	if id.receiver != nil {
-		h = h.WithString(id.receiver.inputDigest().String())
+		h = h.WithString(id.receiver.Digest().String())
 	}
 	h = h.WithDelim()
 
@@ -890,15 +881,6 @@ func (id *ID) calcDigest() (string, error) {
 	h = h.WithString(id.pb.View).
 		WithDelim()
 
-	// Additional cache-key digests
-	if extras := normalizedAdditionalDigestStrings(id.pb.AdditionalDigests); len(extras) > 0 {
-		h = h.WithDelim()
-		for _, dig := range extras {
-			h = h.WithString(dig).
-				WithDelim()
-		}
-	}
-
 	return h.DigestAndClose(), nil
 }
 
@@ -933,7 +915,7 @@ func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, erro
 	case *LiteralID:
 		const prefix = '0'
 		h = h.WithByte(prefix).
-			WithString(v.id.inputDigest().String())
+			WithString(v.id.Digest().String())
 	case *LiteralNull:
 		const prefix = '1'
 		h = h.WithByte(prefix)
@@ -1083,28 +1065,132 @@ func mergeEffectIDs(existing []string, extra []string) []string {
 	return merged
 }
 
-func appendAdditionalDigest(existing []string, dig string) []string {
+func cloneExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*callpbv1.ExtraDigest, 0, len(in))
+	for _, extra := range in {
+		if extra == nil {
+			continue
+		}
+		out = append(out, &callpbv1.ExtraDigest{
+			Digest: extra.Digest,
+			Label:  extra.Label,
+		})
+	}
+	return out
+}
+
+func appendExtraDigest(existing []*callpbv1.ExtraDigest, dig, label string) []*callpbv1.ExtraDigest {
 	if dig == "" {
 		return existing
 	}
-	for _, existingDig := range existing {
-		if existingDig == dig {
+	for _, existingExtra := range existing {
+		if existingExtra == nil {
+			continue
+		}
+		if existingExtra.Digest == dig && existingExtra.Label == label {
 			return existing
 		}
 	}
-	return append(existing, dig)
+	return append(existing, &callpbv1.ExtraDigest{
+		Digest: dig,
+		Label:  label,
+	})
 }
 
-func normalizedAdditionalDigestStrings(in []string) []string {
+func removeExtraDigestsByLabel(existing []*callpbv1.ExtraDigest, label string) []*callpbv1.ExtraDigest {
+	if len(existing) == 0 {
+		return nil
+	}
+	out := make([]*callpbv1.ExtraDigest, 0, len(existing))
+	for _, extra := range existing {
+		if extra == nil || extra.Digest == "" {
+			continue
+		}
+		if extra.Label == label {
+			continue
+		}
+		out = append(out, &callpbv1.ExtraDigest{
+			Digest: extra.Digest,
+			Label:  extra.Label,
+		})
+	}
+	return out
+}
+
+func mergeExtraDigests(existing []*callpbv1.ExtraDigest, extra []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest {
+	// NOTE: this is currently O(n^2) in the number of combined extras because
+	// appendExtraDigest scans linearly for de-duplication. That's fine for today's
+	// small lists; revisit if extra-digest cardinality grows substantially.
+	merged := cloneExtraDigests(existing)
+	for _, x := range extra {
+		if x == nil {
+			continue
+		}
+		merged = appendExtraDigest(merged, x.Digest, x.Label)
+	}
+	return normalizedExtraDigests(merged)
+}
+
+func normalizedExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest {
+	if len(in) == 0 {
+		return nil
+	}
+	type key struct {
+		digest string
+		label  string
+	}
+	set := make(map[key]struct{}, len(in))
+	for _, extra := range in {
+		if extra == nil || extra.Digest == "" {
+			continue
+		}
+		set[key{digest: extra.Digest, label: extra.Label}] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	keys := make([]key, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	slices.SortFunc(keys, func(a, b key) int {
+		if a.digest < b.digest {
+			return -1
+		}
+		if a.digest > b.digest {
+			return 1
+		}
+		if a.label < b.label {
+			return -1
+		}
+		if a.label > b.label {
+			return 1
+		}
+		return 0
+	})
+	out := make([]*callpbv1.ExtraDigest, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, &callpbv1.ExtraDigest{
+			Digest: k.digest,
+			Label:  k.label,
+		})
+	}
+	return out
+}
+
+func normalizedExtraDigestStrings(in []*callpbv1.ExtraDigest) []string {
 	if len(in) == 0 {
 		return nil
 	}
 	set := make(map[string]struct{}, len(in))
-	for _, dig := range in {
-		if dig == "" {
+	for _, extra := range in {
+		if extra == nil || extra.Digest == "" {
 			continue
 		}
-		set[dig] = struct{}{}
+		set[extra.Digest] = struct{}{}
 	}
 	if len(set) == 0 {
 		return nil
