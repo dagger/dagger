@@ -1529,6 +1529,9 @@ func (srv *Server) ensureExtraModulesLoaded(ctx context.Context, client *daggerC
 // Unlike workspace modules, it does not set disableFindUp (supports relative paths,
 // `.`, git URLs). If Alias is true, the module's AutoAlias flag is set so that
 // its functions are aliased to the Query root.
+//
+// Only the module itself is served to the client — its dependencies are internal
+// to the module and should not appear at the Query root.
 func (srv *Server) loadExtraModule(
 	ctx context.Context,
 	client *daggerClient,
@@ -1556,19 +1559,9 @@ func (srv *Server) loadExtraModule(
 		mod.Self().AutoAlias = true
 	}
 
-	// Serve module + dependencies
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
-
-	if err := srv.serveModule(client, mod.Self()); err != nil {
-		return err
-	}
-	for _, depMod := range mod.Self().Deps.Mods {
-		if err := srv.serveModule(client, depMod); err != nil {
-			return fmt.Errorf("serving dependency %s: %w", depMod.Name(), err)
-		}
-	}
-	return nil
+	return srv.serveModule(client, mod.Self())
 }
 
 // loadWorkspaceModule resolves a module through the dagql pipeline and serves it
@@ -1607,18 +1600,11 @@ func (srv *Server) loadWorkspaceModule(
 		applyWorkspaceConfigDefaults(mod.Self(), configDefaults)
 	}
 
-	// Serve module + dependencies (adds to client.deps, installs on dagql server).
+	// Only serve the module itself — its dependencies are internal and should
+	// not appear at the Query root.
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
-	if err := srv.serveModule(client, mod.Self()); err != nil {
-		return err
-	}
-	for _, depMod := range mod.Self().Deps.Mods {
-		if err := srv.serveModule(client, depMod); err != nil {
-			return fmt.Errorf("serving dependency %s: %w", depMod.Name(), err)
-		}
-	}
-	return nil
+	return srv.serveModule(client, mod.Self())
 }
 
 // loadRemoteWorkspace clones a git repo specified by remoteRef, reads
