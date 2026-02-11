@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -499,6 +500,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	dgstInputs := []string{cacheCfgResp.CacheKey.ID.Digest().String()}
 
 	var ctxArgs []*FunctionArg
+	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
 
 	for _, argMetadata := range fn.metadata.Args {
@@ -513,6 +515,12 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			// This applies to both types of object defaults:
 			//  1) "contextual args" from `defaultPath` annotations
 			//  2) "user defaults" from user-defined .env
+			//  3) "workspace args" that are automatically injected
+			continue
+		}
+		// Check for Workspace arguments first - they're always injected
+		if argMetadata.IsWorkspace() {
+			workspaceArgs = append(workspaceArgs, argMetadata)
 			continue
 		}
 		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
@@ -531,7 +539,9 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	if len(ctxArgs) > 0 || len(userDefaults) > 0 {
+	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 {
+		cacheCfgResp.UpdatedArgs = make(map[string]dagql.Input)
+		var mu sync.Mutex
 		type argInput struct {
 			argName  string
 			origName string
@@ -555,6 +565,28 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					origName: arg.OriginalName,
 					val:      ctxVal,
 				}
+
+				return nil
+			})
+		}
+
+		// Process workspace arguments - automatically inject workspace when not set
+		workspaceArgVals := make([]*argInput, len(workspaceArgs))
+		for i, arg := range workspaceArgs {
+			eg.Go(func() error {
+				wsVal, err := fn.loadWorkspaceArg(ctx, srv)
+				if err != nil {
+					return fmt.Errorf("load workspace arg %q: %w", arg.Name, err)
+				}
+
+				workspaceArgVals[i] = &argInput{
+					argName:  arg.Name,
+					origName: arg.OriginalName,
+					val:      wsVal,
+				}
+				mu.Lock()
+				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(wsVal)
+				mu.Unlock()
 
 				return nil
 			})
@@ -588,6 +620,15 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				dagql.Opt(arg.val).ToLiteral(),
 				false,
 			))
+			id := arg.val.ID()
+			// prefer content digest if available
+			dgst := id.ContentDigest()
+			if dgst == "" {
+				dgst = id.Digest()
+			}
+			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
+		}
+		for _, arg := range workspaceArgVals {
 			id := arg.val.ID()
 			// prefer content digest if available
 			dgst := id.ContentDigest()
@@ -1200,6 +1241,33 @@ func (fn *ModuleFunction) loadContextualArg(
 	}
 
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+}
+
+// loadWorkspaceArg loads a workspace argument by resolving it through the
+// currentWorkspace query. The workspace is automatically injected into
+// module functions that declare a Workspace parameter.
+func (fn *ModuleFunction) loadWorkspaceArg(
+	ctx context.Context,
+	dag *dagql.Server,
+) (dagql.IDType, error) {
+	if dag == nil {
+		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
+	}
+
+	var ws dagql.ObjectResult[*Workspace]
+	err := dag.Select(ctx, dag.Root(), &ws,
+		dagql.Selector{
+			Field: "currentWorkspace",
+			Args: []dagql.NamedInput{
+				{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load workspace: %w", err)
+	}
+
+	return dagql.NewID[*Workspace](ws.ID()), nil
 }
 
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
