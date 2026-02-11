@@ -783,8 +783,13 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 
 // isCoreTypeDef returns true if the TypeDef originates from the core module
 // (i.e., has no SourceModuleName set).
+// The Query root type is never considered "core" — it's always included
+// because it holds module constructors as root fields.
 func isCoreTypeDef(td *core.TypeDef) bool {
 	if td.AsObject.Valid {
+		if td.AsObject.Value.Name == "Query" {
+			return false
+		}
 		return td.AsObject.Value.SourceModuleName == ""
 	}
 	if td.AsInterface.Valid {
