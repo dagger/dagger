@@ -2,7 +2,9 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,9 +208,22 @@ func (s *workspaceSchema) install(
 		return dagql.String(fmt.Sprintf("Module %q is already installed", name)), nil
 	}
 
-	// Add module to config and write to host
+	// Introspect constructor args for config hints (graceful degradation)
+	var hints map[string][]workspace.ConstructorArgHint
+	constructorArgs, err := introspectConstructorArgs(ctx, srv, args.Ref)
+	if err != nil {
+		slog.Warn("could not introspect constructor args for config hints", "module", name, "error", err)
+	} else if len(constructorArgs) > 0 {
+		hints = map[string][]workspace.ConstructorArgHint{
+			name: constructorArgs,
+		}
+	}
+
+	// Add module to config
 	cfg.Modules[name] = workspace.ModuleEntry{Source: sourcePath}
-	if err := writeWorkspaceConfig(ctx, bk, parent, cfg); err != nil {
+
+	// Write config with hints
+	if err := writeWorkspaceConfigWithHints(ctx, bk, parent, cfg, hints); err != nil {
 		return "", err
 	}
 
@@ -395,6 +410,18 @@ func readWorkspaceConfig(ctx context.Context, bk interface {
 // which requires a buildkit session group not available in resolver context.
 func writeWorkspaceConfig(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, cfg *workspace.Config) error {
 	configBytes := workspace.SerializeConfig(cfg)
+	return exportConfigToHost(ctx, bk, parent, configBytes)
+}
+
+// writeWorkspaceConfigWithHints serializes config with constructor arg hints,
+// then writes to the host.
+func writeWorkspaceConfigWithHints(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, cfg *workspace.Config, hints map[string][]workspace.ConstructorArgHint) error {
+	configBytes := workspace.SerializeConfigWithHints(cfg, hints)
+	return exportConfigToHost(ctx, bk, parent, configBytes)
+}
+
+// exportConfigToHost writes config bytes to config.toml on the host via temp file + LocalFileExport.
+func exportConfigToHost(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, configBytes []byte) error {
 	configHostPath := filepath.Join(parent.Root, workspace.WorkspaceDirName, workspace.ConfigFileName)
 
 	tmpFile, err := os.CreateTemp("", "workspace-config-*.toml")
@@ -413,4 +440,147 @@ func writeWorkspaceConfig(ctx context.Context, bk *buildkit.Client, parent *core
 		return fmt.Errorf("export config: %w", err)
 	}
 	return nil
+}
+
+// introspectConstructorArgs loads a module and extracts its constructor arguments
+// as config hints. Returns nil (not error) if the module has no constructor.
+func introspectConstructorArgs(ctx context.Context, srv *dagql.Server, ref string) ([]workspace.ConstructorArgHint, error) {
+	var mod dagql.ObjectResult[*core.Module]
+	err := srv.Select(ctx, srv.Root(), &mod,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(ref)},
+				{Name: "disableFindUp", Value: dagql.Boolean(true)},
+			},
+		},
+		dagql.Selector{Field: "asModule"},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("loading module: %w", err)
+	}
+
+	mainObj, ok := mod.Self().MainObject()
+	if !ok {
+		return nil, nil
+	}
+
+	if !mainObj.Constructor.Valid {
+		return nil, nil
+	}
+	ctor := mainObj.Constructor.Value
+
+	var hints []workspace.ConstructorArgHint
+	for _, arg := range ctor.Args {
+		hints = append(hints, buildHintFromArg(arg))
+	}
+	return hints, nil
+}
+
+// configurableObjectTypes maps core object type names to their address example values.
+var configurableObjectTypes = map[string]string{
+	"Container":     `"alpine:latest"`,
+	"Directory":     `"./path"`,
+	"File":          `"./file"`,
+	"Secret":        `"env://MY_SECRET"`,
+	"GitRepository": `"https://github.com/owner/repo"`,
+	"GitRef":        `"https://github.com/owner/repo#main"`,
+	"Service":       `"tcp://localhost:8080"`,
+	"Socket":        `"unix:///var/run/docker.sock"`,
+}
+
+// buildHintFromArg converts a FunctionArg into a ConstructorArgHint.
+func buildHintFromArg(arg *core.FunctionArg) workspace.ConstructorArgHint {
+	typeLabel, exampleValue, configurable := typeInfoFromTypeDef(arg.TypeDef)
+
+	// If arg has a non-null default value, format it as TOML instead of using the type example
+	if arg.DefaultValue != nil {
+		if formatted := formatDefaultAsToml(arg.DefaultValue); formatted != "" {
+			exampleValue = formatted
+		}
+	}
+
+	if !configurable {
+		typeLabel = typeLabel + " (not configurable via config)"
+	}
+
+	return workspace.ConstructorArgHint{
+		Name:         arg.Name,
+		TypeLabel:    typeLabel,
+		ExampleValue: exampleValue,
+	}
+}
+
+// typeInfoFromTypeDef returns the type label, example value, and whether the type
+// is configurable via config.toml string values.
+func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, configurable bool) {
+	switch td.Kind {
+	case core.TypeDefKindString:
+		return "string", `""`, true
+	case core.TypeDefKindInteger:
+		return "int", "0", true
+	case core.TypeDefKindFloat:
+		return "float", "0.0", true
+	case core.TypeDefKindBoolean:
+		return "bool", "false", true
+	case core.TypeDefKindEnum:
+		if td.AsEnum.Valid {
+			return td.AsEnum.Value.Name, `""`, true
+		}
+		return "enum", `""`, true
+	case core.TypeDefKindScalar:
+		if td.AsScalar.Valid {
+			return td.AsScalar.Value.Name, `""`, true
+		}
+		return "scalar", `""`, true
+	case core.TypeDefKindObject:
+		if td.AsObject.Valid {
+			objName := td.AsObject.Value.Name
+			if example, ok := configurableObjectTypes[objName]; ok {
+				return objName, example, true
+			}
+			return objName, `"..."`, false
+		}
+		return "object", `"..."`, false
+	case core.TypeDefKindList:
+		if td.AsList.Valid {
+			elemLabel, _, _ := typeInfoFromTypeDef(td.AsList.Value.ElementTypeDef)
+			return "[]" + elemLabel, `"..."`, false
+		}
+		return "list", `"..."`, false
+	default:
+		return string(td.Kind), `"..."`, false
+	}
+}
+
+// formatDefaultAsToml converts a JSON-encoded default value to a TOML literal string.
+// Returns empty string if the value can't be formatted or is null.
+func formatDefaultAsToml(defaultValue core.JSON) string {
+	raw := defaultValue.Bytes()
+	if len(raw) == 0 {
+		return ""
+	}
+
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	var val any
+	if err := dec.Decode(&val); err != nil {
+		return ""
+	}
+
+	switch v := val.(type) {
+	case string:
+		return fmt.Sprintf("%q", v)
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case json.Number:
+		return v.String()
+	case nil:
+		return "" // null means no default
+	default:
+		return ""
+	}
 }
