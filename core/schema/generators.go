@@ -36,6 +36,9 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 		dagql.Func("name", s.name).
 			Doc("Return the fully qualified name of the generator"),
 
+		dagql.Func("path", s.path).
+			Doc("The path of the generator within its module"),
+
 		dagql.Func("description", s.description).
 			Doc("Return the description of the generator"),
 
@@ -79,6 +82,10 @@ func (s generatorsSchema) groupChanges(ctx context.Context, parent dagql.ObjectR
 
 func (s generatorsSchema) name(_ context.Context, parent *core.Generator, args struct{}) (string, error) {
 	return parent.Name(), nil
+}
+
+func (s generatorsSchema) path(_ context.Context, parent *core.Generator, args struct{}) ([]string, error) {
+	return parent.Path(), nil
 }
 
 func (s generatorsSchema) description(_ context.Context, parent *core.Generator, args struct{}) (string, error) {
