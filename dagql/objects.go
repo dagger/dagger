@@ -1081,21 +1081,6 @@ func (fields Fields[T]) Install(server *Server) {
 			},
 		})
 	}
-	// When SkipRootFieldInstalls is set, skip non-internal fields on the root type.
-	// This hides core API functions (container, directory, etc.) while preserving
-	// infrastructure fields (__schemaJSONFile, etc.) and type registrations.
-	if server.SkipRootFieldInstalls && class.TypeName() == server.Root().Type().Name() {
-		var kept Fields[T]
-		for _, f := range fields {
-			if strings.HasPrefix(f.Spec.Name, "__") {
-				kept = append(kept, f)
-			}
-		}
-		if len(kept) > 0 {
-			class.Install(kept...)
-		}
-		return
-	}
 	class.Install(fields...)
 }
 

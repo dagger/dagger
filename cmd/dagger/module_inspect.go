@@ -25,7 +25,7 @@ var errModuleNotFound = errors.New("module not found")
 func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
 	def := &moduleDef{}
 
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
 	}
 
@@ -35,9 +35,10 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 // initializeWorkspace loads type definitions from the workspace.
 // Modules are already served by the engine at connect time.
 // MainObject is the Query root — workspace module constructors appear as Query root fields.
+// Core types are excluded — only workspace module types are shown.
 func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
 	def := &moduleDef{}
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, false); err != nil {
 		return nil, err
 	}
 	return def, nil
@@ -78,7 +79,7 @@ func initializeModule(
 		return nil, err
 	}
 
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, false); err != nil {
 		return nil, err
 	}
 
@@ -274,7 +275,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 }
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
-func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr error) {
+// When includeCore is false, core types (Container, Directory, etc.) are excluded from the result.
+func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includeCore bool) (rerr error) {
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)
 
@@ -283,7 +285,8 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	}
 
 	err := dag.Do(ctx, &dagger.Request{
-		Query: loadTypeDefsQuery,
+		Query:     loadTypeDefsQuery,
+		Variables: map[string]interface{}{"includeCore": includeCore},
 	}, &dagger.Response{
 		Data: &res,
 	})
