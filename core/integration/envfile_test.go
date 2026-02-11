@@ -500,7 +500,7 @@ import (
 type Dep struct {}
 
 func (m *Dep) Bar(
-	ctx context.Context, 
+	ctx context.Context,
 	// +optional
 	s *dagger.Secret,
 ) (string, error) {
@@ -528,12 +528,7 @@ func (m *Dep) Bar(
 	callCmd := hostDaggerCommand(ctx, t, modDir, "call", "-s", "foo")
 	callOutput, err := callCmd.CombinedOutput()
 	require.NoError(t, err, string(callOutput))
-	// the CLI spams "user default: ..." messages despite -s, get the last line only
-	lastLine := callOutput
-	if idx := strings.LastIndex(string(callOutput), "\n"); idx != -1 {
-		lastLine = callOutput[idx+1:]
-	}
-	decodeOutput, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(lastLine)))
+	decodeOutput, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(callOutput)))
 	require.NoError(t, err, string(callOutput))
 	require.Equal(t, "doodoo", string(decodeOutput))
 }
