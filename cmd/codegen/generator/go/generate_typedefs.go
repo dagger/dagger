@@ -6,10 +6,8 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -34,7 +32,6 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	mfs := memfs.New()
 	var overlay fs.FS = layerfs.New(
 		mfs,
-		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
 	)
 
 	res := &generator.GeneratedState{
@@ -45,9 +42,6 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
-
-	// Use the internal package when getting the typedef so we don't download it every time.
-	pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
 
 	if outDir != "." {
 		if err = mfs.MkdirAll(outDir, 0700); err != nil {
