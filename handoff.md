@@ -49,6 +49,24 @@
 - **Fix**: When `.dagger/` exists but has no `config.toml`, also check for `dagger.json` migration triggers before returning empty workspace.
 - **Files**: `core/workspace/detect.go`
 
+### 11. `dagger install` writes to workspace .dagger/config.toml (commit 1381a95ad)
+- **Problem**: `dagger install` added dependencies to `dagger.json` (legacy module system). Per workspace design, it should add modules to `.dagger/config.toml`.
+- **Fix**: Rewrote `moduleInstallCmd` to use workspace flow:
+  1. `workspace.DetectLocal(cwd)` — CLI-side workspace detection using `os.Stat` (new function, no buildkit session needed)
+  2. `dag.ModuleSource().ModuleName()` — engine resolves module name
+  3. `dag.ModuleSource().Kind()` — determines local vs git for source path formatting
+  4. Loads existing config or creates empty, adds module entry
+  5. `workspace.SerializeConfig()` — new function, hand-built TOML with dotted-key format
+  6. Writes `.dagger/config.toml` (creates `.dagger/` dir if needed)
+- Idempotent: "already installed" if name+source match existing entry
+- `--name` flag overrides module name
+- **Files**: `cmd/dagger/module.go`, `core/workspace/config.go`, `core/workspace/detect.go`
+
+### 12. CLI build context fix for embedded markdown (commit 1381a95ad)
+- **Problem**: `core/prompts/fs.go` uses `//go:embed *.md` but CLI build context excluded `.md` files, causing build failure.
+- **Fix**: Added `"!core/prompts/*.md"` to `toolchains/cli-dev/main.go` ignore patterns.
+- **Files**: `toolchains/cli-dev/main.go`
+
 ## Test results
 
 | Test | Status | Notes |
@@ -65,11 +83,14 @@
 | Workspace call --help with config | PASS | `dagger call wolfi --help` shows `container` function |
 | .dagger/ without config.toml + dagger.json with triggers | PASS | Migration error fires (dagger repo scenario) |
 | Legacy dagger.json without .dagger/ | PASS | Migration error fires |
+| `dagger install` remote module | PASS | `Installed module "wolfi"`, config.toml written |
+| `dagger install --name=mywolfi` | PASS | Both entries in config.toml |
+| Idempotent re-install | PASS | `Module "wolfi" is already installed` |
+| `dagger functions` after install | PASS | Shows `alpine`, `wolfi` |
 
 ## Implementation gaps (not yet addressed)
 
-1. **dagger install**: Doesn't update `.dagger/config.toml` (still only updates `dagger.json`)
-2. **dagger module init**: Not implemented (no way to create a new module in a workspace)
-3. **IncludeCoreModule**: Not yet a connect-time client control parameter
-4. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
-5. **.dagger/lock file**: Not implemented
+1. **dagger module init**: Not implemented (no way to create a new module in a workspace)
+2. **IncludeCoreModule**: Not yet a connect-time client control parameter
+3. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
+4. **.dagger/lock file**: Not implemented
