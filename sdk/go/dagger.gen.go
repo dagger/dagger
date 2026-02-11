@@ -12370,15 +12370,15 @@ func (r *Client) Version(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// WorkspaceOpts contains options for Client.Workspace
-type WorkspaceOpts struct {
+// CurrentWorkspaceOpts contains options for Client.CurrentWorkspace
+type CurrentWorkspaceOpts struct {
 	// If true, skip legacy dagger.json migration checks.
 	SkipMigrationCheck bool
 }
 
 // Detect and return the current workspace.
-func (r *Client) Workspace(opts ...WorkspaceOpts) *Workspace {
-	q := r.query.Select("workspace")
+func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
+	q := r.query.Select("currentWorkspace")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `skipMigrationCheck` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SkipMigrationCheck) {

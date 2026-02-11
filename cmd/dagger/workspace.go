@@ -27,7 +27,7 @@ var workspaceInfoCmd = &cobra.Command{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			ws := dag.Workspace()
+			ws := dag.CurrentWorkspace()
 
 			root, err := ws.Root(ctx)
 			if err != nil {
@@ -72,7 +72,7 @@ var moduleInstallCmd = &cobra.Command{
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			ws := dag.Workspace(dagger.WorkspaceOpts{
+			ws := dag.CurrentWorkspace(dagger.CurrentWorkspaceOpts{
 				SkipMigrationCheck: true,
 			})
 
