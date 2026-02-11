@@ -117,6 +117,9 @@ func (s *gitSchema) resolveRemoteRepository(
 				dagql.Selector{Field: "host"},
 				dagql.Selector{Field: "_sshAuthSocket"},
 			); err != nil {
+				if errors.Is(err, errSSHAuthSocketNotSet) {
+					return zero, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+				}
 				return zero, fmt.Errorf("%w: failed to get SSH socket: %w", gitutil.ErrGitAuthFailed, err)
 			}
 
