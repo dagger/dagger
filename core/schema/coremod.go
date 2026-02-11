@@ -67,6 +67,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&addressSchema{},
 		&checksSchema{},
 		&generatorsSchema{},
+		&workspaceSchema{},
 	} {
 		schema.Install(dag)
 	}
