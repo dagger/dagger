@@ -1237,10 +1237,10 @@ func localModuleErrorf(format string, err error) error {
 
 	wrapped := fmt.Errorf(format, err)
 	if moduleURL != "" {
-		return fmt.Errorf("%w\nhint: module source came from --mod=%q. If you intended local, pass --mod .", wrapped, moduleURL)
+		return fmt.Errorf("%w\nhint: module source came from --mod=%q; if you intended local, pass `--mod .`", wrapped, moduleURL)
 	}
 	if envRef, ok := os.LookupEnv("DAGGER_MODULE"); ok {
-		return fmt.Errorf("%w\nhint: module source came from DAGGER_MODULE=%q. If you intended local, pass --mod .", wrapped, envRef)
+		return fmt.Errorf("%w\nhint: module source came from DAGGER_MODULE=%q; if you intended local, pass `--mod .`", wrapped, envRef)
 	}
 	return wrapped
 }

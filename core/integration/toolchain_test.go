@@ -608,7 +608,7 @@ func (ToolchainSuite) TestToolchainLocalModuleHints(ctx context.Context, t *test
 			Sync(ctx)
 		requireErrOut(t, err, `module source "github.com/dagger/dagger@main" kind must be "local", got "git"`)
 		requireErrOut(t, err, `hint: module source came from DAGGER_MODULE="github.com/dagger/dagger@main"`)
-		requireErrOut(t, err, "pass --mod .")
+		requireErrOut(t, err, "pass `--mod .`")
 
 		out, err := modGen.
 			WithEnvVariable("DAGGER_MODULE", "github.com/dagger/dagger@main").
@@ -628,6 +628,6 @@ func (ToolchainSuite) TestToolchainLocalModuleHints(ctx context.Context, t *test
 			Sync(ctx)
 		requireErrOut(t, err, `module source "github.com/dagger/dagger@main" kind must be "local", got "git"`)
 		requireErrOut(t, err, `hint: module source came from --mod="github.com/dagger/dagger@main"`)
-		requireErrOut(t, err, "pass --mod .")
+		requireErrOut(t, err, "pass `--mod .`")
 	})
 }
