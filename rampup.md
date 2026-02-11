@@ -61,9 +61,9 @@ The CLI distinguishes these by trying `os.Chdir` — if it fails, it's remote. T
 - `cmd/dagger/function_name.go` — `initModuleParams()` maps `-m` to `params.Module`
 
 ### Schema (engine-side API for workspace operations)
-- `core/workspace_type.go` — `DagqlWorkspace` type (dagql representation)
+- `core/workspace.go` — `Workspace` type (dagql representation)
 - `core/schema/workspace.go` — resolvers for `workspace()`, `install()`, `moduleInit()`
-- `core/env.go` — hides `DagqlWorkspace` from module SDKs
+- `core/env.go` — hides `Workspace` from module SDKs
 
 ### Module ref parsing (important for understanding remote refs)
 - `core/modulerefs.go` — `ParseRefString()`, `fastModuleSourceKindCheck()`, `ParseGitRefString()`
