@@ -77,3 +77,84 @@ func SerializeConfig(cfg *Config) []byte {
 
 	return []byte(b.String())
 }
+
+// ConstructorArgHint captures information about a module constructor argument
+// for generating commented-out hint lines in config.toml.
+type ConstructorArgHint struct {
+	Name         string // lowerCamelCase arg name (used as config key)
+	TypeLabel    string // e.g. "string", "Container", "MyType (not configurable via config)"
+	ExampleValue string // TOML-formatted example value, e.g. `""`, `false`, `"alpine:latest"`
+}
+
+// SerializeConfigWithHints serializes a Config to TOML bytes with commented-out
+// hint lines for constructor args inserted after each module's entries.
+func SerializeConfigWithHints(cfg *Config, hints map[string][]ConstructorArgHint) []byte {
+	tomlStr := string(SerializeConfig(cfg))
+	if len(hints) > 0 {
+		tomlStr = insertHintComments(tomlStr, cfg, hints)
+	}
+	return []byte(tomlStr)
+}
+
+// insertHintComments injects commented-out config hint lines into the serialized
+// TOML string, positioned after each module's last real key.
+func insertHintComments(tomlStr string, cfg *Config, hints map[string][]ConstructorArgHint) string {
+	// Sort module names for deterministic output
+	moduleNames := make([]string, 0, len(hints))
+	for name := range hints {
+		moduleNames = append(moduleNames, name)
+	}
+	sort.Strings(moduleNames)
+
+	lines := strings.Split(tomlStr, "\n")
+
+	for _, moduleName := range moduleNames {
+		argHints := hints[moduleName]
+		if len(argHints) == 0 {
+			continue
+		}
+
+		// Build the set of config keys already set for this module
+		existingConfigKeys := make(map[string]bool)
+		if entry, ok := cfg.Modules[moduleName]; ok && entry.Config != nil {
+			for k := range entry.Config {
+				existingConfigKeys[strings.ToLower(k)] = true
+			}
+		}
+
+		// Build comment lines, skipping args that already have a config entry
+		var commentLines []string
+		for _, hint := range argHints {
+			if existingConfigKeys[strings.ToLower(hint.Name)] {
+				continue
+			}
+			commentLines = append(commentLines,
+				fmt.Sprintf("# %s.config.%s = %s # %s", moduleName, hint.Name, hint.ExampleValue, hint.TypeLabel))
+		}
+		if len(commentLines) == 0 {
+			continue
+		}
+
+		// Find the last line belonging to this module (starts with "moduleName.")
+		prefix := moduleName + "."
+		lastIdx := -1
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, prefix) {
+				lastIdx = i
+			}
+		}
+		if lastIdx == -1 {
+			continue
+		}
+
+		// Insert comment lines after the last module line
+		newLines := make([]string, 0, len(lines)+len(commentLines))
+		newLines = append(newLines, lines[:lastIdx+1]...)
+		newLines = append(newLines, commentLines...)
+		newLines = append(newLines, lines[lastIdx+1:]...)
+		lines = newLines
+	}
+
+	return strings.Join(lines, "\n")
+}
