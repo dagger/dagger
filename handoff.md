@@ -55,7 +55,9 @@
 | Workspace with wolfi module - call --help | PASS | Pipeline help works |
 | Pipeline execution: wolfi container with-exec stdout | PASS | Prints "hello" |
 | dagger version | PASS | Engine starts correctly |
-| Config defaults + malformed TOML | PENDING | Testing with 600s timeout (engine rebuild needed) |
+| Config defaults in config.toml | PASS | `dagger functions` shows `alpine`, `wolfi` with config entries |
+| Malformed config.toml | PASS | Clean error: `failed to parse config.toml: was expecting token =` |
+| Workspace call --help with config | PASS | `dagger call wolfi --help` shows `container` function |
 
 ## Implementation gaps (not yet addressed)
 
