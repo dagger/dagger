@@ -25,6 +25,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
@@ -362,9 +363,10 @@ dagger init --sdk=go
 var moduleInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
 	Aliases: []string{"use"},
-	Short:   "Install a dependency",
-	Long:    "Install another module as a dependency to the current module.",
-	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
+	Short:   "Add a module to the workspace",
+	Long:    "Add a module to the workspace, making its functions available via 'dagger call'.",
+	Example: `dagger install github.com/shykes/daggerverse/hello@v0.3.0
+  dagger install github.com/dagger/dagger/modules/wolfi --name=alpine`,
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
@@ -372,103 +374,92 @@ var moduleInstallCmd = &cobra.Command{
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modRef, err := getModuleSourceRefWithDefault()
+			// 1. Detect workspace root (CLI-side)
+			cwd, err := pathutil.Getwd()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get working directory: %w", err)
 			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only install dependencies to a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
+			ws, err := workspace.DetectLocal(cwd)
 			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
+				return fmt.Errorf("failed to detect workspace: %w", err)
 			}
 
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
+			// 2. Load existing config (or start empty)
+			cfg := ws.Config
+			if cfg == nil {
+				cfg = &workspace.Config{}
+			}
+			if cfg.Modules == nil {
+				cfg.Modules = make(map[string]workspace.ModuleEntry)
 			}
 
+			// 3. Resolve module name via engine
 			depRefStr := extraArgs[0]
 			depSrc := dag.ModuleSource(depRefStr, dagger.ModuleSourceOpts{
 				DisableFindUp: true,
 			})
 
-			origDepName, err := depSrc.ModuleName(ctx)
+			moduleName, err := depSrc.ModuleName(ctx)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to resolve module name: %w", err)
 			}
 			if installName != "" {
-				depSrc = depSrc.WithName(installName)
+				moduleName = installName
 			}
 
-			modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{depSrc})
-			if engineVersion := getCompatVersion(); engineVersion != "" {
-				modSrc = modSrc.WithEngineVersion(engineVersion)
-			}
-
-			_, err = modSrc.
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
+			// 4. Determine source path
+			sourcePath := depRefStr
+			depKind, err := depSrc.Kind(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to update dependencies: %w", err)
+				return fmt.Errorf("failed to get module source kind: %w", err)
 			}
-
-			sdk, err := depSrc.SDK().Source(ctx)
-			if err != nil {
-				return err
-			}
-			depRootSubpath, err := depSrc.SourceRootSubpath(ctx)
-			if err != nil {
-				return err
-			}
-			depSrcKind, err := depSrc.Kind(ctx)
-			if err != nil {
-				return err
-			}
-
-			switch depSrcKind {
-			case dagger.ModuleSourceKindLocalSource:
-				analyticsType := "module_install"
-				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
-					"module_name":   origDepName,
-					"install_name":  installName,
-					"module_sdk":    sdk,
-					"source_kind":   "local",
-					"local_subpath": depRootSubpath,
-				})
-			case dagger.ModuleSourceKindGitSource:
-				gitURL, err := depSrc.CloneRef(ctx)
+			if depKind == dagger.ModuleSourceKindLocalSource {
+				// Make path relative to .dagger/ directory
+				contextDirPath, err := depSrc.LocalContextDirectoryPath(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to get git clone URL: %w", err)
+					return fmt.Errorf("failed to get local context directory: %w", err)
 				}
-				gitVersion, err := depSrc.Version(ctx)
+				depRootSubpath, err := depSrc.SourceRootSubpath(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to get git version: %w", err)
+					return fmt.Errorf("failed to get source root subpath: %w", err)
 				}
-				gitCommit, err := depSrc.Commit(ctx)
+				depAbsPath := filepath.Join(contextDirPath, depRootSubpath)
+				daggerDir := filepath.Join(ws.Root, workspace.WorkspaceDirName)
+				relPath, err := filepath.Rel(daggerDir, depAbsPath)
 				if err != nil {
-					return fmt.Errorf("failed to get git commit: %w", err)
+					return fmt.Errorf("failed to compute relative path: %w", err)
 				}
-
-				analyticsType := "module_install"
-				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
-					"module_name":   origDepName,
-					"install_name":  installName,
-					"module_sdk":    sdk,
-					"source_kind":   "git",
-					"git_subpath":   depRootSubpath,
-					"git_symbolic":  filepath.Join(gitURL, depRootSubpath),
-					"git_clone_url": gitURL,
-					"git_version":   gitVersion,
-					"git_commit":    gitCommit,
-				})
+				sourcePath = relPath
 			}
+
+			// 5. Check if already installed with same source
+			if existing, ok := cfg.Modules[moduleName]; ok && existing.Source == sourcePath {
+				fmt.Fprintf(cmd.OutOrStdout(), "Module %q is already installed\n", moduleName)
+				return nil
+			}
+
+			// 6. Add module to config
+			cfg.Modules[moduleName] = workspace.ModuleEntry{Source: sourcePath}
+
+			// 7. Write config.toml
+			daggerDir := filepath.Join(ws.Root, workspace.WorkspaceDirName)
+			if err := os.MkdirAll(daggerDir, 0o755); err != nil {
+				return fmt.Errorf("failed to create %s: %w", daggerDir, err)
+			}
+			configPath := filepath.Join(daggerDir, workspace.ConfigFileName)
+			if err := os.WriteFile(configPath, workspace.SerializeConfig(cfg), 0o644); err != nil {
+				return fmt.Errorf("failed to write %s: %w", configPath, err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Installed module %q in %s\n", moduleName, configPath)
+
+			// 8. Analytics
+			analytics.Ctx(ctx).Capture(ctx, "workspace_install", map[string]string{
+				"module_name":  moduleName,
+				"source":       sourcePath,
+				"source_kind":  string(depKind),
+				"install_name": installName,
+			})
 
 			return nil
 		})
