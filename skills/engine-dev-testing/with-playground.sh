@@ -22,9 +22,9 @@ set -x
 # then execute the given inner command and print the output.
 # The inner command is written to a file inside the container to avoid
 # quoting issues with heredocs, newlines, and special characters.
-dagger --progress=plain call \
-  engine-dev \
-  playground \
+dagger \
+--progress=plain \
+  call engine-dev playground \
   with-directory --path=src/dagger --source=https://github.com/dagger/dagger#main \
   with-directory --path=src/demo-react-app --source=https://github.com/kpenfound/demo-react-app#main \
   with-new-file --path=/tmp/inner.sh --contents="$1" --permissions=0755 \
