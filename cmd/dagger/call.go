@@ -89,24 +89,30 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			return functionListRun(o, cmd.OutOrStdout())
+			// Only filter core functions when showing the root Query type.
+			// When navigating into a module type (dagger functions wolfi),
+			// all functions should be shown.
+			isRoot := len(cmd.Flags().Args()) == 0
+			return functionListRun(o, cmd.OutOrStdout(), isRoot)
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer) error {
+func functionListRun(o functionProvider, writer io.Writer, filterCore bool) error {
 	fns, skipped := GetSupportedFunctions(o)
 
-	// Filter out core API constructors — only show module constructors.
-	// Core types are excluded from currentTypeDefs, but the Query root type
-	// still has core functions listed. Filter them here.
-	filtered := make([]*modFunction, 0, len(fns))
-	for _, fn := range fns {
-		if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
-			filtered = append(filtered, fn)
+	// At the Query root, filter out core API constructors — only show module
+	// constructors. When navigating into a module type, show all functions.
+	if filterCore {
+		filtered := make([]*modFunction, 0, len(fns))
+		for _, fn := range fns {
+			if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
+				filtered = append(filtered, fn)
+			}
 		}
+		fns = filtered
+		skipped = nil // don't show core "skipped" noise either
 	}
-	fns = filtered
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",
