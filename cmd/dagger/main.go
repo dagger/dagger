@@ -138,7 +138,7 @@ func init() {
 		versionCmd(),
 		queryCmd,
 		runCmd,
-		watchCmd,
+		traceCmd,
 		configCmd,
 		checksCmd,
 		generateCmd,
