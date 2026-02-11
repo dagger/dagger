@@ -872,7 +872,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 				}
 				return fmt.Errorf("decode: %w", err)
 			}
-			if event.Name == "attached" {
+			if event.Name == "subscribed" {
 				continue
 			}
 

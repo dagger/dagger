@@ -853,11 +853,14 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 		var call callpbv1.Call
 		if err := call.Decode(callPayload); err != nil {
 			slog.Warn("failed to decode call", "err", err)
-		} else {
-			// Cache the decoded call for future use
-			db.Calls[dig] = &call
-			return &call
+			// Cache nil so we don't keep retrying and spamming warnings
+			// on every render cycle.
+			db.Calls[dig] = nil
+			return nil
 		}
+		// Cache the decoded call for future use
+		db.Calls[dig] = &call
+		return &call
 	}
 
 	// Finally, try to find the call through creator spans
