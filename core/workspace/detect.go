@@ -106,7 +106,7 @@ func checkMigrationTriggers(data []byte) error {
 
 	if hasToolchains || hasNonDotSource {
 		return fmt.Errorf(
-			"this project uses a legacy dagger.json that needs migration; run `dagger migrate` to update it",
+			"this project uses a legacy dagger.json that needs migration to the workspace format (.dagger/config.toml); see https://github.com/dagger/dagger for migration instructions",
 		)
 	}
 
