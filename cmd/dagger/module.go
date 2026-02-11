@@ -397,7 +397,7 @@ The module is created at .dagger/modules/<name>/ and automatically added to
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			ws := dag.Workspace(dagger.WorkspaceOpts{
+			ws := dag.CurrentWorkspace(dagger.CurrentWorkspaceOpts{
 				SkipMigrationCheck: true,
 			})
 

@@ -579,7 +579,7 @@ func Version(ctx context.Context) (string, error) {
 }
 
 // Detect and return the current workspace.
-func Workspace(opts ...dagger.WorkspaceOpts) *dagger.Workspace {
+func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
 	client := initClient()
-	return client.Workspace(opts...)
+	return client.CurrentWorkspace(opts...)
 }
