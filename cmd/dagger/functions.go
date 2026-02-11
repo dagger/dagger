@@ -462,10 +462,11 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	fns, skipped := GetSupportedFunctions(fnProvider)
 
 	for _, fn := range fns {
-		// On the Query root type, hide core API constructors (container, directory,
-		// etc.) — only show module constructors. This doesn't apply to `dagger core`.
+		// On the Query root type, hide core API functions — only show functions
+		// provided by modules (constructors and auto-aliases). This doesn't apply
+		// to `dagger core`.
 		if !fc.DisableModuleLoad && typeDef.AsObject != nil && typeDef.AsObject.Name == "Query" {
-			if fn.ReturnType.AsObject == nil || fn.ReturnType.AsObject.SourceModuleName == "" {
+			if fn.SourceModuleName == "" {
 				continue
 			}
 		}

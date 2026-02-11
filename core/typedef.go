@@ -27,6 +27,10 @@ type Function struct {
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
 
+	// SourceModuleName is set when the function is provided by a module (e.g. a module
+	// constructor or auto-alias on the Query root). Empty for core API functions.
+	SourceModuleName string `field:"true" doc:"If this function is provided by a module, the name of the module. Unset otherwise."`
+
 	// Below are not in public API
 	CachePolicy     FunctionCachePolicy
 	CacheTTLSeconds dagql.Nullable[dagql.Int]

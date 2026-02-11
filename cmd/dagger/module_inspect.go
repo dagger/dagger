@@ -903,12 +903,13 @@ func shortDescription(desc string) string {
 
 // modFunction is a representation of dagger.Function.
 type modFunction struct {
-	Name        string
-	Description string
-	ReturnType  *modTypeDef
-	Args        []*modFunctionArg
-	cmdName     string
-	once        sync.Once
+	Name             string
+	Description      string
+	SourceModuleName string
+	ReturnType       *modTypeDef
+	Args             []*modFunctionArg
+	cmdName          string
+	once             sync.Once
 }
 
 func (f *modFunction) CmdName() string {
