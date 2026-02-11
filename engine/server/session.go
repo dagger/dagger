@@ -1439,10 +1439,17 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 	}
 
 	clientMD := client.clientMetadata
-	if clientMD == nil || !clientMD.SkipWorkspaceModules {
+	if clientMD != nil && clientMD.RemoteWorkdir != "" {
+		// Remote workspace: clone git repo and load workspace from it.
+		if err := srv.loadRemoteWorkspace(ctx, client, clientMD.RemoteWorkdir); err != nil {
+			client.workspaceErr = fmt.Errorf("remote workspace %q: %w", clientMD.RemoteWorkdir, err)
+			client.workspaceLoaded = true
+			return client.workspaceErr
+		}
+	} else if clientMD == nil || !clientMD.SkipWorkspaceModules {
+		// Local workspace: detect from client's working directory.
 		cwd, err := client.bkClient.AbsPath(ctx, ".")
 		if err != nil {
-			// Workspace detection failure is permanent.
 			client.workspaceErr = fmt.Errorf("workspace detection: %w", err)
 			client.workspaceLoaded = true
 			return client.workspaceErr
@@ -1611,6 +1618,103 @@ func (srv *Server) loadWorkspaceModule(
 			return fmt.Errorf("serving dependency %s: %w", depMod.Name(), err)
 		}
 	}
+	return nil
+}
+
+// loadRemoteWorkspace clones a git repo specified by remoteRef, reads
+// .dagger/config.toml from it, and loads all configured workspace modules.
+// For local module sources in the config, it constructs full git refs
+// pointing to the correct subpath within the repo.
+func (srv *Server) loadRemoteWorkspace(
+	ctx context.Context,
+	client *daggerClient,
+	remoteRef string,
+) error {
+	dag := client.dag
+
+	// 1. Parse the remote ref to get repo URL, version, and subdir.
+	parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
+	if err != nil {
+		return fmt.Errorf("parsing git ref: %w", err)
+	}
+
+	// 2. Clone the repo and get the directory tree.
+	// Build the ref selector — use "head" if no version specified.
+	refSelector := dagql.Selector{Field: "head"}
+	if parsedRef.ModVersion != "" {
+		refSelector = dagql.Selector{
+			Field: "ref",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(parsedRef.ModVersion)}},
+		}
+	}
+
+	var tree dagql.ObjectResult[*core.Directory]
+	err = dag.Select(ctx, dag.Root(), &tree,
+		dagql.Selector{
+			Field: "git",
+			Args: []dagql.NamedInput{
+				{Name: "url", Value: dagql.String(parsedRef.SourceCloneRef)},
+			},
+		},
+		refSelector,
+		dagql.Selector{Field: "tree"},
+	)
+	if err != nil {
+		return fmt.Errorf("cloning repo: %w", err)
+	}
+
+	// 3. Determine the workspace root within the cloned tree.
+	// RepoRootSubdir is "/" when pointing at the repo root, or a subpath like "subdir".
+	wsRoot := ""
+	if parsedRef.RepoRootSubdir != "/" && parsedRef.RepoRootSubdir != "." {
+		wsRoot = parsedRef.RepoRootSubdir
+	}
+
+	// 4. Read .dagger/config.toml from the cloned tree.
+	configPath := filepath.Join(wsRoot, workspace.WorkspaceDirName, workspace.ConfigFileName)
+
+	var configContents dagql.String
+	err = dag.Select(ctx, tree, &configContents,
+		dagql.Selector{
+			Field: "file",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(configPath)}},
+		},
+		dagql.Selector{Field: "contents"},
+	)
+	if err != nil {
+		// No config.toml — valid but empty workspace, nothing to load.
+		slog.Debug("remote workspace has no config", "ref", remoteRef, "err", err)
+		return nil
+	}
+
+	cfg, err := workspace.ParseConfig([]byte(configContents))
+	if err != nil {
+		return fmt.Errorf("parsing remote workspace config: %w", err)
+	}
+
+	// 5. Load each configured module.
+	for name, entry := range cfg.Modules {
+		sourcePath := entry.Source
+
+		// For local sources (relative paths within the repo), construct a
+		// full git ref so the module resolver can clone and load it.
+		if strings.HasPrefix(entry.Source, ".") || strings.HasPrefix(entry.Source, "/") || !strings.Contains(entry.Source, ".") {
+			// Local source: resolve relative to .dagger/ directory within the workspace root.
+			subPath := filepath.Join(wsRoot, workspace.WorkspaceDirName, entry.Source)
+			subPath = filepath.Clean(subPath)
+
+			// Construct a full git ref: repoRoot/subPath@version
+			sourcePath = parsedRef.RepoRoot.Root + "/" + subPath
+			if parsedRef.ModVersion != "" {
+				sourcePath += "@" + parsedRef.ModVersion
+			}
+		}
+
+		if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config); err != nil {
+			return fmt.Errorf("loading remote workspace module %q: %w", name, err)
+		}
+	}
+
 	return nil
 }
 
