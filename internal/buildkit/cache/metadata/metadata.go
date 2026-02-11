@@ -28,7 +28,11 @@ type Store struct {
 }
 
 func NewStore(dbPath string) (*Store, error) {
-	db, err := boltutil.Open(dbPath, 0600, &bbolt.Options{NoSync: true})
+	db, err := boltutil.Open(dbPath, 0600, &bbolt.Options{
+		NoSync:         true,
+		NoFreelistSync: true,
+		NoGrowSync:     true,
+	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open database file %s", dbPath)
 	}
