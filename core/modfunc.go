@@ -544,7 +544,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		// Process "contextual arguments", aka objects with a `defaulPath`
 		ctxArgVals := make([]*argInput, len(ctxArgs))
 		for i, arg := range ctxArgs {
-			i, arg := i, arg
 			eg.Go(func() error {
 				ctxVal, err := fn.loadContextualArg(ctx, srv, arg)
 				if err != nil {
@@ -564,7 +563,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		// Process user-defined user defaults for objects
 		userDefaultVals := make([]*argInput, len(userDefaults))
 		for i, userDefault := range userDefaults {
-			i, userDefault := i, userDefault
 			eg.Go(func() error {
 				id, err := userDefault.DagqlID(ctx)
 				if err != nil {

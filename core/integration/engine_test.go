@@ -730,15 +730,10 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 
 		// find the lines with metrics we care about testing
 		soughtMetrics := map[string]struct{}{
-			"dagger_connected_clients":                              {},
-			"dagger_dagql_cache_entries":                            {},
-			"dagger_dagql_cache_ongoing_calls_entries":              {},
-			"dagger_dagql_cache_completed_calls_entries":            {},
-			"dagger_dagql_cache_completed_calls_by_content_entries": {},
-			"dagger_dagql_cache_ongoing_arbitrary_entries":          {},
-			"dagger_dagql_cache_completed_arbitrary_entries":        {},
-			"dagger_local_cache_total_disk_size_bytes":              {},
-			"dagger_local_cache_entries":                            {},
+			"dagger_connected_clients":                 {},
+			"dagger_dagql_cache_entries":               {},
+			"dagger_local_cache_total_disk_size_bytes": {},
+			"dagger_local_cache_entries":               {},
 		}
 		foundMetrics := map[string]int{}
 		for _, line := range strings.Split(out, "\n") {
@@ -779,31 +774,6 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 			case "dagger_dagql_cache_entries":
 				if num < 0 {
 					t.Logf("expected dagger_dagql_cache_entries >= 0, got %d", num)
-					validatedAll = false
-				}
-			case "dagger_dagql_cache_ongoing_calls_entries":
-				if num < 0 {
-					t.Logf("expected dagger_dagql_cache_ongoing_calls_entries >= 0, got %d", num)
-					validatedAll = false
-				}
-			case "dagger_dagql_cache_completed_calls_entries":
-				if num < 0 {
-					t.Logf("expected dagger_dagql_cache_completed_calls_entries >= 0, got %d", num)
-					validatedAll = false
-				}
-			case "dagger_dagql_cache_completed_calls_by_content_entries":
-				if num < 0 {
-					t.Logf("expected dagger_dagql_cache_completed_calls_by_content_entries >= 0, got %d", num)
-					validatedAll = false
-				}
-			case "dagger_dagql_cache_ongoing_arbitrary_entries":
-				if num < 0 {
-					t.Logf("expected dagger_dagql_cache_ongoing_arbitrary_entries >= 0, got %d", num)
-					validatedAll = false
-				}
-			case "dagger_dagql_cache_completed_arbitrary_entries":
-				if num < 0 {
-					t.Logf("expected dagger_dagql_cache_completed_arbitrary_entries >= 0, got %d", num)
 					validatedAll = false
 				}
 			case "dagger_local_cache_total_disk_size_bytes":
@@ -861,13 +831,8 @@ func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T
 		}
 
 		sought := map[string]struct{}{
-			"dagger_connected_clients":                              {},
-			"dagger_dagql_cache_entries":                            {},
-			"dagger_dagql_cache_ongoing_calls_entries":              {},
-			"dagger_dagql_cache_completed_calls_entries":            {},
-			"dagger_dagql_cache_completed_calls_by_content_entries": {},
-			"dagger_dagql_cache_ongoing_arbitrary_entries":          {},
-			"dagger_dagql_cache_completed_arbitrary_entries":        {},
+			"dagger_connected_clients":   {},
+			"dagger_dagql_cache_entries": {},
 		}
 		found := map[string]float64{}
 		for _, line := range strings.Split(out, "\n") {
@@ -948,14 +913,10 @@ done
 			`}).Sync(ctx)
 	require.NoError(t, err)
 
-	// Give any async session/cache-release paths a moment to run before polling.
-	time.Sleep(2 * time.Second)
-
 	var (
-		settled     bool
-		lastClient  float64
-		lastDagql   float64
-		lastMetrics map[string]float64
+		settled    bool
+		lastClient float64
+		lastDagql  float64
 	)
 	for attempt := 1; attempt <= 24; attempt++ {
 		metrics, err := getMetrics()
@@ -964,7 +925,6 @@ done
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		lastMetrics = metrics
 		lastClient = metrics["dagger_connected_clients"]
 		lastDagql = metrics["dagger_dagql_cache_entries"]
 		if lastClient == 0 && lastDagql == baselineDagql {
@@ -984,15 +944,10 @@ done
 	require.Truef(
 		t,
 		settled,
-		"dagql cache entries did not return to baseline after clients closed (connected_clients=%v dagql_cache_entries=%v baseline=%v ongoing_calls=%v completed_calls=%v completed_calls_by_content=%v ongoing_arbitrary=%v completed_arbitrary=%v)",
+		"dagql cache entries did not return to baseline after clients closed (connected_clients=%v dagql_cache_entries=%v baseline=%v)",
 		lastClient,
 		lastDagql,
 		baselineDagql,
-		lastMetrics["dagger_dagql_cache_ongoing_calls_entries"],
-		lastMetrics["dagger_dagql_cache_completed_calls_entries"],
-		lastMetrics["dagger_dagql_cache_completed_calls_by_content_entries"],
-		lastMetrics["dagger_dagql_cache_ongoing_arbitrary_entries"],
-		lastMetrics["dagger_dagql_cache_completed_arbitrary_entries"],
 	)
 }
 

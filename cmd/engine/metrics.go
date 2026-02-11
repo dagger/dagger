@@ -24,31 +24,6 @@ var (
 		Help: "Number of entries in the dagql cache",
 	})
 
-	dagqlCacheOngoingCallsEntriesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dagger_dagql_cache_ongoing_calls_entries",
-		Help: "Number of in-progress dagql call entries",
-	})
-
-	dagqlCacheCompletedCallsEntriesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dagger_dagql_cache_completed_calls_entries",
-		Help: "Number of completed dagql call entries indexed by call key",
-	})
-
-	dagqlCacheCompletedCallsByContentEntriesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dagger_dagql_cache_completed_calls_by_content_entries",
-		Help: "Number of completed dagql call entries indexed by content digest",
-	})
-
-	dagqlCacheOngoingArbitraryEntriesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dagger_dagql_cache_ongoing_arbitrary_entries",
-		Help: "Number of in-progress arbitrary dagql cache entries",
-	})
-
-	dagqlCacheCompletedArbitraryEntriesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dagger_dagql_cache_completed_arbitrary_entries",
-		Help: "Number of completed arbitrary dagql cache entries",
-	})
-
 	localCacheTotalDiskSizeGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dagger_local_cache_total_disk_size_bytes",
 		Help: "Total disk space consumed by the local cache in bytes",
@@ -71,21 +46,6 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 		return err
 	}
 	if err := prometheus.Register(dagqlCacheEntriesGauge); err != nil {
-		return err
-	}
-	if err := prometheus.Register(dagqlCacheOngoingCallsEntriesGauge); err != nil {
-		return err
-	}
-	if err := prometheus.Register(dagqlCacheCompletedCallsEntriesGauge); err != nil {
-		return err
-	}
-	if err := prometheus.Register(dagqlCacheCompletedCallsByContentEntriesGauge); err != nil {
-		return err
-	}
-	if err := prometheus.Register(dagqlCacheOngoingArbitraryEntriesGauge); err != nil {
-		return err
-	}
-	if err := prometheus.Register(dagqlCacheCompletedArbitraryEntriesGauge); err != nil {
 		return err
 	}
 	if err := prometheus.Register(localCacheTotalDiskSizeGauge); err != nil {
@@ -140,12 +100,6 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		connectedClientsGauge.Set(float64(srv.ConnectedClients()))
 		dagqlCacheEntriesGauge.Set(float64(srv.DagqlCacheEntries()))
-		cacheStats := srv.DagqlCacheEntryStats()
-		dagqlCacheOngoingCallsEntriesGauge.Set(float64(cacheStats.OngoingCalls))
-		dagqlCacheCompletedCallsEntriesGauge.Set(float64(cacheStats.CompletedCalls))
-		dagqlCacheCompletedCallsByContentEntriesGauge.Set(float64(cacheStats.CompletedCallsByContent))
-		dagqlCacheOngoingArbitraryEntriesGauge.Set(float64(cacheStats.OngoingArbitrary))
-		dagqlCacheCompletedArbitraryEntriesGauge.Set(float64(cacheStats.CompletedArbitrary))
 
 		var dbReset float64
 		if srv.CorruptDBReset() {

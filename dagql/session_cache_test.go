@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -241,6 +242,61 @@ func TestSessionCacheReleaseAndCloseWithNilResult(t *testing.T) {
 
 	assert.NilError(t, sc.ReleaseAndClose(ctx))
 	assert.Equal(t, 0, base.Size())
+}
+
+func TestSessionCacheGetOrInitCallNilID(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	sc := NewSessionCache(cacheIface.(*cache))
+
+	called := false
+	_, err = sc.GetOrInitCall(ctx, CacheKey{}, func(context.Context) (AnyResult, error) {
+		called = true
+		return nil, nil
+	})
+	assert.ErrorContains(t, err, "cache key ID is nil")
+	assert.Assert(t, !called)
+}
+
+func TestSessionCacheErrorThenNilResultStaysNil(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	key := cacheTestID("session-error-then-nil")
+	initCalls := 0
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return nil, errors.New("boom")
+	})
+	assert.ErrorContains(t, err, "boom")
+	assert.Equal(t, 1, initCalls)
+
+	res, err := sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return nil, nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res == nil)
+	assert.Equal(t, 2, initCalls)
+
+	initCalledAgain := false
+	res, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		initCalledAgain = true
+		return cacheTestIntResult(key, 42), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res == nil)
+	assert.Assert(t, !initCalledAgain)
+	assert.Equal(t, 1, base.Size())
 }
 
 func TestSessionCacheArbitraryReleaseAndClose(t *testing.T) {

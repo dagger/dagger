@@ -105,6 +105,9 @@ func (c *SessionCache) GetOrInitCall(
 	for _, opt := range opts {
 		opt.SetCacheCallOpt(&o)
 	}
+	if key.ID == nil {
+		return nil, errors.New("cache key ID is nil")
+	}
 
 	keys := telemetryKeys(ctx)
 	if keys == nil {
@@ -148,11 +151,6 @@ func (c *SessionCache) GetOrInitCall(
 	// success: we're in a good state now, allow normal caching again
 	c.noCacheNext.Delete(callKey)
 
-	nilResult := false
-	if valueRes, ok := res.(cacheValueResult); ok && !valueRes.cacheHasValue() {
-		nilResult = true
-	}
-
 	// If we forced DoNotCache due to a prior failure, we need to re-insert the successful
 	// result into the underlying cache under the original key so subsequent calls find it.
 	// The call above used a random storage key (due to DoNotCache=true), so the result
@@ -166,6 +164,11 @@ func (c *SessionCache) GetOrInitCall(
 			res = cachedRes
 		}
 		// If caching fails, we still return the successful result, just won't be cached
+	}
+
+	nilResult := false
+	if valueRes, ok := res.(cacheValueResult); ok && !valueRes.cacheHasValue() {
+		nilResult = true
 	}
 
 	c.mu.Lock()
