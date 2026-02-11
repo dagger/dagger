@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -27,7 +26,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -491,7 +489,14 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		return nil, err
 	}
 
-	dgstInputs := []string{cacheCfgResp.CacheKey.CallKey}
+	if cacheCfgResp.CacheKey.ID == nil {
+		cacheCfgResp.CacheKey.ID = req.CacheKey.ID
+	}
+	if cacheCfgResp.CacheKey.ID == nil {
+		return nil, fmt.Errorf("cache key ID is nil for %s.%s", fn.mod.Name(), fn.metadata.Name)
+	}
+
+	dgstInputs := []string{cacheCfgResp.CacheKey.ID.Digest().String()}
 
 	var ctxArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -527,11 +532,10 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	}
 
 	if len(ctxArgs) > 0 || len(userDefaults) > 0 {
-		cacheCfgResp.UpdatedArgs = make(map[string]dagql.Input)
-		var mu sync.Mutex
 		type argInput struct {
-			name string
-			val  dagql.IDType
+			argName  string
+			origName string
+			val      dagql.IDType
 		}
 
 		srv := dagql.CurrentDagqlServer(ctx)
@@ -547,12 +551,10 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				}
 
 				ctxArgVals[i] = &argInput{
-					name: arg.OriginalName,
-					val:  ctxVal,
+					argName:  arg.Name,
+					origName: arg.OriginalName,
+					val:      ctxVal,
 				}
-				mu.Lock()
-				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(ctxVal)
-				mu.Unlock()
 
 				return nil
 			})
@@ -561,7 +563,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		// Process user-defined user defaults for objects
 		userDefaultVals := make([]*argInput, len(userDefaults))
 		for i, userDefault := range userDefaults {
-			i, userDefault := i, userDefault
 			eg.Go(func() error {
 				id, err := userDefault.DagqlID(ctx)
 				if err != nil {
@@ -569,12 +570,10 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				}
 				arg := userDefault.Arg
 				userDefaultVals[i] = &argInput{
-					name: arg.OriginalName,
-					val:  id,
+					argName:  arg.Name,
+					origName: arg.OriginalName,
+					val:      id,
 				}
-				mu.Lock()
-				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(id)
-				mu.Unlock()
 				return nil
 			})
 		}
@@ -584,22 +583,32 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 
 		for _, arg := range ctxArgVals {
+			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
+				arg.argName,
+				dagql.Opt(arg.val).ToLiteral(),
+				false,
+			))
 			id := arg.val.ID()
 			// prefer content digest if available
 			dgst := id.ContentDigest()
 			if dgst == "" {
 				dgst = id.Digest()
 			}
-			dgstInputs = append(dgstInputs, arg.name, dgst.String())
+			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 		}
 		for _, arg := range userDefaultVals {
 			if arg != nil {
+				cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
+					arg.argName,
+					dagql.Opt(arg.val).ToLiteral(),
+					false,
+				))
 				id := arg.val.ID()
 				dgst := id.ContentDigest()
 				if dgst == "" {
 					dgst = id.Digest()
 				}
-				dgstInputs = append(dgstInputs, arg.name, dgst.String())
+				dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 			}
 		}
 	}
@@ -612,7 +621,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
 	}
 
-	cacheCfgResp.CacheKey.CallKey = hashutil.HashStrings(dgstInputs...).String()
+	cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithDigest(hashutil.HashStrings(dgstInputs...))
 	return cacheCfgResp, nil
 }
 
@@ -673,7 +682,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if opts.OverrideStorageKey != "" {
 		cacheMixins = append(cacheMixins, opts.OverrideStorageKey)
 	} else {
-		cacheMixins = append(cacheMixins, cache.CurrentStorageKey(ctx))
+		cacheMixins = append(cacheMixins, dagql.CurrentStorageKey(ctx))
 	}
 
 	execMD.CacheMixin = hashutil.HashStrings(cacheMixins...)
@@ -1052,7 +1061,7 @@ func (fn *ModuleFunction) loadContextualArg(
 					},
 					{
 						Name:  "digest",
-						Value: dagql.String(contentCacheKey.CallKey),
+						Value: dagql.String(contentCacheKey),
 					},
 				},
 			},
@@ -1079,7 +1088,7 @@ func (fn *ModuleFunction) loadContextualArg(
 					},
 					{
 						Name:  "digest",
-						Value: dagql.String(contentCacheKey.CallKey),
+						Value: dagql.String(contentCacheKey),
 					},
 				},
 			},
@@ -1110,7 +1119,7 @@ func (fn *ModuleFunction) loadContextualArg(
 							},
 							{
 								Name:  "digest",
-								Value: dagql.String(contentCacheKey.CallKey),
+								Value: dagql.String(contentCacheKey),
 							},
 						},
 					},
@@ -1132,7 +1141,7 @@ func (fn *ModuleFunction) loadContextualArg(
 							},
 							{
 								Name:  "digest",
-								Value: dagql.String(contentCacheKey.CallKey),
+								Value: dagql.String(contentCacheKey),
 							},
 						},
 					},
@@ -1239,11 +1248,31 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 	case dagql.ID[*Directory]:
 		return applyIgnore(value)
 	case dagql.Optional[dagql.IDType]:
+		if !value.Valid {
+			return nil, nil
+		}
 		id := value.Value
 		if dirid, ok := id.(dagql.ID[*Directory]); ok {
 			return applyIgnore(dirid)
 		}
 		return nil, fmt.Errorf("not a directory id: %#v", id)
+	case dagql.DynamicOptional:
+		if !value.Valid {
+			return nil, nil
+		}
+		switch id := value.Value.(type) {
+		case DynamicID:
+			return applyIgnore(id)
+		case dagql.ID[*Directory]:
+			return applyIgnore(id)
+		case dagql.IDType:
+			if dirid, ok := id.(dagql.ID[*Directory]); ok {
+				return applyIgnore(dirid)
+			}
+			return nil, fmt.Errorf("not a directory id: %#v", id)
+		default:
+			return nil, fmt.Errorf("not a directory id: %#v", value.Value)
+		}
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
 	}

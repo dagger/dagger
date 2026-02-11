@@ -21,21 +21,23 @@ Jump to the right doc for your task:
 
 | Task | Read |
 |------|------|
-| Understand how IDs encode operations | [ids.md](references/ids.md) |
-| Understand the GraphQL server implementation | [dagql-api-server.md](references/dagql-api-server.md) |
-| Understand how results are cached | [cache-storage.md](references/cache-storage.md) |
-| Debug a cache miss | [debugging.md](references/debugging.md) |
+| Understand how IDs encode operations and digests | [ids.md](references/ids.md) |
+| Understand cache-relevant dagql execution flow | [dagql-api-server.md](references/dagql-api-server.md) |
+| Understand base/session cache storage and lifecycle | [cache-storage.md](references/cache-storage.md) |
+| Debug cache misses and cache behavior regressions | [debugging.md](references/debugging.md) |
+| Understand filesync cache behavior | [filesync.md](references/filesync.md) |
 
 ## Core References
 
-To build deep experitise, read these in order:
+To build cache expertise, read these in order:
 
-1. **[ids.md](references/ids.md)** - How IDs encode operations and derive digests
-2. **[dagql-api-server.md](references/dagql-api-server.md)** - The dagql GraphQL server implementation
-3. **[cache-storage.md](references/cache-storage.md)** - How dagql results are cached
+1. **[ids.md](references/ids.md)** - How IDs and digests define cache identity
+2. **[dagql-api-server.md](references/dagql-api-server.md)** - How `Select`/`preselect`/`call` drive cache usage
+3. **[cache-storage.md](references/cache-storage.md)** - How results are stored, indexed, released, and persisted
 
 ## Optional References
 
 Load on-demand for specific tasks:
 
-- **[debugging.md](references/debugging.md)** - Techniques for diagnosing cache misses and unexpected invalidations
+- **[debugging.md](references/debugging.md)** - Practical debugging loop and instrumentation points
+- **[filesync.md](references/filesync.md)** - Host filesystem sync internals and filesync cache model

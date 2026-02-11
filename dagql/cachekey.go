@@ -40,7 +40,13 @@ func CachePerClientObject[A any](
 	resp := &GetCacheConfigResponse{
 		CacheKey: req.CacheKey,
 	}
-	resp.CacheKey.CallKey = hashutil.HashStrings(resp.CacheKey.CallKey, clientMD.ClientID).String()
+	if resp.CacheKey.ID == nil {
+		return nil, fmt.Errorf("cache key ID is nil")
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+		resp.CacheKey.ID.Digest().String(),
+		clientMD.ClientID,
+	))
 	return resp, nil
 }
 
@@ -73,7 +79,13 @@ func CachePerSessionObject[A any](
 	resp := &GetCacheConfigResponse{
 		CacheKey: req.CacheKey,
 	}
-	resp.CacheKey.CallKey = hashutil.HashStrings(resp.CacheKey.CallKey, clientMD.SessionID).String()
+	if resp.CacheKey.ID == nil {
+		return nil, fmt.Errorf("cache key ID is nil")
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+		resp.CacheKey.ID.Digest().String(),
+		clientMD.SessionID,
+	))
 	return resp, nil
 }
 
@@ -114,7 +126,10 @@ func CachePerCall[P Typed, A any](
 ) (*GetCacheConfigResponse, error) {
 	randID := identity.NewID()
 	resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
-	resp.CacheKey.CallKey = randID
+	if resp.CacheKey.ID == nil {
+		return nil, fmt.Errorf("cache key ID is nil")
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(randID))
 	return resp, nil
 }
 
@@ -132,10 +147,13 @@ func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, ObjectRes
 	) (*GetCacheConfigResponse, error) {
 		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
 		schemaDgst := srv.SchemaDigest()
-		resp.CacheKey.CallKey = hashutil.HashStrings(
-			resp.CacheKey.CallKey,
+		if resp.CacheKey.ID == nil {
+			return nil, fmt.Errorf("cache key ID is nil")
+		}
+		resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+			resp.CacheKey.ID.Digest().String(),
 			schemaDgst.String(),
-		).String()
+		))
 		return resp, nil
 	}
 }
@@ -161,11 +179,14 @@ func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, Obj
 		}
 
 		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
-		resp.CacheKey.CallKey = hashutil.HashStrings(
-			resp.CacheKey.CallKey,
+		if resp.CacheKey.ID == nil {
+			return nil, fmt.Errorf("cache key ID is nil")
+		}
+		resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+			resp.CacheKey.ID.Digest().String(),
 			srv.SchemaDigest().String(),
 			clientMD.ClientID,
-		).String()
+		))
 		return resp, nil
 	}
 }

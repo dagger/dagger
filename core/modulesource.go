@@ -24,7 +24,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -1154,7 +1153,7 @@ func ResolveDepToSource(
 			}
 			err = dag.Select(ctx, dag.Root(), &inst, selectors...)
 			if err != nil {
-				if errors.Is(err, cache.ErrCacheRecursiveCall) {
+				if errors.Is(err, dagql.ErrCacheRecursiveCall) {
 					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
 				}
 				return inst, err

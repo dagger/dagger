@@ -126,7 +126,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		NoIDs: true,
 	})
 	srv.root = ObjectResult[T]{
-		Result: Result[T]{self: root},
+		Result: newDetachedResult(nil, root),
 		class:  rootClass,
 	}
 	srv.InstallObject(rootClass)
@@ -919,10 +919,7 @@ func NewResultForID[T Typed](
 		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
 	}
 
-	return Result[T]{
-		constructor: id,
-		self:        self,
-	}, nil
+	return newDetachedResult(id, self), nil
 }
 
 func NewObjectResultForCurrentID[T Typed](

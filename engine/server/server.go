@@ -26,7 +26,6 @@ import (
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/filesync"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
@@ -181,7 +180,7 @@ type Server struct {
 	//
 	// dagql cache
 	//
-	baseDagqlCache cache.Cache[string, dagql.AnyResult]
+	baseDagqlCache dagql.Cache
 
 	//
 	// session+client state
@@ -607,7 +606,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup dagql caching
 	//
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+	srv.baseDagqlCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
 	if err != nil {
 		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
 		// db and trying again.
@@ -615,7 +614,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
 			slog.Error("failed to remove existing dagql cache db", "error", err)
 		}
-		srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+		srv.baseDagqlCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
 		}
@@ -869,6 +868,20 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 
 func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
+}
+
+func (srv *Server) DagqlCacheEntries() int {
+	if srv.baseDagqlCache == nil {
+		return 0
+	}
+	return srv.baseDagqlCache.Size()
+}
+
+func (srv *Server) DagqlCacheEntryStats() dagql.CacheEntryStats {
+	if srv.baseDagqlCache == nil {
+		return dagql.CacheEntryStats{}
+	}
+	return srv.baseDagqlCache.EntryStats()
 }
 
 // ConnectedClients returns the number of currently connected clients

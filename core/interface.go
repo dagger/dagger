@@ -332,11 +332,8 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					return nil, fmt.Errorf("failed to call interface function %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
 
-				postCall := res.GetPostCall()
-				if postCall != nil {
-					if err := postCall(ctx); err != nil {
-						return nil, fmt.Errorf("failed to run post-call for %s.%s: %w", ifaceName, fieldDef.Name, err)
-					}
+				if err := res.PostCall(ctx); err != nil {
+					return nil, fmt.Errorf("failed to run post-call for %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
 
 				if fnTypeDef.ReturnType.Underlying().Kind != TypeDefKindInterface {
