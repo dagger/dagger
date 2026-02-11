@@ -24,7 +24,6 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
@@ -375,11 +374,8 @@ var moduleModInitCmd = &cobra.Command{
 	Short: "Create a new module in the workspace",
 	Long: `Create a new module in the workspace.
 
-When inside a workspace, the module is created at .dagger/modules/<name>/ and
-automatically added to .dagger/config.toml so it's immediately callable via
-'dagger call <name> <function>'.
-
-When no workspace is found, the module is created in the current directory.`,
+The module is created at .dagger/modules/<name>/ and automatically added to
+.dagger/config.toml so it's immediately callable via 'dagger call <name> <function>'.`,
 	Example: `dagger module init --sdk=go ci
   dagger module init --sdk=python deploy`,
 	Args: cobra.ExactArgs(1),
@@ -393,135 +389,23 @@ When no workspace is found, the module is created in the current directory.`,
 		modName := extraArgs[0]
 
 		return withEngine(ctx, client.Params{
-			// Skip workspace loading — module init does its own CLI-side detection
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			// 1. Detect workspace
-			cwd, err := pathutil.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-			ws, err := workspace.DetectLocal(cwd)
-			if err != nil {
-				return fmt.Errorf("failed to detect workspace: %w", err)
-			}
-
-			// 2. Determine module path
-			// We're "in a workspace" if .dagger/ or .git exists at the workspace root
-			// (vs. the cwd fallback when nothing was found)
-			var srcRootArg string
-			daggerDirExists := false
-			if info, err := os.Stat(filepath.Join(ws.Root, workspace.WorkspaceDirName)); err == nil && info.IsDir() {
-				daggerDirExists = true
-			}
-			gitExists := false
-			if _, err := os.Stat(filepath.Join(ws.Root, ".git")); err == nil {
-				gitExists = true
-			}
-			inWorkspace := daggerDirExists || gitExists
-			if inWorkspace {
-				// Inside workspace: create at .dagger/modules/<name>/
-				srcRootArg = filepath.Join(ws.Root, workspace.WorkspaceDirName, "modules", modName)
-			} else {
-				// Standalone: create in current directory
-				srcRootArg = filepath.Join(cwd, modName)
-			}
-
-			// Make relative for engine
-			relPath, err := filepath.Rel(cwd, srcRootArg)
-			if err != nil {
-				return fmt.Errorf("failed to get relative path: %w", err)
-			}
-
-			// 3. Create module via engine (reuses existing init logic)
-			modSrc := dag.ModuleSource(relPath, dagger.ModuleSourceOpts{
-				DisableFindUp:  true,
-				AllowNotExists: true,
-				RequireKind:    dagger.ModuleSourceKindLocalSource,
+			ws := dag.Workspace(dagger.WorkspaceOpts{
+				SkipMigrationCheck: true,
 			})
 
-			alreadyExists, err := modSrc.ConfigExists(ctx)
+			msg, err := ws.ModuleInit(ctx, modName, sdk, dagger.WorkspaceModuleInitOpts{
+				Source:  moduleSourcePath,
+				Include: moduleIncludes,
+			})
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
-			}
-			if alreadyExists {
-				return fmt.Errorf("module %q already exists at %s", modName, srcRootArg)
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
-			}
-
-			modSrc = modSrc.WithName(modName)
-			modSrc = modSrc.WithSDK(sdk)
-
-			if moduleSourcePath != "" {
-				srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get source root subpath: %w", err)
-				}
-				srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
-				sourceAbsPath, err := pathutil.Abs(moduleSourcePath)
-				if err != nil {
-					return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
-				}
-				relSourcePath, err := filepath.Rel(srcRootAbsPath, sourceAbsPath)
-				if err != nil {
-					return fmt.Errorf("failed to get relative source path: %w", err)
-				}
-				modSrc = modSrc.WithSourceSubpath(relSourcePath)
-			}
-
-			if len(moduleIncludes) > 0 {
-				modSrc = modSrc.WithIncludes(moduleIncludes)
-			}
-
-			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
-
-			// Export generated files (dagger.json + SDK scaffolding)
-			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate module: %w", err)
-			}
-
-			// Generate license
-			searchExisting := !cmd.Flags().Lookup("license").Changed
-			if err := findOrCreateLicense(ctx, srcRootArg, searchExisting); err != nil {
 				return err
 			}
 
-			// 4. Auto-install in workspace config
-			if inWorkspace {
-				cfg := ws.Config
-				if cfg == nil {
-					cfg = &workspace.Config{}
-				}
-				if cfg.Modules == nil {
-					cfg.Modules = make(map[string]workspace.ModuleEntry)
-				}
-
-				// Source path relative to .dagger/ directory
-				sourcePath := filepath.Join("modules", modName)
-				cfg.Modules[modName] = workspace.ModuleEntry{Source: sourcePath}
-
-				daggerDir := filepath.Join(ws.Root, workspace.WorkspaceDirName)
-				if err := os.MkdirAll(daggerDir, 0o755); err != nil {
-					return fmt.Errorf("failed to create %s: %w", daggerDir, err)
-				}
-				configPath := filepath.Join(daggerDir, workspace.ConfigFileName)
-				if err := os.WriteFile(configPath, workspace.SerializeConfig(cfg), 0o644); err != nil {
-					return fmt.Errorf("failed to write %s: %w", configPath, err)
-				}
-
-				fmt.Fprintf(cmd.OutOrStdout(), "Created module %q at %s\n", modName, srcRootArg)
-				fmt.Fprintf(cmd.OutOrStdout(), "Installed in %s\n", configPath)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Created module %q at %s\n", modName, srcRootArg)
-			}
-
+			fmt.Fprintln(cmd.OutOrStdout(), msg)
 			return nil
 		})
 	},
