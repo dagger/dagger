@@ -97,6 +97,17 @@ available functions.
 func functionListRun(o functionProvider, writer io.Writer) error {
 	fns, skipped := GetSupportedFunctions(o)
 
+	// Filter out core API constructors — only show module constructors.
+	// Core types are excluded from currentTypeDefs, but the Query root type
+	// still has core functions listed. Filter them here.
+	filtered := make([]*modFunction, 0, len(fns))
+	for _, fn := range fns {
+		if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
+			filtered = append(filtered, fn)
+		}
+	}
+	fns = filtered
+
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",
 		termenv.String("Name").Bold(),
