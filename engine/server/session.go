@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -1458,7 +1459,17 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 		if ws.Config != nil && len(ws.Config.Modules) > 0 {
 			dag := client.dag
 			for name, entry := range ws.Config.Modules {
-				sourcePath := filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
+				// Determine if the source is local or remote.
+				// Local sources (starting with . or / or containing no dots) are
+				// resolved relative to the .dagger/ directory.
+				// Everything else is passed through as-is (remote git refs like
+				// github.com/org/repo).
+				var sourcePath string
+				if strings.HasPrefix(entry.Source, ".") || strings.HasPrefix(entry.Source, "/") || !strings.Contains(entry.Source, ".") {
+					sourcePath = filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
+				} else {
+					sourcePath = entry.Source
+				}
 				if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias); err != nil {
 					client.workspaceErr = fmt.Errorf("loading workspace module %q: %w", name, err)
 					client.workspaceLoaded = true

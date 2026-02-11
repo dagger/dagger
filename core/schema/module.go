@@ -47,7 +47,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
-			Doc(`The TypeDef representations of the objects currently being served in the session.`),
+			Doc(`The TypeDef representations of the objects currently being served in the session.`).
+			Args(
+				dagql.Arg("includeCore").Doc(`Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.`),
+			),
 
 		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
@@ -748,7 +751,9 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct {
+	IncludeCore dagql.Optional[dagql.Boolean]
+}) (dagql.Array[*core.TypeDef], error) {
 	deps, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -757,7 +762,43 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current schema: %w", err)
 	}
-	return deps.TypeDefs(ctx, dag)
+	typeDefs, err := deps.TypeDefs(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+
+	includeCore := !args.IncludeCore.Valid || args.IncludeCore.Value.Bool()
+	if !includeCore {
+		filtered := make([]*core.TypeDef, 0, len(typeDefs))
+		for _, td := range typeDefs {
+			if !isCoreTypeDef(td) {
+				filtered = append(filtered, td)
+			}
+		}
+		typeDefs = filtered
+	}
+
+	return typeDefs, nil
+}
+
+// isCoreTypeDef returns true if the TypeDef originates from the core module
+// (i.e., has no SourceModuleName set).
+func isCoreTypeDef(td *core.TypeDef) bool {
+	if td.AsObject.Valid {
+		return td.AsObject.Value.SourceModuleName == ""
+	}
+	if td.AsInterface.Valid {
+		return td.AsInterface.Value.SourceModuleName == ""
+	}
+	if td.AsEnum.Valid {
+		return td.AsEnum.Value.SourceModuleName == ""
+	}
+	if td.AsScalar.Valid {
+		return td.AsScalar.Value.SourceModuleName == ""
+	}
+	// Input types and list types don't have SourceModuleName;
+	// they are core types by convention.
+	return true
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
