@@ -1470,7 +1470,7 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 				} else {
 					sourcePath = entry.Source
 				}
-				if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias); err != nil {
+				if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config); err != nil {
 					client.workspaceErr = fmt.Errorf("loading workspace module %q: %w", name, err)
 					client.workspaceLoaded = true
 					return client.workspaceErr
@@ -1566,12 +1566,15 @@ func (srv *Server) loadExtraModule(
 
 // loadWorkspaceModule resolves a module through the dagql pipeline and serves it
 // to the client. This adds the module's constructor as a Query root field.
+// If configDefaults is non-nil, its entries are applied as default values for
+// the module constructor's arguments.
 func (srv *Server) loadWorkspaceModule(
 	ctx context.Context,
 	client *daggerClient,
 	dag *dagql.Server,
 	name, sourcePath string,
 	alias bool,
+	configDefaults map[string]string,
 ) error {
 	var mod dagql.ObjectResult[*core.Module]
 	err := dag.Select(ctx, dag.Root(), &mod,
@@ -1592,6 +1595,11 @@ func (srv *Server) loadWorkspaceModule(
 		mod.Self().AutoAlias = true
 	}
 
+	// Apply workspace config defaults as constructor argument defaults.
+	if len(configDefaults) > 0 {
+		applyWorkspaceConfigDefaults(mod.Self(), configDefaults)
+	}
+
 	// Serve module + dependencies (adds to client.deps, installs on dagql server).
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
@@ -1604,6 +1612,49 @@ func (srv *Server) loadWorkspaceModule(
 		}
 	}
 	return nil
+}
+
+// applyWorkspaceConfigDefaults sets default values on the module's constructor
+// arguments from workspace config entries (config.* keys in config.toml).
+// Each key in the map is matched (case-insensitively) against constructor arg
+// names. Values are stored as JSON strings or parsed as JSON if valid.
+func applyWorkspaceConfigDefaults(mod *core.Module, defaults map[string]string) {
+	for _, objDef := range mod.ObjectDefs {
+		if !objDef.AsObject.Valid {
+			continue
+		}
+		obj := objDef.AsObject.Value
+		if !obj.Constructor.Valid {
+			continue
+		}
+		ctor := obj.Constructor.Value
+		for _, arg := range ctor.Args {
+			val, ok := defaults[arg.OriginalName]
+			if !ok {
+				// Try case-insensitive match
+				for k, v := range defaults {
+					if strings.EqualFold(k, arg.OriginalName) || strings.EqualFold(k, arg.Name) {
+						val = v
+						ok = true
+						break
+					}
+				}
+			}
+			if !ok {
+				continue
+			}
+			// Try to parse as JSON first; if invalid JSON, treat as string literal
+			var parsed any
+			if err := json.Unmarshal([]byte(val), &parsed); err != nil {
+				parsed = val
+			}
+			marshaled, err := json.Marshal(parsed)
+			if err != nil {
+				continue
+			}
+			arg.DefaultValue = core.JSON(marshaled)
+		}
+	}
 }
 
 // If the current client is coming from a function, return the module that function is from
