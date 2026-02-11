@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
@@ -98,6 +99,53 @@ func Detect(
 	}
 
 	// Step 4: nothing found → cwd is workspace root
+	return &Workspace{Root: cwd}, nil
+}
+
+// DetectLocal finds the workspace root from the local filesystem.
+// This is the CLI-side counterpart to Detect(), which requires a buildkit session.
+// It walks up from cwd looking for .dagger/, then .git, then falls back to cwd.
+// It does not check migration triggers (that's the engine's responsibility).
+func DetectLocal(cwd string) (*Workspace, error) {
+	// Walk up looking for .dagger/
+	dir := cwd
+	for {
+		info, err := os.Stat(filepath.Join(dir, WorkspaceDirName))
+		if err == nil && info.IsDir() {
+			configPath := filepath.Join(dir, WorkspaceDirName, ConfigFileName)
+			data, err := os.ReadFile(configPath)
+			if err == nil {
+				cfg, err := ParseConfig(data)
+				if err != nil {
+					return nil, fmt.Errorf("parsing %s: %w", configPath, err)
+				}
+				return &Workspace{Root: dir, Config: cfg}, nil
+			}
+			// .dagger/ exists but no config.toml — valid empty workspace
+			return &Workspace{Root: dir}, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	// Walk up looking for .git
+	dir = cwd
+	for {
+		_, err := os.Stat(filepath.Join(dir, ".git"))
+		if err == nil {
+			return &Workspace{Root: dir}, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	// Nothing found — cwd is workspace root
 	return &Workspace{Root: cwd}, nil
 }
 
