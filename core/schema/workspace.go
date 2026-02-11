@@ -27,8 +27,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
-	dagql.Fields[*core.Workspace]{}.Install(srv)
-
 	dagql.Fields[*core.Workspace]{
 		dagql.Func("install", s.install).
 			DoNotCache("Mutates workspace config on host").
