@@ -258,6 +258,17 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 				}
 				fn.ReturnType = rtType
 
+				// For Query root fields, check if the field was provided by a
+				// module (e.g. module constructor or auto-alias). This lets the
+				// CLI distinguish module functions from core API constructors.
+				if introspectionType.Name == "Query" {
+					if queryType, ok := dag.ObjectType("Query"); ok {
+						if spec, ok := queryType.FieldSpec(introspectionField.Name, dag.View); ok && spec.Module != nil {
+							fn.SourceModuleName = spec.Module.Name()
+						}
+					}
+				}
+
 				for _, introspectionArg := range introspectionField.Args {
 					fnArg := &core.FunctionArg{
 						Name:        introspectionArg.Name,

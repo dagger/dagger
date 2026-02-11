@@ -120,6 +120,5 @@ Key test scenarios:
 ## Common pitfalls
 
 - **Can't `go build ./engine/server/...` on macOS** — pre-existing issue, Linux-only deps. Use `GOOS=linux GOARCH=amd64 go build ./engine/server/...` to verify types, or just build the CLI with `go build ./cmd/dagger/...`.
-- **`os.Chdir` affects everything** — ~15 places in the CLI depend on CWD being the workdir. Don't remove the chdir for local paths without a large refactor.
 - **dagql `Select` types** — use `dagql.ObjectResult[*core.Foo]` for object results, `dagql.String`/`dagql.Boolean` for scalars. There is no `dagql.Instance`.
 - **Workspace detection vs module loading** — detection always runs (even with `-m`). Loading modules from config can be skipped via `SkipWorkspaceModules`.

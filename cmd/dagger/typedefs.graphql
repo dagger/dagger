@@ -41,6 +41,7 @@ fragment TypeDefRefParts on TypeDef {
 fragment FunctionParts on Function {
 	name
 	description
+	sourceModuleName
 	returnType {
 		...TypeDefRefParts
 	}
