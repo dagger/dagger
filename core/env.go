@@ -311,7 +311,7 @@ var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&EngineCache{},
 	&EngineCacheEntry{},
 	&EngineCacheEntrySet{},
-	&DagqlWorkspace{},
+	&Workspace{},
 }
 
 var TypesHiddenFromEnvExtensions = []dagql.Typed{

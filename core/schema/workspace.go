@@ -27,9 +27,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
-	dagql.Fields[*core.DagqlWorkspace]{}.Install(srv)
+	dagql.Fields[*core.Workspace]{}.Install(srv)
 
-	dagql.Fields[*core.DagqlWorkspace]{
+	dagql.Fields[*core.Workspace]{
 		dagql.Func("install", s.install).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Install a module into the workspace, writing config.toml to the host.").
@@ -57,7 +57,7 @@ func (s *workspaceSchema) workspace(
 	ctx context.Context,
 	parent *core.Query,
 	args workspaceArgs,
-) (*core.DagqlWorkspace, error) {
+) (*core.Workspace, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func (s *workspaceSchema) workspace(
 		}
 	}
 
-	result := &core.DagqlWorkspace{
+	result := &core.Workspace{
 		Root:      ws.Root,
 		HasConfig: ws.Config != nil,
 	}
@@ -100,7 +100,7 @@ type installArgs struct {
 
 func (s *workspaceSchema) install(
 	ctx context.Context,
-	parent *core.DagqlWorkspace,
+	parent *core.Workspace,
 	args installArgs,
 ) (dagql.String, error) {
 	query, err := core.CurrentQuery(ctx)
@@ -225,7 +225,7 @@ type moduleInitArgs struct {
 
 func (s *workspaceSchema) moduleInit(
 	ctx context.Context,
-	parent *core.DagqlWorkspace,
+	parent *core.Workspace,
 	args moduleInitArgs,
 ) (dagql.String, error) {
 	query, err := core.CurrentQuery(ctx)
@@ -368,7 +368,7 @@ func (s *workspaceSchema) moduleInit(
 // readWorkspaceConfig reads the current workspace config from host, or returns a fresh empty config.
 func readWorkspaceConfig(ctx context.Context, bk interface {
 	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
-}, parent *core.DagqlWorkspace) (*workspace.Config, error) {
+}, parent *core.Workspace) (*workspace.Config, error) {
 	var cfg *workspace.Config
 	if parent.HasConfig {
 		data, err := bk.ReadCallerHostFile(ctx, parent.ConfigPath)
@@ -392,7 +392,7 @@ func readWorkspaceConfig(ctx context.Context, bk interface {
 // writeWorkspaceConfig serializes and writes config.toml to the host.
 // Uses a temp file + LocalFileExport to bypass the Directory/File abstraction
 // which requires a buildkit session group not available in resolver context.
-func writeWorkspaceConfig(ctx context.Context, bk *buildkit.Client, parent *core.DagqlWorkspace, cfg *workspace.Config) error {
+func writeWorkspaceConfig(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, cfg *workspace.Config) error {
 	configBytes := workspace.SerializeConfig(cfg)
 	configHostPath := filepath.Join(parent.Root, workspace.WorkspaceDirName, workspace.ConfigFileName)
 
