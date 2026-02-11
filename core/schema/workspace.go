@@ -336,16 +336,17 @@ func (s *workspaceSchema) moduleInit(
 		Args:  []dagql.NamedInput{{Name: "version", Value: dagql.String(modules.EngineVersionLatest)}},
 	})
 	selectors = append(selectors, dagql.Selector{Field: "generatedContextDirectory"})
+	selectors = append(selectors, dagql.Selector{
+		Field: "export",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(contextDirPath)},
+		},
+	})
 
-	var genDir dagql.ObjectResult[*core.Directory]
-	err = srv.Select(ctx, srv.Root(), &genDir, selectors...)
+	var exported string
+	err = srv.Select(ctx, srv.Root(), &exported, selectors...)
 	if err != nil {
 		return "", fmt.Errorf("generate module: %w", err)
-	}
-
-	// Export generated files to host
-	if err := genDir.Self().Export(ctx, string(contextDirPath), false); err != nil {
-		return "", fmt.Errorf("export module: %w", err)
 	}
 
 	// Auto-install in workspace config
