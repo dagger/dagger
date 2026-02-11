@@ -544,7 +544,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the annotation.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("publish", DagOpWrapper(srv, s.publish), dagql.CachePerCall).
+		dagql.NodeFunc("publish", DagOpWrapper(srv, s.publish)).
+			WithInput(dagql.CachePerCall).
 			DoNotCache("side effect on an external system (OCI registry)").
 			Doc(`Package the container state as an OCI image, and publish it to a registry`,
 				`Returns the fully qualified address of the published image, with digest`).
@@ -573,7 +574,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("platform", s.platform).
 			Doc(`The platform this container executes and publishes as.`),
 
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.export), dagql.CachePerCall).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.export)).
+			WithInput(dagql.CachePerCall).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
@@ -601,7 +603,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.exportLegacy), dagql.CachePerCall).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.exportLegacy)).
+			WithInput(dagql.CachePerCall).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 

@@ -48,7 +48,8 @@ type gitSchema struct{}
 
 func (s *gitSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("git", s.git, dagql.CachePerClient).
+		dagql.NodeFunc("git", s.git).
+			WithInput(dagql.CachePerClient).
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			Args(

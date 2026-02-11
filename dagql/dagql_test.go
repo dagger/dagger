@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/dagql/internal/pipes"
 	"github.com/dagger/dagger/dagql/internal/points"
 	"github.com/dagger/dagger/dagql/introspection"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -2730,6 +2731,285 @@ func TestCustomDigest(t *testing.T) {
 		assert.Equal(t, s1, res.ReturnTheArg.Val)
 		assert.Equal(t, s1ID, res.ReturnTheArg.ID)
 	}
+}
+
+func TestImplicitInputCachePerClient(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	var calls atomic.Int64
+	dagql.Fields[Query]{
+		dagql.NodeFunc("perClientCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{}) (int, error) {
+			return int(calls.Add(1)), nil
+		}).WithInput(dagql.CachePerClient),
+	}.Install(srv)
+
+	callForClient := func(clientID string) int {
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			ClientID: clientID,
+		})
+		var res int
+		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
+			Field: "perClientCounter",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	assert.Equal(t, callForClient("client-a"), 1)
+	assert.Equal(t, callForClient("client-a"), 1)
+	assert.Equal(t, callForClient("client-b"), 2)
+	assert.Equal(t, callForClient("client-b"), 2)
+}
+
+func TestImplicitInputCachePerSession(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	var calls atomic.Int64
+	dagql.Fields[Query]{
+		dagql.NodeFunc("perSessionCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{}) (int, error) {
+			return int(calls.Add(1)), nil
+		}).WithInput(dagql.CachePerSession),
+	}.Install(srv)
+
+	callForSession := func(sessionID string) int {
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			ClientID:  "same-client",
+			SessionID: sessionID,
+		})
+		var res int
+		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
+			Field: "perSessionCounter",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	assert.Equal(t, callForSession("session-a"), 1)
+	assert.Equal(t, callForSession("session-a"), 1)
+	assert.Equal(t, callForSession("session-b"), 2)
+	assert.Equal(t, callForSession("session-b"), 2)
+}
+
+func TestImplicitInputCachePerCall(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	var calls atomic.Int64
+	dagql.Fields[Query]{
+		dagql.NodeFunc("perCallCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{}) (int, error) {
+			return int(calls.Add(1)), nil
+		}).WithInput(dagql.CachePerCall),
+	}.Install(srv)
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "client-a",
+	})
+
+	var first int
+	require.NoError(t, srv.Select(ctx, srv.Root(), &first, dagql.Selector{Field: "perCallCounter"}))
+	assert.Equal(t, first, 1)
+
+	var second int
+	require.NoError(t, srv.Select(ctx, srv.Root(), &second, dagql.Selector{Field: "perCallCounter"}))
+	assert.Equal(t, second, 2)
+
+	var third int
+	require.NoError(t, srv.Select(ctx, srv.Root(), &third, dagql.Selector{Field: "perCallCounter"}))
+	assert.Equal(t, third, 3)
+}
+
+func TestImplicitInputCachePerSchema(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	var calls atomic.Int64
+	dagql.Fields[Query]{
+		dagql.NodeFunc("perSchemaCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{}) (int, error) {
+			return int(calls.Add(1)), nil
+		}).WithInput(dagql.CachePerSchema(srv)),
+	}.Install(srv)
+
+	call := func() int {
+		var res int
+		err := srv.Select(context.Background(), srv.Root(), &res, dagql.Selector{
+			Field: "perSchemaCounter",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	assert.Equal(t, call(), 1)
+	assert.Equal(t, call(), 1)
+
+	// Change schema; the implicit schema input should invalidate cache identity.
+	dagql.Fields[Query]{
+		dagql.NodeFunc("schemaBump", func(context.Context, dagql.ObjectResult[Query], struct{}) (int, error) {
+			return 0, nil
+		}),
+	}.Install(srv)
+
+	assert.Equal(t, call(), 2)
+	assert.Equal(t, call(), 2)
+}
+
+func TestImplicitInputCachePerClientSchema(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	var calls atomic.Int64
+	dagql.Fields[Query]{
+		dagql.NodeFunc("perClientSchemaCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{}) (int, error) {
+			return int(calls.Add(1)), nil
+		}).WithInput(dagql.CachePerClient, dagql.CachePerSchema(srv)),
+	}.Install(srv)
+
+	callForClient := func(clientID string) int {
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			ClientID: clientID,
+		})
+		var res int
+		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
+			Field: "perClientSchemaCounter",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	assert.Equal(t, callForClient("client-a"), 1)
+	assert.Equal(t, callForClient("client-a"), 1)
+	assert.Equal(t, callForClient("client-b"), 2)
+	assert.Equal(t, callForClient("client-b"), 2)
+
+	// Change schema; same client should now see a new cache identity.
+	dagql.Fields[Query]{
+		dagql.NodeFunc("schemaBump", func(context.Context, dagql.ObjectResult[Query], struct{}) (int, error) {
+			return 0, nil
+		}),
+	}.Install(srv)
+
+	assert.Equal(t, callForClient("client-a"), 3)
+	assert.Equal(t, callForClient("client-a"), 3)
+}
+
+func TestImplicitInputCacheAsRequested(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	var calls atomic.Int64
+	dagql.Fields[Query]{
+		dagql.NodeFunc("asRequestedCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], args struct {
+			NoCache bool `default:"false"`
+		}) (int, error) {
+			return int(calls.Add(1)), nil
+		}).WithInput(dagql.CacheAsRequested("noCache")),
+	}.Install(srv)
+
+	call := func(clientID string, noCache bool) int {
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			ClientID: clientID,
+		})
+		var res int
+		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
+			Field: "asRequestedCounter",
+			Args: []dagql.NamedInput{
+				{Name: "noCache", Value: dagql.NewBoolean(noCache)},
+			},
+		})
+		require.NoError(t, err)
+		return res
+	}
+	callDefault := func(clientID string) int {
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			ClientID: clientID,
+		})
+		var res int
+		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
+			Field: "asRequestedCounter",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	// default noCache=false should also resolve as per-client cache
+	assert.Equal(t, callDefault("client-default"), 1)
+	assert.Equal(t, callDefault("client-default"), 1)
+
+	// noCache=false => per-client cache reuse
+	assert.Equal(t, call("client-a", false), 2)
+	assert.Equal(t, call("client-a", false), 2)
+	assert.Equal(t, call("client-b", false), 3)
+	assert.Equal(t, call("client-b", false), 3)
+
+	// noCache=true => per-call execution
+	assert.Equal(t, call("client-a", true), 4)
+	assert.Equal(t, call("client-a", true), 5)
+}
+
+func TestImplicitInputRecomputedAfterCacheConfigIDRewrite(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	var calls atomic.Int64
+	var observed []bool
+	var observedL sync.Mutex
+	observedInput := dagql.ImplicitInput{
+		Name: "observedNoCache",
+		Resolver: func(_ context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+			raw, ok := args["noCache"]
+			if !ok {
+				return nil, fmt.Errorf("missing noCache arg")
+			}
+			var noCache bool
+			switch val := raw.(type) {
+			case dagql.Boolean:
+				noCache = val.Bool()
+			case dagql.Optional[dagql.Boolean]:
+				if val.Valid {
+					noCache = val.Value.Bool()
+				}
+			case dagql.DynamicOptional:
+				if val.Valid {
+					booleanVal, ok := val.Value.(dagql.Boolean)
+					if !ok {
+						return nil, fmt.Errorf("expected noCache bool in dynamic optional, got %T", val.Value)
+					}
+					noCache = booleanVal.Bool()
+				}
+			default:
+				return nil, fmt.Errorf("expected noCache bool, got %T", raw)
+			}
+			observedL.Lock()
+			observed = append(observed, noCache)
+			observedL.Unlock()
+			return dagql.NewString(fmt.Sprintf("%t", noCache)), nil
+		},
+	}
+	dagql.Fields[Query]{
+		dagql.NodeFuncWithCacheKey("updatedArgCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], args struct {
+			NoCache bool `default:"false"`
+		}) (int, error) {
+			return int(calls.Add(1)), nil
+		}, func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct {
+			NoCache bool `default:"false"`
+		}, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
+			resp := &dagql.GetCacheConfigResponse{
+				CacheKey: req.CacheKey,
+			}
+			resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+				"noCache",
+				dagql.NewBoolean(true).ToLiteral(),
+				false,
+			))
+			return resp, nil
+		}).WithInput(observedInput),
+	}.Install(srv)
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "client-a",
+	})
+
+	var result int
+	require.NoError(t, srv.Select(ctx, srv.Root(), &result, dagql.Selector{Field: "updatedArgCounter"}))
+	assert.Equal(t, result, 1)
+
+	observedL.Lock()
+	defer observedL.Unlock()
+	assert.DeepEqual(t, observed, []bool{false, true})
 }
 
 func TestServerSelect(t *testing.T) {

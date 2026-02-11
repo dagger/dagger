@@ -81,6 +81,10 @@ message Call {
   // Extra digests are annotations that may be used by cache and equivalence
   // systems, but do not affect the recipe digest.
   repeated ExtraDigest extraDigests = 14;
+
+  // Implicit inputs are engine-computed call inputs that are not explicit
+  // GraphQL field arguments, but still contribute to recipe identity.
+  repeated Argument implicitInputs = 15;
 }
 
 // ExtraDigest is an attached digest annotation for a call.

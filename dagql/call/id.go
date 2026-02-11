@@ -48,10 +48,11 @@ type ID struct {
 	pb *callpbv1.Call
 
 	// Wrappers around the various proto types in ID.pb
-	receiver *ID
-	args     []*Argument
-	module   *Module
-	typ      *Type
+	receiver       *ID
+	args           []*Argument
+	implicitInputs []*Argument
+	module         *Module
+	typ            *Type
 }
 
 const (
@@ -110,6 +111,15 @@ func (id *ID) View() View {
 // can corrupt the ID
 func (id *ID) Args() []*Argument {
 	return id.args
+}
+
+// ImplicitInputs are inputs to the call that are computed by the engine rather
+// than explicitly set by a GraphQL caller.
+//
+// NOTE: use with caution, any inplace writes to elements of the returned slice
+// can corrupt the ID
+func (id *ID) ImplicitInputs() []*Argument {
+	return id.implicitInputs
 }
 
 func (id *ID) Arg(name string) *Argument {
@@ -269,6 +279,12 @@ func (id *ID) AllEffectIDs() []string {
 			}
 			walkLiteral(arg.value)
 		}
+		for _, input := range cur.implicitInputs {
+			if input == nil {
+				continue
+			}
+			walkLiteral(input.value)
+		}
 	}
 	walk(id)
 	return out
@@ -289,6 +305,15 @@ func (id *ID) Inputs() ([]digest.Digest, error) {
 		see(id.Receiver().Digest())
 	}
 	for _, arg := range id.args {
+		ins, err := arg.value.Inputs()
+		if err != nil {
+			return nil, err
+		}
+		for _, in := range ins {
+			see(in)
+		}
+	}
+	for _, arg := range id.implicitInputs {
 		ins, err := arg.value.Inputs()
 		if err != nil {
 			return nil, err
@@ -355,6 +380,21 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	}
 	h = h.WithDelim()
 
+	// Implicit inputs
+	for _, input := range id.implicitInputs {
+		if input.isSensitive {
+			continue
+		}
+		var err error
+		h, inputs, err = appendArgumentSelfBytes(input, h, inputs)
+		if err != nil {
+			h.Close()
+			return "", nil, err
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
 	// Nth
 	h = h.WithInt64(id.pb.Nth).
 		WithDelim()
@@ -383,6 +423,9 @@ func (id *ID) Modules() []*Module {
 		}
 		for _, arg := range id.args {
 			allMods = append(allMods, arg.value.Modules()...)
+		}
+		for _, input := range id.implicitInputs {
+			allMods = append(allMods, input.value.Modules()...)
 		}
 		id = id.receiver
 	}
@@ -554,6 +597,19 @@ func WithArgs(args ...*Argument) IDOpt {
 	}
 }
 
+func WithImplicitInputs(inputs ...*Argument) IDOpt {
+	return func(id *ID) {
+		id.implicitInputs = inputs
+		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(inputs))
+		for _, input := range inputs {
+			if input.isSensitive {
+				continue
+			}
+			id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, input.pb)
+		}
+	}
+}
+
 func WithReceiver(recv *ID) IDOpt {
 	return func(id *ID) {
 		id.receiver = recv
@@ -695,6 +751,7 @@ func (id *ID) shallowClone() *ID {
 		Type:           cp.pb.Type,
 		Field:          cp.pb.Field,
 		Args:           cp.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
+		ImplicitInputs: cp.pb.ImplicitInputs,
 		Nth:            cp.pb.Nth,
 		Module:         cp.pb.Module,
 		Digest:         cp.pb.Digest,
@@ -737,6 +794,9 @@ func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	id.module.gatherCalls(callsByDigest)
 	for _, arg := range id.args {
 		arg.gatherCalls(callsByDigest)
+	}
+	for _, input := range id.implicitInputs {
+		input.gatherCalls(callsByDigest)
 	}
 }
 
@@ -808,6 +868,16 @@ func (id *ID) decode(
 		}
 		id.args = append(id.args, decodedArg)
 	}
+	for _, input := range id.pb.ImplicitInputs {
+		if input == nil {
+			continue
+		}
+		decodedInput := new(Argument)
+		if err := decodedInput.decode(input, callsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode implicit input: %w", err)
+		}
+		id.implicitInputs = append(id.implicitInputs, decodedInput)
+	}
 	if id.pb.Type != nil {
 		id.typ = &Type{pb: id.pb.Type}
 	}
@@ -856,6 +926,20 @@ func (id *ID) calcDigest() (string, error) {
 			continue
 		}
 		h, err = AppendArgumentBytes(arg, h)
+		if err != nil {
+			h.Close()
+			return "", err
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	// Implicit inputs
+	for _, input := range id.implicitInputs {
+		if input.isSensitive {
+			continue
+		}
+		h, err = AppendArgumentBytes(input, h)
 		if err != nil {
 			h.Close()
 			return "", err

@@ -65,7 +65,8 @@ var _ SchemaResolvers = &moduleSourceSchema{}
 
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, dagql.CachePerClient).
+		dagql.NodeFunc("moduleSource", s.moduleSource).
+			WithInput(dagql.CachePerClient).
 			Doc(`Create a new module source instance from a source ref string`).
 			Args(
 				dagql.Arg("refString").Doc(`The string ref representation of the module source`),
@@ -75,13 +76,17 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("_contextDirectory", s.contextDirectory, dagql.CachePerCall).
+		dagql.NodeFunc("_contextDirectory", s.contextDirectory).
+			WithInput(dagql.CachePerCall).
 			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
-		dagql.NodeFuncWithCacheKey("_contextFile", s.contextFile, dagql.CachePerCall).
+		dagql.NodeFunc("_contextFile", s.contextFile).
+			WithInput(dagql.CachePerCall).
 			Doc(`Obtain a contextual file argument for the given path and module.`),
-		dagql.NodeFuncWithCacheKey("_contextGitRepository", s.contextGitRepository, dagql.CachePerCall).
+		dagql.NodeFunc("_contextGitRepository", s.contextGitRepository).
+			WithInput(dagql.CachePerCall).
 			Doc(`Obtain a contextual git repository argument for the given module.`),
-		dagql.NodeFuncWithCacheKey("_contextGitRef", s.contextGitRef, dagql.CachePerCall).
+		dagql.NodeFunc("_contextGitRef", s.contextGitRef).
+			WithInput(dagql.CachePerCall).
 			Doc(`Obtain a contextual git ref argument for the given module.`),
 	}.Install(dag)
 
@@ -119,7 +124,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("_rebasedIncludePaths", s.moduleSourceRebasedIncludePaths).
 			Doc(`List of include paths from dagger.json, relative to the context directory.`),
 
-		dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, dagql.CachePerClient).
+		dagql.Func("withSourceSubpath", s.moduleSourceWithSourceSubpath).
+			WithInput(dagql.CachePerClient).
 			Doc(`Update the module source with a new source subpath.`).
 			Args(
 				dagql.Arg("path").Doc(`The path to set as the source subpath. Must be relative to the module source's source root directory.`),
@@ -131,7 +137,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("name").Doc(`The name to set.`),
 			),
 
-		dagql.FuncWithCacheKey("withIncludes", s.moduleSourceWithIncludes, dagql.CachePerClient).
+		dagql.Func("withIncludes", s.moduleSourceWithIncludes).
+			WithInput(dagql.CachePerClient).
 			Doc(`Update the module source with additional include patterns for files+directories from its context that are required for building it`).
 			Args(
 				dagql.Arg("patterns").Doc(`The new additional include patterns.`),

@@ -19,7 +19,8 @@ type httpSchema struct{}
 
 func (s *httpSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("http", s.http, dagql.CachePerClient).
+		dagql.NodeFunc("http", s.http).
+			WithInput(dagql.CachePerClient).
 			Doc(`Returns a file containing an http remote url content.`).
 			Args(
 				dagql.Arg("url").Doc(`HTTP url to get the content from (e.g., "https://docs.dagger.io").`),
