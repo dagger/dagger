@@ -242,6 +242,7 @@ require (
 	github.com/containerd/plugin v1.0.0 // indirect
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
+	github.com/creachadair/tomledit v0.0.29 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.0 // indirect
 	github.com/danielgatis/go-ansicode v1.0.7 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
@@ -307,6 +308,8 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/neongreen/mono/lib/toml v0.0.0-20251026210731-4c1679aeef5c // indirect
+	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect

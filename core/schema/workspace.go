@@ -222,8 +222,14 @@ func (s *workspaceSchema) install(
 	// Add module to config
 	cfg.Modules[name] = workspace.ModuleEntry{Source: sourcePath}
 
-	// Write config with hints
-	if err := writeWorkspaceConfigWithHints(ctx, bk, parent, cfg, hints); err != nil {
+	// Read existing raw TOML for comment preservation
+	var existingTOML []byte
+	if parent.HasConfig {
+		existingTOML, _ = bk.ReadCallerHostFile(ctx, parent.ConfigPath)
+	}
+
+	// Write config with hints (preserving existing comments)
+	if err := writeWorkspaceConfigWithHints(ctx, bk, parent, cfg, existingTOML, hints); err != nil {
 		return "", err
 	}
 
@@ -413,10 +419,15 @@ func writeWorkspaceConfig(ctx context.Context, bk *buildkit.Client, parent *core
 	return exportConfigToHost(ctx, bk, parent, configBytes)
 }
 
-// writeWorkspaceConfigWithHints serializes config with constructor arg hints,
-// then writes to the host.
-func writeWorkspaceConfigWithHints(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, cfg *workspace.Config, hints map[string][]workspace.ConstructorArgHint) error {
-	configBytes := workspace.SerializeConfigWithHints(cfg, hints)
+// writeWorkspaceConfigWithHints serializes config with comment-preserving TOML
+// and constructor arg hints, then writes to the host.
+func writeWorkspaceConfigWithHints(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, cfg *workspace.Config, existingTOML []byte, hints map[string][]workspace.ConstructorArgHint) error {
+	configBytes, err := workspace.SerializeConfigWithHints(cfg, existingTOML, hints)
+	if err != nil {
+		// Fallback to basic serialization without hints or comment preservation
+		slog.Warn("falling back to basic config serialization", "error", err)
+		configBytes = workspace.SerializeConfig(cfg)
+	}
 	return exportConfigToHost(ctx, bk, parent, configBytes)
 }
 
