@@ -106,6 +106,5 @@
 
 ## Implementation gaps (not yet addressed)
 
-1. **IncludeCoreModule**: Not yet a connect-time client control parameter
-2. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
-3. **.dagger/lock file**: Not implemented
+1. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
+2. **.dagger/lock file**: Not implemented

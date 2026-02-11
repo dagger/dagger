@@ -636,14 +636,15 @@ Prototype in progress on the `workspace` branch. Implemented so far:
 - Engine-side module loading from `config.toml` — `engine/server/session.go`
 - CLI workspace mode (`dagger call <module> <function>`) — `cmd/dagger/`
 - Migration error for legacy `dagger.json` with triggers
+- Module `config.*` values (constructor arg overrides) — `engine/server/session.go`
+- `dagger install` creating/updating `config.toml` — `cmd/dagger/module.go`
+- `dagger module init` creating modules in `.dagger/modules/` — `cmd/dagger/module.go`
+- Core type filtering via `currentTypeDefs(includeCore)` — `core/schema/module.go`
 
 Not yet implemented:
 
-- `-m` as engine connect-time parameter (currently CLI-side, to be moved)
-- Aliases (`[aliases]` in config.toml)
-- Module `config.*` values (constructor arg overrides)
-- `dagger install` creating/updating `config.toml`
-- `dagger module init` creating modules in `.dagger/modules/`
+- Workspace ignore enforcement (`Ignore` field parses but patterns aren't applied)
+- `.dagger/lock` file
 
 ---
 
