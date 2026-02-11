@@ -44,6 +44,11 @@
 - **Fix**: After loading a workspace module via dagql pipeline, `applyWorkspaceConfigDefaults()` iterates over the module's ObjectDefs, finds the constructor, and sets `DefaultValue` on matching arguments (case-insensitive match). Values are parsed as JSON if valid, otherwise treated as string literals.
 - **Files**: `engine/server/session.go`
 
+### 10. Check migration triggers when .dagger/ exists without config.toml (commit adc527962)
+- **Problem**: `Detect()` found `.dagger/` (step 1), failed to read `config.toml`, and immediately returned an empty workspace — skipping `dagger.json` migration check (step 2). Projects like the dagger repo (`.dagger/` as Go module source dir + `dagger.json` with triggers) silently got an empty workspace instead of the migration error.
+- **Fix**: When `.dagger/` exists but has no `config.toml`, also check for `dagger.json` migration triggers before returning empty workspace.
+- **Files**: `core/workspace/detect.go`
+
 ## Test results
 
 | Test | Status | Notes |
@@ -58,6 +63,8 @@
 | Config defaults in config.toml | PASS | `dagger functions` shows `alpine`, `wolfi` with config entries |
 | Malformed config.toml | PASS | Clean error: `failed to parse config.toml: was expecting token =` |
 | Workspace call --help with config | PASS | `dagger call wolfi --help` shows `container` function |
+| .dagger/ without config.toml + dagger.json with triggers | PASS | Migration error fires (dagger repo scenario) |
+| Legacy dagger.json without .dagger/ | PASS | Migration error fires |
 
 ## Implementation gaps (not yet addressed)
 
