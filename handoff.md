@@ -85,6 +85,11 @@
 - **Pure CLI-side**: Uses `workspace.DetectLocal()`, no engine connection needed.
 - **Files**: `cmd/dagger/module.go`, `cmd/dagger/main.go`
 
+### 15. Skip workspace loading for install/init commands
+- **Problem**: `dagger install` and `dagger module init` connect to the engine (for ModuleSource resolution), which triggers engine-side workspace detection. In projects with legacy `dagger.json` (e.g. demo-react-app), this fails with migration error before the CLI-side workspace logic runs.
+- **Fix**: Added `SkipWorkspaceModules` field to `client.Params`. Both `moduleInstallCmd` and `moduleModInitCmd` pass `SkipWorkspaceModules: true` to skip engine-side workspace loading — they only need the engine for `ModuleSource` name/kind resolution, not workspace module loading.
+- **Files**: `engine/client/client.go`, `cmd/dagger/module.go`
+
 ## Test results
 
 | Test | Status | Notes |
@@ -109,6 +114,7 @@
 | Module files generated (dagger.json, main.go) | PASS | SDK scaffolding created |
 | `dagger functions` after module init | PASS | Shows `ci` |
 | `dagger module init` without --sdk | PASS | Error: `--sdk is required` |
+| `dagger install` in project with legacy dagger.json | PASS | Installs jest module, no migration error |
 | `dagger workspace info` with config | PASS | Shows root path and config path |
 | `dagger workspace info` empty .dagger/ | PASS | Shows root path, `Config: none` |
 | `dagger workspace info` bare directory | PASS | Falls back to cwd, `Config: none` |

@@ -127,6 +127,8 @@ type Params struct {
 
 	EagerRuntime bool
 
+	SkipWorkspaceModules bool
+
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
 }
@@ -1403,6 +1405,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 
 	if c.Module != "" {
 		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Alias: true}}
+		md.SkipWorkspaceModules = true
+	}
+	if c.SkipWorkspaceModules {
 		md.SkipWorkspaceModules = true
 	}
 

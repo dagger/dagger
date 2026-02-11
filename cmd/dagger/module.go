@@ -432,7 +432,10 @@ When no workspace is found, the module is created in the current directory.`,
 
 		modName := extraArgs[0]
 
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{
+			// Skip workspace loading — module init does its own CLI-side detection
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
 			// 1. Detect workspace
@@ -575,7 +578,10 @@ var moduleInstallCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{
+			// Skip workspace loading — install does its own CLI-side detection
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
 			// 1. Detect workspace root (CLI-side)
