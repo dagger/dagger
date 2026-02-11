@@ -34,3 +34,16 @@ func (m *HelloWithGenerators) EmptyChangeset() *dagger.Changeset {
 func (m *HelloWithGenerators) ChangesetFailure() (*dagger.Changeset, error) {
 	return nil, errors.New("could not generate the changeset")
 }
+
+type MetaGen struct{}
+
+func (m *HelloWithGenerators) OtherGenerators() *MetaGen {
+	return &MetaGen{}
+}
+
+// +generate
+func (mg *MetaGen) GenThings() *dagger.Changeset {
+	return dag.Directory().
+		WithNewFile("meta-gen", "generated").
+		Changes(dag.Directory())
+}

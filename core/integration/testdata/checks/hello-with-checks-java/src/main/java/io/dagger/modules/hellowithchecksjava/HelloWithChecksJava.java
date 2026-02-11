@@ -52,4 +52,9 @@ public class HelloWithChecksJava {
       .from("alpine:3")
       .withExec(List.of("sh", "-c", "exit 1"));
   }
+
+  @Function
+  public Test test() {
+    return new Test();
+  }
 }

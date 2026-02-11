@@ -214,11 +214,13 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		if err != nil {
 			return nil, err
 		}
-		ref, err := res.Ref.Result(ctx)
-		if err != nil {
-			return nil, err
+		if res != nil && res.Ref != nil {
+			ref, err := res.Ref.Result(ctx)
+			if err != nil {
+				return nil, err
+			}
+			solverRes = ref
 		}
-		solverRes = ref
 
 	case *File:
 		if inst.Result != nil {
@@ -780,7 +782,7 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 			Dest:      secret.MountPath,
 			MountType: pb.MountType_SECRET,
 			SecretOpt: &pb.SecretOpt{
-				ID:   secret.Secret.ID().Digest().String(),
+				ID:   SecretIDDigest(secret.Secret.ID()).String(),
 				Uid:  uint32(uid),
 				Gid:  uint32(gid),
 				Mode: uint32(secret.Mode),

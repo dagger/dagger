@@ -339,6 +339,208 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	setup := func(ctx context.Context, t *testctx.T) (endpoint string, c2 *dagger.Client, addCacheBlock func(*testctx.T, string, int), getUsedBytes func(*testctx.T) int) {
+		t.Helper()
+
+		engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+		engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { engineSvc.Stop(ctx) })
+
+		endpoint, err = engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		require.NoError(t, err)
+
+		c2, err = dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		require.NoError(t, err)
+		t.Cleanup(func() { c2.Close() })
+
+		nextBlockID := 0
+		addCacheBlock = func(t *testctx.T, inputDevice string, sizeMB int) {
+			t.Helper()
+			c3, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			require.NoError(t, err)
+			_, err = c3.Container().From(alpineImage).WithExec([]string{
+				"dd",
+				"if=" + inputDevice,
+				"of=/bigfile" + fmt.Sprint(nextBlockID),
+				"bs=1M",
+				"count=" + fmt.Sprint(sizeMB),
+			}).Sync(ctx)
+			require.NoError(t, err)
+			require.NoError(t, c3.Close())
+			nextBlockID++
+		}
+		getUsedBytes = func(t *testctx.T) int {
+			t.Helper()
+			cacheEnts := c2.Engine().LocalCache().EntrySet()
+			used, err := cacheEnts.DiskSpaceBytes(ctx)
+			require.NoError(t, err)
+			return used
+		}
+
+		return endpoint, c2, addCacheBlock, getUsedBytes
+	}
+
+	t.Run("invalidValues", func(ctx context.Context, t *testctx.T) {
+		_, c2, _, _ := setup(ctx, t)
+
+		err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+			UseDefaultPolicy: false,
+			ReservedSpace:    "not-a-size",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid reservedSpace value")
+
+		err = c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+			UseDefaultPolicy: false,
+			MinFreeSpace:     "not-a-size",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid minFreeSpace value")
+	})
+
+	t.Run("maxUsedSpace", func(ctx context.Context, t *testctx.T) {
+		_, c2, addCacheBlock, getUsedBytes := setup(ctx, t)
+
+		baselineUsedBytes := getUsedBytes(t)
+		addCacheBlock(t, "/dev/zero", 2048)
+		usedBeforeMaxPrune := getUsedBytes(t)
+		require.Greater(t, usedBeforeMaxPrune, baselineUsedBytes)
+
+		highMaxUsedSpace := usedBeforeMaxPrune + 1024*1024*1024
+		err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+			UseDefaultPolicy: false,
+			MaxUsedSpace:     fmt.Sprint(highMaxUsedSpace),
+			ReservedSpace:    "0",
+			MinFreeSpace:     "0",
+			TargetSpace:      fmt.Sprint(highMaxUsedSpace),
+		})
+		require.NoError(t, err)
+		usedAfterHighMaxPrune := getUsedBytes(t)
+		require.GreaterOrEqual(t, usedAfterHighMaxPrune, usedBeforeMaxPrune-256*1024*1024, "high max-used-space should avoid aggressive pruning")
+
+		lowMaxUsedSpace := 1024 * 1024 * 1024
+		require.Greater(t, usedBeforeMaxPrune, lowMaxUsedSpace)
+		tryCount := 10
+		for i := range tryCount {
+			err = c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+				UseDefaultPolicy: false,
+				MaxUsedSpace:     fmt.Sprint(lowMaxUsedSpace),
+				ReservedSpace:    "0",
+				MinFreeSpace:     "0",
+				TargetSpace:      fmt.Sprint(lowMaxUsedSpace),
+			})
+			require.NoError(t, err)
+
+			usedAfterLowMaxPrune := getUsedBytes(t)
+			if usedAfterLowMaxPrune < lowMaxUsedSpace {
+				return
+			}
+
+			t.Logf("current used bytes %d >= max used space %d, running explicit prune with custom policy thresholds", usedAfterLowMaxPrune, lowMaxUsedSpace)
+			if i < tryCount-1 {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			t.Fatalf("expected used bytes to decrease below %d from explicit prune with maxUsedSpace override, got %d", lowMaxUsedSpace, usedAfterLowMaxPrune)
+		}
+	})
+
+	t.Run("minFreeSpace", func(ctx context.Context, t *testctx.T) {
+		_, c2, addCacheBlock, getUsedBytes := setup(ctx, t)
+
+		addCacheBlock(t, "/dev/zero", 2048)
+		usedBeforeMinFreePrune := getUsedBytes(t)
+		highMaxForMinFree := usedBeforeMinFreePrune + 1024*1024*1024
+
+		err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+			UseDefaultPolicy: false,
+			MaxUsedSpace:     fmt.Sprint(highMaxForMinFree),
+			ReservedSpace:    "0",
+			MinFreeSpace:     "0",
+			TargetSpace:      fmt.Sprint(highMaxForMinFree),
+		})
+		require.NoError(t, err)
+		usedAfterNoMinFreePrune := getUsedBytes(t)
+
+		tryCount := 10
+		for i := range tryCount {
+			err = c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+				UseDefaultPolicy: false,
+				MaxUsedSpace:     fmt.Sprint(highMaxForMinFree),
+				ReservedSpace:    "0",
+				MinFreeSpace:     "200%",
+				TargetSpace:      fmt.Sprint(highMaxForMinFree),
+			})
+			require.NoError(t, err)
+
+			usedAfterMinFreePrune := getUsedBytes(t)
+			if usedAfterMinFreePrune < usedAfterNoMinFreePrune-256*1024*1024 {
+				return
+			}
+
+			t.Logf("current used bytes %d did not decrease enough from baseline %d with minFreeSpace override, retrying", usedAfterMinFreePrune, usedAfterNoMinFreePrune)
+			if i < tryCount-1 {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			t.Fatalf("expected minFreeSpace override to prune at least %d bytes; before=%d after=%d", 256*1024*1024, usedAfterNoMinFreePrune, usedAfterMinFreePrune)
+		}
+	})
+
+	t.Run("reservedSpace", func(ctx context.Context, t *testctx.T) {
+		runScenario := func(ctx context.Context, t *testctx.T, reservedSpace string) int {
+			t.Helper()
+
+			_, c2, addCacheBlock, getUsedBytes := setup(ctx, t)
+			for range 8 {
+				addCacheBlock(t, "/dev/urandom", 128)
+			}
+
+			usedBefore := getUsedBytes(t)
+			require.Greater(t, usedBefore, 512*1024*1024)
+			maxUsed := 128 * 1024 * 1024
+
+			tryCount := 10
+			for i := range tryCount {
+				err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+					UseDefaultPolicy: false,
+					MaxUsedSpace:     fmt.Sprint(maxUsed),
+					ReservedSpace:    reservedSpace,
+					MinFreeSpace:     "0",
+					TargetSpace:      fmt.Sprint(maxUsed),
+				})
+				require.NoError(t, err)
+
+				used := getUsedBytes(t)
+				if used < usedBefore {
+					return used
+				}
+
+				t.Logf("current used bytes %d did not decrease from %d after prune with reservedSpace=%s, retrying", used, usedBefore, reservedSpace)
+				if i < tryCount-1 {
+					time.Sleep(1 * time.Second)
+					continue
+				}
+
+				// Last iteration — return whatever we got; the outer
+				// comparison will catch a real problem.
+				return used
+			}
+			// unreachable, but keeps the compiler happy
+			return getUsedBytes(t)
+		}
+
+		noReservedUsed := runScenario(ctx, t, "0")
+		withReservedUsed := runScenario(ctx, t, "256MB")
+		require.Greater(t, withReservedUsed, noReservedUsed+64*1024*1024, "reservedSpace should retain more cache than reservedSpace=0 under the same maxUsedSpace limit")
+	})
+}
+
 func engineConfigWithEnabled(enabled bool) func(context.Context, *testctx.T, config.Config) config.Config {
 	return func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
 		t.Helper()

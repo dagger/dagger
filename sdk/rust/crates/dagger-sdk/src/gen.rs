@@ -6584,7 +6584,19 @@ pub struct EngineCacheEntrySetOpts<'a> {
     pub key: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct EngineCachePruneOpts {
+pub struct EngineCachePruneOpts<'a> {
+    /// Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+    #[builder(setter(into, strip_option), default)]
+    pub max_used_space: Option<&'a str>,
+    /// Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+    #[builder(setter(into, strip_option), default)]
+    pub min_free_space: Option<&'a str>,
+    /// Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+    #[builder(setter(into, strip_option), default)]
+    pub reserved_space: Option<&'a str>,
+    /// Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+    #[builder(setter(into, strip_option), default)]
+    pub target_space: Option<&'a str>,
     /// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
     #[builder(setter(into, strip_option), default)]
     pub use_default_policy: Option<bool>,
@@ -6648,10 +6660,25 @@ impl EngineCache {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn prune_opts(&self, opts: EngineCachePruneOpts) -> Result<Void, DaggerError> {
+    pub async fn prune_opts<'a>(
+        &self,
+        opts: EngineCachePruneOpts<'a>,
+    ) -> Result<Void, DaggerError> {
         let mut query = self.selection.select("prune");
         if let Some(use_default_policy) = opts.use_default_policy {
             query = query.arg("useDefaultPolicy", use_default_policy);
+        }
+        if let Some(max_used_space) = opts.max_used_space {
+            query = query.arg("maxUsedSpace", max_used_space);
+        }
+        if let Some(reserved_space) = opts.reserved_space {
+            query = query.arg("reservedSpace", reserved_space);
+        }
+        if let Some(min_free_space) = opts.min_free_space {
+            query = query.arg("minFreeSpace", min_free_space);
+        }
+        if let Some(target_space) = opts.target_space {
+            query = query.arg("targetSpace", target_space);
         }
         query.execute(self.graphql_client.clone()).await
     }

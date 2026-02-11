@@ -479,13 +479,13 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		// Install first commit
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install",
-			"github.com/dagger/jest@9ad6b0b9811b93bf2293a9f3eb0ffcae4d10919d",
+			"github.com/dagger/jest@b19aca4e39448291f65ad96f0eea3005ea1cf356",
 		))
 
 		// will fail at name deduplication (both named "jest")
 		_, err := modGen.With(daggerExec(
 			"toolchain", "install",
-			"github.com/dagger/jest@7e9d82b267c73bdb09dbc5e70a79e2cd020f7cc2",
+			"github.com/dagger/jest@1484257689c618ed314f5acefd1d712d80cda2dc",
 		)).CombinedOutput(ctx)
 
 		// this should error with "duplicate toolchain name"
@@ -502,13 +502,13 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		// Install first commit
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install", "--name", "jest-old",
-			"github.com/dagger/jest@9ad6b0b9811b93bf2293a9f3eb0ffcae4d10919d",
+			"github.com/dagger/jest@b19aca4e39448291f65ad96f0eea3005ea1cf356",
 		))
 
 		// will fail at name deduplication (both named "jest")
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install", "--name", "jest-new",
-			"github.com/dagger/jest@7e9d82b267c73bdb09dbc5e70a79e2cd020f7cc2",
+			"github.com/dagger/jest@1484257689c618ed314f5acefd1d712d80cda2dc",
 		))
 
 		// This should work if we use different names

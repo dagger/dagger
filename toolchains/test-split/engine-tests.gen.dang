@@ -1,64 +1,100 @@
 type TestSplit {
-		let testSpecific(run: [String!]!, ebpfProgs: [String!], pkg: String! = "./core/integration", race: Boolean): Void {
-				engineDev().test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
-		}
+  let testSpecific(
+    run: [String!]!,
+    ebpfProgs: [String!],
+    pkg: String! = "./core/integration",
+    race: Boolean,
+  ): Void {
+    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+  }
 
-		let testSkip(skip: [String!]!, ebpfProgs: [String!], pkg: String! = "./core/integration", race: Boolean): Void {
-				engineDev().test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
-		}
+  let testSkip(
+    skip: [String!]!,
+    ebpfProgs: [String!],
+    pkg: String! = "./core/integration",
+    race: Boolean,
+  ): Void {
+    engineDev.test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+  }
 
-		"""Test Base"""
-		pub testBase(): Void @check {
-				testSkip(skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD"], pkg: "./...", race: true)
-		}
+  """
+  Test Base
+  """
+  pub testBase: Void @check {
+    testSkip(
+      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD"],
+      pkg: "./...",
+      race: true,
+    )
+  }
 
-		"""Test Provision"""
-		pub testProvision(): Void @check {
-				testSpecific(["TestProvision"])
-		}
+  """
+  Test Provision
+  """
+  pub testProvision: Void @check {
+    testSpecific(["TestProvision"])
+  }
 
-		"""Test Telemetry"""
-		pub testTelemetry(): Void @check {
-				testSpecific(["TestTelemetry"], pkg: "./dagql/idtui")
-		}
+  """
+  Test Telemetry
+  """
+  pub testTelemetry: Void @check {
+    testSpecific(["TestTelemetry"], pkg: "./dagql/idtui")
+  }
 
-		"""Test Call and Shell"""
-		pub testCallAndShell(): Void @check {
-				testSpecific(["TestCall", "TestShell", "TestDaggerCMD"])
-		}
+  """
+  Test Call and Shell
+  """
+  pub testCallAndShell: Void @check {
+    testSpecific(["TestCall", "TestShell", "TestDaggerCMD"])
+  }
 
-		"""Test CLI Engine"""
-		pub testCliEngine(): Void @check {
-				testSpecific(["TestCLI", "TestEngine"])
-		}
+  """
+  Test CLI Engine
+  """
+  pub testCliEngine: Void @check {
+    testSpecific(["TestCLI", "TestEngine"])
+  }
 
-		"""Test Client Generator"""
-		pub testClientGenerator(): Void @check {
-				testSpecific(["TestClientGenerator"])
-		}
+  """
+  Test Client Generator
+  """
+  pub testClientGenerator: Void @check {
+    testSpecific(["TestClientGenerator"])
+  }
 
-		"""Test Container"""
-		pub testContainer(): Void @check {
-				testSpecific(["TestContainer", "TestDockerfile"])
-		}
+  """
+  Test Container
+  """
+  pub testContainer: Void @check {
+    testSpecific(["TestContainer", "TestDockerfile"])
+  }
 
-		"""Test Interface"""
-		pub testInterface(): Void @check {
-				testSpecific(["TestInterface"])
-		}
+  """
+  Test Interface
+  """
+  pub testInterface: Void @check {
+    testSpecific(["TestInterface"])
+  }
 
-		"""Test LLM"""
-		pub testLlm(): Void @check {
-				testSpecific(["TestLLM"])
-		}
+  """
+  Test LLM
+  """
+  pub testLlm: Void @check {
+    testSpecific(["TestLLM"])
+  }
 
-		"""Test Module Runtimes"""
-		pub testModuleRuntimes(): Void @check {
-				testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
-		}
+  """
+  Test Module Runtimes
+  """
+  pub testModuleRuntimes: Void @check {
+    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
+  }
 
-		"""Test Modules"""
-		pub testModules(): Void @check {
-				testSpecific(["TestModule"])
-		}
+  """
+  Test Modules
+  """
+  pub testModules: Void @check {
+    testSpecific(["TestModule"])
+  }
 }

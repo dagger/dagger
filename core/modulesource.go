@@ -528,6 +528,48 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 	return hashutil.HashStrings(inputs...)
 }
 
+// ContentCacheScope returns a stable provenance scope for content-addressed module
+// cache keys. This prevents modules with identical content from different remotes
+// (e.g. public vs private mirrors) or different transport forms (https vs ssh)
+// from aliasing to the same cached module.
+func (src *ModuleSource) ContentCacheScope() string {
+	if src == nil {
+		return ""
+	}
+	if src.Kind != ModuleSourceKindGit || src.Git == nil {
+		return ""
+	}
+
+	repo := src.Git.HTMLRepoURL
+	if repo == "" {
+		// fallback for early/partial git sources before HTML URL is populated
+		repo = src.Git.CloneRef
+	}
+	cloneRef := src.Git.CloneRef
+
+	return hashutil.HashStrings(
+		"git-module-cache-scope",
+		repo,
+		cloneRef,
+		src.Git.Commit,
+		src.SourceRootSubpath,
+	).String()
+}
+
+// ContentScopedDigest returns a stable digest for caching source-derived artifacts.
+// For git sources we mix in provenance scope so distinct remotes with identical
+// content don't alias in runtime/codegen/module-definition caches.
+func (src *ModuleSource) ContentScopedDigest() string {
+	if src == nil {
+		return ""
+	}
+	scope := src.ContentCacheScope()
+	if scope == "" {
+		return src.Digest
+	}
+	return hashutil.HashStrings(src.Digest, scope).String()
+}
+
 // LoadContextDir loads addition files+directories from the module source's context, including those that
 // may have not been included in the original module source load.
 func (src *ModuleSource) LoadContextDir(

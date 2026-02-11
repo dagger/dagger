@@ -11,15 +11,15 @@ type Changelog {
   """
   Generate the changelog with 'changie merge'. Only run this manually, at release time.
   """
-  pub generate(): Changeset {
+  pub generate: Changeset {
     let changieVersion = "1.21.0"
-    container.
-      from("ghcr.io/miniscruff/changie:v"+changieVersion).
-      withWorkdir("/src").
-      withMountedDirectory(".", source).
-      withExec(["/changie", "merge"]).
-      directory(".").
-      changes(source)
+    container
+      .from("ghcr.io/miniscruff/changie:v" + changieVersion)
+      .withWorkdir("/src")
+      .withMountedDirectory(".", source)
+      .withExec(["/changie", "merge"])
+      .directory(".")
+      .changes(source)
   }
 
   """
@@ -36,9 +36,9 @@ type Changelog {
     """
     version: String!,
   ): File! {
-    let path = ".changes/"+version+".md"
+    let path = ".changes/" + version + ".md"
     if (component != "") {
-      path = component.trimSuffix("/")+"/"+path
+      path = component.trimSuffix("/") + "/" + path
     }
     source.file(path)
   }

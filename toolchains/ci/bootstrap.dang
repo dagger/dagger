@@ -10,16 +10,19 @@ type CI {
   In other words, don't skip running <foo> just because it happens to be run here!
   """
   pub bootstrap(
-				"""The Dagger repository to run CI against"""
-				repo: GitRepository! @defaultPath(path: "/"),
-		): Void @check {
-				let source = repo.head().tree().withChanges(repo.uncommitted())
-				engineDev().
-						playground().
-						withMountedDirectory("./dagger", source).
-						withWorkdir("./dagger").
-						withExec(["dagger", "checks", "**:*lint*"]).
-						sync()
-				null
-		}
+    """
+    The Dagger repository to run CI against
+    """
+    repo: GitRepository! @defaultPath(path: "/"),
+  ): Void @check {
+    let source = repo.head.tree.withChanges(repo.uncommitted)
+    engineDev
+      .playground
+      .withMountedDirectory("./dagger", source)
+      .withWorkdir("./dagger")
+      .withExec(["dagger", "checks", "**:*lint*"])
+      .sync
+
+    null
+  }
 }

@@ -101,7 +101,7 @@ func (ms *mockServer) EngineLocalCacheEntries(context.Context) (*EngineCacheEntr
 	return nil, nil
 }
 
-func (ms *mockServer) PruneEngineLocalCacheEntries(context.Context, bool) (*EngineCacheEntrySet, error) {
+func (ms *mockServer) PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error) {
 	return nil, nil
 }
 func (ms *mockServer) EngineLocalCachePolicy() *bkclient.PruneInfo { return nil }

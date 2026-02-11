@@ -18,6 +18,9 @@ directive @experimental(
   reason: String! = "Not stabilized"
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
+"""Indicates that this function is a generate function."""
+directive @generate on FIELD_DEFINITION
+
 """Filter directory contents using .gitignore-style glob patterns."""
 directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 
@@ -2114,6 +2117,26 @@ type EngineCache {
     Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
     """
     useDefaultPolicy: Boolean = false
+
+    """
+    Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+    """
+    maxUsedSpace: String = ""
+
+    """
+    Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+    """
+    reservedSpace: String = ""
+
+    """
+    Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+    """
+    minFreeSpace: String = ""
+
+    """
+    Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+    """
+    targetSpace: String = ""
   ): Void
 
   """The minimum amount of disk space this policy is guaranteed to retain."""
