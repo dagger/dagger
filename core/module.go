@@ -600,6 +600,13 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if gqlFieldName(field.Name) == "id" {
 			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
 		}
+		// Workspace cannot be stored as a field on a module object
+		if field.TypeDef.Kind == TypeDefKindObject && field.TypeDef.AsObject.Value.Name == "Workspace" {
+			return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
+				obj.OriginalName,
+				field.OriginalName,
+			)
+		}
 		fieldType, ok, err := mod.Deps.ModTypeFor(ctx, field.TypeDef)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
