@@ -67,6 +67,18 @@
 - **Fix**: Added `"!core/prompts/*.md"` to `toolchains/cli-dev/main.go` ignore patterns.
 - **Files**: `toolchains/cli-dev/main.go`
 
+### 13. `dagger module init` command (commit cacc78b10)
+- **Problem**: No way to create a new module inside a workspace.
+- **Fix**: Added `dagger module` parent command with `init` subcommand:
+  - `dagger module init --sdk=go ci` creates module at `.dagger/modules/ci/`
+  - Auto-installs in `.dagger/config.toml` with `ci.source = "modules/ci"`
+  - `--sdk` is required (go, python, typescript)
+  - Delegates to engine for SDK scaffolding (dagger.json + source files)
+  - Workspace detection: checks if `.dagger/` or `.git` exists at root
+  - Outside workspace: creates module at `<cwd>/<name>/` (standalone mode)
+  - Old `dagger init` kept intact for backwards compatibility
+- **Files**: `cmd/dagger/module.go`, `cmd/dagger/main.go`
+
 ## Test results
 
 | Test | Status | Notes |
@@ -87,10 +99,13 @@
 | `dagger install --name=mywolfi` | PASS | Both entries in config.toml |
 | Idempotent re-install | PASS | `Module "wolfi" is already installed` |
 | `dagger functions` after install | PASS | Shows `alpine`, `wolfi` |
+| `dagger module init --sdk=go ci` in workspace | PASS | Creates `.dagger/modules/ci/`, auto-installs in config.toml |
+| Module files generated (dagger.json, main.go) | PASS | SDK scaffolding created |
+| `dagger functions` after module init | PASS | Shows `ci` |
+| `dagger module init` without --sdk | PASS | Error: `--sdk is required` |
 
 ## Implementation gaps (not yet addressed)
 
-1. **dagger module init**: Not implemented (no way to create a new module in a workspace)
-2. **IncludeCoreModule**: Not yet a connect-time client control parameter
-3. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
-4. **.dagger/lock file**: Not implemented
+1. **IncludeCoreModule**: Not yet a connect-time client control parameter
+2. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
+3. **.dagger/lock file**: Not implemented
