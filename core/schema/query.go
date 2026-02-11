@@ -99,10 +99,22 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 		introspectionResponse.Schema.QueryType.Name = *queryName
 	}
 	for _, dagqlType := range dagqlSchema.Types() {
-		introspectionResponse.Schema.Types = append(introspectionResponse.Schema.Types, dagqlToCodegenType(dagqlType))
+		codeGenType, err := dagqlToCodegenType(dagqlType)
+		if err != nil {
+			return nil, err
+		}
+		introspectionResponse.Schema.Types = append(introspectionResponse.Schema.Types, codeGenType)
 	}
-	for _, dagqlDirective := range dagqlSchema.Directives() {
-		introspectionResponse.Schema.Directives = append(introspectionResponse.Schema.Directives, dagqlToCodegenDirectiveDef(dagqlDirective))
+	directives, err := dagqlSchema.Directives()
+	if err != nil {
+		return nil, err
+	}
+	for _, dagqlDirective := range directives {
+		dd, err := dagqlToCodegenDirectiveDef(dagqlDirective)
+		if err != nil {
+			return nil, err
+		}
+		introspectionResponse.Schema.Directives = append(introspectionResponse.Schema.Directives, dd)
 	}
 
 	for _, typed := range core.TypesHiddenFromModuleSDKs {
@@ -174,7 +186,7 @@ func (s *querySchema) schemaJSONFile(
 	return dagql.NewObjectResultForID(f, s.srv, curID)
 }
 
-func dagqlToCodegenType(dagqlType *introspection.Type) *codegenintrospection.Type {
+func dagqlToCodegenType(dagqlType *introspection.Type) (*codegenintrospection.Type, error) {
 	t := &codegenintrospection.Type{}
 
 	t.Kind = codegenintrospection.TypeKind(dagqlType.Kind())
@@ -185,16 +197,30 @@ func dagqlToCodegenType(dagqlType *introspection.Type) *codegenintrospection.Typ
 
 	t.Description = dagqlType.Description()
 
-	dagqlFields := dagqlType.Fields(true)
+	dagqlFields, err := dagqlType.Fields(true)
+	if err != nil {
+		return nil, err
+	}
 	t.Fields = make([]*codegenintrospection.Field, 0, len(dagqlFields))
 	for _, dagqlField := range dagqlFields {
-		t.Fields = append(t.Fields, dagqlToCodegenField(dagqlField))
+		codeGenType, err := dagqlToCodegenField(dagqlField)
+		if err != nil {
+			return nil, err
+		}
+		t.Fields = append(t.Fields, codeGenType)
 	}
 
-	dagqlInputFields := dagqlType.InputFields(true)
+	dagqlInputFields, err := dagqlType.InputFields(true)
+	if err != nil {
+		return nil, err
+	}
 	t.InputFields = make([]codegenintrospection.InputValue, 0, len(dagqlInputFields))
 	for _, dagqlInputValue := range dagqlInputFields {
-		t.InputFields = append(t.InputFields, dagqlToCodegenInputValue(dagqlInputValue))
+		inputField, err := dagqlToCodegenInputValue(dagqlInputValue)
+		if err != nil {
+			return nil, err
+		}
+		t.InputFields = append(t.InputFields, inputField)
 	}
 
 	dagqlEnumValues := dagqlType.EnumValues(true)
@@ -206,7 +232,11 @@ func dagqlToCodegenType(dagqlType *introspection.Type) *codegenintrospection.Typ
 	dagqlInterfaces := dagqlType.Interfaces()
 	t.Interfaces = make([]*codegenintrospection.Type, 0, len(dagqlInterfaces))
 	for _, dagqlIface := range dagqlInterfaces {
-		t.Interfaces = append(t.Interfaces, dagqlToCodegenType(dagqlIface))
+		codeGenType, err := dagqlToCodegenType(dagqlIface)
+		if err != nil {
+			return nil, err
+		}
+		t.Interfaces = append(t.Interfaces, codeGenType)
 	}
 
 	dagqlDirectives := dagqlType.Directives()
@@ -215,7 +245,7 @@ func dagqlToCodegenType(dagqlType *introspection.Type) *codegenintrospection.Typ
 		t.Directives = append(t.Directives, dagqlToCodegenDirective(dagqlDirective))
 	}
 
-	return t
+	return t, nil
 }
 
 func dagqlToCodegenDirective(dagqlDirective *introspection.DirectiveApplication) *codegenintrospection.Directive {
@@ -238,7 +268,7 @@ func dagqlToCodegenDirectiveArg(dagqlArg *introspection.DirectiveApplicationArg)
 	return arg
 }
 
-func dagqlToCodegenDirectiveDef(dagqlDirective *introspection.Directive) *codegenintrospection.DirectiveDef {
+func dagqlToCodegenDirectiveDef(dagqlDirective *introspection.Directive) (*codegenintrospection.DirectiveDef, error) {
 	d := &codegenintrospection.DirectiveDef{
 		Name:        dagqlDirective.Name,
 		Description: dagqlDirective.Description(),
@@ -248,24 +278,36 @@ func dagqlToCodegenDirectiveDef(dagqlDirective *introspection.Directive) *codege
 	dagqlArgs := dagqlDirective.Args(true)
 	d.Args = make(codegenintrospection.InputValues, 0, len(dagqlArgs))
 	for _, dagqlInputValue := range dagqlArgs {
-		d.Args = append(d.Args, dagqlToCodegenInputValue(dagqlInputValue))
+		arg, err := dagqlToCodegenInputValue(dagqlInputValue)
+		if err != nil {
+			return nil, err
+		}
+		d.Args = append(d.Args, arg)
 	}
-	return d
+	return d, nil
 }
 
-func dagqlToCodegenField(dagqlField *introspection.Field) *codegenintrospection.Field {
+func dagqlToCodegenField(dagqlField *introspection.Field) (*codegenintrospection.Field, error) {
 	f := &codegenintrospection.Field{}
 
 	f.Name = dagqlField.Name
 
 	f.Description = dagqlField.Description()
 
-	f.TypeRef = dagqlToCodegenTypeRef(dagqlField.Type_)
+	var err error
+	f.TypeRef, err = dagqlToCodegenTypeRef(dagqlField.Type_)
+	if err != nil {
+		return nil, err
+	}
 
 	dagqlArgs := dagqlField.Args(true)
 	f.Args = make(codegenintrospection.InputValues, 0, len(dagqlArgs))
 	for _, dagqlInputValue := range dagqlArgs {
-		f.Args = append(f.Args, dagqlToCodegenInputValue(dagqlInputValue))
+		arg, err := dagqlToCodegenInputValue(dagqlInputValue)
+		if err != nil {
+			return nil, err
+		}
+		f.Args = append(f.Args, arg)
 	}
 
 	f.IsDeprecated = dagqlField.IsDeprecated()
@@ -277,10 +319,10 @@ func dagqlToCodegenField(dagqlField *introspection.Field) *codegenintrospection.
 		f.Directives = append(f.Directives, dagqlToCodegenDirective(dagqlDirective))
 	}
 
-	return f
+	return f, nil
 }
 
-func dagqlToCodegenInputValue(dagqlInputValue *introspection.InputValue) codegenintrospection.InputValue {
+func dagqlToCodegenInputValue(dagqlInputValue *introspection.InputValue) (codegenintrospection.InputValue, error) {
 	v := codegenintrospection.InputValue{}
 
 	v.Name = dagqlInputValue.Name
@@ -289,7 +331,11 @@ func dagqlToCodegenInputValue(dagqlInputValue *introspection.InputValue) codegen
 
 	v.DefaultValue = dagqlInputValue.DefaultValue
 
-	v.TypeRef = dagqlToCodegenTypeRef(dagqlInputValue.Type_)
+	var err error
+	v.TypeRef, err = dagqlToCodegenTypeRef(dagqlInputValue.Type_)
+	if err != nil {
+		return codegenintrospection.InputValue{}, err
+	}
 
 	v.DeprecationReason = dagqlInputValue.DeprecationReason()
 	v.IsDeprecated = dagqlInputValue.IsDeprecated()
@@ -300,7 +346,7 @@ func dagqlToCodegenInputValue(dagqlInputValue *introspection.InputValue) codegen
 		v.Directives = append(v.Directives, dagqlToCodegenDirective(dagqlDirective))
 	}
 
-	return v
+	return v, nil
 }
 
 func dagqlToCodegenEnumValue(dagqlInputValue *introspection.EnumValue) codegenintrospection.EnumValue {
@@ -322,9 +368,9 @@ func dagqlToCodegenEnumValue(dagqlInputValue *introspection.EnumValue) codegenin
 	return v
 }
 
-func dagqlToCodegenTypeRef(dagqlType *introspection.Type) *codegenintrospection.TypeRef {
+func dagqlToCodegenTypeRef(dagqlType *introspection.Type) (*codegenintrospection.TypeRef, error) {
 	if dagqlType == nil {
-		return nil
+		return nil, nil
 	}
 	typeRef := &codegenintrospection.TypeRef{
 		Kind: codegenintrospection.TypeKind(dagqlType.Kind()),
@@ -332,8 +378,16 @@ func dagqlToCodegenTypeRef(dagqlType *introspection.Type) *codegenintrospection.
 	if name := dagqlType.Name(); name != nil {
 		typeRef.Name = *name
 	}
-	if ofType := dagqlType.OfType(); ofType != nil && (dagqlType.Kind() == "NON_NULL" || dagqlType.Kind() == "LIST") {
-		typeRef.OfType = dagqlToCodegenTypeRef(ofType)
+	ofType, err := dagqlType.OfType()
+	if err != nil {
+		return nil, err
 	}
-	return typeRef
+	if ofType != nil && (dagqlType.Kind() == "NON_NULL" || dagqlType.Kind() == "LIST") {
+		type_, err := dagqlToCodegenTypeRef(ofType)
+		if err != nil {
+			return nil, err
+		}
+		typeRef.OfType = type_
+	}
+	return typeRef, nil
 }

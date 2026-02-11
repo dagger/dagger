@@ -90,7 +90,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 			return dagql.NonNull(self.SubscriptionType()), nil
 		}).DoNotCache("simple field selection"),
 		dagql.Func("directives", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Directive], error) {
-			return self.Directives(), nil
+			return self.Directives()
 		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
@@ -111,12 +111,12 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("fields", func(ctx context.Context, self *Type, args struct {
 			IncludeDeprecated dagql.Boolean `default:"false"`
 		}) (dagql.Array[*Field], error) {
-			return self.Fields(args.IncludeDeprecated.Bool()), nil
+			return self.Fields(args.IncludeDeprecated.Bool())
 		}).DoNotCache("simple field selection"),
 		dagql.Func("inputFields", func(ctx context.Context, self *Type, args struct {
 			IncludeDeprecated dagql.Boolean `default:"false"`
 		}) (dagql.Array[*InputValue], error) {
-			return self.InputFields(args.IncludeDeprecated.Bool()), nil
+			return self.InputFields(args.IncludeDeprecated.Bool())
 		}).DoNotCache("simple field selection"),
 		dagql.Func("interfaces", func(ctx context.Context, self *Type, args struct{}) (dagql.Array[*Type], error) {
 			return self.Interfaces(), nil
@@ -132,7 +132,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("ofType", func(ctx context.Context, self *Type, args struct{}) (dagql.Nullable[*Type], error) {
 			switch self.Kind() {
 			case "LIST", "NON_NULL":
-				return dagql.NonNull(self.OfType()), nil
+				type_, err := self.OfType()
+				return dagql.NonNull(type_), err
 			default:
 				return dagql.Null[*Type](), nil
 			}
@@ -312,13 +313,17 @@ func (s *Schema) SubscriptionType() *Type {
 	return WrapTypeFromDef(s.schema, s.schema.Subscription)
 }
 
-func (s *Schema) Directives() []*Directive {
+func (s *Schema) Directives() ([]*Directive, error) {
 	dIndex := map[string]Directive{}
 	dNames := make([]string, 0, len(s.schema.Directives))
 
 	for _, d := range s.schema.Directives {
 		dNames = append(dNames, d.Name)
-		dIndex[d.Name] = s.directiveFromDef(d)
+		directive, err := s.directiveFromDef(d)
+		if err != nil {
+			return nil, err
+		}
+		dIndex[d.Name] = directive
 	}
 	sort.Strings(dNames)
 
@@ -328,10 +333,10 @@ func (s *Schema) Directives() []*Directive {
 		res[i] = &cp
 	}
 
-	return res
+	return res, nil
 }
 
-func (s *Schema) directiveFromDef(d *ast.DirectiveDefinition) Directive {
+func (s *Schema) directiveFromDef(d *ast.DirectiveDefinition) (Directive, error) {
 	locs := make([]string, len(d.Locations))
 	for i, loc := range d.Locations {
 		locs[i] = string(loc)
@@ -339,11 +344,15 @@ func (s *Schema) directiveFromDef(d *ast.DirectiveDefinition) Directive {
 
 	args := make([]*InputValue, len(d.Arguments))
 	for i, arg := range d.Arguments {
+		type_, err := WrapTypeFromType(s.schema, arg.Type)
+		if err != nil {
+			return Directive{}, err
+		}
 		args[i] = &InputValue{
 			Name:         arg.Name,
 			description:  arg.Description,
 			DefaultValue: defaultValue(arg.DefaultValue),
-			Type_:        WrapTypeFromType(s.schema, arg.Type),
+			Type_:        type_,
 			deprecation:  arg.Directives.ForName("deprecated"),
 			internal:     arg.Directives.ForName("internal") != nil,
 		}
@@ -355,7 +364,7 @@ func (s *Schema) directiveFromDef(d *ast.DirectiveDefinition) Directive {
 		Locations:    locs,
 		args:         args,
 		IsRepeatable: d.IsRepeatable,
-	}
+	}, nil
 }
 
 var _ dagql.Typed = &Schema{}
@@ -546,19 +555,19 @@ func WrapTypeFromDef(s *ast.Schema, def *ast.Definition) *Type {
 	return &Type{schema: s, def: def}
 }
 
-func WrapTypeFromType(s *ast.Schema, typ *ast.Type) *Type {
+func WrapTypeFromType(s *ast.Schema, typ *ast.Type) (*Type, error) {
 	if typ == nil {
-		return nil
+		return nil, nil
 	}
 
 	if !typ.NonNull && typ.NamedType != "" {
 		def, ok := s.Types[typ.NamedType]
 		if !ok {
-			panic("unknown type: " + typ.NamedType)
+			return nil, fmt.Errorf("unknown type: %q", typ.NamedType)
 		}
-		return &Type{schema: s, def: def}
+		return &Type{schema: s, def: def}, nil
 	}
-	return &Type{schema: s, typ: typ}
+	return &Type{schema: s, typ: typ}, nil
 }
 
 func (t *Type) Kind() string {
@@ -591,9 +600,9 @@ func (t *Type) Description() string {
 	return t.def.Description
 }
 
-func (t *Type) Fields(includeDeprecated bool) []*Field {
+func (t *Type) Fields(includeDeprecated bool) ([]*Field, error) {
 	if t.def == nil || (t.def.Kind != ast.Object && t.def.Kind != ast.Interface) {
-		return []*Field{}
+		return []*Field{}, nil
 	}
 	fields := []*Field{}
 	for _, f := range t.def.Fields {
@@ -607,8 +616,12 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 
 		var args []*InputValue
 		for _, arg := range f.Arguments {
+			type_, err := WrapTypeFromType(t.schema, arg.Type)
+			if err != nil {
+				return nil, err
+			}
 			args = append(args, &InputValue{
-				Type_:        WrapTypeFromType(t.schema, arg.Type),
+				Type_:        type_,
 				Name:         arg.Name,
 				description:  arg.Description,
 				DefaultValue: defaultValue(arg.DefaultValue),
@@ -618,21 +631,25 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 			})
 		}
 
+		type_, err := WrapTypeFromType(t.schema, f.Type)
+		if err != nil {
+			return nil, err
+		}
 		fields = append(fields, &Field{
 			Name:        f.Name,
 			description: f.Description,
 			args:        args,
-			Type_:       WrapTypeFromType(t.schema, f.Type),
+			Type_:       type_,
 			directives:  f.Directives,
 			deprecation: f.Directives.ForName("deprecated"),
 		})
 	}
-	return fields
+	return fields, nil
 }
 
-func (t *Type) InputFields(includeDeprecated bool) []*InputValue {
+func (t *Type) InputFields(includeDeprecated bool) ([]*InputValue, error) {
 	if t.def == nil || t.def.Kind != ast.InputObject {
-		return []*InputValue{}
+		return []*InputValue{}, nil
 	}
 
 	res := make([]*InputValue, 0, len(t.def.Fields))
@@ -641,17 +658,21 @@ func (t *Type) InputFields(includeDeprecated bool) []*InputValue {
 			continue // skip deprecated fields unless included
 		}
 
+		type_, err := WrapTypeFromType(t.schema, f.Type)
+		if err != nil {
+			return nil, err
+		}
 		res = append(res, &InputValue{
 			Name:         f.Name,
 			description:  f.Description,
-			Type_:        WrapTypeFromType(t.schema, f.Type),
+			Type_:        type_,
 			DefaultValue: defaultValue(f.DefaultValue),
 			directives:   f.Directives,
 			deprecation:  f.Directives.ForName("deprecated"),
 			internal:     f.Directives.ForName("internal") != nil,
 		})
 	}
-	return res
+	return res, nil
 }
 
 func (t *Type) Directives() []*DirectiveApplication {
@@ -712,9 +733,9 @@ func (t *Type) EnumValues(includeDeprecated bool) []*EnumValue {
 	return res
 }
 
-func (t *Type) OfType() *Type {
+func (t *Type) OfType() (*Type, error) {
 	if t.typ == nil {
-		return nil
+		return nil, nil
 	}
 	if t.typ.NonNull {
 		// fake non null nodes
@@ -726,7 +747,7 @@ func (t *Type) OfType() *Type {
 	if t.typ.Elem != nil {
 		return WrapTypeFromType(t.schema, t.typ.Elem)
 	}
-	return nil
+	return nil, nil
 }
 
 func (t *Type) SpecifiedByURL() *string {
