@@ -142,6 +142,7 @@ func init() {
 		configCmd,
 		checksCmd,
 		generateCmd,
+		workspaceCmd,
 		moduleCmd,
 		moduleInitCmd,
 		moduleInstallCmd,
