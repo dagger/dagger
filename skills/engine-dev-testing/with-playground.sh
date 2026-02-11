@@ -21,7 +21,7 @@ trap cleanup EXIT
 # The inner command is written to a file inside the container to avoid
 # quoting issues with heredocs, newlines, and special characters.
 # --progress=dots reduces noise while still showing enough to debug failures
-dagger --progress=plain call \
+dagger --progress=dots call \
   engine-dev \
   playground \
   with-directory --path=src/dagger --source=https://github.com/dagger/dagger#main \
