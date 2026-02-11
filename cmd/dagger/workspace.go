@@ -63,6 +63,9 @@ var moduleInstallCmd = &cobra.Command{
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		if remoteWorkdir != "" {
+			return fmt.Errorf("cannot install with a remote workdir")
+		}
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,

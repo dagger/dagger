@@ -382,6 +382,10 @@ The module is created at .dagger/modules/<name>/ and automatically added to
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
+		if remoteWorkdir != "" {
+			return fmt.Errorf("cannot init module with a remote workdir")
+		}
+
 		if sdk == "" {
 			return fmt.Errorf("--sdk is required; specify the SDK to use (go, python, typescript)")
 		}
