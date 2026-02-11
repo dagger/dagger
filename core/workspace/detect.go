@@ -64,7 +64,19 @@ func Detect(
 				Config: cfg,
 			}, nil
 		}
-		// config.toml doesn't exist inside .dagger/ — treat as empty workspace
+		// config.toml doesn't exist inside .dagger/ — but a legacy dagger.json
+		// may still be present (e.g. .dagger/ is a module source dir, not a
+		// workspace config dir). Check migration triggers before treating as
+		// empty workspace.
+		if legacyDir, ok := found[LegacyConfigFileName]; ok {
+			legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
+			data, err := readFile(ctx, legacyPath)
+			if err == nil {
+				if err := checkMigrationTriggers(data); err != nil {
+					return nil, err
+				}
+			}
+		}
 		return &Workspace{Root: daggerDir}, nil
 	}
 
