@@ -9,7 +9,7 @@
 
 ### 2. Replace SkipRootFieldInstalls with currentTypeDefs(includeCore) (commit 053c3c168)
 - **Problem**: `SkipRootFieldInstalls` hid ALL core root fields from dagql schema, including `currentTypeDefs` which the CLI needs for introspection.
-- **Fix**: Removed `SkipRootFieldInstalls` entirely. All core fields are always installed. Added `includeCore` optional boolean arg to `currentTypeDefs` — when false, filters out core TypeDefs (those with empty `SourceModuleName`). CLI passes `includeCore: false` for workspace mode.
+- **Fix**: Removed `SkipRootFieldInstalls` entirely. All core fields are always installed. Added `includeCore` optional boolean arg to `currentTypeDefs` — when false, filters out core TypeDefs (those with empty `SourceModuleName`). The arg exists for API clients; CLI loads all types and filters at display level.
 - **Files**: `dagql/server.go`, `dagql/objects.go`, `core/moddeps.go`, `core/schema/module.go`, `cmd/dagger/typedefs.graphql`, `cmd/dagger/module_inspect.go`, `cmd/dagger/call.go`, `cmd/dagger/functions.go`, `cmd/dagger/shell_commands.go`
 
 ### 3. Fix workspace module source resolution for remote refs (in commit 053c3c168)
@@ -22,28 +22,40 @@
 - **Fix**: `isCoreTypeDef` never treats Query as core. CLI filters Query root functions to hide core constructors.
 - **Files**: `core/schema/module.go`, `cmd/dagger/functions.go`, `cmd/dagger/call.go`
 
-### 5. Root-level filter fix for dagger functions (commit e45400347)
-- **Problem**: Core function filter in `functionListRun` applied unconditionally, which would break navigating into module types (`dagger functions wolfi`).
-- **Fix**: Only apply at root level. Also suppress noisy "skipped functions" message when filtering core functions.
-- **Files**: `cmd/dagger/call.go`
+### 5. CLI loads all TypeDefs for pipeline navigation (commit 50f34b9fa)
+- **Problem**: `includeCore: false` filtered out core types like Container, breaking `dagger call wolfi container with-exec`. CLI needs core types for navigating return types.
+- **Fix**: CLI always loads with `includeCore: true`. Root-level filter hides core constructors from display, but types remain available for pipeline navigation.
+- **Files**: `cmd/dagger/module_inspect.go`, `cmd/dagger/shell_commands.go`
+
+### 6. Migration error message fix (commit 2db2d87a3)
+- **Fix**: No longer references non-existent `dagger migrate` command.
+- **Files**: `core/workspace/detect.go`
+
+### 7. Migration module alias format fix (commit 25613e9a3)
+- **Fix**: Generates per-module `alias = true` instead of global `[aliases]` section.
+- **Files**: `modules/migrate/toml.go`, `modules/migrate/report.go`
+
+### 8. Add Ignore field to Config struct (commit 80031d299)
+- **Fix**: `Config.Ignore []string` field for parsing workspace ignore patterns. Enforcement not yet implemented.
+- **Files**: `core/workspace/config.go`
 
 ## Test results
 
 | Test | Status | Notes |
 |------|--------|-------|
-| Empty workspace detection | PASS | `.dagger/` dir detected, workspace loads |
-| Legacy dagger.json migration (with source) | PASS | Error fires: "run `dagger migrate` to update it" |
-| Workspace with wolfi module - functions | PASS | Shows `alpine`, `wolfi` only, no core noise |
-| Workspace with wolfi module - call --help | PASS | `dagger call wolfi --help` shows wolfi functions |
-| dagger version | PASS | Engine starts and reports version |
+| Empty workspace (no modules) | PASS | Clean empty output |
+| Empty .dagger/ (no config.toml) | PASS | Clean empty output |
+| Legacy dagger.json migration | PASS | Error fires with correct message |
+| Workspace with wolfi module - functions | PASS | Shows `alpine`, `wolfi` only |
+| Workspace with wolfi module - call --help | PASS | Pipeline help works |
+| Pipeline execution: wolfi container with-exec stdout | PASS | Prints "hello" |
+| dagger version | PASS | Engine starts correctly |
 
 ## Implementation gaps (not yet addressed)
 
-1. config.* constructor defaults parsed but not applied
-2. `dagger install` doesn't update `.dagger/config.toml`
-3. `dagger module init` not implemented
-4. `IncludeCoreModule` not a client control (connect-time parameter)
-5. Migration module generates old `[aliases]` format
-6. Workspace `ignore` field not in config struct
-7. Migration error message references wrong command (`dagger migrate` doesn't exist)
-8. `.dagger/lock` file not implemented
+1. **config.* constructor defaults**: Parsed in config struct but not passed as constructor args when loading modules
+2. **dagger install**: Doesn't update `.dagger/config.toml` (still only updates `dagger.json`)
+3. **dagger module init**: Not implemented (no way to create a new module in a workspace)
+4. **IncludeCoreModule**: Not yet a connect-time client control parameter
+5. **Workspace ignore enforcement**: `Ignore` field parses but patterns aren't applied during operations
+6. **.dagger/lock file**: Not implemented
