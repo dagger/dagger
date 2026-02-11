@@ -974,7 +974,7 @@ func (f *modFunction) SupportedArgs() []*modFunctionArg {
 
 func (f *modFunction) HasUnsupportedFlags() bool {
 	for _, arg := range f.Args {
-		if arg.IsRequired() && arg.IsUnsupportedFlag() {
+		if arg.IsRequired() && arg.IsUnsupportedFlag() && !arg.IsMagicalArg() {
 			return true
 		}
 	}
@@ -1055,6 +1055,16 @@ func (r *modFunctionArg) IsUnsupportedFlag() bool {
 	err := r.AddFlag(flags)
 	var e *UnsupportedFlagError
 	return errors.As(err, &e)
+}
+
+// IsMagicalArg returns true for argument types that are server-injected and
+// should never be exposed as CLI flags, but whose presence should not cause
+// the owning function to be hidden from the CLI.
+func (r *modFunctionArg) IsMagicalArg() bool {
+	if r.TypeDef.Kind == dagger.TypeDefKindObjectKind && r.TypeDef.AsObject != nil {
+		return r.TypeDef.AsObject.Name == Workspace
+	}
+	return false
 }
 
 func getDefaultValue[T any](r *modFunctionArg) (T, error) {
