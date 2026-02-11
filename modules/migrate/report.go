@@ -111,7 +111,7 @@ func (r *reportBuilder) String() string {
 
 	// Not migrated section
 	b.WriteString("## Not Migrated (manual action needed)\n\n")
-	b.WriteString("- [ ] Aliases: run `dagger migrate --aliases` after engine support is available\n")
+	b.WriteString("- [ ] Aliases: project module has `alias = true` set; verify all functions are promoted correctly\n")
 	b.WriteString("- [ ] User defaults (.env): review and migrate manually to `config.*` entries\n")
 
 	return b.String()

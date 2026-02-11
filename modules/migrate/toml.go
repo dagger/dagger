@@ -23,6 +23,9 @@ func generateConfigTOML(cfg *LegacyConfig, warnings []warning, aliases []aliasEn
 	// Project module entry (if there is an SDK)
 	if cfg.SDK != nil && cfg.SDK.Source != "" {
 		fmt.Fprintf(&b, "%s.source = \"modules/%s\"\n", cfg.Name, cfg.Name)
+		if len(aliases) > 0 {
+			fmt.Fprintf(&b, "%s.alias = true\n", cfg.Name)
+		}
 	}
 
 	// Toolchain entries
@@ -52,15 +55,6 @@ func generateConfigTOML(cfg *LegacyConfig, warnings []warning, aliases []aliasEn
 					fmt.Fprintf(&b, "# %s.config.%s = \"\" # %s\n", tc.Name, arg.Name, arg.TypeName)
 				}
 			}
-		}
-	}
-
-	// Aliases section
-	b.WriteString("\n[aliases]\n")
-	if len(aliases) > 0 {
-		fmt.Fprintf(&b, "# Migrated from project module %q.\n", cfg.Name)
-		for _, a := range aliases {
-			fmt.Fprintf(&b, "%s = [\"%s\", \"%s\"]\n", a.FunctionName, a.ModuleName, a.FunctionName)
 		}
 	}
 
