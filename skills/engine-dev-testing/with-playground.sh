@@ -15,16 +15,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-set -x
-
 # Build the dagger engine playground, using the installed system dagger,
 # with pre-downloaded sample source code for convenience,
 # then execute the given inner command and print the output.
 # The inner command is written to a file inside the container to avoid
 # quoting issues with heredocs, newlines, and special characters.
-dagger \
---progress=plain \
-  call engine-dev playground \
+# --progress=dots reduces noise while still showing enough to debug failures
+dagger --progress=plain call \
+  engine-dev \
+  playground \
   with-directory --path=src/dagger --source=https://github.com/dagger/dagger#main \
   with-directory --path=src/demo-react-app --source=https://github.com/kpenfound/demo-react-app#main \
   with-new-file --path=/tmp/inner.sh --contents="$1" --permissions=0755 \
@@ -42,8 +41,6 @@ fi
 # Wait for dagger to finish (or be killed by watchdog)
 wait "$DAGGER_PID"
 EXIT_CODE=$?
-
-set +x
 
 # 143 = 128 + 15 (SIGTERM) — the watchdog killed the process
 if [ "$EXIT_CODE" -eq 143 ]; then
