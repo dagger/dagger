@@ -2168,7 +2168,11 @@ func (fe *frontendPretty) hasShownRootError() bool {
 	if fe.err == nil {
 		return false
 	}
-	for _, origin := range telemetry.ParseErrorOrigins(fe.err.Error()) {
+	origins := telemetry.ParseErrorOrigins(fe.err.Error())
+	if len(origins) == 0 {
+		return false
+	}
+	for _, origin := range origins {
 		if !origin.IsValid() {
 			return false
 		}
