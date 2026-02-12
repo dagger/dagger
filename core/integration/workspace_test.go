@@ -1,0 +1,265 @@
+package core
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"dagger.io/dagger"
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+)
+
+type WorkspaceSuite struct{}
+
+func TestWorkspace(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(WorkspaceSuite{})
+}
+
+const dangSDK = "github.com/vito/dang/dagger-sdk@9eb282f01ed7f367f5bce96998301ce1a9df1347"
+
+// workspaceBase returns a container with git, the dagger CLI, and an
+// initialized git repo at /work — the starting point for workspace tests.
+func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	t.Helper()
+	return c.Container().From(golangImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "Dagger Tests"}).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithExec([]string{"git", "init"})
+}
+
+// initDangModule creates a Dang module in the workspace with the given name
+// and source code. Uses "dagger module init" to scaffold the workspace and
+// module, then overwrites main.dang with the provided source.
+func initDangModule(name, source string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
+			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
+	}
+}
+
+// TestWorkspaceArg verifies that a module function accepting a Workspace
+// argument can access the host filesystem.
+func (WorkspaceSuite) TestWorkspaceArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("hello.txt", "hello from workspace").
+		With(initDangModule("greeter", `
+type Greeter {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub read: String! {
+    source.file("hello.txt").contents
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("greeter", "read")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+}
+
+// TestWorkspaceDirectoryEntries verifies that Workspace.directory returns the
+// correct entries from the host filesystem.
+func (WorkspaceSuite) TestWorkspaceDirectoryEntries(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("a.txt", "aaa").
+		WithNewFile("b.txt", "bbb").
+		WithNewFile("sub/c.txt", "ccc").
+		With(initDangModule("lister", `
+type Lister {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("lister", "ls")).Stdout(ctx)
+	require.NoError(t, err)
+	entries := strings.TrimSpace(out)
+	require.Contains(t, entries, "a.txt")
+	require.Contains(t, entries, "b.txt")
+	require.Contains(t, entries, "sub/")
+}
+
+// TestWorkspaceDirectoryExclude verifies that include/exclude patterns work
+// when calling Workspace.directory.
+func (WorkspaceSuite) TestWorkspaceDirectoryExclude(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("keep.txt", "keep me").
+		WithNewFile("drop.log", "drop me").
+		With(initDangModule("filtered", `
+type Filtered {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".", exclude: ["*.log"])
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("filtered", "ls")).Stdout(ctx)
+	require.NoError(t, err)
+	entries := strings.TrimSpace(out)
+	require.Contains(t, entries, "keep.txt")
+	require.NotContains(t, entries, "drop.log")
+}
+
+// TestWorkspaceNotCached verifies that functions accepting Workspace args are
+// never persistently cached — changes to the host filesystem are reflected
+// on subsequent calls without needing a cache buster.
+func (WorkspaceSuite) TestWorkspaceNotCached(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a module that lists workspace entries.
+	base := workspaceBase(t, c).
+		WithNewFile("original.txt", "original").
+		With(initDangModule("cachechk", `
+type Cachechk {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+
+	// First call — should see original.txt.
+	out, err := base.With(daggerCall("cachechk", "ls")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "original.txt")
+	require.NotContains(t, out, "added.txt")
+
+	// Add a file and call again — should see the new file without any cache buster.
+	out, err = base.
+		WithNewFile("added.txt", "added").
+		With(daggerCall("cachechk", "ls")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "original.txt")
+	require.Contains(t, out, "added.txt")
+}
+
+// TestWorkspaceFile verifies that Workspace.file returns the correct file
+// content from the host filesystem.
+func (WorkspaceSuite) TestWorkspaceFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("data.txt", "file content here").
+		With(initDangModule("reader", `
+type Reader {
+  pub content: String!
+
+  new(ws: Workspace!) {
+    self.content = ws.file("data.txt").contents
+    self
+  }
+
+  pub read: String! {
+    content
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("reader", "read")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "file content here", strings.TrimSpace(out))
+}
+
+// TestWorkspaceSubdirectory verifies that Workspace.directory can access
+// a subdirectory of the workspace.
+func (WorkspaceSuite) TestWorkspaceSubdirectory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("sub/foo.txt", "foo").
+		WithNewFile("sub/bar.txt", "bar").
+		With(initDangModule("subdir", `
+type Subdir {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory("sub")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("subdir", "ls")).Stdout(ctx)
+	require.NoError(t, err)
+	entries := strings.TrimSpace(out)
+	require.Contains(t, entries, "foo.txt")
+	require.Contains(t, entries, "bar.txt")
+	// Should NOT contain top-level workspace files.
+	require.NotContains(t, entries, "sub/")
+}
+
+// TestWorkspaceArgNotExposedAsCLIFlag verifies that Workspace arguments are
+// "magical" — injected by the server — and not exposed as CLI flags, but the
+// function is still visible and callable.
+func (WorkspaceSuite) TestWorkspaceArgNotExposedAsCLIFlag(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("test.txt", "test").
+		With(initDangModule("magic", `
+type Magic {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+
+	// The function should be callable without passing --source (it's auto-injected).
+	out, err := ctr.With(daggerCall("magic", "ls")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "test.txt")
+
+	// --help should NOT show a --source flag for the constructor.
+	help, err := ctr.With(daggerCall("magic", "--help")).Stdout(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, help, "--source")
+}
