@@ -230,6 +230,79 @@ type Subdir {
 	require.NotContains(t, entries, "sub/")
 }
 
+// TestWorkspacePathTraversal verifies that a module cannot use Workspace to
+// escape the workspace root and access arbitrary host paths.
+func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("legit.txt", "legit")
+
+	t.Run("directory traversal with ..", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("escape-dir", `
+type EscapeDir {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory("../..")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+		_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "outside workspace root")
+	})
+
+	t.Run("file traversal with ..", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("escape-file", `
+type EscapeFile {
+  pub content: String!
+
+  new(source: Workspace!) {
+    self.content = source.file("../../etc/hostname").contents
+    self
+  }
+
+  pub read: String! {
+    content
+  }
+}
+`))
+		_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "outside workspace root")
+	})
+
+	t.Run("absolute path treated as relative", func(ctx context.Context, t *testctx.T) {
+		// Absolute paths are relative to workspace root, not the host root.
+		// /sub should resolve to <workspace>/sub, not /sub on the host.
+		ctr := base.
+			WithNewFile("sub/inner.txt", "inner").
+			With(initDangModule("abs-rel", `
+type AbsRel {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory("/sub")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "inner.txt")
+	})
+}
+
 // TestWorkspaceArgNotExposedAsCLIFlag verifies that Workspace arguments are
 // "magical" — injected by the server — and not exposed as CLI flags, but the
 // function is still visible and callable.
