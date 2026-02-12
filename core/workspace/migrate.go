@@ -129,7 +129,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 			Source: source,
 		}
 		// Migrate constructor customizations to config entries
-		config := make(map[string]string)
+		config := make(map[string]any)
 		for _, cust := range tc.Customizations {
 			if cust.IsConstructor() && cust.Default != "" {
 				config[cust.Argument] = cust.Default

@@ -2,7 +2,9 @@ package workspace
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	neontoml "github.com/neongreen/mono/lib/toml"
@@ -17,9 +19,9 @@ type Config struct {
 
 // ModuleEntry represents a single module entry in the workspace config.
 type ModuleEntry struct {
-	Source string            `toml:"source"`
-	Config map[string]string `toml:"config,omitempty"`
-	Alias  bool              `toml:"alias,omitempty"`
+	Source string         `toml:"source"`
+	Config map[string]any `toml:"config,omitempty"`
+	Alias  bool           `toml:"alias,omitempty"`
 }
 
 // ParseConfig parses a config.toml file from raw bytes.
@@ -74,7 +76,7 @@ func SerializeConfig(cfg *Config) []byte {
 				sort.Strings(keys)
 				fmt.Fprintf(&b, "\n[modules.%s.config]\n", name)
 				for _, k := range keys {
-					fmt.Fprintf(&b, "%s = %q\n", k, entry.Config[k])
+					fmt.Fprintf(&b, "%s = %s\n", k, formatConfigValue(entry.Config[k]))
 				}
 			}
 		}
@@ -271,4 +273,290 @@ func findModuleInsertionPoint(lines []string, moduleName string) (insertIdx int,
 	}
 
 	return -1, false
+}
+
+// formatConfigValue formats a config value for TOML serialization.
+func formatConfigValue(v any) string {
+	switch val := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", val)
+	case bool:
+		return strconv.FormatBool(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case []any:
+		parts := make([]string, len(val))
+		for i, item := range val {
+			parts[i] = formatConfigValue(item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []string:
+		parts := make([]string, len(val))
+		for i, item := range val {
+			parts[i] = fmt.Sprintf("%q", item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprintf("%q", fmt.Sprint(v))
+	}
+}
+
+// ReadConfigValue reads a value from the config TOML at the given key path.
+// If key is empty, returns the full config file content.
+// For scalar values, returns the raw value string.
+// For non-scalar (table) values, returns a flattened dotted-key representation.
+func ReadConfigValue(data []byte, key string) (string, error) {
+	if key == "" {
+		return string(data), nil
+	}
+
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return "", fmt.Errorf("parsing config: %w", err)
+	}
+
+	keys := strings.Split(key, ".")
+	val := tree.GetPath(keys)
+	if val == nil {
+		return "", fmt.Errorf("key %q is not set", key)
+	}
+
+	switch v := val.(type) {
+	case *toml.Tree:
+		return flattenTOMLTree("", v), nil
+	default:
+		return formatScalarOutput(v), nil
+	}
+}
+
+// flattenTOMLTree recursively flattens a TOML tree into dotted-key format.
+func flattenTOMLTree(prefix string, tree *toml.Tree) string {
+	var lines []string
+	for _, key := range tree.Keys() {
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
+		}
+		val := tree.Get(key)
+		switch v := val.(type) {
+		case *toml.Tree:
+			lines = append(lines, flattenTOMLTree(fullKey, v))
+		default:
+			lines = append(lines, fmt.Sprintf("%s = %s", fullKey, formatScalarTOML(v)))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// formatScalarOutput formats a scalar value for stdout output (no TOML quoting).
+func formatScalarOutput(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		return strconv.FormatBool(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case []any:
+		parts := make([]string, len(val))
+		for i, item := range val {
+			parts[i] = formatScalarOutput(item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+// formatScalarTOML formats a scalar value with TOML quoting (strings are quoted).
+func formatScalarTOML(v any) string {
+	switch val := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", val)
+	case bool:
+		return strconv.FormatBool(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case []any:
+		parts := make([]string, len(val))
+		for i, item := range val {
+			parts[i] = formatScalarTOML(item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+// WriteConfigValue writes a value to the config TOML at the given key path.
+// It validates the key against the config schema, parses the value string
+// into the appropriate type, and preserves existing comments and formatting.
+func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte, error) {
+	if key == "" {
+		return nil, fmt.Errorf("key is required for writing")
+	}
+
+	if err := validateConfigKey(key); err != nil {
+		return nil, err
+	}
+
+	value := parseValueString(key, rawValue)
+
+	var doc *neontoml.Document
+	var err error
+	if len(existingData) > 0 {
+		doc, err = neontoml.Parse(existingData)
+		if err != nil {
+			return nil, fmt.Errorf("parsing existing config: %w", err)
+		}
+	} else {
+		doc, err = neontoml.ParseString("")
+		if err != nil {
+			return nil, fmt.Errorf("creating empty document: %w", err)
+		}
+	}
+
+	if err := doc.Set(key, value); err != nil {
+		return nil, fmt.Errorf("setting %q: %w", key, err)
+	}
+
+	return doc.Bytes(), nil
+}
+
+// validateConfigKey checks that a key path is valid according to the config schema.
+//
+// Valid paths:
+//   - ignore (the ignore list)
+//   - modules.<name>.source
+//   - modules.<name>.alias
+//   - modules.<name>.config.<key>
+// validateConfigKey ensures the given dotted key path corresponds to a valid
+// config.toml schema path, derived from Config and ModuleEntry struct tags.
+func validateConfigKey(key string) error {
+	parts := strings.Split(key, ".")
+	if len(parts) == 0 {
+		return fmt.Errorf("key is required")
+	}
+	return validateKeyAgainstType(parts, reflect.TypeOf(Config{}), key)
+}
+
+// validateKeyAgainstType recursively validates a key path against a struct type,
+// using toml struct tags to determine valid field names and nesting rules.
+func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) error {
+	if len(parts) == 0 {
+		return nil
+	}
+
+	field, ok := findTOMLField(t, parts[0])
+	if !ok {
+		return fmt.Errorf("unknown config key %q; valid fields at this level: %s",
+			fullKey, strings.Join(validTOMLFieldNames(t), ", "))
+	}
+
+	rest := parts[1:]
+	ft := field.Type
+
+	switch ft.Kind() {
+	case reflect.Map:
+		// Maps require at least one more level for the map key
+		if len(rest) == 0 {
+			return fmt.Errorf("cannot set %q directly; specify a sub-key", fullKey)
+		}
+		// rest[0] is the map key (arbitrary string), skip it
+		mapValueRest := rest[1:]
+		elemType := ft.Elem()
+
+		if elemType.Kind() == reflect.Struct {
+			// map[string]SomeStruct — validate remaining parts against the struct
+			if len(mapValueRest) == 0 {
+				return fmt.Errorf("cannot set %q directly; specify a field like %s.%s",
+					fullKey, fullKey, validTOMLFieldNames(elemType)[0])
+			}
+			return validateKeyAgainstType(mapValueRest, elemType, fullKey)
+		}
+
+		// map[string]any or map[string]primitive — the map key IS the leaf
+		if len(mapValueRest) > 0 {
+			return fmt.Errorf("invalid key %q; config keys cannot be nested deeper", fullKey)
+		}
+		return nil
+
+	default:
+		// Scalar, slice, or other leaf fields — no sub-keys allowed
+		if len(rest) > 0 {
+			return fmt.Errorf("invalid key %q; %s does not have sub-keys", fullKey, parts[0])
+		}
+		return nil
+	}
+}
+
+// findTOMLField returns the struct field matching the given TOML key name.
+func findTOMLField(t reflect.Type, name string) (reflect.StructField, bool) {
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		tag := f.Tag.Get("toml")
+		tomlName := strings.Split(tag, ",")[0]
+		if tomlName == name {
+			return f, true
+		}
+	}
+	return reflect.StructField{}, false
+}
+
+// validTOMLFieldNames returns the TOML key names for all exported fields of a struct.
+func validTOMLFieldNames(t reflect.Type) []string {
+	var names []string
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("toml")
+		name := strings.Split(tag, ",")[0]
+		if name != "" && name != "-" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// parseValueString converts a raw value string into a typed Go value,
+// using the key path to inform type expectations.
+func parseValueString(key string, rawValue string) any {
+	parts := strings.Split(key, ".")
+
+	// modules.<name>.alias is always a bool
+	if len(parts) == 3 && parts[0] == "modules" && parts[2] == "alias" {
+		return rawValue == "true"
+	}
+
+	// Try bool
+	if rawValue == "true" || rawValue == "false" {
+		return rawValue == "true"
+	}
+
+	// Try integer
+	if n, err := strconv.ParseInt(rawValue, 10, 64); err == nil {
+		return n
+	}
+
+	// Try float
+	if f, err := strconv.ParseFloat(rawValue, 64); err == nil {
+		return f
+	}
+
+	// Try comma-separated array (only if commas are present)
+	if strings.Contains(rawValue, ",") {
+		items := strings.Split(rawValue, ",")
+		result := make([]string, len(items))
+		for i, item := range items {
+			result[i] = strings.TrimSpace(item)
+		}
+		return result
+	}
+
+	return rawValue
 }
