@@ -2653,6 +2653,15 @@ impl Check {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The original module in which the check has been defined
+    pub fn original_module(&self) -> Module {
+        let query = self.selection.select("originalModule");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Whether the check passed
     pub async fn passed(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("passed");
@@ -9489,6 +9498,20 @@ impl Generator {
     /// Return the fully qualified name of the generator
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The original module in which the generator has been defined
+    pub fn original_module(&self) -> Module {
+        let query = self.selection.select("originalModule");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The path of the generator within its module
+    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
     /// Execute the generator

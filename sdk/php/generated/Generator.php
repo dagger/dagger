@@ -65,6 +65,24 @@ class Generator extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The original module in which the generator has been defined
+     */
+    public function originalModule(): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The path of the generator within its module
+     */
+    public function path(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
      * Execute the generator
      */
     public function run(): Generator
