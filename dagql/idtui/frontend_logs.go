@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -17,7 +16,6 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/muesli/termenv"
 	"github.com/vito/go-interact/interact"
-	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -25,13 +23,12 @@ import (
 )
 
 type frontendLogs struct {
-	profile     termenv.Profile
-	out         TermOutput
-	mu          sync.Mutex
-	db          *dagui.DB
-	opts        dagui.FrontendOpts
-	prefixW     *multiprefixw.Writer
-	pendingLogs map[dagui.SpanID][]sdklog.Record
+	profile termenv.Profile
+	out     TermOutput
+	mu      sync.Mutex
+	db      *dagui.DB
+	opts    dagui.FrontendOpts
+	logs    streamingLogExporter
 }
 
 // NewLogs creates a new logs-style frontend that only prints logs from spans,
@@ -47,15 +44,20 @@ func NewLogs(output io.Writer) Frontend {
 
 	db := dagui.NewDB()
 
-	return &frontendLogs{
+	fe := &frontendLogs{
 		profile: profile,
 		out:     out,
-
-		db: db,
-
+		db:      db,
+	}
+	fe.logs = streamingLogExporter{
+		db:          db,
+		opts:        &fe.opts,
+		profile:     profile,
+		out:         out,
 		prefixW:     multiprefixw.New(out),
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
 	}
+	return fe
 }
 
 func (fe *frontendLogs) SetClient(client *dagger.Client) {}
@@ -108,7 +110,10 @@ func (fe *frontendLogs) SpanExporter() sdktrace.SpanExporter {
 }
 
 func (fe *frontendLogs) LogExporter() sdklog.Exporter {
-	return &logsLogExporter{fe}
+	return &logsLogExporter{
+		streamingLogExporter: &fe.logs,
+		mu:                   &fe.mu,
+	}
 }
 
 func (fe *frontendLogs) MetricExporter() sdkmetric.Exporter {
@@ -151,9 +156,7 @@ func (e *logsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 		}
 
 		// Check if there are pending logs for this span and flush them
-		if logExporter, ok := e.LogExporter().(*logsLogExporter); ok {
-			logExporter.flushPendingLogsForSpan(id)
-		}
+		e.logs.flushPendingLogsForSpan(id)
 	}
 
 	return nil
@@ -195,42 +198,14 @@ func (e *logsMetricExporter) Shutdown(ctx context.Context) error {
 
 // logsLogExporter implements log.Exporter for the logs frontend
 type logsLogExporter struct {
-	*frontendLogs
+	*streamingLogExporter
+	mu *sync.Mutex
 }
 
 func (e *logsLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
-	// Export to DB first like other frontends
-	if err := e.db.LogExporter().Export(ctx, records); err != nil {
-		return err
-	}
-
-	if len(records) == 0 {
-		return nil
-	}
-
-	// Group records by span and either flush immediately if span exists, or store for later
-	spanGroups := make(map[dagui.SpanID][]sdklog.Record)
-	for _, record := range records {
-		spanID := dagui.SpanID{SpanID: record.SpanID()}
-		spanGroups[spanID] = append(spanGroups[spanID], record)
-	}
-
-	for spanID, records := range spanGroups {
-		// Check if span exists in DB
-		dbSpan := e.db.Spans.Map[spanID]
-		if dbSpan != nil && dbSpan.Name != "" {
-			// Span exists, flush immediately
-			e.flushLogsForSpan(spanID, records)
-		} else {
-			// Span doesn't exist yet, store for later
-			e.pendingLogs[spanID] = append(e.pendingLogs[spanID], records...)
-		}
-	}
-
-	return nil
+	return e.streamingLogExporter.Export(ctx, records)
 }
 
 func (e *logsLogExporter) ForceFlush(ctx context.Context) error {
@@ -239,75 +214,4 @@ func (e *logsLogExporter) ForceFlush(ctx context.Context) error {
 
 func (e *logsLogExporter) Shutdown(ctx context.Context) error {
 	return nil
-}
-
-// flushLogsForSpan writes logs for a specific span with proper prefix
-func (e *logsLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklog.Record) {
-	// Get span info from DB
-	dbSpan := e.db.Spans.Map[spanID]
-	if dbSpan == nil {
-		return
-	}
-
-	// Check if we should show this span
-	var skip bool
-	for p := range dbSpan.Parents {
-		if p.Encapsulate || !e.opts.ShouldShow(e.db, p) {
-			skip = true
-			break
-		}
-	}
-	if dbSpan.ID == e.db.PrimarySpan {
-		// don't print primary span logs; they'll be printed at the end
-		skip = true
-	}
-
-	if skip || (dbSpan.Encapsulated && !dbSpan.IsFailedOrCausedFailure()) {
-		return // Skip logs for encapsulated spans
-	}
-
-	// Set prefix
-	r := newRenderer(e.db, 0, e.opts, true)
-	prefix := dotLogsPrefix(r, e.profile, dbSpan)
-
-	// Write all logs for this span, filtering out verbose logs
-	for _, record := range records {
-		// Check if this log is marked as verbose
-		isVerbose := false
-		record.WalkAttributes(func(kv log.KeyValue) bool {
-			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
-				isVerbose = true
-				return false // stop walking
-			}
-			return true // continue walking
-		})
-
-		// Skip verbose logs in the logs frontend
-		if isVerbose {
-			continue
-		}
-
-		body := record.Body().AsString()
-		if body == "" {
-			continue
-		}
-
-		// Only set prefix + track finisher when we're actually gonna print
-		e.prefixW.Prefix = prefix
-		fmt.Fprint(e.prefixW, body)
-
-		// When context-switching, print an overhang so it's clear when the logs
-		// haven't line-terminated
-		e.prefixW.LineOverhang =
-			e.out.String(multiprefixw.DefaultLineOverhang).
-				Foreground(termenv.ANSIBrightBlack).String()
-	}
-}
-
-// flushPendingLogsForSpan flushes any pending logs when a span becomes available
-func (e *logsLogExporter) flushPendingLogsForSpan(spanID dagui.SpanID) {
-	if records, exists := e.pendingLogs[spanID]; exists {
-		e.flushLogsForSpan(spanID, records)
-		delete(e.pendingLogs, spanID)
-	}
 }
