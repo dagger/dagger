@@ -7,6 +7,7 @@ demos/
 exit.go
 frontend.go
 frontend_dots.go
+frontend_logs.go
 frontend_mock.go
 frontend_plain.go
 frontend_pretty.go
@@ -53,6 +54,7 @@ Expected stderr:
 ┃ exit.go
 ┃ frontend.go
 ┃ frontend_dots.go
+┃ frontend_logs.go
 ┃ frontend_mock.go
 ┃ frontend_plain.go
 ┃ frontend_pretty.go
