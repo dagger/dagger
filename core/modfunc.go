@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -120,39 +119,6 @@ func (fn *ModuleFunction) hasWorkspaceArgs() bool {
 		}
 	}
 	return false
-}
-
-// withContentDigestFromReturnedIDs computes a content digest for the result
-// based on the content digests of the core IDs it contains (e.g. Directory,
-// File, Container). This leverages the content digests already computed by
-// the dagql pipeline (e.g. MakeDirectoryContentHashed) rather than relying
-// on serialized JSON output.
-func (fn *ModuleFunction) withContentDigestFromReturnedIDs(ctx context.Context, returnValue dagql.AnyResult) dagql.AnyResult {
-	returnedIDs := map[digest.Digest]*resource.ID{}
-	if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
-		// Best effort — if we can't collect IDs, skip content digest.
-		return returnValue
-	}
-	if len(returnedIDs) == 0 {
-		return returnValue
-	}
-
-	// Collect content digests from the returned IDs, preferring content digest
-	// over recipe digest (same as how ID digest computation works).
-	dgstInputs := make([]string, 0, len(returnedIDs))
-	for _, rid := range returnedIDs {
-		dgst := rid.ContentDigest()
-		if dgst == "" {
-			dgst = rid.Digest()
-		}
-		dgstInputs = append(dgstInputs, dgst.String())
-	}
-	sort.Strings(dgstInputs) // deterministic order since map iteration is random
-
-	contentDigest := hashutil.HashStrings(dgstInputs...)
-	return returnValue.WithID(
-		returnValue.ID().With(call.WithContentDigest(contentDigest)),
-	)
 }
 
 func (fn *ModuleFunction) recordCall(ctx context.Context) {
@@ -972,13 +938,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// If this function accepts Workspace args, set a content digest on the
-	// result derived from the content digests of the IDs it returned. This
-	// ensures downstream calls that reference this result get a different
-	// cache key when the underlying content changes (e.g. a Directory synced
-	// from a changed host workspace). Content digests propagate through the
-	// DAG via ID references.
+	// result derived from the actual output. This ensures downstream calls
+	// that reference this result get a different cache key when the result
+	// content changes (e.g. a Directory synced from a changed host workspace).
+	// Content digests propagate through the DAG via ID references.
 	if returnValue != nil && fn.hasWorkspaceArgs() {
-		returnValue = fn.withContentDigestFromReturnedIDs(ctx, returnValue)
+		contentDigest := hashutil.HashStrings(string(outputBytes))
+		returnValue = returnValue.WithID(
+			returnValue.ID().With(call.WithContentDigest(contentDigest)),
+		)
 	}
 
 	return returnValue, nil
