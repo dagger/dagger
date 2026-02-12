@@ -429,7 +429,7 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 	if r.shared != nil {
 		postCall = r.shared.postCall
 	}
-	return derefableSelf.DerefToResult(r.ID(), postCall)
+	return derefableSelf.DerefToResult(r.ID(), postCall, r.IsSafeToPersistCache())
 }
 
 func (r Result[T]) NthValue(nth int) (AnyResult, error) {
@@ -580,7 +580,7 @@ func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
 	if r.shared != nil {
 		postCall = r.shared.postCall
 	}
-	return derefableSelf.DerefToResult(r.ID(), postCall)
+	return derefableSelf.DerefToResult(r.ID(), postCall, r.IsSafeToPersistCache())
 }
 
 func (r ObjectResult[T]) SetField(field reflect.Value) error {
@@ -838,6 +838,7 @@ func (c *cache) GetOrInitCall(
 	if key.TTL != 0 && c.db != nil {
 		cachedCall, err := c.db.SelectCall(ctx, callKey)
 		if err == nil || errors.Is(err, sql.ErrNoRows) {
+			noHit := errors.Is(err, sql.ErrNoRows)
 			now := time.Now().Unix()
 			expiration := now + key.TTL
 
@@ -847,7 +848,7 @@ func (c *cache) GetOrInitCall(
 			// nice to find some more elegant way of modeling this that disentangles this cache
 			// from engine client metadata.
 			switch {
-			case cachedCall == nil:
+			case noHit || cachedCall == nil:
 				md, err := engine.ClientMetadataFromContext(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("get client metadata: %w", err)
@@ -1080,6 +1081,8 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, isFirstCaller bool)
 	}
 
 	if err == nil {
+		safeToPersistCache := res.safeToPersistCache
+
 		delete(c.ongoingCalls, res.callConcurrencyKeys)
 		lst, ok := c.completedCalls[res.storageKey]
 		if ok {
@@ -1117,7 +1120,7 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, isFirstCaller bool)
 		res.refCount++
 		c.mu.Unlock()
 
-		if isFirstCaller && res.persistToDB != nil && res.safeToPersistCache {
+		if isFirstCaller && res.persistToDB != nil && safeToPersistCache {
 			err := res.persistToDB(ctx)
 			if err != nil {
 				slog.Error("failed to persist cache expiration", "err", err)

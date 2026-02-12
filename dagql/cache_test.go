@@ -786,6 +786,46 @@ func TestCachePostCallAndSafeToPersistMetadataPreserved(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestDerefValuePropagatesSafeToPersistMetadataForNullables(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		value    Typed
+		expected int
+	}{
+		{
+			name: "dynamic-nullable",
+			value: DynamicNullable{
+				Elem:  NewInt(0),
+				Value: NewInt(21),
+				Valid: true,
+			},
+			expected: 21,
+		},
+		{
+			name: "nullable-generic",
+			value: Nullable[Int]{
+				Value: NewInt(42),
+				Valid: true,
+			},
+			expected: 42,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			id := cacheTestID(tc.name + "-safe")
+			outer := newDetachedResult(id, tc.value).WithSafeToPersistCache(true)
+
+			deref, ok := outer.DerefValue()
+			assert.Assert(t, ok)
+			assert.Assert(t, deref.IsSafeToPersistCache())
+			assert.Equal(t, tc.expected, cacheTestUnwrapInt(t, deref))
+		})
+	}
+}
+
 func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
