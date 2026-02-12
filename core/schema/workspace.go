@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -98,9 +99,18 @@ func (s *workspaceSchema) currentWorkspace(
 		}
 	}
 
+	// Capture the current client ID so that when this workspace is passed to
+	// a module function, the directory/file resolvers can route host filesystem
+	// operations through the correct (original) client session.
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("client metadata: %w", err)
+	}
+
 	result := &core.Workspace{
 		Root:      ws.Root,
 		HasConfig: ws.Config != nil,
+		ClientID:  clientMetadata.ClientID,
 	}
 	if ws.Config != nil {
 		result.ConfigPath = filepath.Join(ws.Root, workspace.WorkspaceDirName, workspace.ConfigFileName)
@@ -122,23 +132,51 @@ func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
 }
 
 func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	ws := parent.Self()
+
+	// Override the client metadata in context to the workspace's owning client
+	// so that host filesystem operations route through the correct session.
+	// This is necessary when the workspace is passed to a module function —
+	// the module's own session doesn't have access to the host filesystem.
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return inst, err
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	ws := parent.Self()
 	absPath := filepath.Join(ws.Root, filepath.Clean(args.Path))
 
-	dir, err := (&core.Host{}).Directory(ctx, absPath, core.CopyFilter{
-		Include: args.Include,
-		Exclude: args.Exclude,
-	}, false, ".")
+	dirArgs := []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(absPath)},
+	}
+	if len(args.Include) > 0 {
+		includes := make(dagql.ArrayInput[dagql.String], len(args.Include))
+		for i, p := range args.Include {
+			includes[i] = dagql.String(p)
+		}
+		dirArgs = append(dirArgs, dagql.NamedInput{Name: "include", Value: includes})
+	}
+	if len(args.Exclude) > 0 {
+		excludes := make(dagql.ArrayInput[dagql.String], len(args.Exclude))
+		for i, p := range args.Exclude {
+			excludes[i] = dagql.String(p)
+		}
+		dirArgs = append(dirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
+	}
+
+	err = srv.Select(ctx, srv.Root(), &inst,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{Field: "directory", Args: dirArgs},
+	)
 	if err != nil {
 		return inst, fmt.Errorf("workspace directory %q: %w", args.Path, err)
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	return inst, nil
 }
 
 type workspaceFileArgs struct {
@@ -150,36 +188,61 @@ func (workspaceFileArgs) CacheType() dagql.CacheControlType {
 }
 
 func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFileArgs) (inst dagql.Result[*core.File], _ error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return inst, err
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	// Delegate to host directory + file extraction, same as Host.file
-	fileDir, fileName := filepath.Split(filepath.Join(parent.Self().Root, filepath.Clean(args.Path)))
+	absPath := filepath.Join(ws.Root, filepath.Clean(args.Path))
+	fileDir, fileName := filepath.Split(absPath)
 
-	dir, err := (&core.Host{}).Directory(ctx, fileDir, core.CopyFilter{
-		Include: []string{fileName},
-	}, false, ".")
-	if err != nil {
+	if err := srv.Select(ctx, srv.Root(), &inst,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(fileDir)},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString(fileName)}},
+			},
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(fileName)},
+			},
+		},
+	); err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
 	}
 
-	dirResult, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-	if err != nil {
-		return inst, err
-	}
-
-	if err := srv.Select(ctx, dirResult, &inst, dagql.Selector{
-		Field: "file",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(fileName)},
-		},
-	}); err != nil {
-		return inst, err
-	}
-
 	return inst, nil
+}
+
+// withWorkspaceClientContext overrides the client metadata in context to the
+// workspace's owning client ID. This ensures host filesystem operations route
+// through the correct client session, even when called from a module context.
+func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	if ws.ClientID == "" {
+		return ctx, nil
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return ctx, fmt.Errorf("get client metadata: %w", err)
+	}
+	if clientMetadata.ClientID == ws.ClientID {
+		return ctx, nil // already in the right context
+	}
+	// Clone metadata and override the client ID to the workspace owner's
+	override := *clientMetadata
+	override.ClientID = ws.ClientID
+	return engine.ContextWithClientMetadata(ctx, &override), nil
 }
 
 type installArgs struct {
