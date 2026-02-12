@@ -20,7 +20,7 @@ Use a tight test repro before adding logs.
 Recommended integration command format:
 
 ```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestSomeSubtestYouWant'
+dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>'
 ```
 
 This command rebuilds the dev engine, runs it as an ephemeral service, and then runs tests against it.
@@ -33,7 +33,7 @@ Output includes:
 Capture output to a file under `/tmp` to avoid overwhelming terminal context:
 
 ```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestSomeSubtestYouWant' > /tmp/cache-debug.log 2>&1
+dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>' > /tmp/cache-debug.log 2>&1
 rg -n "panic:|--- FAIL:|^FAIL\s" /tmp/cache-debug.log
 ```
 

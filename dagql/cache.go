@@ -175,6 +175,12 @@ func shouldReuseEquivalentHitForCall(keyID *call.ID, res *sharedResult) bool {
 	if !shouldReuseEquivalentObjectPayload(res) {
 		return false
 	}
+	// Query.http is intentionally scoped per client/session for call execution
+	// (network fetch + HTTP revalidation behavior). Do not short-circuit it via
+	// equivalent/known-digest lookup.
+	if keyID != nil && keyID.Field() == "http" {
+		return false
+	}
 	if keyID == nil || res == nil || res.constructor == nil {
 		return true
 	}
