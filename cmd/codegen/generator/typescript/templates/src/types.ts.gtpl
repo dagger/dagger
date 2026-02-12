@@ -13,11 +13,9 @@ Export a type for each type or input existing in the GraphQL schema.
 		{{- if .Description }}
 			{{- /* Split comment string into a slice of one line per element. */ -}}
 			{{- $desc := CommentToLines .Description }}
-/**
 				{{- range $desc }}
- * {{ . }}
+// {{ . }}
 				{{- end }}
- */
 		{{- end }}
 export type {{ .Name }} = string & {__{{ .Name }}: never} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 {{ "" }}
@@ -30,11 +28,9 @@ export type {{ .Name }} = string & {__{{ .Name }}: never} {{- with .Directives.S
 		{{- if .Description }}
 			{{- /* Split comment string into a slice of one line per element. */ -}}
 			{{- $desc := CommentToLines .Description }}
-/**
 				{{- range $desc }}
- * {{ . }}
+// {{ . }}
 				{{- end }}
- */
 		{{- end }}
 export enum {{ $enumName }} { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- range $fields := .EnumValues | SortEnumFields | GroupEnumByValue }}
@@ -60,21 +56,18 @@ export enum {{ $enumName }} { {{- with .Directives.SourceMap }} // {{ .Module }}
 				  {{- /* Split comment string into a slice of one line per element. */ -}}
 				  {{- $desc := CommentToLines .Description }}
 
-  /**
 				  {{- range $desc }}
-   * {{ . }}
+  // {{ . }}
 				  {{- end }}
 				  {{- if and $desc .IsDeprecated }}
-   *
+  //
 				  {{- end }}
 				  {{- if .IsDeprecated }}
 					  {{- $deprecationLines := FormatDeprecation .DeprecationReason }}
 					  {{- range $deprecationLines }}
-   * {{ . }}
+  // {{ . }}
 					  {{- end }}
 				  {{- end }}
-   */
-
 			  {{- end }}
   {{ $fieldName }} = {{ $fieldValue }}, {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 			{{- end }}
@@ -152,22 +145,20 @@ export type {{ $.Name | FormatName }} = {
 			{{- if ne $i 0 }}
 {{""}}
 			{{- end }}
-  /**
 			{{- if $field.Description }}
 				{{- range CommentToLines $field.Description }}
-   * {{ . }}
+  // {{ . }}
 				{{- end }}
 			{{- end }}
 			{{- if and $field.Description $field.IsDeprecated }}
-   *
+  //
 			{{- end }}
 			{{- if $field.IsDeprecated }}
 				{{- $deprecationLines := FormatDeprecation $field.DeprecationReason }}
 				{{- range $deprecationLines }}
-   * {{ . }}
+  // {{ . }}
 				{{- end }}
 			{{- end }}
-   */
 		{{- end }}
 
 		{{- /* Write type, if it's an id it's an output, otherwise it's an input. */ -}}

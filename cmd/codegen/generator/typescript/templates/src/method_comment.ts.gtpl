@@ -7,10 +7,9 @@
 	{{- /* Write method description. */ -}}
 	{{- if or .Description $argsDesc .IsDeprecated .Directives.IsExperimental }}
 {{""}}
-  /**
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
 		{{- range CommentToLines .Description }}
-   * {{ . }}
+  // {{ . }}
 		{{- end }}
 	{{- end }}
 
@@ -23,9 +22,9 @@
 			{{- range $i, $line := $desc }}
 				{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
 				{{- if (eq $i 0) }}
-   * @param {{ $arg.Name }} {{ $line }}
+  // @param {{ $arg.Name }} {{ $line }}
 				{{- else }}
-   * {{ $line }}
+  // {{ $line }}
 				{{- end }}
 			{{- end }}
 		{{- end }}
@@ -41,9 +40,9 @@
 				{{- range $i, $line := $desc }}
 					{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
 					{{- if (eq $i 0) }}
-   * @param opts.{{ $arg.Name }} {{ $line }}
+  // @param opts.{{ $arg.Name }} {{ $line }}
 					{{- else }}
-   * {{ $line }}
+  // {{ $line }}
 					{{- end }}
 				{{- end }}
 			{{- end }}
@@ -54,19 +53,15 @@
     {{- if .IsDeprecated }}
         {{- $deprecationLines := FormatDeprecation .DeprecationReason }}
         {{- range $deprecationLines }}
-   * {{ . }}
+  // {{ . }}
 		{{- end }}
 	{{- end }}
     {{- /* Write experimental message. */ -}}
     {{- if .Directives.IsExperimental }}
         {{- $experimentalLines := FormatExperimental .Directives.ExperimentalReason }}
         {{- range $experimentalLines }}
-   * {{ . }}
+  // {{ . }}
 		{{- end }}
-	{{- end }}
-
-	{{- if or .Description $argsDesc .IsDeprecated .Directives.IsExperimental }}
-   */
 	{{- end }}
 {{ "" -}}
 {{- end }}

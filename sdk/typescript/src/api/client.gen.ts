@@ -31,45 +31,27 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
-/**
- * The `AddressID` scalar type represents an identifier for an object of type Address.
- */
+// The `AddressID` scalar type represents an identifier for an object of type Address.
 export type AddressID = string & { __AddressID: never }
 
-/**
- * The `BindingID` scalar type represents an identifier for an object of type Binding.
- */
+// The `BindingID` scalar type represents an identifier for an object of type Binding.
 export type BindingID = string & { __BindingID: never }
 
 export type BuildArg = {
-  /**
-   * The build argument name.
-   */
+  // The build argument name.
   name: string
 
-  /**
-   * The build argument value.
-   */
+  // The build argument value.
   value: string
 }
 
-/**
- * Sharing mode of the cache volume.
- */
+// Sharing mode of the cache volume.
 export enum CacheSharingMode {
-  /**
-   * Shares the cache volume amongst many build pipelines, but will serialize the writes
-   */
+  // Shares the cache volume amongst many build pipelines, but will serialize the writes
   Locked = "LOCKED",
-
-  /**
-   * Keeps a cache volume for a single build pipeline
-   */
+  // Keeps a cache volume for a single build pipeline
   Private = "PRIVATE",
-
-  /**
-   * Shares the cache volume amongst many build pipelines
-   */
+  // Shares the cache volume amongst many build pipelines
   Shared = "SHARED",
 }
 
@@ -106,57 +88,33 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
       return name as CacheSharingMode
   }
 }
-/**
- * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
- */
+// The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
 export type ChangesetWithChangesetOpts = {
-  /**
-   * What to do on a merge conflict
-   */
+  // What to do on a merge conflict
   onConflict?: ChangesetMergeConflict
 }
 
 export type ChangesetWithChangesetsOpts = {
-  /**
-   * What to do on a merge conflict
-   */
+  // What to do on a merge conflict
   onConflict?: ChangesetsMergeConflict
 }
 
-/**
- * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
- */
+// The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
 export type ChangesetID = string & { __ChangesetID: never }
 
-/**
- * Strategy to use when merging changesets with conflicting changes.
- */
+// Strategy to use when merging changesets with conflicting changes.
 export enum ChangesetMergeConflict {
-  /**
-   * Attempt the merge and fail if git merge fails due to conflicts
-   */
+  // Attempt the merge and fail if git merge fails due to conflicts
   Fail = "FAIL",
-
-  /**
-   * Fail before attempting merge if file-level conflicts are detected
-   */
+  // Fail before attempting merge if file-level conflicts are detected
   FailEarly = "FAIL_EARLY",
-
-  /**
-   * Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.
-   */
+  // Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.
   LeaveConflictMarkers = "LEAVE_CONFLICT_MARKERS",
-
-  /**
-   * The conflict is resolved by applying the version of the calling changeset
-   */
+  // The conflict is resolved by applying the version of the calling changeset
   PreferOurs = "PREFER_OURS",
-
-  /**
-   * The conflict is resolved by applying the version of the other changeset
-   */
+  // The conflict is resolved by applying the version of the other changeset
   PreferTheirs = "PREFER_THEIRS",
 }
 
@@ -205,18 +163,11 @@ function ChangesetMergeConflictNameToValue(
       return name as ChangesetMergeConflict
   }
 }
-/**
- * Strategy to use when merging multiple changesets with git octopus merge.
- */
+// Strategy to use when merging multiple changesets with git octopus merge.
 export enum ChangesetsMergeConflict {
-  /**
-   * Attempt the octopus merge and fail if git merge fails due to conflicts
-   */
+  // Attempt the octopus merge and fail if git merge fails due to conflicts
   Fail = "FAIL",
-
-  /**
-   * Fail before attempting merge if file-level conflicts are detected between any changesets
-   */
+  // Fail before attempting merge if file-level conflicts are detected between any changesets
   FailEarly = "FAIL_EARLY",
 }
 
@@ -253,918 +204,634 @@ function ChangesetsMergeConflictNameToValue(
       return name as ChangesetsMergeConflict
   }
 }
-/**
- * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
- */
+// The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
 export type CheckGroupID = string & { __CheckGroupID: never }
 
-/**
- * The `CheckID` scalar type represents an identifier for an object of type Check.
- */
+// The `CheckID` scalar type represents an identifier for an object of type Check.
 export type CheckID = string & { __CheckID: never }
 
-/**
- * The `CloudID` scalar type represents an identifier for an object of type Cloud.
- */
+// The `CloudID` scalar type represents an identifier for an object of type Cloud.
 export type CloudID = string & { __CloudID: never }
 
 export type ContainerAsServiceOpts = {
-  /**
-   * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
-   */
+  // Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+  //
+  // If empty, the container's default command is used.
   args?: string[]
 
-  /**
-   * If the container has an entrypoint, prepend it to the args.
-   */
+  // If the container has an entrypoint, prepend it to the args.
   useEntrypoint?: boolean
 
-  /**
-   * Provides Dagger access to the executed command.
-   */
+  // Provides Dagger access to the executed command.
   experimentalPrivilegedNesting?: boolean
 
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
+  // Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
   insecureRootCapabilities?: boolean
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 
-  /**
-   * If set, skip the automatic init process injected into containers by default.
-   *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
+  // If set, skip the automatic init process injected into containers by default.
+  //
+  // This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
   noInit?: boolean
 }
 
 export type ContainerAsTarballOpts = {
-  /**
-   * Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform images.
-   */
+  // Identifiers for other platform specific containers.
+  //
+  // Used for multi-platform images.
   platformVariants?: Container[]
 
-  /**
-   * Force each layer of the image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   */
+  // Force each layer of the image to use the specified compression algorithm.
+  //
+  // If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
   forcedCompression?: ImageLayerCompression
 
-  /**
-   * Use the specified media types for the image's layers.
-   *
-   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
-   */
+  // Use the specified media types for the image's layers.
+  //
+  // Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
   mediaTypes?: ImageMediaTypes
 }
 
 export type ContainerDirectoryOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerExistsOpts = {
-  /**
-   * If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
-   */
+  // If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
   expectedType?: ExistsType
 
-  /**
-   * If specified, do not follow symlinks.
-   */
+  // If specified, do not follow symlinks.
   doNotFollowSymlinks?: boolean
 }
 
 export type ContainerExportOpts = {
-  /**
-   * Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform image.
-   */
+  // Identifiers for other platform specific containers.
+  //
+  // Used for multi-platform image.
   platformVariants?: Container[]
 
-  /**
-   * Force each layer of the exported image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   */
+  // Force each layer of the exported image to use the specified compression algorithm.
+  //
+  // If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
   forcedCompression?: ImageLayerCompression
 
-  /**
-   * Use the specified media types for the exported image's layers.
-   *
-   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
-   */
+  // Use the specified media types for the exported image's layers.
+  //
+  // Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
   mediaTypes?: ImageMediaTypes
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerExportImageOpts = {
-  /**
-   * Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform image.
-   */
+  // Identifiers for other platform specific containers.
+  //
+  // Used for multi-platform image.
   platformVariants?: Container[]
 
-  /**
-   * Force each layer of the exported image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   */
+  // Force each layer of the exported image to use the specified compression algorithm.
+  //
+  // If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
   forcedCompression?: ImageLayerCompression
 
-  /**
-   * Use the specified media types for the exported image's layers.
-   *
-   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
-   */
+  // Use the specified media types for the exported image's layers.
+  //
+  // Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
   mediaTypes?: ImageMediaTypes
 }
 
 export type ContainerFileOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   expand?: boolean
 }
 
 export type ContainerImportOpts = {
-  /**
-   * Identifies the tag to import from the archive, if the archive bundles multiple tags.
-   */
+  // Identifies the tag to import from the archive, if the archive bundles multiple tags.
   tag?: string
 }
 
 export type ContainerPublishOpts = {
-  /**
-   * Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform image.
-   */
+  // Identifiers for other platform specific containers.
+  //
+  // Used for multi-platform image.
   platformVariants?: Container[]
 
-  /**
-   * Force each layer of the published image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   */
+  // Force each layer of the published image to use the specified compression algorithm.
+  //
+  // If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
   forcedCompression?: ImageLayerCompression
 
-  /**
-   * Use the specified media types for the published image's layers.
-   *
-   * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
-   */
+  // Use the specified media types for the published image's layers.
+  //
+  // Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
   mediaTypes?: ImageMediaTypes
 }
 
 export type ContainerStatOpts = {
-  /**
-   * If specified, do not follow symlinks.
-   */
+  // If specified, do not follow symlinks.
   doNotFollowSymlinks?: boolean
 }
 
 export type ContainerTerminalOpts = {
-  /**
-   * If set, override the container's default terminal command and invoke these command arguments instead.
-   */
+  // If set, override the container's default terminal command and invoke these command arguments instead.
   cmd?: string[]
 
-  /**
-   * Provides Dagger access to the executed command.
-   */
+  // Provides Dagger access to the executed command.
   experimentalPrivilegedNesting?: boolean
 
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
+  // Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
   insecureRootCapabilities?: boolean
 }
 
 export type ContainerUpOpts = {
-  /**
-   * Bind each tunnel port to a random port on the host.
-   */
+  // Bind each tunnel port to a random port on the host.
   random?: boolean
 
-  /**
-   * List of frontend/backend port mappings to forward.
-   *
-   * Frontend is the port accepting traffic on the host, backend is the service port.
-   */
+  // List of frontend/backend port mappings to forward.
+  //
+  // Frontend is the port accepting traffic on the host, backend is the service port.
   ports?: PortForward[]
 
-  /**
-   * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
-   */
+  // Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+  //
+  // If empty, the container's default command is used.
   args?: string[]
 
-  /**
-   * If the container has an entrypoint, prepend it to the args.
-   */
+  // If the container has an entrypoint, prepend it to the args.
   useEntrypoint?: boolean
 
-  /**
-   * Provides Dagger access to the executed command.
-   */
+  // Provides Dagger access to the executed command.
   experimentalPrivilegedNesting?: boolean
 
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
+  // Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
   insecureRootCapabilities?: boolean
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 
-  /**
-   * If set, skip the automatic init process injected into containers by default.
-   *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
+  // If set, skip the automatic init process injected into containers by default.
+  //
+  // This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
   noInit?: boolean
 }
 
 export type ContainerWithDefaultTerminalCmdOpts = {
-  /**
-   * Provides Dagger access to the executed command.
-   */
+  // Provides Dagger access to the executed command.
   experimentalPrivilegedNesting?: boolean
 
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
+  // Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
   insecureRootCapabilities?: boolean
 }
 
 export type ContainerWithDirectoryOpts = {
-  /**
-   * Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
-   */
+  // Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
   exclude?: string[]
 
-  /**
-   * Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
-   */
+  // Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
   include?: string[]
 
-  /**
-   * Apply .gitignore rules when writing the directory.
-   */
+  // Apply .gitignore rules when writing the directory.
   gitignore?: boolean
 
-  /**
-   * A user:group to set for the directory and its contents.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the directory and its contents.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithEntrypointOpts = {
-  /**
-   * Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
-   */
+  // Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
   keepDefaultArgs?: boolean
 }
 
 export type ContainerWithEnvVariableOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
-   */
+  // Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
   expand?: boolean
 }
 
 export type ContainerWithExecOpts = {
-  /**
-   * Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
-   */
+  // Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
   useEntrypoint?: boolean
 
-  /**
-   * Content to write to the command's standard input. Example: "Hello world")
-   */
+  // Content to write to the command's standard input. Example: "Hello world")
   stdin?: string
 
-  /**
-   * Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
-   */
+  // Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
   redirectStdin?: string
 
-  /**
-   * Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-   */
+  // Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
   redirectStdout?: string
 
-  /**
-   * Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
-   */
+  // Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
   redirectStderr?: string
 
-  /**
-   * Exit codes this command is allowed to exit with without error
-   */
+  // Exit codes this command is allowed to exit with without error
   expect?: ReturnType
 
-  /**
-   * Provides Dagger access to the executed command.
-   */
+  // Provides Dagger access to the executed command.
   experimentalPrivilegedNesting?: boolean
 
-  /**
-   * Execute the command with all root capabilities. Like --privileged in Docker
-   *
-   * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
-   */
+  // Execute the command with all root capabilities. Like --privileged in Docker
+  //
+  // DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
   insecureRootCapabilities?: boolean
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 
-  /**
-   * Skip the automatic init process injected into containers by default.
-   *
-   * Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
-   */
+  // Skip the automatic init process injected into containers by default.
+  //
+  // Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
   noInit?: boolean
 }
 
 export type ContainerWithExposedPortOpts = {
-  /**
-   * Network protocol. Example: "tcp"
-   */
+  // Network protocol. Example: "tcp"
   protocol?: NetworkProtocol
 
-  /**
-   * Port description. Example: "payment API endpoint"
-   */
+  // Port description. Example: "payment API endpoint"
   description?: string
 
-  /**
-   * Skip the health check when run as a service.
-   */
+  // Skip the health check when run as a service.
   experimentalSkipHealthcheck?: boolean
 }
 
 export type ContainerWithFileOpts = {
-  /**
-   * Permissions of the new file. Example: 0600
-   */
+  // Permissions of the new file. Example: 0600
   permissions?: number
 
-  /**
-   * A user:group to set for the file.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the file.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   expand?: boolean
 }
 
 export type ContainerWithFilesOpts = {
-  /**
-   * Permission given to the copied files (e.g., 0600).
-   */
+  // Permission given to the copied files (e.g., 0600).
   permissions?: number
 
-  /**
-   * A user:group to set for the files.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the files.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   expand?: boolean
 }
 
 export type ContainerWithMountedCacheOpts = {
-  /**
-   * Identifier of the directory to use as the cache volume's root.
-   */
+  // Identifier of the directory to use as the cache volume's root.
   source?: Directory
 
-  /**
-   * Sharing mode of the cache volume.
-   */
+  // Sharing mode of the cache volume.
   sharing?: CacheSharingMode
 
-  /**
-   * A user:group to set for the mounted cache directory.
-   *
-   * Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the mounted cache directory.
+  //
+  // Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithMountedDirectoryOpts = {
-  /**
-   * A user:group to set for the mounted directory and its contents.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the mounted directory and its contents.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithMountedFileOpts = {
-  /**
-   * A user or user:group to set for the mounted file.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user or user:group to set for the mounted file.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   expand?: boolean
 }
 
 export type ContainerWithMountedSecretOpts = {
-  /**
-   * A user:group to set for the mounted secret.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the mounted secret.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Permission given to the mounted secret (e.g., 0600).
-   *
-   * This option requires an owner to be set to be active.
-   */
+  // Permission given to the mounted secret (e.g., 0600).
+  //
+  // This option requires an owner to be set to be active.
   mode?: number
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithMountedTempOpts = {
-  /**
-   * Size of the temporary directory in bytes.
-   */
+  // Size of the temporary directory in bytes.
   size?: number
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithNewFileOpts = {
-  /**
-   * Permissions of the new file. Example: 0600
-   */
+  // Permissions of the new file. Example: 0600
   permissions?: number
 
-  /**
-   * A user:group to set for the file.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the file.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   expand?: boolean
 }
 
 export type ContainerWithSymlinkOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   expand?: boolean
 }
 
 export type ContainerWithUnixSocketOpts = {
-  /**
-   * A user:group to set for the mounted socket.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the mounted socket.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithWorkdirOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithoutDirectoryOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithoutEntrypointOpts = {
-  /**
-   * Don't remove the default arguments when unsetting the entrypoint.
-   */
+  // Don't remove the default arguments when unsetting the entrypoint.
   keepDefaultArgs?: boolean
 }
 
 export type ContainerWithoutExposedPortOpts = {
-  /**
-   * Port protocol to unexpose
-   */
+  // Port protocol to unexpose
   protocol?: NetworkProtocol
 }
 
 export type ContainerWithoutFileOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   expand?: boolean
 }
 
 export type ContainerWithoutFilesOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   expand?: boolean
 }
 
 export type ContainerWithoutMountOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
 export type ContainerWithoutUnixSocketOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   expand?: boolean
 }
 
-/**
- * The `ContainerID` scalar type represents an identifier for an object of type Container.
- */
+// The `ContainerID` scalar type represents an identifier for an object of type Container.
 export type ContainerID = string & { __ContainerID: never }
 
 export type CurrentModuleGeneratorsOpts = {
-  /**
-   * Only include generators matching the specified patterns
-   */
+  // Only include generators matching the specified patterns
   include?: string[]
 }
 
 export type CurrentModuleWorkdirOpts = {
-  /**
-   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   */
+  // Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
   exclude?: string[]
 
-  /**
-   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   */
+  // Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
   include?: string[]
 
-  /**
-   * Apply .gitignore filter rules inside the directory
-   */
+  // Apply .gitignore filter rules inside the directory
   gitignore?: boolean
 }
 
-/**
- * The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
- */
+// The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
 export type CurrentModuleID = string & { __CurrentModuleID: never }
 
 export type DirectoryAsModuleOpts = {
-  /**
-   * An optional subpath of the directory which contains the module's configuration file.
-   *
-   * If not set, the module source code is loaded from the root of the directory.
-   */
+  // An optional subpath of the directory which contains the module's configuration file.
+  //
+  // If not set, the module source code is loaded from the root of the directory.
   sourceRootPath?: string
 }
 
 export type DirectoryAsModuleSourceOpts = {
-  /**
-   * An optional subpath of the directory which contains the module's configuration file.
-   *
-   * If not set, the module source code is loaded from the root of the directory.
-   */
+  // An optional subpath of the directory which contains the module's configuration file.
+  //
+  // If not set, the module source code is loaded from the root of the directory.
   sourceRootPath?: string
 }
 
 export type DirectoryDockerBuildOpts = {
-  /**
-   * Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
-   */
+  // Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
   dockerfile?: string
 
-  /**
-   * The platform to build.
-   */
+  // The platform to build.
   platform?: Platform
 
-  /**
-   * Build arguments to use in the build.
-   */
+  // Build arguments to use in the build.
   buildArgs?: BuildArg[]
 
-  /**
-   * Target build stage to build.
-   */
+  // Target build stage to build.
   target?: string
 
-  /**
-   * Secrets to pass to the build.
-   *
-   * They will be mounted at /run/secrets/[secret-name].
-   */
+  // Secrets to pass to the build.
+  //
+  // They will be mounted at /run/secrets/[secret-name].
   secrets?: Secret[]
 
-  /**
-   * If set, skip the automatic init process injected into containers created by RUN statements.
-   *
-   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
+  // If set, skip the automatic init process injected into containers created by RUN statements.
+  //
+  // This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
   noInit?: boolean
 
-  /**
-   * A socket to use for SSH authentication during the build
-   *
-   * (e.g., for Dockerfile RUN --mount=type=ssh instructions).
-   *
-   * Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
-   */
+  // A socket to use for SSH authentication during the build
+  //
+  // (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+  //
+  // Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
   ssh?: Socket
 }
 
 export type DirectoryEntriesOpts = {
-  /**
-   * Location of the directory to look at (e.g., "/src").
-   */
+  // Location of the directory to look at (e.g., "/src").
   path?: string
 }
 
 export type DirectoryExistsOpts = {
-  /**
-   * If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
-   */
+  // If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
   expectedType?: ExistsType
 
-  /**
-   * If specified, do not follow symlinks.
-   */
+  // If specified, do not follow symlinks.
   doNotFollowSymlinks?: boolean
 }
 
 export type DirectoryExportOpts = {
-  /**
-   * If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
-   */
+  // If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
   wipe?: boolean
 }
 
 export type DirectoryFilterOpts = {
-  /**
-   * If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
-   */
+  // If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
   exclude?: string[]
 
-  /**
-   * If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
-   */
+  // If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
   include?: string[]
 
-  /**
-   * If set, apply .gitignore rules when filtering the directory.
-   */
+  // If set, apply .gitignore rules when filtering the directory.
   gitignore?: boolean
 }
 
 export type DirectorySearchOpts = {
-  /**
-   * Directory or file paths to search
-   */
+  // Directory or file paths to search
   paths?: string[]
 
-  /**
-   * Glob patterns to match (e.g., "*.md")
-   */
+  // Glob patterns to match (e.g., "*.md")
   globs?: string[]
 
-  /**
-   * The text to match.
-   */
+  // The text to match.
   pattern: string
 
-  /**
-   * Interpret the pattern as a literal string instead of a regular expression.
-   */
+  // Interpret the pattern as a literal string instead of a regular expression.
   literal?: boolean
 
-  /**
-   * Enable searching across multiple lines.
-   */
+  // Enable searching across multiple lines.
   multiline?: boolean
 
-  /**
-   * Allow the . pattern to match newlines in multiline mode.
-   */
+  // Allow the . pattern to match newlines in multiline mode.
   dotall?: boolean
 
-  /**
-   * Enable case-insensitive matching.
-   */
+  // Enable case-insensitive matching.
   insensitive?: boolean
 
-  /**
-   * Honor .gitignore, .ignore, and .rgignore files.
-   */
+  // Honor .gitignore, .ignore, and .rgignore files.
   skipIgnored?: boolean
 
-  /**
-   * Skip hidden files (files starting with .).
-   */
+  // Skip hidden files (files starting with .).
   skipHidden?: boolean
 
-  /**
-   * Only return matching files, not lines and content
-   */
+  // Only return matching files, not lines and content
   filesOnly?: boolean
 
-  /**
-   * Limit the number of results to return
-   */
+  // Limit the number of results to return
   limit?: number
 }
 
 export type DirectoryStatOpts = {
-  /**
-   * If specified, do not follow symlinks.
-   */
+  // If specified, do not follow symlinks.
   doNotFollowSymlinks?: boolean
 }
 
 export type DirectoryTerminalOpts = {
-  /**
-   * If set, override the default container used for the terminal.
-   */
+  // If set, override the default container used for the terminal.
   container?: Container
 
-  /**
-   * If set, override the container's default terminal command and invoke these command arguments instead.
-   */
+  // If set, override the container's default terminal command and invoke these command arguments instead.
   cmd?: string[]
 
-  /**
-   * Provides Dagger access to the executed command.
-   */
+  // Provides Dagger access to the executed command.
   experimentalPrivilegedNesting?: boolean
 
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
+  // Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
   insecureRootCapabilities?: boolean
 }
 
 export type DirectoryWithDirectoryOpts = {
-  /**
-   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   */
+  // Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
   exclude?: string[]
 
-  /**
-   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   */
+  // Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
   include?: string[]
 
-  /**
-   * Apply .gitignore filter rules inside the directory
-   */
+  // Apply .gitignore filter rules inside the directory
   gitignore?: boolean
 
-  /**
-   * A user:group to set for the copied directory and its contents.
-   *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the copied directory and its contents.
+  //
+  // The user and group must be an ID (1000:1000), not a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 }
 
 export type DirectoryWithFileOpts = {
-  /**
-   * Permission given to the copied file (e.g., 0600).
-   */
+  // Permission given to the copied file (e.g., 0600).
   permissions?: number
 
-  /**
-   * A user:group to set for the copied directory and its contents.
-   *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // A user:group to set for the copied directory and its contents.
+  //
+  // The user and group must be an ID (1000:1000), not a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   owner?: string
 }
 
 export type DirectoryWithFilesOpts = {
-  /**
-   * Permission given to the copied files (e.g., 0600).
-   */
+  // Permission given to the copied files (e.g., 0600).
   permissions?: number
 }
 
 export type DirectoryWithNewDirectoryOpts = {
-  /**
-   * Permission granted to the created directory (e.g., 0777).
-   */
+  // Permission granted to the created directory (e.g., 0777).
   permissions?: number
 }
 
 export type DirectoryWithNewFileOpts = {
-  /**
-   * Permissions of the new file. Example: 0600
-   */
+  // Permissions of the new file. Example: 0600
   permissions?: number
 }
 
-/**
- * The `DirectoryID` scalar type represents an identifier for an object of type Directory.
- */
+// The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 export type DirectoryID = string & { __DirectoryID: never }
 
 export type EngineCacheEntrySetOpts = {
@@ -1172,125 +839,77 @@ export type EngineCacheEntrySetOpts = {
 }
 
 export type EngineCachePruneOpts = {
-  /**
-   * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
-   */
+  // Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
   useDefaultPolicy?: boolean
 
-  /**
-   * Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
-   */
+  // Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
   maxUsedSpace?: string
 
-  /**
-   * Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
-   */
+  // Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
   reservedSpace?: string
 
-  /**
-   * Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
-   */
+  // Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
   minFreeSpace?: string
 
-  /**
-   * Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
-   */
+  // Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
   targetSpace?: string
 }
 
-/**
- * The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
- */
+// The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
 export type EngineCacheEntryID = string & { __EngineCacheEntryID: never }
 
-/**
- * The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
- */
+// The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
 export type EngineCacheEntrySetID = string & { __EngineCacheEntrySetID: never }
 
-/**
- * The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
- */
+// The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
 export type EngineCacheID = string & { __EngineCacheID: never }
 
-/**
- * The `EngineID` scalar type represents an identifier for an object of type Engine.
- */
+// The `EngineID` scalar type represents an identifier for an object of type Engine.
 export type EngineID = string & { __EngineID: never }
 
-/**
- * The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
- */
+// The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
 export type EnumTypeDefID = string & { __EnumTypeDefID: never }
 
-/**
- * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
- */
+// The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
 export type EnvChecksOpts = {
-  /**
-   * Only include checks matching the specified patterns
-   */
+  // Only include checks matching the specified patterns
   include?: string[]
 }
 
 export type EnvFileGetOpts = {
-  /**
-   * Return the value exactly as written to the file. No quote removal or variable expansion
-   */
+  // Return the value exactly as written to the file. No quote removal or variable expansion
   raw?: boolean
 }
 
 export type EnvFileVariablesOpts = {
-  /**
-   * Return values exactly as written to the file. No quote removal or variable expansion
-   */
+  // Return values exactly as written to the file. No quote removal or variable expansion
   raw?: boolean
 }
 
-/**
- * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
- */
+// The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
 export type EnvFileID = string & { __EnvFileID: never }
 
-/**
- * The `EnvID` scalar type represents an identifier for an object of type Env.
- */
+// The `EnvID` scalar type represents an identifier for an object of type Env.
 export type EnvID = string & { __EnvID: never }
 
-/**
- * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
- */
+// The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 export type EnvVariableID = string & { __EnvVariableID: never }
 
-/**
- * The `ErrorID` scalar type represents an identifier for an object of type Error.
- */
+// The `ErrorID` scalar type represents an identifier for an object of type Error.
 export type ErrorID = string & { __ErrorID: never }
 
-/**
- * The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
- */
+// The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
 export type ErrorValueID = string & { __ErrorValueID: never }
 
-/**
- * File type.
- */
+// File type.
 export enum ExistsType {
-  /**
-   * Tests path is a directory
-   */
+  // Tests path is a directory
   DirectoryType = "DIRECTORY_TYPE",
-
-  /**
-   * Tests path is a regular file
-   */
+  // Tests path is a regular file
   RegularType = "REGULAR_TYPE",
-
-  /**
-   * Tests path is a symlink
-   */
+  // Tests path is a symlink
   SymlinkType = "SYMLINK_TYPE",
 }
 
@@ -1327,144 +946,88 @@ function ExistsTypeNameToValue(name: string): ExistsType {
       return name as ExistsType
   }
 }
-/**
- * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
- */
+// The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
 
 export type FileAsEnvFileOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" with the value of other vars
-   *
-   * @deprecated Variable expansion is now enabled by default
-   */
+  // Replace "${VAR}" or "$VAR" with the value of other vars
+  //
+  // @deprecated Variable expansion is now enabled by default
   expand?: boolean
 }
 
 export type FileContentsOpts = {
-  /**
-   * Start reading after this line
-   */
+  // Start reading after this line
   offsetLines?: number
 
-  /**
-   * Maximum number of lines to read
-   */
+  // Maximum number of lines to read
   limitLines?: number
 }
 
 export type FileDigestOpts = {
-  /**
-   * If true, exclude metadata from the digest.
-   */
+  // If true, exclude metadata from the digest.
   excludeMetadata?: boolean
 }
 
 export type FileExportOpts = {
-  /**
-   * If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
-   */
+  // If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
   allowParentDirPath?: boolean
 }
 
 export type FileSearchOpts = {
-  /**
-   * Interpret the pattern as a literal string instead of a regular expression.
-   */
+  // Interpret the pattern as a literal string instead of a regular expression.
   literal?: boolean
 
-  /**
-   * Enable searching across multiple lines.
-   */
+  // Enable searching across multiple lines.
   multiline?: boolean
 
-  /**
-   * Allow the . pattern to match newlines in multiline mode.
-   */
+  // Allow the . pattern to match newlines in multiline mode.
   dotall?: boolean
 
-  /**
-   * Enable case-insensitive matching.
-   */
+  // Enable case-insensitive matching.
   insensitive?: boolean
 
-  /**
-   * Honor .gitignore, .ignore, and .rgignore files.
-   */
+  // Honor .gitignore, .ignore, and .rgignore files.
   skipIgnored?: boolean
 
-  /**
-   * Skip hidden files (files starting with .).
-   */
+  // Skip hidden files (files starting with .).
   skipHidden?: boolean
 
-  /**
-   * Only return matching files, not lines and content
-   */
+  // Only return matching files, not lines and content
   filesOnly?: boolean
 
-  /**
-   * Limit the number of results to return
-   */
+  // Limit the number of results to return
   limit?: number
   paths?: string[]
   globs?: string[]
 }
 
 export type FileWithReplacedOpts = {
-  /**
-   * Replace all occurrences of the pattern.
-   */
+  // Replace all occurrences of the pattern.
   all?: boolean
 
-  /**
-   * Replace the first match starting from the specified line.
-   */
+  // Replace the first match starting from the specified line.
   firstFrom?: number
 }
 
-/**
- * The `FileID` scalar type represents an identifier for an object of type File.
- */
+// The `FileID` scalar type represents an identifier for an object of type File.
 export type FileID = string & { __FileID: never }
 
-/**
- * File type.
- */
+// File type.
 export enum FileType {
-  /**
-   * directory file type
-   */
+  // directory file type
   Directory = "DIRECTORY",
-
-  /**
-   * directory file type
-   */
+  // directory file type
   DirectoryType = FileType.Directory,
-
-  /**
-   * regular file type
-   */
+  // regular file type
   Regular = "REGULAR",
-
-  /**
-   * regular file type
-   */
+  // regular file type
   RegularType = FileType.Regular,
-
-  /**
-   * symlink file type
-   */
+  // symlink file type
   Symlink = "SYMLINK",
-
-  /**
-   * symlink file type
-   */
+  // symlink file type
   SymlinkType = FileType.Symlink,
-
-  /**
-   * unknown file type
-   */
+  // unknown file type
   Unknown = "UNKNOWN",
 }
 
@@ -1506,60 +1069,40 @@ function FileTypeNameToValue(name: string): FileType {
   }
 }
 export type FunctionWithArgOpts = {
-  /**
-   * A doc string for the argument, if any
-   */
+  // A doc string for the argument, if any
   description?: string
 
-  /**
-   * A default value to use for this argument if not explicitly set by the caller, if any
-   */
+  // A default value to use for this argument if not explicitly set by the caller, if any
   defaultValue?: JSON
 
-  /**
-   * If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
-   */
+  // If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
   defaultPath?: string
 
-  /**
-   * Patterns to ignore when loading the contextual argument value.
-   */
+  // Patterns to ignore when loading the contextual argument value.
   ignore?: string[]
 
-  /**
-   * The source map for the argument definition.
-   */
+  // The source map for the argument definition.
   sourceMap?: SourceMap
 
-  /**
-   * If deprecated, the reason or migration path.
-   */
+  // If deprecated, the reason or migration path.
   deprecated?: string
   defaultAddress?: string
 }
 
 export type FunctionWithCachePolicyOpts = {
-  /**
-   * The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
-   */
+  // The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
   timeToLive?: string
 }
 
 export type FunctionWithDeprecatedOpts = {
-  /**
-   * Reason or migration path describing the deprecation.
-   */
+  // Reason or migration path describing the deprecation.
   reason?: string
 }
 
-/**
- * The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
- */
+// The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
 export type FunctionArgID = string & { __FunctionArgID: never }
 
-/**
- * The behavior configured for function result caching.
- */
+// The behavior configured for function result caching.
 export enum FunctionCachePolicy {
   Default = "Default",
   Never = "Never",
@@ -1599,107 +1142,71 @@ function FunctionCachePolicyNameToValue(name: string): FunctionCachePolicy {
       return name as FunctionCachePolicy
   }
 }
-/**
- * The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
- */
+// The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
 export type FunctionCallArgValueID = string & {
   __FunctionCallArgValueID: never
 }
 
-/**
- * The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
- */
+// The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
 export type FunctionCallID = string & { __FunctionCallID: never }
 
-/**
- * The `FunctionID` scalar type represents an identifier for an object of type Function.
- */
+// The `FunctionID` scalar type represents an identifier for an object of type Function.
 export type FunctionID = string & { __FunctionID: never }
 
-/**
- * The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
- */
+// The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
 export type GeneratorGroupChangesOpts = {
-  /**
-   * Strategy to apply on conflicts between generators
-   */
+  // Strategy to apply on conflicts between generators
   onConflict?: ChangesetsMergeConflict
 }
 
-/**
- * The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
- */
+// The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
 export type GeneratorGroupID = string & { __GeneratorGroupID: never }
 
-/**
- * The `GeneratorID` scalar type represents an identifier for an object of type Generator.
- */
+// The `GeneratorID` scalar type represents an identifier for an object of type Generator.
 export type GeneratorID = string & { __GeneratorID: never }
 
 export type GitRefTreeOpts = {
-  /**
-   * Set to true to discard .git directory.
-   */
+  // Set to true to discard .git directory.
   discardGitDir?: boolean
 
-  /**
-   * The depth of the tree to fetch.
-   */
+  // The depth of the tree to fetch.
   depth?: number
 }
 
-/**
- * The `GitRefID` scalar type represents an identifier for an object of type GitRef.
- */
+// The `GitRefID` scalar type represents an identifier for an object of type GitRef.
 export type GitRefID = string & { __GitRefID: never }
 
 export type GitRepositoryBranchesOpts = {
-  /**
-   * Glob patterns (e.g., "refs/tags/v*").
-   */
+  // Glob patterns (e.g., "refs/tags/v*").
   patterns?: string[]
 }
 
 export type GitRepositoryTagsOpts = {
-  /**
-   * Glob patterns (e.g., "refs/tags/v*").
-   */
+  // Glob patterns (e.g., "refs/tags/v*").
   patterns?: string[]
 }
 
-/**
- * The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
- */
+// The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
 export type GitRepositoryID = string & { __GitRepositoryID: never }
 
 export type HostDirectoryOpts = {
-  /**
-   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   */
+  // Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
   exclude?: string[]
 
-  /**
-   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   */
+  // Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
   include?: string[]
 
-  /**
-   * If true, the directory will always be reloaded from the host.
-   */
+  // If true, the directory will always be reloaded from the host.
   noCache?: boolean
 
-  /**
-   * Apply .gitignore filter rules inside the directory
-   */
+  // Apply .gitignore filter rules inside the directory
   gitignore?: boolean
 }
 
 export type HostFileOpts = {
-  /**
-   * If true, the file will always be reloaded from the host.
-   */
+  // If true, the file will always be reloaded from the host.
   noCache?: boolean
 }
 
@@ -1708,40 +1215,30 @@ export type HostFindUpOpts = {
 }
 
 export type HostServiceOpts = {
-  /**
-   * Upstream host to forward traffic to.
-   */
+  // Upstream host to forward traffic to.
   host?: string
 }
 
 export type HostTunnelOpts = {
-  /**
-   * Map each service port to the same port on the host, as if the service were running natively.
-   *
-   * Note: enabling may result in port conflicts.
-   */
+  // Map each service port to the same port on the host, as if the service were running natively.
+  //
+  // Note: enabling may result in port conflicts.
   native?: boolean
 
-  /**
-   * Configure explicit port forwarding rules for the tunnel.
-   *
-   * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-   *
-   * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
-   *
-   * If ports are given and native is true, the ports are additive.
-   */
+  // Configure explicit port forwarding rules for the tunnel.
+  //
+  // If a port's frontend is unspecified or 0, a random port will be chosen by the host.
+  //
+  // If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
+  //
+  // If ports are given and native is true, the ports are additive.
   ports?: PortForward[]
 }
 
-/**
- * The `HostID` scalar type represents an identifier for an object of type Host.
- */
+// The `HostID` scalar type represents an identifier for an object of type Host.
 export type HostID = string & { __HostID: never }
 
-/**
- * Compression algorithm to use for image layers.
- */
+// Compression algorithm to use for image layers.
 export enum ImageLayerCompression {
   EstarGz = "EStarGZ",
   Estargz = ImageLayerCompression.EstarGz,
@@ -1789,9 +1286,7 @@ function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
       return name as ImageLayerCompression
   }
 }
-/**
- * Mediatypes to use in published or exported image metadata.
- */
+// Mediatypes to use in published or exported image metadata.
 export enum ImageMediaTypes {
   Docker = "DockerMediaTypes",
   DockerMediaTypes = ImageMediaTypes.Docker,
@@ -1828,96 +1323,62 @@ function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
       return name as ImageMediaTypes
   }
 }
-/**
- * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
- */
+// The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
 export type InputTypeDefID = string & { __InputTypeDefID: never }
 
-/**
- * The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
- */
+// The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
 export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
 
-/**
- * An arbitrary JSON-encoded value.
- */
+// An arbitrary JSON-encoded value.
 export type JSON = string & { __JSON: never }
 
 export type JSONValueContentsOpts = {
-  /**
-   * Pretty-print
-   */
+  // Pretty-print
   pretty?: boolean
 
-  /**
-   * Optional line prefix
-   */
+  // Optional line prefix
   indent?: string
 }
 
-/**
- * The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
- */
+// The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
 export type JSONValueID = string & { __JSONValueID: never }
 
-/**
- * The `LLMID` scalar type represents an identifier for an object of type LLM.
- */
+// The `LLMID` scalar type represents an identifier for an object of type LLM.
 export type LLMID = string & { __LLMID: never }
 
-/**
- * The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
- */
+// The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
 export type LLMTokenUsageID = string & { __LLMTokenUsageID: never }
 
-/**
- * The `LabelID` scalar type represents an identifier for an object of type Label.
- */
+// The `LabelID` scalar type represents an identifier for an object of type Label.
 export type LabelID = string & { __LabelID: never }
 
-/**
- * The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
- */
+// The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
 export type ModuleChecksOpts = {
-  /**
-   * Only include checks matching the specified patterns
-   */
+  // Only include checks matching the specified patterns
   include?: string[]
 }
 
 export type ModuleGeneratorsOpts = {
-  /**
-   * Only include generators matching the specified patterns
-   */
+  // Only include generators matching the specified patterns
   include?: string[]
 }
 
 export type ModuleServeOpts = {
-  /**
-   * Expose the dependencies of this module to the client
-   */
+  // Expose the dependencies of this module to the client
   includeDependencies?: boolean
 }
 
-/**
- * The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
- */
+// The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
 export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
 
-/**
- * The `ModuleID` scalar type represents an identifier for an object of type Module.
- */
+// The `ModuleID` scalar type represents an identifier for an object of type Module.
 export type ModuleID = string & { __ModuleID: never }
 
-/**
- * Experimental features of a module
- */
+// Experimental features of a module
 export enum ModuleSourceExperimentalFeature {
-  /**
-   * Self calls
-   */
+  // Self calls
   SelfCalls = "SELF_CALLS",
 }
 
@@ -1950,14 +1411,10 @@ function ModuleSourceExperimentalFeatureNameToValue(
       return name as ModuleSourceExperimentalFeature
   }
 }
-/**
- * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
- */
+// The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
 export type ModuleSourceID = string & { __ModuleSourceID: never }
 
-/**
- * The kind of module source.
- */
+// The kind of module source.
 export enum ModuleSourceKind {
   Dir = "DIR_SOURCE",
   DirSource = ModuleSourceKind.Dir,
@@ -2000,9 +1457,7 @@ function ModuleSourceKindNameToValue(name: string): ModuleSourceKind {
       return name as ModuleSourceKind
   }
 }
-/**
- * Transport layer network protocol associated to a port.
- */
+// Transport layer network protocol associated to a port.
 export enum NetworkProtocol {
   Tcp = "TCP",
   Udp = "UDP",
@@ -2037,210 +1492,138 @@ function NetworkProtocolNameToValue(name: string): NetworkProtocol {
       return name as NetworkProtocol
   }
 }
-/**
- * The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
- */
+// The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
 export type ObjectTypeDefID = string & { __ObjectTypeDefID: never }
 
 export type PipelineLabel = {
-  /**
-   * Label name.
-   */
+  // Label name.
   name: string
 
-  /**
-   * Label value.
-   */
+  // Label value.
   value: string
 }
 
-/**
- * The platform config OS and architecture in a Container.
- *
- * The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
- */
+// The platform config OS and architecture in a Container.
+//
+// The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 export type Platform = string & { __Platform: never }
 
 export type PortForward = {
-  /**
-   * Destination port for traffic.
-   */
+  // Destination port for traffic.
   backend: number
 
-  /**
-   * Port to expose to clients. If unspecified, a default will be chosen.
-   */
+  // Port to expose to clients. If unspecified, a default will be chosen.
   frontend?: number
 
-  /**
-   * Transport layer protocol to use for traffic.
-   */
+  // Transport layer protocol to use for traffic.
   protocol?: NetworkProtocol
 }
 
-/**
- * The `PortID` scalar type represents an identifier for an object of type Port.
- */
+// The `PortID` scalar type represents an identifier for an object of type Port.
 export type PortID = string & { __PortID: never }
 
 export type ClientContainerOpts = {
-  /**
-   * Platform to initialize the container with. Defaults to the native platform of the current engine
-   */
+  // Platform to initialize the container with. Defaults to the native platform of the current engine
   platform?: Platform
 }
 
 export type ClientEnvOpts = {
-  /**
-   * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
-   */
+  // Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
   privileged?: boolean
 
-  /**
-   * Allow new outputs to be declared and saved in the environment
-   */
+  // Allow new outputs to be declared and saved in the environment
   writable?: boolean
 }
 
 export type ClientEnvFileOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" with the value of other vars
-   *
-   * @deprecated Variable expansion is now enabled by default
-   */
+  // Replace "${VAR}" or "$VAR" with the value of other vars
+  //
+  // @deprecated Variable expansion is now enabled by default
   expand?: boolean
 }
 
 export type ClientFileOpts = {
-  /**
-   * Permissions of the new file. Example: 0600
-   */
+  // Permissions of the new file. Example: 0600
   permissions?: number
 }
 
 export type ClientGitOpts = {
-  /**
-   * DEPRECATED: Set to true to keep .git directory.
-   *
-   * @deprecated Set to true to keep .git directory.
-   */
+  // DEPRECATED: Set to true to keep .git directory.
+  //
+  // @deprecated Set to true to keep .git directory.
   keepGitDir?: boolean
 
-  /**
-   * Set SSH known hosts
-   */
+  // Set SSH known hosts
   sshKnownHosts?: string
 
-  /**
-   * Set SSH auth socket
-   */
+  // Set SSH auth socket
   sshAuthSocket?: Socket
 
-  /**
-   * Username used to populate the password during basic HTTP Authorization
-   */
+  // Username used to populate the password during basic HTTP Authorization
   httpAuthUsername?: string
 
-  /**
-   * Secret used to populate the password during basic HTTP Authorization
-   */
+  // Secret used to populate the password during basic HTTP Authorization
   httpAuthToken?: Secret
 
-  /**
-   * Secret used to populate the Authorization HTTP header
-   */
+  // Secret used to populate the Authorization HTTP header
   httpAuthHeader?: Secret
 
-  /**
-   * A service which must be started before the repo is fetched.
-   */
+  // A service which must be started before the repo is fetched.
   experimentalServiceHost?: Service
 }
 
 export type ClientHttpOpts = {
-  /**
-   * File name to use for the file. Defaults to the last part of the URL.
-   */
+  // File name to use for the file. Defaults to the last part of the URL.
   name?: string
 
-  /**
-   * Permissions to set on the file.
-   */
+  // Permissions to set on the file.
   permissions?: number
 
-  /**
-   * Secret used to populate the Authorization HTTP header
-   */
+  // Secret used to populate the Authorization HTTP header
   authHeader?: Secret
 
-  /**
-   * A service which must be started before the URL is fetched.
-   */
+  // A service which must be started before the URL is fetched.
   experimentalServiceHost?: Service
 }
 
 export type ClientLlmOpts = {
-  /**
-   * Model to use
-   */
+  // Model to use
   model?: string
 
-  /**
-   * Cap the number of API calls for this LLM
-   */
+  // Cap the number of API calls for this LLM
   maxAPICalls?: number
 }
 
 export type ClientModuleSourceOpts = {
-  /**
-   * The pinned version of the module source
-   */
+  // The pinned version of the module source
   refPin?: string
 
-  /**
-   * If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
-   */
+  // If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
   disableFindUp?: boolean
 
-  /**
-   * If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
-   */
+  // If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
   allowNotExists?: boolean
 
-  /**
-   * If set, error out if the ref string is not of the provided requireKind.
-   */
+  // If set, error out if the ref string is not of the provided requireKind.
   requireKind?: ModuleSourceKind
 }
 
 export type ClientSecretOpts = {
-  /**
-   * If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
-   *
-   * For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
-   *
-   * If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
-   */
+  // If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
+  //
+  // For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
+  //
+  // If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
   cacheKey?: string
 }
 
-/**
- * Expected return type of an execution
- */
+// Expected return type of an execution
 export enum ReturnType {
-  /**
-   * Any execution (exit codes 0-127 and 192-255)
-   */
+  // Any execution (exit codes 0-127 and 192-255)
   Any = "ANY",
-
-  /**
-   * A failed execution (exit codes 1-127 and 192-255)
-   */
+  // A failed execution (exit codes 1-127 and 192-255)
   Failure = "FAILURE",
-
-  /**
-   * A successful execution (exit code 0)
-   */
+  // A successful execution (exit code 0)
   Success = "SUCCESS",
 }
 
@@ -2277,47 +1660,31 @@ function ReturnTypeNameToValue(name: string): ReturnType {
       return name as ReturnType
   }
 }
-/**
- * The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
- */
+// The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
 export type SDKConfigID = string & { __SDKConfigID: never }
 
-/**
- * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
- */
+// The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
 
-/**
- * The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
- */
+// The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
 export type SearchResultID = string & { __SearchResultID: never }
 
-/**
- * The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
- */
+// The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
 export type SearchSubmatchID = string & { __SearchSubmatchID: never }
 
-/**
- * The `SecretID` scalar type represents an identifier for an object of type Secret.
- */
+// The `SecretID` scalar type represents an identifier for an object of type Secret.
 export type SecretID = string & { __SecretID: never }
 
 export type ServiceEndpointOpts = {
-  /**
-   * The exposed port number for the endpoint
-   */
+  // The exposed port number for the endpoint
   port?: number
 
-  /**
-   * Return a URL with the given scheme, eg. http for http://
-   */
+  // Return a URL with the given scheme, eg. http for http://
   scheme?: string
 }
 
 export type ServiceStopOpts = {
-  /**
-   * Immediately kill the service without waiting for a graceful exit
-   */
+  // Immediately kill the service without waiting for a graceful exit
   kill?: boolean
 }
 
@@ -2326,109 +1693,71 @@ export type ServiceTerminalOpts = {
 }
 
 export type ServiceUpOpts = {
-  /**
-   * List of frontend/backend port mappings to forward.
-   *
-   * Frontend is the port accepting traffic on the host, backend is the service port.
-   */
+  // List of frontend/backend port mappings to forward.
+  //
+  // Frontend is the port accepting traffic on the host, backend is the service port.
   ports?: PortForward[]
 
-  /**
-   * Bind each tunnel port to a random port on the host.
-   */
+  // Bind each tunnel port to a random port on the host.
   random?: boolean
 }
 
-/**
- * The `ServiceID` scalar type represents an identifier for an object of type Service.
- */
+// The `ServiceID` scalar type represents an identifier for an object of type Service.
 export type ServiceID = string & { __ServiceID: never }
 
-/**
- * The `SocketID` scalar type represents an identifier for an object of type Socket.
- */
+// The `SocketID` scalar type represents an identifier for an object of type Socket.
 export type SocketID = string & { __SocketID: never }
 
-/**
- * The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
- */
+// The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 export type SourceMapID = string & { __SourceMapID: never }
 
-/**
- * The `StatID` scalar type represents an identifier for an object of type Stat.
- */
+// The `StatID` scalar type represents an identifier for an object of type Stat.
 export type StatID = string & { __StatID: never }
 
-/**
- * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
- */
+// The `TerminalID` scalar type represents an identifier for an object of type Terminal.
 export type TerminalID = string & { __TerminalID: never }
 
 export type TypeDefWithEnumOpts = {
-  /**
-   * A doc string for the enum, if any
-   */
+  // A doc string for the enum, if any
   description?: string
 
-  /**
-   * The source map for the enum definition.
-   */
+  // The source map for the enum definition.
   sourceMap?: SourceMap
 }
 
 export type TypeDefWithEnumMemberOpts = {
-  /**
-   * The value of the member in the enum
-   */
+  // The value of the member in the enum
   value?: string
 
-  /**
-   * A doc string for the member, if any
-   */
+  // A doc string for the member, if any
   description?: string
 
-  /**
-   * The source map for the enum member definition.
-   */
+  // The source map for the enum member definition.
   sourceMap?: SourceMap
 
-  /**
-   * If deprecated, the reason or migration path.
-   */
+  // If deprecated, the reason or migration path.
   deprecated?: string
 }
 
 export type TypeDefWithEnumValueOpts = {
-  /**
-   * A doc string for the value, if any
-   */
+  // A doc string for the value, if any
   description?: string
 
-  /**
-   * The source map for the enum value definition.
-   */
+  // The source map for the enum value definition.
   sourceMap?: SourceMap
 
-  /**
-   * If deprecated, the reason or migration path.
-   */
+  // If deprecated, the reason or migration path.
   deprecated?: string
 }
 
 export type TypeDefWithFieldOpts = {
-  /**
-   * A doc string for the field, if any
-   */
+  // A doc string for the field, if any
   description?: string
 
-  /**
-   * The source map for the field definition.
-   */
+  // The source map for the field definition.
   sourceMap?: SourceMap
 
-  /**
-   * If deprecated, the reason or migration path.
-   */
+  // If deprecated, the reason or migration path.
   deprecated?: string
 }
 
@@ -2447,143 +1776,74 @@ export type TypeDefWithScalarOpts = {
   description?: string
 }
 
-/**
- * The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
- */
+// The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 export type TypeDefID = string & { __TypeDefID: never }
 
-/**
- * Distinguishes the different kinds of TypeDefs.
- */
+// Distinguishes the different kinds of TypeDefs.
 export enum TypeDefKind {
-  /**
-   * A boolean value.
-   */
+  // A boolean value.
   Boolean = "BOOLEAN_KIND",
-
-  /**
-   * A boolean value.
-   */
+  // A boolean value.
   BooleanKind = TypeDefKind.Boolean,
-
-  /**
-   * A GraphQL enum type and its values
-   *
-   * Always paired with an EnumTypeDef.
-   */
+  // A GraphQL enum type and its values
+  //
+  // Always paired with an EnumTypeDef.
   Enum = "ENUM_KIND",
-
-  /**
-   * A GraphQL enum type and its values
-   *
-   * Always paired with an EnumTypeDef.
-   */
+  // A GraphQL enum type and its values
+  //
+  // Always paired with an EnumTypeDef.
   EnumKind = TypeDefKind.Enum,
-
-  /**
-   * A float value.
-   */
+  // A float value.
   Float = "FLOAT_KIND",
-
-  /**
-   * A float value.
-   */
+  // A float value.
   FloatKind = TypeDefKind.Float,
-
-  /**
-   * A graphql input type, used only when representing the core API via TypeDefs.
-   */
+  // A graphql input type, used only when representing the core API via TypeDefs.
   Input = "INPUT_KIND",
-
-  /**
-   * A graphql input type, used only when representing the core API via TypeDefs.
-   */
+  // A graphql input type, used only when representing the core API via TypeDefs.
   InputKind = TypeDefKind.Input,
-
-  /**
-   * An integer value.
-   */
+  // An integer value.
   Integer = "INTEGER_KIND",
-
-  /**
-   * An integer value.
-   */
+  // An integer value.
   IntegerKind = TypeDefKind.Integer,
-
-  /**
-   * Always paired with an InterfaceTypeDef.
-   *
-   * A named type of functions that can be matched+implemented by other objects+interfaces.
-   */
+  // Always paired with an InterfaceTypeDef.
+  //
+  // A named type of functions that can be matched+implemented by other objects+interfaces.
   Interface = "INTERFACE_KIND",
-
-  /**
-   * Always paired with an InterfaceTypeDef.
-   *
-   * A named type of functions that can be matched+implemented by other objects+interfaces.
-   */
+  // Always paired with an InterfaceTypeDef.
+  //
+  // A named type of functions that can be matched+implemented by other objects+interfaces.
   InterfaceKind = TypeDefKind.Interface,
-
-  /**
-   * Always paired with a ListTypeDef.
-   *
-   * A list of values all having the same type.
-   */
+  // Always paired with a ListTypeDef.
+  //
+  // A list of values all having the same type.
   List = "LIST_KIND",
-
-  /**
-   * Always paired with a ListTypeDef.
-   *
-   * A list of values all having the same type.
-   */
+  // Always paired with a ListTypeDef.
+  //
+  // A list of values all having the same type.
   ListKind = TypeDefKind.List,
-
-  /**
-   * Always paired with an ObjectTypeDef.
-   *
-   * A named type defined in the GraphQL schema, with fields and functions.
-   */
+  // Always paired with an ObjectTypeDef.
+  //
+  // A named type defined in the GraphQL schema, with fields and functions.
   Object = "OBJECT_KIND",
-
-  /**
-   * Always paired with an ObjectTypeDef.
-   *
-   * A named type defined in the GraphQL schema, with fields and functions.
-   */
+  // Always paired with an ObjectTypeDef.
+  //
+  // A named type defined in the GraphQL schema, with fields and functions.
   ObjectKind = TypeDefKind.Object,
-
-  /**
-   * A scalar value of any basic kind.
-   */
+  // A scalar value of any basic kind.
   Scalar = "SCALAR_KIND",
-
-  /**
-   * A scalar value of any basic kind.
-   */
+  // A scalar value of any basic kind.
   ScalarKind = TypeDefKind.Scalar,
-
-  /**
-   * A string value.
-   */
+  // A string value.
   String = "STRING_KIND",
-
-  /**
-   * A string value.
-   */
+  // A string value.
   StringKind = TypeDefKind.String,
-
-  /**
-   * A special kind used to signify that no value is returned.
-   *
-   * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-   */
+  // A special kind used to signify that no value is returned.
+  //
+  // This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
   Void = "VOID_KIND",
-
-  /**
-   * A special kind used to signify that no value is returned.
-   *
-   * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-   */
+  // A special kind used to signify that no value is returned.
+  //
+  // This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
   VoidKind = TypeDefKind.Void,
 }
 
@@ -2652,11 +1912,9 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
       return name as TypeDefKind
   }
 }
-/**
- * The absence of a value.
- *
- * A Null Void is used as a placeholder for resolvers that do not return anything.
- */
+// The absence of a value.
+//
+// A Null Void is used as a placeholder for resolvers that do not return anything.
 export type Void = string & { __Void: never }
 
 export type __DirectiveArgsOpts = {
@@ -2679,9 +1937,7 @@ export type __TypeInputFieldsOpts = {
   includeDeprecated?: boolean
 }
 
-/**
- * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
- */
+// A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
 export class Address extends BaseClient {
   private readonly _id?: AddressID = undefined
   private readonly _value?: string = undefined
@@ -2696,9 +1952,7 @@ export class Address extends BaseClient {
     this._value = _value
   }
 
-  /**
-   * A unique identifier for this Address.
-   */
+  // A unique identifier for this Address.
   id = async (): Promise<AddressID> => {
     if (this._id) {
       return this._id
@@ -2711,73 +1965,55 @@ export class Address extends BaseClient {
     return response
   }
 
-  /**
-   * Load a container from the address.
-   */
+  // Load a container from the address.
   container = (): Container => {
     const ctx = this._ctx.select("container")
     return new Container(ctx)
   }
 
-  /**
-   * Load a directory from the address.
-   */
+  // Load a directory from the address.
   directory = (opts?: AddressDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { ...opts })
     return new Directory(ctx)
   }
 
-  /**
-   * Load a file from the address.
-   */
+  // Load a file from the address.
   file = (opts?: AddressFileOpts): File => {
     const ctx = this._ctx.select("file", { ...opts })
     return new File(ctx)
   }
 
-  /**
-   * Load a git ref (branch, tag or commit) from the address.
-   */
+  // Load a git ref (branch, tag or commit) from the address.
   gitRef = (): GitRef => {
     const ctx = this._ctx.select("gitRef")
     return new GitRef(ctx)
   }
 
-  /**
-   * Load a git repository from the address.
-   */
+  // Load a git repository from the address.
   gitRepository = (): GitRepository => {
     const ctx = this._ctx.select("gitRepository")
     return new GitRepository(ctx)
   }
 
-  /**
-   * Load a secret from the address.
-   */
+  // Load a secret from the address.
   secret = (): Secret => {
     const ctx = this._ctx.select("secret")
     return new Secret(ctx)
   }
 
-  /**
-   * Load a service from the address.
-   */
+  // Load a service from the address.
   service = (): Service => {
     const ctx = this._ctx.select("service")
     return new Service(ctx)
   }
 
-  /**
-   * Load a local socket from the address.
-   */
+  // Load a local socket from the address.
   socket = (): Socket => {
     const ctx = this._ctx.select("socket")
     return new Socket(ctx)
   }
 
-  /**
-   * The address value
-   */
+  // The address value
   value = async (): Promise<string> => {
     if (this._value) {
       return this._value
@@ -2821,9 +2057,7 @@ export class Binding extends BaseClient {
     this._typeName = _typeName
   }
 
-  /**
-   * A unique identifier for this Binding.
-   */
+  // A unique identifier for this Binding.
   id = async (): Promise<BindingID> => {
     if (this._id) {
       return this._id
@@ -2836,209 +2070,157 @@ export class Binding extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieve the binding value, as type Address
-   */
+  // Retrieve the binding value, as type Address
   asAddress = (): Address => {
     const ctx = this._ctx.select("asAddress")
     return new Address(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type CacheVolume
-   */
+  // Retrieve the binding value, as type CacheVolume
   asCacheVolume = (): CacheVolume => {
     const ctx = this._ctx.select("asCacheVolume")
     return new CacheVolume(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Changeset
-   */
+  // Retrieve the binding value, as type Changeset
   asChangeset = (): Changeset => {
     const ctx = this._ctx.select("asChangeset")
     return new Changeset(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Check
-   */
+  // Retrieve the binding value, as type Check
   asCheck = (): Check => {
     const ctx = this._ctx.select("asCheck")
     return new Check(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type CheckGroup
-   */
+  // Retrieve the binding value, as type CheckGroup
   asCheckGroup = (): CheckGroup => {
     const ctx = this._ctx.select("asCheckGroup")
     return new CheckGroup(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Cloud
-   */
+  // Retrieve the binding value, as type Cloud
   asCloud = (): Cloud => {
     const ctx = this._ctx.select("asCloud")
     return new Cloud(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Container
-   */
+  // Retrieve the binding value, as type Container
   asContainer = (): Container => {
     const ctx = this._ctx.select("asContainer")
     return new Container(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Directory
-   */
+  // Retrieve the binding value, as type Directory
   asDirectory = (): Directory => {
     const ctx = this._ctx.select("asDirectory")
     return new Directory(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Env
-   */
+  // Retrieve the binding value, as type Env
   asEnv = (): Env => {
     const ctx = this._ctx.select("asEnv")
     return new Env(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type EnvFile
-   */
+  // Retrieve the binding value, as type EnvFile
   asEnvFile = (): EnvFile => {
     const ctx = this._ctx.select("asEnvFile")
     return new EnvFile(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type File
-   */
+  // Retrieve the binding value, as type File
   asFile = (): File => {
     const ctx = this._ctx.select("asFile")
     return new File(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Generator
-   */
+  // Retrieve the binding value, as type Generator
   asGenerator = (): Generator => {
     const ctx = this._ctx.select("asGenerator")
     return new Generator(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type GeneratorGroup
-   */
+  // Retrieve the binding value, as type GeneratorGroup
   asGeneratorGroup = (): GeneratorGroup => {
     const ctx = this._ctx.select("asGeneratorGroup")
     return new GeneratorGroup(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type GitRef
-   */
+  // Retrieve the binding value, as type GitRef
   asGitRef = (): GitRef => {
     const ctx = this._ctx.select("asGitRef")
     return new GitRef(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type GitRepository
-   */
+  // Retrieve the binding value, as type GitRepository
   asGitRepository = (): GitRepository => {
     const ctx = this._ctx.select("asGitRepository")
     return new GitRepository(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type JSONValue
-   */
+  // Retrieve the binding value, as type JSONValue
   asJSONValue = (): JSONValue => {
     const ctx = this._ctx.select("asJSONValue")
     return new JSONValue(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Module
-   */
+  // Retrieve the binding value, as type Module
   asModule = (): Module_ => {
     const ctx = this._ctx.select("asModule")
     return new Module_(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type ModuleConfigClient
-   */
+  // Retrieve the binding value, as type ModuleConfigClient
   asModuleConfigClient = (): ModuleConfigClient => {
     const ctx = this._ctx.select("asModuleConfigClient")
     return new ModuleConfigClient(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type ModuleSource
-   */
+  // Retrieve the binding value, as type ModuleSource
   asModuleSource = (): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource")
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type SearchResult
-   */
+  // Retrieve the binding value, as type SearchResult
   asSearchResult = (): SearchResult => {
     const ctx = this._ctx.select("asSearchResult")
     return new SearchResult(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type SearchSubmatch
-   */
+  // Retrieve the binding value, as type SearchSubmatch
   asSearchSubmatch = (): SearchSubmatch => {
     const ctx = this._ctx.select("asSearchSubmatch")
     return new SearchSubmatch(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Secret
-   */
+  // Retrieve the binding value, as type Secret
   asSecret = (): Secret => {
     const ctx = this._ctx.select("asSecret")
     return new Secret(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Service
-   */
+  // Retrieve the binding value, as type Service
   asService = (): Service => {
     const ctx = this._ctx.select("asService")
     return new Service(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Socket
-   */
+  // Retrieve the binding value, as type Socket
   asSocket = (): Socket => {
     const ctx = this._ctx.select("asSocket")
     return new Socket(ctx)
   }
 
-  /**
-   * Retrieve the binding value, as type Stat
-   */
+  // Retrieve the binding value, as type Stat
   asStat = (): Stat => {
     const ctx = this._ctx.select("asStat")
     return new Stat(ctx)
   }
 
-  /**
-   * Returns the binding's string value
-   */
+  // Returns the binding's string value
   asString = async (): Promise<string> => {
     if (this._asString) {
       return this._asString
@@ -3051,9 +2233,7 @@ export class Binding extends BaseClient {
     return response
   }
 
-  /**
-   * Returns the digest of the binding value
-   */
+  // Returns the digest of the binding value
   digest = async (): Promise<string> => {
     if (this._digest) {
       return this._digest
@@ -3066,9 +2246,7 @@ export class Binding extends BaseClient {
     return response
   }
 
-  /**
-   * Returns true if the binding is null
-   */
+  // Returns true if the binding is null
   isNull = async (): Promise<boolean> => {
     if (this._isNull) {
       return this._isNull
@@ -3081,9 +2259,7 @@ export class Binding extends BaseClient {
     return response
   }
 
-  /**
-   * Returns the binding name
-   */
+  // Returns the binding name
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -3096,9 +2272,7 @@ export class Binding extends BaseClient {
     return response
   }
 
-  /**
-   * Returns the binding type
-   */
+  // Returns the binding type
   typeName = async (): Promise<string> => {
     if (this._typeName) {
       return this._typeName
@@ -3112,9 +2286,7 @@ export class Binding extends BaseClient {
   }
 }
 
-/**
- * A directory whose contents persist across runs.
- */
+// A directory whose contents persist across runs.
 export class CacheVolume extends BaseClient {
   private readonly _id?: CacheVolumeID = undefined
 
@@ -3127,9 +2299,7 @@ export class CacheVolume extends BaseClient {
     this._id = _id
   }
 
-  /**
-   * A unique identifier for this CacheVolume.
-   */
+  // A unique identifier for this CacheVolume.
   id = async (): Promise<CacheVolumeID> => {
     if (this._id) {
       return this._id
@@ -3143,9 +2313,7 @@ export class CacheVolume extends BaseClient {
   }
 }
 
-/**
- * A comparison between two directories representing changes that can be applied.
- */
+// A comparison between two directories representing changes that can be applied.
 export class Changeset extends BaseClient {
   private readonly _id?: ChangesetID = undefined
   private readonly _export?: string = undefined
@@ -3170,9 +2338,7 @@ export class Changeset extends BaseClient {
     this._sync = _sync
   }
 
-  /**
-   * A unique identifier for this Changeset.
-   */
+  // A unique identifier for this Changeset.
   id = async (): Promise<ChangesetID> => {
     if (this._id) {
       return this._id
@@ -3185,9 +2351,7 @@ export class Changeset extends BaseClient {
     return response
   }
 
-  /**
-   * Files and directories that were added in the newer directory.
-   */
+  // Files and directories that were added in the newer directory.
   addedPaths = async (): Promise<string[]> => {
     const ctx = this._ctx.select("addedPaths")
 
@@ -3196,34 +2360,26 @@ export class Changeset extends BaseClient {
     return response
   }
 
-  /**
-   * The newer/upper snapshot.
-   */
+  // The newer/upper snapshot.
   after = (): Directory => {
     const ctx = this._ctx.select("after")
     return new Directory(ctx)
   }
 
-  /**
-   * Return a Git-compatible patch of the changes
-   */
+  // Return a Git-compatible patch of the changes
   asPatch = (): File => {
     const ctx = this._ctx.select("asPatch")
     return new File(ctx)
   }
 
-  /**
-   * The older/lower snapshot to compare against.
-   */
+  // The older/lower snapshot to compare against.
   before = (): Directory => {
     const ctx = this._ctx.select("before")
     return new Directory(ctx)
   }
 
-  /**
-   * Applies the diff represented by this changeset to a path on the host.
-   * @param path Location of the copied directory (e.g., "logs/").
-   */
+  // Applies the diff represented by this changeset to a path on the host.
+  // @param path Location of the copied directory (e.g., "logs/").
   export = async (path: string): Promise<string> => {
     if (this._export) {
       return this._export
@@ -3236,9 +2392,7 @@ export class Changeset extends BaseClient {
     return response
   }
 
-  /**
-   * Returns true if the changeset is empty (i.e. there are no changes).
-   */
+  // Returns true if the changeset is empty (i.e. there are no changes).
   isEmpty = async (): Promise<boolean> => {
     if (this._isEmpty) {
       return this._isEmpty
@@ -3251,17 +2405,13 @@ export class Changeset extends BaseClient {
     return response
   }
 
-  /**
-   * Return a snapshot containing only the created and modified files
-   */
+  // Return a snapshot containing only the created and modified files
   layer = (): Directory => {
     const ctx = this._ctx.select("layer")
     return new Directory(ctx)
   }
 
-  /**
-   * Files and directories that existed before and were updated in the newer directory.
-   */
+  // Files and directories that existed before and were updated in the newer directory.
   modifiedPaths = async (): Promise<string[]> => {
     const ctx = this._ctx.select("modifiedPaths")
 
@@ -3270,9 +2420,7 @@ export class Changeset extends BaseClient {
     return response
   }
 
-  /**
-   * Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
-   */
+  // Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
   removedPaths = async (): Promise<string[]> => {
     const ctx = this._ctx.select("removedPaths")
 
@@ -3281,9 +2429,7 @@ export class Changeset extends BaseClient {
     return response
   }
 
-  /**
-   * Force evaluation in the engine.
-   */
+  // Force evaluation in the engine.
   sync = async (): Promise<Changeset> => {
     const ctx = this._ctx.select("sync")
 
@@ -3292,13 +2438,11 @@ export class Changeset extends BaseClient {
     return new Client(ctx.copy()).loadChangesetFromID(response)
   }
 
-  /**
-   * Add changes to an existing changeset
-   *
-   * By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
-   * @param changes Changes to merge into the actual changeset
-   * @param opts.onConflict What to do on a merge conflict
-   */
+  // Add changes to an existing changeset
+  //
+  // By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+  // @param changes Changes to merge into the actual changeset
+  // @param opts.onConflict What to do on a merge conflict
   withChangeset = (
     changes: Changeset,
     opts?: ChangesetWithChangesetOpts,
@@ -3318,15 +2462,13 @@ export class Changeset extends BaseClient {
     return new Changeset(ctx)
   }
 
-  /**
-   * Add changes from multiple changesets using git octopus merge strategy
-   *
-   * This is more efficient than chaining multiple withChangeset calls when merging many changesets.
-   *
-   * Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
-   * @param changes List of changesets to merge into the actual changeset
-   * @param opts.onConflict What to do on a merge conflict
-   */
+  // Add changes from multiple changesets using git octopus merge strategy
+  //
+  // This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+  //
+  // Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+  // @param changes List of changesets to merge into the actual changeset
+  // @param opts.onConflict What to do on a merge conflict
   withChangesets = (
     changes: Changeset[],
     opts?: ChangesetWithChangesetsOpts,
@@ -3386,9 +2528,7 @@ export class Check extends BaseClient {
     this._resultEmoji = _resultEmoji
   }
 
-  /**
-   * A unique identifier for this Check.
-   */
+  // A unique identifier for this Check.
   id = async (): Promise<CheckID> => {
     if (this._id) {
       return this._id
@@ -3401,9 +2541,7 @@ export class Check extends BaseClient {
     return response
   }
 
-  /**
-   * Whether the check completed
-   */
+  // Whether the check completed
   completed = async (): Promise<boolean> => {
     if (this._completed) {
       return this._completed
@@ -3416,9 +2554,7 @@ export class Check extends BaseClient {
     return response
   }
 
-  /**
-   * The description of the check
-   */
+  // The description of the check
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -3431,9 +2567,7 @@ export class Check extends BaseClient {
     return response
   }
 
-  /**
-   * Return the fully qualified name of the check
-   */
+  // Return the fully qualified name of the check
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -3446,9 +2580,7 @@ export class Check extends BaseClient {
     return response
   }
 
-  /**
-   * Whether the check passed
-   */
+  // Whether the check passed
   passed = async (): Promise<boolean> => {
     if (this._passed) {
       return this._passed
@@ -3461,9 +2593,7 @@ export class Check extends BaseClient {
     return response
   }
 
-  /**
-   * The path of the check within its module
-   */
+  // The path of the check within its module
   path = async (): Promise<string[]> => {
     const ctx = this._ctx.select("path")
 
@@ -3472,9 +2602,7 @@ export class Check extends BaseClient {
     return response
   }
 
-  /**
-   * An emoji representing the result of the check
-   */
+  // An emoji representing the result of the check
   resultEmoji = async (): Promise<string> => {
     if (this._resultEmoji) {
       return this._resultEmoji
@@ -3487,9 +2615,7 @@ export class Check extends BaseClient {
     return response
   }
 
-  /**
-   * Execute the check
-   */
+  // Execute the check
   run = (): Check => {
     const ctx = this._ctx.select("run")
     return new Check(ctx)
@@ -3517,9 +2643,7 @@ export class CheckGroup extends BaseClient {
     this._id = _id
   }
 
-  /**
-   * A unique identifier for this CheckGroup.
-   */
+  // A unique identifier for this CheckGroup.
   id = async (): Promise<CheckGroupID> => {
     if (this._id) {
       return this._id
@@ -3532,9 +2656,7 @@ export class CheckGroup extends BaseClient {
     return response
   }
 
-  /**
-   * Return a list of individual checks and their details
-   */
+  // Return a list of individual checks and their details
   list = async (): Promise<Check[]> => {
     type list = {
       id: CheckID
@@ -3547,17 +2669,13 @@ export class CheckGroup extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadCheckFromID(r.id))
   }
 
-  /**
-   * Generate a markdown report
-   */
+  // Generate a markdown report
   report = (): File => {
     const ctx = this._ctx.select("report")
     return new File(ctx)
   }
 
-  /**
-   * Execute all selected checks
-   */
+  // Execute all selected checks
   run = (): CheckGroup => {
     const ctx = this._ctx.select("run")
     return new CheckGroup(ctx)
@@ -3573,9 +2691,7 @@ export class CheckGroup extends BaseClient {
   }
 }
 
-/**
- * Dagger Cloud configuration and state
- */
+// Dagger Cloud configuration and state
 export class Cloud extends BaseClient {
   private readonly _id?: CloudID = undefined
   private readonly _traceURL?: string = undefined
@@ -3590,9 +2706,7 @@ export class Cloud extends BaseClient {
     this._traceURL = _traceURL
   }
 
-  /**
-   * A unique identifier for this Cloud.
-   */
+  // A unique identifier for this Cloud.
   id = async (): Promise<CloudID> => {
     if (this._id) {
       return this._id
@@ -3605,9 +2719,7 @@ export class Cloud extends BaseClient {
     return response
   }
 
-  /**
-   * The trace URL for the current session
-   */
+  // The trace URL for the current session
   traceURL = async (): Promise<string> => {
     if (this._traceURL) {
       return this._traceURL
@@ -3621,9 +2733,7 @@ export class Cloud extends BaseClient {
   }
 }
 
-/**
- * An OCI-compatible container, also known as a Docker container.
- */
+// An OCI-compatible container, also known as a Docker container.
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
   private readonly _combinedOutput?: string = undefined
@@ -3687,9 +2797,7 @@ export class Container extends BaseClient {
     this._workdir = _workdir
   }
 
-  /**
-   * A unique identifier for this Container.
-   */
+  // A unique identifier for this Container.
   id = async (): Promise<ContainerID> => {
     if (this._id) {
       return this._id
@@ -3702,38 +2810,34 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Turn the container into a Service.
-   *
-   * Be sure to set any exposed ports before this conversion.
-   * @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
-   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   * @param opts.noInit If set, skip the automatic init process injected into containers by default.
-   *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
+  // Turn the container into a Service.
+  //
+  // Be sure to set any exposed ports before this conversion.
+  // @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+  //
+  // If empty, the container's default command is used.
+  // @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
+  // @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+  // @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+  // @param opts.noInit If set, skip the automatic init process injected into containers by default.
+  //
+  // This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
   asService = (opts?: ContainerAsServiceOpts): Service => {
     const ctx = this._ctx.select("asService", { ...opts })
     return new Service(ctx)
   }
 
-  /**
-   * Package the container state as an OCI image, and return it as a tar archive
-   * @param opts.platformVariants Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform images.
-   * @param opts.forcedCompression Force each layer of the image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.mediaTypes Use the specified media types for the image's layers.
-   *
-   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
-   */
+  // Package the container state as an OCI image, and return it as a tar archive
+  // @param opts.platformVariants Identifiers for other platform specific containers.
+  //
+  // Used for multi-platform images.
+  // @param opts.forcedCompression Force each layer of the image to use the specified compression algorithm.
+  //
+  // If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+  // @param opts.mediaTypes Use the specified media types for the image's layers.
+  //
+  // Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
   asTarball = (opts?: ContainerAsTarballOpts): File => {
     const metadata = {
       forcedCompression: {
@@ -3747,11 +2851,9 @@ export class Container extends BaseClient {
     return new File(ctx)
   }
 
-  /**
-   * The combined buffered standard output and standard error stream of the last executed command
-   *
-   * Returns an error if no command was executed
-   */
+  // The combined buffered standard output and standard error stream of the last executed command
+  //
+  // Returns an error if no command was executed
   combinedOutput = async (): Promise<string> => {
     if (this._combinedOutput) {
       return this._combinedOutput
@@ -3764,9 +2866,7 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Return the container's default arguments.
-   */
+  // Return the container's default arguments.
   defaultArgs = async (): Promise<string[]> => {
     const ctx = this._ctx.select("defaultArgs")
 
@@ -3775,21 +2875,17 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieve a directory from the container's root filesystem
-   *
-   * Mounts are included.
-   * @param path The path of the directory to retrieve (e.g., "./src").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Retrieve a directory from the container's root filesystem
+  //
+  // Mounts are included.
+  // @param path The path of the directory to retrieve (e.g., "./src").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   directory = (path: string, opts?: ContainerDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
     return new Directory(ctx)
   }
 
-  /**
-   * Return the container's OCI entrypoint.
-   */
+  // Return the container's OCI entrypoint.
   entrypoint = async (): Promise<string[]> => {
     const ctx = this._ctx.select("entrypoint")
 
@@ -3798,10 +2894,8 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves the value of the specified environment variable.
-   * @param name The name of the environment variable to retrieve (e.g., "PATH").
-   */
+  // Retrieves the value of the specified environment variable.
+  // @param name The name of the environment variable to retrieve (e.g., "PATH").
   envVariable = async (name: string): Promise<string> => {
     if (this._envVariable) {
       return this._envVariable
@@ -3814,9 +2908,7 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves the list of environment variables passed to commands.
-   */
+  // Retrieves the list of environment variables passed to commands.
   envVariables = async (): Promise<EnvVariable[]> => {
     type envVariables = {
       id: EnvVariableID
@@ -3831,12 +2923,10 @@ export class Container extends BaseClient {
     )
   }
 
-  /**
-   * check if a file or directory exists
-   * @param path Path to check (e.g., "/file.txt").
-   * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
-   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
-   */
+  // check if a file or directory exists
+  // @param path Path to check (e.g., "/file.txt").
+  // @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+  // @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
   exists = async (
     path: string,
     opts?: ContainerExistsOpts,
@@ -3860,11 +2950,9 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * The exit code of the last executed command
-   *
-   * Returns an error if no command was executed
-   */
+  // The exit code of the last executed command
+  //
+  // Returns an error if no command was executed
   exitCode = async (): Promise<number> => {
     if (this._exitCode) {
       return this._exitCode
@@ -3877,49 +2965,43 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * EXPERIMENTAL API! Subject to change/removal at any time.
-   *
-   * Configures all available GPUs on the host to be accessible to this container.
-   *
-   * This currently works for Nvidia devices only.
-   */
+  // EXPERIMENTAL API! Subject to change/removal at any time.
+  //
+  // Configures all available GPUs on the host to be accessible to this container.
+  //
+  // This currently works for Nvidia devices only.
   experimentalWithAllGPUs = (): Container => {
     const ctx = this._ctx.select("experimentalWithAllGPUs")
     return new Container(ctx)
   }
 
-  /**
-   * EXPERIMENTAL API! Subject to change/removal at any time.
-   *
-   * Configures the provided list of devices to be accessible to this container.
-   *
-   * This currently works for Nvidia devices only.
-   * @param devices List of devices to be accessible to this container.
-   */
+  // EXPERIMENTAL API! Subject to change/removal at any time.
+  //
+  // Configures the provided list of devices to be accessible to this container.
+  //
+  // This currently works for Nvidia devices only.
+  // @param devices List of devices to be accessible to this container.
   experimentalWithGPU = (devices: string[]): Container => {
     const ctx = this._ctx.select("experimentalWithGPU", { devices })
     return new Container(ctx)
   }
 
-  /**
-   * Writes the container as an OCI tarball to the destination file path on the host.
-   *
-   * It can also export platform variants.
-   * @param path Host's destination path (e.g., "./tarball").
-   *
-   * Path can be relative to the engine's workdir or absolute.
-   * @param opts.platformVariants Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform image.
-   * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.mediaTypes Use the specified media types for the exported image's layers.
-   *
-   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Writes the container as an OCI tarball to the destination file path on the host.
+  //
+  // It can also export platform variants.
+  // @param path Host's destination path (e.g., "./tarball").
+  //
+  // Path can be relative to the engine's workdir or absolute.
+  // @param opts.platformVariants Identifiers for other platform specific containers.
+  //
+  // Used for multi-platform image.
+  // @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
+  //
+  // If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+  // @param opts.mediaTypes Use the specified media types for the exported image's layers.
+  //
+  // Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   export = async (
     path: string,
     opts?: ContainerExportOpts,
@@ -3947,19 +3029,17 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Exports the container as an image to the host's container image store.
-   * @param name Name of image to export to in the host's store
-   * @param opts.platformVariants Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform image.
-   * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.mediaTypes Use the specified media types for the exported image's layers.
-   *
-   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
-   */
+  // Exports the container as an image to the host's container image store.
+  // @param name Name of image to export to in the host's store
+  // @param opts.platformVariants Identifiers for other platform specific containers.
+  //
+  // Used for multi-platform image.
+  // @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
+  //
+  // If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+  // @param opts.mediaTypes Use the specified media types for the exported image's layers.
+  //
+  // Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
   exportImage = async (
     name: string,
     opts?: ContainerExportImageOpts,
@@ -3985,11 +3065,9 @@ export class Container extends BaseClient {
     await ctx.execute()
   }
 
-  /**
-   * Retrieves the list of exposed ports.
-   *
-   * This includes ports already exposed by the image, even if not explicitly added with dagger.
-   */
+  // Retrieves the list of exposed ports.
+  //
+  // This includes ports already exposed by the image, even if not explicitly added with dagger.
   exposedPorts = async (): Promise<Port[]> => {
     type exposedPorts = {
       id: PortID
@@ -4002,30 +3080,24 @@ export class Container extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
   }
 
-  /**
-   * Retrieves a file at the given path.
-   *
-   * Mounts are included.
-   * @param path The path of the file to retrieve (e.g., "./README.md").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Retrieves a file at the given path.
+  //
+  // Mounts are included.
+  // @param path The path of the file to retrieve (e.g., "./README.md").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   file = (path: string, opts?: ContainerFileOpts): File => {
     const ctx = this._ctx.select("file", { path, ...opts })
     return new File(ctx)
   }
 
-  /**
-   * Download a container image, and apply it to the container state. All previous state will be lost.
-   * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
-   */
+  // Download a container image, and apply it to the container state. All previous state will be lost.
+  // @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
   from = (address: string): Container => {
     const ctx = this._ctx.select("from", { address })
     return new Container(ctx)
   }
 
-  /**
-   * The unique image reference which can only be retrieved immediately after the 'Container.From' call.
-   */
+  // The unique image reference which can only be retrieved immediately after the 'Container.From' call.
   imageRef = async (): Promise<string> => {
     if (this._imageRef) {
       return this._imageRef
@@ -4038,20 +3110,16 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Reads the container from an OCI tarball.
-   * @param source File to read the container from.
-   * @param opts.tag Identifies the tag to import from the archive, if the archive bundles multiple tags.
-   */
+  // Reads the container from an OCI tarball.
+  // @param source File to read the container from.
+  // @param opts.tag Identifies the tag to import from the archive, if the archive bundles multiple tags.
   import_ = (source: File, opts?: ContainerImportOpts): Container => {
     const ctx = this._ctx.select("import", { source, ...opts })
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves the value of the specified label.
-   * @param name The name of the label (e.g., "org.opencontainers.artifact.created").
-   */
+  // Retrieves the value of the specified label.
+  // @param name The name of the label (e.g., "org.opencontainers.artifact.created").
   label = async (name: string): Promise<string> => {
     if (this._label) {
       return this._label
@@ -4064,9 +3132,7 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves the list of labels passed to container.
-   */
+  // Retrieves the list of labels passed to container.
   labels = async (): Promise<Label[]> => {
     type labels = {
       id: LabelID
@@ -4079,9 +3145,7 @@ export class Container extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadLabelFromID(r.id))
   }
 
-  /**
-   * Retrieves the list of paths where a directory is mounted.
-   */
+  // Retrieves the list of paths where a directory is mounted.
   mounts = async (): Promise<string[]> => {
     const ctx = this._ctx.select("mounts")
 
@@ -4090,9 +3154,7 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * The platform this container executes and publishes as.
-   */
+  // The platform this container executes and publishes as.
   platform = async (): Promise<Platform> => {
     if (this._platform) {
       return this._platform
@@ -4105,23 +3167,21 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Package the container state as an OCI image, and publish it to a registry
-   *
-   * Returns the fully qualified address of the published image, with digest
-   * @param address The OCI address to publish to
-   *
-   * Same format as "docker push". Example: "registry.example.com/user/repo:tag"
-   * @param opts.platformVariants Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform image.
-   * @param opts.forcedCompression Force each layer of the published image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.mediaTypes Use the specified media types for the published image's layers.
-   *
-   * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
-   */
+  // Package the container state as an OCI image, and publish it to a registry
+  //
+  // Returns the fully qualified address of the published image, with digest
+  // @param address The OCI address to publish to
+  //
+  // Same format as "docker push". Example: "registry.example.com/user/repo:tag"
+  // @param opts.platformVariants Identifiers for other platform specific containers.
+  //
+  // Used for multi-platform image.
+  // @param opts.forcedCompression Force each layer of the published image to use the specified compression algorithm.
+  //
+  // If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+  // @param opts.mediaTypes Use the specified media types for the published image's layers.
+  //
+  // Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
   publish = async (
     address: string,
     opts?: ContainerPublishOpts,
@@ -4149,29 +3209,23 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
-   */
+  // Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
   rootfs = (): Directory => {
     const ctx = this._ctx.select("rootfs")
     return new Directory(ctx)
   }
 
-  /**
-   * Return file status
-   * @param path Path to check (e.g., "/file.txt").
-   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
-   */
+  // Return file status
+  // @param path Path to check (e.g., "/file.txt").
+  // @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
   stat = (path: string, opts?: ContainerStatOpts): Stat => {
     const ctx = this._ctx.select("stat", { path, ...opts })
     return new Stat(ctx)
   }
 
-  /**
-   * The buffered standard error stream of the last executed command
-   *
-   * Returns an error if no command was executed
-   */
+  // The buffered standard error stream of the last executed command
+  //
+  // Returns an error if no command was executed
   stderr = async (): Promise<string> => {
     if (this._stderr) {
       return this._stderr
@@ -4184,11 +3238,9 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * The buffered standard output stream of the last executed command
-   *
-   * Returns an error if no command was executed
-   */
+  // The buffered standard output stream of the last executed command
+  //
+  // Returns an error if no command was executed
   stdout = async (): Promise<string> => {
     if (this._stdout) {
       return this._stdout
@@ -4201,11 +3253,9 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Forces evaluation of the pipeline in the engine.
-   *
-   * It doesn't run the default command if no exec has been set.
-   */
+  // Forces evaluation of the pipeline in the engine.
+  //
+  // It doesn't run the default command if no exec has been set.
   sync = async (): Promise<Container> => {
     const ctx = this._ctx.select("sync")
 
@@ -4214,36 +3264,32 @@ export class Container extends BaseClient {
     return new Client(ctx.copy()).loadContainerFromID(response)
   }
 
-  /**
-   * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
-   * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
+  // Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+  // @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
+  // @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+  // @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
   terminal = (opts?: ContainerTerminalOpts): Container => {
     const ctx = this._ctx.select("terminal", { ...opts })
     return new Container(ctx)
   }
 
-  /**
-   * Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
-   *
-   * Be sure to set any exposed ports before calling this api.
-   * @param opts.random Bind each tunnel port to a random port on the host.
-   * @param opts.ports List of frontend/backend port mappings to forward.
-   *
-   * Frontend is the port accepting traffic on the host, backend is the service port.
-   * @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
-   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   * @param opts.noInit If set, skip the automatic init process injected into containers by default.
-   *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
+  // Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+  //
+  // Be sure to set any exposed ports before calling this api.
+  // @param opts.random Bind each tunnel port to a random port on the host.
+  // @param opts.ports List of frontend/backend port mappings to forward.
+  //
+  // Frontend is the port accepting traffic on the host, backend is the service port.
+  // @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+  //
+  // If empty, the container's default command is used.
+  // @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
+  // @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+  // @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+  // @param opts.noInit If set, skip the automatic init process injected into containers by default.
+  //
+  // This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
   up = async (opts?: ContainerUpOpts): Promise<void> => {
     if (this._up) {
       return
@@ -4254,9 +3300,7 @@ export class Container extends BaseClient {
     await ctx.execute()
   }
 
-  /**
-   * Retrieves the user to be set for all commands.
-   */
+  // Retrieves the user to be set for all commands.
   user = async (): Promise<string> => {
     if (this._user) {
       return this._user
@@ -4269,31 +3313,25 @@ export class Container extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves this container plus the given OCI annotation.
-   * @param name The name of the annotation.
-   * @param value The value of the annotation.
-   */
+  // Retrieves this container plus the given OCI annotation.
+  // @param name The name of the annotation.
+  // @param value The value of the annotation.
   withAnnotation = (name: string, value: string): Container => {
     const ctx = this._ctx.select("withAnnotation", { name, value })
     return new Container(ctx)
   }
 
-  /**
-   * Configures default arguments for future commands. Like CMD in Dockerfile.
-   * @param args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-   */
+  // Configures default arguments for future commands. Like CMD in Dockerfile.
+  // @param args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
   withDefaultArgs = (args: string[]): Container => {
     const ctx = this._ctx.select("withDefaultArgs", { args })
     return new Container(ctx)
   }
 
-  /**
-   * Set the default command to invoke for the container's terminal API.
-   * @param args The args of the command.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
+  // Set the default command to invoke for the container's terminal API.
+  // @param args The args of the command.
+  // @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+  // @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
   withDefaultTerminalCmd = (
     args: string[],
     opts?: ContainerWithDefaultTerminalCmdOpts,
@@ -4302,20 +3340,18 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Return a new container snapshot, with a directory added to its filesystem
-   * @param path Location of the written directory (e.g., "/tmp/directory").
-   * @param source Identifier of the directory to write
-   * @param opts.exclude Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
-   * @param opts.include Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
-   * @param opts.gitignore Apply .gitignore rules when writing the directory.
-   * @param opts.owner A user:group to set for the directory and its contents.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Return a new container snapshot, with a directory added to its filesystem
+  // @param path Location of the written directory (e.g., "/tmp/directory").
+  // @param source Identifier of the directory to write
+  // @param opts.exclude Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
+  // @param opts.include Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
+  // @param opts.gitignore Apply .gitignore rules when writing the directory.
+  // @param opts.owner A user:group to set for the directory and its contents.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withDirectory = (
     path: string,
     source: Directory,
@@ -4325,11 +3361,9 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
-   * @param args Arguments of the entrypoint. Example: ["go", "run"].
-   * @param opts.keepDefaultArgs Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
-   */
+  // Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
+  // @param args Arguments of the entrypoint. Example: ["go", "run"].
+  // @param opts.keepDefaultArgs Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
   withEntrypoint = (
     args: string[],
     opts?: ContainerWithEntrypointOpts,
@@ -4338,21 +3372,17 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Export environment variables from an env-file to the container.
-   * @param source Identifier of the envfile
-   */
+  // Export environment variables from an env-file to the container.
+  // @param source Identifier of the envfile
   withEnvFileVariables = (source: EnvFile): Container => {
     const ctx = this._ctx.select("withEnvFileVariables", { source })
     return new Container(ctx)
   }
 
-  /**
-   * Set a new environment variable in the container.
-   * @param name Name of the environment variable (e.g., "HOST").
-   * @param value Value of the environment variable. (e.g., "localhost").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
-   */
+  // Set a new environment variable in the container.
+  // @param name Name of the environment variable (e.g., "HOST").
+  // @param value Value of the environment variable. (e.g., "localhost").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
   withEnvVariable = (
     name: string,
     value: string,
@@ -4362,37 +3392,33 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Raise an error.
-   * @param err Message of the error to raise. If empty, the error will be ignored.
-   */
+  // Raise an error.
+  // @param err Message of the error to raise. If empty, the error will be ignored.
   withError = (err: string): Container => {
     const ctx = this._ctx.select("withError", { err })
     return new Container(ctx)
   }
 
-  /**
-   * Execute a command in the container, and return a new snapshot of the container state after execution.
-   * @param args Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
-   *
-   * To run a shell command, execute the shell and pass the shell command as argument. Example: ["sh", "-c", "ls -l | grep foo"]
-   *
-   * Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
-   * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
-   * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
-   * @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
-   * @param opts.expect Exit codes this command is allowed to exit with without error
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
-   *
-   * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   * @param opts.noInit Skip the automatic init process injected into containers by default.
-   *
-   * Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
-   */
+  // Execute a command in the container, and return a new snapshot of the container state after execution.
+  // @param args Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
+  //
+  // To run a shell command, execute the shell and pass the shell command as argument. Example: ["sh", "-c", "ls -l | grep foo"]
+  //
+  // Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
+  // @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
+  // @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
+  // @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+  // @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+  // @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+  // @param opts.expect Exit codes this command is allowed to exit with without error
+  // @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+  // @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
+  //
+  // DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+  // @param opts.noInit Skip the automatic init process injected into containers by default.
+  //
+  // Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
     const metadata = {
       expect: { is_enum: true, value_to_name: ReturnTypeValueToName },
@@ -4406,19 +3432,17 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
-   *
-   * Exposed ports serve two purposes:
-   *
-   * - For health checks and introspection, when running services
-   *
-   * - For setting the EXPOSE OCI field when publishing the container
-   * @param port Port number to expose. Example: 8080
-   * @param opts.protocol Network protocol. Example: "tcp"
-   * @param opts.description Port description. Example: "payment API endpoint"
-   * @param opts.experimentalSkipHealthcheck Skip the health check when run as a service.
-   */
+  // Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
+  //
+  // Exposed ports serve two purposes:
+  //
+  // - For health checks and introspection, when running services
+  //
+  // - For setting the EXPOSE OCI field when publishing the container
+  // @param port Port number to expose. Example: 8080
+  // @param opts.protocol Network protocol. Example: "tcp"
+  // @param opts.description Port description. Example: "payment API endpoint"
+  // @param opts.experimentalSkipHealthcheck Skip the health check when run as a service.
   withExposedPort = (
     port: number,
     opts?: ContainerWithExposedPortOpts,
@@ -4435,18 +3459,16 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Return a container snapshot with a file added
-   * @param path Path of the new file. Example: "/path/to/new-file.txt"
-   * @param source File to add
-   * @param opts.permissions Permissions of the new file. Example: 0600
-   * @param opts.owner A user:group to set for the file.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Return a container snapshot with a file added
+  // @param path Path of the new file. Example: "/path/to/new-file.txt"
+  // @param source File to add
+  // @param opts.permissions Permissions of the new file. Example: 0600
+  // @param opts.owner A user:group to set for the file.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   withFile = (
     path: string,
     source: File,
@@ -4456,18 +3478,16 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container plus the contents of the given files copied to the given path.
-   * @param path Location where copied files should be placed (e.g., "/src").
-   * @param sources Identifiers of the files to copy.
-   * @param opts.permissions Permission given to the copied files (e.g., 0600).
-   * @param opts.owner A user:group to set for the files.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Retrieves this container plus the contents of the given files copied to the given path.
+  // @param path Location where copied files should be placed (e.g., "/src").
+  // @param sources Identifiers of the files to copy.
+  // @param opts.permissions Permission given to the copied files (e.g., 0600).
+  // @param opts.owner A user:group to set for the files.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   withFiles = (
     path: string,
     sources: File[],
@@ -4477,31 +3497,27 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container plus the given label.
-   * @param name The name of the label (e.g., "org.opencontainers.artifact.created").
-   * @param value The value of the label (e.g., "2023-01-01T00:00:00Z").
-   */
+  // Retrieves this container plus the given label.
+  // @param name The name of the label (e.g., "org.opencontainers.artifact.created").
+  // @param value The value of the label (e.g., "2023-01-01T00:00:00Z").
   withLabel = (name: string, value: string): Container => {
     const ctx = this._ctx.select("withLabel", { name, value })
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container plus a cache volume mounted at the given path.
-   * @param path Location of the cache directory (e.g., "/root/.npm").
-   * @param cache Identifier of the cache volume to mount.
-   * @param opts.source Identifier of the directory to use as the cache volume's root.
-   * @param opts.sharing Sharing mode of the cache volume.
-   * @param opts.owner A user:group to set for the mounted cache directory.
-   *
-   * Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Retrieves this container plus a cache volume mounted at the given path.
+  // @param path Location of the cache directory (e.g., "/root/.npm").
+  // @param cache Identifier of the cache volume to mount.
+  // @param opts.source Identifier of the directory to use as the cache volume's root.
+  // @param opts.sharing Sharing mode of the cache volume.
+  // @param opts.owner A user:group to set for the mounted cache directory.
+  //
+  // Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withMountedCache = (
     path: string,
     cache: CacheVolume,
@@ -4520,17 +3536,15 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container plus a directory mounted at the given path.
-   * @param path Location of the mounted directory (e.g., "/mnt/directory").
-   * @param source Identifier of the mounted directory.
-   * @param opts.owner A user:group to set for the mounted directory and its contents.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Retrieves this container plus a directory mounted at the given path.
+  // @param path Location of the mounted directory (e.g., "/mnt/directory").
+  // @param source Identifier of the mounted directory.
+  // @param opts.owner A user:group to set for the mounted directory and its contents.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withMountedDirectory = (
     path: string,
     source: Directory,
@@ -4544,17 +3558,15 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container plus a file mounted at the given path.
-   * @param path Location of the mounted file (e.g., "/tmp/file.txt").
-   * @param source Identifier of the mounted file.
-   * @param opts.owner A user or user:group to set for the mounted file.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Retrieves this container plus a file mounted at the given path.
+  // @param path Location of the mounted file (e.g., "/tmp/file.txt").
+  // @param source Identifier of the mounted file.
+  // @param opts.owner A user or user:group to set for the mounted file.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   withMountedFile = (
     path: string,
     source: File,
@@ -4564,20 +3576,18 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container plus a secret mounted into a file at the given path.
-   * @param path Location of the secret file (e.g., "/tmp/secret.txt").
-   * @param source Identifier of the secret to mount.
-   * @param opts.owner A user:group to set for the mounted secret.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.mode Permission given to the mounted secret (e.g., 0600).
-   *
-   * This option requires an owner to be set to be active.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Retrieves this container plus a secret mounted into a file at the given path.
+  // @param path Location of the secret file (e.g., "/tmp/secret.txt").
+  // @param source Identifier of the secret to mount.
+  // @param opts.owner A user:group to set for the mounted secret.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.mode Permission given to the mounted secret (e.g., 0600).
+  //
+  // This option requires an owner to be set to be active.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withMountedSecret = (
     path: string,
     source: Secret,
@@ -4587,12 +3597,10 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
-   * @param path Location of the temporary directory (e.g., "/tmp/temp_dir").
-   * @param opts.size Size of the temporary directory in bytes.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
+  // @param path Location of the temporary directory (e.g., "/tmp/temp_dir").
+  // @param opts.size Size of the temporary directory in bytes.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withMountedTemp = (
     path: string,
     opts?: ContainerWithMountedTempOpts,
@@ -4601,18 +3609,16 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Return a new container snapshot, with a file added to its filesystem with text content
-   * @param path Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
-   * @param contents Contents of the new file. Example: "Hello world!"
-   * @param opts.permissions Permissions of the new file. Example: 0600
-   * @param opts.owner A user:group to set for the file.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Return a new container snapshot, with a file added to its filesystem with text content
+  // @param path Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
+  // @param contents Contents of the new file. Example: "Hello world!"
+  // @param opts.permissions Permissions of the new file. Example: 0600
+  // @param opts.owner A user:group to set for the file.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   withNewFile = (
     path: string,
     contents: string,
@@ -4622,12 +3628,10 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Attach credentials for future publishing to a registry. Use in combination with publish
-   * @param address The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"
-   * @param username The username to authenticate with. Example: "alice"
-   * @param secret The API key, password or token to authenticate to this registry
-   */
+  // Attach credentials for future publishing to a registry. Use in combination with publish
+  // @param address The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"
+  // @param username The username to authenticate with. Example: "alice"
+  // @param secret The API key, password or token to authenticate to this registry
   withRegistryAuth = (
     address: string,
     username: string,
@@ -4641,47 +3645,39 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Change the container's root filesystem. The previous root filesystem will be lost.
-   * @param directory The new root filesystem.
-   */
+  // Change the container's root filesystem. The previous root filesystem will be lost.
+  // @param directory The new root filesystem.
   withRootfs = (directory: Directory): Container => {
     const ctx = this._ctx.select("withRootfs", { directory })
     return new Container(ctx)
   }
 
-  /**
-   * Set a new environment variable, using a secret value
-   * @param name Name of the secret variable (e.g., "API_SECRET").
-   * @param secret Identifier of the secret value.
-   */
+  // Set a new environment variable, using a secret value
+  // @param name Name of the secret variable (e.g., "API_SECRET").
+  // @param secret Identifier of the secret value.
   withSecretVariable = (name: string, secret: Secret): Container => {
     const ctx = this._ctx.select("withSecretVariable", { name, secret })
     return new Container(ctx)
   }
 
-  /**
-   * Establish a runtime dependency from a container to a network service.
-   *
-   * The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
-   *
-   * The service will be reachable from the container via the provided hostname alias.
-   *
-   * The service dependency will also convey to any files or directories produced by the container.
-   * @param alias Hostname that will resolve to the target service (only accessible from within this container)
-   * @param service The target service
-   */
+  // Establish a runtime dependency from a container to a network service.
+  //
+  // The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
+  //
+  // The service will be reachable from the container via the provided hostname alias.
+  //
+  // The service dependency will also convey to any files or directories produced by the container.
+  // @param alias Hostname that will resolve to the target service (only accessible from within this container)
+  // @param service The target service
   withServiceBinding = (alias: string, service: Service): Container => {
     const ctx = this._ctx.select("withServiceBinding", { alias, service })
     return new Container(ctx)
   }
 
-  /**
-   * Return a snapshot with a symlink
-   * @param target Location of the file or directory to link to (e.g., "/existing/file").
-   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Return a snapshot with a symlink
+  // @param target Location of the file or directory to link to (e.g., "/existing/file").
+  // @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   withSymlink = (
     target: string,
     linkName: string,
@@ -4691,17 +3687,15 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container plus a socket forwarded to the given Unix socket path.
-   * @param path Location of the forwarded Unix socket (e.g., "/tmp/socket").
-   * @param source Identifier of the socket to forward.
-   * @param opts.owner A user:group to set for the mounted socket.
-   *
-   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Retrieves this container plus a socket forwarded to the given Unix socket path.
+  // @param path Location of the forwarded Unix socket (e.g., "/tmp/socket").
+  // @param source Identifier of the socket to forward.
+  // @param opts.owner A user:group to set for the mounted socket.
+  //
+  // The user and group can either be an ID (1000:1000) or a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withUnixSocket = (
     path: string,
     source: Socket,
@@ -4711,47 +3705,37 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container with a different command user.
-   * @param name The user to set (e.g., "root").
-   */
+  // Retrieves this container with a different command user.
+  // @param name The user to set (e.g., "root").
   withUser = (name: string): Container => {
     const ctx = this._ctx.select("withUser", { name })
     return new Container(ctx)
   }
 
-  /**
-   * Change the container's working directory. Like WORKDIR in Dockerfile.
-   * @param path The path to set as the working directory (e.g., "/app").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Change the container's working directory. Like WORKDIR in Dockerfile.
+  // @param path The path to set as the working directory (e.g., "/app").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withWorkdir = (path: string, opts?: ContainerWithWorkdirOpts): Container => {
     const ctx = this._ctx.select("withWorkdir", { path, ...opts })
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container minus the given OCI annotation.
-   * @param name The name of the annotation.
-   */
+  // Retrieves this container minus the given OCI annotation.
+  // @param name The name of the annotation.
   withoutAnnotation = (name: string): Container => {
     const ctx = this._ctx.select("withoutAnnotation", { name })
     return new Container(ctx)
   }
 
-  /**
-   * Remove the container's default arguments.
-   */
+  // Remove the container's default arguments.
   withoutDefaultArgs = (): Container => {
     const ctx = this._ctx.select("withoutDefaultArgs")
     return new Container(ctx)
   }
 
-  /**
-   * Return a new container snapshot, with a directory removed from its filesystem
-   * @param path Location of the directory to remove (e.g., ".github/").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Return a new container snapshot, with a directory removed from its filesystem
+  // @param path Location of the directory to remove (e.g., ".github/").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withoutDirectory = (
     path: string,
     opts?: ContainerWithoutDirectoryOpts,
@@ -4760,29 +3744,23 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Reset the container's OCI entrypoint.
-   * @param opts.keepDefaultArgs Don't remove the default arguments when unsetting the entrypoint.
-   */
+  // Reset the container's OCI entrypoint.
+  // @param opts.keepDefaultArgs Don't remove the default arguments when unsetting the entrypoint.
   withoutEntrypoint = (opts?: ContainerWithoutEntrypointOpts): Container => {
     const ctx = this._ctx.select("withoutEntrypoint", { ...opts })
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container minus the given environment variable.
-   * @param name The name of the environment variable (e.g., "HOST").
-   */
+  // Retrieves this container minus the given environment variable.
+  // @param name The name of the environment variable (e.g., "HOST").
   withoutEnvVariable = (name: string): Container => {
     const ctx = this._ctx.select("withoutEnvVariable", { name })
     return new Container(ctx)
   }
 
-  /**
-   * Unexpose a previously exposed port.
-   * @param port Port number to unexpose
-   * @param opts.protocol Port protocol to unexpose
-   */
+  // Unexpose a previously exposed port.
+  // @param port Port number to unexpose
+  // @param opts.protocol Port protocol to unexpose
   withoutExposedPort = (
     port: number,
     opts?: ContainerWithoutExposedPortOpts,
@@ -4799,21 +3777,17 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container with the file at the given path removed.
-   * @param path Location of the file to remove (e.g., "/file.txt").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Retrieves this container with the file at the given path removed.
+  // @param path Location of the file to remove (e.g., "/file.txt").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   withoutFile = (path: string, opts?: ContainerWithoutFileOpts): Container => {
     const ctx = this._ctx.select("withoutFile", { path, ...opts })
     return new Container(ctx)
   }
 
-  /**
-   * Return a new container spanshot with specified files removed
-   * @param paths Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
+  // Return a new container spanshot with specified files removed
+  // @param paths Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
   withoutFiles = (
     paths: string[],
     opts?: ContainerWithoutFilesOpts,
@@ -4822,20 +3796,16 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container minus the given environment label.
-   * @param name The name of the label to remove (e.g., "org.opencontainers.artifact.created").
-   */
+  // Retrieves this container minus the given environment label.
+  // @param name The name of the label to remove (e.g., "org.opencontainers.artifact.created").
   withoutLabel = (name: string): Container => {
     const ctx = this._ctx.select("withoutLabel", { name })
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container after unmounting everything at the given path.
-   * @param path Location of the cache directory (e.g., "/root/.npm").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Retrieves this container after unmounting everything at the given path.
+  // @param path Location of the cache directory (e.g., "/root/.npm").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withoutMount = (
     path: string,
     opts?: ContainerWithoutMountOpts,
@@ -4844,31 +3814,25 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container without the registry authentication of a given address.
-   * @param address Registry's address to remove the authentication from.
-   *
-   * Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
-   */
+  // Retrieves this container without the registry authentication of a given address.
+  // @param address Registry's address to remove the authentication from.
+  //
+  // Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
   withoutRegistryAuth = (address: string): Container => {
     const ctx = this._ctx.select("withoutRegistryAuth", { address })
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container minus the given environment variable containing the secret.
-   * @param name The name of the environment variable (e.g., "HOST").
-   */
+  // Retrieves this container minus the given environment variable containing the secret.
+  // @param name The name of the environment variable (e.g., "HOST").
   withoutSecretVariable = (name: string): Container => {
     const ctx = this._ctx.select("withoutSecretVariable", { name })
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container with a previously added Unix socket removed.
-   * @param path Location of the socket to remove (e.g., "/tmp/socket").
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
+  // Retrieves this container with a previously added Unix socket removed.
+  // @param path Location of the socket to remove (e.g., "/tmp/socket").
+  // @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
   withoutUnixSocket = (
     path: string,
     opts?: ContainerWithoutUnixSocketOpts,
@@ -4877,29 +3841,23 @@ export class Container extends BaseClient {
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves this container with an unset command user.
-   *
-   * Should default to root.
-   */
+  // Retrieves this container with an unset command user.
+  //
+  // Should default to root.
   withoutUser = (): Container => {
     const ctx = this._ctx.select("withoutUser")
     return new Container(ctx)
   }
 
-  /**
-   * Unset the container's working directory.
-   *
-   * Should default to "/".
-   */
+  // Unset the container's working directory.
+  //
+  // Should default to "/".
   withoutWorkdir = (): Container => {
     const ctx = this._ctx.select("withoutWorkdir")
     return new Container(ctx)
   }
 
-  /**
-   * Retrieves the working directory for all commands.
-   */
+  // Retrieves the working directory for all commands.
   workdir = async (): Promise<string> => {
     if (this._workdir) {
       return this._workdir
@@ -4922,9 +3880,7 @@ export class Container extends BaseClient {
   }
 }
 
-/**
- * Reflective module API provided to functions at runtime.
- */
+// Reflective module API provided to functions at runtime.
 export class CurrentModule extends BaseClient {
   private readonly _id?: CurrentModuleID = undefined
   private readonly _name?: string = undefined
@@ -4939,9 +3895,7 @@ export class CurrentModule extends BaseClient {
     this._name = _name
   }
 
-  /**
-   * A unique identifier for this CurrentModule.
-   */
+  // A unique identifier for this CurrentModule.
   id = async (): Promise<CurrentModuleID> => {
     if (this._id) {
       return this._id
@@ -4954,9 +3908,7 @@ export class CurrentModule extends BaseClient {
     return response
   }
 
-  /**
-   * The dependencies of the module.
-   */
+  // The dependencies of the module.
   dependencies = async (): Promise<Module_[]> => {
     type dependencies = {
       id: ModuleID
@@ -4969,27 +3921,21 @@ export class CurrentModule extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
   }
 
-  /**
-   * The generated files and directories made on top of the module source's context directory.
-   */
+  // The generated files and directories made on top of the module source's context directory.
   generatedContextDirectory = (): Directory => {
     const ctx = this._ctx.select("generatedContextDirectory")
     return new Directory(ctx)
   }
 
-  /**
-   * Return all generators defined by the module
-   * @param opts.include Only include generators matching the specified patterns
-   * @experimental
-   */
+  // Return all generators defined by the module
+  // @param opts.include Only include generators matching the specified patterns
+  // @experimental
   generators = (opts?: CurrentModuleGeneratorsOpts): GeneratorGroup => {
     const ctx = this._ctx.select("generators", { ...opts })
     return new GeneratorGroup(ctx)
   }
 
-  /**
-   * The name of the module being executed in
-   */
+  // The name of the module being executed in
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -5002,39 +3948,31 @@ export class CurrentModule extends BaseClient {
     return response
   }
 
-  /**
-   * The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
-   */
+  // The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
   source = (): Directory => {
     const ctx = this._ctx.select("source")
     return new Directory(ctx)
   }
 
-  /**
-   * Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
-   * @param path Location of the directory to access (e.g., ".").
-   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   * @param opts.gitignore Apply .gitignore filter rules inside the directory
-   */
+  // Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
+  // @param path Location of the directory to access (e.g., ".").
+  // @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+  // @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+  // @param opts.gitignore Apply .gitignore filter rules inside the directory
   workdir = (path: string, opts?: CurrentModuleWorkdirOpts): Directory => {
     const ctx = this._ctx.select("workdir", { path, ...opts })
     return new Directory(ctx)
   }
 
-  /**
-   * Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
-   * @param path Location of the file to retrieve (e.g., "README.md").
-   */
+  // Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
+  // @param path Location of the file to retrieve (e.g., "README.md").
   workdirFile = (path: string): File => {
     const ctx = this._ctx.select("workdirFile", { path })
     return new File(ctx)
   }
 }
 
-/**
- * A directory.
- */
+// A directory.
 export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
@@ -5068,9 +4006,7 @@ export class Directory extends BaseClient {
     this._sync = _sync
   }
 
-  /**
-   * A unique identifier for this Directory.
-   */
+  // A unique identifier for this Directory.
   id = async (): Promise<DirectoryID> => {
     if (this._id) {
       return this._id
@@ -5083,73 +4019,59 @@ export class Directory extends BaseClient {
     return response
   }
 
-  /**
-   * Converts this directory to a local git repository
-   */
+  // Converts this directory to a local git repository
   asGit = (): GitRepository => {
     const ctx = this._ctx.select("asGit")
     return new GitRepository(ctx)
   }
 
-  /**
-   * Load the directory as a Dagger module source
-   * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
-   *
-   * If not set, the module source code is loaded from the root of the directory.
-   */
+  // Load the directory as a Dagger module source
+  // @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
+  //
+  // If not set, the module source code is loaded from the root of the directory.
   asModule = (opts?: DirectoryAsModuleOpts): Module_ => {
     const ctx = this._ctx.select("asModule", { ...opts })
     return new Module_(ctx)
   }
 
-  /**
-   * Load the directory as a Dagger module source
-   * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
-   *
-   * If not set, the module source code is loaded from the root of the directory.
-   */
+  // Load the directory as a Dagger module source
+  // @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
+  //
+  // If not set, the module source code is loaded from the root of the directory.
   asModuleSource = (opts?: DirectoryAsModuleSourceOpts): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource", { ...opts })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Return the difference between this directory and another directory, typically an older snapshot.
-   *
-   * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
-   * @param from The base directory snapshot to compare against
-   */
+  // Return the difference between this directory and another directory, typically an older snapshot.
+  //
+  // The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+  // @param from The base directory snapshot to compare against
   changes = (from: Directory): Changeset => {
     const ctx = this._ctx.select("changes", { from })
     return new Changeset(ctx)
   }
 
-  /**
-   * Change the owner of the directory contents recursively.
-   * @param path Path of the directory to change ownership of (e.g., "/").
-   * @param owner A user:group to set for the mounted directory and its contents.
-   *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // Change the owner of the directory contents recursively.
+  // @param path Path of the directory to change ownership of (e.g., "/").
+  // @param owner A user:group to set for the mounted directory and its contents.
+  //
+  // The user and group must be an ID (1000:1000), not a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   chown = (path: string, owner: string): Directory => {
     const ctx = this._ctx.select("chown", { path, owner })
     return new Directory(ctx)
   }
 
-  /**
-   * Return the difference between this directory and an another directory. The difference is encoded as a directory.
-   * @param other The directory to compare against
-   */
+  // Return the difference between this directory and an another directory. The difference is encoded as a directory.
+  // @param other The directory to compare against
   diff = (other: Directory): Directory => {
     const ctx = this._ctx.select("diff", { other })
     return new Directory(ctx)
   }
 
-  /**
-   * Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
-   */
+  // Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
   digest = async (): Promise<string> => {
     if (this._digest) {
       return this._digest
@@ -5162,42 +4084,36 @@ export class Directory extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves a directory at the given path.
-   * @param path Location of the directory to retrieve. Example: "/src"
-   */
+  // Retrieves a directory at the given path.
+  // @param path Location of the directory to retrieve. Example: "/src"
   directory = (path: string): Directory => {
     const ctx = this._ctx.select("directory", { path })
     return new Directory(ctx)
   }
 
-  /**
-   * Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
-   * @param opts.dockerfile Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
-   * @param opts.platform The platform to build.
-   * @param opts.buildArgs Build arguments to use in the build.
-   * @param opts.target Target build stage to build.
-   * @param opts.secrets Secrets to pass to the build.
-   *
-   * They will be mounted at /run/secrets/[secret-name].
-   * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
-   *
-   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   * @param opts.ssh A socket to use for SSH authentication during the build
-   *
-   * (e.g., for Dockerfile RUN --mount=type=ssh instructions).
-   *
-   * Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
-   */
+  // Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
+  // @param opts.dockerfile Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+  // @param opts.platform The platform to build.
+  // @param opts.buildArgs Build arguments to use in the build.
+  // @param opts.target Target build stage to build.
+  // @param opts.secrets Secrets to pass to the build.
+  //
+  // They will be mounted at /run/secrets/[secret-name].
+  // @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
+  //
+  // This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+  // @param opts.ssh A socket to use for SSH authentication during the build
+  //
+  // (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+  //
+  // Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
   dockerBuild = (opts?: DirectoryDockerBuildOpts): Container => {
     const ctx = this._ctx.select("dockerBuild", { ...opts })
     return new Container(ctx)
   }
 
-  /**
-   * Returns a list of files and directories at the given path.
-   * @param opts.path Location of the directory to look at (e.g., "/src").
-   */
+  // Returns a list of files and directories at the given path.
+  // @param opts.path Location of the directory to look at (e.g., "/src").
   entries = async (opts?: DirectoryEntriesOpts): Promise<string[]> => {
     const ctx = this._ctx.select("entries", { ...opts })
 
@@ -5206,12 +4122,10 @@ export class Directory extends BaseClient {
     return response
   }
 
-  /**
-   * check if a file or directory exists
-   * @param path Path to check (e.g., "/file.txt").
-   * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
-   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
-   */
+  // check if a file or directory exists
+  // @param path Path to check (e.g., "/file.txt").
+  // @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+  // @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
   exists = async (
     path: string,
     opts?: DirectoryExistsOpts,
@@ -5235,11 +4149,9 @@ export class Directory extends BaseClient {
     return response
   }
 
-  /**
-   * Writes the contents of the directory to a path on the host.
-   * @param path Location of the copied directory (e.g., "logs/").
-   * @param opts.wipe If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
-   */
+  // Writes the contents of the directory to a path on the host.
+  // @param path Location of the copied directory (e.g., "logs/").
+  // @param opts.wipe If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
   export = async (
     path: string,
     opts?: DirectoryExportOpts,
@@ -5255,31 +4167,25 @@ export class Directory extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieve a file at the given path.
-   * @param path Location of the file to retrieve (e.g., "README.md").
-   */
+  // Retrieve a file at the given path.
+  // @param path Location of the file to retrieve (e.g., "README.md").
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
     return new File(ctx)
   }
 
-  /**
-   * Return a snapshot with some paths included or excluded
-   * @param opts.exclude If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
-   * @param opts.include If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
-   * @param opts.gitignore If set, apply .gitignore rules when filtering the directory.
-   */
+  // Return a snapshot with some paths included or excluded
+  // @param opts.exclude If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
+  // @param opts.include If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
+  // @param opts.gitignore If set, apply .gitignore rules when filtering the directory.
   filter = (opts?: DirectoryFilterOpts): Directory => {
     const ctx = this._ctx.select("filter", { ...opts })
     return new Directory(ctx)
   }
 
-  /**
-   * Search up the directory tree for a file or directory, and return its path. If no match, return null
-   * @param name The name of the file or directory to search for
-   * @param start The path to start the search from
-   */
+  // Search up the directory tree for a file or directory, and return its path. If no match, return null
+  // @param name The name of the file or directory to search for
+  // @param start The path to start the search from
   findUp = async (name: string, start: string): Promise<string> => {
     if (this._findUp) {
       return this._findUp
@@ -5292,10 +4198,8 @@ export class Directory extends BaseClient {
     return response
   }
 
-  /**
-   * Returns a list of files and directories that matche the given pattern.
-   * @param pattern Pattern to match (e.g., "*.md").
-   */
+  // Returns a list of files and directories that matche the given pattern.
+  // @param pattern Pattern to match (e.g., "*.md").
   glob = async (pattern: string): Promise<string[]> => {
     const ctx = this._ctx.select("glob", { pattern })
 
@@ -5304,9 +4208,7 @@ export class Directory extends BaseClient {
     return response
   }
 
-  /**
-   * Returns the name of the directory.
-   */
+  // Returns the name of the directory.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -5319,22 +4221,20 @@ export class Directory extends BaseClient {
     return response
   }
 
-  /**
-   * Searches for content matching the given regular expression or literal string.
-   *
-   * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-   * @param opts.paths Directory or file paths to search
-   * @param opts.globs Glob patterns to match (e.g., "*.md")
-   * @param opts.pattern The text to match.
-   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
-   * @param opts.multiline Enable searching across multiple lines.
-   * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
-   * @param opts.insensitive Enable case-insensitive matching.
-   * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
-   * @param opts.skipHidden Skip hidden files (files starting with .).
-   * @param opts.filesOnly Only return matching files, not lines and content
-   * @param opts.limit Limit the number of results to return
-   */
+  // Searches for content matching the given regular expression or literal string.
+  //
+  // Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  // @param opts.paths Directory or file paths to search
+  // @param opts.globs Glob patterns to match (e.g., "*.md")
+  // @param opts.pattern The text to match.
+  // @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
+  // @param opts.multiline Enable searching across multiple lines.
+  // @param opts.dotall Allow the . pattern to match newlines in multiline mode.
+  // @param opts.insensitive Enable case-insensitive matching.
+  // @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
+  // @param opts.skipHidden Skip hidden files (files starting with .).
+  // @param opts.filesOnly Only return matching files, not lines and content
+  // @param opts.limit Limit the number of results to return
   search = async (opts?: DirectorySearchOpts): Promise<SearchResult[]> => {
     type search = {
       id: SearchResultID
@@ -5349,19 +4249,15 @@ export class Directory extends BaseClient {
     )
   }
 
-  /**
-   * Return file status
-   * @param path Path to stat (e.g., "/file.txt").
-   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
-   */
+  // Return file status
+  // @param path Path to stat (e.g., "/file.txt").
+  // @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
   stat = (path: string, opts?: DirectoryStatOpts): Stat => {
     const ctx = this._ctx.select("stat", { path, ...opts })
     return new Stat(ctx)
   }
 
-  /**
-   * Force evaluation in the engine.
-   */
+  // Force evaluation in the engine.
   sync = async (): Promise<Directory> => {
     const ctx = this._ctx.select("sync")
 
@@ -5370,40 +4266,34 @@ export class Directory extends BaseClient {
     return new Client(ctx.copy()).loadDirectoryFromID(response)
   }
 
-  /**
-   * Opens an interactive terminal in new container with this directory mounted inside.
-   * @param opts.container If set, override the default container used for the terminal.
-   * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
+  // Opens an interactive terminal in new container with this directory mounted inside.
+  // @param opts.container If set, override the default container used for the terminal.
+  // @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
+  // @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+  // @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
   terminal = (opts?: DirectoryTerminalOpts): Directory => {
     const ctx = this._ctx.select("terminal", { ...opts })
     return new Directory(ctx)
   }
 
-  /**
-   * Return a directory with changes from another directory applied to it.
-   * @param changes Changes to apply to the directory
-   */
+  // Return a directory with changes from another directory applied to it.
+  // @param changes Changes to apply to the directory
   withChanges = (changes: Changeset): Directory => {
     const ctx = this._ctx.select("withChanges", { changes })
     return new Directory(ctx)
   }
 
-  /**
-   * Return a snapshot with a directory added
-   * @param path Location of the written directory (e.g., "/src/").
-   * @param source Identifier of the directory to copy.
-   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   * @param opts.gitignore Apply .gitignore filter rules inside the directory
-   * @param opts.owner A user:group to set for the copied directory and its contents.
-   *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // Return a snapshot with a directory added
+  // @param path Location of the written directory (e.g., "/src/").
+  // @param source Identifier of the directory to copy.
+  // @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+  // @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+  // @param opts.gitignore Apply .gitignore filter rules inside the directory
+  // @param opts.owner A user:group to set for the copied directory and its contents.
+  //
+  // The user and group must be an ID (1000:1000), not a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   withDirectory = (
     path: string,
     source: Directory,
@@ -5413,26 +4303,22 @@ export class Directory extends BaseClient {
     return new Directory(ctx)
   }
 
-  /**
-   * Raise an error.
-   * @param err Message of the error to raise. If empty, the error will be ignored.
-   */
+  // Raise an error.
+  // @param err Message of the error to raise. If empty, the error will be ignored.
   withError = (err: string): Directory => {
     const ctx = this._ctx.select("withError", { err })
     return new Directory(ctx)
   }
 
-  /**
-   * Retrieves this directory plus the contents of the given file copied to the given path.
-   * @param path Location of the copied file (e.g., "/file.txt").
-   * @param source Identifier of the file to copy.
-   * @param opts.permissions Permission given to the copied file (e.g., 0600).
-   * @param opts.owner A user:group to set for the copied directory and its contents.
-   *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // Retrieves this directory plus the contents of the given file copied to the given path.
+  // @param path Location of the copied file (e.g., "/file.txt").
+  // @param source Identifier of the file to copy.
+  // @param opts.permissions Permission given to the copied file (e.g., 0600).
+  // @param opts.owner A user:group to set for the copied directory and its contents.
+  //
+  // The user and group must be an ID (1000:1000), not a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   withFile = (
     path: string,
     source: File,
@@ -5442,12 +4328,10 @@ export class Directory extends BaseClient {
     return new Directory(ctx)
   }
 
-  /**
-   * Retrieves this directory plus the contents of the given files copied to the given path.
-   * @param path Location where copied files should be placed (e.g., "/src").
-   * @param sources Identifiers of the files to copy.
-   * @param opts.permissions Permission given to the copied files (e.g., 0600).
-   */
+  // Retrieves this directory plus the contents of the given files copied to the given path.
+  // @param path Location where copied files should be placed (e.g., "/src").
+  // @param sources Identifiers of the files to copy.
+  // @param opts.permissions Permission given to the copied files (e.g., 0600).
   withFiles = (
     path: string,
     sources: File[],
@@ -5457,11 +4341,9 @@ export class Directory extends BaseClient {
     return new Directory(ctx)
   }
 
-  /**
-   * Retrieves this directory plus a new directory created at the given path.
-   * @param path Location of the directory created (e.g., "/logs").
-   * @param opts.permissions Permission granted to the created directory (e.g., 0777).
-   */
+  // Retrieves this directory plus a new directory created at the given path.
+  // @param path Location of the directory created (e.g., "/logs").
+  // @param opts.permissions Permission granted to the created directory (e.g., 0777).
   withNewDirectory = (
     path: string,
     opts?: DirectoryWithNewDirectoryOpts,
@@ -5470,12 +4352,10 @@ export class Directory extends BaseClient {
     return new Directory(ctx)
   }
 
-  /**
-   * Return a snapshot with a new file added
-   * @param path Path of the new file. Example: "foo/bar.txt"
-   * @param contents Contents of the new file. Example: "Hello world!"
-   * @param opts.permissions Permissions of the new file. Example: 0600
-   */
+  // Return a snapshot with a new file added
+  // @param path Path of the new file. Example: "foo/bar.txt"
+  // @param contents Contents of the new file. Example: "Hello world!"
+  // @param opts.permissions Permissions of the new file. Example: 0600
   withNewFile = (
     path: string,
     contents: string,
@@ -5485,69 +4365,55 @@ export class Directory extends BaseClient {
     return new Directory(ctx)
   }
 
-  /**
-   * Retrieves this directory with the given Git-compatible patch applied.
-   * @param patch Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
-   * @experimental
-   */
+  // Retrieves this directory with the given Git-compatible patch applied.
+  // @param patch Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
+  // @experimental
   withPatch = (patch: string): Directory => {
     const ctx = this._ctx.select("withPatch", { patch })
     return new Directory(ctx)
   }
 
-  /**
-   * Retrieves this directory with the given Git-compatible patch file applied.
-   * @param patch File containing the patch to apply
-   * @experimental
-   */
+  // Retrieves this directory with the given Git-compatible patch file applied.
+  // @param patch File containing the patch to apply
+  // @experimental
   withPatchFile = (patch: File): Directory => {
     const ctx = this._ctx.select("withPatchFile", { patch })
     return new Directory(ctx)
   }
 
-  /**
-   * Return a snapshot with a symlink
-   * @param target Location of the file or directory to link to (e.g., "/existing/file").
-   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
-   */
+  // Return a snapshot with a symlink
+  // @param target Location of the file or directory to link to (e.g., "/existing/file").
+  // @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
   withSymlink = (target: string, linkName: string): Directory => {
     const ctx = this._ctx.select("withSymlink", { target, linkName })
     return new Directory(ctx)
   }
 
-  /**
-   * Retrieves this directory with all file/dir timestamps set to the given time.
-   * @param timestamp Timestamp to set dir/files in.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199).
-   */
+  // Retrieves this directory with all file/dir timestamps set to the given time.
+  // @param timestamp Timestamp to set dir/files in.
+  //
+  // Formatted in seconds following Unix epoch (e.g., 1672531199).
   withTimestamps = (timestamp: number): Directory => {
     const ctx = this._ctx.select("withTimestamps", { timestamp })
     return new Directory(ctx)
   }
 
-  /**
-   * Return a snapshot with a subdirectory removed
-   * @param path Path of the subdirectory to remove. Example: ".github/workflows"
-   */
+  // Return a snapshot with a subdirectory removed
+  // @param path Path of the subdirectory to remove. Example: ".github/workflows"
   withoutDirectory = (path: string): Directory => {
     const ctx = this._ctx.select("withoutDirectory", { path })
     return new Directory(ctx)
   }
 
-  /**
-   * Return a snapshot with a file removed
-   * @param path Path of the file to remove (e.g., "/file.txt").
-   */
+  // Return a snapshot with a file removed
+  // @param path Path of the file to remove (e.g., "/file.txt").
   withoutFile = (path: string): Directory => {
     const ctx = this._ctx.select("withoutFile", { path })
     return new Directory(ctx)
   }
 
-  /**
-   * Return a snapshot with files removed
-   * @param paths Paths of the files to remove (e.g., ["/file.txt"]).
-   */
+  // Return a snapshot with files removed
+  // @param paths Paths of the files to remove (e.g., ["/file.txt"]).
   withoutFiles = (paths: string[]): Directory => {
     const ctx = this._ctx.select("withoutFiles", { paths })
     return new Directory(ctx)
@@ -5563,9 +4429,7 @@ export class Directory extends BaseClient {
   }
 }
 
-/**
- * The Dagger engine configuration and state
- */
+// The Dagger engine configuration and state
 export class Engine extends BaseClient {
   private readonly _id?: EngineID = undefined
   private readonly _name?: string = undefined
@@ -5580,9 +4444,7 @@ export class Engine extends BaseClient {
     this._name = _name
   }
 
-  /**
-   * A unique identifier for this Engine.
-   */
+  // A unique identifier for this Engine.
   id = async (): Promise<EngineID> => {
     if (this._id) {
       return this._id
@@ -5595,9 +4457,7 @@ export class Engine extends BaseClient {
     return response
   }
 
-  /**
-   * The list of connected client IDs
-   */
+  // The list of connected client IDs
   clients = async (): Promise<string[]> => {
     const ctx = this._ctx.select("clients")
 
@@ -5606,17 +4466,13 @@ export class Engine extends BaseClient {
     return response
   }
 
-  /**
-   * The local (on-disk) cache for the Dagger engine
-   */
+  // The local (on-disk) cache for the Dagger engine
   localCache = (): EngineCache => {
     const ctx = this._ctx.select("localCache")
     return new EngineCache(ctx)
   }
 
-  /**
-   * The name of the engine instance.
-   */
+  // The name of the engine instance.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -5630,9 +4486,7 @@ export class Engine extends BaseClient {
   }
 }
 
-/**
- * A cache storage for the Dagger engine
- */
+// A cache storage for the Dagger engine
 export class EngineCache extends BaseClient {
   private readonly _id?: EngineCacheID = undefined
   private readonly _maxUsedSpace?: number = undefined
@@ -5663,9 +4517,7 @@ export class EngineCache extends BaseClient {
     this._targetSpace = _targetSpace
   }
 
-  /**
-   * A unique identifier for this EngineCache.
-   */
+  // A unique identifier for this EngineCache.
   id = async (): Promise<EngineCacheID> => {
     if (this._id) {
       return this._id
@@ -5678,17 +4530,13 @@ export class EngineCache extends BaseClient {
     return response
   }
 
-  /**
-   * The current set of entries in the cache
-   */
+  // The current set of entries in the cache
   entrySet = (opts?: EngineCacheEntrySetOpts): EngineCacheEntrySet => {
     const ctx = this._ctx.select("entrySet", { ...opts })
     return new EngineCacheEntrySet(ctx)
   }
 
-  /**
-   * The maximum bytes to keep in the cache without pruning.
-   */
+  // The maximum bytes to keep in the cache without pruning.
   maxUsedSpace = async (): Promise<number> => {
     if (this._maxUsedSpace) {
       return this._maxUsedSpace
@@ -5701,9 +4549,7 @@ export class EngineCache extends BaseClient {
     return response
   }
 
-  /**
-   * The target amount of free disk space the garbage collector will attempt to leave.
-   */
+  // The target amount of free disk space the garbage collector will attempt to leave.
   minFreeSpace = async (): Promise<number> => {
     if (this._minFreeSpace) {
       return this._minFreeSpace
@@ -5716,14 +4562,12 @@ export class EngineCache extends BaseClient {
     return response
   }
 
-  /**
-   * Prune the cache of releaseable entries
-   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
-   * @param opts.maxUsedSpace Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
-   * @param opts.reservedSpace Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
-   * @param opts.minFreeSpace Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
-   * @param opts.targetSpace Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
-   */
+  // Prune the cache of releaseable entries
+  // @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+  // @param opts.maxUsedSpace Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+  // @param opts.reservedSpace Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+  // @param opts.minFreeSpace Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+  // @param opts.targetSpace Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
   prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {
       return
@@ -5734,9 +4578,7 @@ export class EngineCache extends BaseClient {
     await ctx.execute()
   }
 
-  /**
-   * The minimum amount of disk space this policy is guaranteed to retain.
-   */
+  // The minimum amount of disk space this policy is guaranteed to retain.
   reservedSpace = async (): Promise<number> => {
     if (this._reservedSpace) {
       return this._reservedSpace
@@ -5749,9 +4591,7 @@ export class EngineCache extends BaseClient {
     return response
   }
 
-  /**
-   * The target number of bytes to keep when pruning.
-   */
+  // The target number of bytes to keep when pruning.
   targetSpace = async (): Promise<number> => {
     if (this._targetSpace) {
       return this._targetSpace
@@ -5765,9 +4605,7 @@ export class EngineCache extends BaseClient {
   }
 }
 
-/**
- * An individual cache entry in a cache entry set
- */
+// An individual cache entry in a cache entry set
 export class EngineCacheEntry extends BaseClient {
   private readonly _id?: EngineCacheEntryID = undefined
   private readonly _activelyUsed?: boolean = undefined
@@ -5798,9 +4636,7 @@ export class EngineCacheEntry extends BaseClient {
     this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
   }
 
-  /**
-   * A unique identifier for this EngineCacheEntry.
-   */
+  // A unique identifier for this EngineCacheEntry.
   id = async (): Promise<EngineCacheEntryID> => {
     if (this._id) {
       return this._id
@@ -5813,9 +4649,7 @@ export class EngineCacheEntry extends BaseClient {
     return response
   }
 
-  /**
-   * Whether the cache entry is actively being used.
-   */
+  // Whether the cache entry is actively being used.
   activelyUsed = async (): Promise<boolean> => {
     if (this._activelyUsed) {
       return this._activelyUsed
@@ -5828,9 +4662,7 @@ export class EngineCacheEntry extends BaseClient {
     return response
   }
 
-  /**
-   * The time the cache entry was created, in Unix nanoseconds.
-   */
+  // The time the cache entry was created, in Unix nanoseconds.
   createdTimeUnixNano = async (): Promise<number> => {
     if (this._createdTimeUnixNano) {
       return this._createdTimeUnixNano
@@ -5843,9 +4675,7 @@ export class EngineCacheEntry extends BaseClient {
     return response
   }
 
-  /**
-   * The description of the cache entry.
-   */
+  // The description of the cache entry.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -5858,9 +4688,7 @@ export class EngineCacheEntry extends BaseClient {
     return response
   }
 
-  /**
-   * The disk space used by the cache entry.
-   */
+  // The disk space used by the cache entry.
   diskSpaceBytes = async (): Promise<number> => {
     if (this._diskSpaceBytes) {
       return this._diskSpaceBytes
@@ -5873,9 +4701,7 @@ export class EngineCacheEntry extends BaseClient {
     return response
   }
 
-  /**
-   * The most recent time the cache entry was used, in Unix nanoseconds.
-   */
+  // The most recent time the cache entry was used, in Unix nanoseconds.
   mostRecentUseTimeUnixNano = async (): Promise<number> => {
     if (this._mostRecentUseTimeUnixNano) {
       return this._mostRecentUseTimeUnixNano
@@ -5889,9 +4715,7 @@ export class EngineCacheEntry extends BaseClient {
   }
 }
 
-/**
- * A set of cache entries returned by a query to a cache
- */
+// A set of cache entries returned by a query to a cache
 export class EngineCacheEntrySet extends BaseClient {
   private readonly _id?: EngineCacheEntrySetID = undefined
   private readonly _diskSpaceBytes?: number = undefined
@@ -5913,9 +4737,7 @@ export class EngineCacheEntrySet extends BaseClient {
     this._entryCount = _entryCount
   }
 
-  /**
-   * A unique identifier for this EngineCacheEntrySet.
-   */
+  // A unique identifier for this EngineCacheEntrySet.
   id = async (): Promise<EngineCacheEntrySetID> => {
     if (this._id) {
       return this._id
@@ -5928,9 +4750,7 @@ export class EngineCacheEntrySet extends BaseClient {
     return response
   }
 
-  /**
-   * The total disk space used by the cache entries in this set.
-   */
+  // The total disk space used by the cache entries in this set.
   diskSpaceBytes = async (): Promise<number> => {
     if (this._diskSpaceBytes) {
       return this._diskSpaceBytes
@@ -5943,9 +4763,7 @@ export class EngineCacheEntrySet extends BaseClient {
     return response
   }
 
-  /**
-   * The list of individual cache entries in the set
-   */
+  // The list of individual cache entries in the set
   entries = async (): Promise<EngineCacheEntry[]> => {
     type entries = {
       id: EngineCacheEntryID
@@ -5960,9 +4778,7 @@ export class EngineCacheEntrySet extends BaseClient {
     )
   }
 
-  /**
-   * The number of cache entries in this set.
-   */
+  // The number of cache entries in this set.
   entryCount = async (): Promise<number> => {
     if (this._entryCount) {
       return this._entryCount
@@ -5976,9 +4792,7 @@ export class EngineCacheEntrySet extends BaseClient {
   }
 }
 
-/**
- * A definition of a custom enum defined in a Module.
- */
+// A definition of a custom enum defined in a Module.
 export class EnumTypeDef extends BaseClient {
   private readonly _id?: EnumTypeDefID = undefined
   private readonly _description?: string = undefined
@@ -6003,9 +4817,7 @@ export class EnumTypeDef extends BaseClient {
     this._sourceModuleName = _sourceModuleName
   }
 
-  /**
-   * A unique identifier for this EnumTypeDef.
-   */
+  // A unique identifier for this EnumTypeDef.
   id = async (): Promise<EnumTypeDefID> => {
     if (this._id) {
       return this._id
@@ -6018,9 +4830,7 @@ export class EnumTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * A doc string for the enum, if any.
-   */
+  // A doc string for the enum, if any.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -6033,9 +4843,7 @@ export class EnumTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The members of the enum.
-   */
+  // The members of the enum.
   members = async (): Promise<EnumValueTypeDef[]> => {
     type members = {
       id: EnumValueTypeDefID
@@ -6050,9 +4858,7 @@ export class EnumTypeDef extends BaseClient {
     )
   }
 
-  /**
-   * The name of the enum.
-   */
+  // The name of the enum.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -6065,17 +4871,13 @@ export class EnumTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The location of this enum declaration.
-   */
+  // The location of this enum declaration.
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
   }
 
-  /**
-   * If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
-   */
+  // If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
   sourceModuleName = async (): Promise<string> => {
     if (this._sourceModuleName) {
       return this._sourceModuleName
@@ -6088,9 +4890,7 @@ export class EnumTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * @deprecated use members instead
-   */
+  // @deprecated use members instead
   values = async (): Promise<EnumValueTypeDef[]> => {
     type values = {
       id: EnumValueTypeDefID
@@ -6106,9 +4906,7 @@ export class EnumTypeDef extends BaseClient {
   }
 }
 
-/**
- * A definition of a value in a custom enum defined in a Module.
- */
+// A definition of a value in a custom enum defined in a Module.
 export class EnumValueTypeDef extends BaseClient {
   private readonly _id?: EnumValueTypeDefID = undefined
   private readonly _deprecated?: string = undefined
@@ -6136,9 +4934,7 @@ export class EnumValueTypeDef extends BaseClient {
     this._value = _value
   }
 
-  /**
-   * A unique identifier for this EnumValueTypeDef.
-   */
+  // A unique identifier for this EnumValueTypeDef.
   id = async (): Promise<EnumValueTypeDefID> => {
     if (this._id) {
       return this._id
@@ -6151,9 +4947,7 @@ export class EnumValueTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The reason this enum member is deprecated, if any.
-   */
+  // The reason this enum member is deprecated, if any.
   deprecated = async (): Promise<string> => {
     if (this._deprecated) {
       return this._deprecated
@@ -6166,9 +4960,7 @@ export class EnumValueTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * A doc string for the enum member, if any.
-   */
+  // A doc string for the enum member, if any.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -6181,9 +4973,7 @@ export class EnumValueTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the enum member.
-   */
+  // The name of the enum member.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -6196,17 +4986,13 @@ export class EnumValueTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The location of this enum member declaration.
-   */
+  // The location of this enum member declaration.
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
   }
 
-  /**
-   * The value of the enum member
-   */
+  // The value of the enum member
   value = async (): Promise<string> => {
     if (this._value) {
       return this._value
@@ -6232,9 +5018,7 @@ export class Env extends BaseClient {
     this._id = _id
   }
 
-  /**
-   * A unique identifier for this Env.
-   */
+  // A unique identifier for this Env.
   id = async (): Promise<EnvID> => {
     if (this._id) {
       return this._id
@@ -6247,37 +5031,29 @@ export class Env extends BaseClient {
     return response
   }
 
-  /**
-   * Return the check with the given name from the installed modules. Must match exactly one check.
-   * @param name The name of the check to retrieve
-   * @experimental
-   */
+  // Return the check with the given name from the installed modules. Must match exactly one check.
+  // @param name The name of the check to retrieve
+  // @experimental
   check = (name: string): Check => {
     const ctx = this._ctx.select("check", { name })
     return new Check(ctx)
   }
 
-  /**
-   * Return all checks defined by the installed modules
-   * @param opts.include Only include checks matching the specified patterns
-   * @experimental
-   */
+  // Return all checks defined by the installed modules
+  // @param opts.include Only include checks matching the specified patterns
+  // @experimental
   checks = (opts?: EnvChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })
     return new CheckGroup(ctx)
   }
 
-  /**
-   * Retrieves an input binding by name
-   */
+  // Retrieves an input binding by name
   input = (name: string): Binding => {
     const ctx = this._ctx.select("input", { name })
     return new Binding(ctx)
   }
 
-  /**
-   * Returns all input bindings provided to the environment
-   */
+  // Returns all input bindings provided to the environment
   inputs = async (): Promise<Binding[]> => {
     type inputs = {
       id: BindingID
@@ -6290,17 +5066,13 @@ export class Env extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
   }
 
-  /**
-   * Retrieves an output binding by name
-   */
+  // Retrieves an output binding by name
   output = (name: string): Binding => {
     const ctx = this._ctx.select("output", { name })
     return new Binding(ctx)
   }
 
-  /**
-   * Returns all declared output bindings for the environment
-   */
+  // Returns all declared output bindings for the environment
   outputs = async (): Promise<Binding[]> => {
     type outputs = {
       id: BindingID
@@ -6313,12 +5085,10 @@ export class Env extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
   }
 
-  /**
-   * Create or update a binding of type Address in the environment
-   * @param name The name of the binding
-   * @param value The Address value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Address in the environment
+  // @param name The name of the binding
+  // @param value The Address value to assign to the binding
+  // @param description The purpose of the input
   withAddressInput = (
     name: string,
     value: Address,
@@ -6332,22 +5102,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Address output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Address output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withAddressOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withAddressOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type CacheVolume in the environment
-   * @param name The name of the binding
-   * @param value The CacheVolume value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type CacheVolume in the environment
+  // @param name The name of the binding
+  // @param value The CacheVolume value to assign to the binding
+  // @param description The purpose of the input
   withCacheVolumeInput = (
     name: string,
     value: CacheVolume,
@@ -6361,22 +5127,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired CacheVolume output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired CacheVolume output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withCacheVolumeOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Changeset in the environment
-   * @param name The name of the binding
-   * @param value The Changeset value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Changeset in the environment
+  // @param name The name of the binding
+  // @param value The Changeset value to assign to the binding
+  // @param description The purpose of the input
   withChangesetInput = (
     name: string,
     value: Changeset,
@@ -6390,22 +5152,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Changeset output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Changeset output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withChangesetOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withChangesetOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type CheckGroup in the environment
-   * @param name The name of the binding
-   * @param value The CheckGroup value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type CheckGroup in the environment
+  // @param name The name of the binding
+  // @param value The CheckGroup value to assign to the binding
+  // @param description The purpose of the input
   withCheckGroupInput = (
     name: string,
     value: CheckGroup,
@@ -6419,64 +5177,52 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired CheckGroup output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired CheckGroup output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withCheckGroupOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCheckGroupOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Check in the environment
-   * @param name The name of the binding
-   * @param value The Check value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Check in the environment
+  // @param name The name of the binding
+  // @param value The Check value to assign to the binding
+  // @param description The purpose of the input
   withCheckInput = (name: string, value: Check, description: string): Env => {
     const ctx = this._ctx.select("withCheckInput", { name, value, description })
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Check output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Check output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withCheckOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCheckOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Cloud in the environment
-   * @param name The name of the binding
-   * @param value The Cloud value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Cloud in the environment
+  // @param name The name of the binding
+  // @param value The Cloud value to assign to the binding
+  // @param description The purpose of the input
   withCloudInput = (name: string, value: Cloud, description: string): Env => {
     const ctx = this._ctx.select("withCloudInput", { name, value, description })
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Cloud output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Cloud output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withCloudOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCloudOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Container in the environment
-   * @param name The name of the binding
-   * @param value The Container value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Container in the environment
+  // @param name The name of the binding
+  // @param value The Container value to assign to the binding
+  // @param description The purpose of the input
   withContainerInput = (
     name: string,
     value: Container,
@@ -6490,32 +5236,26 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Container output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Container output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withContainerOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withContainerOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Installs the current module into the environment, exposing its functions to the model
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   */
+  // Installs the current module into the environment, exposing its functions to the model
+  //
+  // Contextual path arguments will be populated using the environment's workspace.
   withCurrentModule = (): Env => {
     const ctx = this._ctx.select("withCurrentModule")
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Directory in the environment
-   * @param name The name of the binding
-   * @param value The Directory value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Directory in the environment
+  // @param name The name of the binding
+  // @param value The Directory value to assign to the binding
+  // @param description The purpose of the input
   withDirectoryInput = (
     name: string,
     value: Directory,
@@ -6529,22 +5269,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Directory output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Directory output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withDirectoryOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withDirectoryOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type EnvFile in the environment
-   * @param name The name of the binding
-   * @param value The EnvFile value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type EnvFile in the environment
+  // @param name The name of the binding
+  // @param value The EnvFile value to assign to the binding
+  // @param description The purpose of the input
   withEnvFileInput = (
     name: string,
     value: EnvFile,
@@ -6558,64 +5294,52 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired EnvFile output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired EnvFile output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withEnvFileOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withEnvFileOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Env in the environment
-   * @param name The name of the binding
-   * @param value The Env value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Env in the environment
+  // @param name The name of the binding
+  // @param value The Env value to assign to the binding
+  // @param description The purpose of the input
   withEnvInput = (name: string, value: Env, description: string): Env => {
     const ctx = this._ctx.select("withEnvInput", { name, value, description })
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Env output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Env output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withEnvOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withEnvOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type File in the environment
-   * @param name The name of the binding
-   * @param value The File value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type File in the environment
+  // @param name The name of the binding
+  // @param value The File value to assign to the binding
+  // @param description The purpose of the input
   withFileInput = (name: string, value: File, description: string): Env => {
     const ctx = this._ctx.select("withFileInput", { name, value, description })
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired File output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired File output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withFileOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withFileOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type GeneratorGroup in the environment
-   * @param name The name of the binding
-   * @param value The GeneratorGroup value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type GeneratorGroup in the environment
+  // @param name The name of the binding
+  // @param value The GeneratorGroup value to assign to the binding
+  // @param description The purpose of the input
   withGeneratorGroupInput = (
     name: string,
     value: GeneratorGroup,
@@ -6629,11 +5353,9 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired GeneratorGroup output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired GeneratorGroup output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withGeneratorGroupOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withGeneratorGroupOutput", {
       name,
@@ -6642,12 +5364,10 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Generator in the environment
-   * @param name The name of the binding
-   * @param value The Generator value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Generator in the environment
+  // @param name The name of the binding
+  // @param value The Generator value to assign to the binding
+  // @param description The purpose of the input
   withGeneratorInput = (
     name: string,
     value: Generator,
@@ -6661,22 +5381,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Generator output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Generator output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withGeneratorOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withGeneratorOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type GitRef in the environment
-   * @param name The name of the binding
-   * @param value The GitRef value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type GitRef in the environment
+  // @param name The name of the binding
+  // @param value The GitRef value to assign to the binding
+  // @param description The purpose of the input
   withGitRefInput = (name: string, value: GitRef, description: string): Env => {
     const ctx = this._ctx.select("withGitRefInput", {
       name,
@@ -6686,22 +5402,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired GitRef output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired GitRef output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withGitRefOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withGitRefOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type GitRepository in the environment
-   * @param name The name of the binding
-   * @param value The GitRepository value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type GitRepository in the environment
+  // @param name The name of the binding
+  // @param value The GitRepository value to assign to the binding
+  // @param description The purpose of the input
   withGitRepositoryInput = (
     name: string,
     value: GitRepository,
@@ -6715,11 +5427,9 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired GitRepository output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired GitRepository output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withGitRepositoryOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withGitRepositoryOutput", {
       name,
@@ -6728,12 +5438,10 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type JSONValue in the environment
-   * @param name The name of the binding
-   * @param value The JSONValue value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type JSONValue in the environment
+  // @param name The name of the binding
+  // @param value The JSONValue value to assign to the binding
+  // @param description The purpose of the input
   withJSONValueInput = (
     name: string,
     value: JSONValue,
@@ -6747,21 +5455,17 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired JSONValue output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired JSONValue output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withJSONValueOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withJSONValueOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Sets the main module for this environment (the project being worked on)
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   */
+  // Sets the main module for this environment (the project being worked on)
+  //
+  // Contextual path arguments will be populated using the environment's workspace.
   withMainModule = (module_: Module_): Env => {
     const ctx = this._ctx.select("withMainModule", {
       module: module_,
@@ -6769,12 +5473,10 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Installs a module into the environment, exposing its functions to the model
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   * @deprecated Use withMainModule instead
-   */
+  // Installs a module into the environment, exposing its functions to the model
+  //
+  // Contextual path arguments will be populated using the environment's workspace.
+  // @deprecated Use withMainModule instead
   withModule = (module_: Module_): Env => {
     const ctx = this._ctx.select("withModule", {
       module: module_,
@@ -6782,12 +5484,10 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type ModuleConfigClient in the environment
-   * @param name The name of the binding
-   * @param value The ModuleConfigClient value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type ModuleConfigClient in the environment
+  // @param name The name of the binding
+  // @param value The ModuleConfigClient value to assign to the binding
+  // @param description The purpose of the input
   withModuleConfigClientInput = (
     name: string,
     value: ModuleConfigClient,
@@ -6801,11 +5501,9 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired ModuleConfigClient output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired ModuleConfigClient output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withModuleConfigClientOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withModuleConfigClientOutput", {
       name,
@@ -6814,12 +5512,10 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Module in the environment
-   * @param name The name of the binding
-   * @param value The Module value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Module in the environment
+  // @param name The name of the binding
+  // @param value The Module value to assign to the binding
+  // @param description The purpose of the input
   withModuleInput = (
     name: string,
     value: Module_,
@@ -6833,22 +5529,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Module output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Module output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withModuleOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withModuleOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type ModuleSource in the environment
-   * @param name The name of the binding
-   * @param value The ModuleSource value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type ModuleSource in the environment
+  // @param name The name of the binding
+  // @param value The ModuleSource value to assign to the binding
+  // @param description The purpose of the input
   withModuleSourceInput = (
     name: string,
     value: ModuleSource,
@@ -6862,11 +5554,9 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired ModuleSource output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired ModuleSource output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withModuleSourceOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withModuleSourceOutput", {
       name,
@@ -6875,12 +5565,10 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type SearchResult in the environment
-   * @param name The name of the binding
-   * @param value The SearchResult value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type SearchResult in the environment
+  // @param name The name of the binding
+  // @param value The SearchResult value to assign to the binding
+  // @param description The purpose of the input
   withSearchResultInput = (
     name: string,
     value: SearchResult,
@@ -6894,11 +5582,9 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired SearchResult output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired SearchResult output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withSearchResultOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withSearchResultOutput", {
       name,
@@ -6907,12 +5593,10 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type SearchSubmatch in the environment
-   * @param name The name of the binding
-   * @param value The SearchSubmatch value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type SearchSubmatch in the environment
+  // @param name The name of the binding
+  // @param value The SearchSubmatch value to assign to the binding
+  // @param description The purpose of the input
   withSearchSubmatchInput = (
     name: string,
     value: SearchSubmatch,
@@ -6926,11 +5610,9 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired SearchSubmatch output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired SearchSubmatch output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withSearchSubmatchOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withSearchSubmatchOutput", {
       name,
@@ -6939,12 +5621,10 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Secret in the environment
-   * @param name The name of the binding
-   * @param value The Secret value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Secret in the environment
+  // @param name The name of the binding
+  // @param value The Secret value to assign to the binding
+  // @param description The purpose of the input
   withSecretInput = (name: string, value: Secret, description: string): Env => {
     const ctx = this._ctx.select("withSecretInput", {
       name,
@@ -6954,22 +5634,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Secret output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Secret output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withSecretOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withSecretOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Service in the environment
-   * @param name The name of the binding
-   * @param value The Service value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Service in the environment
+  // @param name The name of the binding
+  // @param value The Service value to assign to the binding
+  // @param description The purpose of the input
   withServiceInput = (
     name: string,
     value: Service,
@@ -6983,22 +5659,18 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Service output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Service output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withServiceOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withServiceOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Socket in the environment
-   * @param name The name of the binding
-   * @param value The Socket value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Socket in the environment
+  // @param name The name of the binding
+  // @param value The Socket value to assign to the binding
+  // @param description The purpose of the input
   withSocketInput = (name: string, value: Socket, description: string): Env => {
     const ctx = this._ctx.select("withSocketInput", {
       name,
@@ -7008,43 +5680,35 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Socket output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Socket output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withSocketOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withSocketOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Create or update a binding of type Stat in the environment
-   * @param name The name of the binding
-   * @param value The Stat value to assign to the binding
-   * @param description The purpose of the input
-   */
+  // Create or update a binding of type Stat in the environment
+  // @param name The name of the binding
+  // @param value The Stat value to assign to the binding
+  // @param description The purpose of the input
   withStatInput = (name: string, value: Stat, description: string): Env => {
     const ctx = this._ctx.select("withStatInput", { name, value, description })
     return new Env(ctx)
   }
 
-  /**
-   * Declare a desired Stat output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
+  // Declare a desired Stat output to be assigned in the environment
+  // @param name The name of the binding
+  // @param description A description of the desired value of the binding
   withStatOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStatOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Provides a string input binding to the environment
-   * @param name The name of the binding
-   * @param value The string value to assign to the binding
-   * @param description The description of the input
-   */
+  // Provides a string input binding to the environment
+  // @param name The name of the binding
+  // @param value The string value to assign to the binding
+  // @param description The description of the input
   withStringInput = (name: string, value: string, description: string): Env => {
     const ctx = this._ctx.select("withStringInput", {
       name,
@@ -7054,28 +5718,22 @@ export class Env extends BaseClient {
     return new Env(ctx)
   }
 
-  /**
-   * Declares a desired string output binding
-   * @param name The name of the binding
-   * @param description The description of the output
-   */
+  // Declares a desired string output binding
+  // @param name The name of the binding
+  // @param description The description of the output
   withStringOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStringOutput", { name, description })
     return new Env(ctx)
   }
 
-  /**
-   * Returns a new environment with the provided workspace
-   * @param workspace The directory to set as the host filesystem
-   */
+  // Returns a new environment with the provided workspace
+  // @param workspace The directory to set as the host filesystem
   withWorkspace = (workspace: Directory): Env => {
     const ctx = this._ctx.select("withWorkspace", { workspace })
     return new Env(ctx)
   }
 
-  /**
-   * Returns a new environment without any outputs
-   */
+  // Returns a new environment without any outputs
   withoutOutputs = (): Env => {
     const ctx = this._ctx.select("withoutOutputs")
     return new Env(ctx)
@@ -7095,9 +5753,7 @@ export class Env extends BaseClient {
   }
 }
 
-/**
- * A collection of environment variables.
- */
+// A collection of environment variables.
 export class EnvFile extends BaseClient {
   private readonly _id?: EnvFileID = undefined
   private readonly _exists?: boolean = undefined
@@ -7119,9 +5775,7 @@ export class EnvFile extends BaseClient {
     this._get = _get
   }
 
-  /**
-   * A unique identifier for this EnvFile.
-   */
+  // A unique identifier for this EnvFile.
   id = async (): Promise<EnvFileID> => {
     if (this._id) {
       return this._id
@@ -7134,18 +5788,14 @@ export class EnvFile extends BaseClient {
     return response
   }
 
-  /**
-   * Return as a file
-   */
+  // Return as a file
   asFile = (): File => {
     const ctx = this._ctx.select("asFile")
     return new File(ctx)
   }
 
-  /**
-   * Check if a variable exists
-   * @param name Variable name
-   */
+  // Check if a variable exists
+  // @param name Variable name
   exists = async (name: string): Promise<boolean> => {
     if (this._exists) {
       return this._exists
@@ -7158,11 +5808,9 @@ export class EnvFile extends BaseClient {
     return response
   }
 
-  /**
-   * Lookup a variable (last occurrence wins) and return its value, or an empty string
-   * @param name Variable name
-   * @param opts.raw Return the value exactly as written to the file. No quote removal or variable expansion
-   */
+  // Lookup a variable (last occurrence wins) and return its value, or an empty string
+  // @param name Variable name
+  // @param opts.raw Return the value exactly as written to the file. No quote removal or variable expansion
   get = async (name: string, opts?: EnvFileGetOpts): Promise<string> => {
     if (this._get) {
       return this._get
@@ -7175,19 +5823,15 @@ export class EnvFile extends BaseClient {
     return response
   }
 
-  /**
-   * Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
-   * @param prefix The prefix to filter by
-   */
+  // Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+  // @param prefix The prefix to filter by
   namespace_ = (prefix: string): EnvFile => {
     const ctx = this._ctx.select("namespace", { prefix })
     return new EnvFile(ctx)
   }
 
-  /**
-   * Return all variables
-   * @param opts.raw Return values exactly as written to the file. No quote removal or variable expansion
-   */
+  // Return all variables
+  // @param opts.raw Return values exactly as written to the file. No quote removal or variable expansion
   variables = async (opts?: EnvFileVariablesOpts): Promise<EnvVariable[]> => {
     type variables = {
       id: EnvVariableID
@@ -7202,20 +5846,16 @@ export class EnvFile extends BaseClient {
     )
   }
 
-  /**
-   * Add a variable
-   * @param name Variable name
-   * @param value Variable value
-   */
+  // Add a variable
+  // @param name Variable name
+  // @param value Variable value
   withVariable = (name: string, value: string): EnvFile => {
     const ctx = this._ctx.select("withVariable", { name, value })
     return new EnvFile(ctx)
   }
 
-  /**
-   * Remove all occurrences of the named variable
-   * @param name Variable name
-   */
+  // Remove all occurrences of the named variable
+  // @param name Variable name
   withoutVariable = (name: string): EnvFile => {
     const ctx = this._ctx.select("withoutVariable", { name })
     return new EnvFile(ctx)
@@ -7231,9 +5871,7 @@ export class EnvFile extends BaseClient {
   }
 }
 
-/**
- * An environment variable name and value.
- */
+// An environment variable name and value.
 export class EnvVariable extends BaseClient {
   private readonly _id?: EnvVariableID = undefined
   private readonly _name?: string = undefined
@@ -7255,9 +5893,7 @@ export class EnvVariable extends BaseClient {
     this._value = _value
   }
 
-  /**
-   * A unique identifier for this EnvVariable.
-   */
+  // A unique identifier for this EnvVariable.
   id = async (): Promise<EnvVariableID> => {
     if (this._id) {
       return this._id
@@ -7270,9 +5906,7 @@ export class EnvVariable extends BaseClient {
     return response
   }
 
-  /**
-   * The environment variable name.
-   */
+  // The environment variable name.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -7285,9 +5919,7 @@ export class EnvVariable extends BaseClient {
     return response
   }
 
-  /**
-   * The environment variable value.
-   */
+  // The environment variable value.
   value = async (): Promise<string> => {
     if (this._value) {
       return this._value
@@ -7315,9 +5947,7 @@ export class Error extends BaseClient {
     this._message = _message
   }
 
-  /**
-   * A unique identifier for this Error.
-   */
+  // A unique identifier for this Error.
   id = async (): Promise<ErrorID> => {
     if (this._id) {
       return this._id
@@ -7330,9 +5960,7 @@ export class Error extends BaseClient {
     return response
   }
 
-  /**
-   * A description of the error.
-   */
+  // A description of the error.
   message = async (): Promise<string> => {
     if (this._message) {
       return this._message
@@ -7345,9 +5973,7 @@ export class Error extends BaseClient {
     return response
   }
 
-  /**
-   * The extensions of the error.
-   */
+  // The extensions of the error.
   values = async (): Promise<ErrorValue[]> => {
     type values = {
       id: ErrorValueID
@@ -7362,11 +5988,9 @@ export class Error extends BaseClient {
     )
   }
 
-  /**
-   * Add a value to the error.
-   * @param name The name of the value.
-   * @param value The value to store on the error.
-   */
+  // Add a value to the error.
+  // @param name The name of the value.
+  // @param value The value to store on the error.
   withValue = (name: string, value: JSON): Error => {
     const ctx = this._ctx.select("withValue", { name, value })
     return new Error(ctx)
@@ -7403,9 +6027,7 @@ export class ErrorValue extends BaseClient {
     this._value = _value
   }
 
-  /**
-   * A unique identifier for this ErrorValue.
-   */
+  // A unique identifier for this ErrorValue.
   id = async (): Promise<ErrorValueID> => {
     if (this._id) {
       return this._id
@@ -7418,9 +6040,7 @@ export class ErrorValue extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the value.
-   */
+  // The name of the value.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -7433,9 +6053,7 @@ export class ErrorValue extends BaseClient {
     return response
   }
 
-  /**
-   * The value.
-   */
+  // The value.
   value = async (): Promise<JSON> => {
     if (this._value) {
       return this._value
@@ -7449,11 +6067,9 @@ export class ErrorValue extends BaseClient {
   }
 }
 
-/**
- * A definition of a field on a custom object defined in a Module.
- *
- * A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
- */
+// A definition of a field on a custom object defined in a Module.
+//
+// A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
 export class FieldTypeDef extends BaseClient {
   private readonly _id?: FieldTypeDefID = undefined
   private readonly _deprecated?: string = undefined
@@ -7478,9 +6094,7 @@ export class FieldTypeDef extends BaseClient {
     this._name = _name
   }
 
-  /**
-   * A unique identifier for this FieldTypeDef.
-   */
+  // A unique identifier for this FieldTypeDef.
   id = async (): Promise<FieldTypeDefID> => {
     if (this._id) {
       return this._id
@@ -7493,9 +6107,7 @@ export class FieldTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The reason this enum member is deprecated, if any.
-   */
+  // The reason this enum member is deprecated, if any.
   deprecated = async (): Promise<string> => {
     if (this._deprecated) {
       return this._deprecated
@@ -7508,9 +6120,7 @@ export class FieldTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * A doc string for the field, if any.
-   */
+  // A doc string for the field, if any.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -7523,9 +6133,7 @@ export class FieldTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the field in lowerCamelCase format.
-   */
+  // The name of the field in lowerCamelCase format.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -7538,26 +6146,20 @@ export class FieldTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The location of this field declaration.
-   */
+  // The location of this field declaration.
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
   }
 
-  /**
-   * The type of the field.
-   */
+  // The type of the field.
   typeDef = (): TypeDef => {
     const ctx = this._ctx.select("typeDef")
     return new TypeDef(ctx)
   }
 }
 
-/**
- * A file.
- */
+// A file.
 export class File extends BaseClient {
   private readonly _id?: FileID = undefined
   private readonly _contents?: string = undefined
@@ -7591,9 +6193,7 @@ export class File extends BaseClient {
     this._sync = _sync
   }
 
-  /**
-   * A unique identifier for this File.
-   */
+  // A unique identifier for this File.
   id = async (): Promise<FileID> => {
     if (this._id) {
       return this._id
@@ -7606,41 +6206,33 @@ export class File extends BaseClient {
     return response
   }
 
-  /**
-   * Parse as an env file
-   * @param opts.expand Replace "${VAR}" or "$VAR" with the value of other vars
-   */
+  // Parse as an env file
+  // @param opts.expand Replace "${VAR}" or "$VAR" with the value of other vars
   asEnvFile = (opts?: FileAsEnvFileOpts): EnvFile => {
     const ctx = this._ctx.select("asEnvFile", { ...opts })
     return new EnvFile(ctx)
   }
 
-  /**
-   * Parse the file contents as JSON.
-   */
+  // Parse the file contents as JSON.
   asJSON = (): JSONValue => {
     const ctx = this._ctx.select("asJSON")
     return new JSONValue(ctx)
   }
 
-  /**
-   * Change the owner of the file recursively.
-   * @param owner A user:group to set for the file.
-   *
-   * The user and group must be an ID (1000:1000), not a name (foo:bar).
-   *
-   * If the group is omitted, it defaults to the same as the user.
-   */
+  // Change the owner of the file recursively.
+  // @param owner A user:group to set for the file.
+  //
+  // The user and group must be an ID (1000:1000), not a name (foo:bar).
+  //
+  // If the group is omitted, it defaults to the same as the user.
   chown = (owner: string): File => {
     const ctx = this._ctx.select("chown", { owner })
     return new File(ctx)
   }
 
-  /**
-   * Retrieves the contents of the file.
-   * @param opts.offsetLines Start reading after this line
-   * @param opts.limitLines Maximum number of lines to read
-   */
+  // Retrieves the contents of the file.
+  // @param opts.offsetLines Start reading after this line
+  // @param opts.limitLines Maximum number of lines to read
   contents = async (opts?: FileContentsOpts): Promise<string> => {
     if (this._contents) {
       return this._contents
@@ -7653,10 +6245,8 @@ export class File extends BaseClient {
     return response
   }
 
-  /**
-   * Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
-   * @param opts.excludeMetadata If true, exclude metadata from the digest.
-   */
+  // Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+  // @param opts.excludeMetadata If true, exclude metadata from the digest.
   digest = async (opts?: FileDigestOpts): Promise<string> => {
     if (this._digest) {
       return this._digest
@@ -7669,11 +6259,9 @@ export class File extends BaseClient {
     return response
   }
 
-  /**
-   * Writes the file to a file path on the host.
-   * @param path Location of the written directory (e.g., "output.txt").
-   * @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
-   */
+  // Writes the file to a file path on the host.
+  // @param path Location of the written directory (e.g., "output.txt").
+  // @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
   export = async (path: string, opts?: FileExportOpts): Promise<string> => {
     if (this._export) {
       return this._export
@@ -7686,9 +6274,7 @@ export class File extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves the name of the file.
-   */
+  // Retrieves the name of the file.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -7701,20 +6287,18 @@ export class File extends BaseClient {
     return response
   }
 
-  /**
-   * Searches for content matching the given regular expression or literal string.
-   *
-   * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-   * @param pattern The text to match.
-   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
-   * @param opts.multiline Enable searching across multiple lines.
-   * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
-   * @param opts.insensitive Enable case-insensitive matching.
-   * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
-   * @param opts.skipHidden Skip hidden files (files starting with .).
-   * @param opts.filesOnly Only return matching files, not lines and content
-   * @param opts.limit Limit the number of results to return
-   */
+  // Searches for content matching the given regular expression or literal string.
+  //
+  // Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  // @param pattern The text to match.
+  // @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
+  // @param opts.multiline Enable searching across multiple lines.
+  // @param opts.dotall Allow the . pattern to match newlines in multiline mode.
+  // @param opts.insensitive Enable case-insensitive matching.
+  // @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
+  // @param opts.skipHidden Skip hidden files (files starting with .).
+  // @param opts.filesOnly Only return matching files, not lines and content
+  // @param opts.limit Limit the number of results to return
   search = async (
     pattern: string,
     opts?: FileSearchOpts,
@@ -7732,9 +6316,7 @@ export class File extends BaseClient {
     )
   }
 
-  /**
-   * Retrieves the size of the file, in bytes.
-   */
+  // Retrieves the size of the file, in bytes.
   size = async (): Promise<number> => {
     if (this._size) {
       return this._size
@@ -7747,17 +6329,13 @@ export class File extends BaseClient {
     return response
   }
 
-  /**
-   * Return file status
-   */
+  // Return file status
   stat = (): Stat => {
     const ctx = this._ctx.select("stat")
     return new Stat(ctx)
   }
 
-  /**
-   * Force evaluation in the engine.
-   */
+  // Force evaluation in the engine.
   sync = async (): Promise<File> => {
     const ctx = this._ctx.select("sync")
 
@@ -7766,30 +6344,26 @@ export class File extends BaseClient {
     return new Client(ctx.copy()).loadFileFromID(response)
   }
 
-  /**
-   * Retrieves this file with its name set to the given name.
-   * @param name Name to set file to.
-   */
+  // Retrieves this file with its name set to the given name.
+  // @param name Name to set file to.
   withName = (name: string): File => {
     const ctx = this._ctx.select("withName", { name })
     return new File(ctx)
   }
 
-  /**
-   * Retrieves the file with content replaced with the given text.
-   *
-   * If 'all' is true, all occurrences of the pattern will be replaced.
-   *
-   * If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
-   *
-   * If neither are specified, and there are multiple matches for the pattern, this will error.
-   *
-   * If there are no matches for the pattern, this will error.
-   * @param search The text to match.
-   * @param replacement The text to match.
-   * @param opts.all Replace all occurrences of the pattern.
-   * @param opts.firstFrom Replace the first match starting from the specified line.
-   */
+  // Retrieves the file with content replaced with the given text.
+  //
+  // If 'all' is true, all occurrences of the pattern will be replaced.
+  //
+  // If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+  //
+  // If neither are specified, and there are multiple matches for the pattern, this will error.
+  //
+  // If there are no matches for the pattern, this will error.
+  // @param search The text to match.
+  // @param replacement The text to match.
+  // @param opts.all Replace all occurrences of the pattern.
+  // @param opts.firstFrom Replace the first match starting from the specified line.
   withReplaced = (
     search: string,
     replacement: string,
@@ -7803,12 +6377,10 @@ export class File extends BaseClient {
     return new File(ctx)
   }
 
-  /**
-   * Retrieves this file with its created/modified timestamps set to the given time.
-   * @param timestamp Timestamp to set dir/files in.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199).
-   */
+  // Retrieves this file with its created/modified timestamps set to the given time.
+  // @param timestamp Timestamp to set dir/files in.
+  //
+  // Formatted in seconds following Unix epoch (e.g., 1672531199).
   withTimestamps = (timestamp: number): File => {
     const ctx = this._ctx.select("withTimestamps", { timestamp })
     return new File(ctx)
@@ -7824,11 +6396,9 @@ export class File extends BaseClient {
   }
 }
 
-/**
- * Function represents a resolver provided by a Module.
- *
- * A function always evaluates against a parent object and is given a set of named arguments.
- */
+// Function represents a resolver provided by a Module.
+//
+// A function always evaluates against a parent object and is given a set of named arguments.
 export class Function_ extends BaseClient {
   private readonly _id?: FunctionID = undefined
   private readonly _deprecated?: string = undefined
@@ -7853,9 +6423,7 @@ export class Function_ extends BaseClient {
     this._name = _name
   }
 
-  /**
-   * A unique identifier for this Function.
-   */
+  // A unique identifier for this Function.
   id = async (): Promise<FunctionID> => {
     if (this._id) {
       return this._id
@@ -7868,9 +6436,7 @@ export class Function_ extends BaseClient {
     return response
   }
 
-  /**
-   * Arguments accepted by the function, if any.
-   */
+  // Arguments accepted by the function, if any.
   args = async (): Promise<FunctionArg[]> => {
     type args = {
       id: FunctionArgID
@@ -7885,9 +6451,7 @@ export class Function_ extends BaseClient {
     )
   }
 
-  /**
-   * The reason this function is deprecated, if any.
-   */
+  // The reason this function is deprecated, if any.
   deprecated = async (): Promise<string> => {
     if (this._deprecated) {
       return this._deprecated
@@ -7900,9 +6464,7 @@ export class Function_ extends BaseClient {
     return response
   }
 
-  /**
-   * A doc string for the function, if any.
-   */
+  // A doc string for the function, if any.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -7915,9 +6477,7 @@ export class Function_ extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the function.
-   */
+  // The name of the function.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -7930,33 +6490,27 @@ export class Function_ extends BaseClient {
     return response
   }
 
-  /**
-   * The type returned by the function.
-   */
+  // The type returned by the function.
   returnType = (): TypeDef => {
     const ctx = this._ctx.select("returnType")
     return new TypeDef(ctx)
   }
 
-  /**
-   * The location of this function declaration.
-   */
+  // The location of this function declaration.
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
   }
 
-  /**
-   * Returns the function with the provided argument
-   * @param name The name of the argument
-   * @param typeDef The type of the argument
-   * @param opts.description A doc string for the argument, if any
-   * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
-   * @param opts.defaultPath If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
-   * @param opts.ignore Patterns to ignore when loading the contextual argument value.
-   * @param opts.sourceMap The source map for the argument definition.
-   * @param opts.deprecated If deprecated, the reason or migration path.
-   */
+  // Returns the function with the provided argument
+  // @param name The name of the argument
+  // @param typeDef The type of the argument
+  // @param opts.description A doc string for the argument, if any
+  // @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
+  // @param opts.defaultPath If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+  // @param opts.ignore Patterns to ignore when loading the contextual argument value.
+  // @param opts.sourceMap The source map for the argument definition.
+  // @param opts.deprecated If deprecated, the reason or migration path.
   withArg = (
     name: string,
     typeDef: TypeDef,
@@ -7966,11 +6520,9 @@ export class Function_ extends BaseClient {
     return new Function_(ctx)
   }
 
-  /**
-   * Returns the function updated to use the provided cache policy.
-   * @param policy The cache policy to use.
-   * @param opts.timeToLive The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
-   */
+  // Returns the function updated to use the provided cache policy.
+  // @param policy The cache policy to use.
+  // @param opts.timeToLive The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
   withCachePolicy = (
     policy: FunctionCachePolicy,
     opts?: FunctionWithCachePolicyOpts,
@@ -7987,44 +6539,34 @@ export class Function_ extends BaseClient {
     return new Function_(ctx)
   }
 
-  /**
-   * Returns the function with a flag indicating it's a check.
-   */
+  // Returns the function with a flag indicating it's a check.
   withCheck = (): Function_ => {
     const ctx = this._ctx.select("withCheck")
     return new Function_(ctx)
   }
 
-  /**
-   * Returns the function with the provided deprecation reason.
-   * @param opts.reason Reason or migration path describing the deprecation.
-   */
+  // Returns the function with the provided deprecation reason.
+  // @param opts.reason Reason or migration path describing the deprecation.
   withDeprecated = (opts?: FunctionWithDeprecatedOpts): Function_ => {
     const ctx = this._ctx.select("withDeprecated", { ...opts })
     return new Function_(ctx)
   }
 
-  /**
-   * Returns the function with the given doc string.
-   * @param description The doc string to set.
-   */
+  // Returns the function with the given doc string.
+  // @param description The doc string to set.
   withDescription = (description: string): Function_ => {
     const ctx = this._ctx.select("withDescription", { description })
     return new Function_(ctx)
   }
 
-  /**
-   * Returns the function with a flag indicating it's a generator.
-   */
+  // Returns the function with a flag indicating it's a generator.
   withGenerator = (): Function_ => {
     const ctx = this._ctx.select("withGenerator")
     return new Function_(ctx)
   }
 
-  /**
-   * Returns the function with the given source map.
-   * @param sourceMap The source map for the function definition.
-   */
+  // Returns the function with the given source map.
+  // @param sourceMap The source map for the function definition.
   withSourceMap = (sourceMap: SourceMap): Function_ => {
     const ctx = this._ctx.select("withSourceMap", { sourceMap })
     return new Function_(ctx)
@@ -8040,11 +6582,9 @@ export class Function_ extends BaseClient {
   }
 }
 
-/**
- * An argument accepted by a function.
- *
- * This is a specification for an argument at function definition time, not an argument passed at function call time.
- */
+// An argument accepted by a function.
+//
+// This is a specification for an argument at function definition time, not an argument passed at function call time.
 export class FunctionArg extends BaseClient {
   private readonly _id?: FunctionArgID = undefined
   private readonly _defaultAddress?: string = undefined
@@ -8078,9 +6618,7 @@ export class FunctionArg extends BaseClient {
     this._name = _name
   }
 
-  /**
-   * A unique identifier for this FunctionArg.
-   */
+  // A unique identifier for this FunctionArg.
   id = async (): Promise<FunctionArgID> => {
     if (this._id) {
       return this._id
@@ -8093,9 +6631,7 @@ export class FunctionArg extends BaseClient {
     return response
   }
 
-  /**
-   * Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
-   */
+  // Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
   defaultAddress = async (): Promise<string> => {
     if (this._defaultAddress) {
       return this._defaultAddress
@@ -8108,9 +6644,7 @@ export class FunctionArg extends BaseClient {
     return response
   }
 
-  /**
-   * Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
-   */
+  // Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
   defaultPath = async (): Promise<string> => {
     if (this._defaultPath) {
       return this._defaultPath
@@ -8123,9 +6657,7 @@ export class FunctionArg extends BaseClient {
     return response
   }
 
-  /**
-   * A default value to use for this argument when not explicitly set by the caller, if any.
-   */
+  // A default value to use for this argument when not explicitly set by the caller, if any.
   defaultValue = async (): Promise<JSON> => {
     if (this._defaultValue) {
       return this._defaultValue
@@ -8138,9 +6670,7 @@ export class FunctionArg extends BaseClient {
     return response
   }
 
-  /**
-   * The reason this function is deprecated, if any.
-   */
+  // The reason this function is deprecated, if any.
   deprecated = async (): Promise<string> => {
     if (this._deprecated) {
       return this._deprecated
@@ -8153,9 +6683,7 @@ export class FunctionArg extends BaseClient {
     return response
   }
 
-  /**
-   * A doc string for the argument, if any.
-   */
+  // A doc string for the argument, if any.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -8168,9 +6696,7 @@ export class FunctionArg extends BaseClient {
     return response
   }
 
-  /**
-   * Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
-   */
+  // Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
   ignore = async (): Promise<string[]> => {
     const ctx = this._ctx.select("ignore")
 
@@ -8179,9 +6705,7 @@ export class FunctionArg extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the argument in lowerCamelCase format.
-   */
+  // The name of the argument in lowerCamelCase format.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -8194,26 +6718,20 @@ export class FunctionArg extends BaseClient {
     return response
   }
 
-  /**
-   * The location of this arg declaration.
-   */
+  // The location of this arg declaration.
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
   }
 
-  /**
-   * The type of the argument.
-   */
+  // The type of the argument.
   typeDef = (): TypeDef => {
     const ctx = this._ctx.select("typeDef")
     return new TypeDef(ctx)
   }
 }
 
-/**
- * An active function call.
- */
+// An active function call.
 export class FunctionCall extends BaseClient {
   private readonly _id?: FunctionCallID = undefined
   private readonly _name?: string = undefined
@@ -8244,9 +6762,7 @@ export class FunctionCall extends BaseClient {
     this._returnValue = _returnValue
   }
 
-  /**
-   * A unique identifier for this FunctionCall.
-   */
+  // A unique identifier for this FunctionCall.
   id = async (): Promise<FunctionCallID> => {
     if (this._id) {
       return this._id
@@ -8259,9 +6775,7 @@ export class FunctionCall extends BaseClient {
     return response
   }
 
-  /**
-   * The argument values the function is being invoked with.
-   */
+  // The argument values the function is being invoked with.
   inputArgs = async (): Promise<FunctionCallArgValue[]> => {
     type inputArgs = {
       id: FunctionCallArgValueID
@@ -8276,9 +6790,7 @@ export class FunctionCall extends BaseClient {
     )
   }
 
-  /**
-   * The name of the function being called.
-   */
+  // The name of the function being called.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -8291,9 +6803,7 @@ export class FunctionCall extends BaseClient {
     return response
   }
 
-  /**
-   * The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
-   */
+  // The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
   parent = async (): Promise<JSON> => {
     if (this._parent) {
       return this._parent
@@ -8306,9 +6816,7 @@ export class FunctionCall extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
-   */
+  // The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
   parentName = async (): Promise<string> => {
     if (this._parentName) {
       return this._parentName
@@ -8321,10 +6829,8 @@ export class FunctionCall extends BaseClient {
     return response
   }
 
-  /**
-   * Return an error from the function.
-   * @param error The error to return.
-   */
+  // Return an error from the function.
+  // @param error The error to return.
   returnError = async (error: Error): Promise<void> => {
     if (this._returnError) {
       return
@@ -8335,10 +6841,8 @@ export class FunctionCall extends BaseClient {
     await ctx.execute()
   }
 
-  /**
-   * Set the return value of the function call to the provided value.
-   * @param value JSON serialization of the return value.
-   */
+  // Set the return value of the function call to the provided value.
+  // @param value JSON serialization of the return value.
   returnValue = async (value: JSON): Promise<void> => {
     if (this._returnValue) {
       return
@@ -8350,9 +6854,7 @@ export class FunctionCall extends BaseClient {
   }
 }
 
-/**
- * A value passed as a named argument to a function call.
- */
+// A value passed as a named argument to a function call.
 export class FunctionCallArgValue extends BaseClient {
   private readonly _id?: FunctionCallArgValueID = undefined
   private readonly _name?: string = undefined
@@ -8374,9 +6876,7 @@ export class FunctionCallArgValue extends BaseClient {
     this._value = _value
   }
 
-  /**
-   * A unique identifier for this FunctionCallArgValue.
-   */
+  // A unique identifier for this FunctionCallArgValue.
   id = async (): Promise<FunctionCallArgValueID> => {
     if (this._id) {
       return this._id
@@ -8389,9 +6889,7 @@ export class FunctionCallArgValue extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the argument.
-   */
+  // The name of the argument.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -8404,9 +6902,7 @@ export class FunctionCallArgValue extends BaseClient {
     return response
   }
 
-  /**
-   * The value of the argument represented as a JSON serialized string.
-   */
+  // The value of the argument represented as a JSON serialized string.
   value = async (): Promise<JSON> => {
     if (this._value) {
       return this._value
@@ -8420,9 +6916,7 @@ export class FunctionCallArgValue extends BaseClient {
   }
 }
 
-/**
- * The result of running an SDK's codegen.
- */
+// The result of running an SDK's codegen.
 export class GeneratedCode extends BaseClient {
   private readonly _id?: GeneratedCodeID = undefined
 
@@ -8435,9 +6929,7 @@ export class GeneratedCode extends BaseClient {
     this._id = _id
   }
 
-  /**
-   * A unique identifier for this GeneratedCode.
-   */
+  // A unique identifier for this GeneratedCode.
   id = async (): Promise<GeneratedCodeID> => {
     if (this._id) {
       return this._id
@@ -8450,17 +6942,13 @@ export class GeneratedCode extends BaseClient {
     return response
   }
 
-  /**
-   * The directory containing the generated code.
-   */
+  // The directory containing the generated code.
   code = (): Directory => {
     const ctx = this._ctx.select("code")
     return new Directory(ctx)
   }
 
-  /**
-   * List of paths to mark generated in version control (i.e. .gitattributes).
-   */
+  // List of paths to mark generated in version control (i.e. .gitattributes).
   vcsGeneratedPaths = async (): Promise<string[]> => {
     const ctx = this._ctx.select("vcsGeneratedPaths")
 
@@ -8469,9 +6957,7 @@ export class GeneratedCode extends BaseClient {
     return response
   }
 
-  /**
-   * List of paths to ignore in version control (i.e. .gitignore).
-   */
+  // List of paths to ignore in version control (i.e. .gitignore).
   vcsIgnoredPaths = async (): Promise<string[]> => {
     const ctx = this._ctx.select("vcsIgnoredPaths")
 
@@ -8480,17 +6966,13 @@ export class GeneratedCode extends BaseClient {
     return response
   }
 
-  /**
-   * Set the list of paths to mark generated in version control.
-   */
+  // Set the list of paths to mark generated in version control.
   withVCSGeneratedPaths = (paths: string[]): GeneratedCode => {
     const ctx = this._ctx.select("withVCSGeneratedPaths", { paths })
     return new GeneratedCode(ctx)
   }
 
-  /**
-   * Set the list of paths to ignore in version control.
-   */
+  // Set the list of paths to ignore in version control.
   withVCSIgnoredPaths = (paths: string[]): GeneratedCode => {
     const ctx = this._ctx.select("withVCSIgnoredPaths", { paths })
     return new GeneratedCode(ctx)
@@ -8533,9 +7015,7 @@ export class Generator extends BaseClient {
     this._name = _name
   }
 
-  /**
-   * A unique identifier for this Generator.
-   */
+  // A unique identifier for this Generator.
   id = async (): Promise<GeneratorID> => {
     if (this._id) {
       return this._id
@@ -8548,17 +7028,13 @@ export class Generator extends BaseClient {
     return response
   }
 
-  /**
-   * The generated changeset
-   */
+  // The generated changeset
   changes = (): Changeset => {
     const ctx = this._ctx.select("changes")
     return new Changeset(ctx)
   }
 
-  /**
-   * Whether the generator complete
-   */
+  // Whether the generator complete
   completed = async (): Promise<boolean> => {
     if (this._completed) {
       return this._completed
@@ -8571,9 +7047,7 @@ export class Generator extends BaseClient {
     return response
   }
 
-  /**
-   * Return the description of the generator
-   */
+  // Return the description of the generator
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -8586,9 +7060,7 @@ export class Generator extends BaseClient {
     return response
   }
 
-  /**
-   * Wether changeset from the generator execution is empty or not
-   */
+  // Wether changeset from the generator execution is empty or not
   isEmpty = async (): Promise<boolean> => {
     if (this._isEmpty) {
       return this._isEmpty
@@ -8601,9 +7073,7 @@ export class Generator extends BaseClient {
     return response
   }
 
-  /**
-   * Return the fully qualified name of the generator
-   */
+  // Return the fully qualified name of the generator
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -8616,9 +7086,7 @@ export class Generator extends BaseClient {
     return response
   }
 
-  /**
-   * Execute the generator
-   */
+  // Execute the generator
   run = (): Generator => {
     const ctx = this._ctx.select("run")
     return new Generator(ctx)
@@ -8648,9 +7116,7 @@ export class GeneratorGroup extends BaseClient {
     this._isEmpty = _isEmpty
   }
 
-  /**
-   * A unique identifier for this GeneratorGroup.
-   */
+  // A unique identifier for this GeneratorGroup.
   id = async (): Promise<GeneratorGroupID> => {
     if (this._id) {
       return this._id
@@ -8663,14 +7129,12 @@ export class GeneratorGroup extends BaseClient {
     return response
   }
 
-  /**
-   * The combined changes from the generators execution
-   *
-   * If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
-   *
-   * Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
-   * @param opts.onConflict Strategy to apply on conflicts between generators
-   */
+  // The combined changes from the generators execution
+  //
+  // If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
+  //
+  // Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+  // @param opts.onConflict Strategy to apply on conflicts between generators
   changes = (opts?: GeneratorGroupChangesOpts): Changeset => {
     const metadata = {
       onConflict: {
@@ -8683,9 +7147,7 @@ export class GeneratorGroup extends BaseClient {
     return new Changeset(ctx)
   }
 
-  /**
-   * Whether the generated changeset is empty or not
-   */
+  // Whether the generated changeset is empty or not
   isEmpty = async (): Promise<boolean> => {
     if (this._isEmpty) {
       return this._isEmpty
@@ -8698,9 +7160,7 @@ export class GeneratorGroup extends BaseClient {
     return response
   }
 
-  /**
-   * Return a list of individual generators and their details
-   */
+  // Return a list of individual generators and their details
   list = async (): Promise<Generator[]> => {
     type list = {
       id: GeneratorID
@@ -8713,9 +7173,7 @@ export class GeneratorGroup extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadGeneratorFromID(r.id))
   }
 
-  /**
-   * Execute all selected generators
-   */
+  // Execute all selected generators
   run = (): GeneratorGroup => {
     const ctx = this._ctx.select("run")
     return new GeneratorGroup(ctx)
@@ -8731,9 +7189,7 @@ export class GeneratorGroup extends BaseClient {
   }
 }
 
-/**
- * A git ref (tag, branch, or commit).
- */
+// A git ref (tag, branch, or commit).
 export class GitRef extends BaseClient {
   private readonly _id?: GitRefID = undefined
   private readonly _commit?: string = undefined
@@ -8750,9 +7206,7 @@ export class GitRef extends BaseClient {
     this._ref = _ref
   }
 
-  /**
-   * A unique identifier for this GitRef.
-   */
+  // A unique identifier for this GitRef.
   id = async (): Promise<GitRefID> => {
     if (this._id) {
       return this._id
@@ -8765,9 +7219,7 @@ export class GitRef extends BaseClient {
     return response
   }
 
-  /**
-   * The resolved commit id at this ref.
-   */
+  // The resolved commit id at this ref.
   commit = async (): Promise<string> => {
     if (this._commit) {
       return this._commit
@@ -8780,18 +7232,14 @@ export class GitRef extends BaseClient {
     return response
   }
 
-  /**
-   * Find the best common ancestor between this ref and another ref.
-   * @param other The other ref to compare against.
-   */
+  // Find the best common ancestor between this ref and another ref.
+  // @param other The other ref to compare against.
   commonAncestor = (other: GitRef): GitRef => {
     const ctx = this._ctx.select("commonAncestor", { other })
     return new GitRef(ctx)
   }
 
-  /**
-   * The resolved ref name at this ref.
-   */
+  // The resolved ref name at this ref.
   ref = async (): Promise<string> => {
     if (this._ref) {
       return this._ref
@@ -8804,11 +7252,9 @@ export class GitRef extends BaseClient {
     return response
   }
 
-  /**
-   * The filesystem tree at this ref.
-   * @param opts.discardGitDir Set to true to discard .git directory.
-   * @param opts.depth The depth of the tree to fetch.
-   */
+  // The filesystem tree at this ref.
+  // @param opts.discardGitDir Set to true to discard .git directory.
+  // @param opts.depth The depth of the tree to fetch.
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
     return new Directory(ctx)
@@ -8824,9 +7270,7 @@ export class GitRef extends BaseClient {
   }
 }
 
-/**
- * A git repository.
- */
+// A git repository.
 export class GitRepository extends BaseClient {
   private readonly _id?: GitRepositoryID = undefined
   private readonly _url?: string = undefined
@@ -8841,9 +7285,7 @@ export class GitRepository extends BaseClient {
     this._url = _url
   }
 
-  /**
-   * A unique identifier for this GitRepository.
-   */
+  // A unique identifier for this GitRepository.
   id = async (): Promise<GitRepositoryID> => {
     if (this._id) {
       return this._id
@@ -8856,19 +7298,15 @@ export class GitRepository extends BaseClient {
     return response
   }
 
-  /**
-   * Returns details of a branch.
-   * @param name Branch's name (e.g., "main").
-   */
+  // Returns details of a branch.
+  // @param name Branch's name (e.g., "main").
   branch = (name: string): GitRef => {
     const ctx = this._ctx.select("branch", { name })
     return new GitRef(ctx)
   }
 
-  /**
-   * branches that match any of the given glob patterns.
-   * @param opts.patterns Glob patterns (e.g., "refs/tags/v*").
-   */
+  // branches that match any of the given glob patterns.
+  // @param opts.patterns Glob patterns (e.g., "refs/tags/v*").
   branches = async (opts?: GitRepositoryBranchesOpts): Promise<string[]> => {
     const ctx = this._ctx.select("branches", { ...opts })
 
@@ -8877,53 +7315,41 @@ export class GitRepository extends BaseClient {
     return response
   }
 
-  /**
-   * Returns details of a commit.
-   * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
-   */
+  // Returns details of a commit.
+  // @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
   commit = (id: string): GitRef => {
     const ctx = this._ctx.select("commit", { id })
     return new GitRef(ctx)
   }
 
-  /**
-   * Returns details for HEAD.
-   */
+  // Returns details for HEAD.
   head = (): GitRef => {
     const ctx = this._ctx.select("head")
     return new GitRef(ctx)
   }
 
-  /**
-   * Returns details for the latest semver tag.
-   */
+  // Returns details for the latest semver tag.
   latestVersion = (): GitRef => {
     const ctx = this._ctx.select("latestVersion")
     return new GitRef(ctx)
   }
 
-  /**
-   * Returns details of a ref.
-   * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
-   */
+  // Returns details of a ref.
+  // @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
   ref = (name: string): GitRef => {
     const ctx = this._ctx.select("ref", { name })
     return new GitRef(ctx)
   }
 
-  /**
-   * Returns details of a tag.
-   * @param name Tag's name (e.g., "v0.3.9").
-   */
+  // Returns details of a tag.
+  // @param name Tag's name (e.g., "v0.3.9").
   tag = (name: string): GitRef => {
     const ctx = this._ctx.select("tag", { name })
     return new GitRef(ctx)
   }
 
-  /**
-   * tags that match any of the given glob patterns.
-   * @param opts.patterns Glob patterns (e.g., "refs/tags/v*").
-   */
+  // tags that match any of the given glob patterns.
+  // @param opts.patterns Glob patterns (e.g., "refs/tags/v*").
   tags = async (opts?: GitRepositoryTagsOpts): Promise<string[]> => {
     const ctx = this._ctx.select("tags", { ...opts })
 
@@ -8932,17 +7358,13 @@ export class GitRepository extends BaseClient {
     return response
   }
 
-  /**
-   * Returns the changeset of uncommitted changes in the git repository.
-   */
+  // Returns the changeset of uncommitted changes in the git repository.
   uncommitted = (): Changeset => {
     const ctx = this._ctx.select("uncommitted")
     return new Changeset(ctx)
   }
 
-  /**
-   * The URL of the git repository.
-   */
+  // The URL of the git repository.
   url = async (): Promise<string> => {
     if (this._url) {
       return this._url
@@ -8956,9 +7378,7 @@ export class GitRepository extends BaseClient {
   }
 }
 
-/**
- * Information about the host environment.
- */
+// Information about the host environment.
 export class Host extends BaseClient {
   private readonly _id?: HostID = undefined
   private readonly _findUp?: string = undefined
@@ -8973,9 +7393,7 @@ export class Host extends BaseClient {
     this._findUp = _findUp
   }
 
-  /**
-   * A unique identifier for this Host.
-   */
+  // A unique identifier for this Host.
   id = async (): Promise<HostID> => {
     if (this._id) {
       return this._id
@@ -8988,42 +7406,34 @@ export class Host extends BaseClient {
     return response
   }
 
-  /**
-   * Accesses a container image on the host.
-   * @param name Name of the image to access.
-   */
+  // Accesses a container image on the host.
+  // @param name Name of the image to access.
   containerImage = (name: string): Container => {
     const ctx = this._ctx.select("containerImage", { name })
     return new Container(ctx)
   }
 
-  /**
-   * Accesses a directory on the host.
-   * @param path Location of the directory to access (e.g., ".").
-   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   * @param opts.noCache If true, the directory will always be reloaded from the host.
-   * @param opts.gitignore Apply .gitignore filter rules inside the directory
-   */
+  // Accesses a directory on the host.
+  // @param path Location of the directory to access (e.g., ".").
+  // @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+  // @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+  // @param opts.noCache If true, the directory will always be reloaded from the host.
+  // @param opts.gitignore Apply .gitignore filter rules inside the directory
   directory = (path: string, opts?: HostDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
     return new Directory(ctx)
   }
 
-  /**
-   * Accesses a file on the host.
-   * @param path Location of the file to retrieve (e.g., "README.md").
-   * @param opts.noCache If true, the file will always be reloaded from the host.
-   */
+  // Accesses a file on the host.
+  // @param path Location of the file to retrieve (e.g., "README.md").
+  // @param opts.noCache If true, the file will always be reloaded from the host.
   file = (path: string, opts?: HostFileOpts): File => {
     const ctx = this._ctx.select("file", { path, ...opts })
     return new File(ctx)
   }
 
-  /**
-   * Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
-   * @param name name of the file or directory to search for
-   */
+  // Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+  // @param name name of the file or directory to search for
   findUp = async (name: string, opts?: HostFindUpOpts): Promise<string> => {
     if (this._findUp) {
       return this._findUp
@@ -9036,55 +7446,47 @@ export class Host extends BaseClient {
     return response
   }
 
-  /**
-   * Creates a service that forwards traffic to a specified address via the host.
-   * @param ports Ports to expose via the service, forwarding through the host network.
-   *
-   * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-   *
-   * An empty set of ports is not valid; an error will be returned.
-   * @param opts.host Upstream host to forward traffic to.
-   */
+  // Creates a service that forwards traffic to a specified address via the host.
+  // @param ports Ports to expose via the service, forwarding through the host network.
+  //
+  // If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
+  //
+  // An empty set of ports is not valid; an error will be returned.
+  // @param opts.host Upstream host to forward traffic to.
   service = (ports: PortForward[], opts?: HostServiceOpts): Service => {
     const ctx = this._ctx.select("service", { ports, ...opts })
     return new Service(ctx)
   }
 
-  /**
-   * Creates a tunnel that forwards traffic from the host to a service.
-   * @param service Service to send traffic from the tunnel.
-   * @param opts.native Map each service port to the same port on the host, as if the service were running natively.
-   *
-   * Note: enabling may result in port conflicts.
-   * @param opts.ports Configure explicit port forwarding rules for the tunnel.
-   *
-   * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-   *
-   * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
-   *
-   * If ports are given and native is true, the ports are additive.
-   */
+  // Creates a tunnel that forwards traffic from the host to a service.
+  // @param service Service to send traffic from the tunnel.
+  // @param opts.native Map each service port to the same port on the host, as if the service were running natively.
+  //
+  // Note: enabling may result in port conflicts.
+  // @param opts.ports Configure explicit port forwarding rules for the tunnel.
+  //
+  // If a port's frontend is unspecified or 0, a random port will be chosen by the host.
+  //
+  // If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
+  //
+  // If ports are given and native is true, the ports are additive.
   tunnel = (service: Service, opts?: HostTunnelOpts): Service => {
     const ctx = this._ctx.select("tunnel", { service, ...opts })
     return new Service(ctx)
   }
 
-  /**
-   * Accesses a Unix socket on the host.
-   * @param path Location of the Unix socket (e.g., "/var/run/docker.sock").
-   */
+  // Accesses a Unix socket on the host.
+  // @param path Location of the Unix socket (e.g., "/var/run/docker.sock").
   unixSocket = (path: string): Socket => {
     const ctx = this._ctx.select("unixSocket", { path })
     return new Socket(ctx)
   }
 }
 
-/**
- * A graphql input type, which is essentially just a group of named args.
- * This is currently only used to represent pre-existing usage of graphql input types
- * in the core API. It is not used by user modules and shouldn't ever be as user
- * module accept input objects via their id rather than graphql input types.
- */
+// A graphql input type, which is essentially just a group of named args.
+// This is currently only used to represent pre-existing usage of graphql input types
+// in the core API. It is not used by user modules and shouldn't ever be as user
+// module accept input objects via their id rather than graphql input types.
 export class InputTypeDef extends BaseClient {
   private readonly _id?: InputTypeDefID = undefined
   private readonly _name?: string = undefined
@@ -9099,9 +7501,7 @@ export class InputTypeDef extends BaseClient {
     this._name = _name
   }
 
-  /**
-   * A unique identifier for this InputTypeDef.
-   */
+  // A unique identifier for this InputTypeDef.
   id = async (): Promise<InputTypeDefID> => {
     if (this._id) {
       return this._id
@@ -9114,9 +7514,7 @@ export class InputTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * Static fields defined on this input object, if any.
-   */
+  // Static fields defined on this input object, if any.
   fields = async (): Promise<FieldTypeDef[]> => {
     type fields = {
       id: FieldTypeDefID
@@ -9131,9 +7529,7 @@ export class InputTypeDef extends BaseClient {
     )
   }
 
-  /**
-   * The name of the input object.
-   */
+  // The name of the input object.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -9147,9 +7543,7 @@ export class InputTypeDef extends BaseClient {
   }
 }
 
-/**
- * A definition of a custom interface defined in a Module.
- */
+// A definition of a custom interface defined in a Module.
 export class InterfaceTypeDef extends BaseClient {
   private readonly _id?: InterfaceTypeDefID = undefined
   private readonly _description?: string = undefined
@@ -9174,9 +7568,7 @@ export class InterfaceTypeDef extends BaseClient {
     this._sourceModuleName = _sourceModuleName
   }
 
-  /**
-   * A unique identifier for this InterfaceTypeDef.
-   */
+  // A unique identifier for this InterfaceTypeDef.
   id = async (): Promise<InterfaceTypeDefID> => {
     if (this._id) {
       return this._id
@@ -9189,9 +7581,7 @@ export class InterfaceTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The doc string for the interface, if any.
-   */
+  // The doc string for the interface, if any.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -9204,9 +7594,7 @@ export class InterfaceTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * Functions defined on this interface, if any.
-   */
+  // Functions defined on this interface, if any.
   functions = async (): Promise<Function_[]> => {
     type functions = {
       id: FunctionID
@@ -9219,9 +7607,7 @@ export class InterfaceTypeDef extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
   }
 
-  /**
-   * The name of the interface.
-   */
+  // The name of the interface.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -9234,17 +7620,13 @@ export class InterfaceTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The location of this interface declaration.
-   */
+  // The location of this interface declaration.
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
   }
 
-  /**
-   * If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
-   */
+  // If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
   sourceModuleName = async (): Promise<string> => {
     if (this._sourceModuleName) {
       return this._sourceModuleName
@@ -9285,9 +7667,7 @@ export class JSONValue extends BaseClient {
     this._contents = _contents
   }
 
-  /**
-   * A unique identifier for this JSONValue.
-   */
+  // A unique identifier for this JSONValue.
   id = async (): Promise<JSONValueID> => {
     if (this._id) {
       return this._id
@@ -9300,9 +7680,7 @@ export class JSONValue extends BaseClient {
     return response
   }
 
-  /**
-   * Decode an array from json
-   */
+  // Decode an array from json
   asArray = async (): Promise<JSONValue[]> => {
     type asArray = {
       id: JSONValueID
@@ -9315,9 +7693,7 @@ export class JSONValue extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadJSONValueFromID(r.id))
   }
 
-  /**
-   * Decode a boolean from json
-   */
+  // Decode a boolean from json
   asBoolean = async (): Promise<boolean> => {
     if (this._asBoolean) {
       return this._asBoolean
@@ -9330,9 +7706,7 @@ export class JSONValue extends BaseClient {
     return response
   }
 
-  /**
-   * Decode an integer from json
-   */
+  // Decode an integer from json
   asInteger = async (): Promise<number> => {
     if (this._asInteger) {
       return this._asInteger
@@ -9345,9 +7719,7 @@ export class JSONValue extends BaseClient {
     return response
   }
 
-  /**
-   * Decode a string from json
-   */
+  // Decode a string from json
   asString = async (): Promise<string> => {
     if (this._asString) {
       return this._asString
@@ -9360,11 +7732,9 @@ export class JSONValue extends BaseClient {
     return response
   }
 
-  /**
-   * Return the value encoded as json
-   * @param opts.pretty Pretty-print
-   * @param opts.indent Optional line prefix
-   */
+  // Return the value encoded as json
+  // @param opts.pretty Pretty-print
+  // @param opts.indent Optional line prefix
   contents = async (opts?: JSONValueContentsOpts): Promise<JSON> => {
     if (this._contents) {
       return this._contents
@@ -9377,18 +7747,14 @@ export class JSONValue extends BaseClient {
     return response
   }
 
-  /**
-   * Lookup the field at the given path, and return its value.
-   * @param path Path of the field to lookup, encoded as an array of field names
-   */
+  // Lookup the field at the given path, and return its value.
+  // @param path Path of the field to lookup, encoded as an array of field names
   field = (path: string[]): JSONValue => {
     const ctx = this._ctx.select("field", { path })
     return new JSONValue(ctx)
   }
 
-  /**
-   * List fields of the encoded object
-   */
+  // List fields of the encoded object
   fields = async (): Promise<string[]> => {
     const ctx = this._ctx.select("fields")
 
@@ -9397,47 +7763,37 @@ export class JSONValue extends BaseClient {
     return response
   }
 
-  /**
-   * Encode a boolean to json
-   * @param value New boolean value
-   */
+  // Encode a boolean to json
+  // @param value New boolean value
   newBoolean = (value: boolean): JSONValue => {
     const ctx = this._ctx.select("newBoolean", { value })
     return new JSONValue(ctx)
   }
 
-  /**
-   * Encode an integer to json
-   * @param value New integer value
-   */
+  // Encode an integer to json
+  // @param value New integer value
   newInteger = (value: number): JSONValue => {
     const ctx = this._ctx.select("newInteger", { value })
     return new JSONValue(ctx)
   }
 
-  /**
-   * Encode a string to json
-   * @param value New string value
-   */
+  // Encode a string to json
+  // @param value New string value
   newString = (value: string): JSONValue => {
     const ctx = this._ctx.select("newString", { value })
     return new JSONValue(ctx)
   }
 
-  /**
-   * Return a new json value, decoded from the given content
-   * @param contents New JSON-encoded contents
-   */
+  // Return a new json value, decoded from the given content
+  // @param contents New JSON-encoded contents
   withContents = (contents: JSON): JSONValue => {
     const ctx = this._ctx.select("withContents", { contents })
     return new JSONValue(ctx)
   }
 
-  /**
-   * Set a new field at the given path
-   * @param path Path of the field to set, encoded as an array of field names
-   * @param value The new value of the field
-   */
+  // Set a new field at the given path
+  // @param path Path of the field to set, encoded as an array of field names
+  // @param value The new value of the field
   withField = (path: string[], value: JSONValue): JSONValue => {
     const ctx = this._ctx.select("withField", { path, value })
     return new JSONValue(ctx)
@@ -9492,9 +7848,7 @@ export class LLM extends BaseClient {
     this._tools = _tools
   }
 
-  /**
-   * A unique identifier for this LLM.
-   */
+  // A unique identifier for this LLM.
   id = async (): Promise<LLMID> => {
     if (this._id) {
       return this._id
@@ -9507,9 +7861,7 @@ export class LLM extends BaseClient {
     return response
   }
 
-  /**
-   * create a branch in the LLM's history
-   */
+  // create a branch in the LLM's history
   attempt = (number_: number): LLM => {
     const ctx = this._ctx.select("attempt", {
       number: number_,
@@ -9517,25 +7869,19 @@ export class LLM extends BaseClient {
     return new LLM(ctx)
   }
 
-  /**
-   * returns the type of the current state
-   */
+  // returns the type of the current state
   bindResult = (name: string): Binding => {
     const ctx = this._ctx.select("bindResult", { name })
     return new Binding(ctx)
   }
 
-  /**
-   * return the LLM's current environment
-   */
+  // return the LLM's current environment
   env = (): Env => {
     const ctx = this._ctx.select("env")
     return new Env(ctx)
   }
 
-  /**
-   * Indicates whether there are any queued prompts or tool results to send to the model
-   */
+  // Indicates whether there are any queued prompts or tool results to send to the model
   hasPrompt = async (): Promise<boolean> => {
     if (this._hasPrompt) {
       return this._hasPrompt
@@ -9548,9 +7894,7 @@ export class LLM extends BaseClient {
     return response
   }
 
-  /**
-   * return the llm message history
-   */
+  // return the llm message history
   history = async (): Promise<string[]> => {
     const ctx = this._ctx.select("history")
 
@@ -9559,9 +7903,7 @@ export class LLM extends BaseClient {
     return response
   }
 
-  /**
-   * return the raw llm message history as json
-   */
+  // return the raw llm message history as json
   historyJSON = async (): Promise<JSON> => {
     if (this._historyJSON) {
       return this._historyJSON
@@ -9574,9 +7916,7 @@ export class LLM extends BaseClient {
     return response
   }
 
-  /**
-   * return the last llm reply from the history
-   */
+  // return the last llm reply from the history
   lastReply = async (): Promise<string> => {
     if (this._lastReply) {
       return this._lastReply
@@ -9589,17 +7929,13 @@ export class LLM extends BaseClient {
     return response
   }
 
-  /**
-   * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-   */
+  // Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
   loop = (): LLM => {
     const ctx = this._ctx.select("loop")
     return new LLM(ctx)
   }
 
-  /**
-   * return the model used by the llm
-   */
+  // return the model used by the llm
   model = async (): Promise<string> => {
     if (this._model) {
       return this._model
@@ -9612,9 +7948,7 @@ export class LLM extends BaseClient {
     return response
   }
 
-  /**
-   * return the provider used by the llm
-   */
+  // return the provider used by the llm
   provider = async (): Promise<string> => {
     if (this._provider) {
       return this._provider
@@ -9627,9 +7961,7 @@ export class LLM extends BaseClient {
     return response
   }
 
-  /**
-   * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
-   */
+  // Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
   step = async (): Promise<LLM> => {
     const ctx = this._ctx.select("step")
 
@@ -9638,9 +7970,7 @@ export class LLM extends BaseClient {
     return new Client(ctx.copy()).loadLLMFromID(response)
   }
 
-  /**
-   * synchronize LLM state
-   */
+  // synchronize LLM state
   sync = async (): Promise<LLM> => {
     const ctx = this._ctx.select("sync")
 
@@ -9649,17 +7979,13 @@ export class LLM extends BaseClient {
     return new Client(ctx.copy()).loadLLMFromID(response)
   }
 
-  /**
-   * returns the token usage of the current state
-   */
+  // returns the token usage of the current state
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
     return new LLMTokenUsage(ctx)
   }
 
-  /**
-   * print documentation for available tools
-   */
+  // print documentation for available tools
   tools = async (): Promise<string> => {
     if (this._tools) {
       return this._tools
@@ -9672,13 +7998,11 @@ export class LLM extends BaseClient {
     return response
   }
 
-  /**
-   * Return a new LLM with the specified function no longer exposed as a tool
-   * @param typeName The type name whose function will be blocked
-   * @param function The function to block
-   *
-   * Will be converted to lowerCamelCase if necessary.
-   */
+  // Return a new LLM with the specified function no longer exposed as a tool
+  // @param typeName The type name whose function will be blocked
+  // @param function The function to block
+  //
+  // Will be converted to lowerCamelCase if necessary.
   withBlockedFunction = (typeName: string, function_: string): LLM => {
     const ctx = this._ctx.select("withBlockedFunction", {
       typeName,
@@ -9687,87 +8011,67 @@ export class LLM extends BaseClient {
     return new LLM(ctx)
   }
 
-  /**
-   * allow the LLM to interact with an environment via MCP
-   */
+  // allow the LLM to interact with an environment via MCP
   withEnv = (env: Env): LLM => {
     const ctx = this._ctx.select("withEnv", { env })
     return new LLM(ctx)
   }
 
-  /**
-   * Add an external MCP server to the LLM
-   * @param name The name of the MCP server
-   * @param service The MCP service to run and communicate with over stdio
-   */
+  // Add an external MCP server to the LLM
+  // @param name The name of the MCP server
+  // @param service The MCP service to run and communicate with over stdio
   withMCPServer = (name: string, service: Service): LLM => {
     const ctx = this._ctx.select("withMCPServer", { name, service })
     return new LLM(ctx)
   }
 
-  /**
-   * swap out the llm model
-   * @param model The model to use
-   */
+  // swap out the llm model
+  // @param model The model to use
   withModel = (model: string): LLM => {
     const ctx = this._ctx.select("withModel", { model })
     return new LLM(ctx)
   }
 
-  /**
-   * append a prompt to the llm context
-   * @param prompt The prompt to send
-   */
+  // append a prompt to the llm context
+  // @param prompt The prompt to send
   withPrompt = (prompt: string): LLM => {
     const ctx = this._ctx.select("withPrompt", { prompt })
     return new LLM(ctx)
   }
 
-  /**
-   * append the contents of a file to the llm context
-   * @param file The file to read the prompt from
-   */
+  // append the contents of a file to the llm context
+  // @param file The file to read the prompt from
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
     return new LLM(ctx)
   }
 
-  /**
-   * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
-   */
+  // Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
   withStaticTools = (): LLM => {
     const ctx = this._ctx.select("withStaticTools")
     return new LLM(ctx)
   }
 
-  /**
-   * Add a system prompt to the LLM's environment
-   * @param prompt The system prompt to send
-   */
+  // Add a system prompt to the LLM's environment
+  // @param prompt The system prompt to send
   withSystemPrompt = (prompt: string): LLM => {
     const ctx = this._ctx.select("withSystemPrompt", { prompt })
     return new LLM(ctx)
   }
 
-  /**
-   * Disable the default system prompt
-   */
+  // Disable the default system prompt
   withoutDefaultSystemPrompt = (): LLM => {
     const ctx = this._ctx.select("withoutDefaultSystemPrompt")
     return new LLM(ctx)
   }
 
-  /**
-   * Clear the message history, leaving only the system prompts
-   */
+  // Clear the message history, leaving only the system prompts
   withoutMessageHistory = (): LLM => {
     const ctx = this._ctx.select("withoutMessageHistory")
     return new LLM(ctx)
   }
 
-  /**
-   * Clear the system prompts, leaving only the default system prompt
-   */
+  // Clear the system prompts, leaving only the default system prompt
   withoutSystemPrompts = (): LLM => {
     const ctx = this._ctx.select("withoutSystemPrompts")
     return new LLM(ctx)
@@ -9813,9 +8117,7 @@ export class LLMTokenUsage extends BaseClient {
     this._totalTokens = _totalTokens
   }
 
-  /**
-   * A unique identifier for this LLMTokenUsage.
-   */
+  // A unique identifier for this LLMTokenUsage.
   id = async (): Promise<LLMTokenUsageID> => {
     if (this._id) {
       return this._id
@@ -9884,9 +8186,7 @@ export class LLMTokenUsage extends BaseClient {
   }
 }
 
-/**
- * A simple key value object that represents a label.
- */
+// A simple key value object that represents a label.
 export class Label extends BaseClient {
   private readonly _id?: LabelID = undefined
   private readonly _name?: string = undefined
@@ -9903,9 +8203,7 @@ export class Label extends BaseClient {
     this._value = _value
   }
 
-  /**
-   * A unique identifier for this Label.
-   */
+  // A unique identifier for this Label.
   id = async (): Promise<LabelID> => {
     if (this._id) {
       return this._id
@@ -9918,9 +8216,7 @@ export class Label extends BaseClient {
     return response
   }
 
-  /**
-   * The label name.
-   */
+  // The label name.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -9933,9 +8229,7 @@ export class Label extends BaseClient {
     return response
   }
 
-  /**
-   * The label value.
-   */
+  // The label value.
   value = async (): Promise<string> => {
     if (this._value) {
       return this._value
@@ -9949,9 +8243,7 @@ export class Label extends BaseClient {
   }
 }
 
-/**
- * A definition of a list type in a Module.
- */
+// A definition of a list type in a Module.
 export class ListTypeDef extends BaseClient {
   private readonly _id?: ListTypeDefID = undefined
 
@@ -9964,9 +8256,7 @@ export class ListTypeDef extends BaseClient {
     this._id = _id
   }
 
-  /**
-   * A unique identifier for this ListTypeDef.
-   */
+  // A unique identifier for this ListTypeDef.
   id = async (): Promise<ListTypeDefID> => {
     if (this._id) {
       return this._id
@@ -9979,18 +8269,14 @@ export class ListTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The type of the elements in the list.
-   */
+  // The type of the elements in the list.
   elementTypeDef = (): TypeDef => {
     const ctx = this._ctx.select("elementTypeDef")
     return new TypeDef(ctx)
   }
 }
 
-/**
- * A Dagger module.
- */
+// A Dagger module.
 export class Module_ extends BaseClient {
   private readonly _id?: ModuleID = undefined
   private readonly _description?: string = undefined
@@ -10018,9 +8304,7 @@ export class Module_ extends BaseClient {
     this._sync = _sync
   }
 
-  /**
-   * A unique identifier for this Module.
-   */
+  // A unique identifier for this Module.
   id = async (): Promise<ModuleID> => {
     if (this._id) {
       return this._id
@@ -10033,29 +8317,23 @@ export class Module_ extends BaseClient {
     return response
   }
 
-  /**
-   * Return the check defined by the module with the given name. Must match to exactly one check.
-   * @param name The name of the check to retrieve
-   * @experimental
-   */
+  // Return the check defined by the module with the given name. Must match to exactly one check.
+  // @param name The name of the check to retrieve
+  // @experimental
   check = (name: string): Check => {
     const ctx = this._ctx.select("check", { name })
     return new Check(ctx)
   }
 
-  /**
-   * Return all checks defined by the module
-   * @param opts.include Only include checks matching the specified patterns
-   * @experimental
-   */
+  // Return all checks defined by the module
+  // @param opts.include Only include checks matching the specified patterns
+  // @experimental
   checks = (opts?: ModuleChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })
     return new CheckGroup(ctx)
   }
 
-  /**
-   * The dependencies of the module.
-   */
+  // The dependencies of the module.
   dependencies = async (): Promise<Module_[]> => {
     type dependencies = {
       id: ModuleID
@@ -10068,9 +8346,7 @@ export class Module_ extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
   }
 
-  /**
-   * The doc string of the module, if any
-   */
+  // The doc string of the module, if any
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -10083,9 +8359,7 @@ export class Module_ extends BaseClient {
     return response
   }
 
-  /**
-   * Enumerations served by this module.
-   */
+  // Enumerations served by this module.
   enums = async (): Promise<TypeDef[]> => {
     type enums = {
       id: TypeDefID
@@ -10098,37 +8372,29 @@ export class Module_ extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
-  /**
-   * The generated files and directories made on top of the module source's context directory.
-   */
+  // The generated files and directories made on top of the module source's context directory.
   generatedContextDirectory = (): Directory => {
     const ctx = this._ctx.select("generatedContextDirectory")
     return new Directory(ctx)
   }
 
-  /**
-   * Return the generator defined by the module with the given name. Must match to exactly one generator.
-   * @param name The name of the generator to retrieve
-   * @experimental
-   */
+  // Return the generator defined by the module with the given name. Must match to exactly one generator.
+  // @param name The name of the generator to retrieve
+  // @experimental
   generator = (name: string): Generator => {
     const ctx = this._ctx.select("generator", { name })
     return new Generator(ctx)
   }
 
-  /**
-   * Return all generators defined by the module
-   * @param opts.include Only include generators matching the specified patterns
-   * @experimental
-   */
+  // Return all generators defined by the module
+  // @param opts.include Only include generators matching the specified patterns
+  // @experimental
   generators = (opts?: ModuleGeneratorsOpts): GeneratorGroup => {
     const ctx = this._ctx.select("generators", { ...opts })
     return new GeneratorGroup(ctx)
   }
 
-  /**
-   * Interfaces served by this module.
-   */
+  // Interfaces served by this module.
   interfaces = async (): Promise<TypeDef[]> => {
     type interfaces = {
       id: TypeDefID
@@ -10141,21 +8407,17 @@ export class Module_ extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
-  /**
-   * The introspection schema JSON file for this module.
-   *
-   * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
-   *
-   * Note: this is in the context of a module, so some core types may be hidden.
-   */
+  // The introspection schema JSON file for this module.
+  //
+  // This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+  //
+  // Note: this is in the context of a module, so some core types may be hidden.
   introspectionSchemaJSON = (): File => {
     const ctx = this._ctx.select("introspectionSchemaJSON")
     return new File(ctx)
   }
 
-  /**
-   * The name of the module
-   */
+  // The name of the module
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -10168,9 +8430,7 @@ export class Module_ extends BaseClient {
     return response
   }
 
-  /**
-   * Objects served by this module.
-   */
+  // Objects served by this module.
   objects = async (): Promise<TypeDef[]> => {
     type objects = {
       id: TypeDefID
@@ -10183,28 +8443,22 @@ export class Module_ extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
-  /**
-   * The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-   */
+  // The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   runtime = (): Container => {
     const ctx = this._ctx.select("runtime")
     return new Container(ctx)
   }
 
-  /**
-   * The SDK config used by this module.
-   */
+  // The SDK config used by this module.
   sdk = (): SDKConfig => {
     const ctx = this._ctx.select("sdk")
     return new SDKConfig(ctx)
   }
 
-  /**
-   * Serve a module's API in the current session.
-   *
-   * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-   * @param opts.includeDependencies Expose the dependencies of this module to the client
-   */
+  // Serve a module's API in the current session.
+  //
+  // Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
+  // @param opts.includeDependencies Expose the dependencies of this module to the client
   serve = async (opts?: ModuleServeOpts): Promise<void> => {
     if (this._serve) {
       return
@@ -10215,17 +8469,13 @@ export class Module_ extends BaseClient {
     await ctx.execute()
   }
 
-  /**
-   * The source for the module.
-   */
+  // The source for the module.
   source = (): ModuleSource => {
     const ctx = this._ctx.select("source")
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Forces evaluation of the module, including any loading into the engine and associated validation.
-   */
+  // Forces evaluation of the module, including any loading into the engine and associated validation.
   sync = async (): Promise<Module_> => {
     const ctx = this._ctx.select("sync")
 
@@ -10234,26 +8484,20 @@ export class Module_ extends BaseClient {
     return new Client(ctx.copy()).loadModuleFromID(response)
   }
 
-  /**
-   * User-defined default values, loaded from local .env files.
-   */
+  // User-defined default values, loaded from local .env files.
   userDefaults = (): EnvFile => {
     const ctx = this._ctx.select("userDefaults")
     return new EnvFile(ctx)
   }
 
-  /**
-   * Retrieves the module with the given description
-   * @param description The description to set
-   */
+  // Retrieves the module with the given description
+  // @param description The description to set
   withDescription = (description: string): Module_ => {
     const ctx = this._ctx.select("withDescription", { description })
     return new Module_(ctx)
   }
 
-  /**
-   * This module plus the given Enum type and associated values
-   */
+  // This module plus the given Enum type and associated values
   withEnum = (enum_: TypeDef): Module_ => {
     const ctx = this._ctx.select("withEnum", {
       enum: enum_,
@@ -10261,17 +8505,13 @@ export class Module_ extends BaseClient {
     return new Module_(ctx)
   }
 
-  /**
-   * This module plus the given Interface type and associated functions
-   */
+  // This module plus the given Interface type and associated functions
   withInterface = (iface: TypeDef): Module_ => {
     const ctx = this._ctx.select("withInterface", { iface })
     return new Module_(ctx)
   }
 
-  /**
-   * This module plus the given Object type and associated functions.
-   */
+  // This module plus the given Object type and associated functions.
   withObject = (object: TypeDef): Module_ => {
     const ctx = this._ctx.select("withObject", { object })
     return new Module_(ctx)
@@ -10287,9 +8527,7 @@ export class Module_ extends BaseClient {
   }
 }
 
-/**
- * The client generated for the module.
- */
+// The client generated for the module.
 export class ModuleConfigClient extends BaseClient {
   private readonly _id?: ModuleConfigClientID = undefined
   private readonly _directory?: string = undefined
@@ -10311,9 +8549,7 @@ export class ModuleConfigClient extends BaseClient {
     this._generator = _generator
   }
 
-  /**
-   * A unique identifier for this ModuleConfigClient.
-   */
+  // A unique identifier for this ModuleConfigClient.
   id = async (): Promise<ModuleConfigClientID> => {
     if (this._id) {
       return this._id
@@ -10326,9 +8562,7 @@ export class ModuleConfigClient extends BaseClient {
     return response
   }
 
-  /**
-   * The directory the client is generated in.
-   */
+  // The directory the client is generated in.
   directory = async (): Promise<string> => {
     if (this._directory) {
       return this._directory
@@ -10341,9 +8575,7 @@ export class ModuleConfigClient extends BaseClient {
     return response
   }
 
-  /**
-   * The generator to use
-   */
+  // The generator to use
   generator = async (): Promise<string> => {
     if (this._generator) {
       return this._generator
@@ -10357,9 +8589,7 @@ export class ModuleConfigClient extends BaseClient {
   }
 }
 
-/**
- * The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
- */
+// The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 export class ModuleSource extends BaseClient {
   private readonly _id?: ModuleSourceID = undefined
   private readonly _asString?: string = undefined
@@ -10432,9 +8662,7 @@ export class ModuleSource extends BaseClient {
     this._version = _version
   }
 
-  /**
-   * A unique identifier for this ModuleSource.
-   */
+  // A unique identifier for this ModuleSource.
   id = async (): Promise<ModuleSourceID> => {
     if (this._id) {
       return this._id
@@ -10447,17 +8675,13 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
-   */
+  // Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
   asModule = (): Module_ => {
     const ctx = this._ctx.select("asModule")
     return new Module_(ctx)
   }
 
-  /**
-   * A human readable ref string representation of this module source.
-   */
+  // A human readable ref string representation of this module source.
   asString = async (): Promise<string> => {
     if (this._asString) {
       return this._asString
@@ -10470,17 +8694,13 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The blueprint referenced by the module source.
-   */
+  // The blueprint referenced by the module source.
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
     return new ModuleSource(ctx)
   }
 
-  /**
-   * The ref to clone the root of the git repo from. Only valid for git sources.
-   */
+  // The ref to clone the root of the git repo from. Only valid for git sources.
   cloneRef = async (): Promise<string> => {
     if (this._cloneRef) {
       return this._cloneRef
@@ -10493,9 +8713,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The resolved commit of the git repo this source points to.
-   */
+  // The resolved commit of the git repo this source points to.
   commit = async (): Promise<string> => {
     if (this._commit) {
       return this._commit
@@ -10508,9 +8726,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The clients generated for the module.
-   */
+  // The clients generated for the module.
   configClients = async (): Promise<ModuleConfigClient[]> => {
     type configClients = {
       id: ModuleConfigClientID
@@ -10525,9 +8741,7 @@ export class ModuleSource extends BaseClient {
     )
   }
 
-  /**
-   * Whether an existing dagger.json for the module was found.
-   */
+  // Whether an existing dagger.json for the module was found.
   configExists = async (): Promise<boolean> => {
     if (this._configExists) {
       return this._configExists
@@ -10540,17 +8754,13 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The full directory loaded for the module source, including the source code as a subdirectory.
-   */
+  // The full directory loaded for the module source, including the source code as a subdirectory.
   contextDirectory = (): Directory => {
     const ctx = this._ctx.select("contextDirectory")
     return new Directory(ctx)
   }
 
-  /**
-   * The dependencies of the module source.
-   */
+  // The dependencies of the module source.
   dependencies = async (): Promise<ModuleSource[]> => {
     type dependencies = {
       id: ModuleSourceID
@@ -10565,9 +8775,7 @@ export class ModuleSource extends BaseClient {
     )
   }
 
-  /**
-   * A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
-   */
+  // A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
   digest = async (): Promise<string> => {
     if (this._digest) {
       return this._digest
@@ -10580,18 +8788,14 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The directory containing the module configuration and source code (source code may be in a subdir).
-   * @param path A subpath from the source directory to select.
-   */
+  // The directory containing the module configuration and source code (source code may be in a subdir).
+  // @param path A subpath from the source directory to select.
   directory = (path: string): Directory => {
     const ctx = this._ctx.select("directory", { path })
     return new Directory(ctx)
   }
 
-  /**
-   * The engine version of the module.
-   */
+  // The engine version of the module.
   engineVersion = async (): Promise<string> => {
     if (this._engineVersion) {
       return this._engineVersion
@@ -10604,17 +8808,13 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The generated files and directories made on top of the module source's context directory.
-   */
+  // The generated files and directories made on top of the module source's context directory.
   generatedContextDirectory = (): Directory => {
     const ctx = this._ctx.select("generatedContextDirectory")
     return new Directory(ctx)
   }
 
-  /**
-   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
-   */
+  // The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
   htmlRepoURL = async (): Promise<string> => {
     if (this._htmlRepoURL) {
       return this._htmlRepoURL
@@ -10627,9 +8827,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The URL to the source's git repo in a web browser. Only valid for git sources.
-   */
+  // The URL to the source's git repo in a web browser. Only valid for git sources.
   htmlURL = async (): Promise<string> => {
     if (this._htmlURL) {
       return this._htmlURL
@@ -10642,21 +8840,17 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The introspection schema JSON file for this module source.
-   *
-   * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
-   *
-   * Note: this is in the context of a module, so some core types may be hidden.
-   */
+  // The introspection schema JSON file for this module source.
+  //
+  // This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+  //
+  // Note: this is in the context of a module, so some core types may be hidden.
   introspectionSchemaJSON = (): File => {
     const ctx = this._ctx.select("introspectionSchemaJSON")
     return new File(ctx)
   }
 
-  /**
-   * The kind of module source (currently local, git or dir).
-   */
+  // The kind of module source (currently local, git or dir).
   kind = async (): Promise<ModuleSourceKind> => {
     if (this._kind) {
       return this._kind
@@ -10669,9 +8863,7 @@ export class ModuleSource extends BaseClient {
     return ModuleSourceKindNameToValue(response)
   }
 
-  /**
-   * The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
-   */
+  // The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
   localContextDirectoryPath = async (): Promise<string> => {
     if (this._localContextDirectoryPath) {
       return this._localContextDirectoryPath
@@ -10684,9 +8876,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the module, including any setting via the withName API.
-   */
+  // The name of the module, including any setting via the withName API.
   moduleName = async (): Promise<string> => {
     if (this._moduleName) {
       return this._moduleName
@@ -10699,9 +8889,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
-   */
+  // The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
   moduleOriginalName = async (): Promise<string> => {
     if (this._moduleOriginalName) {
       return this._moduleOriginalName
@@ -10714,9 +8902,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The original subpath used when instantiating this module source, relative to the context directory.
-   */
+  // The original subpath used when instantiating this module source, relative to the context directory.
   originalSubpath = async (): Promise<string> => {
     if (this._originalSubpath) {
       return this._originalSubpath
@@ -10729,9 +8915,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The pinned version of this module source.
-   */
+  // The pinned version of this module source.
   pin = async (): Promise<string> => {
     if (this._pin) {
       return this._pin
@@ -10744,9 +8928,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
-   */
+  // The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
   repoRootPath = async (): Promise<string> => {
     if (this._repoRootPath) {
       return this._repoRootPath
@@ -10759,17 +8941,13 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The SDK configuration of the module.
-   */
+  // The SDK configuration of the module.
   sdk = (): SDKConfig => {
     const ctx = this._ctx.select("sdk")
     return new SDKConfig(ctx)
   }
 
-  /**
-   * The path, relative to the context directory, that contains the module's dagger.json.
-   */
+  // The path, relative to the context directory, that contains the module's dagger.json.
   sourceRootSubpath = async (): Promise<string> => {
     if (this._sourceRootSubpath) {
       return this._sourceRootSubpath
@@ -10782,9 +8960,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * The path to the directory containing the module's source code, relative to the context directory.
-   */
+  // The path to the directory containing the module's source code, relative to the context directory.
   sourceSubpath = async (): Promise<string> => {
     if (this._sourceSubpath) {
       return this._sourceSubpath
@@ -10797,9 +8973,7 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * Forces evaluation of the module source, including any loading into the engine and associated validation.
-   */
+  // Forces evaluation of the module source, including any loading into the engine and associated validation.
   sync = async (): Promise<ModuleSource> => {
     const ctx = this._ctx.select("sync")
 
@@ -10808,9 +8982,7 @@ export class ModuleSource extends BaseClient {
     return new Client(ctx.copy()).loadModuleSourceFromID(response)
   }
 
-  /**
-   * The toolchains referenced by the module source.
-   */
+  // The toolchains referenced by the module source.
   toolchains = async (): Promise<ModuleSource[]> => {
     type toolchains = {
       id: ModuleSourceID
@@ -10825,17 +8997,13 @@ export class ModuleSource extends BaseClient {
     )
   }
 
-  /**
-   * User-defined defaults read from local .env files
-   */
+  // User-defined defaults read from local .env files
   userDefaults = (): EnvFile => {
     const ctx = this._ctx.select("userDefaults")
     return new EnvFile(ctx)
   }
 
-  /**
-   * The specified version of the git repo this source points to.
-   */
+  // The specified version of the git repo this source points to.
   version = async (): Promise<string> => {
     if (this._version) {
       return this._version
@@ -10848,47 +9016,37 @@ export class ModuleSource extends BaseClient {
     return response
   }
 
-  /**
-   * Set a blueprint for the module source.
-   * @param blueprint The blueprint module to set.
-   */
+  // Set a blueprint for the module source.
+  // @param blueprint The blueprint module to set.
   withBlueprint = (blueprint: ModuleSource): ModuleSource => {
     const ctx = this._ctx.select("withBlueprint", { blueprint })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update the module source with a new client to generate.
-   * @param generator The generator to use
-   * @param outputDir The output directory for the generated client.
-   */
+  // Update the module source with a new client to generate.
+  // @param generator The generator to use
+  // @param outputDir The output directory for the generated client.
   withClient = (generator: string, outputDir: string): ModuleSource => {
     const ctx = this._ctx.select("withClient", { generator, outputDir })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Append the provided dependencies to the module source's dependency list.
-   * @param dependencies The dependencies to append.
-   */
+  // Append the provided dependencies to the module source's dependency list.
+  // @param dependencies The dependencies to append.
   withDependencies = (dependencies: ModuleSource[]): ModuleSource => {
     const ctx = this._ctx.select("withDependencies", { dependencies })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Upgrade the engine version of the module to the given value.
-   * @param version The engine version to upgrade to.
-   */
+  // Upgrade the engine version of the module to the given value.
+  // @param version The engine version to upgrade to.
   withEngineVersion = (version: string): ModuleSource => {
     const ctx = this._ctx.select("withEngineVersion", { version })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Enable the experimental features for the module source.
-   * @param features The experimental features to enable.
-   */
+  // Enable the experimental features for the module source.
+  // @param features The experimental features to enable.
   withExperimentalFeatures = (
     features: ModuleSourceExperimentalFeature[],
   ): ModuleSource => {
@@ -10896,116 +9054,90 @@ export class ModuleSource extends BaseClient {
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update the module source with additional include patterns for files+directories from its context that are required for building it
-   * @param patterns The new additional include patterns.
-   */
+  // Update the module source with additional include patterns for files+directories from its context that are required for building it
+  // @param patterns The new additional include patterns.
   withIncludes = (patterns: string[]): ModuleSource => {
     const ctx = this._ctx.select("withIncludes", { patterns })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update the module source with a new name.
-   * @param name The name to set.
-   */
+  // Update the module source with a new name.
+  // @param name The name to set.
   withName = (name: string): ModuleSource => {
     const ctx = this._ctx.select("withName", { name })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update the module source with a new SDK.
-   * @param source The SDK source to set.
-   */
+  // Update the module source with a new SDK.
+  // @param source The SDK source to set.
   withSDK = (source: string): ModuleSource => {
     const ctx = this._ctx.select("withSDK", { source })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update the module source with a new source subpath.
-   * @param path The path to set as the source subpath. Must be relative to the module source's source root directory.
-   */
+  // Update the module source with a new source subpath.
+  // @param path The path to set as the source subpath. Must be relative to the module source's source root directory.
   withSourceSubpath = (path: string): ModuleSource => {
     const ctx = this._ctx.select("withSourceSubpath", { path })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Add toolchains to the module source.
-   * @param toolchains The toolchain modules to add.
-   */
+  // Add toolchains to the module source.
+  // @param toolchains The toolchain modules to add.
   withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
     const ctx = this._ctx.select("withToolchains", { toolchains })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update the blueprint module to the latest version.
-   */
+  // Update the blueprint module to the latest version.
   withUpdateBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withUpdateBlueprint")
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update one or more module dependencies.
-   * @param dependencies The dependencies to update.
-   */
+  // Update one or more module dependencies.
+  // @param dependencies The dependencies to update.
   withUpdateDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateDependencies", { dependencies })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update one or more toolchains.
-   * @param toolchains The toolchains to update.
-   */
+  // Update one or more toolchains.
+  // @param toolchains The toolchains to update.
   withUpdateToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Update one or more clients.
-   * @param clients The clients to update
-   */
+  // Update one or more clients.
+  // @param clients The clients to update
   withUpdatedClients = (clients: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdatedClients", { clients })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Remove the current blueprint from the module source.
-   */
+  // Remove the current blueprint from the module source.
   withoutBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withoutBlueprint")
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Remove a client from the module source.
-   * @param path The path of the client to remove.
-   */
+  // Remove a client from the module source.
+  // @param path The path of the client to remove.
   withoutClient = (path: string): ModuleSource => {
     const ctx = this._ctx.select("withoutClient", { path })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Remove the provided dependencies from the module source's dependency list.
-   * @param dependencies The dependencies to remove.
-   */
+  // Remove the provided dependencies from the module source's dependency list.
+  // @param dependencies The dependencies to remove.
   withoutDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutDependencies", { dependencies })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Disable experimental features for the module source.
-   * @param features The experimental features to disable.
-   */
+  // Disable experimental features for the module source.
+  // @param features The experimental features to disable.
   withoutExperimentalFeatures = (
     features: ModuleSourceExperimentalFeature[],
   ): ModuleSource => {
@@ -11013,10 +9145,8 @@ export class ModuleSource extends BaseClient {
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Remove the provided toolchains from the module source.
-   * @param toolchains The toolchains to remove.
-   */
+  // Remove the provided toolchains from the module source.
+  // @param toolchains The toolchains to remove.
   withoutToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutToolchains", { toolchains })
     return new ModuleSource(ctx)
@@ -11032,9 +9162,7 @@ export class ModuleSource extends BaseClient {
   }
 }
 
-/**
- * A definition of a custom object defined in a Module.
- */
+// A definition of a custom object defined in a Module.
 export class ObjectTypeDef extends BaseClient {
   private readonly _id?: ObjectTypeDefID = undefined
   private readonly _deprecated?: string = undefined
@@ -11062,9 +9190,7 @@ export class ObjectTypeDef extends BaseClient {
     this._sourceModuleName = _sourceModuleName
   }
 
-  /**
-   * A unique identifier for this ObjectTypeDef.
-   */
+  // A unique identifier for this ObjectTypeDef.
   id = async (): Promise<ObjectTypeDefID> => {
     if (this._id) {
       return this._id
@@ -11077,17 +9203,13 @@ export class ObjectTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The function used to construct new instances of this object, if any
-   */
+  // The function used to construct new instances of this object, if any
   constructor_ = (): Function_ => {
     const ctx = this._ctx.select("constructor")
     return new Function_(ctx)
   }
 
-  /**
-   * The reason this enum member is deprecated, if any.
-   */
+  // The reason this enum member is deprecated, if any.
   deprecated = async (): Promise<string> => {
     if (this._deprecated) {
       return this._deprecated
@@ -11100,9 +9222,7 @@ export class ObjectTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The doc string for the object, if any.
-   */
+  // The doc string for the object, if any.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -11115,9 +9235,7 @@ export class ObjectTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * Static fields defined on this object, if any.
-   */
+  // Static fields defined on this object, if any.
   fields = async (): Promise<FieldTypeDef[]> => {
     type fields = {
       id: FieldTypeDefID
@@ -11132,9 +9250,7 @@ export class ObjectTypeDef extends BaseClient {
     )
   }
 
-  /**
-   * Functions defined on this object, if any.
-   */
+  // Functions defined on this object, if any.
   functions = async (): Promise<Function_[]> => {
     type functions = {
       id: FunctionID
@@ -11147,9 +9263,7 @@ export class ObjectTypeDef extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
   }
 
-  /**
-   * The name of the object.
-   */
+  // The name of the object.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -11162,17 +9276,13 @@ export class ObjectTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The location of this object declaration.
-   */
+  // The location of this object declaration.
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
   }
 
-  /**
-   * If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
-   */
+  // If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
   sourceModuleName = async (): Promise<string> => {
     if (this._sourceModuleName) {
       return this._sourceModuleName
@@ -11186,9 +9296,7 @@ export class ObjectTypeDef extends BaseClient {
   }
 }
 
-/**
- * A port exposed by a container.
- */
+// A port exposed by a container.
 export class Port extends BaseClient {
   private readonly _id?: PortID = undefined
   private readonly _description?: string = undefined
@@ -11216,9 +9324,7 @@ export class Port extends BaseClient {
     this._protocol = _protocol
   }
 
-  /**
-   * A unique identifier for this Port.
-   */
+  // A unique identifier for this Port.
   id = async (): Promise<PortID> => {
     if (this._id) {
       return this._id
@@ -11231,9 +9337,7 @@ export class Port extends BaseClient {
     return response
   }
 
-  /**
-   * The port description.
-   */
+  // The port description.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -11246,9 +9350,7 @@ export class Port extends BaseClient {
     return response
   }
 
-  /**
-   * Skip the health check when run as a service.
-   */
+  // Skip the health check when run as a service.
   experimentalSkipHealthcheck = async (): Promise<boolean> => {
     if (this._experimentalSkipHealthcheck) {
       return this._experimentalSkipHealthcheck
@@ -11261,9 +9363,7 @@ export class Port extends BaseClient {
     return response
   }
 
-  /**
-   * The port number.
-   */
+  // The port number.
   port = async (): Promise<number> => {
     if (this._port) {
       return this._port
@@ -11276,9 +9376,7 @@ export class Port extends BaseClient {
     return response
   }
 
-  /**
-   * The transport layer protocol.
-   */
+  // The transport layer protocol.
   protocol = async (): Promise<NetworkProtocol> => {
     if (this._protocol) {
       return this._protocol
@@ -11292,9 +9390,7 @@ export class Port extends BaseClient {
   }
 }
 
-/**
- * The root of the DAG.
- */
+// The root of the DAG.
 export class Client extends BaseClient {
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
@@ -11316,76 +9412,60 @@ export class Client extends BaseClient {
     return this._ctx.getGQLClient()
   }
 
-  /**
-   * initialize an address to load directories, containers, secrets or other object types.
-   */
+  // initialize an address to load directories, containers, secrets or other object types.
   address = (value: string): Address => {
     const ctx = this._ctx.select("address", { value })
     return new Address(ctx)
   }
 
-  /**
-   * Constructs a cache volume for a given cache key.
-   * @param key A string identifier to target this cache volume (e.g., "modules-cache").
-   */
+  // Constructs a cache volume for a given cache key.
+  // @param key A string identifier to target this cache volume (e.g., "modules-cache").
   cacheVolume = (key: string): CacheVolume => {
     const ctx = this._ctx.select("cacheVolume", { key })
     return new CacheVolume(ctx)
   }
 
-  /**
-   * Dagger Cloud configuration and state
-   */
+  // Dagger Cloud configuration and state
   cloud = (): Cloud => {
     const ctx = this._ctx.select("cloud")
     return new Cloud(ctx)
   }
 
-  /**
-   * Creates a scratch container, with no image or metadata.
-   *
-   * To pull an image, follow up with the "from" function.
-   * @param opts.platform Platform to initialize the container with. Defaults to the native platform of the current engine
-   */
+  // Creates a scratch container, with no image or metadata.
+  //
+  // To pull an image, follow up with the "from" function.
+  // @param opts.platform Platform to initialize the container with. Defaults to the native platform of the current engine
   container = (opts?: ClientContainerOpts): Container => {
     const ctx = this._ctx.select("container", { ...opts })
     return new Container(ctx)
   }
 
-  /**
-   * Returns the current environment
-   *
-   * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-   *
-   * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-   * @experimental
-   */
+  // Returns the current environment
+  //
+  // When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+  //
+  // When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+  // @experimental
   currentEnv = (): Env => {
     const ctx = this._ctx.select("currentEnv")
     return new Env(ctx)
   }
 
-  /**
-   * The FunctionCall context that the SDK caller is currently executing in.
-   *
-   * If the caller is not currently executing in a function, this will return an error.
-   */
+  // The FunctionCall context that the SDK caller is currently executing in.
+  //
+  // If the caller is not currently executing in a function, this will return an error.
   currentFunctionCall = (): FunctionCall => {
     const ctx = this._ctx.select("currentFunctionCall")
     return new FunctionCall(ctx)
   }
 
-  /**
-   * The module currently being served in the session, if any.
-   */
+  // The module currently being served in the session, if any.
   currentModule = (): CurrentModule => {
     const ctx = this._ctx.select("currentModule")
     return new CurrentModule(ctx)
   }
 
-  /**
-   * The TypeDef representations of the objects currently being served in the session.
-   */
+  // The TypeDef representations of the objects currently being served in the session.
   currentTypeDefs = async (): Promise<TypeDef[]> => {
     type currentTypeDefs = {
       id: TypeDefID
@@ -11398,9 +9478,7 @@ export class Client extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
-  /**
-   * The default platform of the engine.
-   */
+  // The default platform of the engine.
   defaultPlatform = async (): Promise<Platform> => {
     const ctx = this._ctx.select("defaultPlatform")
 
@@ -11409,231 +9487,181 @@ export class Client extends BaseClient {
     return response
   }
 
-  /**
-   * Creates an empty directory.
-   */
+  // Creates an empty directory.
   directory = (): Directory => {
     const ctx = this._ctx.select("directory")
     return new Directory(ctx)
   }
 
-  /**
-   * The Dagger engine container configuration and state
-   */
+  // The Dagger engine container configuration and state
   engine = (): Engine => {
     const ctx = this._ctx.select("engine")
     return new Engine(ctx)
   }
 
-  /**
-   * Initializes a new environment
-   * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
-   * @param opts.writable Allow new outputs to be declared and saved in the environment
-   * @experimental
-   */
+  // Initializes a new environment
+  // @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+  // @param opts.writable Allow new outputs to be declared and saved in the environment
+  // @experimental
   env = (opts?: ClientEnvOpts): Env => {
     const ctx = this._ctx.select("env", { ...opts })
     return new Env(ctx)
   }
 
-  /**
-   * Initialize an environment file
-   * @param opts.expand Replace "${VAR}" or "$VAR" with the value of other vars
-   */
+  // Initialize an environment file
+  // @param opts.expand Replace "${VAR}" or "$VAR" with the value of other vars
   envFile = (opts?: ClientEnvFileOpts): EnvFile => {
     const ctx = this._ctx.select("envFile", { ...opts })
     return new EnvFile(ctx)
   }
 
-  /**
-   * Create a new error.
-   * @param message A brief description of the error.
-   */
+  // Create a new error.
+  // @param message A brief description of the error.
   error = (message: string): Error => {
     const ctx = this._ctx.select("error", { message })
     return new Error(ctx)
   }
 
-  /**
-   * Creates a file with the specified contents.
-   * @param name Name of the new file. Example: "foo.txt"
-   * @param contents Contents of the new file. Example: "Hello world!"
-   * @param opts.permissions Permissions of the new file. Example: 0600
-   */
+  // Creates a file with the specified contents.
+  // @param name Name of the new file. Example: "foo.txt"
+  // @param contents Contents of the new file. Example: "Hello world!"
+  // @param opts.permissions Permissions of the new file. Example: 0600
   file = (name: string, contents: string, opts?: ClientFileOpts): File => {
     const ctx = this._ctx.select("file", { name, contents, ...opts })
     return new File(ctx)
   }
 
-  /**
-   * Creates a function.
-   * @param name Name of the function, in its original format from the implementation language.
-   * @param returnType Return type of the function.
-   */
+  // Creates a function.
+  // @param name Name of the function, in its original format from the implementation language.
+  // @param returnType Return type of the function.
   function_ = (name: string, returnType: TypeDef): Function_ => {
     const ctx = this._ctx.select("function", { name, returnType })
     return new Function_(ctx)
   }
 
-  /**
-   * Create a code generation result, given a directory containing the generated code.
-   */
+  // Create a code generation result, given a directory containing the generated code.
   generatedCode = (code: Directory): GeneratedCode => {
     const ctx = this._ctx.select("generatedCode", { code })
     return new GeneratedCode(ctx)
   }
 
-  /**
-   * Queries a Git repository.
-   * @param url URL of the git repository.
-   *
-   * Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
-   *
-   * Suffix ".git" is optional.
-   * @param opts.keepGitDir DEPRECATED: Set to true to keep .git directory.
-   * @param opts.sshKnownHosts Set SSH known hosts
-   * @param opts.sshAuthSocket Set SSH auth socket
-   * @param opts.httpAuthUsername Username used to populate the password during basic HTTP Authorization
-   * @param opts.httpAuthToken Secret used to populate the password during basic HTTP Authorization
-   * @param opts.httpAuthHeader Secret used to populate the Authorization HTTP header
-   * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
-   */
+  // Queries a Git repository.
+  // @param url URL of the git repository.
+  //
+  // Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
+  //
+  // Suffix ".git" is optional.
+  // @param opts.keepGitDir DEPRECATED: Set to true to keep .git directory.
+  // @param opts.sshKnownHosts Set SSH known hosts
+  // @param opts.sshAuthSocket Set SSH auth socket
+  // @param opts.httpAuthUsername Username used to populate the password during basic HTTP Authorization
+  // @param opts.httpAuthToken Secret used to populate the password during basic HTTP Authorization
+  // @param opts.httpAuthHeader Secret used to populate the Authorization HTTP header
+  // @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
   git = (url: string, opts?: ClientGitOpts): GitRepository => {
     const ctx = this._ctx.select("git", { url, ...opts })
     return new GitRepository(ctx)
   }
 
-  /**
-   * Queries the host environment.
-   */
+  // Queries the host environment.
   host = (): Host => {
     const ctx = this._ctx.select("host")
     return new Host(ctx)
   }
 
-  /**
-   * Returns a file containing an http remote url content.
-   * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
-   * @param opts.name File name to use for the file. Defaults to the last part of the URL.
-   * @param opts.permissions Permissions to set on the file.
-   * @param opts.authHeader Secret used to populate the Authorization HTTP header
-   * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
-   */
+  // Returns a file containing an http remote url content.
+  // @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
+  // @param opts.name File name to use for the file. Defaults to the last part of the URL.
+  // @param opts.permissions Permissions to set on the file.
+  // @param opts.authHeader Secret used to populate the Authorization HTTP header
+  // @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
   http = (url: string, opts?: ClientHttpOpts): File => {
     const ctx = this._ctx.select("http", { url, ...opts })
     return new File(ctx)
   }
 
-  /**
-   * Initialize a JSON value
-   */
+  // Initialize a JSON value
   json = (): JSONValue => {
     const ctx = this._ctx.select("json")
     return new JSONValue(ctx)
   }
 
-  /**
-   * Initialize a Large Language Model (LLM)
-   * @param opts.model Model to use
-   * @param opts.maxAPICalls Cap the number of API calls for this LLM
-   * @experimental
-   */
+  // Initialize a Large Language Model (LLM)
+  // @param opts.model Model to use
+  // @param opts.maxAPICalls Cap the number of API calls for this LLM
+  // @experimental
   llm = (opts?: ClientLlmOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
     return new LLM(ctx)
   }
 
-  /**
-   * Load a Address from its ID.
-   */
+  // Load a Address from its ID.
   loadAddressFromID = (id: AddressID): Address => {
     const ctx = this._ctx.select("loadAddressFromID", { id })
     return new Address(ctx)
   }
 
-  /**
-   * Load a Binding from its ID.
-   */
+  // Load a Binding from its ID.
   loadBindingFromID = (id: BindingID): Binding => {
     const ctx = this._ctx.select("loadBindingFromID", { id })
     return new Binding(ctx)
   }
 
-  /**
-   * Load a CacheVolume from its ID.
-   */
+  // Load a CacheVolume from its ID.
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
   }
 
-  /**
-   * Load a Changeset from its ID.
-   */
+  // Load a Changeset from its ID.
   loadChangesetFromID = (id: ChangesetID): Changeset => {
     const ctx = this._ctx.select("loadChangesetFromID", { id })
     return new Changeset(ctx)
   }
 
-  /**
-   * Load a Check from its ID.
-   */
+  // Load a Check from its ID.
   loadCheckFromID = (id: CheckID): Check => {
     const ctx = this._ctx.select("loadCheckFromID", { id })
     return new Check(ctx)
   }
 
-  /**
-   * Load a CheckGroup from its ID.
-   */
+  // Load a CheckGroup from its ID.
   loadCheckGroupFromID = (id: CheckGroupID): CheckGroup => {
     const ctx = this._ctx.select("loadCheckGroupFromID", { id })
     return new CheckGroup(ctx)
   }
 
-  /**
-   * Load a Cloud from its ID.
-   */
+  // Load a Cloud from its ID.
   loadCloudFromID = (id: CloudID): Cloud => {
     const ctx = this._ctx.select("loadCloudFromID", { id })
     return new Cloud(ctx)
   }
 
-  /**
-   * Load a Container from its ID.
-   */
+  // Load a Container from its ID.
   loadContainerFromID = (id: ContainerID): Container => {
     const ctx = this._ctx.select("loadContainerFromID", { id })
     return new Container(ctx)
   }
 
-  /**
-   * Load a CurrentModule from its ID.
-   */
+  // Load a CurrentModule from its ID.
   loadCurrentModuleFromID = (id: CurrentModuleID): CurrentModule => {
     const ctx = this._ctx.select("loadCurrentModuleFromID", { id })
     return new CurrentModule(ctx)
   }
 
-  /**
-   * Load a Directory from its ID.
-   */
+  // Load a Directory from its ID.
   loadDirectoryFromID = (id: DirectoryID): Directory => {
     const ctx = this._ctx.select("loadDirectoryFromID", { id })
     return new Directory(ctx)
   }
 
-  /**
-   * Load a EngineCacheEntry from its ID.
-   */
+  // Load a EngineCacheEntry from its ID.
   loadEngineCacheEntryFromID = (id: EngineCacheEntryID): EngineCacheEntry => {
     const ctx = this._ctx.select("loadEngineCacheEntryFromID", { id })
     return new EngineCacheEntry(ctx)
   }
 
-  /**
-   * Load a EngineCacheEntrySet from its ID.
-   */
+  // Load a EngineCacheEntrySet from its ID.
   loadEngineCacheEntrySetFromID = (
     id: EngineCacheEntrySetID,
   ): EngineCacheEntrySet => {
@@ -11641,105 +9669,79 @@ export class Client extends BaseClient {
     return new EngineCacheEntrySet(ctx)
   }
 
-  /**
-   * Load a EngineCache from its ID.
-   */
+  // Load a EngineCache from its ID.
   loadEngineCacheFromID = (id: EngineCacheID): EngineCache => {
     const ctx = this._ctx.select("loadEngineCacheFromID", { id })
     return new EngineCache(ctx)
   }
 
-  /**
-   * Load a Engine from its ID.
-   */
+  // Load a Engine from its ID.
   loadEngineFromID = (id: EngineID): Engine => {
     const ctx = this._ctx.select("loadEngineFromID", { id })
     return new Engine(ctx)
   }
 
-  /**
-   * Load a EnumTypeDef from its ID.
-   */
+  // Load a EnumTypeDef from its ID.
   loadEnumTypeDefFromID = (id: EnumTypeDefID): EnumTypeDef => {
     const ctx = this._ctx.select("loadEnumTypeDefFromID", { id })
     return new EnumTypeDef(ctx)
   }
 
-  /**
-   * Load a EnumValueTypeDef from its ID.
-   */
+  // Load a EnumValueTypeDef from its ID.
   loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
     const ctx = this._ctx.select("loadEnumValueTypeDefFromID", { id })
     return new EnumValueTypeDef(ctx)
   }
 
-  /**
-   * Load a EnvFile from its ID.
-   */
+  // Load a EnvFile from its ID.
   loadEnvFileFromID = (id: EnvFileID): EnvFile => {
     const ctx = this._ctx.select("loadEnvFileFromID", { id })
     return new EnvFile(ctx)
   }
 
-  /**
-   * Load a Env from its ID.
-   */
+  // Load a Env from its ID.
   loadEnvFromID = (id: EnvID): Env => {
     const ctx = this._ctx.select("loadEnvFromID", { id })
     return new Env(ctx)
   }
 
-  /**
-   * Load a EnvVariable from its ID.
-   */
+  // Load a EnvVariable from its ID.
   loadEnvVariableFromID = (id: EnvVariableID): EnvVariable => {
     const ctx = this._ctx.select("loadEnvVariableFromID", { id })
     return new EnvVariable(ctx)
   }
 
-  /**
-   * Load a Error from its ID.
-   */
+  // Load a Error from its ID.
   loadErrorFromID = (id: ErrorID): Error => {
     const ctx = this._ctx.select("loadErrorFromID", { id })
     return new Error(ctx)
   }
 
-  /**
-   * Load a ErrorValue from its ID.
-   */
+  // Load a ErrorValue from its ID.
   loadErrorValueFromID = (id: ErrorValueID): ErrorValue => {
     const ctx = this._ctx.select("loadErrorValueFromID", { id })
     return new ErrorValue(ctx)
   }
 
-  /**
-   * Load a FieldTypeDef from its ID.
-   */
+  // Load a FieldTypeDef from its ID.
   loadFieldTypeDefFromID = (id: FieldTypeDefID): FieldTypeDef => {
     const ctx = this._ctx.select("loadFieldTypeDefFromID", { id })
     return new FieldTypeDef(ctx)
   }
 
-  /**
-   * Load a File from its ID.
-   */
+  // Load a File from its ID.
   loadFileFromID = (id: FileID): File => {
     const ctx = this._ctx.select("loadFileFromID", { id })
     return new File(ctx)
   }
 
-  /**
-   * Load a FunctionArg from its ID.
-   */
+  // Load a FunctionArg from its ID.
   loadFunctionArgFromID = (id: FunctionArgID): FunctionArg => {
     const ctx = this._ctx.select("loadFunctionArgFromID", { id })
     return new FunctionArg(ctx)
   }
 
-  /**
-   * Load a FunctionCallArgValue from its ID.
-   */
+  // Load a FunctionCallArgValue from its ID.
   loadFunctionCallArgValueFromID = (
     id: FunctionCallArgValueID,
   ): FunctionCallArgValue => {
@@ -11747,129 +9749,97 @@ export class Client extends BaseClient {
     return new FunctionCallArgValue(ctx)
   }
 
-  /**
-   * Load a FunctionCall from its ID.
-   */
+  // Load a FunctionCall from its ID.
   loadFunctionCallFromID = (id: FunctionCallID): FunctionCall => {
     const ctx = this._ctx.select("loadFunctionCallFromID", { id })
     return new FunctionCall(ctx)
   }
 
-  /**
-   * Load a Function from its ID.
-   */
+  // Load a Function from its ID.
   loadFunctionFromID = (id: FunctionID): Function_ => {
     const ctx = this._ctx.select("loadFunctionFromID", { id })
     return new Function_(ctx)
   }
 
-  /**
-   * Load a GeneratedCode from its ID.
-   */
+  // Load a GeneratedCode from its ID.
   loadGeneratedCodeFromID = (id: GeneratedCodeID): GeneratedCode => {
     const ctx = this._ctx.select("loadGeneratedCodeFromID", { id })
     return new GeneratedCode(ctx)
   }
 
-  /**
-   * Load a Generator from its ID.
-   */
+  // Load a Generator from its ID.
   loadGeneratorFromID = (id: GeneratorID): Generator => {
     const ctx = this._ctx.select("loadGeneratorFromID", { id })
     return new Generator(ctx)
   }
 
-  /**
-   * Load a GeneratorGroup from its ID.
-   */
+  // Load a GeneratorGroup from its ID.
   loadGeneratorGroupFromID = (id: GeneratorGroupID): GeneratorGroup => {
     const ctx = this._ctx.select("loadGeneratorGroupFromID", { id })
     return new GeneratorGroup(ctx)
   }
 
-  /**
-   * Load a GitRef from its ID.
-   */
+  // Load a GitRef from its ID.
   loadGitRefFromID = (id: GitRefID): GitRef => {
     const ctx = this._ctx.select("loadGitRefFromID", { id })
     return new GitRef(ctx)
   }
 
-  /**
-   * Load a GitRepository from its ID.
-   */
+  // Load a GitRepository from its ID.
   loadGitRepositoryFromID = (id: GitRepositoryID): GitRepository => {
     const ctx = this._ctx.select("loadGitRepositoryFromID", { id })
     return new GitRepository(ctx)
   }
 
-  /**
-   * Load a Host from its ID.
-   */
+  // Load a Host from its ID.
   loadHostFromID = (id: HostID): Host => {
     const ctx = this._ctx.select("loadHostFromID", { id })
     return new Host(ctx)
   }
 
-  /**
-   * Load a InputTypeDef from its ID.
-   */
+  // Load a InputTypeDef from its ID.
   loadInputTypeDefFromID = (id: InputTypeDefID): InputTypeDef => {
     const ctx = this._ctx.select("loadInputTypeDefFromID", { id })
     return new InputTypeDef(ctx)
   }
 
-  /**
-   * Load a InterfaceTypeDef from its ID.
-   */
+  // Load a InterfaceTypeDef from its ID.
   loadInterfaceTypeDefFromID = (id: InterfaceTypeDefID): InterfaceTypeDef => {
     const ctx = this._ctx.select("loadInterfaceTypeDefFromID", { id })
     return new InterfaceTypeDef(ctx)
   }
 
-  /**
-   * Load a JSONValue from its ID.
-   */
+  // Load a JSONValue from its ID.
   loadJSONValueFromID = (id: JSONValueID): JSONValue => {
     const ctx = this._ctx.select("loadJSONValueFromID", { id })
     return new JSONValue(ctx)
   }
 
-  /**
-   * Load a LLM from its ID.
-   */
+  // Load a LLM from its ID.
   loadLLMFromID = (id: LLMID): LLM => {
     const ctx = this._ctx.select("loadLLMFromID", { id })
     return new LLM(ctx)
   }
 
-  /**
-   * Load a LLMTokenUsage from its ID.
-   */
+  // Load a LLMTokenUsage from its ID.
   loadLLMTokenUsageFromID = (id: LLMTokenUsageID): LLMTokenUsage => {
     const ctx = this._ctx.select("loadLLMTokenUsageFromID", { id })
     return new LLMTokenUsage(ctx)
   }
 
-  /**
-   * Load a Label from its ID.
-   */
+  // Load a Label from its ID.
   loadLabelFromID = (id: LabelID): Label => {
     const ctx = this._ctx.select("loadLabelFromID", { id })
     return new Label(ctx)
   }
 
-  /**
-   * Load a ListTypeDef from its ID.
-   */
+  // Load a ListTypeDef from its ID.
   loadListTypeDefFromID = (id: ListTypeDefID): ListTypeDef => {
     const ctx = this._ctx.select("loadListTypeDefFromID", { id })
     return new ListTypeDef(ctx)
   }
 
-  /**
-   * Load a ModuleConfigClient from its ID.
-   */
+  // Load a ModuleConfigClient from its ID.
   loadModuleConfigClientFromID = (
     id: ModuleConfigClientID,
   ): ModuleConfigClient => {
@@ -11877,142 +9847,108 @@ export class Client extends BaseClient {
     return new ModuleConfigClient(ctx)
   }
 
-  /**
-   * Load a Module from its ID.
-   */
+  // Load a Module from its ID.
   loadModuleFromID = (id: ModuleID): Module_ => {
     const ctx = this._ctx.select("loadModuleFromID", { id })
     return new Module_(ctx)
   }
 
-  /**
-   * Load a ModuleSource from its ID.
-   */
+  // Load a ModuleSource from its ID.
   loadModuleSourceFromID = (id: ModuleSourceID): ModuleSource => {
     const ctx = this._ctx.select("loadModuleSourceFromID", { id })
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Load a ObjectTypeDef from its ID.
-   */
+  // Load a ObjectTypeDef from its ID.
   loadObjectTypeDefFromID = (id: ObjectTypeDefID): ObjectTypeDef => {
     const ctx = this._ctx.select("loadObjectTypeDefFromID", { id })
     return new ObjectTypeDef(ctx)
   }
 
-  /**
-   * Load a Port from its ID.
-   */
+  // Load a Port from its ID.
   loadPortFromID = (id: PortID): Port => {
     const ctx = this._ctx.select("loadPortFromID", { id })
     return new Port(ctx)
   }
 
-  /**
-   * Load a SDKConfig from its ID.
-   */
+  // Load a SDKConfig from its ID.
   loadSDKConfigFromID = (id: SDKConfigID): SDKConfig => {
     const ctx = this._ctx.select("loadSDKConfigFromID", { id })
     return new SDKConfig(ctx)
   }
 
-  /**
-   * Load a ScalarTypeDef from its ID.
-   */
+  // Load a ScalarTypeDef from its ID.
   loadScalarTypeDefFromID = (id: ScalarTypeDefID): ScalarTypeDef => {
     const ctx = this._ctx.select("loadScalarTypeDefFromID", { id })
     return new ScalarTypeDef(ctx)
   }
 
-  /**
-   * Load a SearchResult from its ID.
-   */
+  // Load a SearchResult from its ID.
   loadSearchResultFromID = (id: SearchResultID): SearchResult => {
     const ctx = this._ctx.select("loadSearchResultFromID", { id })
     return new SearchResult(ctx)
   }
 
-  /**
-   * Load a SearchSubmatch from its ID.
-   */
+  // Load a SearchSubmatch from its ID.
   loadSearchSubmatchFromID = (id: SearchSubmatchID): SearchSubmatch => {
     const ctx = this._ctx.select("loadSearchSubmatchFromID", { id })
     return new SearchSubmatch(ctx)
   }
 
-  /**
-   * Load a Secret from its ID.
-   */
+  // Load a Secret from its ID.
   loadSecretFromID = (id: SecretID): Secret => {
     const ctx = this._ctx.select("loadSecretFromID", { id })
     return new Secret(ctx)
   }
 
-  /**
-   * Load a Service from its ID.
-   */
+  // Load a Service from its ID.
   loadServiceFromID = (id: ServiceID): Service => {
     const ctx = this._ctx.select("loadServiceFromID", { id })
     return new Service(ctx)
   }
 
-  /**
-   * Load a Socket from its ID.
-   */
+  // Load a Socket from its ID.
   loadSocketFromID = (id: SocketID): Socket => {
     const ctx = this._ctx.select("loadSocketFromID", { id })
     return new Socket(ctx)
   }
 
-  /**
-   * Load a SourceMap from its ID.
-   */
+  // Load a SourceMap from its ID.
   loadSourceMapFromID = (id: SourceMapID): SourceMap => {
     const ctx = this._ctx.select("loadSourceMapFromID", { id })
     return new SourceMap(ctx)
   }
 
-  /**
-   * Load a Stat from its ID.
-   */
+  // Load a Stat from its ID.
   loadStatFromID = (id: StatID): Stat => {
     const ctx = this._ctx.select("loadStatFromID", { id })
     return new Stat(ctx)
   }
 
-  /**
-   * Load a Terminal from its ID.
-   */
+  // Load a Terminal from its ID.
   loadTerminalFromID = (id: TerminalID): Terminal => {
     const ctx = this._ctx.select("loadTerminalFromID", { id })
     return new Terminal(ctx)
   }
 
-  /**
-   * Load a TypeDef from its ID.
-   */
+  // Load a TypeDef from its ID.
   loadTypeDefFromID = (id: TypeDefID): TypeDef => {
     const ctx = this._ctx.select("loadTypeDefFromID", { id })
     return new TypeDef(ctx)
   }
 
-  /**
-   * Create a new module.
-   */
+  // Create a new module.
   module_ = (): Module_ => {
     const ctx = this._ctx.select("module")
     return new Module_(ctx)
   }
 
-  /**
-   * Create a new module source instance from a source ref string
-   * @param refString The string ref representation of the module source
-   * @param opts.refPin The pinned version of the module source
-   * @param opts.disableFindUp If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
-   * @param opts.allowNotExists If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
-   * @param opts.requireKind If set, error out if the ref string is not of the provided requireKind.
-   */
+  // Create a new module source instance from a source ref string
+  // @param refString The string ref representation of the module source
+  // @param opts.refPin The pinned version of the module source
+  // @param opts.disableFindUp If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+  // @param opts.allowNotExists If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
+  // @param opts.requireKind If set, error out if the ref string is not of the provided requireKind.
   moduleSource = (
     refString: string,
     opts?: ClientModuleSourceOpts,
@@ -12032,54 +9968,44 @@ export class Client extends BaseClient {
     return new ModuleSource(ctx)
   }
 
-  /**
-   * Creates a new secret.
-   * @param uri The URI of the secret store
-   * @param opts.cacheKey If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
-   *
-   * For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
-   *
-   * If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
-   */
+  // Creates a new secret.
+  // @param uri The URI of the secret store
+  // @param opts.cacheKey If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
+  //
+  // For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
+  //
+  // If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
   secret = (uri: string, opts?: ClientSecretOpts): Secret => {
     const ctx = this._ctx.select("secret", { uri, ...opts })
     return new Secret(ctx)
   }
 
-  /**
-   * Sets a secret given a user defined name to its plaintext and returns the secret.
-   *
-   * The plaintext value is limited to a size of 128000 bytes.
-   * @param name The user defined name for this secret
-   * @param plaintext The plaintext of the secret
-   */
+  // Sets a secret given a user defined name to its plaintext and returns the secret.
+  //
+  // The plaintext value is limited to a size of 128000 bytes.
+  // @param name The user defined name for this secret
+  // @param plaintext The plaintext of the secret
   setSecret = (name: string, plaintext: string): Secret => {
     const ctx = this._ctx.select("setSecret", { name, plaintext })
     return new Secret(ctx)
   }
 
-  /**
-   * Creates source map metadata.
-   * @param filename The filename from the module source.
-   * @param line The line number within the filename.
-   * @param column The column number within the line.
-   */
+  // Creates source map metadata.
+  // @param filename The filename from the module source.
+  // @param line The line number within the filename.
+  // @param column The column number within the line.
   sourceMap = (filename: string, line: number, column: number): SourceMap => {
     const ctx = this._ctx.select("sourceMap", { filename, line, column })
     return new SourceMap(ctx)
   }
 
-  /**
-   * Create a new TypeDef.
-   */
+  // Create a new TypeDef.
   typeDef = (): TypeDef => {
     const ctx = this._ctx.select("typeDef")
     return new TypeDef(ctx)
   }
 
-  /**
-   * Get the current Dagger Engine version.
-   */
+  // Get the current Dagger Engine version.
   version = async (): Promise<string> => {
     const ctx = this._ctx.select("version")
 
@@ -12089,9 +10015,7 @@ export class Client extends BaseClient {
   }
 }
 
-/**
- * The SDK config of the module.
- */
+// The SDK config of the module.
 export class SDKConfig extends BaseClient {
   private readonly _id?: SDKConfigID = undefined
   private readonly _debug?: boolean = undefined
@@ -12113,9 +10037,7 @@ export class SDKConfig extends BaseClient {
     this._source = _source
   }
 
-  /**
-   * A unique identifier for this SDKConfig.
-   */
+  // A unique identifier for this SDKConfig.
   id = async (): Promise<SDKConfigID> => {
     if (this._id) {
       return this._id
@@ -12128,9 +10050,7 @@ export class SDKConfig extends BaseClient {
     return response
   }
 
-  /**
-   * Whether to start the SDK runtime in debug mode with an interactive terminal.
-   */
+  // Whether to start the SDK runtime in debug mode with an interactive terminal.
   debug = async (): Promise<boolean> => {
     if (this._debug) {
       return this._debug
@@ -12143,9 +10063,7 @@ export class SDKConfig extends BaseClient {
     return response
   }
 
-  /**
-   * Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
-   */
+  // Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
   source = async (): Promise<string> => {
     if (this._source) {
       return this._source
@@ -12159,9 +10077,7 @@ export class SDKConfig extends BaseClient {
   }
 }
 
-/**
- * A definition of a custom scalar defined in a Module.
- */
+// A definition of a custom scalar defined in a Module.
 export class ScalarTypeDef extends BaseClient {
   private readonly _id?: ScalarTypeDefID = undefined
   private readonly _description?: string = undefined
@@ -12186,9 +10102,7 @@ export class ScalarTypeDef extends BaseClient {
     this._sourceModuleName = _sourceModuleName
   }
 
-  /**
-   * A unique identifier for this ScalarTypeDef.
-   */
+  // A unique identifier for this ScalarTypeDef.
   id = async (): Promise<ScalarTypeDefID> => {
     if (this._id) {
       return this._id
@@ -12201,9 +10115,7 @@ export class ScalarTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * A doc string for the scalar, if any.
-   */
+  // A doc string for the scalar, if any.
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -12216,9 +10128,7 @@ export class ScalarTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * The name of the scalar.
-   */
+  // The name of the scalar.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -12231,9 +10141,7 @@ export class ScalarTypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
-   */
+  // If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
   sourceModuleName = async (): Promise<string> => {
     if (this._sourceModuleName) {
       return this._sourceModuleName
@@ -12274,9 +10182,7 @@ export class SearchResult extends BaseClient {
     this._matchedLines = _matchedLines
   }
 
-  /**
-   * A unique identifier for this SearchResult.
-   */
+  // A unique identifier for this SearchResult.
   id = async (): Promise<SearchResultID> => {
     if (this._id) {
       return this._id
@@ -12289,9 +10195,7 @@ export class SearchResult extends BaseClient {
     return response
   }
 
-  /**
-   * The byte offset of this line within the file.
-   */
+  // The byte offset of this line within the file.
   absoluteOffset = async (): Promise<number> => {
     if (this._absoluteOffset) {
       return this._absoluteOffset
@@ -12304,9 +10208,7 @@ export class SearchResult extends BaseClient {
     return response
   }
 
-  /**
-   * The path to the file that matched.
-   */
+  // The path to the file that matched.
   filePath = async (): Promise<string> => {
     if (this._filePath) {
       return this._filePath
@@ -12319,9 +10221,7 @@ export class SearchResult extends BaseClient {
     return response
   }
 
-  /**
-   * The first line that matched.
-   */
+  // The first line that matched.
   lineNumber = async (): Promise<number> => {
     if (this._lineNumber) {
       return this._lineNumber
@@ -12334,9 +10234,7 @@ export class SearchResult extends BaseClient {
     return response
   }
 
-  /**
-   * The line content that matched.
-   */
+  // The line content that matched.
   matchedLines = async (): Promise<string> => {
     if (this._matchedLines) {
       return this._matchedLines
@@ -12349,9 +10247,7 @@ export class SearchResult extends BaseClient {
     return response
   }
 
-  /**
-   * Sub-match positions and content within the matched lines.
-   */
+  // Sub-match positions and content within the matched lines.
   submatches = async (): Promise<SearchSubmatch[]> => {
     type submatches = {
       id: SearchSubmatchID
@@ -12391,9 +10287,7 @@ export class SearchSubmatch extends BaseClient {
     this._text = _text
   }
 
-  /**
-   * A unique identifier for this SearchSubmatch.
-   */
+  // A unique identifier for this SearchSubmatch.
   id = async (): Promise<SearchSubmatchID> => {
     if (this._id) {
       return this._id
@@ -12406,9 +10300,7 @@ export class SearchSubmatch extends BaseClient {
     return response
   }
 
-  /**
-   * The match's end offset within the matched lines.
-   */
+  // The match's end offset within the matched lines.
   end = async (): Promise<number> => {
     if (this._end) {
       return this._end
@@ -12421,9 +10313,7 @@ export class SearchSubmatch extends BaseClient {
     return response
   }
 
-  /**
-   * The match's start offset within the matched lines.
-   */
+  // The match's start offset within the matched lines.
   start = async (): Promise<number> => {
     if (this._start) {
       return this._start
@@ -12436,9 +10326,7 @@ export class SearchSubmatch extends BaseClient {
     return response
   }
 
-  /**
-   * The matched text.
-   */
+  // The matched text.
   text = async (): Promise<string> => {
     if (this._text) {
       return this._text
@@ -12452,9 +10340,7 @@ export class SearchSubmatch extends BaseClient {
   }
 }
 
-/**
- * A reference to a secret value, which can be handled more safely than the value itself.
- */
+// A reference to a secret value, which can be handled more safely than the value itself.
 export class Secret extends BaseClient {
   private readonly _id?: SecretID = undefined
   private readonly _name?: string = undefined
@@ -12479,9 +10365,7 @@ export class Secret extends BaseClient {
     this._uri = _uri
   }
 
-  /**
-   * A unique identifier for this Secret.
-   */
+  // A unique identifier for this Secret.
   id = async (): Promise<SecretID> => {
     if (this._id) {
       return this._id
@@ -12494,9 +10378,7 @@ export class Secret extends BaseClient {
     return response
   }
 
-  /**
-   * The name of this secret.
-   */
+  // The name of this secret.
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -12509,9 +10391,7 @@ export class Secret extends BaseClient {
     return response
   }
 
-  /**
-   * The value of this secret.
-   */
+  // The value of this secret.
   plaintext = async (): Promise<string> => {
     if (this._plaintext) {
       return this._plaintext
@@ -12524,9 +10404,7 @@ export class Secret extends BaseClient {
     return response
   }
 
-  /**
-   * The URI of this secret.
-   */
+  // The URI of this secret.
   uri = async (): Promise<string> => {
     if (this._uri) {
       return this._uri
@@ -12540,9 +10418,7 @@ export class Secret extends BaseClient {
   }
 }
 
-/**
- * A content-addressed service providing TCP connectivity.
- */
+// A content-addressed service providing TCP connectivity.
 export class Service extends BaseClient {
   private readonly _id?: ServiceID = undefined
   private readonly _endpoint?: string = undefined
@@ -12576,9 +10452,7 @@ export class Service extends BaseClient {
     this._up = _up
   }
 
-  /**
-   * A unique identifier for this Service.
-   */
+  // A unique identifier for this Service.
   id = async (): Promise<ServiceID> => {
     if (this._id) {
       return this._id
@@ -12591,15 +10465,13 @@ export class Service extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves an endpoint that clients can use to reach this container.
-   *
-   * If no port is specified, the first exposed port is used. If none exist an error is returned.
-   *
-   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-   * @param opts.port The exposed port number for the endpoint
-   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
-   */
+  // Retrieves an endpoint that clients can use to reach this container.
+  //
+  // If no port is specified, the first exposed port is used. If none exist an error is returned.
+  //
+  // If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+  // @param opts.port The exposed port number for the endpoint
+  // @param opts.scheme Return a URL with the given scheme, eg. http for http://
   endpoint = async (opts?: ServiceEndpointOpts): Promise<string> => {
     if (this._endpoint) {
       return this._endpoint
@@ -12612,9 +10484,7 @@ export class Service extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves a hostname which can be used by clients to reach this container.
-   */
+  // Retrieves a hostname which can be used by clients to reach this container.
   hostname = async (): Promise<string> => {
     if (this._hostname) {
       return this._hostname
@@ -12627,9 +10497,7 @@ export class Service extends BaseClient {
     return response
   }
 
-  /**
-   * Retrieves the list of ports provided by the service.
-   */
+  // Retrieves the list of ports provided by the service.
   ports = async (): Promise<Port[]> => {
     type ports = {
       id: PortID
@@ -12642,11 +10510,9 @@ export class Service extends BaseClient {
     return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
   }
 
-  /**
-   * Start the service and wait for its health checks to succeed.
-   *
-   * Services bound to a Container do not need to be manually started.
-   */
+  // Start the service and wait for its health checks to succeed.
+  //
+  // Services bound to a Container do not need to be manually started.
   start = async (): Promise<Service> => {
     const ctx = this._ctx.select("start")
 
@@ -12655,10 +10521,8 @@ export class Service extends BaseClient {
     return new Client(ctx.copy()).loadServiceFromID(response)
   }
 
-  /**
-   * Stop the service.
-   * @param opts.kill Immediately kill the service without waiting for a graceful exit
-   */
+  // Stop the service.
+  // @param opts.kill Immediately kill the service without waiting for a graceful exit
   stop = async (opts?: ServiceStopOpts): Promise<Service> => {
     const ctx = this._ctx.select("stop", { ...opts })
 
@@ -12667,9 +10531,7 @@ export class Service extends BaseClient {
     return new Client(ctx.copy()).loadServiceFromID(response)
   }
 
-  /**
-   * Forces evaluation of the pipeline in the engine.
-   */
+  // Forces evaluation of the pipeline in the engine.
   sync = async (): Promise<Service> => {
     const ctx = this._ctx.select("sync")
 
@@ -12682,13 +10544,11 @@ export class Service extends BaseClient {
     return new Service(ctx)
   }
 
-  /**
-   * Creates a tunnel that forwards traffic from the caller's network to this service.
-   * @param opts.ports List of frontend/backend port mappings to forward.
-   *
-   * Frontend is the port accepting traffic on the host, backend is the service port.
-   * @param opts.random Bind each tunnel port to a random port on the host.
-   */
+  // Creates a tunnel that forwards traffic from the caller's network to this service.
+  // @param opts.ports List of frontend/backend port mappings to forward.
+  //
+  // Frontend is the port accepting traffic on the host, backend is the service port.
+  // @param opts.random Bind each tunnel port to a random port on the host.
   up = async (opts?: ServiceUpOpts): Promise<void> => {
     if (this._up) {
       return
@@ -12699,10 +10559,8 @@ export class Service extends BaseClient {
     await ctx.execute()
   }
 
-  /**
-   * Configures a hostname which can be used by clients within the session to reach this container.
-   * @param hostname The hostname to use.
-   */
+  // Configures a hostname which can be used by clients within the session to reach this container.
+  // @param hostname The hostname to use.
   withHostname = (hostname: string): Service => {
     const ctx = this._ctx.select("withHostname", { hostname })
     return new Service(ctx)
@@ -12718,9 +10576,7 @@ export class Service extends BaseClient {
   }
 }
 
-/**
- * A Unix or TCP/IP socket that can be mounted into a container.
- */
+// A Unix or TCP/IP socket that can be mounted into a container.
 export class Socket extends BaseClient {
   private readonly _id?: SocketID = undefined
 
@@ -12733,9 +10589,7 @@ export class Socket extends BaseClient {
     this._id = _id
   }
 
-  /**
-   * A unique identifier for this Socket.
-   */
+  // A unique identifier for this Socket.
   id = async (): Promise<SocketID> => {
     if (this._id) {
       return this._id
@@ -12749,9 +10603,7 @@ export class Socket extends BaseClient {
   }
 }
 
-/**
- * Source location information.
- */
+// Source location information.
 export class SourceMap extends BaseClient {
   private readonly _id?: SourceMapID = undefined
   private readonly _column?: number = undefined
@@ -12782,9 +10634,7 @@ export class SourceMap extends BaseClient {
     this._url = _url
   }
 
-  /**
-   * A unique identifier for this SourceMap.
-   */
+  // A unique identifier for this SourceMap.
   id = async (): Promise<SourceMapID> => {
     if (this._id) {
       return this._id
@@ -12797,9 +10647,7 @@ export class SourceMap extends BaseClient {
     return response
   }
 
-  /**
-   * The column number within the line.
-   */
+  // The column number within the line.
   column = async (): Promise<number> => {
     if (this._column) {
       return this._column
@@ -12812,9 +10660,7 @@ export class SourceMap extends BaseClient {
     return response
   }
 
-  /**
-   * The filename from the module source.
-   */
+  // The filename from the module source.
   filename = async (): Promise<string> => {
     if (this._filename) {
       return this._filename
@@ -12827,9 +10673,7 @@ export class SourceMap extends BaseClient {
     return response
   }
 
-  /**
-   * The line number within the filename.
-   */
+  // The line number within the filename.
   line = async (): Promise<number> => {
     if (this._line) {
       return this._line
@@ -12842,9 +10686,7 @@ export class SourceMap extends BaseClient {
     return response
   }
 
-  /**
-   * The module dependency this was declared in.
-   */
+  // The module dependency this was declared in.
   module_ = async (): Promise<string> => {
     if (this._module) {
       return this._module
@@ -12857,9 +10699,7 @@ export class SourceMap extends BaseClient {
     return response
   }
 
-  /**
-   * The URL to the file, if any. This can be used to link to the source map in the browser.
-   */
+  // The URL to the file, if any. This can be used to link to the source map in the browser.
   url = async (): Promise<string> => {
     if (this._url) {
       return this._url
@@ -12873,9 +10713,7 @@ export class SourceMap extends BaseClient {
   }
 }
 
-/**
- * A file or directory status object.
- */
+// A file or directory status object.
 export class Stat extends BaseClient {
   private readonly _id?: StatID = undefined
   private readonly _fileType?: FileType = undefined
@@ -12903,9 +10741,7 @@ export class Stat extends BaseClient {
     this._size = _size
   }
 
-  /**
-   * A unique identifier for this Stat.
-   */
+  // A unique identifier for this Stat.
   id = async (): Promise<StatID> => {
     if (this._id) {
       return this._id
@@ -12918,9 +10754,7 @@ export class Stat extends BaseClient {
     return response
   }
 
-  /**
-   * file type
-   */
+  // file type
   fileType = async (): Promise<FileType> => {
     if (this._fileType) {
       return this._fileType
@@ -12933,9 +10767,7 @@ export class Stat extends BaseClient {
     return FileTypeNameToValue(response)
   }
 
-  /**
-   * file name
-   */
+  // file name
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -12948,9 +10780,7 @@ export class Stat extends BaseClient {
     return response
   }
 
-  /**
-   * permission bits
-   */
+  // permission bits
   permissions = async (): Promise<number> => {
     if (this._permissions) {
       return this._permissions
@@ -12963,9 +10793,7 @@ export class Stat extends BaseClient {
     return response
   }
 
-  /**
-   * file size
-   */
+  // file size
   size = async (): Promise<number> => {
     if (this._size) {
       return this._size
@@ -12979,9 +10807,7 @@ export class Stat extends BaseClient {
   }
 }
 
-/**
- * An interactive terminal that clients can connect to.
- */
+// An interactive terminal that clients can connect to.
 export class Terminal extends BaseClient {
   private readonly _id?: TerminalID = undefined
   private readonly _sync?: TerminalID = undefined
@@ -12996,9 +10822,7 @@ export class Terminal extends BaseClient {
     this._sync = _sync
   }
 
-  /**
-   * A unique identifier for this Terminal.
-   */
+  // A unique identifier for this Terminal.
   id = async (): Promise<TerminalID> => {
     if (this._id) {
       return this._id
@@ -13011,11 +10835,9 @@ export class Terminal extends BaseClient {
     return response
   }
 
-  /**
-   * Forces evaluation of the pipeline in the engine.
-   *
-   * It doesn't run the default command if no exec has been set.
-   */
+  // Forces evaluation of the pipeline in the engine.
+  //
+  // It doesn't run the default command if no exec has been set.
   sync = async (): Promise<Terminal> => {
     const ctx = this._ctx.select("sync")
 
@@ -13025,9 +10847,7 @@ export class Terminal extends BaseClient {
   }
 }
 
-/**
- * A definition of a parameter or return type in a Module.
- */
+// A definition of a parameter or return type in a Module.
 export class TypeDef extends BaseClient {
   private readonly _id?: TypeDefID = undefined
   private readonly _kind?: TypeDefKind = undefined
@@ -13049,9 +10869,7 @@ export class TypeDef extends BaseClient {
     this._optional = _optional
   }
 
-  /**
-   * A unique identifier for this TypeDef.
-   */
+  // A unique identifier for this TypeDef.
   id = async (): Promise<TypeDefID> => {
     if (this._id) {
       return this._id
@@ -13064,57 +10882,43 @@ export class TypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
-   */
+  // If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
   asEnum = (): EnumTypeDef => {
     const ctx = this._ctx.select("asEnum")
     return new EnumTypeDef(ctx)
   }
 
-  /**
-   * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
-   */
+  // If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
   asInput = (): InputTypeDef => {
     const ctx = this._ctx.select("asInput")
     return new InputTypeDef(ctx)
   }
 
-  /**
-   * If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
-   */
+  // If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
   asInterface = (): InterfaceTypeDef => {
     const ctx = this._ctx.select("asInterface")
     return new InterfaceTypeDef(ctx)
   }
 
-  /**
-   * If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
-   */
+  // If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
   asList = (): ListTypeDef => {
     const ctx = this._ctx.select("asList")
     return new ListTypeDef(ctx)
   }
 
-  /**
-   * If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
-   */
+  // If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
   asObject = (): ObjectTypeDef => {
     const ctx = this._ctx.select("asObject")
     return new ObjectTypeDef(ctx)
   }
 
-  /**
-   * If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
-   */
+  // If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
   asScalar = (): ScalarTypeDef => {
     const ctx = this._ctx.select("asScalar")
     return new ScalarTypeDef(ctx)
   }
 
-  /**
-   * The kind of type this is (e.g. primitive, list, object).
-   */
+  // The kind of type this is (e.g. primitive, list, object).
   kind = async (): Promise<TypeDefKind> => {
     if (this._kind) {
       return this._kind
@@ -13127,9 +10931,7 @@ export class TypeDef extends BaseClient {
     return TypeDefKindNameToValue(response)
   }
 
-  /**
-   * Whether this type can be set to null. Defaults to false.
-   */
+  // Whether this type can be set to null. Defaults to false.
   optional = async (): Promise<boolean> => {
     if (this._optional) {
       return this._optional
@@ -13142,9 +10944,7 @@ export class TypeDef extends BaseClient {
     return response
   }
 
-  /**
-   * Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
-   */
+  // Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
   withConstructor = (function_: Function_): TypeDef => {
     const ctx = this._ctx.select("withConstructor", {
       function: function_,
@@ -13152,27 +10952,23 @@ export class TypeDef extends BaseClient {
     return new TypeDef(ctx)
   }
 
-  /**
-   * Returns a TypeDef of kind Enum with the provided name.
-   *
-   * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
-   * @param name The name of the enum
-   * @param opts.description A doc string for the enum, if any
-   * @param opts.sourceMap The source map for the enum definition.
-   */
+  // Returns a TypeDef of kind Enum with the provided name.
+  //
+  // Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+  // @param name The name of the enum
+  // @param opts.description A doc string for the enum, if any
+  // @param opts.sourceMap The source map for the enum definition.
   withEnum = (name: string, opts?: TypeDefWithEnumOpts): TypeDef => {
     const ctx = this._ctx.select("withEnum", { name, ...opts })
     return new TypeDef(ctx)
   }
 
-  /**
-   * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-   * @param name The name of the member in the enum
-   * @param opts.value The value of the member in the enum
-   * @param opts.description A doc string for the member, if any
-   * @param opts.sourceMap The source map for the enum member definition.
-   * @param opts.deprecated If deprecated, the reason or migration path.
-   */
+  // Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+  // @param name The name of the member in the enum
+  // @param opts.value The value of the member in the enum
+  // @param opts.description A doc string for the member, if any
+  // @param opts.sourceMap The source map for the enum member definition.
+  // @param opts.deprecated If deprecated, the reason or migration path.
   withEnumMember = (
     name: string,
     opts?: TypeDefWithEnumMemberOpts,
@@ -13181,27 +10977,23 @@ export class TypeDef extends BaseClient {
     return new TypeDef(ctx)
   }
 
-  /**
-   * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-   * @param value The name of the value in the enum
-   * @param opts.description A doc string for the value, if any
-   * @param opts.sourceMap The source map for the enum value definition.
-   * @param opts.deprecated If deprecated, the reason or migration path.
-   * @deprecated Use withEnumMember instead
-   */
+  // Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+  // @param value The name of the value in the enum
+  // @param opts.description A doc string for the value, if any
+  // @param opts.sourceMap The source map for the enum value definition.
+  // @param opts.deprecated If deprecated, the reason or migration path.
+  // @deprecated Use withEnumMember instead
   withEnumValue = (value: string, opts?: TypeDefWithEnumValueOpts): TypeDef => {
     const ctx = this._ctx.select("withEnumValue", { value, ...opts })
     return new TypeDef(ctx)
   }
 
-  /**
-   * Adds a static field for an Object TypeDef, failing if the type is not an object.
-   * @param name The name of the field in the object
-   * @param typeDef The type of the field
-   * @param opts.description A doc string for the field, if any
-   * @param opts.sourceMap The source map for the field definition.
-   * @param opts.deprecated If deprecated, the reason or migration path.
-   */
+  // Adds a static field for an Object TypeDef, failing if the type is not an object.
+  // @param name The name of the field in the object
+  // @param typeDef The type of the field
+  // @param opts.description A doc string for the field, if any
+  // @param opts.sourceMap The source map for the field definition.
+  // @param opts.deprecated If deprecated, the reason or migration path.
   withField = (
     name: string,
     typeDef: TypeDef,
@@ -13211,9 +11003,7 @@ export class TypeDef extends BaseClient {
     return new TypeDef(ctx)
   }
 
-  /**
-   * Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
-   */
+  // Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
   withFunction = (function_: Function_): TypeDef => {
     const ctx = this._ctx.select("withFunction", {
       function: function_,
@@ -13221,17 +11011,13 @@ export class TypeDef extends BaseClient {
     return new TypeDef(ctx)
   }
 
-  /**
-   * Returns a TypeDef of kind Interface with the provided name.
-   */
+  // Returns a TypeDef of kind Interface with the provided name.
   withInterface = (name: string, opts?: TypeDefWithInterfaceOpts): TypeDef => {
     const ctx = this._ctx.select("withInterface", { name, ...opts })
     return new TypeDef(ctx)
   }
 
-  /**
-   * Sets the kind of the type.
-   */
+  // Sets the kind of the type.
   withKind = (kind: TypeDefKind): TypeDef => {
     const metadata = {
       kind: { is_enum: true, value_to_name: TypeDefKindValueToName },
@@ -13241,35 +11027,27 @@ export class TypeDef extends BaseClient {
     return new TypeDef(ctx)
   }
 
-  /**
-   * Returns a TypeDef of kind List with the provided type for its elements.
-   */
+  // Returns a TypeDef of kind List with the provided type for its elements.
   withListOf = (elementType: TypeDef): TypeDef => {
     const ctx = this._ctx.select("withListOf", { elementType })
     return new TypeDef(ctx)
   }
 
-  /**
-   * Returns a TypeDef of kind Object with the provided name.
-   *
-   * Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
-   */
+  // Returns a TypeDef of kind Object with the provided name.
+  //
+  // Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
   withObject = (name: string, opts?: TypeDefWithObjectOpts): TypeDef => {
     const ctx = this._ctx.select("withObject", { name, ...opts })
     return new TypeDef(ctx)
   }
 
-  /**
-   * Sets whether this type can be set to null.
-   */
+  // Sets whether this type can be set to null.
   withOptional = (optional: boolean): TypeDef => {
     const ctx = this._ctx.select("withOptional", { optional })
     return new TypeDef(ctx)
   }
 
-  /**
-   * Returns a TypeDef of kind Scalar with the provided name.
-   */
+  // Returns a TypeDef of kind Scalar with the provided name.
   withScalar = (name: string, opts?: TypeDefWithScalarOpts): TypeDef => {
     const ctx = this._ctx.select("withScalar", { name, ...opts })
     return new TypeDef(ctx)
