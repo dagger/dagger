@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"time"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
 	"github.com/containerd/containerd/v2/defaults"
@@ -26,7 +25,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -187,32 +185,6 @@ func (c *Client) ContentClient() contentapi.ContentClient {
 
 func (c *Client) Dialer() session.Dialer {
 	return grpchijack.Dialer(c.ControlClient())
-}
-
-func (c *Client) Wait(ctx context.Context) error {
-	for {
-		_, err := c.ControlClient().Info(ctx, &controlapi.InfoRequest{})
-		if err == nil {
-			return nil
-		}
-
-		switch code := grpcerrors.Code(err); code {
-		case codes.Unavailable:
-		case codes.Unimplemented:
-			// only buildkit v0.11+ supports the info api, but an unimplemented
-			// response error is still a response so we can ignore it
-			return nil
-		default:
-			return err
-		}
-
-		select {
-		case <-ctx.Done():
-			return context.Cause(ctx)
-		case <-time.After(time.Second):
-		}
-		c.conn.ResetConnectBackoff()
-	}
 }
 
 func (c *Client) Close() error {
