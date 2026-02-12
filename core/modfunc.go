@@ -950,11 +950,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 // hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
 func (fn *ModuleFunction) hasWorkspaceArgs() bool {
-	// for _, arg := range fn.metadata.Args {
-	// 	if arg.IsWorkspace() {
-	// 		return true
-	// 	}
-	// }
+	for _, arg := range fn.metadata.Args {
+		if arg.IsWorkspace() {
+			return true
+		}
+	}
 	return false
 }
 
