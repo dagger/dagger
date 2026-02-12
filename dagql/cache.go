@@ -116,6 +116,35 @@ func ctxWithStorageKey(ctx context.Context, key string) context.Context {
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 
+// preserveIDWithResultDigests keeps the caller's recipe ID while carrying over
+// known digest annotations from the cached constructor. This allows downstream
+// calls to still participate in equivalence/content-based cache hits.
+func preserveIDWithResultDigests(requestID *call.ID, cachedRes *sharedResult) *call.ID {
+	if requestID == nil {
+		return nil
+	}
+	if cachedRes == nil || cachedRes.constructor == nil {
+		return requestID
+	}
+	id := requestID
+	for _, extra := range cachedRes.constructor.ExtraDigests() {
+		if extra.Digest == "" {
+			continue
+		}
+		// Custom digests are still used as call-key scoping in parts of the
+		// engine. Do not copy them across equivalent/content hits, or we can
+		// leak one caller's scope into another caller's recipe ID.
+		if extra.Label == "custom" {
+			continue
+		}
+		id = id.With(call.WithExtraDigest(extra))
+	}
+	if dig := cachedRes.constructor.ContentDigest(); dig != "" {
+		id = id.With(call.WithContentDigest(dig))
+	}
+	return id
+}
+
 func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 	c := &cache{}
 
@@ -989,14 +1018,15 @@ func (c *cache) GetOrInitCall(
 	}
 
 	if lookupTerm != nil {
-		if res := c.lookupEquivalentResultLocked(*lookupTerm); res != nil {
+		res := c.lookupEquivalentResultLocked(*lookupTerm)
+		if res != nil {
 			res.refCount++
 			c.mu.Unlock()
 
 			hitEquivalent := res.constructor != nil && res.constructor.CacheDigest() != key.ID.CacheDigest()
 			var idOverride *call.ID
 			if hitEquivalent {
-				idOverride = key.ID
+				idOverride = preserveIDWithResultDigests(key.ID, res)
 			}
 
 			if !res.hasValue {
@@ -1033,11 +1063,12 @@ func (c *cache) GetOrInitCall(
 				res.refCount++
 				c.aliasRequestIDToResultLocked(key.ID, res)
 				c.mu.Unlock()
+				idOverride := preserveIDWithResultDigests(key.ID, res)
 				if !res.hasValue {
 					if shouldTrackNilResult(ctx) {
 						return Result[Typed]{
 							shared:                res,
-							idOverride:            key.ID,
+							idOverride:            idOverride,
 							hitCache:              true,
 							hitContentDigestCache: true,
 						}, nil
@@ -1050,7 +1081,7 @@ func (c *cache) GetOrInitCall(
 				// have the same content, while still allowing the underlying result be re-used.
 				retRes := Result[Typed]{
 					shared:                res,
-					idOverride:            key.ID,
+					idOverride:            idOverride,
 					hitCache:              true,
 					hitContentDigestCache: true,
 				}

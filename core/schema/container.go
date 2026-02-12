@@ -29,7 +29,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -63,7 +63,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
 			),
 
-		dagql.NodeFuncWithCacheKey("from", s.from, s.fromCacheKey).
+		dagql.NodeFunc("from", s.from).
+			WithInput(fromSessionScopeInput).
 			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
 			Args(
 				dagql.Arg("address").Doc(
@@ -805,53 +806,42 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 
 type containerFromArgs struct {
 	Address string
-	// ResolvedAddress is an internal canonical ref used for actual execution,
-	// while Address may be normalized for cache identity.
-	ResolvedAddress string `internal:"true" default:""`
 
 	ContainerDagOpInternalArgs
 }
 
-func containerFromEffectiveAddress(args containerFromArgs) string {
-	if args.ResolvedAddress != "" {
-		return args.ResolvedAddress
-	}
-	return args.Address
-}
+var fromSessionScopeInput = dagql.ImplicitInput{
+	Name: "fromSessionScope",
+	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+		rawAddress, ok := args["address"]
+		if !ok || rawAddress == nil {
+			return nil, errors.New("missing required address argument")
+		}
+		address, ok := rawAddress.(dagql.String)
+		if !ok {
+			return nil, fmt.Errorf("unexpected address input type %T", rawAddress)
+		}
 
-func (s *containerSchema) fromCacheKey(
-	_ context.Context,
-	_ dagql.ObjectResult[*core.Container],
-	args containerFromArgs,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	address := containerFromEffectiveAddress(args)
-	refName, err := reference.ParseNormalizedNamed(address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse image address %s: %w", address, err)
-	}
-	// add a default :latest if no tag or digest, otherwise this is a no-op
-	refName = reference.TagNameOnly(refName)
+		refName, err := reference.ParseNormalizedNamed(address.String())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse image address %s: %w", address.String(), err)
+		}
+		refName = reference.TagNameOnly(refName)
+		if _, isCanonical := refName.(reference.Canonical); isCanonical {
+			// Digest-addressed refs are immutable and don't need session scoping.
+			return dagql.NewString(""), nil
+		}
 
-	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
-	if resp.CacheKey.ID == nil {
-		return nil, errors.New("cache key ID is nil")
-	}
-
-	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
-			"address",
-			dagql.NewString("digest:"+string(refName.Digest())).ToLiteral(),
-			false,
-		))
-		resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
-			"resolvedAddress",
-			dagql.NewString(refName.String()).ToLiteral(),
-			false,
-		))
-	}
-
-	return resp, nil
+		clientMD, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		if clientMD.SessionID == "" {
+			return nil, errors.New("session ID not found in context")
+		}
+		// Tag-only refs are mutable; resolve once per session.
+		return dagql.NewString(clientMD.SessionID), nil
+	},
 }
 
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
@@ -869,10 +859,9 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 	platform := parent.Self().Platform
 
-	effectiveAddress := containerFromEffectiveAddress(args)
-	refName, err := reference.ParseNormalizedNamed(effectiveAddress)
+	refName, err := reference.ParseNormalizedNamed(args.Address)
 	if err != nil {
-		return inst, fmt.Errorf("failed to parse image address %s: %w", effectiveAddress, err)
+		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
 	// add a default :latest if no tag or digest, otherwise this is a no-op
 	refName = reference.TagNameOnly(refName)
@@ -883,7 +872,15 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			if err != nil {
 				return inst, err
 			}
-			return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+			inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+			if err != nil {
+				return inst, err
+			}
+			return inst.WithContentDigest(hashutil.HashStrings(
+				"container.from",
+				refName.Digest().String(),
+				ctr.Platform.Format(),
+			)), nil
 		}
 
 		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, s.from)
@@ -910,7 +907,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, err
 		}
-		return inst, nil
+		return inst.WithContentDigest(hashutil.HashStrings(
+			"container.from",
+			refName.Digest().String(),
+			ctr.Platform.Format(),
+		)), nil
 	}
 
 	if args.InDagOp() {
@@ -1047,7 +1048,7 @@ type containerExecArgs struct {
 	// ExecMD carries runtime-only execution metadata; it is excluded from ID
 	// digests so cache identity only depends on explicit withExec args plus
 	// execCacheMixin implicit input.
-	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" sensitive:"true" default:"null"`
+	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
 
 	ContainerDagOpInternalArgs
 }

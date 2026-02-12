@@ -35,6 +35,29 @@ func init() {
 	buildkit.RegisterCustomOp(ContainerDagOp{})
 }
 
+func dagOpCacheDigest(id *call.ID) digest.Digest {
+	if id == nil {
+		return ""
+	}
+	if custom := id.CustomDigest(); custom != "" {
+		return custom
+	}
+	return id.CacheDigest()
+}
+
+func dagOpContentOrCacheDigest(id *call.ID) digest.Digest {
+	if id == nil {
+		return ""
+	}
+	if content := id.ContentDigest(); content != "" {
+		return content
+	}
+	if custom := id.CustomDigest(); custom != "" {
+		return custom
+	}
+	return id.EquivalentDigest()
+}
+
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
 // for it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
@@ -50,7 +73,7 @@ func NewDirectoryDagOp(
 		// fall back to using op ID (which will return a different CacheMap value for each op
 		dagop.CacheKey = digest.FromString(
 			strings.Join([]string{
-				dagop.ID.Digest().String(),
+				dagOpCacheDigest(dagop.ID).String(),
 				dagop.Path,
 			}, "\x00"))
 	} else {
@@ -137,7 +160,7 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 func (op FSDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		op.ID.Digest().String(),
+		dagOpCacheDigest(op.ID).String(),
 		op.Path,
 	}, "\x00")), nil
 }
@@ -148,7 +171,7 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
 		inputs = []string{
 			engine.BaseVersion(engine.Version),
-			op.ID.Digest().String(),
+			dagOpCacheDigest(op.ID).String(),
 			op.Path,
 		}
 	} else {
@@ -253,11 +276,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 	ref := workerRef.ImmutableRef
 	if ref != nil {
-		idDgst := obj.ID().Digest().String()
-		// prefer content hash
-		if obj.ID().ContentDigest() != "" {
-			idDgst = obj.ID().ContentDigest().String()
-		}
+		idDgst := dagOpContentOrCacheDigest(obj.ID()).String()
 
 		if err := ref.SetString(keyDaggerDigest, idDgst, daggerDigestIdx+idDgst); err != nil {
 			return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
@@ -316,7 +335,7 @@ func (op RawDagOp) Backend() buildkit.CustomOpBackend {
 func (op RawDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		op.ID.Digest().String(),
+		dagOpCacheDigest(op.ID).String(),
 		op.Filename,
 	}, "\x00")), nil
 }
@@ -324,7 +343,7 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		op.ID.Digest().String(),
+		dagOpCacheDigest(op.ID).String(),
 		op.Filename,
 	}, "\x00"))
 
@@ -428,7 +447,7 @@ func NewContainerDagOp(
 		ID: id,
 		CacheKey: digest.FromString(
 			strings.Join([]string{
-				id.Digest().String(),
+				dagOpCacheDigest(id).String(),
 				engine.BaseVersion(engine.Version),
 			}, "\x00"),
 		),
@@ -640,19 +659,13 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				mount.Selector = dirMnt.Self().Dir
 				llb = dirMnt.Self().LLB
 				res = dirMnt.Self().Result
-				dgst = dirMnt.ID().Digest()
-				if dirMnt.ID().ContentDigest() != "" {
-					dgst = dirMnt.ID().ContentDigest()
-				}
+				dgst = dagOpContentOrCacheDigest(dirMnt.ID())
 			},
 			func(fileMnt *dagql.ObjectResult[*File]) {
 				mount.Selector = fileMnt.Self().File
 				llb = fileMnt.Self().LLB
 				res = fileMnt.Self().Result
-				dgst = fileMnt.ID().Digest()
-				if fileMnt.ID().ContentDigest() != "" {
-					dgst = fileMnt.ID().ContentDigest()
-				}
+				dgst = dagOpContentOrCacheDigest(fileMnt.ID())
 			},
 			func(cache *CacheMountSource) {
 				if cache.Base != nil && cache.Base.Self() != nil {
@@ -931,11 +944,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 		}
 
 		if ref != nil && id != nil {
-			dgst := id.Digest()
-			// prefer content digest if available
-			if id.ContentDigest() != "" {
-				dgst = id.ContentDigest()
-			}
+			dgst := dagOpContentOrCacheDigest(id)
 
 			if dgst != "" {
 				if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {

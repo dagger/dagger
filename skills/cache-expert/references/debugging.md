@@ -81,6 +81,8 @@ Do not run multiple suites in parallel unless necessary; each suite is CPU-heavy
 
 Avoid broad `./...` when debugging cache; use focused package/test slices.
 
+`./dagql/idtui` and `./dagql/idtui/multiprefixw` are integration-style test packages (not quick unit loops). Avoid running them during tight cache-debug cycles unless you explicitly need those integration paths.
+
 ## Metrics-First Leak Triage
 
 When debugging leaked dagql cache refs, start with Prometheus metrics before adding deep logs.
