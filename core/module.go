@@ -296,7 +296,7 @@ func (mod *Module) IDModule() *call.Module {
 	}
 
 	contentCacheKey := mod.ContentDigestCacheKey()
-	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey)), mod.Name(), ref, pin)
+	return call.NewModule(mod.ResultID.With(call.WithContentDigest(digest.Digest(contentCacheKey))), mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -415,26 +415,12 @@ func (mod *Module) CacheConfigForCall(
 	_ call.View,
 	req dagql.GetCacheConfigRequest,
 ) (*dagql.GetCacheConfigResponse, error) {
-	// Function calls on a module should be cached based on the module's content hash, not
-	// the module ID digest (which has a per-client cache key in order to deal with
-	// local dir and git repo loading)
-	id := dagql.CurrentID(ctx)
-	curIDNoMod := id.With(
-		call.WithModule(nil),
-		call.WithCustomDigest(""),
-	)
-
 	resp := &dagql.GetCacheConfigResponse{
 		CacheKey: req.CacheKey,
 	}
 	if resp.CacheKey.ID == nil {
-		resp.CacheKey.ID = curIDNoMod
+		resp.CacheKey.ID = dagql.CurrentID(ctx)
 	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
-		curIDNoMod.Digest().String(),
-		mod.Source.Value.Self().Digest,
-		mod.NameField, // the module source content digest only includes the original name
-	))
 	return resp, nil
 }
 

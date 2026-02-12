@@ -250,7 +250,11 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	}
 	deps := defaultDeps
 	for _, modID := range id.Modules() {
-		inst, err := GetModuleFromContentDigest(ctx, bootstrap, modID.Name(), string(modID.ID().Digest()))
+		modDigest := modID.ID().ContentDigest()
+		if modDigest == "" {
+			modDigest = modID.ID().Digest()
+		}
+		inst, err := GetModuleFromContentDigest(ctx, bootstrap, modID.Name(), string(modDigest))
 		if err != nil {
 			return nil, err
 		}

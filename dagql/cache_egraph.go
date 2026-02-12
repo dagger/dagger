@@ -37,7 +37,11 @@ func termProtoForID(id *call.ID) (callTermProto, error) {
 	if id == nil {
 		return callTermProto{}, nil
 	}
-	selfDigest, inputDigests, err := id.SelfDigestAndInputs()
+	// Module call digests can vary across clients/sessions even when the
+	// recipe-equivalent call is otherwise the same. Ignore module metadata for
+	// term-shape matching; module identity is still captured by input digests
+	// (e.g. custom/content digests added by cache-key config).
+	selfDigest, inputDigests, err := id.With(call.WithModule(nil)).SelfDigestAndInputs()
 	if err != nil {
 		return callTermProto{}, err
 	}

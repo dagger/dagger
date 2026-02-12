@@ -76,6 +76,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Module]{
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.Module]().
+			WithInput(dagql.CachePerClient).
 			Doc(`Forces evaluation of the module, including any loading into the engine and associated validation.`),
 
 		dagql.Func("checks", s.moduleChecks).

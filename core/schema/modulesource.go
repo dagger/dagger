@@ -110,6 +110,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.ModuleSource]{
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.ModuleSource]().
+			WithInput(dagql.CachePerClient).
 			Doc(`Forces evaluation of the module source, including any loading into the engine and associated validation.`),
 
 		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
@@ -3663,8 +3664,19 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
 
-	// save a result for the final module based on its content hash, currently used in the _contextDirectory API
-	if err := core.CacheModuleByContentDigest(ctx, dag, inst); err != nil {
+	// Save a result for the final module based on its content hash, currently
+	// used in the _contextDirectory API and interface implementation loading.
+	// Also attach it as a post-call hook so equivalent/cache hits still
+	// re-register in the current session.
+	registerByContentDigest := func(ctx context.Context) error {
+		curDag := dagql.CurrentDagqlServer(ctx)
+		if curDag == nil {
+			return fmt.Errorf("no dagql server in context")
+		}
+		return core.CacheModuleByContentDigest(ctx, curDag, inst)
+	}
+	inst = inst.ObjectResultWithPostCall(registerByContentDigest)
+	if err := registerByContentDigest(ctx); err != nil {
 		return inst, fmt.Errorf("failed to cache module by content digest: %w", err)
 	}
 

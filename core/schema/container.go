@@ -1048,9 +1048,13 @@ type containerExecArgs struct {
 	// ExecMD carries runtime-only execution metadata; it is excluded from ID
 	// digests so cache identity only depends on explicit withExec args plus
 	// execCacheMixin implicit input.
-	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
+	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" sensitive:"true" default:"null"`
 
 	ContainerDagOpInternalArgs
+}
+
+func (args containerExecArgs) DagOpExecutionMetadata() *buildkit.ExecutionMetadata {
+	return args.ExecMD.Self
 }
 
 var withExecCacheMixinInput = dagql.ImplicitInput{

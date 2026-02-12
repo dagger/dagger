@@ -145,6 +145,160 @@ func preserveIDWithResultDigests(requestID *call.ID, cachedRes *sharedResult) *c
 	return id
 }
 
+func shouldReuseEquivalentObjectPayload(res *sharedResult) bool {
+	if res == nil || res.objType == nil {
+		return true
+	}
+	// Some objects carry caller-local/provenance metadata in payload fields
+	// (e.g. module source paths). Reusing an equivalent-hit payload for these
+	// types can return values from a different caller recipe even if IDs are
+	// overridden.
+	switch res.objType.TypeName() {
+	case "Module", "ModuleSource":
+		return false
+	default:
+		return true
+	}
+}
+
+func shouldReuseExactObjectPayload(res *sharedResult) bool {
+	if res == nil || res.objType == nil {
+		return true
+	}
+	// Container payloads can contain mutable buildkit refs. Reusing the exact
+	// payload across cache hits can cause multiple callers to race finalization
+	// of the same active snapshot.
+	return res.objType.TypeName() != "Container"
+}
+
+func shouldReuseEquivalentHitForCall(keyID *call.ID, res *sharedResult) bool {
+	if !shouldReuseEquivalentObjectPayload(res) {
+		return false
+	}
+	if keyID == nil || res == nil || res.constructor == nil {
+		return true
+	}
+	// Equivalent/content-digest reuse must not cross call paths. Path remapping
+	// can leak wrong contextual/provenance payloads (e.g. moduleSource context).
+	if keyID.Path() != res.constructor.Path() {
+		isContainer := false
+		if res.objType != nil && res.objType.TypeName() == "Container" {
+			isContainer = true
+		}
+		if res.constructor != nil && res.constructor.Type() != nil && res.constructor.Type().NamedType() == "Container" {
+			isContainer = true
+		}
+		if isContainer {
+			// DagOp and non-DagOp container calls are not interchangeable even
+			// when they converge to the same known digest. Reusing across this
+			// boundary can break nested execution lifecycles.
+			if isDagOpCall(keyID) != isDagOpCall(res.constructor) {
+				return false
+			}
+			// Container results can be reached through equivalent recipes with
+			// different call paths (e.g. module function wrappers vs underlying
+			// container builder calls). Allow cross-path reuse.
+		} else {
+			return false
+		}
+	}
+	// Avoid reusing constructor payloads for non-core object instances.
+	// These values can embed contextual defaults (e.g. _contextDirectory IDs)
+	// that are session-specific and become stale across sessions.
+	if res.objType != nil {
+		typeName := res.objType.TypeName()
+		if typeName != "" && keyID.Type() != nil && keyID.Type().NamedType() == typeName {
+			if keyID.Field() == lowerFirstASCII(typeName) && !isCoreConstructorType(typeName) {
+				return false
+			}
+		}
+	}
+	// Identity/provenance introspection fields must preserve exact recipe-bound
+	// payload values and should not reuse equivalent-hit payloads.
+	switch keyID.Field() {
+	case "id", "asString":
+		return false
+	default:
+		return true
+	}
+}
+
+func shouldPreserveRequestIDOnEquivalentHit(keyID *call.ID, res *sharedResult) bool {
+	if keyID == nil {
+		return false
+	}
+	if res != nil && res.objType != nil && res.objType.TypeName() == "Container" {
+		return false
+	}
+	// Module-provided calls can include client-scoped receiver digests in the
+	// recipe path. Preserving request IDs for equivalent hits there causes
+	// stable cached payloads to appear as different IDs across callers.
+	return keyID.Module() == nil
+}
+
+func lowerFirstASCII(s string) string {
+	if s == "" {
+		return s
+	}
+	b := []byte(s)
+	if b[0] >= 'A' && b[0] <= 'Z' {
+		b[0] = b[0] - 'A' + 'a'
+	}
+	return string(b)
+}
+
+func isDagOpCall(id *call.ID) bool {
+	if id == nil {
+		return false
+	}
+	arg := id.Arg("isDagOp")
+	if arg == nil {
+		return false
+	}
+	lit, ok := arg.Value().(*call.LiteralBool)
+	if !ok {
+		return false
+	}
+	return lit.Value()
+}
+
+func isCoreConstructorType(typeName string) bool {
+	switch typeName {
+	case "Address",
+		"CacheVolume",
+		"Container",
+		"CurrentModule",
+		"Directory",
+		"Engine",
+		"EnvFile",
+		"File",
+		"Function",
+		"FunctionCall",
+		"GeneratedCode",
+		"GitRef",
+		"GitRepository",
+		"Host",
+		"HTTP",
+		"LLM",
+		"Module",
+		"ModuleSource",
+		"PortForward",
+		"Query",
+		"Secret",
+		"Service",
+		"Socket",
+		"SourceMap",
+		"TypeDef":
+		return true
+	default:
+		return false
+	}
+}
+
+func persistentKnownDigestCallKey(knownDigest string) string {
+	return hashutil.HashStrings("known-digest", knownDigest).String()
+}
+
 func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 	c := &cache{}
 
@@ -873,84 +1027,6 @@ func (c *cache) GetOrInitCall(
 		concurrencyKey: key.ConcurrencyKey,
 	}
 
-	// The storage key is the key for what's actually stored on disk.
-	// By default it's just the call key, but if we have a TTL then there
-	// can be different results stored on disk for a single call key, necessitating
-	// this separate storage key.
-	storageKey := callKey
-
-	var persistToDB func(context.Context) error
-	if key.TTL != 0 && c.db != nil {
-		cachedCall, err := c.db.SelectCall(ctx, callKey)
-		if err == nil || errors.Is(err, sql.ErrNoRows) {
-			noHit := errors.Is(err, sql.ErrNoRows)
-			now := time.Now().Unix()
-			expiration := now + key.TTL
-
-			// TODO:(sipsma) we unfortunately have to incorporate the session ID into the storage key
-			// for now in order to get functions that make SetSecret calls to behave as "per-session"
-			// caches (while *also* retaining the correct behavior in all other cases). It would be
-			// nice to find some more elegant way of modeling this that disentangles this cache
-			// from engine client metadata.
-			switch {
-			case noHit || cachedCall == nil:
-				md, err := engine.ClientMetadataFromContext(ctx)
-				if err != nil {
-					return nil, fmt.Errorf("get client metadata: %w", err)
-				}
-				storageKey = hashutil.NewHasher().
-					WithString(storageKey).
-					WithString(md.SessionID).
-					DigestAndClose()
-
-				// Nothing saved in the cache yet, use a new expiration. Don't save yet, that only happens
-				// once a call completes successfully and has been determined to be safe to cache.
-				persistToDB = func(ctx context.Context) error {
-					return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
-						CallKey:        callKey,
-						StorageKey:     storageKey,
-						Expiration:     expiration,
-						PrevStorageKey: "",
-					})
-				}
-
-			case cachedCall.Expiration < now:
-				md, err := engine.ClientMetadataFromContext(ctx)
-				if err != nil {
-					return nil, fmt.Errorf("get client metadata: %w", err)
-				}
-				storageKey = hashutil.NewHasher().
-					WithString(storageKey).
-					WithString(md.SessionID).
-					DigestAndClose()
-
-				// We do have a cached entry, but it expired, so don't use it. Use a new expiration, but again
-				// don't store it yet until the call completes successfully and is determined to be safe
-				// to cache.
-				persistToDB = func(ctx context.Context) error {
-					return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
-						CallKey:        callKey,
-						StorageKey:     storageKey,
-						Expiration:     expiration,
-						PrevStorageKey: cachedCall.StorageKey,
-					})
-				}
-
-			default:
-				// We have a cached entry and it hasn't expired yet, use it
-				storageKey = cachedCall.StorageKey
-			}
-		} else {
-			slog.Error("failed to select call from cache", "err", err)
-		}
-	}
-
-	ctx = ctxWithStorageKey(ctx, storageKey)
-
-	if ctx.Value(cacheContextKey{storageKey, c}) != nil {
-		return nil, ErrCacheRecursiveCall
-	}
-
 	knownLookupKeys := make([]string, 0, 1+len(key.ID.ExtraDigests()))
 	knownLookupSet := make(map[string]struct{}, cap(knownLookupKeys))
 	addKnownLookupKey := func(k string) {
@@ -967,15 +1043,127 @@ func (c *cache) GetOrInitCall(
 	for _, extra := range key.ID.ExtraDigests() {
 		addKnownLookupKey(extra.Digest.String())
 	}
+	persistCallKeys := make([]string, 0, 1+len(knownLookupKeys))
+	persistCallKeySet := make(map[string]struct{}, cap(persistCallKeys))
+	addPersistCallKey := func(k string) {
+		if k == "" {
+			return
+		}
+		if _, ok := persistCallKeySet[k]; ok {
+			return
+		}
+		persistCallKeySet[k] = struct{}{}
+		persistCallKeys = append(persistCallKeys, k)
+	}
+	addPersistCallKey(callKey)
+	for _, knownLookupKey := range knownLookupKeys {
+		addPersistCallKey(persistentKnownDigestCallKey(knownLookupKey))
+	}
+
+	// The storage key is the key for what's actually stored on disk.
+	// By default it's just the call key, but if we have a TTL then there
+	// can be different results stored on disk for a single call key, necessitating
+	// this separate storage key.
+	storageKey := callKey
+
+	var persistToDB func(context.Context) error
+	if key.TTL != 0 && c.db != nil {
+		var cachedCall *cachedb.Call
+		for _, persistCallKey := range persistCallKeys {
+			candidateCall, err := c.db.SelectCall(ctx, persistCallKey)
+			if err == nil {
+				cachedCall = candidateCall
+				break
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				slog.Error("failed to select call from cache", "callKey", persistCallKey, "err", err)
+				break
+			}
+		}
+
+		now := time.Now().Unix()
+		expiration := now + key.TTL
+
+		// TODO:(sipsma) we unfortunately have to incorporate the session ID into the storage key
+		// for now in order to get functions that make SetSecret calls to behave as "per-session"
+		// caches (while *also* retaining the correct behavior in all other cases). It would be
+		// nice to find some more elegant way of modeling this that disentangles this cache
+		// from engine client metadata.
+		switch {
+		case cachedCall == nil:
+			md, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("get client metadata: %w", err)
+			}
+			storageKey = hashutil.NewHasher().
+				WithString(storageKey).
+				WithString(md.SessionID).
+				DigestAndClose()
+
+			// Nothing saved in the cache yet, use a new expiration. Don't save yet, that only happens
+			// once a call completes successfully and has been determined to be safe to cache.
+			persistToDB = func(ctx context.Context) error {
+				for _, persistCallKey := range persistCallKeys {
+					err := c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
+						CallKey:        persistCallKey,
+						StorageKey:     storageKey,
+						Expiration:     expiration,
+						PrevStorageKey: "",
+					})
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+
+		case cachedCall.Expiration < now:
+			md, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("get client metadata: %w", err)
+			}
+			storageKey = hashutil.NewHasher().
+				WithString(storageKey).
+				WithString(md.SessionID).
+				DigestAndClose()
+
+			// We do have a cached entry, but it expired, so don't use it. Use a new expiration, but again
+			// don't store it yet until the call completes successfully and is determined to be safe
+			// to cache.
+			persistToDB = func(ctx context.Context) error {
+				for _, persistCallKey := range persistCallKeys {
+					err := c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
+						CallKey:        persistCallKey,
+						StorageKey:     storageKey,
+						Expiration:     expiration,
+						PrevStorageKey: cachedCall.StorageKey,
+					})
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+
+		default:
+			// We have a cached entry and it hasn't expired yet, use it
+			storageKey = cachedCall.StorageKey
+		}
+	}
+
+	ctx = ctxWithStorageKey(ctx, storageKey)
+
+	if ctx.Value(cacheContextKey{storageKey, c}) != nil {
+		return nil, ErrCacheRecursiveCall
+	}
+
 	var lookupTerm *callTermProto
-	if storageKey == callKey {
-		term, err := termProtoForID(key.ID)
-		if err != nil {
-			return nil, fmt.Errorf("derive call term: %w", err)
-		}
-		if len(term.inputDigests) > 0 {
-			lookupTerm = &term
-		}
+	term, err := termProtoForID(key.ID)
+	if err != nil {
+		return nil, fmt.Errorf("derive call term: %w", err)
+	}
+	if len(term.inputDigests) > 0 {
+		lookupTerm = &term
 	}
 
 	c.mu.Lock()
@@ -991,42 +1179,57 @@ func (c *cache) GetOrInitCall(
 
 	if lst, ok := c.completedCalls[storageKey]; ok {
 		if res := lst.first(); res != nil {
-			res.refCount++
-			c.mu.Unlock()
-			if !res.hasValue {
-				if shouldTrackNilResult(ctx) {
-					return Result[Typed]{
-						shared:   res,
-						hitCache: true,
-					}, nil
+			if shouldReuseExactObjectPayload(res) {
+				res.refCount++
+				c.mu.Unlock()
+				if !res.hasValue {
+					if shouldTrackNilResult(ctx) {
+						return Result[Typed]{
+							shared:   res,
+							hitCache: true,
+						}, nil
+					}
+					return nil, nil
 				}
-				return nil, nil
-			}
-			retRes := Result[Typed]{
-				shared:   res,
-				hitCache: true,
-			}
-			if res.objType != nil {
-				retObjRes, err := res.objType.New(retRes)
-				if err != nil {
-					return nil, fmt.Errorf("reconstruct object result from cache: %w", err)
+				retRes := Result[Typed]{
+					shared:   res,
+					hitCache: true,
 				}
-				return retObjRes, nil
+				if res.objType != nil {
+					retObjRes, err := res.objType.New(retRes)
+					if err != nil {
+						return nil, fmt.Errorf("reconstruct object result from cache: %w", err)
+					}
+					return retObjRes, nil
+				}
+				return retRes, nil
 			}
-			return retRes, nil
 		}
 	}
 
 	if lookupTerm != nil {
 		res := c.lookupEquivalentResultLocked(*lookupTerm)
 		if res != nil {
+			if !shouldReuseEquivalentHitForCall(key.ID, res) {
+				goto knownDigestLookup
+			}
 			res.refCount++
 			c.mu.Unlock()
 
 			hitEquivalent := res.constructor != nil && res.constructor.CacheDigest() != key.ID.CacheDigest()
 			var idOverride *call.ID
-			if hitEquivalent {
+			if hitEquivalent && shouldPreserveRequestIDOnEquivalentHit(key.ID, res) {
 				idOverride = preserveIDWithResultDigests(key.ID, res)
+				if key.ID != nil && res.constructor != nil && key.ID.Path() != res.constructor.Path() {
+					slog.Info("cache equivalent hit remapped call",
+						"requestPath", key.ID.Path(),
+						"requestDigest", key.ID.Digest(),
+						"resultPath", res.constructor.Path(),
+						"resultDigest", res.constructor.Digest(),
+						"requestType", key.ID.Type().NamedType(),
+						"resultType", res.constructor.Type().NamedType(),
+					)
+				}
 			}
 
 			if !res.hasValue {
@@ -1057,13 +1260,31 @@ func (c *cache) GetOrInitCall(
 		}
 	}
 
+knownDigestLookup:
 	for _, knownKey := range knownLookupKeys {
 		if lst, ok := c.completedCallsByKnownDigest[knownKey]; ok {
 			if res := lst.first(); res != nil {
+				if !shouldReuseEquivalentHitForCall(key.ID, res) {
+					continue
+				}
 				res.refCount++
 				c.aliasRequestIDToResultLocked(key.ID, res)
 				c.mu.Unlock()
-				idOverride := preserveIDWithResultDigests(key.ID, res)
+				var idOverride *call.ID
+				if shouldPreserveRequestIDOnEquivalentHit(key.ID, res) {
+					idOverride = preserveIDWithResultDigests(key.ID, res)
+				}
+				if key.ID != nil && res.constructor != nil && key.ID.Path() != res.constructor.Path() {
+					slog.Info("cache known-digest hit remapped call",
+						"knownKey", knownKey,
+						"requestPath", key.ID.Path(),
+						"requestDigest", key.ID.Digest(),
+						"resultPath", res.constructor.Path(),
+						"resultDigest", res.constructor.Digest(),
+						"requestType", key.ID.Type().NamedType(),
+						"resultType", res.constructor.Type().NamedType(),
+					)
+				}
 				if !res.hasValue {
 					if shouldTrackNilResult(ctx) {
 						return Result[Typed]{

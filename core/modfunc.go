@@ -496,8 +496,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		return nil, fmt.Errorf("cache key ID is nil for %s.%s", fn.mod.Name(), fn.metadata.Name)
 	}
 
-	dgstInputs := []string{cacheCfgResp.CacheKey.ID.Digest().String()}
-
 	var ctxArgs []*FunctionArg
 	var userDefaults []*UserDefault
 
@@ -533,27 +531,29 @@ func (fn *ModuleFunction) CacheConfigForCall(
 
 	if len(ctxArgs) > 0 || len(userDefaults) > 0 {
 		type argInput struct {
-			argName  string
-			origName string
-			val      dagql.IDType
+			argName string
+			val     dagql.IDType
 		}
 
 		srv := dagql.CurrentDagqlServer(ctx)
 		eg, ctx := errgroup.WithContext(ctx)
 
-		// Process "contextual arguments", aka objects with a `defaulPath`
+		// Resolve once so all contextual args for this call key against the same
+		// module content identity.
+		contentCacheKey := fn.mod.ContentDigestCacheKey()
+
+		// Process "contextual arguments", aka objects with a `defaultPath`
 		ctxArgVals := make([]*argInput, len(ctxArgs))
 		for i, arg := range ctxArgs {
 			eg.Go(func() error {
-				ctxVal, err := fn.loadContextualArg(ctx, srv, arg)
+				ctxVal, err := fn.loadContextualArg(ctx, srv, arg, contentCacheKey)
 				if err != nil {
 					return fmt.Errorf("load contextual arg %q: %w", arg.Name, err)
 				}
 
 				ctxArgVals[i] = &argInput{
-					argName:  arg.Name,
-					origName: arg.OriginalName,
-					val:      ctxVal,
+					argName: arg.Name,
+					val:     ctxVal,
 				}
 
 				return nil
@@ -570,9 +570,8 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				}
 				arg := userDefault.Arg
 				userDefaultVals[i] = &argInput{
-					argName:  arg.Name,
-					origName: arg.OriginalName,
-					val:      id,
+					argName: arg.Name,
+					val:     id,
 				}
 				return nil
 			})
@@ -588,13 +587,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				dagql.Opt(arg.val).ToLiteral(),
 				false,
 			))
-			id := arg.val.ID()
-			// prefer content digest if available
-			dgst := id.ContentDigest()
-			if dgst == "" {
-				dgst = id.Digest()
-			}
-			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 		}
 		for _, arg := range userDefaultVals {
 			if arg != nil {
@@ -603,26 +595,108 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					dagql.Opt(arg.val).ToLiteral(),
 					false,
 				))
-				id := arg.val.ID()
-				dgst := id.ContentDigest()
-				if dgst == "" {
-					dgst = id.Digest()
-				}
-				dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 			}
 		}
 	}
 
-	if cachePolicy := fn.metadata.derivedCachePolicy(fn.mod); cachePolicy == FunctionCachePolicyPerSession {
+	baseID := cacheCfgResp.CacheKey.ID.With(
+		call.WithModule(nil),
+		call.WithCustomDigest(""),
+	)
+	selfDigest, inputDigests, err := baseID.SelfDigestAndEquivalentInputs()
+	if err != nil {
+		return nil, fmt.Errorf("compute cache digest for %s.%s: %w", fn.mod.Name(), fn.metadata.Name, err)
+	}
+	dgstInputs := make([]string, 0, 3+len(inputDigests))
+	dgstInputs = append(dgstInputs, selfDigest.String())
+	startInputIdx := 0
+	var normalizedRecvDigest digest.Digest
+	if recv := baseID.Receiver(); recv != nil {
+		recvDigest, err := fn.normalizedReceiverDigest(recv)
+		if err != nil {
+			return nil, fmt.Errorf("compute normalized receiver digest for %s.%s: %w", fn.mod.Name(), fn.metadata.Name, err)
+		}
+		normalizedRecvDigest = recvDigest
+		dgstInputs = append(dgstInputs, recvDigest.String())
+		startInputIdx = 1
+	}
+	for _, in := range inputDigests[startInputIdx:] {
+		dgstInputs = append(dgstInputs, in.String())
+	}
+	dgstInputs = append(dgstInputs, fn.mod.Source.Value.Self().Digest, fn.mod.NameField)
+
+	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod)
+	if cachePolicy == FunctionCachePolicyPerSession {
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
 		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
 	}
-
-	cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithDigest(hashutil.HashStrings(dgstInputs...))
+	// Constructors can capture contextual defaults in object payload fields.
+	// Scope constructor cache keys per session so stale contextual IDs are not
+	// reused after session boundaries.
+	if fn.metadata.Name == "" {
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
+	}
+	customDigest := hashutil.HashStrings(dgstInputs...)
+	cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithDigest(customDigest)
+	if normalizedRecvDigest != "" {
+		recv := cacheCfgResp.CacheKey.ID.Receiver()
+		if recv != nil {
+			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.With(
+				call.WithReceiver(recv.With(call.WithContentDigest(normalizedRecvDigest))),
+			)
+		}
+	}
 	return cacheCfgResp, nil
+}
+
+func (fn *ModuleFunction) normalizedReceiverDigest(id *call.ID) (digest.Digest, error) {
+	if id == nil {
+		return "", nil
+	}
+	idNoMod := id.With(
+		call.WithModule(nil),
+		call.WithCustomDigest(""),
+	)
+
+	// Root module identity should be based on module source content, not per-client
+	// module source call identity.
+	if idNoMod.Field() == "asModule" {
+		if recv := idNoMod.Receiver(); recv != nil && recv.Field() == "moduleSource" {
+			return digest.Digest(hashutil.HashStrings(
+				"moduleSourceAsModule",
+				fn.mod.Source.Value.Self().Digest,
+				fn.mod.NameField,
+			)), nil
+		}
+	}
+
+	selfDigest, inputDigests, err := idNoMod.SelfDigestAndEquivalentInputs()
+	if err != nil {
+		return "", err
+	}
+	digestInputs := make([]string, 0, 1+len(inputDigests))
+	digestInputs = append(digestInputs, selfDigest.String())
+	startInputIdx := 0
+	if recv := idNoMod.Receiver(); recv != nil {
+		recvDigest, err := fn.normalizedReceiverDigest(recv)
+		if err != nil {
+			return "", err
+		}
+		digestInputs = append(digestInputs, recvDigest.String())
+		startInputIdx = 1
+	}
+	for _, in := range inputDigests[startInputIdx:] {
+		digestInputs = append(digestInputs, in.String())
+	}
+
+	return digest.Digest(hashutil.HashStrings(digestInputs...)), nil
 }
 
 func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], rerr error) {
@@ -883,9 +957,24 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
 		if hasNamedSecrets {
-			// Named secrets indicate a direct SetSecret result in the returned value.
-			// Those cannot be persisted safely across sessions.
-			safeToPersistCache = false
+			// Named secrets are only safe to persist across sessions when the return value is
+			// itself secret/socket data. If they're embedded in other objects (e.g. container
+			// state), persisting can incorrectly reuse secret-dependent results across sessions.
+			for _, id := range returnedIDsList {
+				typ := id.Type()
+				if typ == nil {
+					safeToPersistCache = false
+					break
+				}
+				switch typ.NamedType() {
+				case "Secret", "Socket":
+				default:
+					safeToPersistCache = false
+				}
+				if !safeToPersistCache {
+					break
+				}
+			}
 		}
 
 		returnValue = returnValue.WithPostCall(resourceTransferPostCall)
@@ -1019,6 +1108,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	ctx context.Context,
 	dag *dagql.Server,
 	arg *FunctionArg,
+	contentCacheKey string,
 ) (dagql.IDType, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be an object", arg.OriginalName)
@@ -1041,7 +1131,6 @@ func (fn *ModuleFunction) loadContextualArg(
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		contentCacheKey := fn.mod.ContentDigestCacheKey()
 		var dir dagql.ObjectResult[*Directory]
 		err := dag.Select(ctx, dag.Root(), &dir,
 			dagql.Selector{
@@ -1072,7 +1161,6 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*Directory](dir.ID()), nil
 
 	case "File":
-		contentCacheKey := fn.mod.ContentDigestCacheKey()
 		var f dagql.ObjectResult[*File]
 		err := dag.Select(ctx, dag.Root(), &f,
 			dagql.Selector{
@@ -1105,7 +1193,6 @@ func (fn *ModuleFunction) loadContextualArg(
 		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
 		isLocalGit := cleanedPath == "." || cleanedPath == ".git"
 		if isLocalMod && isLocalGit {
-			contentCacheKey := fn.mod.ContentDigestCacheKey()
 			switch arg.TypeDef.AsObject.Value.Name {
 			case "GitRepository":
 				var f dagql.ObjectResult[*GitRepository]

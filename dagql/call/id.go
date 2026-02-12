@@ -203,6 +203,12 @@ func (id *ID) CacheDigest() digest.Digest {
 	if id == nil {
 		return ""
 	}
+	// Preserve legacy cache-key semantics while custom digest rewrites still
+	// exist: a custom digest explicitly overrides the recipe digest for cache
+	// identity.
+	if custom := id.CustomDigest(); custom != "" {
+		return custom
+	}
 	extras := normalizedExtraDigestStrings(id.pb.ExtraDigests)
 	if len(extras) == 0 {
 		return id.Digest()

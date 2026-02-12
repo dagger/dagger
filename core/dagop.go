@@ -436,6 +436,7 @@ func NewContainerDagOp(
 	argDigest digest.Digest,
 	inputs []llb.State,
 	ctr *Container,
+	execMD *buildkit.ExecutionMetadata,
 ) (*Container, error) {
 	mounts, ctrInputs, dgsts, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
@@ -451,6 +452,7 @@ func NewContainerDagOp(
 				engine.BaseVersion(engine.Version),
 			}, "\x00"),
 		),
+		ExecMD: execMD,
 		ContainerMountData: ContainerMountData{
 			Mounts:      mounts,
 			Digests:     dgsts,
@@ -502,6 +504,10 @@ func newContainerDagOp(
 type ContainerDagOp struct {
 	ID       *call.ID
 	CacheKey digest.Digest
+	// Optional runtime metadata used when evaluating the in-dagop call.
+	// This is serialized in the custom op payload but intentionally excluded
+	// from CacheMap/Digest identity derivation.
+	ExecMD *buildkit.ExecutionMetadata `json:",omitempty"`
 
 	ContainerMountData
 }
@@ -598,15 +604,24 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	mountData.Inputs = inputs
 	loadCtx = ctxWithMountData(loadCtx, mountData)
 
-	obj, err := opt.Server.LoadType(loadCtx, op.ID)
+	loadID := op.ID
+	if op.ExecMD != nil && loadID != nil && loadID.Field() == "withExec" && loadID.Arg("execMD") == nil {
+		execMDJSON, err := json.Marshal(op.ExecMD)
+		if err != nil {
+			return nil, fmt.Errorf("marshal exec metadata: %w", err)
+		}
+		loadID = loadID.WithArgument(call.NewArgument("execMD", call.NewLiteralString(string(execMDJSON)), false))
+	}
+
+	obj, err := opt.Server.LoadType(loadCtx, loadID)
 	if err != nil {
 		return nil, err
 	}
 	if obj == nil {
-		return nil, fmt.Errorf("invalid unset container load: %s", op.ID.Display())
+		return nil, fmt.Errorf("invalid unset container load: %s", loadID.Display())
 	}
 	if obj.Unwrap() == nil {
-		return nil, fmt.Errorf("invalid unset wrapped container load: %s", op.ID.Display())
+		return nil, fmt.Errorf("invalid unset wrapped container load: %s", loadID.Display())
 	}
 
 	bk, err := query.Buildkit(ctx)

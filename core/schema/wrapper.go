@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
@@ -439,7 +440,15 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, "", err
 	}
-	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, deps, ctr)
+
+	var execMD *buildkit.ExecutionMetadata
+	if withExecMD, ok := any(args).(interface {
+		DagOpExecutionMetadata() *buildkit.ExecutionMetadata
+	}); ok {
+		execMD = withExecMD.DagOpExecutionMetadata()
+	}
+
+	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, deps, ctr, execMD)
 	if err != nil {
 		return nil, "", err
 	}
