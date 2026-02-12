@@ -29,6 +29,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -803,36 +804,52 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 
 type containerFromArgs struct {
 	Address string
+	// ResolvedAddress is an internal canonical ref used for actual execution,
+	// while Address may be normalized for cache identity.
+	ResolvedAddress string `internal:"true" default:""`
 
 	ContainerDagOpInternalArgs
 }
 
+func containerFromEffectiveAddress(args containerFromArgs) string {
+	if args.ResolvedAddress != "" {
+		return args.ResolvedAddress
+	}
+	return args.Address
+}
+
 func (s *containerSchema) fromCacheKey(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Container],
+	_ context.Context,
+	_ dagql.ObjectResult[*core.Container],
 	args containerFromArgs,
 	req dagql.GetCacheConfigRequest,
 ) (*dagql.GetCacheConfigResponse, error) {
-	refName, err := reference.ParseNormalizedNamed(args.Address)
+	address := containerFromEffectiveAddress(args)
+	refName, err := reference.ParseNormalizedNamed(address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
+		return nil, fmt.Errorf("failed to parse image address %s: %w", address, err)
 	}
-
-	var imageRef string
-	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		imageRef = "digest:" + string(refName.Digest())
-	} else {
-		imageRef = args.Address
-	}
+	// add a default :latest if no tag or digest, otherwise this is a no-op
+	refName = reference.TagNameOnly(refName)
 
 	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
 	if resp.CacheKey.ID == nil {
 		return nil, errors.New("cache key ID is nil")
 	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
-		parent.ID().Digest().String(),
-		imageRef,
-	))
+
+	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
+		resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+			"address",
+			dagql.NewString("digest:"+string(refName.Digest())).ToLiteral(),
+			false,
+		))
+		resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+			"resolvedAddress",
+			dagql.NewString(refName.String()).ToLiteral(),
+			false,
+		))
+	}
+
 	return resp, nil
 }
 
@@ -851,9 +868,10 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 	platform := parent.Self().Platform
 
-	refName, err := reference.ParseNormalizedNamed(args.Address)
+	effectiveAddress := containerFromEffectiveAddress(args)
+	refName, err := reference.ParseNormalizedNamed(effectiveAddress)
 	if err != nil {
-		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
+		return inst, fmt.Errorf("failed to parse image address %s: %w", effectiveAddress, err)
 	}
 	// add a default :latest if no tag or digest, otherwise this is a no-op
 	refName = reference.TagNameOnly(refName)
