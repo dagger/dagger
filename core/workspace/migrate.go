@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dagger/dagger/core"
 )
 
 // MigrationIO abstracts host file operations needed for migration.
@@ -119,8 +121,12 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 	}
 
 	for _, tc := range cfg.Toolchains {
+		source := tc.Source
+		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
+			source = "../" + tc.Source
+		}
 		entry := ModuleEntry{
-			Source: "../" + tc.Source,
+			Source: source,
 		}
 		// Migrate constructor customizations to config entries
 		config := make(map[string]string)
@@ -257,7 +263,11 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 			b.WriteString(w.tomlComment())
 		}
 		fmt.Fprintf(&b, "[modules.%s]\n", tc.Name)
-		fmt.Fprintf(&b, "source = \"../%s\"\n", tc.Source)
+		source := tc.Source
+		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
+			source = "../" + tc.Source
+		}
+		fmt.Fprintf(&b, "source = %q\n", source)
 
 		// Collect config values from customizations
 		var configEntries []string
