@@ -198,6 +198,14 @@ func (fn *Function) derivedCachePolicy(mod *Module) FunctionCachePolicy {
 		cachePolicy = FunctionCachePolicyPerSession
 	}
 
+	// Workspace arguments represent live host filesystem state, so functions
+	// that accept them must never be persistently cached.
+	for _, arg := range fn.Args {
+		if arg.IsWorkspace() {
+			return FunctionCachePolicyNever
+		}
+	}
+
 	return cachePolicy
 }
 
