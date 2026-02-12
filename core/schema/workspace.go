@@ -24,10 +24,7 @@ var _ SchemaResolvers = &workspaceSchema{}
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("currentWorkspace", s.currentWorkspace, dagql.CachePerCall).
-			Doc("Detect and return the current workspace.").
-			Args(
-				dagql.Arg("skipMigrationCheck").Doc("If true, skip legacy dagger.json migration checks."),
-			),
+			Doc("Detect and return the current workspace."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
@@ -68,14 +65,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 }
 
-type workspaceArgs struct {
-	SkipMigrationCheck bool `default:"false"`
-}
-
 func (s *workspaceSchema) currentWorkspace(
 	ctx context.Context,
 	parent *core.Query,
-	args workspaceArgs,
+	_ struct{},
 ) (*core.Workspace, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -93,12 +86,7 @@ func (s *workspaceSchema) currentWorkspace(
 	statFS := core.NewCallerStatFS(bk)
 	ws, err := workspace.Detect(ctx, statFS, bk.ReadCallerHostFile, cwd)
 	if err != nil {
-		if args.SkipMigrationCheck && strings.Contains(err.Error(), "migration") {
-			// Fall through — install/init can work in legacy projects
-			ws = &workspace.Workspace{Root: cwd}
-		} else {
-			return nil, fmt.Errorf("workspace detection: %w", err)
-		}
+		return nil, fmt.Errorf("workspace detection: %w", err)
 	}
 
 	// Capture the current client ID so that when this workspace is passed to

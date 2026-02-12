@@ -1446,8 +1446,8 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 			client.workspaceLoaded = true
 			return client.workspaceErr
 		}
-	} else if clientMD == nil || !clientMD.SkipWorkspaceModules {
-		// Local workspace: detect from client's working directory.
+	} else {
+		// Local workspace: always detect, even if SkipWorkspaceModules is set.
 		cwd, err := client.bkClient.AbsPath(ctx, ".")
 		if err != nil {
 			client.workspaceErr = fmt.Errorf("workspace detection: %w", err)
@@ -1458,12 +1458,27 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 		statFS := core.NewCallerStatFS(client.bkClient)
 		ws, err := workspace.Detect(ctx, statFS, client.bkClient.ReadCallerHostFile, cwd)
 		if err != nil {
+			var migErr *workspace.ErrMigrationRequired
+			if errors.As(err, &migErr) && clientMD != nil && clientMD.AutoMigrate {
+				// Auto-migrate: perform migration instead of erroring.
+				result, migRunErr := workspace.Migrate(ctx, client.bkClient, migErr)
+				if migRunErr != nil {
+					client.workspaceErr = fmt.Errorf("migration failed: %w", migRunErr)
+					client.workspaceLoaded = true
+					return client.workspaceErr
+				}
+				slog.Info(result.Summary())
+				// Migration done; don't load modules in this session.
+				client.workspaceLoaded = true
+				return nil
+			}
 			client.workspaceErr = err
 			client.workspaceLoaded = true
 			return client.workspaceErr
 		}
 
-		if ws.Config != nil && len(ws.Config.Modules) > 0 {
+		// Load modules from workspace config (skip if SkipWorkspaceModules).
+		if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.Config != nil && len(ws.Config.Modules) > 0 {
 			dag := client.dag
 			for name, entry := range ws.Config.Modules {
 				// Determine if the source is local or remote.

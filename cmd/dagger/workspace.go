@@ -72,9 +72,7 @@ var moduleInstallCmd = &cobra.Command{
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			ws := dag.CurrentWorkspace(dagger.CurrentWorkspaceOpts{
-				SkipMigrationCheck: true,
-			})
+			ws := dag.CurrentWorkspace()
 
 			msg, err := ws.Install(ctx, extraArgs[0], dagger.WorkspaceInstallOpts{
 				Name: installName,
@@ -90,6 +88,39 @@ var moduleInstallCmd = &cobra.Command{
 				"install_name": installName,
 			})
 
+			return nil
+		})
+	},
+}
+
+var migrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "Migrate a legacy dagger.json project to the workspace format",
+	Long:  "Converts a legacy dagger.json to the .dagger/config.toml workspace format.",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+			AutoMigrate:          true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			// AutoMigrate causes ensureWorkspaceLoaded to perform migration.
+			// Query the workspace to confirm success.
+			dag := engineClient.Dagger()
+			ws := dag.CurrentWorkspace()
+			hasConfig, err := ws.HasConfig(ctx)
+			if err != nil {
+				return fmt.Errorf("migration: %w", err)
+			}
+			if hasConfig {
+				configPath, err := ws.ConfigPath(ctx)
+				if err != nil {
+					return fmt.Errorf("migration: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Migration complete: %s\n", configPath)
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "No migration needed.")
+			}
 			return nil
 		})
 	},
