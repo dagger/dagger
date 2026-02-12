@@ -454,7 +454,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("withExec", s.withExec, s.withExecCacheKey).
+		dagql.NodeFunc("withExec", s.withExec).
+			WithInput(withExecCacheMixinInput).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -1043,9 +1044,31 @@ type containerExecArgs struct {
 	// calling it with args
 	SkipEntrypoint *bool `default:"false"`
 
-	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
+	// ExecMD carries runtime-only execution metadata; it is excluded from ID
+	// digests so cache identity only depends on explicit withExec args plus
+	// execCacheMixin implicit input.
+	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" sensitive:"true" default:"null"`
 
 	ContainerDagOpInternalArgs
+}
+
+var withExecCacheMixinInput = dagql.ImplicitInput{
+	Name: "execCacheMixin",
+	Resolver: func(_ context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+		rawExecMD, ok := args["execMD"]
+		if !ok || rawExecMD == nil {
+			return dagql.NewString(""), nil
+		}
+
+		execMD, ok := rawExecMD.(dagql.SerializedString[*buildkit.ExecutionMetadata])
+		if !ok {
+			return nil, fmt.Errorf("unexpected execMD input type %T", rawExecMD)
+		}
+		if execMD.Self == nil || execMD.Self.CacheMixin == "" {
+			return dagql.NewString(""), nil
+		}
+		return dagql.NewString(execMD.Self.CacheMixin.String()), nil
+	},
 }
 
 var _ core.Digestable = containerExecArgs{}
@@ -1132,28 +1155,6 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
-}
-
-func (s *containerSchema) withExecCacheKey(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Container],
-	args containerExecArgs,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	argDigest, err := args.Digest()
-	if err != nil {
-		return nil, err
-	}
-
-	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
-	if resp.CacheKey.ID == nil {
-		return nil, errors.New("cache key ID is nil")
-	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
-		parent.ID().Digest().String(),
-		string(argDigest),
-	))
-	return resp, nil
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
