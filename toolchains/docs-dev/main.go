@@ -95,7 +95,8 @@ func (d DocsDev) LintMarkdown(
 }
 
 // Regenerate the API schema and CLI reference docs
-func (d DocsDev) Generate(
+// +generate
+func (d DocsDev) References(
 	// Dagger version to generate API docs for
 	// +optional
 	version string,

@@ -367,6 +367,7 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
+// +generate
 func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	// ebpf object files are actually expected to only be generated during a build, not
 	// committed, so we remove stubs and real ones before+after go generate

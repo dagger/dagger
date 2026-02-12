@@ -44,7 +44,7 @@ type ElixirSdkDev {
   """
   Regenerate the Elixir SDK API
   """
-  pub generate(introspectionJson: File!): Changeset! {
+  pub generate(introspectionJson: File!): Changeset! @generate {
     # Make sure everything is relative to git root
     let before = directory
       .withDirectory(sourcePath, source)

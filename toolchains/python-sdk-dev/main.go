@@ -168,7 +168,8 @@ func (t PythonSdkDev) TestSuite(
 }
 
 // Regenerate the core Python client library
-func (t PythonSdkDev) Generate(_ context.Context) (*dagger.Changeset, error) {
+// +generate
+func (t PythonSdkDev) ClientLibrary(_ context.Context) (*dagger.Changeset, error) {
 	devContainer := t.DevContainer
 
 	// We don't control the input source, it's defined in wrapped native module
