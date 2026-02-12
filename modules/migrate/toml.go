@@ -17,45 +17,65 @@ func generateConfigTOML(cfg *LegacyConfig, warnings []warning, aliases []aliasEn
 		warningsByTC[w.toolchain] = append(warningsByTC[w.toolchain], w)
 	}
 
-	// All module entries use compact dotted-key form under a single [modules] header
-	b.WriteString("[modules]\n")
+	needsBlank := false
 
 	// Project module entry (if there is an SDK)
 	if cfg.SDK != nil && cfg.SDK.Source != "" {
-		fmt.Fprintf(&b, "%s.source = \"modules/%s\"\n", cfg.Name, cfg.Name)
+		fmt.Fprintf(&b, "[modules.%s]\n", cfg.Name)
+		fmt.Fprintf(&b, "source = \"modules/%s\"\n", cfg.Name)
 		if len(aliases) > 0 {
-			fmt.Fprintf(&b, "%s.alias = true\n", cfg.Name)
+			b.WriteString("alias = true\n")
 		}
+		needsBlank = true
 	}
 
 	// Toolchain entries
 	for _, tc := range cfg.Toolchains {
-		// Add warning comments before the entry
+		if needsBlank {
+			b.WriteString("\n")
+		}
+		// Add warning comments before the section header
 		for _, w := range warningsByTC[tc.Name] {
 			b.WriteString(w.tomlComment())
 		}
 		// Source paths are relative to .dagger/, so prepend ../ to the original path
-		fmt.Fprintf(&b, "%s.source = \"../%s\"\n", tc.Name, tc.Source)
-		// Add migrated constructor config values from customizations
+		fmt.Fprintf(&b, "[modules.%s]\n", tc.Name)
+		fmt.Fprintf(&b, "source = \"../%s\"\n", tc.Source)
+
+		// Collect config values from customizations
+		var configEntries []string
 		for _, cust := range tc.Customizations {
 			if cust.IsConstructor() && cust.Default != "" {
-				fmt.Fprintf(&b, "%s.config.%s = %q\n", tc.Name, cust.Argument, cust.Default)
+				configEntries = append(configEntries, fmt.Sprintf("%s = %q\n", cust.Argument, cust.Default))
 			}
 		}
-		// Add commented-out constructor args (from introspection)
+
+		// Collect commented-out constructor arg hints (from introspection)
+		var hintLines []string
 		if args, ok := constructorArgs[tc.Name]; ok {
 			for _, arg := range args {
-				// Skip args that already have a customization (already emitted above or as a warning)
 				if hasCustomization(tc, arg.Name) {
 					continue
 				}
 				if arg.DefaultValue != "" && arg.DefaultValue != "null" {
-					fmt.Fprintf(&b, "# %s.config.%s = %s\n", tc.Name, arg.Name, arg.DefaultValue)
+					hintLines = append(hintLines, fmt.Sprintf("# %s = %s\n", arg.Name, arg.DefaultValue))
 				} else {
-					fmt.Fprintf(&b, "# %s.config.%s = \"\" # %s\n", tc.Name, arg.Name, arg.TypeName)
+					hintLines = append(hintLines, fmt.Sprintf("# %s = \"\" # %s\n", arg.Name, arg.TypeName))
 				}
 			}
 		}
+
+		// Write [modules.<name>.config] section if there are config entries or hints
+		if len(configEntries) > 0 || len(hintLines) > 0 {
+			fmt.Fprintf(&b, "\n[modules.%s.config]\n", tc.Name)
+			for _, entry := range configEntries {
+				b.WriteString(entry)
+			}
+			for _, line := range hintLines {
+				b.WriteString(line)
+			}
+		}
+		needsBlank = true
 	}
 
 	return b.String()

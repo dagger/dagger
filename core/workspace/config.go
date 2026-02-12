@@ -32,7 +32,7 @@ func ParseConfig(data []byte) (*Config, error) {
 }
 
 // SerializeConfig serializes a Config to TOML bytes.
-// Uses hand-built TOML with dotted-key format matching modules/migrate/toml.go.
+// Uses section-header format: [modules.<name>] and [modules.<name>.config].
 func SerializeConfig(cfg *Config) []byte {
 	var b strings.Builder
 
@@ -55,12 +55,15 @@ func SerializeConfig(cfg *Config) []byte {
 		}
 		sort.Strings(names)
 
-		b.WriteString("[modules]\n")
-		for _, name := range names {
+		for i, name := range names {
+			if i > 0 {
+				b.WriteString("\n")
+			}
 			entry := cfg.Modules[name]
-			fmt.Fprintf(&b, "%s.source = %q\n", name, entry.Source)
+			fmt.Fprintf(&b, "[modules.%s]\n", name)
+			fmt.Fprintf(&b, "source = %q\n", entry.Source)
 			if entry.Alias {
-				fmt.Fprintf(&b, "%s.alias = true\n", name)
+				b.WriteString("alias = true\n")
 			}
 			if len(entry.Config) > 0 {
 				// Sort config keys for deterministic output
@@ -69,8 +72,9 @@ func SerializeConfig(cfg *Config) []byte {
 					keys = append(keys, k)
 				}
 				sort.Strings(keys)
+				fmt.Fprintf(&b, "\n[modules.%s.config]\n", name)
 				for _, k := range keys {
-					fmt.Fprintf(&b, "%s.config.%s = %q\n", name, k, entry.Config[k])
+					fmt.Fprintf(&b, "%s = %q\n", k, entry.Config[k])
 				}
 			}
 		}
@@ -99,7 +103,10 @@ func SerializeConfigWithHints(cfg *Config, existingTOML []byte, hints map[string
 			return nil, fmt.Errorf("parsing existing config: %w", err)
 		}
 	} else {
-		doc, err = neontoml.ParseString("[modules]\n")
+		// For fresh documents, use SerializeConfig to generate the initial TOML
+		// in section-header format, then parse it so neontoml can preserve that format.
+		fresh := SerializeConfig(cfg)
+		doc, err = neontoml.Parse(fresh)
 		if err != nil {
 			return nil, fmt.Errorf("creating fresh document: %w", err)
 		}
@@ -189,8 +196,9 @@ func insertHintComments(tomlStr string, cfg *Config, hints map[string][]Construc
 				continue
 			}
 			if useRelativeKeys {
+				// Under a section header, use bare key names
 				commentLines = append(commentLines,
-					fmt.Sprintf("# config.%s = %s # %s", hint.Name, hint.ExampleValue, hint.TypeLabel))
+					fmt.Sprintf("# %s = %s # %s", hint.Name, hint.ExampleValue, hint.TypeLabel))
 			} else {
 				commentLines = append(commentLines,
 					fmt.Sprintf("# %s.config.%s = %s # %s", moduleName, hint.Name, hint.ExampleValue, hint.TypeLabel))
@@ -215,33 +223,28 @@ func insertHintComments(tomlStr string, cfg *Config, hints map[string][]Construc
 // Returns the line index to insert after, and whether the module uses a section
 // header (meaning comment keys should be relative, not fully qualified).
 func findModuleInsertionPoint(lines []string, moduleName string) (insertIdx int, useRelativeKeys bool) {
-	// Strategy 1: dotted keys under [modules] — lines starting with "moduleName."
-	dottedPrefix := moduleName + "."
-	lastDottedIdx := -1
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, dottedPrefix) {
-			lastDottedIdx = i
-		}
-	}
-	if lastDottedIdx != -1 {
-		return lastDottedIdx, false
-	}
-
-	// Strategy 2: section header [modules.moduleName]
+	// Strategy 1: section header [modules.moduleName.config] or [modules.moduleName]
+	// Prefer inserting after [modules.moduleName.config] section if it exists,
+	// otherwise after the [modules.moduleName] section.
+	configSectionHeader := "[modules." + moduleName + ".config]"
 	sectionHeader := "[modules." + moduleName + "]"
 	inSection := false
 	lastSectionIdx := -1
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == sectionHeader {
+		if trimmed == configSectionHeader || trimmed == sectionHeader {
 			inSection = true
 			lastSectionIdx = i
 			continue
 		}
 		if inSection {
-			// Another section header ends this section
+			// Another section header ends this section (but config subsection continues it)
 			if strings.HasPrefix(trimmed, "[") {
+				if trimmed == configSectionHeader {
+					// Config subsection is part of this module, keep going
+					lastSectionIdx = i
+					continue
+				}
 				break
 			}
 			// Track last non-empty, non-comment line as the insertion point
@@ -252,6 +255,19 @@ func findModuleInsertionPoint(lines []string, moduleName string) (insertIdx int,
 	}
 	if lastSectionIdx != -1 {
 		return lastSectionIdx, true
+	}
+
+	// Strategy 2: dotted keys under [modules] — lines starting with "moduleName."
+	dottedPrefix := moduleName + "."
+	lastDottedIdx := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, dottedPrefix) {
+			lastDottedIdx = i
+		}
+	}
+	if lastDottedIdx != -1 {
+		return lastDottedIdx, false
 	}
 
 	return -1, false
