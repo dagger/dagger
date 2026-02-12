@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,9 +47,16 @@ func (r *MigrationResult) Summary() string {
 	return b.String()
 }
 
+// ConstructorIntrospector loads a module by reference and returns its constructor
+// argument hints for generating commented-out config entries.
+// Returns nil if the module has no constructor or introspection is not possible.
+type ConstructorIntrospector func(ctx context.Context, ref string) ([]ConstructorArgHint, error)
+
 // Migrate performs the legacy dagger.json -> workspace format migration.
 // Called when AutoMigrate is set and ErrMigrationRequired was detected.
-func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) (*MigrationResult, error) {
+// If introspect is non-nil, it is called for each toolchain to discover
+// constructor arguments and generate commented-out config hints.
+func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, introspect ConstructorIntrospector) (*MigrationResult, error) {
 	// 1. Read and parse legacy config
 	data, err := bk.ReadCallerHostFile(ctx, migErr.LegacyConfigPath)
 	if err != nil {
@@ -128,8 +136,25 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired) 
 		result.ToolchainCount++
 	}
 
+	// 3c. Introspect constructor args for config hints
+	var allHints map[string][]ConstructorArgHint
+	if introspect != nil {
+		allHints = make(map[string][]ConstructorArgHint)
+		for _, tc := range cfg.Toolchains {
+			hints, err := introspect(ctx, tc.Source)
+			if err != nil {
+				slog.Warn("could not introspect constructor args for config hints",
+					"toolchain", tc.Name, "error", err)
+				continue
+			}
+			if len(hints) > 0 {
+				allHints[tc.Name] = hints
+			}
+		}
+	}
+
 	// 4. Write .dagger/config.toml
-	configContent := generateMigrationConfigTOML(&cfg, warnings)
+	configContent := generateMigrationConfigTOML(&cfg, warnings, allHints)
 	configPath := filepath.Join(migErr.ProjectRoot, WorkspaceDirName, ConfigFileName)
 	if err := writeHostFile(ctx, bk, configPath, []byte(configContent)); err != nil {
 		return nil, fmt.Errorf("writing workspace config: %w", err)
@@ -201,7 +226,9 @@ func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, e
 
 // generateMigrationConfigTOML builds the .dagger/config.toml content.
 // Uses hand-built TOML for precise control over warning comments.
-func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning) string {
+// If hints is non-nil, commented-out constructor arg entries are added
+// for each toolchain (matching the behavior of 'dagger install').
+func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning, hints map[string][]ConstructorArgHint) string {
 	var b strings.Builder
 
 	// Build warning lookup by toolchain name
@@ -231,9 +258,30 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning)
 				fmt.Fprintf(&b, "%s.config.%s = %q\n", tc.Name, cust.Argument, cust.Default)
 			}
 		}
+		// Add commented-out constructor arg hints (from introspection)
+		if argHints, ok := hints[tc.Name]; ok {
+			for _, hint := range argHints {
+				// Skip args that already have a customization
+				if hasCustomization(tc, hint.Name) {
+					continue
+				}
+				fmt.Fprintf(&b, "# %s.config.%s = %s # %s\n",
+					tc.Name, hint.Name, hint.ExampleValue, hint.TypeLabel)
+			}
+		}
 	}
 
 	return b.String()
+}
+
+// hasCustomization checks if a toolchain already has a customization for the given arg name.
+func hasCustomization(tc *legacyDependency, argName string) bool {
+	for _, cust := range tc.Customizations {
+		if cust.Argument == argName {
+			return true
+		}
+	}
+	return false
 }
 
 // migrationWarning represents a warning about a non-migratable customization.

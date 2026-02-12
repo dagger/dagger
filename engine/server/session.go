@@ -1461,7 +1461,10 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 			var migErr *workspace.ErrMigrationRequired
 			if errors.As(err, &migErr) && clientMD != nil && clientMD.AutoMigrate {
 				// Auto-migrate: perform migration instead of erroring.
-				result, migRunErr := workspace.Migrate(ctx, client.bkClient, migErr)
+				introspect := workspace.ConstructorIntrospector(func(ctx context.Context, ref string) ([]workspace.ConstructorArgHint, error) {
+					return schema.IntrospectConstructorArgs(ctx, client.dag, ref)
+				})
+				result, migRunErr := workspace.Migrate(ctx, client.bkClient, migErr, introspect)
 				if migRunErr != nil {
 					client.workspaceErr = fmt.Errorf("migration failed: %w", migRunErr)
 					client.workspaceLoaded = true

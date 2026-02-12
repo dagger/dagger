@@ -374,7 +374,7 @@ func (s *workspaceSchema) install(
 
 	// Introspect constructor args for config hints (graceful degradation)
 	var hints map[string][]workspace.ConstructorArgHint
-	constructorArgs, err := introspectConstructorArgs(ctx, srv, args.Ref)
+	constructorArgs, err := IntrospectConstructorArgs(ctx, srv, args.Ref)
 	if err != nil {
 		slog.Warn("could not introspect constructor args for config hints", "module", name, "error", err)
 	} else if len(constructorArgs) > 0 {
@@ -617,9 +617,9 @@ func exportConfigToHost(ctx context.Context, bk *buildkit.Client, parent *core.W
 	return nil
 }
 
-// introspectConstructorArgs loads a module and extracts its constructor arguments
+// IntrospectConstructorArgs loads a module and extracts its constructor arguments
 // as config hints. Returns nil (not error) if the module has no constructor.
-func introspectConstructorArgs(ctx context.Context, srv *dagql.Server, ref string) ([]workspace.ConstructorArgHint, error) {
+func IntrospectConstructorArgs(ctx context.Context, srv *dagql.Server, ref string) ([]workspace.ConstructorArgHint, error) {
 	var mod dagql.ObjectResult[*core.Module]
 	err := srv.Select(ctx, srv.Root(), &mod,
 		dagql.Selector{
