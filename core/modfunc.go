@@ -111,16 +111,6 @@ type CallInput struct {
 	Value dagql.Typed
 }
 
-// hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
-func (fn *ModuleFunction) hasWorkspaceArgs() bool {
-	for _, arg := range fn.metadata.Args {
-		if arg.IsWorkspace() {
-			return true
-		}
-	}
-	return false
-}
-
 func (fn *ModuleFunction) recordCall(ctx context.Context) {
 	mod := fn.mod
 	if fn.metadata.Name == "" {
@@ -508,6 +498,17 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	}
 
 	dgstInputs := []string{cacheCfgResp.CacheKey.ID.Digest().String()}
+
+	// Mix in the parent object's field content so that functions called on
+	// objects with different field values (e.g. a Directory that changed on
+	// the host) get different cache keys.
+	if parentObj, ok := dagql.UnwrapAs[*ModuleObject](parent); ok && len(parentObj.Fields) > 0 {
+		parentFieldsJSON, err := json.Marshal(parentObj.Fields)
+		if err != nil {
+			return nil, fmt.Errorf("marshal parent fields for cache key: %w", err)
+		}
+		dgstInputs = append(dgstInputs, hashutil.HashStrings(string(parentFieldsJSON)).String())
+	}
 
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
@@ -935,18 +936,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 	if returnValue != nil {
 		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
-	}
-
-	// If this function accepts Workspace args, set a content digest on the
-	// result derived from the actual output. This ensures downstream calls
-	// that reference this result get a different cache key when the result
-	// content changes (e.g. a Directory synced from a changed host workspace).
-	// Content digests propagate through the DAG via ID references.
-	if returnValue != nil && fn.hasWorkspaceArgs() {
-		contentDigest := hashutil.HashStrings(string(outputBytes))
-		returnValue = returnValue.WithID(
-			returnValue.ID().With(call.WithContentDigest(contentDigest)),
-		)
 	}
 
 	return returnValue, nil
