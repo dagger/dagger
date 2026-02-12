@@ -11,9 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/opencontainers/go-digest"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
@@ -391,8 +389,11 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	return s.DecodeInput(string(val.Value))
 }
 
-func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.AnyResult, map[digest.Digest]*resource.ID) error {
-	return nil
+func (obj *CoreModScalar) CollectContent(_ context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
+	if value == nil {
+		return content.CollectJSONable(nil)
+	}
+	return content.CollectJSONable(value.Unwrap())
 }
 
 func (obj *CoreModScalar) SourceMod() core.Mod {
@@ -462,18 +463,18 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	}
 }
 
-func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
 	if value == nil {
-		return nil
+		return content.CollectJSONable(nil)
 	}
 	switch x := value.(type) {
 	case dagql.Input:
-		return nil
+		return content.CollectJSONable(x)
 	case dagql.AnyResult:
-		ids[x.ID().Digest()] = &resource.ID{ID: *x.ID()}
+		content.CollectID(*x.ID(), false)
 		return nil
 	default:
-		return fmt.Errorf("%T.CollectCoreIDs: unknown type %T", obj, value)
+		return content.CollectJSONable(value.Unwrap())
 	}
 }
 
@@ -527,8 +528,11 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return s.DecodeInput(input)
 }
 
-func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
-	return nil
+func (enum *CoreModEnum) CollectContent(_ context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
+	if value == nil {
+		return content.CollectJSONable(nil)
+	}
+	return content.CollectJSONable(value.Unwrap())
 }
 
 func (enum *CoreModEnum) SourceMod() core.Mod {
