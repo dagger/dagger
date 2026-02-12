@@ -127,7 +127,7 @@
     "engine/distconsts",
     "go.mod",
     "go.sum",
-    "util/parallel"
+    "util/patchpreview"
   ],
   "dependencies": [],
   "source": ".dagger"
