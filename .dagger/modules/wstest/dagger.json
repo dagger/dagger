@@ -1,6 +1,6 @@
 {
-  "name": "changelog",
-  "engineVersion": "v0.19.11",
+  "name": "wstest",
+  "engineVersion": "v0.19.12-20260211231420-dev-b33a4f834936",
   "sdk": {
     "source": "github.com/vito/dang/dagger-sdk@ca623b0182926bd94c82f0cad5149d3a1288a3b8"
   }
