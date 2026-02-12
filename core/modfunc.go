@@ -499,6 +499,17 @@ func (fn *ModuleFunction) CacheConfigForCall(
 
 	dgstInputs := []string{cacheCfgResp.CacheKey.ID.Digest().String()}
 
+	// Mix in the parent object's field content so that functions called on
+	// objects with different field values (e.g. a Directory that changed on
+	// the host) get different cache keys.
+	if parentObj, ok := dagql.UnwrapAs[*ModuleObject](parent); ok && len(parentObj.Fields) > 0 {
+		parentFieldsJSON, err := json.Marshal(parentObj.Fields)
+		if err != nil {
+			return nil, fmt.Errorf("marshal parent fields for cache key: %w", err)
+		}
+		dgstInputs = append(dgstInputs, hashutil.HashStrings(string(parentFieldsJSON)).String())
+	}
+
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
