@@ -876,8 +876,8 @@ func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[
 
 	src = mod.Source.Value
 	scopedSourceDigest := src.Self().ContentScopedDigest()
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
-	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	srcInstScoped := src.WithContentDigest(digest.Digest(scopedSourceDigest))
+	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstScoped)
 	if err != nil {
 		return runtime, fmt.Errorf("failed to load runtime: %w", err)
 	}
