@@ -144,6 +144,7 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 		volumeName:    target.Query().Get("volume"),
 		cleanup:       cleanup,
 		port:          port,
+		env:           target.Query()["env"],
 		cpus:          target.Query().Get("cpus"),
 		memory:        target.Query().Get("memory"),
 	}, opts)
@@ -223,6 +224,8 @@ type containerCreateOpts struct {
 
 	port int
 
+	env []string
+
 	cpus   string
 	memory string
 }
@@ -288,6 +291,7 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		volumes:    []string{volume},
 		privileged: true,
 		args:       []string{"--debug"},
+		env:        opts.env,
 		cpus:       opts.cpus,
 		memory:     opts.memory,
 	}
