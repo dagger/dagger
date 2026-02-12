@@ -16,7 +16,7 @@ type DaggerDev struct{}
 
 // Verify that generated code is up to date
 // +check
-func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
+func (dev *DaggerDev) Generated(ctx context.Context) error {
 	generated := dag.CurrentModule().Generators().Run()
 	if empty, err := generated.IsEmpty(ctx); err != nil {
 		return err
