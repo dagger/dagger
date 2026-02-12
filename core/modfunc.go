@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -540,8 +539,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	}
 
 	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 {
-		cacheCfgResp.UpdatedArgs = make(map[string]dagql.Input)
-		var mu sync.Mutex
 		type argInput struct {
 			argName  string
 			origName string
@@ -584,9 +581,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					origName: arg.OriginalName,
 					val:      wsVal,
 				}
-				mu.Lock()
-				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(wsVal)
-				mu.Unlock()
 
 				return nil
 			})
@@ -629,6 +623,11 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 		}
 		for _, arg := range workspaceArgVals {
+			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
+				arg.argName,
+				dagql.Opt(arg.val).ToLiteral(),
+				false,
+			))
 			id := arg.val.ID()
 			// prefer content digest if available
 			dgst := id.ContentDigest()
