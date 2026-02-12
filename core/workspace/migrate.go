@@ -123,7 +123,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 	for _, tc := range cfg.Toolchains {
 		source := tc.Source
 		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
-			source = "../" + tc.Source
+			source = filepath.Join("..", tc.Source)
 		}
 		entry := ModuleEntry{
 			Source: source,
@@ -265,7 +265,7 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 		fmt.Fprintf(&b, "[modules.%s]\n", tc.Name)
 		source := tc.Source
 		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
-			source = "../" + tc.Source
+			source = filepath.Join("..", tc.Source)
 		}
 		fmt.Fprintf(&b, "source = %q\n", source)
 
