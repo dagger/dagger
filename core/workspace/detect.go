@@ -72,7 +72,7 @@ func Detect(
 			legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
 			data, err := readFile(ctx, legacyPath)
 			if err == nil {
-				if err := checkMigrationTriggers(data); err != nil {
+				if err := checkMigrationTriggers(data, legacyPath, legacyDir); err != nil {
 					return nil, err
 				}
 			}
@@ -85,7 +85,7 @@ func Detect(
 		legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
 		data, err := readFile(ctx, legacyPath)
 		if err == nil {
-			if err := checkMigrationTriggers(data); err != nil {
+			if err := checkMigrationTriggers(data, legacyPath, legacyDir); err != nil {
 				return nil, err
 			}
 		}
@@ -101,9 +101,20 @@ func Detect(
 	return &Workspace{Root: cwd}, nil
 }
 
+// ErrMigrationRequired indicates a legacy dagger.json needs migration
+// to the workspace format.
+type ErrMigrationRequired struct {
+	LegacyConfigPath string // absolute path to the dagger.json
+	ProjectRoot      string // directory containing it
+}
+
+func (e *ErrMigrationRequired) Error() string {
+	return `Migration required: run "dagger migrate" to update this project to the workspace format.`
+}
+
 // checkMigrationTriggers checks if a legacy dagger.json requires migration.
-// Returns an error if migration triggers are present.
-func checkMigrationTriggers(data []byte) error {
+// Returns *ErrMigrationRequired if migration triggers are present.
+func checkMigrationTriggers(data []byte, legacyConfigPath, projectRoot string) error {
 	var legacy struct {
 		Source     string `json:"source"`
 		Toolchains []any  `json:"toolchains"`
@@ -117,9 +128,10 @@ func checkMigrationTriggers(data []byte) error {
 	hasNonDotSource := legacy.Source != "" && legacy.Source != "."
 
 	if hasToolchains || hasNonDotSource {
-		return fmt.Errorf(
-			"this project uses a legacy dagger.json that needs migration to the workspace format (.dagger/config.toml); see https://github.com/dagger/dagger for migration instructions",
-		)
+		return &ErrMigrationRequired{
+			LegacyConfigPath: legacyConfigPath,
+			ProjectRoot:      projectRoot,
+		}
 	}
 
 	return nil

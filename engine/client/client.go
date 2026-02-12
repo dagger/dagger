@@ -129,6 +129,10 @@ type Params struct {
 
 	SkipWorkspaceModules bool
 
+	// AutoMigrate triggers automatic migration when a legacy dagger.json
+	// is detected during workspace loading.
+	AutoMigrate bool
+
 	// RemoteWorkdir is a git ref string (e.g. "github.com/foo/bar@v1.0")
 	// for loading a workspace from a remote git repository instead of the
 	// client's local filesystem.
@@ -1414,6 +1418,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.SkipWorkspaceModules {
 		md.SkipWorkspaceModules = true
+	}
+	if c.AutoMigrate {
+		md.AutoMigrate = true
 	}
 	if c.RemoteWorkdir != "" {
 		md.RemoteWorkdir = c.RemoteWorkdir

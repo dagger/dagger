@@ -147,6 +147,7 @@ func init() {
 		moduleCmd,
 		moduleInitCmd,
 		moduleInstallCmd,
+		migrateCmd,
 		moduleUnInstallCmd,
 		moduleUpdateCmd,
 		moduleDevelopCmd,
