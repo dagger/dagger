@@ -138,7 +138,10 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
-	absPath := filepath.Join(ws.Root, filepath.Clean(args.Path))
+	absPath, err := resolveWorkspacePath(args.Path, ws.Root)
+	if err != nil {
+		return inst, err
+	}
 
 	dirArgs := []dagql.NamedInput{
 		{Name: "path", Value: dagql.NewString(absPath)},
@@ -190,7 +193,10 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	absPath := filepath.Join(ws.Root, filepath.Clean(args.Path))
+	absPath, err := resolveWorkspacePath(args.Path, ws.Root)
+	if err != nil {
+		return inst, err
+	}
 	fileDir, fileName := filepath.Split(absPath)
 
 	if err := srv.Select(ctx, srv.Root(), &inst,
@@ -213,6 +219,24 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	return inst, nil
+}
+
+// resolveWorkspacePath resolves a path relative to the workspace root.
+// Absolute paths are treated as relative to the root (leading "/" is stripped).
+// Returns an error if the resolved path escapes the workspace root via "..".
+func resolveWorkspacePath(path, root string) (string, error) {
+	// Treat absolute paths as relative to workspace root.
+	clean := filepath.Clean(path)
+	if filepath.IsAbs(clean) {
+		clean = clean[1:] // strip leading "/"
+	}
+	resolved := filepath.Join(root, clean)
+	// Ensure the resolved path stays inside root.
+	rootPrefix := filepath.Clean(root) + string(filepath.Separator)
+	if resolved != filepath.Clean(root) && !strings.HasPrefix(resolved, rootPrefix) {
+		return "", fmt.Errorf("path %q resolves outside workspace root %q", path, root)
+	}
+	return resolved, nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the
