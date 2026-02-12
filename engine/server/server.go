@@ -665,6 +665,8 @@ func (srv *Server) initBoltDBs() (err error) {
 	srv.snapshotterMDStore, err = storage.NewMetaStore(srv.snapshotterDBPath,
 		func(opts *bolt.Options) error {
 			opts.NoSync = true
+			opts.NoFreelistSync = true
+			opts.NoGrowSync = true
 			return nil
 		},
 	)
@@ -678,7 +680,9 @@ func (srv *Server) initBoltDBs() (err error) {
 	}()
 
 	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, &bolt.Options{
-		NoSync: true,
+		NoSync:         true,
+		NoFreelistSync: true,
+		NoGrowSync:     true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to open metadata db: %w", err)
@@ -729,7 +733,7 @@ func (srv *Server) Clients() []string {
 }
 
 // GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
-// run with NoSync=true for performance reasons.
+// run with NoSync=true (plus NoFreelistSync/NoGrowSync) for performance reasons.
 func (srv *Server) GracefulStop(ctx context.Context) error {
 	var eg errgroup.Group
 	eg.Go(func() error {
