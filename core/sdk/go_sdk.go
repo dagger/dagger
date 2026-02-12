@@ -329,22 +329,12 @@ func (sdk *goSDK) ModuleTypes(
 				{
 					Name: "args",
 					Value: dagql.ArrayInput[dagql.String]{
-						"go", "get", dagql.String("dagger.io/dagger@" + goSDKLibVersion),
-					},
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withExec",
-			Args: []dagql.NamedInput{
-				{
-					Name: "args",
-					Value: dagql.ArrayInput[dagql.String]{
 						"codegen",
 						"generate-typedefs",
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
+						"--lib-version", dagql.String(goSDKLibVersion),
 						"--output", GoSDKModuleIDPath,
 					},
 				},

@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
@@ -85,6 +86,14 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 		return res, nil
 	}
 
+	// Ensure dagger.io/dagger package is available before loading the package
+	// if it's not replaced by the user.
+	if !pkgInfo.DaggerPkgReplaced {
+		if err := g.ensureDaggerPackage(ctx, filepath.Join(g.Config.OutputDir, outDir)); err != nil {
+			return nil, fmt.Errorf("ensure dagger package: %w", err)
+		}
+	}
+
 	pkg, fset, err := loadPackage(ctx, filepath.Join(g.Config.OutputDir, outDir), false)
 	if err != nil {
 		return nil, fmt.Errorf("load package %q: %w", outDir, err)
@@ -106,4 +115,23 @@ func generateTypeDefs(ctx context.Context, cfg generator.Config, mfs *memfs.FS, 
 	}
 
 	return mfs.WriteFile(cfg.TypeDefsPath, []byte(t), 0600)
+}
+
+// We need the dagger package to be installed to correctly resolved imported interface
+// such as `querybuilder.GraphQLMarshaller`
+func (g *GoGenerator) ensureDaggerPackage(ctx context.Context, dir string) error {
+	if g.Config.ModuleConfig == nil || g.Config.ModuleConfig.LibVersion == "" {
+		return nil
+	}
+
+	cmd := exec.CommandContext(ctx, "go", "get", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to get %s@%s: %w", daggerImportPath, g.Config.ModuleConfig.LibVersion, err)
+	}
+
+	return nil
 }
