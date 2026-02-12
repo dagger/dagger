@@ -85,7 +85,7 @@ func (s *gitSchema) resolveRemoteRepository(
 		remote.URL.User = url.User("git")
 	}
 
-	if err := s.scopeExplicitSSHAuthSocket(ctx, srv, remote); err != nil {
+	if err := s.scopeProvidedSSHAuthSocket(ctx, srv, remote); err != nil {
 		return zero, err
 	}
 
@@ -95,7 +95,7 @@ func (s *gitSchema) resolveRemoteRepository(
 	}
 
 	// 3) If auth wasn't provided explicitly, try caller-scoped auth.
-	if !hasExplicitRemoteAuth(remote) {
+	if !remote.SSHAuthSocket.Valid && !remote.AuthToken.Valid && !remote.AuthHeader.Valid {
 		resolved, ok, err := s.resolveWithClientAuth(ctx, srv, parent, remote)
 		if err != nil {
 			return zero, err
@@ -106,14 +106,31 @@ func (s *gitSchema) resolveRemoteRepository(
 	}
 
 	// 4) Resolve ls-remote and rewrite identity to semantic repo inputs.
-	return s.resolveResolvedRemoteRepository(ctx, srv, repo, remote)
+	resolved := repo.Clone()
+	resolved.Backend = remote
+
+	lsRemote, err := resolved.Backend.Remote(ctx)
+	if err != nil {
+		return zero, err
+	}
+	resolved.Remote = lsRemote
+	resolved.Resolved = true
+
+	result, err := dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
+	if err != nil {
+		return zero, err
+	}
+
+	// Keep auth in repo identity; keep ls-remote in identity to invalidate on pushes.
+	if resolved.Remote != nil {
+		dgstInputs := remoteRepoResolveDigestInputs(remote, resolved)
+		result = result.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
+	}
+
+	return result, nil
 }
 
-func hasExplicitRemoteAuth(remote *core.RemoteGitRepository) bool {
-	return remote.SSHAuthSocket.Valid || remote.AuthToken.Valid || remote.AuthHeader.Valid
-}
-
-func (s *gitSchema) scopeExplicitSSHAuthSocket(
+func (s *gitSchema) scopeProvidedSSHAuthSocket(
 	ctx context.Context,
 	srv *dagql.Server,
 	remote *core.RemoteGitRepository,
@@ -191,39 +208,7 @@ func (s *gitSchema) resolveWithClientAuth(
 	}
 }
 
-func (s *gitSchema) resolveResolvedRemoteRepository(
-	ctx context.Context,
-	srv *dagql.Server,
-	repo *core.GitRepository,
-	remote *core.RemoteGitRepository,
-) (dagql.ObjectResult[*core.GitRepository], error) {
-	var zero dagql.ObjectResult[*core.GitRepository]
-
-	resolved := repo.Clone()
-	resolved.Backend = remote
-
-	lsRemote, err := resolved.Backend.Remote(ctx)
-	if err != nil {
-		return zero, err
-	}
-	resolved.Remote = lsRemote
-	resolved.Resolved = true
-
-	result, err := dagql.NewObjectResultForCurrentID(ctx, srv, resolved)
-	if err != nil {
-		return zero, err
-	}
-
-	// Keep auth in repo identity; keep ls-remote in identity to invalidate on pushes.
-	if resolved.Remote != nil {
-		dgstInputs := remoteRepoResolveDigestInputs(remote, resolved)
-		result = result.WithObjectDigest(hashutil.HashStrings(dgstInputs...))
-	}
-
-	return result, nil
-}
-
-// Keep cache-identity inputs centralized for repo/ref resolution paths.
+// Keep pinned head in digest so pinned refs don't alias moving branch snapshots.
 func appendPinnedHeadDigestInputs(inputs []string, pinnedHead *gitutil.Ref) []string {
 	if pinnedHead == nil {
 		return inputs
@@ -253,6 +238,13 @@ func remoteRepoResolveDigestInputs(remote *core.RemoteGitRepository, resolved *c
 		remote.URL.String(),
 		strconv.FormatBool(resolved.DiscardGitDir),
 	}
+	inputs = appendRemoteAuthDigestInputs(inputs, remote)
+	inputs = append(inputs, "remote", resolved.Remote.Digest().String())
+	return appendPinnedHeadDigestInputs(inputs, resolved.PinnedHead)
+}
+
+// Auth material is part of repo identity so different auth contexts cannot collide.
+func appendRemoteAuthDigestInputs(inputs []string, remote *core.RemoteGitRepository) []string {
 	if remote.SSHAuthSocket.Valid {
 		if dgst := core.SocketIDDigest(remote.SSHAuthSocket.Value.ID()); dgst != "" {
 			inputs = append(inputs, "sshAuthSock", dgst.String())
@@ -268,8 +260,7 @@ func remoteRepoResolveDigestInputs(remote *core.RemoteGitRepository, resolved *c
 			inputs = append(inputs, "authHeader", dgst.String())
 		}
 	}
-	inputs = append(inputs, "remote", resolved.Remote.Digest().String())
-	return appendPinnedHeadDigestInputs(inputs, resolved.PinnedHead)
+	return inputs
 }
 
 // resolveAmbiguousURL chooses protocol from auth hints, then probes https/ssh.
@@ -324,6 +315,7 @@ func (s *gitSchema) resolveViaGitCall(
 		args = appendInheritedGitAuthArgs(args, remote)
 	}
 
+	// Preserve non-auth git() args when replaying through a canonical URL/auth form.
 	args = appendInheritedGitCallArgs(args, parent, remote)
 
 	var result dagql.ObjectResult[*core.GitRepository]
@@ -338,25 +330,17 @@ func (s *gitSchema) resolveViaGitCall(
 }
 
 func appendInheritedGitAuthArgs(args []dagql.NamedInput, remote *core.RemoteGitRepository) []dagql.NamedInput {
-	if remote.AuthToken.Valid {
-		args = append(args, dagql.NamedInput{
-			Name: "httpAuthToken", Value: dagql.Opt(dagql.NewID[*core.Secret](remote.AuthToken.Value.ID())),
-		})
+	if token := remote.AuthToken; token.Valid {
+		args = append(args, dagql.NamedInput{Name: "httpAuthToken", Value: dagql.Opt(dagql.NewID[*core.Secret](token.Value.ID()))})
 	}
-	if remote.AuthHeader.Valid {
-		args = append(args, dagql.NamedInput{
-			Name: "httpAuthHeader", Value: dagql.Opt(dagql.NewID[*core.Secret](remote.AuthHeader.Value.ID())),
-		})
+	if header := remote.AuthHeader; header.Valid {
+		args = append(args, dagql.NamedInput{Name: "httpAuthHeader", Value: dagql.Opt(dagql.NewID[*core.Secret](header.Value.ID()))})
 	}
 	if remote.AuthUsername != "" {
-		args = append(args, dagql.NamedInput{
-			Name: "httpAuthUsername", Value: dagql.NewString(remote.AuthUsername),
-		})
+		args = append(args, dagql.NamedInput{Name: "httpAuthUsername", Value: dagql.NewString(remote.AuthUsername)})
 	}
-	if remote.SSHAuthSocket.Valid {
-		args = append(args, dagql.NamedInput{
-			Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](remote.SSHAuthSocket.Value.ID())),
-		})
+	if sock := remote.SSHAuthSocket; sock.Valid {
+		args = append(args, dagql.NamedInput{Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](sock.Value.ID()))})
 	}
 	return args
 }
@@ -366,44 +350,36 @@ func appendInheritedGitCallArgs(
 	parent dagql.ObjectResult[*core.GitRepository],
 	remote *core.RemoteGitRepository,
 ) []dagql.NamedInput {
-	if keepGitDir := parent.ID().Arg("keepGitDir"); keepGitDir != nil {
-		if v, ok := keepGitDir.Value().ToInput().(bool); ok && v {
-			args = append(args, dagql.NamedInput{
-				Name: "keepGitDir", Value: dagql.Opt(dagql.Boolean(true)),
-			})
+	appendIfTrue := func(name string) {
+		arg := parent.ID().Arg(name)
+		if arg == nil {
+			return
+		}
+		v, ok := arg.Value().ToInput().(bool)
+		if ok && v {
+			args = append(args, dagql.NamedInput{Name: name, Value: dagql.Opt(dagql.Boolean(true))})
+		}
+	}
+	appendIfNonEmpty := func(name string) {
+		arg := parent.ID().Arg(name)
+		if arg == nil {
+			return
+		}
+		v, ok := arg.Value().ToInput().(string)
+		if ok && v != "" {
+			args = append(args, dagql.NamedInput{Name: name, Value: dagql.NewString(v)})
 		}
 	}
 
-	if sshKnownHosts := parent.ID().Arg("sshKnownHosts"); sshKnownHosts != nil {
-		if v, ok := sshKnownHosts.Value().ToInput().(string); ok && v != "" {
-			args = append(args, dagql.NamedInput{
-				Name: "sshKnownHosts", Value: dagql.NewString(v),
-			})
-		}
-	}
-
-	if commit := parent.ID().Arg("commit"); commit != nil {
-		if v, ok := commit.Value().ToInput().(string); ok && v != "" {
-			args = append(args, dagql.NamedInput{
-				Name: "commit", Value: dagql.NewString(v),
-			})
-		}
-	}
-
-	if ref := parent.ID().Arg("ref"); ref != nil {
-		if v, ok := ref.Value().ToInput().(string); ok && v != "" {
-			args = append(args, dagql.NamedInput{
-				Name: "ref", Value: dagql.NewString(v),
-			})
-		}
-	}
+	appendIfTrue("keepGitDir")
+	appendIfNonEmpty("sshKnownHosts")
+	appendIfNonEmpty("commit")
+	appendIfNonEmpty("ref")
 
 	if remote.Services != nil {
 		if svcArg := parent.ID().Arg("experimentalServiceHost"); svcArg != nil {
 			if litID, ok := svcArg.Value().(*call.LiteralID); ok {
-				args = append(args, dagql.NamedInput{
-					Name: "experimentalServiceHost", Value: dagql.Opt(dagql.NewID[*core.Service](litID.Value())),
-				})
+				args = append(args, dagql.NamedInput{Name: "experimentalServiceHost", Value: dagql.Opt(dagql.NewID[*core.Service](litID.Value()))})
 			}
 		}
 	}
@@ -519,7 +495,19 @@ func (s *gitSchema) resolveRef(
 	}
 	ref.Resolved = true
 
-	result, err := dagql.NewObjectResultForID(ref, srv, resolvedRefID(parent, resolvedRepo, ref))
+	// Keep caller intent (requested name) while pinning to the resolved commit.
+	refArgs := []*call.Argument{
+		call.NewArgument("name", call.NewLiteralString(parent.Self().Ref.Name), false),
+	}
+	if ref.Ref != nil && ref.Ref.SHA != "" {
+		refArgs = append(refArgs, call.NewArgument("commit", call.NewLiteralString(ref.Ref.SHA), false))
+	}
+
+	resolvedRefID := resolvedRepo.ID().Receiver().
+		Append(ref.Type(), "ref", call.WithArgs(refArgs...)).
+		Append(ref.Type(), "__resolve")
+
+	result, err := dagql.NewObjectResultForID(ref, srv, resolvedRefID)
 	if err != nil {
 		return zero, err
 	}
@@ -543,28 +531,4 @@ func refResolveDigestInputs(resolvedRepo *core.GitRepository, ref *gitutil.Ref) 
 		inputs = append([]string{remote.URL.String()}, inputs...)
 	}
 	return inputs
-}
-
-func resolvedRefID(
-	parent dagql.ObjectResult[*core.GitRef],
-	resolvedRepo dagql.ObjectResult[*core.GitRepository],
-	ref *core.GitRef,
-) *call.ID {
-	repoID := resolvedRepo.ID().Receiver()
-	return repoID.
-		Append(ref.Type(), "ref", call.WithArgs(resolvedRefCallArgs(parent, ref)...)).
-		Append(ref.Type(), "__resolve")
-}
-
-func resolvedRefCallArgs(
-	parent dagql.ObjectResult[*core.GitRef],
-	ref *core.GitRef,
-) []*call.Argument {
-	args := []*call.Argument{
-		call.NewArgument("name", call.NewLiteralString(parent.Self().Ref.Name), false),
-	}
-	if ref.Ref != nil && ref.Ref.SHA != "" {
-		args = append(args, call.NewArgument("commit", call.NewLiteralString(ref.Ref.SHA), false))
-	}
-	return args
 }
