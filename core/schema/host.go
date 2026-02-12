@@ -2,33 +2,21 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
-	"github.com/containerd/containerd/v2/plugins/content/local"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
-	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/distribution/reference"
-	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/ctrns"
 	"github.com/dagger/dagger/util/hashutil"
 )
@@ -43,7 +31,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
 
-		dagql.Func("_builtinContainer", s.builtinContainer).Doc("Retrieves a container builtin to the engine."),
+		dagql.NodeFunc("_builtinContainer", s.builtinContainer).Doc("Retrieves a container builtin to the engine."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
@@ -131,103 +119,49 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 
 type builtinContainerArgs struct {
 	Digest string `doc:"Digest of the image manifest"`
+
+	ContainerDagOpInternalArgs
 }
 
-func (s *hostSchema) builtinContainer(ctx context.Context, parent *core.Query, args builtinContainerArgs) (*core.Container, error) {
-	st := llb.OCILayout(
-		fmt.Sprintf("dagger/import@%s", args.Digest),
-		llb.OCIStore("", buildkit.BuiltinContentOCIStoreName),
-		llb.Platform(parent.Platform().Spec()),
-		buildkit.WithTracePropagation(ctx),
-	)
-
-	ctrDef, err := st.Marshal(ctx, llb.Platform(parent.Platform().Spec()))
+func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectResult[*core.Query], args builtinContainerArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	// synchronously solve+unlazy so we don't have to deal with lazy blobs in any subsequent calls
-	// that don't handle them (i.e. buildkit's cache volume code)
-	// TODO: can be deleted once https://github.com/dagger/dagger/pull/8871 is closed
-	bk, err := parent.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: ctrDef.ToPB(),
-		Evaluate:   true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to solve builtin container: %w", err)
-	}
-	resultProxy, err := res.SingleRef()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get single ref: %w", err)
-	}
-	cachedRes, err := resultProxy.Result(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get result: %w", err)
-	}
-	workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
-	if !ok {
-		return nil, fmt.Errorf("invalid ref: %T", cachedRes.Sys())
-	}
-	layerRefs := workerRef.ImmutableRef.LayerChain()
-	defer layerRefs.Release(context.WithoutCancel(ctx))
-	var eg errgroup.Group
-	for _, layerRef := range layerRefs {
-		eg.Go(func() error {
-			// FileList is the secret method that actually forces an unlazy of blobs in the cases
-			// we want here...
-			_, err := layerRef.FileList(ctx, nil)
-			return err
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		// this is a best effort attempt to unlazy the refs, it fails yell about it
-		// but not worth being fatal
-		slog.ErrorContext(ctx, "failed to unlazy layers", "err", err)
+	if !args.InDagOp() {
+		dummyCtr := core.NewContainer(parent.Self().Platform())
+		ctr, effectID, err := DagOpContainer(ctx, srv, dummyCtr, args, nil)
+		if err != nil {
+			return inst, err
+		}
+
+		err = core.BuiltInContainerUpdateConfig(ctx, ctr, args.Digest)
+		if err != nil {
+			return inst, err
+		}
+		if ctr.FS.Self().Dir == "" {
+			// Note that this is set inside the dagop; however it doesn't correctly get propagated back, so we need to reset it here
+			// containerSchema.from has the same issue and work-around
+			ctr.FS.Self().Dir = "/"
+		}
+
+		resultID := dagql.CurrentID(ctx)
+		if effectID != "" && resultID != nil {
+			resultID = resultID.AppendEffectIDs(effectID)
+		}
+		inst, err = dagql.NewObjectResultForID(ctr, srv, resultID)
+		if err != nil {
+			return inst, err
+		}
+		return inst, nil
 	}
 
-	container := core.NewContainer(parent.Platform())
-	rootfsDir := core.NewDirectory(ctrDef.ToPB(), "/", container.Platform, container.Services)
-	container.FS, err = core.UpdatedRootFS(ctx, rootfsDir)
+	ctr, err := core.BuiltInContainer(ctx, parent.Self().Platform(), args.Digest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update rootfs: %w", err)
+		return inst, err
 	}
-
-	goSDKContentStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
-	}
-
-	manifestBlob, err := content.ReadBlob(ctx, goSDKContentStore, specs.Descriptor{
-		Digest: digest.Digest(args.Digest),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
-	}
-
-	var man specs.Manifest
-	err = json.Unmarshal(manifestBlob, &man)
-	if err != nil {
-		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
-	}
-
-	configBlob, err := content.ReadBlob(ctx, goSDKContentStore, man.Config)
-	if err != nil {
-		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
-	}
-
-	var imgSpec specs.Image
-	err = json.Unmarshal(configBlob, &imgSpec)
-	if err != nil {
-		return nil, fmt.Errorf("load image config: %w", err)
-	}
-
-	container.Config = imgSpec.Config
-
-	return container, nil
+	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
 type hostDirectoryArgs struct {
