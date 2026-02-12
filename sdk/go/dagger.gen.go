@@ -14016,6 +14016,44 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// WorkspaceConfigReadOpts contains options for Workspace.ConfigRead
+type WorkspaceConfigReadOpts struct {
+	// Dotted key path to read (e.g. "modules.foo.source"). Empty reads the full config.
+	Key string
+}
+
+// Read a configuration value from config.toml.
+//
+// Returns the value at the given key, or the full config if no key is specified.
+func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadOpts) (string, error) {
+	q := r.query.Select("configRead")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Write a configuration value to config.toml.
+//
+// Sets the value at the given dotted key path, preserving comments and formatting.
+func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (string, error) {
+	q := r.query.Select("configWrite")
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // WorkspaceInstallOpts contains options for Workspace.Install
 type WorkspaceInstallOpts struct {
 	// Override name for the installed module entry.

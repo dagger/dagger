@@ -336,3 +336,175 @@ type Magic {
 	require.NoError(t, err)
 	require.NotContains(t, help, "--source")
 }
+
+// workspaceWithConfig returns a container with a workspace containing a config.toml.
+func workspaceWithConfig(t testing.TB, c *dagger.Client, configTOML string) *dagger.Container {
+	t.Helper()
+	return workspaceBase(t, c).
+		WithNewFile(".dagger/config.toml", configTOML)
+}
+
+func (WorkspaceSuite) TestConfigReadFullConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+alias = true
+
+[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	out, err := ctr.With(daggerExec("workspace", "config")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `source = "modules/my-module"`)
+	require.Contains(t, out, "alias = true")
+	require.Contains(t, out, `source = "github.com/dagger/jest"`)
+}
+
+func (WorkspaceSuite) TestConfigReadScalar(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+alias = true
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Read string value
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module.source")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "modules/my-module", strings.TrimSpace(out))
+
+	// Read bool value
+	out, err = ctr.With(daggerExec("workspace", "config", "modules.my-module.alias")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "true", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestConfigReadTable(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+alias = true
+
+[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Read a module table
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `source = "modules/my-module"`)
+	require.Contains(t, out, "alias = true")
+
+	// Read the modules table (should flatten with dotted keys)
+	out, err = ctr.With(daggerExec("workspace", "config", "modules")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `my-module.source = "modules/my-module"`)
+	require.Contains(t, out, "my-module.alias = true")
+	require.Contains(t, out, `jest.source = "github.com/dagger/jest"`)
+}
+
+func (WorkspaceSuite) TestConfigReadKeyNotSet(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	_, err := ctr.With(daggerExec("workspace", "config", "modules.nonexistent.source")).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "not set")
+}
+
+func (WorkspaceSuite) TestConfigWriteString(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Write a new source value
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.jest.source", "github.com/eunomie/jest"))
+
+	// Verify by reading back
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.jest.source")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/eunomie/jest", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestConfigWriteBool(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+alias = true
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Write a bool value
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.my-module.alias", "false"))
+
+	// Verify by reading back
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module.alias")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "false", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestConfigWriteArray(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Write a comma-separated array
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.jest.config.tags", "main,develop"))
+
+	// Verify the raw config file contains the array
+	out, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `tags`)
+	require.Contains(t, out, "main")
+	require.Contains(t, out, "develop")
+}
+
+func (WorkspaceSuite) TestConfigWriteInvalidKey(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Try to set an unknown key
+	_, err := ctr.With(daggerExec("workspace", "config", "modules.jest.badfield", "value")).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "unknown module field")
+}
+
+func (WorkspaceSuite) TestConfigWritePreservesComments(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `# My workspace config
+[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Write a value
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.jest.source", "github.com/eunomie/jest"))
+
+	// Verify the comment is preserved
+	out, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "# My workspace config")
+	require.Contains(t, out, `"github.com/eunomie/jest"`)
+}

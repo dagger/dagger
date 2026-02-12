@@ -62,6 +62,23 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("source").Doc("Source subpath within the module root."),
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
 			),
+		dagql.Func("configRead", s.configRead).
+			DoNotCache("Reads live config from host").
+			Doc("Read a configuration value from config.toml.",
+				"If key is empty, returns the full config. "+
+					"If key points to a scalar, returns the value. "+
+					"If key points to a table, returns flattened dotted-key output.").
+			Args(
+				dagql.Arg("key").Doc("Dotted key path (e.g. modules.mymod.source). Empty for full config."),
+			),
+		dagql.Func("configWrite", s.configWrite).
+			DoNotCache("Mutates workspace config on host").
+			Doc("Write a configuration value to config.toml.",
+				"Validates the key against the config schema and auto-detects value types.").
+			Args(
+				dagql.Arg("key").Doc("Dotted key path (e.g. modules.mymod.source)."),
+				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
+			),
 	}.Install(srv)
 }
 
@@ -549,6 +566,77 @@ func (s *workspaceSchema) moduleInit(
 
 	configPath := filepath.Join(parent.Root, workspace.WorkspaceDirName, workspace.ConfigFileName)
 	return dagql.String(fmt.Sprintf("Created module %q at %s\nInstalled in %s", args.Name, modulePath, configPath)), nil
+}
+
+type configReadArgs struct {
+	Key string `default:""`
+}
+
+func (s *workspaceSchema) configRead(
+	ctx context.Context,
+	parent *core.Workspace,
+	args configReadArgs,
+) (dagql.String, error) {
+	if !parent.HasConfig {
+		return "", fmt.Errorf("no config.toml found in workspace")
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("buildkit: %w", err)
+	}
+
+	data, err := bk.ReadCallerHostFile(ctx, parent.ConfigPath)
+	if err != nil {
+		return "", fmt.Errorf("reading config: %w", err)
+	}
+
+	result, err := workspace.ReadConfigValue(data, args.Key)
+	if err != nil {
+		return "", err
+	}
+
+	return dagql.String(result), nil
+}
+
+type configWriteArgs struct {
+	Key   string
+	Value string
+}
+
+func (s *workspaceSchema) configWrite(
+	ctx context.Context,
+	parent *core.Workspace,
+	args configWriteArgs,
+) (dagql.String, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("buildkit: %w", err)
+	}
+
+	var existingData []byte
+	if parent.HasConfig {
+		existingData, _ = bk.ReadCallerHostFile(ctx, parent.ConfigPath)
+	}
+
+	result, err := workspace.WriteConfigValue(existingData, args.Key, args.Value)
+	if err != nil {
+		return "", err
+	}
+
+	if err := exportConfigToHost(ctx, bk, parent, result); err != nil {
+		return "", err
+	}
+
+	return dagql.String(args.Value), nil
 }
 
 // readWorkspaceConfig reads the current workspace config from host, or returns a fresh empty config.

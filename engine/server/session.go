@@ -1592,7 +1592,7 @@ func (srv *Server) loadWorkspaceModule(
 	dag *dagql.Server,
 	name, sourcePath string,
 	alias bool,
-	configDefaults map[string]string,
+	configDefaults map[string]any,
 ) error {
 	var mod dagql.ObjectResult[*core.Module]
 	err := dag.Select(ctx, dag.Root(), &mod,
@@ -1726,7 +1726,7 @@ func (srv *Server) loadRemoteWorkspace(
 // arguments from workspace config entries (config.* keys in config.toml).
 // Each key in the map is matched (case-insensitively) against constructor arg
 // names. Values are stored as JSON strings or parsed as JSON if valid.
-func applyWorkspaceConfigDefaults(mod *core.Module, defaults map[string]string) {
+func applyWorkspaceConfigDefaults(mod *core.Module, defaults map[string]any) {
 	for _, objDef := range mod.ObjectDefs {
 		if !objDef.AsObject.Valid {
 			continue
@@ -1751,12 +1751,8 @@ func applyWorkspaceConfigDefaults(mod *core.Module, defaults map[string]string) 
 			if !ok {
 				continue
 			}
-			// Try to parse as JSON first; if invalid JSON, treat as string literal
-			var parsed any
-			if err := json.Unmarshal([]byte(val), &parsed); err != nil {
-				parsed = val
-			}
-			marshaled, err := json.Marshal(parsed)
+			// Marshal the value to JSON directly (supports strings, bools, ints, arrays)
+			marshaled, err := json.Marshal(val)
 			if err != nil {
 				continue
 			}

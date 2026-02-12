@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
@@ -126,8 +127,56 @@ var migrateCmd = &cobra.Command{
 	},
 }
 
+var workspaceConfigCmd = &cobra.Command{
+	Use:   "config [key] [value]",
+	Short: "Get or set workspace configuration",
+	Long: `Get or set workspace configuration values in .dagger/config.toml.
+
+With no arguments, prints the full configuration.
+With one argument, prints the value at the given key.
+With two arguments, sets the value at the given key.
+
+Works like "git config" for workspace settings.`,
+	Example: `  dagger workspace config
+  dagger workspace config modules.mymod.source
+  dagger workspace config modules.mymod.alias false
+  dagger workspace config modules.mymod.config.tags main,develop`,
+	Args: cobra.MaximumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+			ws := dag.CurrentWorkspace()
+
+			switch len(args) {
+			case 0, 1:
+				var key string
+				if len(args) == 1 {
+					key = args[0]
+				}
+				val, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{
+					Key: key,
+				})
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(val, "\n"))
+				return nil
+			case 2:
+				_, err := ws.ConfigWrite(ctx, args[0], args[1])
+				return err
+			default:
+				return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
+			}
+		})
+	},
+}
+
 func init() {
 	workspaceCmd.AddCommand(workspaceInfoCmd)
+	workspaceCmd.AddCommand(workspaceConfigCmd)
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
