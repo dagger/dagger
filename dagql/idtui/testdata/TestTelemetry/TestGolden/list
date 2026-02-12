@@ -1,31 +1,8 @@
 Expected stdout:
 
-.git/
-chroma.go
-debug.go
-demos/
-exit.go
-frontend.go
-frontend_dots.go
-frontend_logs.go
-frontend_mock.go
-frontend_plain.go
-frontend_pretty.go
-golden_test.go
-huh.go
-multiprefixw/
-output.go
-patch.go
-rave.go
-render_dsl.go
-symbols.go
-sys_unix.go
-sys_windows.go
-testdata/
-viztest/
-vterm.go
-vterm_lite.go
-vterm_lite_test.go
+test.txt
+test2.txt
+test3.txt
 
 Expected stderr:
 
@@ -47,32 +24,9 @@ Expected stderr:
 ✔ .list(
 │ ┆ dir: Address.directory: Directory!
 │ ): String! X.Xs
-┃ .git/
-┃ chroma.go
-┃ debug.go
-┃ demos/
-┃ exit.go
-┃ frontend.go
-┃ frontend_dots.go
-┃ frontend_logs.go
-┃ frontend_mock.go
-┃ frontend_plain.go
-┃ frontend_pretty.go
-┃ golden_test.go
-┃ huh.go
-┃ multiprefixw/
-┃ output.go
-┃ patch.go
-┃ rave.go
-┃ render_dsl.go
-┃ symbols.go
-┃ sys_unix.go
-┃ sys_windows.go
-┃ testdata/
-┃ viztest/
-┃ vterm.go
-┃ vterm_lite.go
-┃ vterm_lite_test.go
+┃ test.txt
+┃ test2.txt
+┃ test3.txt
 ╰╴$ Directory.entries: [String!]! X.Xs CACHED
 
 
