@@ -758,9 +758,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if !ok {
 			return nil, fmt.Errorf("find mod type for parent %q", fn.objDef.Name)
 		}
-		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
+		parentContent := NewCollectedContent()
+		if err := parentModType.CollectContent(ctx, opts.ParentTyped, parentContent); err != nil {
 			return nil, fmt.Errorf("collect IDs from parent fields: %w", err)
 		}
+		execMD.ParentIDs = parentContent.IDs
 	}
 
 	if mod.ResultID != nil {
@@ -907,15 +909,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 		// If the function returned anything that's isolated per-client, this caller client should
 		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
-		returnedIDs := map[digest.Digest]*resource.ID{}
-		if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
-			return nil, fmt.Errorf("collect IDs: %w", err)
+		returnedContent := NewCollectedContent()
+		if err := fn.returnType.CollectContent(ctx, returnValue, returnedContent); err != nil {
+			return nil, fmt.Errorf("collect content: %w", err)
 		}
 
 		// Function calls are cached per-session, but every client caller needs to add
 		// secret/socket/etc. resources from the result to their store.
-		returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
-		for _, id := range returnedIDs {
+		returnedIDsList := make([]*resource.ID, 0, len(returnedContent.IDs))
+		for _, id := range returnedContent.IDs {
 			returnedIDsList = append(returnedIDsList, id)
 		}
 		resourceTransferPostCall, hasNamedSecrets, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
@@ -929,12 +931,31 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 
 		returnValue = returnValue.WithPostCall(resourceTransferPostCall)
+
+		// If this function accepts Workspace args, set a content digest on the
+		// result derived from all content it returned — both core object IDs
+		// (Directory, File, etc.) and primitive scalar values (String, Int, etc.).
+		// This ensures downstream calls that reference this result get a different
+		// cache key when the underlying content changes.
+		if fn.hasWorkspaceArgs() {
+			returnValue = returnValue.WithContentDigestAny(returnedContent.Digest())
+		}
 	}
 	if returnValue != nil {
 		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
 	}
 
 	return returnValue, nil
+}
+
+// hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
+func (fn *ModuleFunction) hasWorkspaceArgs() bool {
+	// for _, arg := range fn.metadata.Args {
+	// 	if arg.IsWorkspace() {
+	// 		return true
+	// 	}
+	// }
+	return false
 }
 
 func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {

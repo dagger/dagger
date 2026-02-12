@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/exp/constraints"
 
@@ -96,6 +97,9 @@ type AnyResult interface {
 
 	// WithSafeToPersistCache returns a new AnyResult with the given safe-to-persist-cache flag.
 	WithSafeToPersistCache(safe bool) AnyResult
+
+	// WithContentDigest returns a new AnyResult with the given content digest.
+	WithContentDigestAny(digest.Digest) AnyResult
 
 	HitCache() bool
 	HitContentDigestCache() bool
