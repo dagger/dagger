@@ -28,6 +28,24 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFuncWithCacheKey("directory",
+			DagOpDirectoryWrapper(
+				srv, s.directory,
+				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
+			), dagql.CacheAsRequested).
+			Doc(`Returns a Directory from the workspace.`,
+				`Path is relative to workspace root. Use "." for the root directory.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").`),
+				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+			),
+		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
+			Doc(`Returns a File from the workspace.`,
+				`Path is relative to workspace root.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
+			),
 		dagql.Func("install", s.install).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Install a module into the workspace, writing config.toml to the host.").
@@ -89,6 +107,79 @@ func (s *workspaceSchema) currentWorkspace(
 	}
 
 	return result, nil
+}
+
+type workspaceDirectoryArgs struct {
+	Path string
+
+	core.CopyFilter
+
+	DagOpInternalArgs
+}
+
+func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	ws := parent.Self()
+	absPath := filepath.Join(ws.Root, filepath.Clean(args.Path))
+
+	dir, err := (&core.Host{}).Directory(ctx, absPath, core.CopyFilter{
+		Include: args.Include,
+		Exclude: args.Exclude,
+	}, false, ".")
+	if err != nil {
+		return inst, fmt.Errorf("workspace directory %q: %w", args.Path, err)
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type workspaceFileArgs struct {
+	Path string
+}
+
+func (workspaceFileArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFileArgs) (inst dagql.Result[*core.File], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	// Delegate to host directory + file extraction, same as Host.file
+	fileDir, fileName := filepath.Split(filepath.Join(parent.Self().Root, filepath.Clean(args.Path)))
+
+	dir, err := (&core.Host{}).Directory(ctx, fileDir, core.CopyFilter{
+		Include: []string{fileName},
+	}, false, ".")
+	if err != nil {
+		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
+	}
+
+	dirResult, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	if err != nil {
+		return inst, err
+	}
+
+	if err := srv.Select(ctx, dirResult, &inst, dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(fileName)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+
+	return inst, nil
 }
 
 type installArgs struct {
