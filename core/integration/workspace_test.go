@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ func TestWorkspace(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceSuite{})
 }
 
-const dangSDK = "github.com/vito/dang/dagger-sdk@9eb282f01ed7f367f5bce96998301ce1a9df1347"
+const dangSDK = "github.com/vito/dang/dagger-sdk@ca623b0182926bd94c82f0cad5149d3a1288a3b8"
 
 // workspaceBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
@@ -335,4 +336,216 @@ type Magic {
 	help, err := ctr.With(daggerCall("magic", "--help")).Stdout(ctx)
 	require.NoError(t, err)
 	require.NotContains(t, help, "--source")
+}
+// TestWorkspaceContentAddressed verifies that when a module constructor takes
+// a Workspace argument, the result is content-addressed: calling a function
+// twice with the same workspace content should be cached (the function body
+// should not re-execute).
+//
+// We use nonNestedDevEngine so that each `dagger call` starts a fresh session
+// against the same engine. This avoids the session-local dagql cache that
+// would mask caching bugs — we need to test the engine's persistent cache.
+func (WorkspaceSuite) TestWorkspaceContentAddressed(ctx context.Context, t *testctx.T) {
+	var marker = "FUNCTION_EXECUTED:" + rand.Text()
+
+	daggerCallWithLogs := func(args ...string) dagger.WithContainerFunc {
+		return func(ctr *dagger.Container) *dagger.Container {
+			execArgs := append([]string{"dagger", "--progress=logs", "call"}, args...)
+			return ctr.WithExec(execArgs, dagger.ContainerWithExecOpts{
+				UseEntrypoint: true,
+			})
+		}
+	}
+
+	t.Run("storing a Directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		base := workspaceBase(t, c).
+			// use a non-nested dev engine - if we use nesting, we'll just hit
+			// session-local caches, we need to ensure that each `dagger call` runs with
+			// a fresh session to really test the caching semantics
+			With(nonNestedDevEngine(c)).
+			WithNewFile("included-file", rand.Text()).
+			With(initDangModule("cacheme", `
+type Cacheme {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".", exclude: ["*", "!included-file"])
+    self
+  }
+
+  pub read: String! {
+    print("`+marker+`")
+    source.file("included-file").contents
+  }
+}
+`))
+
+		// First call — function should execute, marker appears in logs.
+		first := base.With(daggerCallWithLogs("cacheme", "read"))
+		out1, err := first.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out1, marker, "expected function to execute on first call")
+
+		// Second call — same workspace content, function should be cached.
+		// Uses a fresh session (non-nested), so only the engine's persistent
+		// content-addressed cache can prevent re-execution.
+		second := first.With(daggerCallWithLogs("cacheme", "read"))
+		out2, err := second.CombinedOutput(ctx)
+		require.NoError(t, err)
+		// The marker should NOT appear in the second call's stderr, because the
+		// function result should have been served from cache.
+		require.NotContains(t, out2, marker,
+			"expected function to be cached on second call with unchanged workspace content")
+
+		// Third call - write to an unaffected file, function should still be cached
+		third := second.
+			WithNewFile("another-file", rand.Text()).
+			With(daggerCallWithLogs("cacheme", "read"))
+		out3, err := third.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out3, marker,
+			"expected function to be cached on third call with unchanged workspace content")
+
+		// Fourth call - write to an affected file, function should not be cached
+		newText := rand.Text()
+		fourth := third.
+			WithNewFile("included-file", newText).
+			With(daggerCallWithLogs("cacheme", "read"))
+		out4, err := fourth.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out4, newText,
+			"expected function to pick up the new text")
+		require.Contains(t, out4, marker,
+			"expected function to be re-executed on fourth call with changed workspace content")
+	})
+
+	t.Run("storing a File", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		base := workspaceBase(t, c).
+			// use a non-nested dev engine - if we use nesting, we'll just hit
+			// session-local caches, we need to ensure that each `dagger call` runs with
+			// a fresh session to really test the caching semantics
+			With(nonNestedDevEngine(c)).
+			WithNewFile("included-file", rand.Text()).
+			With(initDangModule("cacheme", `
+type Cacheme {
+  pub source: File!
+
+  new(source: Workspace!) {
+    self.source = source.file("included-file")
+    self
+  }
+
+  pub read: String! {
+    print("`+marker+`")
+    source.contents
+  }
+}
+`))
+
+		// First call — function should execute, marker appears in logs.
+		first := base.With(daggerCallWithLogs("cacheme", "read"))
+		out1, err := first.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out1, marker, "expected function to execute on first call")
+
+		// Second call — same workspace content, function should be cached.
+		// Uses a fresh session (non-nested), so only the engine's persistent
+		// content-addressed cache can prevent re-execution.
+		second := first.With(daggerCallWithLogs("cacheme", "read"))
+		out2, err := second.CombinedOutput(ctx)
+		require.NoError(t, err)
+		// The marker should NOT appear in the second call's stderr, because the
+		// function result should have been served from cache.
+		require.NotContains(t, out2, marker,
+			"expected function to be cached on second call with unchanged workspace content")
+
+		// Third call - write to an unaffected file, function should still be cached
+		third := second.
+			WithNewFile("another-file", rand.Text()).
+			With(daggerCallWithLogs("cacheme", "read"))
+		out3, err := third.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out3, marker,
+			"expected function to be cached on third call with unchanged workspace content")
+
+		// Fourth call - write to an affected file, function should not be cached
+		newText := rand.Text()
+		fourth := third.
+			WithNewFile("included-file", newText).
+			With(daggerCallWithLogs("cacheme", "read"))
+		out4, err := fourth.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out4, newText,
+			"expected function to pick up the new text")
+		require.Contains(t, out4, marker,
+			"expected function to be re-executed on fourth call with changed workspace content")
+	})
+
+	t.Run("storing the contents of a File", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		base := workspaceBase(t, c).
+			// use a non-nested dev engine - if we use nesting, we'll just hit
+			// session-local caches, we need to ensure that each `dagger call` runs with
+			// a fresh session to really test the caching semantics
+			With(nonNestedDevEngine(c)).
+			WithNewFile("included-file", rand.Text()).
+			With(initDangModule("cacheme", `
+type Cacheme {
+  pub source: String!
+
+  new(source: Workspace!) {
+    self.source = source.file("included-file").contents
+    self
+  }
+
+  pub read: String! {
+    print("`+marker+`")
+    source
+  }
+}
+`))
+
+		// First call — function should execute, marker appears in logs.
+		first := base.With(daggerCallWithLogs("cacheme", "read"))
+		out1, err := first.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out1, marker, "expected function to execute on first call")
+
+		// Second call — same workspace content, function should be cached.
+		// Uses a fresh session (non-nested), so only the engine's persistent
+		// content-addressed cache can prevent re-execution.
+		second := first.With(daggerCallWithLogs("cacheme", "read"))
+		out2, err := second.CombinedOutput(ctx)
+		require.NoError(t, err)
+		// The marker should NOT appear in the second call's stderr, because the
+		// function result should have been served from cache.
+		require.NotContains(t, out2, marker,
+			"expected function to be cached on second call with unchanged workspace content")
+
+		// Third call - write to an unaffected file, function should still be cached
+		third := second.
+			WithNewFile("another-file", rand.Text()).
+			With(daggerCallWithLogs("cacheme", "read"))
+		out3, err := third.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out3, marker,
+			"expected function to be cached on third call with unchanged workspace content")
+
+		// Fourth call - write to an affected file, function should not be cached
+		newText := rand.Text()
+		fourth := third.
+			WithNewFile("included-file", newText).
+			With(daggerCallWithLogs("cacheme", "read"))
+		out4, err := fourth.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out4, newText,
+			"expected function to pick up the new text")
+		require.Contains(t, out4, marker,
+			"expected function to be re-executed on fourth call with changed workspace content")
+	})
 }
