@@ -180,8 +180,9 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 // relative to the new module location.
 func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, error) {
 	// Relative prefix to rewrite paths from the new module location back to project root.
-	// From .dagger/modules/<name>/, that's 3 levels up: ../../../
-	depth := len(strings.Split(newModulePath, "/"))
+	// newModulePath is relative to .dagger/ (e.g. "modules/myapp"), so the full path
+	// from the project root is .dagger/modules/myapp/ — that's 3 levels up: ../../../
+	depth := len(strings.Split(newModulePath, "/")) + 1 // +1 for .dagger/ directory
 	prefix := strings.Repeat("../", depth)
 
 	// For source=".", the code stays at project root. The new dagger.json
@@ -191,12 +192,16 @@ func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, e
 		source = prefix
 	}
 
-	// Rewrite dependency paths
+	// Rewrite dependency paths (only local paths need adjusting; git refs stay as-is)
 	var deps []*legacyDependency
 	for _, dep := range cfg.Dependencies {
+		source := dep.Source
+		if core.FastModuleSourceKindCheck(dep.Source, dep.Pin) == core.ModuleSourceKindLocal {
+			source = filepath.Join(prefix, dep.Source)
+		}
 		newDep := &legacyDependency{
 			Name:   dep.Name,
-			Source: prefix + dep.Source,
+			Source: source,
 			Pin:    dep.Pin,
 		}
 		deps = append(deps, newDep)
