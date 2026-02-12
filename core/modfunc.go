@@ -543,8 +543,9 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		cacheCfgResp.UpdatedArgs = make(map[string]dagql.Input)
 		var mu sync.Mutex
 		type argInput struct {
-			name string
-			val  dagql.IDType
+			argName  string
+			origName string
+			val      dagql.IDType
 		}
 
 		srv := dagql.CurrentDagqlServer(ctx)
@@ -560,12 +561,10 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				}
 
 				ctxArgVals[i] = &argInput{
-					name: arg.OriginalName,
-					val:  ctxVal,
+					argName:  arg.Name,
+					origName: arg.OriginalName,
+					val:      ctxVal,
 				}
-				mu.Lock()
-				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(ctxVal)
-				mu.Unlock()
 
 				return nil
 			})
@@ -581,8 +580,9 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				}
 
 				workspaceArgVals[i] = &argInput{
-					name: arg.OriginalName,
-					val:  wsVal,
+					argName:  arg.Name,
+					origName: arg.OriginalName,
+					val:      wsVal,
 				}
 				mu.Lock()
 				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(wsVal)
@@ -602,12 +602,10 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				}
 				arg := userDefault.Arg
 				userDefaultVals[i] = &argInput{
-					name: arg.OriginalName,
-					val:  id,
+					argName:  arg.Name,
+					origName: arg.OriginalName,
+					val:      id,
 				}
-				mu.Lock()
-				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(id)
-				mu.Unlock()
 				return nil
 			})
 		}
@@ -617,13 +615,18 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 
 		for _, arg := range ctxArgVals {
+			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
+				arg.argName,
+				dagql.Opt(arg.val).ToLiteral(),
+				false,
+			))
 			id := arg.val.ID()
 			// prefer content digest if available
 			dgst := id.ContentDigest()
 			if dgst == "" {
 				dgst = id.Digest()
 			}
-			dgstInputs = append(dgstInputs, arg.name, dgst.String())
+			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 		}
 		for _, arg := range workspaceArgVals {
 			id := arg.val.ID()
@@ -632,16 +635,21 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			if dgst == "" {
 				dgst = id.Digest()
 			}
-			dgstInputs = append(dgstInputs, arg.name, dgst.String())
+			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 		}
 		for _, arg := range userDefaultVals {
 			if arg != nil {
+				cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
+					arg.argName,
+					dagql.Opt(arg.val).ToLiteral(),
+					false,
+				))
 				id := arg.val.ID()
 				dgst := id.ContentDigest()
 				if dgst == "" {
 					dgst = id.Digest()
 				}
-				dgstInputs = append(dgstInputs, arg.name, dgst.String())
+				dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 			}
 		}
 	}
