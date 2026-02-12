@@ -21,7 +21,7 @@ type Derefable interface {
 // DerefableResult is a Derefable that can return a result underlied by the specific type the Derefable wraps.
 type DerefableResult interface {
 	Derefable
-	DerefToResult(constructor *call.ID, postCall PostCallFunc) (AnyResult, bool)
+	DerefToResult(constructor *call.ID, postCall PostCallFunc, safeToPersistCache bool) (AnyResult, bool)
 }
 
 // Optional wraps a type and allows it to be null.
@@ -283,20 +283,21 @@ func (n Nullable[T]) Deref() (Typed, bool) {
 func (n Nullable[T]) DerefToResult(
 	constructor *call.ID,
 	postCall PostCallFunc,
+	safeToPersistCache bool,
 ) (AnyResult, bool) {
 	if !n.Valid {
 		return nil, false
 	}
 	if anyRes, ok := any(n.Value).(AnyResult); ok {
 		// If the value is already an AnyResult, we can return it directly.
-		return anyRes, true
+		return anyRes.WithSafeToPersistCache(safeToPersistCache), true
 	}
 
 	res := newDetachedResult(constructor, n.Value)
 	if postCall != nil {
 		res = res.ResultWithPostCall(postCall)
 	}
-	return res, true
+	return res.WithSafeToPersistCache(safeToPersistCache), true
 }
 
 func (n Nullable[T]) MarshalJSON() ([]byte, error) {
@@ -336,20 +337,21 @@ func (n DynamicNullable) Deref() (Typed, bool) {
 func (n DynamicNullable) DerefToResult(
 	constructor *call.ID,
 	postCall PostCallFunc,
+	safeToPersistCache bool,
 ) (AnyResult, bool) {
 	if !n.Valid {
 		return nil, false
 	}
 	if anyRes, ok := n.Value.(AnyResult); ok {
 		// If the value is already an AnyResult, we can return it directly.
-		return anyRes, true
+		return anyRes.WithSafeToPersistCache(safeToPersistCache), true
 	}
 
 	res := newDetachedResult(constructor, n.Value)
 	if postCall != nil {
 		res = res.ResultWithPostCall(postCall)
 	}
-	return res, true
+	return res.WithSafeToPersistCache(safeToPersistCache), true
 }
 
 func (n DynamicNullable) MarshalJSON() ([]byte, error) {

@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fix nullable function return types incorrectly being skipped for persistent
+  cache
+time: 2026-02-12T10:56:44.641350269-08:00
+custom:
+  Author: sipsma
+  PR: "11855"
