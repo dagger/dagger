@@ -327,6 +327,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	spec.Name = gqlFieldName(mod.Name())
 	spec.Module = obj.Module.IDModule()
 	spec.GetCacheConfig = fn.CacheConfigForCall
+	spec.ImplicitInputs = append(spec.ImplicitInputs, fn.cacheImplicitInputs()...)
 
 	dag.Root().ObjectType().Extend(
 		spec,
@@ -454,6 +455,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	}
 	spec.Module = mod.IDModule()
 	spec.GetCacheConfig = modFun.CacheConfigForCall
+	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,

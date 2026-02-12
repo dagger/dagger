@@ -33,6 +33,9 @@ import (
 const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
 const MinFunctionCacheTTLSeconds = 1
 
+const moduleFunctionScopeInputName = "moduleFunctionScope"
+const moduleFunctionEquivalentDigestLabel = "moduleFunctionEquivalent"
+
 type ModuleFunction struct {
 	mod    *Module
 	objDef *ObjectTypeDef // may be nil for special functions like the module definition function call
@@ -133,6 +136,33 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 		props["caller_type"] = "direct"
 	}
 	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
+}
+
+func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
+	if fn == nil || fn.mod == nil || fn.metadata == nil {
+		return nil
+	}
+
+	sourceDigest := ""
+	if source := fn.mod.GetSource(); source != nil {
+		sourceDigest = source.Digest
+	}
+	moduleScope := hashutil.HashStrings(sourceDigest, fn.mod.NameField).String()
+	implicitInputs := []dagql.ImplicitInput{
+		{
+			Name: moduleFunctionScopeInputName,
+			Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
+				return dagql.NewString(moduleScope), nil
+			},
+		},
+	}
+
+	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod)
+	if cachePolicy == FunctionCachePolicyPerSession || fn.metadata.Name == "" {
+		implicitInputs = append(implicitInputs, dagql.CachePerSession)
+	}
+
+	return implicitInputs
 }
 
 // setCallInputs sets the call inputs for the function call.
@@ -605,9 +635,9 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	)
 	selfDigest, inputDigests, err := baseID.SelfDigestAndEquivalentInputs()
 	if err != nil {
-		return nil, fmt.Errorf("compute cache digest for %s.%s: %w", fn.mod.Name(), fn.metadata.Name, err)
+		return nil, fmt.Errorf("compute equivalent digest for %s.%s: %w", fn.mod.Name(), fn.metadata.Name, err)
 	}
-	dgstInputs := make([]string, 0, 3+len(inputDigests))
+	dgstInputs := make([]string, 0, 2+len(inputDigests))
 	dgstInputs = append(dgstInputs, selfDigest.String())
 	startInputIdx := 0
 	var normalizedRecvDigest digest.Digest
@@ -623,28 +653,18 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	for _, in := range inputDigests[startInputIdx:] {
 		dgstInputs = append(dgstInputs, in.String())
 	}
-	dgstInputs = append(dgstInputs, fn.mod.Source.Value.Self().Digest, fn.mod.NameField)
-
-	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod)
-	if cachePolicy == FunctionCachePolicyPerSession {
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, err
-		}
-		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
+	sourceDigest := ""
+	if source := fn.mod.GetSource(); source != nil {
+		sourceDigest = source.Digest
 	}
-	// Constructors can capture contextual defaults in object payload fields.
-	// Scope constructor cache keys per session so stale contextual IDs are not
-	// reused after session boundaries.
-	if fn.metadata.Name == "" {
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, err
-		}
-		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
+	dgstInputs = append(dgstInputs, sourceDigest, fn.mod.NameField)
+	if fn.metadata.Name != "" {
+		equivalentDigest := hashutil.HashStrings(dgstInputs...)
+		cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.With(call.WithExtraDigest(call.ExtraDigest{
+			Digest: equivalentDigest,
+			Label:  moduleFunctionEquivalentDigestLabel,
+		}))
 	}
-	customDigest := hashutil.HashStrings(dgstInputs...)
-	cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithDigest(customDigest)
 	if normalizedRecvDigest != "" {
 		recv := cacheCfgResp.CacheKey.ID.Receiver()
 		if recv != nil {
@@ -664,6 +684,16 @@ func (fn *ModuleFunction) normalizedReceiverDigest(id *call.ID) (digest.Digest, 
 		call.WithModule(nil),
 		call.WithCustomDigest(""),
 	)
+	if len(idNoMod.ImplicitInputs()) > 0 {
+		filteredInputs := make([]*call.Argument, 0, len(idNoMod.ImplicitInputs()))
+		for _, input := range idNoMod.ImplicitInputs() {
+			if input != nil && input.Name() == dagql.CachePerSession.Name {
+				continue
+			}
+			filteredInputs = append(filteredInputs, input)
+		}
+		idNoMod = idNoMod.With(call.WithImplicitInputs(filteredInputs...))
+	}
 
 	// Root module identity should be based on module source content, not per-client
 	// module source call identity.
