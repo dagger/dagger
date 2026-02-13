@@ -75,10 +75,6 @@
       "source": "toolchains/java-sdk-dev"
     },
     {
-      "name": "migrate",
-      "source": "modules/migrate"
-    },
-    {
       "name": "php-sdk",
       "source": "toolchains/php-sdk-dev"
     },
