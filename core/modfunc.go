@@ -631,7 +631,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 
 	baseID := cacheCfgResp.CacheKey.ID.With(
 		call.WithModule(nil),
-		call.WithCustomDigest(""),
 	)
 	selfDigest, inputDigests, err := baseID.SelfDigestAndEquivalentInputs()
 	if err != nil {
@@ -682,7 +681,6 @@ func (fn *ModuleFunction) normalizedReceiverDigest(id *call.ID) (digest.Digest, 
 	}
 	idNoMod := id.With(
 		call.WithModule(nil),
-		call.WithCustomDigest(""),
 	)
 	if len(idNoMod.ImplicitInputs()) > 0 {
 		filteredInputs := make([]*call.Argument, 0, len(idNoMod.ImplicitInputs()))

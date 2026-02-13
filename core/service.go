@@ -138,10 +138,10 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		if id == nil {
 			return "", errors.New("service ID is nil")
 		}
-		// Hostname identity should follow equivalence identity (e.g. content
-		// digests) rather than strict recipe identity so equivalent services
-		// converge across sessions.
-		hostDigest := id.EquivalentDigest()
+		// Hostname identity should follow output-equivalence identity
+		// (e.g. content digests) rather than strict recipe identity so
+		// equivalent services converge across sessions.
+		hostDigest := id.OutputEquivalentDigest()
 		if hostDigest == "" {
 			hostDigest = id.Digest()
 		}

@@ -35,27 +35,21 @@ func init() {
 	buildkit.RegisterCustomOp(ContainerDagOp{})
 }
 
-func dagOpCacheDigest(id *call.ID) digest.Digest {
+func dagOpStructuralDigest(id *call.ID) digest.Digest {
 	if id == nil {
 		return ""
 	}
-	if custom := id.CustomDigest(); custom != "" {
-		return custom
-	}
-	return id.CacheDigest()
+	return id.StructuralEquivalentDigest()
 }
 
-func dagOpContentOrCacheDigest(id *call.ID) digest.Digest {
+func dagOpContentOrStructuralDigest(id *call.ID) digest.Digest {
 	if id == nil {
 		return ""
 	}
 	if content := id.ContentDigest(); content != "" {
 		return content
 	}
-	if custom := id.CustomDigest(); custom != "" {
-		return custom
-	}
-	return id.EquivalentDigest()
+	return dagOpStructuralDigest(id)
 }
 
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
@@ -73,7 +67,7 @@ func NewDirectoryDagOp(
 		// fall back to using op ID (which will return a different CacheMap value for each op
 		dagop.CacheKey = digest.FromString(
 			strings.Join([]string{
-				dagOpCacheDigest(dagop.ID).String(),
+				dagOpStructuralDigest(dagop.ID).String(),
 				dagop.Path,
 			}, "\x00"))
 	} else {
@@ -160,7 +154,7 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 func (op FSDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		dagOpCacheDigest(op.ID).String(),
+		dagOpStructuralDigest(op.ID).String(),
 		op.Path,
 	}, "\x00")), nil
 }
@@ -171,7 +165,7 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
 		inputs = []string{
 			engine.BaseVersion(engine.Version),
-			dagOpCacheDigest(op.ID).String(),
+			dagOpStructuralDigest(op.ID).String(),
 			op.Path,
 		}
 	} else {
@@ -276,7 +270,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 	ref := workerRef.ImmutableRef
 	if ref != nil {
-		idDgst := dagOpContentOrCacheDigest(obj.ID()).String()
+		idDgst := dagOpContentOrStructuralDigest(obj.ID()).String()
 
 		if err := ref.SetString(keyDaggerDigest, idDgst, daggerDigestIdx+idDgst); err != nil {
 			return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
@@ -335,7 +329,7 @@ func (op RawDagOp) Backend() buildkit.CustomOpBackend {
 func (op RawDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		dagOpCacheDigest(op.ID).String(),
+		dagOpStructuralDigest(op.ID).String(),
 		op.Filename,
 	}, "\x00")), nil
 }
@@ -343,7 +337,7 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		dagOpCacheDigest(op.ID).String(),
+		dagOpStructuralDigest(op.ID).String(),
 		op.Filename,
 	}, "\x00"))
 
@@ -448,7 +442,7 @@ func NewContainerDagOp(
 		ID: id,
 		CacheKey: digest.FromString(
 			strings.Join([]string{
-				dagOpCacheDigest(id).String(),
+				dagOpStructuralDigest(id).String(),
 				engine.BaseVersion(engine.Version),
 			}, "\x00"),
 		),
@@ -674,13 +668,13 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				mount.Selector = dirMnt.Self().Dir
 				llb = dirMnt.Self().LLB
 				res = dirMnt.Self().Result
-				dgst = dagOpContentOrCacheDigest(dirMnt.ID())
+				dgst = dagOpContentOrStructuralDigest(dirMnt.ID())
 			},
 			func(fileMnt *dagql.ObjectResult[*File]) {
 				mount.Selector = fileMnt.Self().File
 				llb = fileMnt.Self().LLB
 				res = fileMnt.Self().Result
-				dgst = dagOpContentOrCacheDigest(fileMnt.ID())
+				dgst = dagOpContentOrStructuralDigest(fileMnt.ID())
 			},
 			func(cache *CacheMountSource) {
 				if cache.Base != nil && cache.Base.Self() != nil {
@@ -959,7 +953,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 		}
 
 		if ref != nil && id != nil {
-			dgst := dagOpContentOrCacheDigest(id)
+			dgst := dagOpContentOrStructuralDigest(id)
 
 			if dgst != "" {
 				if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {

@@ -237,20 +237,13 @@ func (id *ID) inputDigest() digest.Digest {
 	return hashutil.HashStrings(ins...)
 }
 
-// EquivalentDigest returns the digest used to represent this call in
-// equivalence-based identity flows (e.g. dag-op keying):
-// 1. content digest (if set)
-// 2. custom digest (if set)
-// 3. hash(selfDigest + equivalent input digests)
-func (id *ID) EquivalentDigest() digest.Digest {
+// StructuralEquivalentDigest returns a digest that encodes the call's own shape
+// (field/type/args/implicit-input names/module/view/etc.) plus equivalent input
+// digests. This is appropriate for keying operation identity where call self
+// semantics must still matter.
+func (id *ID) StructuralEquivalentDigest() digest.Digest {
 	if id == nil {
 		return ""
-	}
-	if content := id.ContentDigest(); content != "" {
-		return content
-	}
-	if custom := id.CustomDigest(); custom != "" {
-		return custom
 	}
 	selfDigest, inputDigests, err := id.SelfDigestAndEquivalentInputs()
 	if err != nil {
@@ -261,6 +254,30 @@ func (id *ID) EquivalentDigest() digest.Digest {
 		h = h.WithString(in.String())
 	}
 	return digest.Digest(h.DigestAndClose())
+}
+
+// OutputEquivalentDigest returns the digest used when outputs can be treated as
+// interchangeable across different recipes:
+// 1. content digest (if set)
+// 2. custom digest (if set)
+// 3. structural-equivalent digest
+func (id *ID) OutputEquivalentDigest() digest.Digest {
+	if id == nil {
+		return ""
+	}
+	if content := id.ContentDigest(); content != "" {
+		return content
+	}
+	if custom := id.CustomDigest(); custom != "" {
+		return custom
+	}
+	return id.StructuralEquivalentDigest()
+}
+
+// EquivalentDigest is retained as a compatibility alias for
+// OutputEquivalentDigest.
+func (id *ID) EquivalentDigest() digest.Digest {
+	return id.OutputEquivalentDigest()
 }
 
 // EffectIDs returns the effect IDs directly attached to this call.
@@ -474,7 +491,7 @@ func (id *ID) SelfDigestAndEquivalentInputs() (digest.Digest, []digest.Digest, e
 
 	// Receiver contributes to inputs, not the self digest.
 	if id.receiver != nil {
-		inputs = append(inputs, id.receiver.EquivalentDigest())
+		inputs = append(inputs, id.receiver.OutputEquivalentDigest())
 	}
 	for _, dig := range normalizedExtraDigestStrings(id.pb.ExtraDigests) {
 		inputs = append(inputs, digest.Digest(dig))
@@ -1280,7 +1297,7 @@ func appendLiteralSelfBytesEquivalent(lit Literal, h *hashutil.Hasher, inputs []
 	case *LiteralID:
 		const prefix = '0'
 		h = h.WithByte(prefix)
-		inputs = append(inputs, v.id.EquivalentDigest())
+		inputs = append(inputs, v.id.OutputEquivalentDigest())
 	case *LiteralNull:
 		const prefix = '1'
 		h = h.WithByte(prefix)
