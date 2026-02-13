@@ -368,8 +368,9 @@ class ModuleParser:
         decorator = find_decorator(node, "function")
         decorator_info = extract_decorator_info(decorator) if decorator else None
 
-        # Check for @check decorator
+        # Check for @check and @generate decorators
         is_check = has_decorator(node, "check")
+        is_generate = has_decorator(node, "generate")
 
         # Extract decorator kwargs
         func_kwargs: dict[str, Any] = {}
@@ -402,6 +403,7 @@ class ModuleParser:
             deprecated=func_kwargs.get("deprecated"),
             cache_policy=func_kwargs.get("cache"),
             is_check=is_check,
+            is_generate=is_generate,
             is_async=isinstance(node, ast.AsyncFunctionDef),
             is_classmethod=is_classmethod(node),
             is_constructor=False,

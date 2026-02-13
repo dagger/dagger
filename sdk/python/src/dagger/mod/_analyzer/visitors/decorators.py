@@ -31,6 +31,8 @@ DAGGER_DECORATORS = {
     "enum_type": {"enum_type", "dagger.enum_type", "mod.enum_type"},
     # @dagger.check or @mod.check or @check
     "check": {"check", "dagger.check", "mod.check"},
+    # @dagger.generate or @mod.generate or @generate
+    "generate": {"generate", "dagger.generate", "mod.generate"},
 }
 
 
