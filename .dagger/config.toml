@@ -82,9 +82,6 @@ source = "../toolchains/java-sdk-dev"
 # workspace = "./path" # Directory
 # sourcePath = "" # string
 
-[modules.migrate]
-source = "../modules/migrate"
-
 [modules.php-sdk]
 source = "../toolchains/php-sdk-dev"
 
