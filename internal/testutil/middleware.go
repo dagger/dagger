@@ -3,7 +3,6 @@ package testutil
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/testctx"
@@ -27,11 +26,6 @@ func SpanOpts[T testctx.Runner[T]](w *testctx.W[T]) []trace.SpanStartOption {
 		attribute.String(testctxTypeAttr, fmt.Sprintf("%T", t)),
 		// Prevent revealed/rolled-up stuff bubbling up through test spans.
 		attribute.Bool(telemetry.UIBoundaryAttr, true),
-	}
-	if strings.Count(w.Name(), "/") == 0 {
-		// Only reveal top-level test suites; we don't need to automatically see
-		// every single one.
-		attrs = append(attrs, attribute.Bool(telemetry.UIRevealAttr, true))
 	}
 	if isPrewarm() {
 		attrs = append(attrs, attribute.Bool(testctxPrewarmAttr, true))
