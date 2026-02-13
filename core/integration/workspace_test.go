@@ -1090,3 +1090,58 @@ type Inner {
 		require.Equal(t, "custom message", strings.TrimSpace(out))
 	})
 }
+
+// TestFunctionsWithModFlag verifies that `dagger functions -m <module>` shows
+// the module's promoted (auto-aliased) functions and hides the redundant
+// constructor.
+func (WorkspaceSuite) TestFunctionsWithModFlag(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(nonNestedDevEngine(c)).
+		With(daggerNonNestedExec("module", "init", "--sdk="+dangSDK, "greeter", "./greeter")).
+		WithNewFile("/work/greeter/main.dang", `
+type Greeter {
+  pub name: String!
+
+  new(name: String! = "world") {
+    self.name = name
+    self
+  }
+
+  pub greet: String! {
+    "hello, " + name
+  }
+
+  pub shout: String! {
+    "HELLO, " + name
+  }
+}
+`).
+		WithWorkdir("/work")
+
+	t.Run("shows promoted functions not constructor", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerNonNestedExec("-m", "./greeter", "functions")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(out, "\n")
+		// The promoted functions should be listed.
+		require.Contains(t, lines, "greet   -")
+		require.Contains(t, lines, "shout   -")
+		// The constructor should NOT appear — its functions are already promoted.
+		for _, line := range lines {
+			require.NotContains(t, line, "greeter")
+		}
+	})
+
+	t.Run("call works with promoted functions", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerNonNestedExec("-m", "./greeter", "call", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world", strings.TrimSpace(out))
+	})
+
+	t.Run("call works with constructor args and promoted functions", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerNonNestedExec("-m", "./greeter", "call", "--name", "dagger", "shout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "HELLO, dagger", strings.TrimSpace(out))
+	})
+}

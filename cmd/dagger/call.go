@@ -89,11 +89,14 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			// Only filter core functions when showing the root Query type.
-			// When navigating into a module type (dagger functions wolfi),
-			// all functions should be shown.
-			isRoot := len(cmd.Flags().Args()) == 0
-			return functionListRun(o, cmd.OutOrStdout(), isRoot)
+			// Only filter core functions when listing the Query root in
+			// workspace mode (multiple modules as sub-commands). When a
+			// main module is set (single module or -m), or when navigating
+			// into a module type, show all functions.
+			filterCore := len(cmd.Flags().Args()) == 0 &&
+				mod.MainObject.AsObject != nil &&
+				mod.MainObject.AsObject.Name == "Query"
+			return functionListRun(o, cmd.OutOrStdout(), filterCore)
 		})
 	},
 }

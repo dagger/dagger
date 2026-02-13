@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -34,15 +35,62 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 
 // initializeWorkspace loads type definitions from the workspace.
 // Modules are already served by the engine at connect time.
-// MainObject is the Query root — workspace module constructors appear as Query root fields.
-// All types (including core) are loaded so the CLI can navigate pipelines
-// (e.g. dagger call wolfi container with-exec). The CLI's root-level filter
-// hides core constructors from the top-level command display.
+//
+// When a specific module was requested via -m, the CLI identifies that module
+// among the loaded types and sets it as the MainObject so that the module's
+// constructor flags are available at the top level (e.g. dagger call --model x run).
+//
+// When no specific module was requested, MainObject is the Query root and
+// workspace module constructors appear as Query root sub-commands.
+//
+// FIXME(vito): this needs to be cleaned up or renamed, since it also handles
+// support for standalone modules and implicit `-m .`
 func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
 	def := &moduleDef{}
+
+	// If a specific module was requested via -m, resolve its name so that
+	// loadTypeDefs can match it and set MainObject to the module's type
+	// (rather than Query). This makes the module's constructor flags
+	// available at the top level (e.g. dagger call --model x run).
+	if modRef, explicit := getExplicitModuleSourceRef(); explicit && modRef != "" {
+		modName, err := dag.ModuleSource(modRef).ModuleName(ctx)
+		if err == nil && modName != "" {
+			def.Name = modName
+		}
+	}
+
 	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
 	}
+
+	// When no -m is given and we're in legacy mode (dagger.json without a
+	// workspace config), the engine auto-loaded the legacy module. Detect it
+	// and set it as MainObject for backwards compat, so that constructor
+	// flags work at the top level (e.g. dagger call --flag val func).
+	//
+	// We only do this when there's no .dagger/config.toml — if a workspace
+	// config exists, modules appear as sub-commands and MainObject stays as
+	// Query.
+	if def.Name == "" && def.MainObject != nil && def.MainObject.AsObject != nil && def.MainObject.AsObject.Name == "Query" {
+		if _, err := os.Stat(filepath.Join(workdir, ".dagger", "config.toml")); errors.Is(err, os.ErrNotExist) {
+			// No workspace config — look for a single module constructor.
+			modules := map[string]*modTypeDef{}
+			for _, fn := range def.MainObject.AsObject.Functions {
+				if obj := fn.ReturnType.AsObject; obj != nil && obj.SourceModuleName != "" {
+					if fn.Name == gqlFieldName(obj.SourceModuleName) {
+						modules[obj.SourceModuleName] = fn.ReturnType
+					}
+				}
+			}
+			if len(modules) == 1 {
+				for name, mod := range modules {
+					def.Name = name
+					def.MainObject = mod
+				}
+			}
+		}
+	}
+
 	return def, nil
 }
 
