@@ -134,5 +134,5 @@
     "util/patchpreview"
   ],
   "dependencies": [],
-  "source": ".dagger"
+  "source": ".dagger/modules/dagger-dev"
 }
