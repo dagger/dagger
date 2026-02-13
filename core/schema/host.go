@@ -36,6 +36,7 @@ import (
 type hostSchema struct{}
 
 var _ SchemaResolvers = &hostSchema{}
+var errSSHAuthSocketNotSet = errors.New("SSH_AUTH_SOCK is not set")
 
 func (s *hostSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
@@ -440,7 +441,7 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 		}
 	} else {
 		if clientMetadata.SSHAuthSocketPath == "" {
-			return inst, errors.New("SSH_AUTH_SOCK is not set")
+			return inst, errSSHAuthSocketNotSet
 		}
 		accessor, err := core.GetClientResourceAccessor(ctx, query, clientMetadata.SSHAuthSocketPath)
 		if err != nil {
