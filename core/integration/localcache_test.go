@@ -352,14 +352,14 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 		endpoint, err = engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 
-		c2, err = dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		c2, err = dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(NewTWriter(t)))
 		require.NoError(t, err)
 		t.Cleanup(func() { c2.Close() })
 
 		nextBlockID := 0
 		addCacheBlock = func(t *testctx.T, inputDevice string, sizeMB int) {
 			t.Helper()
-			c3, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			c3, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(NewTWriter(t)))
 			require.NoError(t, err)
 			_, err = c3.Container().From(alpineImage).WithExec([]string{
 				"dd",

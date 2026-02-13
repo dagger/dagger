@@ -60,9 +60,12 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("_DAGGER_TESTS_ENGINE_TAR", engineTarPath)
 
-	// Start inner test engine for isolated test sessions
-	engine := dag.EngineDev().TestEngine()
-	go engine.Up(ctx)
+	// Start inner test engine with registries for isolated test sessions
+	engine, err := dag.EngineDev().TestEngine().Start(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start test engine: %v\n", err)
+		os.Exit(1)
+	}
 	engineEndpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Connect to test engine: %v\n", err)
