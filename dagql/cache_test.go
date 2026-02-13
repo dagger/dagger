@@ -1181,6 +1181,88 @@ func TestCacheAdditionalDigestLookupAcrossDistinctRecipeIDs(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheOutputEquivalenceLookupRespectsImplicitInputScope(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sharedOutputEq := digest.FromString("implicit-scope-shared-output-eq")
+	base := cacheTestID("implicit-scope")
+	keyA := base.
+		With(call.WithAdditionalDigest(sharedOutputEq)).
+		With(call.WithImplicitInputs(
+			call.NewArgument("cachePerClient", call.NewLiteralString("client-a"), false),
+		))
+	keyB := base.
+		With(call.WithAdditionalDigest(sharedOutputEq)).
+		With(call.WithImplicitInputs(
+			call.NewArgument("cachePerClient", call.NewLiteralString("client-b"), false),
+		))
+
+	initCalls := 0
+	resA, err := c.GetOrInitCall(ctx, CacheKey{ID: keyA}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(keyA, NewInt(101)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resA.HitCache())
+
+	resB, err := c.GetOrInitCall(ctx, CacheKey{ID: keyB}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(keyB, NewInt(202)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resB.HitCache())
+	assert.Assert(t, !resB.HitContentDigestCache())
+	assert.Equal(t, 2, initCalls)
+	assert.Equal(t, 202, cacheTestUnwrapInt(t, resB))
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheOutputEquivalenceLookupSeparatesDagOpExecutionMode(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sharedOutputEq := digest.FromString("dagop-mode-shared-output-eq")
+	base := cacheTestID("dagop-mode")
+	normalKey := base.With(call.WithAdditionalDigest(sharedOutputEq))
+	dagOpKey := base.
+		With(call.WithArgs(
+			call.NewArgument("isDagOp", call.NewLiteralBool(true), false),
+		)).
+		With(call.WithAdditionalDigest(sharedOutputEq))
+
+	initCalls := 0
+	normalRes, err := c.GetOrInitCall(ctx, CacheKey{ID: normalKey}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(normalKey, NewInt(301)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !normalRes.HitCache())
+
+	dagOpRes, err := c.GetOrInitCall(ctx, CacheKey{ID: dagOpKey}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(dagOpKey, NewInt(302)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !dagOpRes.HitCache())
+	assert.Assert(t, !dagOpRes.HitContentDigestCache())
+	assert.Equal(t, 2, initCalls)
+	assert.Equal(t, 302, cacheTestUnwrapInt(t, dagOpRes))
+
+	assert.NilError(t, normalRes.Release(ctx))
+	assert.NilError(t, dagOpRes.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestCacheAdditionalDigestDirectHitPreservesRequestID(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
