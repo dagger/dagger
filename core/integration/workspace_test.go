@@ -488,7 +488,7 @@ source = "github.com/dagger/jest"
 	// Try to set an unknown key
 	_, err := ctr.With(daggerExec("workspace", "config", "modules.jest.badfield", "value")).Stdout(ctx)
 	require.Error(t, err)
-	requireErrOut(t, err, "unknown module field")
+	requireErrOut(t, err, "unknown config key")
 }
 
 func (WorkspaceSuite) TestConfigWritePreservesComments(ctx context.Context, t *testctx.T) {
