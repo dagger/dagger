@@ -70,6 +70,46 @@ func (c *Client) AbsPath(ctx context.Context, path string) (string, error) {
 	return msg.Path, nil
 }
 
+// ImportCallerHostDir imports a directory from the caller's host into a
+// temporary directory on the engine. The caller is responsible for cleaning
+// up the returned directory when done.
+func (c *Client) ImportCallerHostDir(ctx context.Context, hostPath string) (string, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer cancel(errors.New("import caller host dir done"))
+
+	tmpDir, err := os.MkdirTemp("", "dagger-import-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp dir: %w", err)
+	}
+
+	ctx = engine.LocalImportOpts{
+		Path: hostPath,
+	}.AppendToOutgoingContext(ctx)
+
+	clientCaller, err := c.GetSessionCaller(ctx, false)
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to get requester session: %w", err)
+	}
+	diffCopyClient, err := filesync.NewFileSyncClient(clientCaller.Conn()).DiffCopy(ctx)
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to create diff copy client: %w", err)
+	}
+	defer diffCopyClient.CloseSend()
+
+	err = fsutil.Receive(ctx, diffCopyClient, tmpDir, fsutil.ReceiveOpt{})
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to receive directory: %w", err)
+	}
+
+	return tmpDir, nil
+}
+
 func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
 	msg := fsutiltypes.Stat{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{

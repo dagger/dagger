@@ -13,8 +13,9 @@ import (
 
 // Config represents a parsed .dagger/config.toml workspace configuration.
 type Config struct {
-	Modules map[string]ModuleEntry `toml:"modules"`
-	Ignore  []string               `toml:"ignore"`
+	Modules          map[string]ModuleEntry `toml:"modules"`
+	Ignore           []string               `toml:"ignore"`
+	DefaultsFromDotEnv bool                 `toml:"defaults_from_dotenv,omitempty"`
 }
 
 // ModuleEntry represents a single module entry in the workspace config.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +75,14 @@ type Module struct {
 	// AutoAlias causes the module's functions to be aliased to the Query root,
 	// so they can be called directly without going through the module constructor.
 	AutoAlias bool
+
+	// User defaults loaded from workspace config.toml (config.* entries).
+	// When set, replaces .env as the source of user defaults.
+	WorkspaceDefaults *EnvFile
+
+	// When true and WorkspaceDefaults is set, also load .env defaults
+	// (merged on top of workspace defaults). Off by default.
+	DefaultsFromDotEnv bool
 }
 
 func (*Module) Type() *ast.Type {
@@ -233,6 +242,24 @@ func CacheModuleByContentDigest(
 
 // Return all user defaults for this module
 func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
+	if mod.WorkspaceDefaults != nil {
+		// Workspace module: use config.toml entries as the primary source
+		defaults := NewEnvFile(true).WithEnvFiles(mod.WorkspaceDefaults)
+		if mod.DefaultsFromDotEnv {
+			// Opt-in: .env overrides workspace config (higher priority)
+			contextSrc := mod.GetContextSource()
+			if contextSrc != nil && contextSrc.UserDefaults != nil {
+				defaults = defaults.WithEnvFiles(contextSrc.UserDefaults)
+			}
+			src := mod.GetSource()
+			if src != nil && src != contextSrc && src.UserDefaults != nil {
+				defaults = defaults.WithEnvFiles(src.UserDefaults)
+			}
+		}
+		return defaults, nil
+	}
+
+	// No workspace defaults (e.g. -m module): use .env as before
 	defaults := NewEnvFile(true)
 
 	// Use ContextSource for loading .env files (it has the actual context directory)
@@ -263,6 +290,89 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 		return modDefaults, nil
 	}
 	return modDefaults.Namespace(ctx, objName)
+}
+
+// ApplyWorkspaceDefaultsToTypeDefs updates constructor arg typedefs based on
+// WorkspaceDefaults, so that --help displays the correct default values.
+// For primitive types (string, int, bool, float), it sets arg.DefaultValue
+// to the JSON representation. For object types (Secret, Directory, etc.),
+// it marks the arg as optional (since a default will be resolved at call time).
+func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
+	if mod.WorkspaceDefaults == nil {
+		return
+	}
+	for _, objDef := range mod.ObjectDefs {
+		if !objDef.AsObject.Valid {
+			continue
+		}
+		obj := objDef.AsObject.Value
+		if !obj.Constructor.Valid {
+			continue
+		}
+		ctor := obj.Constructor.Value
+		for _, arg := range ctor.Args {
+			// Look up the arg in workspace defaults (case-insensitive)
+			var userInput string
+			found := false
+			for _, kv := range mod.WorkspaceDefaults.Environ {
+				k, v, _ := strings.Cut(kv, "=")
+				if strings.EqualFold(k, arg.OriginalName) || strings.EqualFold(k, arg.Name) {
+					userInput = v
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+			if arg.TypeDef.Kind == TypeDefKindObject {
+				// Object types (Secret, Directory, etc.): mark optional
+				// so --help shows it's not required
+				arg.TypeDef.Optional = true
+			} else {
+				// Primitive types: set the JSON default value
+				var jsonValue JSON
+				switch arg.TypeDef.Kind {
+				case TypeDefKindString:
+					marshaled, err := json.Marshal(userInput)
+					if err != nil {
+						continue
+					}
+					jsonValue = JSON(marshaled)
+				case TypeDefKindInteger:
+					if n, err := strconv.Atoi(userInput); err == nil {
+						marshaled, _ := json.Marshal(n)
+						jsonValue = JSON(marshaled)
+					} else {
+						continue
+					}
+				case TypeDefKindFloat:
+					if f, err := strconv.ParseFloat(userInput, 64); err == nil {
+						marshaled, _ := json.Marshal(f)
+						jsonValue = JSON(marshaled)
+					} else {
+						continue
+					}
+				case TypeDefKindBoolean:
+					b := userInput == "true"
+					marshaled, _ := json.Marshal(b)
+					jsonValue = JSON(marshaled)
+				default:
+					// For other types, try to use the raw value as JSON
+					if json.Valid([]byte(userInput)) {
+						jsonValue = JSON(userInput)
+					} else {
+						marshaled, err := json.Marshal(userInput)
+						if err != nil {
+							continue
+						}
+						jsonValue = JSON(marshaled)
+					}
+				}
+				arg.DefaultValue = jsonValue
+			}
+		}
+	}
 }
 
 func (mod *Module) IDModule() *call.Module {
@@ -969,6 +1079,10 @@ func (mod Module) Clone() *Module {
 
 	if cp.SDKConfig != nil {
 		cp.SDKConfig = cp.SDKConfig.Clone()
+	}
+
+	if mod.WorkspaceDefaults != nil {
+		cp.WorkspaceDefaults = mod.WorkspaceDefaults.Clone()
 	}
 
 	return &cp

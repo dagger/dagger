@@ -17,17 +17,21 @@ type MigrationIO interface {
 	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
 	LocalFileExport(ctx context.Context, srcPath string, filePath string, destPath string, allowParentDirPath bool) error
 	LocalDirExport(ctx context.Context, srcPath string, destPath string, merge bool, removePaths []string) error
+	ImportCallerHostDir(ctx context.Context, hostPath string) (string, error)
 }
 
 // MigrationResult holds the output of a successful migration.
 type MigrationResult struct {
-	ProjectRoot    string
-	ConfigPath     string   // path to new .dagger/config.toml
-	ModuleName     string   // name of migrated project module (if any)
-	ModuleNewPath  string   // new location of module config
-	ToolchainCount int      // number of toolchains converted
-	RemovedFiles   []string // files removed during migration
-	Warnings       []string // non-fatal warnings
+	ProjectRoot     string
+	ConfigPath      string   // path to new .dagger/config.toml
+	ModuleName      string   // name of migrated project module (if any)
+	ModuleNewPath   string   // new location of module config
+	OldSourcePath   string   // original source path (for moved modules)
+	DepRewriteCount int      // number of dependency paths rewritten
+	IncRewriteCount int      // number of include paths rewritten
+	ToolchainCount  int      // number of toolchains converted
+	RemovedFiles    []string // files removed during migration
+	Warnings        []string // non-fatal warnings
 }
 
 // Summary returns a human-readable summary of the migration.
@@ -36,6 +40,12 @@ func (r *MigrationResult) Summary() string {
 	fmt.Fprintf(&b, "Migrated to workspace format: %s\n", r.ConfigPath)
 	if r.ModuleName != "" {
 		fmt.Fprintf(&b, "  Module %q configured at %s\n", r.ModuleName, r.ModuleNewPath)
+	}
+	if r.OldSourcePath != "" {
+		fmt.Fprintf(&b, "  Source moved: %s -> %s\n", r.OldSourcePath, r.ModuleNewPath)
+	}
+	if r.DepRewriteCount > 0 || r.IncRewriteCount > 0 {
+		fmt.Fprintf(&b, "  Rewritten %d dependency path(s), %d include path(s)\n", r.DepRewriteCount, r.IncRewriteCount)
 	}
 	if r.ToolchainCount > 0 {
 		fmt.Fprintf(&b, "  %d toolchain(s) converted to workspace modules\n", r.ToolchainCount)
@@ -103,14 +113,46 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 		}
 
 		// Build new dagger.json for the module at its new location
-		newJSON, err := buildMigratedModuleJSON(&cfg, modulePath)
+		newJSON, depCount, incCount, err := buildMigratedModuleJSON(&cfg, modulePath)
 		if err != nil {
 			return nil, fmt.Errorf("building migrated module JSON: %w", err)
 		}
+		result.DepRewriteCount = depCount
+		result.IncRewriteCount = incCount
 
 		newJSONPath := filepath.Join(migErr.ProjectRoot, WorkspaceDirName, modulePath, "dagger.json")
 		if err := writeHostFile(ctx, bk, newJSONPath, newJSON); err != nil {
 			return nil, fmt.Errorf("writing migrated module config: %w", err)
+		}
+
+		// Move source files to new location when source != "."
+		if hasNonLocalSource {
+			srcDir := filepath.Join(migErr.ProjectRoot, cfg.Source)
+			destDir := filepath.Join(migErr.ProjectRoot, WorkspaceDirName, modulePath)
+			result.OldSourcePath = cfg.Source
+
+			if err := copyHostDir(ctx, bk, srcDir, destDir); err != nil {
+				return nil, fmt.Errorf("moving source files: %w", err)
+			}
+
+			// Clean up old source directory, with ancestor safety check:
+			// skip delete if old source is an ancestor of the new location.
+			newFullPath := filepath.Join(WorkspaceDirName, modulePath)
+			if strings.HasPrefix(newFullPath+"/", cfg.Source+"/") {
+				slog.Warn("old source dir is ancestor of new location; skipping cleanup",
+					"oldSource", cfg.Source, "newLocation", newFullPath)
+				result.Warnings = append(result.Warnings,
+					fmt.Sprintf("old source dir %q is ancestor of new location; skipped cleanup", cfg.Source))
+			} else {
+				if err := deleteHostDir(ctx, bk, srcDir); err != nil {
+					slog.Warn("could not remove old source directory",
+						"path", srcDir, "error", err)
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("could not remove old source directory %q: %v", cfg.Source, err))
+				} else {
+					result.RemovedFiles = append(result.RemovedFiles, cfg.Source+"/")
+				}
+			}
 		}
 	}
 
@@ -178,7 +220,9 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 // buildMigratedModuleJSON creates the cleaned-up dagger.json for the migrated module.
 // Source and Toolchains are removed; dependency/include paths are rewritten
 // relative to the new module location.
-func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, error) {
+// Returns the JSON bytes, the number of dependency paths rewritten, and the
+// number of include paths rewritten.
+func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, int, int, error) {
 	// Relative prefix to rewrite paths from the new module location back to project root.
 	// newModulePath is relative to .dagger/ (e.g. "modules/myapp"), so the full path
 	// from the project root is .dagger/modules/myapp/ — that's 3 levels up: ../../../
@@ -194,10 +238,12 @@ func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, e
 
 	// Rewrite dependency paths (only local paths need adjusting; git refs stay as-is)
 	var deps []*legacyDependency
+	depRewriteCount := 0
 	for _, dep := range cfg.Dependencies {
 		source := dep.Source
 		if core.FastModuleSourceKindCheck(dep.Source, dep.Pin) == core.ModuleSourceKindLocal {
 			source = filepath.Join(prefix, dep.Source)
+			depRewriteCount++
 		}
 		newDep := &legacyDependency{
 			Name:   dep.Name,
@@ -209,12 +255,14 @@ func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, e
 
 	// Rewrite include paths
 	var includes []string
+	incRewriteCount := 0
 	for _, inc := range cfg.Include {
 		if strings.HasPrefix(inc, "!") {
 			includes = append(includes, "!"+prefix+inc[1:])
 		} else {
 			includes = append(includes, prefix+inc)
 		}
+		incRewriteCount++
 	}
 
 	newCfg := newModuleJSON{
@@ -229,10 +277,10 @@ func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, e
 
 	out, err := json.MarshalIndent(newCfg, "", "  ")
 	if err != nil {
-		return nil, err
+		return nil, 0, 0, err
 	}
 	out = append(out, '\n')
-	return out, nil
+	return out, depRewriteCount, incRewriteCount, nil
 }
 
 // generateMigrationConfigTOML builds the .dagger/config.toml content.
@@ -414,4 +462,34 @@ func deleteHostFile(ctx context.Context, bk MigrationIO, filePath string) error 
 	defer os.RemoveAll(tmpDir)
 
 	return bk.LocalDirExport(ctx, tmpDir, dir, true, []string{fileName})
+}
+
+// copyHostDir copies a directory from one host location to another via the engine.
+// It imports the source directory into a temp dir, then exports it to the destination.
+func copyHostDir(ctx context.Context, bk MigrationIO, srcPath, destPath string) error {
+	tmpDir, err := bk.ImportCallerHostDir(ctx, srcPath)
+	if err != nil {
+		return fmt.Errorf("import source dir %q: %w", srcPath, err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := bk.LocalDirExport(ctx, tmpDir, destPath, true, nil); err != nil {
+		return fmt.Errorf("export to dest dir %q: %w", destPath, err)
+	}
+	return nil
+}
+
+// deleteHostDir deletes a directory on the host via LocalDirExport with removePaths.
+// Uses trailing "/" convention to trigger os.RemoveAll on the client side.
+func deleteHostDir(ctx context.Context, bk MigrationIO, dirPath string) error {
+	parentDir := filepath.Dir(dirPath)
+	dirName := filepath.Base(dirPath) + "/" // trailing "/" triggers os.RemoveAll
+
+	tmpDir, err := os.MkdirTemp("", "dagger-migrate-empty-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	return bk.LocalDirExport(ctx, tmpDir, parentDir, true, []string{dirName})
 }
