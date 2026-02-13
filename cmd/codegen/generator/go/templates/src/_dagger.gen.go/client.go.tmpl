@@ -1,3 +1,16 @@
+// Type aliases for SDK types used by test code
+type ClientOpt = dagger.ClientOpt
+type Request = dagger.Request
+type Response = dagger.Response
+
+// Re-export SDK client option constructors
+var WithLogOutput = dagger.WithLogOutput
+var WithVersionOverride = dagger.WithVersionOverride
+var WithVerbosity = dagger.WithVerbosity
+var WithRunnerHost = dagger.WithRunnerHost
+var WithEnvironmentVariable = dagger.WithEnvironmentVariable
+var WithWorkdir = dagger.WithWorkdir
+
 // Client is the Dagger Engine Client
 type Client struct {
 	{{- /*  The standalone client in not dev mode needs to store the dagger client for the global client to work */ -}}
@@ -6,16 +19,33 @@ type Client struct {
 	client graphql.Client
 }
 
+// errorWrappedClient wraps the SDK's graphql.Client to convert errors
+// into this package's ExecError type instead of the SDK's ExecError type.
+type errorWrappedClient struct {
+	graphql.Client
+}
 
-func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
+func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	err := c.Client.MakeRequest(ctx, req, resp)
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+		return err
+	}
+	return nil
+}
+
+func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	dag, err := dagger.Connect(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
 
+	gqlClient := errorWrappedClient{dag.GraphQLClient()}
 	c := &Client{
-		query:  dag.QueryBuilder(),
-		client: dag.GraphQLClient(),
+		query:  dag.QueryBuilder().Client(gqlClient),
+		client: gqlClient,
 		dag:    dag,
 	}
 
@@ -29,6 +59,38 @@ func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
 {{/*  The standalone client in not dev mode needs to expose a close method for the global client to work */ -}}
 func (c *Client) Close() error {
 	return c.dag.Close()
+}
+
+// GraphQLClient returns the underlying graphql.Client
+func (c *Client) GraphQLClient() graphql.Client {
+	return c.client
+}
+
+// QueryBuilder returns the underlying query builder
+func (c *Client) QueryBuilder() *querybuilder.Selection {
+	return c.query
+}
+
+// Do executes a raw GraphQL request using the client's session
+func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
+	daggerReq := &dagger.Request{
+		Query:     req.Query,
+		Variables: req.Variables,
+		OpName:    req.OpName,
+	}
+	daggerResp := &dagger.Response{
+		Data:       resp.Data,
+		Extensions: resp.Extensions,
+		Errors:     resp.Errors,
+	}
+
+	err := c.dag.Do(ctx, daggerReq, daggerResp)
+
+	resp.Data = daggerResp.Data
+	resp.Extensions = daggerResp.Extensions
+	resp.Errors = daggerResp.Errors
+
+	return err
 }
 
 // serveModuleDependencies services all dependencies of the module.
