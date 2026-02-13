@@ -229,78 +229,14 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 
 		switch introspectionType.Kind {
 		case introspection.TypeKindObject:
-			typeDef := &core.ObjectTypeDef{
-				Name:        introspectionType.Name,
-				Description: introspectionType.Description,
+			objTypeDef, ok, err := introspectionObjectToTypeDef(introspectionType, dag)
+			if err != nil {
+				return nil, err
 			}
-
-			isIdable := false
-			for _, introspectionField := range introspectionType.Fields {
-				if introspectionField.Name == "id" {
-					isIdable = true
-					continue
-				}
-
-				fn := &core.Function{
-					Name:        introspectionField.Name,
-					Description: introspectionField.Description,
-					Deprecated:  introspectionField.DeprecationReason,
-				}
-
-				rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert return type: %w", err)
-				}
-				if !ok {
-					continue
-				}
-				fn.ReturnType = rtType
-
-				// For Query root fields, check if the field was provided by a
-				// module (e.g. module constructor or auto-alias). This lets the
-				// CLI distinguish module functions from core API constructors.
-				if introspectionType.Name == "Query" {
-					if queryType, ok := dag.ObjectType("Query"); ok {
-						if spec, ok := queryType.FieldSpec(introspectionField.Name, dag.View); ok && spec.Module != nil {
-							fn.SourceModuleName = spec.Module.Name()
-						}
-					}
-				}
-
-				for _, introspectionArg := range introspectionField.Args {
-					fnArg := &core.FunctionArg{
-						Name:        introspectionArg.Name,
-						Description: introspectionArg.Description,
-						Deprecated:  introspectionArg.DeprecationReason,
-					}
-
-					if introspectionArg.DefaultValue != nil {
-						fnArg.DefaultValue = core.JSON(*introspectionArg.DefaultValue)
-					}
-
-					argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
-					if err != nil {
-						return nil, fmt.Errorf("failed to convert argument type: %w", err)
-					}
-					if !ok {
-						continue
-					}
-					fnArg.TypeDef = argType
-
-					fn.Args = append(fn.Args, fnArg)
-				}
-
-				typeDef.Functions = append(typeDef.Functions, fn)
-			}
-
-			if !isIdable && typeDef.Name != "Query" {
+			if !ok {
 				continue
 			}
-
-			typeDefs = append(typeDefs, &core.TypeDef{
-				Kind:     core.TypeDefKindObject,
-				AsObject: dagql.NonNull(typeDef),
-			})
+			typeDefs = append(typeDefs, objTypeDef)
 
 		case introspection.TypeKindInputObject:
 			typeDef := &core.InputTypeDef{
@@ -365,6 +301,83 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 		}
 	}
 	return typeDefs, nil
+}
+
+// introspectionObjectToTypeDef converts an introspection object type to a core TypeDef.
+// Returns (nil, false, nil) if the type should be skipped.
+func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *dagql.Server) (*core.TypeDef, bool, error) {
+	typeDef := &core.ObjectTypeDef{
+		Name:        introspectionType.Name,
+		Description: introspectionType.Description,
+	}
+
+	isIdable := false
+	for _, introspectionField := range introspectionType.Fields {
+		if introspectionField.Name == "id" {
+			isIdable = true
+			continue
+		}
+
+		fn := &core.Function{
+			Name:        introspectionField.Name,
+			Description: introspectionField.Description,
+			Deprecated:  introspectionField.DeprecationReason,
+		}
+
+		rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert return type: %w", err)
+		}
+		if !ok {
+			continue
+		}
+		fn.ReturnType = rtType
+
+		// For Query root fields, check if the field was provided by a
+		// module (e.g. module constructor or auto-alias). This lets the
+		// CLI distinguish module functions from core API constructors.
+		if introspectionType.Name == "Query" {
+			if queryType, ok := dag.ObjectType("Query"); ok {
+				if spec, ok := queryType.FieldSpec(introspectionField.Name, dag.View); ok && spec.Module != nil {
+					fn.SourceModuleName = spec.Module.Name()
+				}
+			}
+		}
+
+		for _, introspectionArg := range introspectionField.Args {
+			fnArg := &core.FunctionArg{
+				Name:        introspectionArg.Name,
+				Description: introspectionArg.Description,
+				Deprecated:  introspectionArg.DeprecationReason,
+			}
+
+			if introspectionArg.DefaultValue != nil {
+				fnArg.DefaultValue = core.JSON(*introspectionArg.DefaultValue)
+			}
+
+			argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to convert argument type: %w", err)
+			}
+			if !ok {
+				continue
+			}
+			fnArg.TypeDef = argType
+
+			fn.Args = append(fn.Args, fnArg)
+		}
+
+		typeDef.Functions = append(typeDef.Functions, fn)
+	}
+
+	if !isIdable && typeDef.Name != "Query" {
+		return nil, false, nil
+	}
+
+	return &core.TypeDef{
+		Kind:     core.TypeDefKindObject,
+		AsObject: dagql.NonNull(typeDef),
+	}, true, nil
 }
 
 // CoreModScalar represents scalars from core (Platform, etc)
