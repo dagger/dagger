@@ -366,19 +366,27 @@ dagger init --sdk=go
 	},
 }
 
-// moduleModInitCmd is the workspace-aware "dagger module init" subcommand.
-// It creates a new module inside the workspace at .dagger/modules/<name>/
-// and auto-installs it in .dagger/config.toml.
+// moduleModInitCmd is the "dagger module init" subcommand.
+//
+// With just a name, it creates a workspace module inside
+// .dagger/modules/<name>/ and auto-installs it in .dagger/config.toml.
+//
+// With a name and a path, it creates a standalone module at that path
+// WITHOUT adding it to the workspace config.
 var moduleModInitCmd = &cobra.Command{
-	Use:   "init [options] --sdk=<sdk> <name>",
-	Short: "Create a new module in the workspace",
-	Long: `Create a new module in the workspace.
+	Use:   "init [options] --sdk=<sdk> <name> [path]",
+	Short: "Create a new module",
+	Long: `Create a new module, either in the workspace or at a standalone path.
 
-The module is created at .dagger/modules/<name>/ and automatically added to
-.dagger/config.toml so it's immediately callable via 'dagger call <name> <function>'.`,
-	Example: `dagger module init --sdk=go ci
-  dagger module init --sdk=python deploy`,
-	Args: cobra.ExactArgs(1),
+With just a name, the module is created at .dagger/modules/<name>/ and
+automatically added to .dagger/config.toml.
+
+With a name and a path, the module is created at that path as a standalone
+module with its own dagger.json — it is NOT added to the workspace config.`,
+	Example: `  dagger module init --sdk=go ci
+  dagger module init --sdk=python deploy
+  dagger module init --sdk=go mymod ./sub/mymod`,
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
@@ -392,25 +400,96 @@ The module is created at .dagger/modules/<name>/ and automatically added to
 
 		modName := extraArgs[0]
 
-		return withEngine(ctx, client.Params{
-			SkipWorkspaceModules: true,
-		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
+		if len(extraArgs) >= 2 {
+			return initStandaloneModule(ctx, cmd, modName, extraArgs[1])
+		}
 
-			ws := dag.CurrentWorkspace()
+		return initWorkspaceModule(ctx, cmd, modName)
+	},
+}
 
-			msg, err := ws.ModuleInit(ctx, modName, sdk, dagger.WorkspaceModuleInitOpts{
-				Source:  moduleSourcePath,
-				Include: moduleIncludes,
-			})
+// initWorkspaceModule creates a module inside .dagger/modules/<name>/ and
+// auto-installs it in .dagger/config.toml.
+func initWorkspaceModule(ctx context.Context, cmd *cobra.Command, modName string) error {
+	return withEngine(ctx, client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		dag := engineClient.Dagger()
+
+		ws := dag.CurrentWorkspace()
+
+		msg, err := ws.ModuleInit(ctx, modName, sdk, dagger.WorkspaceModuleInitOpts{
+			Source:  moduleSourcePath,
+			Include: moduleIncludes,
+		})
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), msg)
+		return nil
+	})
+}
+
+// initStandaloneModule creates a module at the given path with its own
+// dagger.json, without adding it to any workspace config.
+func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName string, modPath string) error {
+	return withEngine(ctx, client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		dag := engineClient.Dagger()
+
+		modSrc := dag.ModuleSource(modPath, dagger.ModuleSourceOpts{
+			DisableFindUp:  true,
+			AllowNotExists: true,
+			RequireKind:    dagger.ModuleSourceKindLocalSource,
+		})
+
+		alreadyExists, err := modSrc.ConfigExists(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check if module already exists: %w", err)
+		}
+		if alreadyExists {
+			return fmt.Errorf("module already exists at %s", modPath)
+		}
+
+		contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get local context directory path: %w", err)
+		}
+
+		srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get source root subpath: %w", err)
+		}
+		srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
+
+		// Infer source path if not specified
+		if moduleSourcePath == "" {
+			moduleSourcePath, err = inferSourcePathDir(srcRootAbsPath)
 			if err != nil {
 				return err
 			}
+		}
 
-			fmt.Fprintln(cmd.OutOrStdout(), msg)
-			return nil
-		})
-	},
+		modSrc = modSrc.WithName(modName)
+		modSrc = modSrc.WithSDK(sdk)
+		if moduleSourcePath != "" {
+			modSrc = modSrc.WithSourceSubpath(moduleSourcePath)
+		}
+		if len(moduleIncludes) > 0 {
+			modSrc = modSrc.WithIncludes(moduleIncludes)
+		}
+		modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
+
+		_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
+		if err != nil {
+			return fmt.Errorf("failed to generate module: %w", err)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", modName, "in", srcRootAbsPath)
+		return nil
+	})
 }
 
 var moduleUpdateCmd = &cobra.Command{
