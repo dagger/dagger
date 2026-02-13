@@ -72,7 +72,7 @@ func Detect(
 			legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
 			data, err := readFile(ctx, legacyPath)
 			if err == nil {
-				if err := checkMigrationTriggers(data, legacyPath, legacyDir); err != nil {
+				if err := CheckMigrationTriggers(data, legacyPath, legacyDir); err != nil {
 					return nil, err
 				}
 			}
@@ -85,7 +85,7 @@ func Detect(
 		legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
 		data, err := readFile(ctx, legacyPath)
 		if err == nil {
-			if err := checkMigrationTriggers(data, legacyPath, legacyDir); err != nil {
+			if err := CheckMigrationTriggers(data, legacyPath, legacyDir); err != nil {
 				return nil, err
 			}
 		}
@@ -112,9 +112,9 @@ func (e *ErrMigrationRequired) Error() string {
 	return `Migration required: run "dagger migrate" to update this project to the workspace format.`
 }
 
-// checkMigrationTriggers checks if a legacy dagger.json requires migration.
+// CheckMigrationTriggers checks if a legacy dagger.json requires migration.
 // Returns *ErrMigrationRequired if migration triggers are present.
-func checkMigrationTriggers(data []byte, legacyConfigPath, projectRoot string) error {
+func CheckMigrationTriggers(data []byte, legacyConfigPath, projectRoot string) error {
 	var legacy struct {
 		Source     string `json:"source"`
 		Toolchains []any  `json:"toolchains"`
