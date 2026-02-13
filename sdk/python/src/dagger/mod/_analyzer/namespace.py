@@ -159,7 +159,7 @@ class StubNamespace:
             name: The module or attribute name to import.
             alias: Optional alias for the import.
         """
-        key = alias or name.split(".")[-1]
+        key = alias or name.rsplit(".", maxsplit=1)[-1]
 
         # Try to actually import it
         try:
