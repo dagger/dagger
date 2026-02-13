@@ -76,12 +76,13 @@ type Module struct {
 	// so they can be called directly without going through the module constructor.
 	AutoAlias bool
 
-	// User defaults loaded from workspace config.toml (config.* entries).
-	// When set, replaces .env as the source of user defaults.
-	WorkspaceDefaults *EnvFile
+	// Config values from workspace config.toml [modules.<name>.config].
+	// Typed map: strings, bools, ints, floats as-is from TOML.
+	// When set, constructor args are resolved from this map first.
+	WorkspaceConfig map[string]any
 
-	// When true and WorkspaceDefaults is set, also load .env defaults
-	// (merged on top of workspace defaults). Off by default.
+	// When true and WorkspaceConfig is set, also load .env defaults
+	// for args not found in WorkspaceConfig. Off by default.
 	DefaultsFromDotEnv bool
 }
 
@@ -242,24 +243,6 @@ func CacheModuleByContentDigest(
 
 // Return all user defaults for this module
 func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
-	if mod.WorkspaceDefaults != nil {
-		// Workspace module: use config.toml entries as the primary source
-		defaults := NewEnvFile(true).WithEnvFiles(mod.WorkspaceDefaults)
-		if mod.DefaultsFromDotEnv {
-			// Opt-in: .env overrides workspace config (higher priority)
-			contextSrc := mod.GetContextSource()
-			if contextSrc != nil && contextSrc.UserDefaults != nil {
-				defaults = defaults.WithEnvFiles(contextSrc.UserDefaults)
-			}
-			src := mod.GetSource()
-			if src != nil && src != contextSrc && src.UserDefaults != nil {
-				defaults = defaults.WithEnvFiles(src.UserDefaults)
-			}
-		}
-		return defaults, nil
-	}
-
-	// No workspace defaults (e.g. -m module): use .env as before
 	defaults := NewEnvFile(true)
 
 	// Use ContextSource for loading .env files (it has the actual context directory)
@@ -293,12 +276,12 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 }
 
 // ApplyWorkspaceDefaultsToTypeDefs updates constructor arg typedefs based on
-// WorkspaceDefaults, so that --help displays the correct default values.
+// WorkspaceConfig, so that --help displays the correct default values.
 // For primitive types (string, int, bool, float), it sets arg.DefaultValue
 // to the JSON representation. For object types (Secret, Directory, etc.),
 // it marks the arg as optional (since a default will be resolved at call time).
 func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
-	if mod.WorkspaceDefaults == nil {
+	if mod.WorkspaceConfig == nil {
 		return
 	}
 	for _, objDef := range mod.ObjectDefs {
@@ -311,18 +294,8 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
 		}
 		ctor := obj.Constructor.Value
 		for _, arg := range ctor.Args {
-			// Look up the arg in workspace defaults (case-insensitive)
-			var userInput string
-			found := false
-			for _, kv := range mod.WorkspaceDefaults.Environ {
-				k, v, _ := strings.Cut(kv, "=")
-				if strings.EqualFold(k, arg.OriginalName) || strings.EqualFold(k, arg.Name) {
-					userInput = v
-					found = true
-					break
-				}
-			}
-			if !found {
+			val, ok := lookupConfigCaseInsensitive(mod.WorkspaceConfig, arg.OriginalName, arg.Name)
+			if !ok {
 				continue
 			}
 			if arg.TypeDef.Kind == TypeDefKindObject {
@@ -331,6 +304,7 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
 				arg.TypeDef.Optional = true
 			} else {
 				// Primitive types: set the JSON default value
+				userInput := configValueToString(val)
 				var jsonValue JSON
 				switch arg.TypeDef.Kind {
 				case TypeDefKindString:
@@ -1081,8 +1055,11 @@ func (mod Module) Clone() *Module {
 		cp.SDKConfig = cp.SDKConfig.Clone()
 	}
 
-	if mod.WorkspaceDefaults != nil {
-		cp.WorkspaceDefaults = mod.WorkspaceDefaults.Clone()
+	if mod.WorkspaceConfig != nil {
+		cp.WorkspaceConfig = make(map[string]any, len(mod.WorkspaceConfig))
+		for k, v := range mod.WorkspaceConfig {
+			cp.WorkspaceConfig[k] = v
+		}
 	}
 
 	return &cp

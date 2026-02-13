@@ -436,7 +436,33 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	if !ok {
 		return nil, false, fmt.Errorf("lookup default: function %q has no argument %q", fn.metadata.Name, argName)
 	}
-	// Lookup user default for the requested arg
+
+	isConstructor := fn.metadata.Name == ""
+
+	// TODO(workspace-env-expansion): Implement ${VAR} expansion for workspace config string values.
+	//
+	// Spec:
+	// - $VAR and ${VAR} in string config values should resolve to system environment variables
+	// - NO cascading: $FOO always means the system env var FOO, never another config key
+	// - Resolution should go through the Workspace type (gateway for client context access)
+	// - The Workspace type should expose a method for resolving system env vars,
+	//   which can later be gated by interactive prompts, allow/deny policies, value injection
+	// - Consider docker-compose's variable substitution spec as reference for syntax
+	// - For now, string values pass through as-is (no expansion)
+
+	// PATH A: Workspace config (constructor only, no EnvFile)
+	if fn.mod.WorkspaceConfig != nil && isConstructor {
+		val, ok := lookupConfigCaseInsensitive(fn.mod.WorkspaceConfig, arg.OriginalName, arg.Name)
+		if ok {
+			return fn.newUserDefault(arg, configValueToString(val)), true, nil
+		}
+		// Not in workspace config — only fall through to .env if enabled
+		if !fn.mod.DefaultsFromDotEnv {
+			return nil, false, nil
+		}
+	}
+
+	// PATH B: existing .env pipeline (completely unchanged)
 	// We need access to the main client's context for resolving system env variables
 	// (otherwise we may resolve them in the module container's context)
 	// so we upgrade the context to the main client.
@@ -1363,5 +1389,50 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		}
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
+	}
+}
+
+// lookupConfigCaseInsensitive performs a case-insensitive lookup in a workspace
+// config map, trying each of the provided names in order.
+func lookupConfigCaseInsensitive(m map[string]any, names ...string) (any, bool) {
+	for _, name := range names {
+		for k, v := range m {
+			if strings.EqualFold(k, name) {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// configValueToString converts a typed config value to its string representation.
+// Strings pass through as-is, bools become "true"/"false", numbers their decimal
+// representation, and arrays are JSON-encoded.
+func configValueToString(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		return strconv.FormatBool(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case int:
+		return strconv.Itoa(val)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case []any:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(encoded)
+	case []string:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(encoded)
+	default:
+		return fmt.Sprint(v)
 	}
 }

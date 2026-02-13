@@ -2,10 +2,8 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core/dotenv"
@@ -296,43 +294,3 @@ func (ef *EnvFile) Digest(ctx context.Context) (digest.Digest, error) {
 	return hashutil.HashStrings(vals...), nil
 }
 
-// ConfigMapToEnvFile converts a map[string]any (TOML config values) to an *EnvFile.
-// Strings are preserved as-is (including env://, ${VAR}, paths).
-// Bools become "true"/"false", numbers their string representation,
-// and arrays are JSON-encoded.
-func ConfigMapToEnvFile(m map[string]any) *EnvFile {
-	ef := NewEnvFile(true)
-	for k, v := range m {
-		ef = ef.WithVariable(k, configValueToString(v))
-	}
-	return ef
-}
-
-func configValueToString(v any) string {
-	switch val := v.(type) {
-	case string:
-		return val
-	case bool:
-		return strconv.FormatBool(val)
-	case int64:
-		return strconv.FormatInt(val, 10)
-	case int:
-		return strconv.Itoa(val)
-	case float64:
-		return strconv.FormatFloat(val, 'f', -1, 64)
-	case []any:
-		encoded, err := json.Marshal(val)
-		if err != nil {
-			return fmt.Sprint(val)
-		}
-		return string(encoded)
-	case []string:
-		encoded, err := json.Marshal(val)
-		if err != nil {
-			return fmt.Sprint(val)
-		}
-		return string(encoded)
-	default:
-		return fmt.Sprint(v)
-	}
-}
