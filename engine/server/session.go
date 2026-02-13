@@ -1606,7 +1606,7 @@ func (srv *Server) loadExtraModule(
 
 // loadWorkspaceModule resolves a module through the dagql pipeline and serves it
 // to the client. This adds the module's constructor as a Query root field.
-// If configDefaults is non-nil, its entries are set as WorkspaceDefaults on
+// If configDefaults is non-nil, its entries are stored as WorkspaceConfig on
 // the module, which feeds into the user defaults pipeline for env://, ${VAR},
 // and path resolution.
 //
@@ -1639,9 +1639,9 @@ func (srv *Server) loadWorkspaceModule(
 		mod.Self().AutoAlias = true
 	}
 
-	// Apply workspace config defaults through the user defaults pipeline.
+	// Apply workspace config defaults.
 	if len(configDefaults) > 0 {
-		mod.Self().WorkspaceDefaults = core.ConfigMapToEnvFile(configDefaults)
+		mod.Self().WorkspaceConfig = configDefaults
 		mod.Self().DefaultsFromDotEnv = defaultsFromDotEnv
 		mod.Self().ApplyWorkspaceDefaultsToTypeDefs()
 	}
