@@ -3493,13 +3493,13 @@ func (s *moduleSourceSchema) integrateToolchains(
 	mod *core.Module,
 	dag *dagql.Server,
 ) (*core.Module, error) {
+	// Initialize toolchain registry
+	mod.Toolchains = core.NewToolchainRegistry(mod)
+
 	toolchainMods := extractToolchainModules(mod)
 	if len(toolchainMods) == 0 {
 		return mod, nil
 	}
-
-	// Initialize toolchain registry
-	mod.Toolchains = core.NewToolchainRegistry(mod)
 
 	// Register all toolchains in the registry
 	for _, tcMod := range toolchainMods {

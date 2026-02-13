@@ -33,6 +33,10 @@ func (g *Generator) Name() string {
 	return g.Node.PathString()
 }
 
+func (g *Generator) OriginalModule() *Module {
+	return g.Node.OriginalModule
+}
+
 func (g *Generator) Clone() *Generator {
 	c := *g
 	c.Node = g.Node.Clone()

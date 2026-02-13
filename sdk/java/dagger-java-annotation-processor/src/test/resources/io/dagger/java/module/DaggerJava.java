@@ -8,11 +8,13 @@ import io.dagger.client.Container;
 import io.dagger.client.Directory;
 import io.dagger.client.Platform;
 import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.client.Changeset;
 import io.dagger.module.annotation.Check;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Enum;
 import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Generate;
 import io.dagger.module.annotation.Ignore;
 import io.dagger.module.annotation.Object;
 
@@ -175,5 +177,14 @@ public class DaggerJava {
     if (version == null || version.isEmpty()) {
       throw new IllegalStateException("Version must be set");
     }
+  }
+
+  /** Generates code from the module configuration */
+  @Function
+  @Generate
+  public Changeset generateCode() {
+    return dag().directory()
+        .withNewFile("generated.txt", "content")
+        .changes(dag().directory());
   }
 }

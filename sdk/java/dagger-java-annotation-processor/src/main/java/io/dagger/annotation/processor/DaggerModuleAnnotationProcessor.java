@@ -26,6 +26,7 @@ import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Enum;
 import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Generate;
 import io.dagger.module.annotation.Ignore;
 import io.dagger.module.annotation.Module;
 import io.dagger.module.annotation.Object;
@@ -73,6 +74,7 @@ import javax.lang.model.util.Elements;
   "io.dagger.module.annotation.Enum",
   "io.dagger.module.annotation.Function",
   "io.dagger.module.annotation.Check",
+  "io.dagger.module.annotation.Generate",
   "io.dagger.module.annotation.Optional",
   "io.dagger.module.annotation.Default",
   "io.dagger.module.annotation.DefaultPath"
@@ -177,7 +179,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                 ((ExecutableElement) elt).getReturnType().toString(),
                                 ((ExecutableElement) elt).getReturnType().getKind().name()),
                             parseParameters((ExecutableElement) elt).toArray(new ParameterInfo[0]),
-                            false)); // constructors are never checks
+                            false, // constructors are never checks
+                            false)); // constructors are never generators
               } else if (constructorDefs.size() > 1) {
                 // There's more than one non-empty constructor, but Dagger only supports to expose a
                 // single one
@@ -233,6 +236,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                           TypeMirror tm = ((ExecutableElement) elt).getReturnType();
                           TypeKind tk = tm.getKind();
                           boolean isCheck = elt.getAnnotation(Check.class) != null;
+                          boolean isGenerate = elt.getAnnotation(Generate.class) != null;
                           FunctionInfo functionInfo =
                               new FunctionInfo(
                                   fName,
@@ -240,7 +244,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                   parseFunctionDescription(elt),
                                   new TypeInfo(tm.toString(), tk.name()),
                                   parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]),
-                                  isCheck);
+                                  isCheck,
+                                  isGenerate);
                           return functionInfo;
                         })
                     .toList();
@@ -711,6 +716,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     }
     if (fnInfo.isCheck()) {
       code.add("\n                    .withCheck()");
+    }
+    if (fnInfo.isGenerate()) {
+      code.add("\n                    .withGenerator()");
     }
     for (var parameterInfo : fnInfo.parameters()) {
       code.add("\n                    .withArg($S, ", parameterInfo.name())

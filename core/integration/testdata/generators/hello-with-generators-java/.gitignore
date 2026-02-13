@@ -1,0 +1,14 @@
+# Java build artifacts
+target/
+*.class
+*.jar
+*.war
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Dagger generated files
+dagger.gen.go
+internal/
