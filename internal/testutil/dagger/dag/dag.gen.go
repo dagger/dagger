@@ -147,6 +147,12 @@ func ElixirSDK(opts ...dagger.ElixirSDKOpts) *dagger.ElixirSDK {
 	return client.ElixirSDK(opts...)
 }
 
+// The Dagger engine container configuration and state
+func Engine() *dagger.Engine {
+	client := initClient()
+	return client.Engine()
+}
+
 func EngineDev(opts ...dagger.EngineDevOpts) *dagger.EngineDev {
 	client := initClient()
 	return client.EngineDev(opts...)
@@ -343,6 +349,24 @@ func LoadElixirSDKFromID(id dagger.ElixirSDKID) *dagger.ElixirSDK {
 	return client.LoadElixirSDKFromID(id)
 }
 
+// Load a EngineCacheEntry from its ID.
+func LoadEngineCacheEntryFromID(id dagger.EngineCacheEntryID) *dagger.EngineCacheEntry {
+	client := initClient()
+	return client.LoadEngineCacheEntryFromID(id)
+}
+
+// Load a EngineCacheEntrySet from its ID.
+func LoadEngineCacheEntrySetFromID(id dagger.EngineCacheEntrySetID) *dagger.EngineCacheEntrySet {
+	client := initClient()
+	return client.LoadEngineCacheEntrySetFromID(id)
+}
+
+// Load a EngineCache from its ID.
+func LoadEngineCacheFromID(id dagger.EngineCacheID) *dagger.EngineCache {
+	client := initClient()
+	return client.LoadEngineCacheFromID(id)
+}
+
 // Load a EngineDev from its ID.
 func LoadEngineDevFromID(id dagger.EngineDevID) *dagger.EngineDev {
 	client := initClient()
@@ -353,6 +377,12 @@ func LoadEngineDevFromID(id dagger.EngineDevID) *dagger.EngineDev {
 func LoadEngineDevLoadedEngineFromID(id dagger.EngineDevLoadedEngineID) *dagger.EngineDevLoadedEngine {
 	client := initClient()
 	return client.LoadEngineDevLoadedEngineFromID(id)
+}
+
+// Load a Engine from its ID.
+func LoadEngineFromID(id dagger.EngineID) *dagger.Engine {
+	client := initClient()
+	return client.LoadEngineFromID(id)
 }
 
 // Load a EnumTypeDef from its ID.

@@ -181,11 +181,23 @@ type DocsID string
 // The `ElixirSdkID` scalar type represents an identifier for an object of type ElixirSdk.
 type ElixirSDKID string
 
+// The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
+type EngineCacheEntryID string
+
+// The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
+type EngineCacheEntrySetID string
+
+// The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
+type EngineCacheID string
+
 // The `EngineDevID` scalar type represents an identifier for an object of type EngineDev.
 type EngineDevID string
 
 // The `EngineDevLoadedEngineID` scalar type represents an identifier for an object of type EngineDevLoadedEngine.
 type EngineDevLoadedEngineID string
+
+// The `EngineID` scalar type represents an identifier for an object of type Engine.
+type EngineID string
 
 // The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
 type EnumTypeDefID string
@@ -4455,7 +4467,7 @@ type DaggerDevGoOpts struct {
 	// Go version
 	//
 	//
-	// Default: "1.25.6"
+	// Default: "1.25.7"
 	Version string // go (../../toolchains/go/main.go:31:2)
 	//
 	// Use a custom module cache
@@ -6091,9 +6103,509 @@ func (r *ElixirSDK) Workspace() *Directory {
 	}
 }
 
+// The Dagger engine configuration and state
+type Engine struct {
+	query *querybuilder.Selection
+
+	id   *EngineID
+	name *string
+}
+
+func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
+	return &Engine{
+		query: q,
+	}
+}
+
+// The list of connected client IDs
+func (r *Engine) Clients(ctx context.Context) ([]string, error) {
+	q := r.query.Select("clients")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Engine.
+func (r *Engine) ID(ctx context.Context) (EngineID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Engine) XXX_GraphQLType() string {
+	return "Engine"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Engine) XXX_GraphQLIDType() string {
+	return "EngineID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Engine) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Engine) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The local (on-disk) cache for the Dagger engine
+func (r *Engine) LocalCache() *EngineCache {
+	q := r.query.Select("localCache")
+
+	return &EngineCache{
+		query: q,
+	}
+}
+
+// The name of the engine instance.
+func (r *Engine) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A cache storage for the Dagger engine
+type EngineCache struct {
+	query *querybuilder.Selection
+
+	id            *EngineCacheID
+	maxUsedSpace  *int
+	minFreeSpace  *int
+	prune         *Void
+	reservedSpace *int
+	targetSpace   *int
+}
+
+func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
+	return &EngineCache{
+		query: q,
+	}
+}
+
+// EngineCacheEntrySetOpts contains options for EngineCache.EntrySet
+type EngineCacheEntrySetOpts struct {
+	Key string
+}
+
+// The current set of entries in the cache
+func (r *EngineCache) EntrySet(opts ...EngineCacheEntrySetOpts) *EngineCacheEntrySet {
+	q := r.query.Select("entrySet")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
+
+	return &EngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// A unique identifier for this EngineCache.
+func (r *EngineCache) ID(ctx context.Context) (EngineCacheID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineCacheID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineCache) XXX_GraphQLType() string {
+	return "EngineCache"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineCache) XXX_GraphQLIDType() string {
+	return "EngineCacheID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineCache) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineCache) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The maximum bytes to keep in the cache without pruning.
+func (r *EngineCache) MaxUsedSpace(ctx context.Context) (int, error) {
+	if r.maxUsedSpace != nil {
+		return *r.maxUsedSpace, nil
+	}
+	q := r.query.Select("maxUsedSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The target amount of free disk space the garbage collector will attempt to leave.
+func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
+	if r.minFreeSpace != nil {
+		return *r.minFreeSpace, nil
+	}
+	q := r.query.Select("minFreeSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// EngineCachePruneOpts contains options for EngineCache.Prune
+type EngineCachePruneOpts struct {
+	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+	UseDefaultPolicy bool
+	// Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+	MaxUsedSpace string
+	// Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+	ReservedSpace string
+	// Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+	MinFreeSpace string
+	// Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+	TargetSpace string
+}
+
+// Prune the cache of releaseable entries
+func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) error {
+	if r.prune != nil {
+		return nil
+	}
+	q := r.query.Select("prune")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `useDefaultPolicy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseDefaultPolicy) {
+			q = q.Arg("useDefaultPolicy", opts[i].UseDefaultPolicy)
+		}
+		// `maxUsedSpace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxUsedSpace) {
+			q = q.Arg("maxUsedSpace", opts[i].MaxUsedSpace)
+		}
+		// `reservedSpace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReservedSpace) {
+			q = q.Arg("reservedSpace", opts[i].ReservedSpace)
+		}
+		// `minFreeSpace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MinFreeSpace) {
+			q = q.Arg("minFreeSpace", opts[i].MinFreeSpace)
+		}
+		// `targetSpace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TargetSpace) {
+			q = q.Arg("targetSpace", opts[i].TargetSpace)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+// The minimum amount of disk space this policy is guaranteed to retain.
+func (r *EngineCache) ReservedSpace(ctx context.Context) (int, error) {
+	if r.reservedSpace != nil {
+		return *r.reservedSpace, nil
+	}
+	q := r.query.Select("reservedSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The target number of bytes to keep when pruning.
+func (r *EngineCache) TargetSpace(ctx context.Context) (int, error) {
+	if r.targetSpace != nil {
+		return *r.targetSpace, nil
+	}
+	q := r.query.Select("targetSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// An individual cache entry in a cache entry set
+type EngineCacheEntry struct {
+	query *querybuilder.Selection
+
+	activelyUsed              *bool
+	createdTimeUnixNano       *int
+	description               *string
+	diskSpaceBytes            *int
+	id                        *EngineCacheEntryID
+	mostRecentUseTimeUnixNano *int
+}
+
+func (r *EngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntry {
+	return &EngineCacheEntry{
+		query: q,
+	}
+}
+
+// Whether the cache entry is actively being used.
+func (r *EngineCacheEntry) ActivelyUsed(ctx context.Context) (bool, error) {
+	if r.activelyUsed != nil {
+		return *r.activelyUsed, nil
+	}
+	q := r.query.Select("activelyUsed")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The time the cache entry was created, in Unix nanoseconds.
+func (r *EngineCacheEntry) CreatedTimeUnixNano(ctx context.Context) (int, error) {
+	if r.createdTimeUnixNano != nil {
+		return *r.createdTimeUnixNano, nil
+	}
+	q := r.query.Select("createdTimeUnixNano")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The description of the cache entry.
+func (r *EngineCacheEntry) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The disk space used by the cache entry.
+func (r *EngineCacheEntry) DiskSpaceBytes(ctx context.Context) (int, error) {
+	if r.diskSpaceBytes != nil {
+		return *r.diskSpaceBytes, nil
+	}
+	q := r.query.Select("diskSpaceBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineCacheEntry.
+func (r *EngineCacheEntry) ID(ctx context.Context) (EngineCacheEntryID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineCacheEntryID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineCacheEntry) XXX_GraphQLType() string {
+	return "EngineCacheEntry"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineCacheEntry) XXX_GraphQLIDType() string {
+	return "EngineCacheEntryID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineCacheEntry) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineCacheEntry) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The most recent time the cache entry was used, in Unix nanoseconds.
+func (r *EngineCacheEntry) MostRecentUseTimeUnixNano(ctx context.Context) (int, error) {
+	if r.mostRecentUseTimeUnixNano != nil {
+		return *r.mostRecentUseTimeUnixNano, nil
+	}
+	q := r.query.Select("mostRecentUseTimeUnixNano")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A set of cache entries returned by a query to a cache
+type EngineCacheEntrySet struct {
+	query *querybuilder.Selection
+
+	diskSpaceBytes *int
+	entryCount     *int
+	id             *EngineCacheEntrySetID
+}
+
+func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntrySet {
+	return &EngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// The total disk space used by the cache entries in this set.
+func (r *EngineCacheEntrySet) DiskSpaceBytes(ctx context.Context) (int, error) {
+	if r.diskSpaceBytes != nil {
+		return *r.diskSpaceBytes, nil
+	}
+	q := r.query.Select("diskSpaceBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The list of individual cache entries in the set
+func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, error) {
+	q := r.query.Select("entries")
+
+	q = q.Select("id")
+
+	type entries struct {
+		Id EngineCacheEntryID
+	}
+
+	convert := func(fields []entries) []EngineCacheEntry {
+		out := []EngineCacheEntry{}
+
+		for i := range fields {
+			val := EngineCacheEntry{id: &fields[i].Id}
+			val.query = q.Root().Select("loadEngineCacheEntryFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []entries
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The number of cache entries in this set.
+func (r *EngineCacheEntrySet) EntryCount(ctx context.Context) (int, error) {
+	if r.entryCount != nil {
+		return *r.entryCount, nil
+	}
+	q := r.query.Select("entryCount")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineCacheEntrySet.
+func (r *EngineCacheEntrySet) ID(ctx context.Context) (EngineCacheEntrySetID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineCacheEntrySetID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineCacheEntrySet) XXX_GraphQLType() string {
+	return "EngineCacheEntrySet"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineCacheEntrySet) XXX_GraphQLIDType() string {
+	return "EngineCacheEntrySetID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineCacheEntrySet) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineCacheEntrySet) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 type EngineDev struct { // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 	query *querybuilder.Selection
 
+	benchmark     *Void
 	id            *EngineDevID
 	networkCidr   *string
 	publish       *Void
@@ -6112,6 +6624,222 @@ func (r *EngineDev) With(f WithEngineDevFunc) *EngineDev {
 
 func (r *EngineDev) WithGraphQLQuery(q *querybuilder.Selection) *EngineDev {
 	return &EngineDev{
+		query: q,
+	}
+}
+
+// EngineDevBenchmarkOpts contains options for EngineDev.Benchmark
+type EngineDevBenchmarkOpts struct {
+	//
+	// Only run these benchmarks
+	//
+	Run string // engine-dev (../../toolchains/engine-dev/bench.go:17:2)
+	//
+	// Skip these benchmarks
+	//
+	Skip string // engine-dev (../../toolchains/engine-dev/bench.go:20:2)
+
+	// Default: "./..."
+	Pkg string // engine-dev (../../toolchains/engine-dev/bench.go:23:2)
+	//
+	// Abort bench run on first failure
+	//
+	Failfast bool // engine-dev (../../toolchains/engine-dev/bench.go:26:2)
+	//
+	// How long before timing out the benchmark run
+	//
+	Timeout string // engine-dev (../../toolchains/engine-dev/bench.go:29:2)
+
+	Race bool // engine-dev (../../toolchains/engine-dev/bench.go:31:2)
+
+	// Default: 1
+	Count int // engine-dev (../../toolchains/engine-dev/bench.go:34:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../toolchains/engine-dev/bench.go:37:2)
+	//
+	// run benchmarks once with metrics tagged "prewarm" before running for real
+	//
+	Prewarm bool // engine-dev (../../toolchains/engine-dev/bench.go:40:2)
+	//
+	// notify this discord webhook on failure
+	//
+	DiscordWebhook *Secret // engine-dev (../../toolchains/engine-dev/bench.go:43:2)
+	//
+	// Git repository to extract git metadata for discord notification
+	//
+	Repo *GitRepository // engine-dev (../../toolchains/engine-dev/bench.go:46:2)
+}
+
+// Perform a benchmark of the given test run
+func (r *EngineDev) Benchmark(ctx context.Context, opts ...EngineDevBenchmarkOpts) error { // engine-dev (../../toolchains/engine-dev/bench.go:13:1)
+	if r.benchmark != nil {
+		return nil
+	}
+	q := r.query.Select("benchmark")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `prewarm` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Prewarm) {
+			q = q.Arg("prewarm", opts[i].Prewarm)
+		}
+		// `discordWebhook` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DiscordWebhook) {
+			q = q.Arg("discordWebhook", opts[i].DiscordWebhook)
+		}
+		// `repo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Repo) {
+			q = q.Arg("repo", opts[i].Repo)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+// EngineDevBenchmarkDumpOpts contains options for EngineDev.BenchmarkDump
+type EngineDevBenchmarkDumpOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../toolchains/engine-dev/bench.go:105:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../toolchains/engine-dev/bench.go:108:2)
+
+	// Default: "./..."
+	Pkg string // engine-dev (../../toolchains/engine-dev/bench.go:111:2)
+	//
+	// Abort test run on first failure
+	//
+	Failfast bool // engine-dev (../../toolchains/engine-dev/bench.go:114:2)
+	//
+	// How long before timing out the test run
+	//
+	Timeout string // engine-dev (../../toolchains/engine-dev/bench.go:117:2)
+
+	Race bool // engine-dev (../../toolchains/engine-dev/bench.go:119:2)
+
+	// Default: 1
+	Count int // engine-dev (../../toolchains/engine-dev/bench.go:122:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../toolchains/engine-dev/bench.go:125:2)
+	//
+	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
+	//
+	//
+	// Default: "pprof/heap"
+	Route string // engine-dev (../../toolchains/engine-dev/bench.go:129:2)
+	//
+	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
+	//
+	NoFinal bool // engine-dev (../../toolchains/engine-dev/bench.go:133:2)
+	//
+	// wait this long before starting to take dumps. delay does not include engine startup.
+	//
+	//
+	// Default: "1s"
+	Delay string // engine-dev (../../toolchains/engine-dev/bench.go:137:2)
+	//
+	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
+	//
+	//
+	// Default: "-1s"
+	Interval string // engine-dev (../../toolchains/engine-dev/bench.go:141:2)
+}
+
+// Run specific benchmarks while curling (pprof) dumps from their associated dev engine:
+// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(datebut also works for profiles:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date
+func (r *EngineDev) BenchmarkDump(opts ...EngineDevBenchmarkDumpOpts) *Directory { // engine-dev (../../toolchains/engine-dev/bench.go:101:1)
+	q := r.query.Select("benchmarkDump")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `route` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Route) {
+			q = q.Arg("route", opts[i].Route)
+		}
+		// `noFinal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoFinal) {
+			q = q.Arg("noFinal", opts[i].NoFinal)
+		}
+		// `delay` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Delay) {
+			q = q.Arg("delay", opts[i].Delay)
+		}
+		// `interval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interval) {
+			q = q.Arg("interval", opts[i].Interval)
+		}
+	}
+
+	return &Directory{
 		query: q,
 	}
 }
@@ -6589,6 +7317,130 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 	}
 
 	return q.Execute(ctx)
+}
+
+// EngineDevTestDumpOpts contains options for EngineDev.TestDump
+type EngineDevTestDumpOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../toolchains/engine-dev/pprof.go:24:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../toolchains/engine-dev/pprof.go:27:2)
+
+	// Default: "./..."
+	Pkg string // engine-dev (../../toolchains/engine-dev/pprof.go:30:2)
+	//
+	// Abort test run on first failure
+	//
+	Failfast bool // engine-dev (../../toolchains/engine-dev/pprof.go:33:2)
+	//
+	// How many tests to run in parallel - defaults to the number of CPUs
+	//
+	Parallel int // engine-dev (../../toolchains/engine-dev/pprof.go:36:2)
+	//
+	// How long before timing out the test run
+	//
+	Timeout string // engine-dev (../../toolchains/engine-dev/pprof.go:39:2)
+
+	Race bool // engine-dev (../../toolchains/engine-dev/pprof.go:41:2)
+
+	// Default: 1
+	Count int // engine-dev (../../toolchains/engine-dev/pprof.go:44:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../toolchains/engine-dev/pprof.go:47:2)
+	//
+	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
+	//
+	//
+	// Default: "pprof/heap"
+	Route string // engine-dev (../../toolchains/engine-dev/pprof.go:51:2)
+	//
+	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
+	//
+	NoFinal bool // engine-dev (../../toolchains/engine-dev/pprof.go:55:2)
+	//
+	// wait this long before starting to take dumps. delay does not include engine startup.
+	//
+	//
+	// Default: "1s"
+	Delay string // engine-dev (../../toolchains/engine-dev/pprof.go:59:2)
+	//
+	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
+	//
+	//
+	// Default: "-1s"
+	Interval string // engine-dev (../../toolchains/engine-dev/pprof.go:63:2)
+}
+
+// Run specific tests while curling (pprof) dumps from their associated dev engine:
+// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(datebut also works for profiles:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date
+func (r *EngineDev) TestDump(opts ...EngineDevTestDumpOpts) *Directory { // engine-dev (../../toolchains/engine-dev/pprof.go:20:1)
+	q := r.query.Select("testDump")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `route` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Route) {
+			q = q.Arg("route", opts[i].Route)
+		}
+		// `noFinal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoFinal) {
+			q = q.Arg("noFinal", opts[i].NoFinal)
+		}
+		// `delay` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Delay) {
+			q = q.Arg("delay", opts[i].Delay)
+		}
+		// `interval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interval) {
+			q = q.Arg("interval", opts[i].Interval)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
 }
 
 // EngineDevTestEngineOpts contains options for EngineDev.TestEngine
@@ -16227,6 +17079,15 @@ func (r *Client) ElixirSDK(opts ...ElixirSDKOpts) *ElixirSDK {
 	}
 }
 
+// The Dagger engine container configuration and state
+func (r *Client) Engine() *Engine {
+	q := r.query.Select("engine")
+
+	return &Engine{
+		query: q,
+	}
+}
+
 // EngineDevOpts contains options for Client.EngineDev
 type EngineDevOpts struct {
 	Source *Directory // engine-dev (../../toolchains/engine-dev/main.go:41:2)
@@ -16446,7 +17307,7 @@ type GoOpts struct {
 	// Go version
 	//
 	//
-	// Default: "1.25.6"
+	// Default: "1.25.7"
 	Version string // go (../../toolchains/go/main.go:31:2)
 	//
 	// Use a custom module cache
@@ -16880,6 +17741,36 @@ func (r *Client) LoadElixirSDKFromID(id ElixirSDKID) *ElixirSDK {
 	}
 }
 
+// Load a EngineCacheEntry from its ID.
+func (r *Client) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
+	q := r.query.Select("loadEngineCacheEntryFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCacheEntry{
+		query: q,
+	}
+}
+
+// Load a EngineCacheEntrySet from its ID.
+func (r *Client) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
+	q := r.query.Select("loadEngineCacheEntrySetFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// Load a EngineCache from its ID.
+func (r *Client) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
+	q := r.query.Select("loadEngineCacheFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCache{
+		query: q,
+	}
+}
+
 // Load a EngineDev from its ID.
 func (r *Client) LoadEngineDevFromID(id EngineDevID) *EngineDev {
 	q := r.query.Select("loadEngineDevFromID")
@@ -16896,6 +17787,16 @@ func (r *Client) LoadEngineDevLoadedEngineFromID(id EngineDevLoadedEngineID) *En
 	q = q.Arg("id", id)
 
 	return &EngineDevLoadedEngine{
+		query: q,
+	}
+}
+
+// Load a Engine from its ID.
+func (r *Client) LoadEngineFromID(id EngineID) *Engine {
+	q := r.query.Select("loadEngineFromID")
+	q = q.Arg("id", id)
+
+	return &Engine{
 		query: q,
 	}
 }
@@ -21860,6 +22761,19 @@ const (
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
 )
 
+// Type aliases for SDK types used by test code
+type ClientOpt = dagger.ClientOpt
+type Request = dagger.Request
+type Response = dagger.Response
+
+// Re-export SDK client option constructors
+var WithLogOutput = dagger.WithLogOutput
+var WithVersionOverride = dagger.WithVersionOverride
+var WithVerbosity = dagger.WithVerbosity
+var WithRunnerHost = dagger.WithRunnerHost
+var WithEnvironmentVariable = dagger.WithEnvironmentVariable
+var WithWorkdir = dagger.WithWorkdir
+
 // Client is the Dagger Engine Client
 type Client struct {
 	dag    *dagger.Client
@@ -21867,65 +22781,22 @@ type Client struct {
 	client graphql.Client
 }
 
-// ClientOpt holds a client option
-type ClientOpt = dagger.ClientOpt
-
-// Request contains all the values required to build queries executed by
-// the graphql.Client.
-//
-// Typically, GraphQL APIs will accept a JSON payload of the form
-//
-//	{"query": "query myQuery { ... }", "variables": {...}}`
-//
-// and Request marshals to this format.
-type Request struct {
-	// The literal string representing the GraphQL query, e.g.
-	// `query myQuery { myField }`.
-	Query string `json:"query"`
-	// A JSON-marshalable value containing the variables to be sent
-	// along with the query, or nil if there are none.
-	Variables interface{} `json:"variables,omitempty"`
-	// The GraphQL operation name. The server typically doesn't
-	// require this unless there are multiple queries in the
-	// document, but genqlient sets it unconditionally anyway.
-	OpName string `json:"operationName"`
+// errorWrappedClient wraps the SDK's graphql.Client to convert errors
+// into this package's ExecError type instead of the SDK's ExecError type.
+type errorWrappedClient struct {
+	graphql.Client
 }
 
-// Response that contains data returned by the GraphQL API.
-//
-// Typically, GraphQL APIs will return a JSON payload of the form
-//
-//	{"data": {...}, "errors": {...}}
-//
-// It may additionally contain a key named "extensions", that
-// might hold GraphQL protocol extensions. Extensions and Errors
-// are optional, depending on the values returned by the server.
-type Response struct {
-	Data       interface{}            `json:"data"`
-	Extensions map[string]interface{} `json:"extensions,omitempty"`
-	Errors     gqlerror.List          `json:"errors,omitempty"`
+func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	err := c.Client.MakeRequest(ctx, req, resp)
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+		return err
+	}
+	return nil
 }
-
-// WithWorkdir sets the engine workdir
-var WithWorkdir = dagger.WithWorkdir
-
-// WithLogOutput sets the progress writer
-var WithLogOutput = dagger.WithLogOutput
-
-// WithConn sets the engine connection explicitly
-var WithConn = dagger.WithConn
-
-// WithVersionOverride requests a specific schema version from the engine
-var WithVersionOverride = dagger.WithVersionOverride
-
-// WithVerbosity sets the verbosity level for the progress output
-var WithVerbosity = dagger.WithVerbosity
-
-// WithRunnerHost sets the runner host URL
-var WithRunnerHost = dagger.WithRunnerHost
-
-// WithEnvironmentVariable sets an environment variable in the CLI subprocess
-var WithEnvironmentVariable = dagger.WithEnvironmentVariable
 
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	dag, err := dagger.Connect(ctx, opts...)
@@ -21933,9 +22804,10 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 
+	gqlClient := errorWrappedClient{dag.GraphQLClient()}
 	c := &Client{
-		query:  dag.QueryBuilder(),
-		client: dag.GraphQLClient(),
+		query:  dag.QueryBuilder().Client(gqlClient),
+		client: gqlClient,
 		dag:    dag,
 	}
 
@@ -21962,7 +22834,6 @@ func (c *Client) QueryBuilder() *querybuilder.Selection {
 
 // Do executes a raw GraphQL request using the client's session
 func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
-	// Convert to dagger types
 	daggerReq := &dagger.Request{
 		Query:     req.Query,
 		Variables: req.Variables,
@@ -21976,7 +22847,6 @@ func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 
 	err := c.dag.Do(ctx, daggerReq, daggerResp)
 
-	// Copy response back
 	resp.Data = daggerResp.Data
 	resp.Extensions = daggerResp.Extensions
 	resp.Errors = daggerResp.Errors
