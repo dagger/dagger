@@ -134,10 +134,6 @@ func BaseVersion(version string) string {
 }
 
 func IsDevVersion(version string) bool {
-	if _, ok := os.LookupEnv(DaggerDevEngine); ok {
-		return true
-	}
-
 	if version == "" {
 		return true
 	}

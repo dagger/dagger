@@ -31,6 +31,7 @@ func GenerateTypeDefs(cmd *cobra.Command, args []string) error {
 
 	moduleConfig := &generator.ModuleGeneratorConfig{
 		ModuleName: moduleName,
+		LibVersion: libVersion,
 	}
 
 	modPath, err := relativeTo(outputDir, modulePath)
@@ -65,4 +66,5 @@ func init() {
 	_ = generateTypeDefsCmd.MarkFlagRequired("module-name")
 	_ = generateTypeDefsCmd.MarkFlagRequired("module-source-path")
 	generateTypeDefsCmd.Flags().StringVar(&outputFile, "output", "", "path to output file")
+	generateTypeDefsCmd.Flags().StringVar(&libVersion, "lib-version", "", "if set, use the given version of dagger.io/dagger in the generated client")
 }
