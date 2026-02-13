@@ -688,29 +688,50 @@ func (r Result[T]) IsSafeToPersistCache() bool {
 	return r.shared != nil && r.shared.safeToPersistCache
 }
 
-// WithDigest returns an updated instance with the given metadata set.
-// customDigest overrides the default digest of the instance to the provided value.
-// NOTE: customDigest must be used with care as any instances with the same digest
-// will be considered equivalent and can thus replace each other in the cache.
-// Generally, customDigest should be used when there's a content-based digest available
-// that won't be caputured by the default, call-chain derived digest.
-func (r Result[T]) WithDigest(customDigest digest.Digest) Result[T] {
+// WithExtraDigest returns an updated instance with an extra known digest.
+func (r Result[T]) WithExtraDigest(extra call.ExtraDigest) Result[T] {
 	id := r.ID()
 	if id == nil {
 		return r
 	}
 	r = r.withDetachedPayload()
-	r.shared.constructor = id.WithDigest(customDigest)
+	r.shared.constructor = id.With(call.WithExtraDigest(extra))
 	return r
 }
 
-func (r Result[T]) WithContentDigest(customDigest digest.Digest) Result[T] {
+// WithAdditionalDigest returns an updated instance with an unlabeled extra
+// digest.
+func (r Result[T]) WithAdditionalDigest(additionalDigest digest.Digest) Result[T] {
+	return r.WithExtraDigest(call.ExtraDigest{
+		Digest: additionalDigest,
+	})
+}
+
+// WithLegacyCustomDigest returns an updated instance with the legacy "custom"
+// digest metadata set.
+func (r Result[T]) WithLegacyCustomDigest(customDigest digest.Digest) Result[T] {
 	id := r.ID()
 	if id == nil {
 		return r
 	}
 	r = r.withDetachedPayload()
-	r.shared.constructor = id.With(call.WithContentDigest(customDigest))
+	r.shared.constructor = id.With(call.WithCustomDigest(customDigest))
+	return r
+}
+
+// WithDigest is retained as a compatibility alias for
+// WithLegacyCustomDigest.
+func (r Result[T]) WithDigest(customDigest digest.Digest) Result[T] {
+	return r.WithLegacyCustomDigest(customDigest)
+}
+
+func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
+	id := r.ID()
+	if id == nil {
+		return r
+	}
+	r = r.withDetachedPayload()
+	r.shared.constructor = id.With(call.WithContentDigest(contentDigest))
 	return r
 }
 
@@ -797,16 +818,39 @@ func (r ObjectResult[T]) ObjectType() ObjectType {
 	return r.class
 }
 
-func (r ObjectResult[T]) WithObjectDigest(customDigest digest.Digest) ObjectResult[T] {
+func (r ObjectResult[T]) WithExtraDigest(extra call.ExtraDigest) ObjectResult[T] {
 	return ObjectResult[T]{
-		Result: r.Result.WithDigest(customDigest),
+		Result: r.Result.WithExtraDigest(extra),
 		class:  r.class,
 	}
 }
 
-func (r ObjectResult[T]) WithContentDigest(customDigest digest.Digest) ObjectResult[T] {
+func (r ObjectResult[T]) WithAdditionalDigest(additionalDigest digest.Digest) ObjectResult[T] {
 	return ObjectResult[T]{
-		Result: r.Result.WithContentDigest(customDigest),
+		Result: r.Result.WithAdditionalDigest(additionalDigest),
+		class:  r.class,
+	}
+}
+
+func (r ObjectResult[T]) WithLegacyCustomDigest(customDigest digest.Digest) ObjectResult[T] {
+	return ObjectResult[T]{
+		Result: r.Result.WithLegacyCustomDigest(customDigest),
+		class:  r.class,
+	}
+}
+
+// WithObjectDigest is retained as a compatibility alias for
+// WithLegacyCustomDigest.
+func (r ObjectResult[T]) WithObjectDigest(customDigest digest.Digest) ObjectResult[T] {
+	return ObjectResult[T]{
+		Result: r.Result.WithLegacyCustomDigest(customDigest),
+		class:  r.class,
+	}
+}
+
+func (r ObjectResult[T]) WithContentDigest(contentDigest digest.Digest) ObjectResult[T] {
+	return ObjectResult[T]{
+		Result: r.Result.WithContentDigest(contentDigest),
 		class:  r.class,
 	}
 }

@@ -662,7 +662,8 @@ func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] 
 	return FuncWithCacheKey(name, fn, nil)
 }
 
-// FuncWithCacheKey is like Func but allows specifying a custom digest that will be used to cache the operation in dagql.
+// FuncWithCacheKey is like Func but lets a resolver customize cache behavior
+// for each call (e.g. ID rewrites, TTL, do-not-cache, concurrency key).
 func FuncWithCacheKey[T Typed, A any, R any](
 	name string,
 	fn FuncHandler[T, A, R],
@@ -679,7 +680,9 @@ func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) F
 	return NodeFuncWithCacheKey(name, fn, nil)
 }
 
-// NodeFuncWithCacheKey is like NodeFunc but allows specifying a custom digest that will be used to cache the operation in dagql.
+// NodeFuncWithCacheKey is like NodeFunc but lets a resolver customize cache
+// behavior for each call (e.g. ID rewrites, TTL, do-not-cache, concurrency
+// key).
 func NodeFuncWithCacheKey[T Typed, A any, R any](
 	name string,
 	fn NodeFuncHandler[T, A, R],

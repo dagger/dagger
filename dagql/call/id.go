@@ -681,6 +681,8 @@ func WithView(view View) IDOpt {
 	}
 }
 
+// WithCustomDigest is a legacy compatibility helper that sets (or clears) the
+// "custom" labeled extra digest.
 func WithCustomDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
 		if dig != "" {
@@ -789,25 +791,27 @@ func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
 	return newID.apply(opts...)
 }
 
-// WithDigest adds (or clears) the legacy "custom" extra digest used by cache
-// key rewriting logic.
-func (id *ID) WithDigest(customDigest digest.Digest) *ID {
+// WithExtraDigest returns a copy of the ID with the given extra digest
+// metadata appended.
+func (id *ID) WithExtraDigest(extra ExtraDigest) *ID {
+	return id.With(WithExtraDigest(extra))
+}
+
+// WithAdditionalDigest returns a copy of the ID with an unlabeled extra digest
+// appended.
+func (id *ID) WithAdditionalDigest(additionalDigest digest.Digest) *ID {
+	return id.With(WithAdditionalDigest(additionalDigest))
+}
+
+// WithLegacyCustomDigest adds (or clears) the legacy "custom" extra digest.
+func (id *ID) WithLegacyCustomDigest(customDigest digest.Digest) *ID {
 	return id.With(WithCustomDigest(customDigest))
 }
 
-func (id *ID) HasCustomDigest() bool {
-	if id == nil {
-		return false
-	}
-	for _, extra := range id.pb.ExtraDigests {
-		if extra == nil {
-			continue
-		}
-		if extra.Label == extraDigestLabelCustom && extra.Digest != "" {
-			return true
-		}
-	}
-	return false
+// WithDigest is retained as a compatibility alias for
+// WithLegacyCustomDigest.
+func (id *ID) WithDigest(customDigest digest.Digest) *ID {
+	return id.WithLegacyCustomDigest(customDigest)
 }
 
 // WithArgument returns a new ID that's the same as before except with the
