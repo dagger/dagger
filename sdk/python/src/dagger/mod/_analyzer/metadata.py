@@ -166,6 +166,7 @@ class FunctionMetadata:
     deprecated: str | None = None
     cache_policy: str | None = None
     is_check: bool = False
+    is_generate: bool = False
 
     # Function characteristics
     is_async: bool = False
@@ -187,6 +188,7 @@ class FunctionMetadata:
             "deprecated": self.deprecated,
             "cache_policy": self.cache_policy,
             "is_check": self.is_check,
+            "is_generate": self.is_generate,
             "is_async": self.is_async,
             "is_classmethod": self.is_classmethod,
             "is_constructor": self.is_constructor,
@@ -211,6 +213,7 @@ class FunctionMetadata:
             deprecated=data.get("deprecated"),
             cache_policy=data.get("cache_policy"),
             is_check=data.get("is_check", False),
+            is_generate=data.get("is_generate", False),
             is_async=data.get("is_async", False),
             is_classmethod=data.get("is_classmethod", False),
             is_constructor=data.get("is_constructor", False),
