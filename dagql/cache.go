@@ -945,6 +945,43 @@ func shouldTrackNilResult(ctx context.Context) bool {
 	return ctx.Value(trackNilResultCtxKey{}) != nil
 }
 
+func materializeCacheHitResult(
+	ctx context.Context,
+	res *sharedResult,
+	presentationID *call.ID,
+	hitCache bool,
+	hitContentDigestCache bool,
+	objectReconstructErrPrefix string,
+) (AnyResult, error) {
+	if !res.hasValue {
+		if shouldTrackNilResult(ctx) {
+			return Result[Typed]{
+				shared:                res,
+				presentationID:        presentationID,
+				hitCache:              hitCache,
+				hitContentDigestCache: hitContentDigestCache,
+			}, nil
+		}
+		return nil, nil
+	}
+
+	retRes := Result[Typed]{
+		shared:                res,
+		presentationID:        presentationID,
+		hitCache:              hitCache,
+		hitContentDigestCache: hitContentDigestCache,
+	}
+	if res.objType == nil {
+		return retRes, nil
+	}
+
+	retObjRes, err := res.objType.New(retRes)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", objectReconstructErrPrefix, err)
+	}
+	return retObjRes, nil
+}
+
 type arbitraryCacheContextKey struct {
 	callKey string
 	cache   *cache
@@ -1415,29 +1452,14 @@ func (c *cache) GetOrInitCall(
 			res.refCount++
 			c.mu.Unlock()
 			presentationID := presentationIDForResult(key.ID, res, false)
-			if !res.hasValue {
-				if shouldTrackNilResult(ctx) {
-					return Result[Typed]{
-						shared:         res,
-						presentationID: presentationID,
-						hitCache:       true,
-					}, nil
-				}
-				return nil, nil
-			}
-			retRes := Result[Typed]{
-				shared:         res,
-				presentationID: presentationID,
-				hitCache:       true,
-			}
-			if res.objType != nil {
-				retObjRes, err := res.objType.New(retRes)
-				if err != nil {
-					return nil, fmt.Errorf("reconstruct object result from cache: %w", err)
-				}
-				return retObjRes, nil
-			}
-			return retRes, nil
+			return materializeCacheHitResult(
+				ctx,
+				res,
+				presentationID,
+				true,
+				false,
+				"reconstruct object result from cache",
+			)
 		}
 	}
 
@@ -1497,32 +1519,14 @@ func (c *cache) GetOrInitCall(
 					"resultType", res.constructor.Type().NamedType(),
 				)
 			}
-
-			if !res.hasValue {
-				if shouldTrackNilResult(ctx) {
-					return Result[Typed]{
-						shared:                res,
-						presentationID:        presentationID,
-						hitCache:              true,
-						hitContentDigestCache: hitEquivalent,
-					}, nil
-				}
-				return nil, nil
-			}
-			retRes := Result[Typed]{
-				shared:                res,
-				presentationID:        presentationID,
-				hitCache:              true,
-				hitContentDigestCache: hitEquivalent,
-			}
-			if res.objType != nil {
-				retObjRes, err := res.objType.New(retRes)
-				if err != nil {
-					return nil, fmt.Errorf("reconstruct equivalent-hit object result from cache: %w", err)
-				}
-				return retObjRes, nil
-			}
-			return retRes, nil
+			return materializeCacheHitResult(
+				ctx,
+				res,
+				presentationID,
+				true,
+				hitEquivalent,
+				"reconstruct equivalent-hit object result from cache",
+			)
 		}
 	}
 
@@ -1583,35 +1587,14 @@ func (c *cache) GetOrInitCall(
 						"resultType", res.constructor.Type().NamedType(),
 					)
 				}
-				if !res.hasValue {
-					if shouldTrackNilResult(ctx) {
-						return Result[Typed]{
-							shared:                res,
-							presentationID:        presentationID,
-							hitCache:              true,
-							hitContentDigestCache: true,
-						}, nil
-					}
-					return nil, nil
-				}
-				// if the cache hit was only due to a matching content digest, rather than recipe,
-				// keep using the same ID as the input. This ensures that the client keeps seeing
-				// the recipe they expected rather than a different random one that happened to
-				// have the same content, while still allowing the underlying result be re-used.
-				retRes := Result[Typed]{
-					shared:                res,
-					presentationID:        presentationID,
-					hitCache:              true,
-					hitContentDigestCache: true,
-				}
-				if res.objType != nil {
-					retObjRes, err := res.objType.New(retRes)
-					if err != nil {
-						return nil, fmt.Errorf("reconstruct content-hit object result from cache: %w", err)
-					}
-					return retObjRes, nil
-				}
-				return retRes, nil
+				return materializeCacheHitResult(
+					ctx,
+					res,
+					presentationID,
+					true,
+					true,
+					"reconstruct content-hit object result from cache",
+				)
 			}
 			if shouldTraceCacheFlow(key.ID) {
 				slog.Info("cache trace known-digest-no-match",
@@ -1824,31 +1807,15 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, isFirstCaller bool)
 		if isFirstCaller {
 			hitCache = false
 		}
-		if !res.hasValue {
-			presentationID := presentationIDForResult(res.requestID, res, false)
-			if shouldTrackNilResult(ctx) {
-				return Result[Typed]{
-					shared:         res,
-					presentationID: presentationID,
-					hitCache:       hitCache,
-				}, nil
-			}
-			return nil, nil
-		}
 		presentationID := presentationIDForResult(res.requestID, res, false)
-		retRes := Result[Typed]{
-			shared:         res,
-			presentationID: presentationID,
-			hitCache:       hitCache,
-		}
-		if res.objType != nil {
-			retObjRes, err := res.objType.New(retRes)
-			if err != nil {
-				return nil, fmt.Errorf("reconstruct object result from cache wait: %w", err)
-			}
-			return retObjRes, nil
-		}
-		return retRes, nil
+		return materializeCacheHitResult(
+			ctx,
+			res,
+			presentationID,
+			hitCache,
+			false,
+			"reconstruct object result from cache wait",
+		)
 	}
 
 	if shouldTraceCacheFlow(res.requestID) {
