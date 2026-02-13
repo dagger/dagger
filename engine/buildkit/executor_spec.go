@@ -92,6 +92,96 @@ var removeEnvs = map[string]struct{}{
 	DaggerNoInitEnv:          {},
 }
 
+// graphqlErrorCapture wraps http.ResponseWriter to capture GraphQL error responses
+// and write them to the meta mount for error propagation in privileged nesting.
+// It implements all optional HTTP interfaces to maintain HTTP/2 compatibility.
+type graphqlErrorCapture struct {
+	http.ResponseWriter
+	metaMountPath string
+	buf           bytes.Buffer
+	statusCode    int
+	captured      bool
+}
+
+func (w *graphqlErrorCapture) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *graphqlErrorCapture) Write(b []byte) (int, error) {
+	// Buffer response up to 64KB to parse error JSON
+	const maxBufferSize = 64 * 1024
+	if !w.captured && w.buf.Len() < maxBufferSize {
+		toWrite := b
+		if w.buf.Len()+len(b) > maxBufferSize {
+			toWrite = b[:maxBufferSize-w.buf.Len()]
+		}
+		w.buf.Write(toWrite)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush implements http.Flusher
+func (w *graphqlErrorCapture) Flush() {
+	w.tryCapture()
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Push implements http.Pusher for HTTP/2 server push
+func (w *graphqlErrorCapture) Push(target string, opts *http.PushOptions) error {
+	if p, ok := w.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+// Hijack implements http.Hijacker
+func (w *graphqlErrorCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
+}
+
+// ReadFrom implements io.ReaderFrom
+func (w *graphqlErrorCapture) ReadFrom(r io.Reader) (int64, error) {
+	w.tryCapture()
+	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
+	return io.Copy(w.ResponseWriter, r)
+}
+
+func (w *graphqlErrorCapture) tryCapture() {
+	if w.captured || w.buf.Len() == 0 || w.metaMountPath == "" {
+		slog.Info("[DEBUG tryCapture] skipping", "captured", w.captured, "bufLen", w.buf.Len(), "metaMountPath", w.metaMountPath)
+		return
+	}
+	w.captured = true
+
+	slog.Info("[DEBUG tryCapture] Attempting to parse response", "bufLen", w.buf.Len())
+
+	// Parse GraphQL response to extract error
+	var resp struct {
+		Errors []struct {
+			Message    string         `json:"message"`
+			Extensions map[string]any `json:"extensions,omitempty"`
+		} `json:"errors,omitempty"`
+	}
+
+	if err := json.Unmarshal(w.buf.Bytes(), &resp); err == nil && len(resp.Errors) > 0 {
+		slog.Info("[DEBUG tryCapture] Found errors, writing to nested_error", "errorCount", len(resp.Errors))
+		errData, _ := json.Marshal(resp.Errors[0])
+		nestedErrorPath := filepath.Join(w.metaMountPath, MetaMountNestedErrorPath)
+		writeErr := os.WriteFile(nestedErrorPath, errData, 0o644)
+		slog.Info("[DEBUG tryCapture] Wrote nested_error", "path", nestedErrorPath, "err", writeErr)
+	} else {
+		slog.Info("[DEBUG tryCapture] Failed to parse or no errors", "parseErr", err, "errorCount", len(resp.Errors))
+	}
+}
+
 type execState struct {
 	id        string
 	procInfo  *executor.ProcessInfo
@@ -1037,7 +1127,19 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD)
+			// Only wrap the response writer if we have a meta mount path
+			if state.metaMountDirPath != "" {
+				slog.Info("[DEBUG] Creating graphqlErrorCapture wrapper", "metaMountPath", state.metaMountDirPath)
+				wrapper := &graphqlErrorCapture{
+					ResponseWriter: resp,
+					metaMountPath:  state.metaMountDirPath,
+				}
+				defer wrapper.tryCapture()
+				w.sessionHandler.ServeHTTPToNestedClient(wrapper, req, w.execMD)
+			} else {
+				slog.Info("[DEBUG] No meta mount path, not wrapping response writer")
+				w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD)
+			}
 		}), http2Srv),
 	}
 	if err := http2.ConfigureServer(httpSrv, http2Srv); err != nil {

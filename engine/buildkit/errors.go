@@ -2,6 +2,7 @@ package buildkit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // ExecError is a custom dagger error that occurs during a `withExec` execution.
@@ -91,6 +93,38 @@ func (e RichError) AsExecErr(ctx context.Context, client *Client) (*ExecError, b
 	stdout, stderr, exitCode, err := getExecMeta(ctx, client, metaMountResult)
 	if err != nil {
 		return nil, false, err
+	}
+
+	// Check for nested GraphQL error from privileged nesting
+	workerRef, ok := metaMountResult.Sys().(*bkworker.WorkerRef)
+	slog.InfoContext(ctx, "[DEBUG AsExecErr] Checking for nested error", "hasWorkerRef", ok, "hasImmutableRef", ok && workerRef.ImmutableRef != nil)
+	if ok && workerRef.ImmutableRef != nil {
+		mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(client.ID()))
+		slog.InfoContext(ctx, "[DEBUG AsExecErr] Mounted meta", "mountErr", err)
+		if err == nil {
+			nestedError, readErr := getExecMetaFile(ctx, client, mntable, MetaMountNestedErrorPath)
+			slog.InfoContext(ctx, "[DEBUG AsExecErr] Read nested_error", "len", len(nestedError), "readErr", readErr)
+			if len(nestedError) > 0 {
+				var nestedErrData struct {
+					Message    string         `json:"message"`
+					Extensions map[string]any `json:"extensions,omitempty"`
+				}
+				if json.Unmarshal(nestedError, &nestedErrData) == nil {
+					slog.InfoContext(ctx, "[DEBUG AsExecErr] Parsed nested error", "message", nestedErrData.Message)
+					if len(stderr) > 0 {
+						stderr = append(stderr, '\n')
+					}
+					stderr = append(stderr, []byte("Nested error: "+nestedErrData.Message)...)
+
+					if nestedErrData.Extensions["_type"] == "EXEC_ERROR" {
+						if nestedStderr, ok := nestedErrData.Extensions["stderr"].(string); ok && nestedStderr != "" {
+							stderr = append(stderr, '\n')
+							stderr = append(stderr, []byte(nestedStderr)...)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Embed the error origin, either from when the op was built, or from the
