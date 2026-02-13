@@ -185,7 +185,7 @@ def _extract_list_arg(node: ast.Call) -> list[str] | None:
             for el in target_node.elts
             if isinstance(el, ast.Constant) and isinstance(el.value, str)
         ]
-        return result if result else None
+        return result or None
 
     return None
 

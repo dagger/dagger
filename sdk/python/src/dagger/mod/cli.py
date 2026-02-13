@@ -70,10 +70,11 @@ async def register_with_ast() -> int | None:
         # Find source files
         source_files = find_source_files()
         if not source_files:
-            raise ModuleLoadError(
+            msg = (
                 "No Python source files found for module. "
                 f"Looking for package: {IMPORT_PKG}"
             )
+            raise ModuleLoadError(msg)
 
         logger.debug("Found source files: %s", source_files)
 
@@ -98,11 +99,11 @@ async def register_with_ast() -> int | None:
         await anyio.Path(TYPE_DEF_FILE).write_text(output)
 
         logger.debug("Registration complete: %s", TYPE_DEF_FILE)
-        return None
-
     except AnalysisError as e:
         logger.exception("AST analysis failed")
         raise ModuleLoadError(str(e)) from e
+    else:
+        return None
 
 
 def find_source_files() -> list[str]:
@@ -110,14 +111,7 @@ def find_source_files() -> list[str]:
 
     Returns a list of .py files in the module package.
     """
-    import_pkg = IMPORT_PKG
-
-    # Try to find the package
-    spec = importlib.util.find_spec(import_pkg)
-    if spec is None:
-        # Fallback to "main" package
-        import_pkg = "main"
-        spec = importlib.util.find_spec(import_pkg)
+    spec = _find_module_spec()
 
     if spec is None or spec.submodule_search_locations is None:
         return []
@@ -131,27 +125,41 @@ def find_source_files() -> list[str]:
         return []
 
     # Find all .py files in the package
-    source_files = []
+    source_files: list[str] = []
     for location in search_locations:
         pkg_path = Path(location)
         if pkg_path.is_dir():
-            # Add __init__.py first if it exists
-            init_file = pkg_path / "__init__.py"
-            if init_file.exists():
-                source_files.append(str(init_file))
-
-            # Add other .py files
-            for py_file in pkg_path.glob("*.py"):
-                if py_file.name != "__init__.py":
-                    source_files.append(str(py_file))
-
-            # Add files from subdirectories (one level deep)
-            for subdir in pkg_path.iterdir():
-                if subdir.is_dir() and not subdir.name.startswith("_"):
-                    for py_file in subdir.glob("*.py"):
-                        source_files.append(str(py_file))
+            _collect_package_files(pkg_path, source_files)
 
     return source_files
+
+
+def _find_module_spec() -> importlib.machinery.ModuleSpec | None:
+    """Find the module spec, falling back to 'main' package."""
+    spec = importlib.util.find_spec(IMPORT_PKG)
+    if spec is None:
+        spec = importlib.util.find_spec("main")
+    return spec
+
+
+def _collect_package_files(pkg_path: Path, source_files: list[str]) -> None:
+    """Collect .py files from a package directory into source_files."""
+    # Add __init__.py first if it exists
+    init_file = pkg_path / "__init__.py"
+    if init_file.exists():
+        source_files.append(str(init_file))
+
+    # Add other .py files
+    source_files.extend(
+        str(py_file)
+        for py_file in pkg_path.glob("*.py")
+        if py_file.name != "__init__.py"
+    )
+
+    # Add files from subdirectories (one level deep)
+    for subdir in pkg_path.iterdir():
+        if subdir.is_dir() and not subdir.name.startswith("_"):
+            source_files.extend(str(py_file) for py_file in subdir.glob("*.py"))
 
 
 def load_module() -> Module:
