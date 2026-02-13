@@ -1517,7 +1517,7 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 				} else {
 					sourcePath = entry.Source
 				}
-				if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config); err != nil {
+				if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config, ws.Config.DefaultsFromDotEnv); err != nil {
 					client.workspaceErr = fmt.Errorf("loading workspace module %q: %w", name, err)
 					client.workspaceLoaded = true
 					return client.workspaceErr
@@ -1606,8 +1606,10 @@ func (srv *Server) loadExtraModule(
 
 // loadWorkspaceModule resolves a module through the dagql pipeline and serves it
 // to the client. This adds the module's constructor as a Query root field.
-// If configDefaults is non-nil, its entries are applied as default values for
-// the module constructor's arguments.
+// If configDefaults is non-nil, its entries are set as WorkspaceDefaults on
+// the module, which feeds into the user defaults pipeline for env://, ${VAR},
+// and path resolution.
+//
 //nolint:unparam
 func (srv *Server) loadWorkspaceModule(
 	ctx context.Context,
@@ -1616,6 +1618,7 @@ func (srv *Server) loadWorkspaceModule(
 	name, sourcePath string,
 	alias bool,
 	configDefaults map[string]any,
+	defaultsFromDotEnv bool,
 ) error {
 	var mod dagql.ObjectResult[*core.Module]
 	err := dag.Select(ctx, dag.Root(), &mod,
@@ -1636,9 +1639,11 @@ func (srv *Server) loadWorkspaceModule(
 		mod.Self().AutoAlias = true
 	}
 
-	// Apply workspace config defaults as constructor argument defaults.
+	// Apply workspace config defaults through the user defaults pipeline.
 	if len(configDefaults) > 0 {
-		applyWorkspaceConfigDefaults(mod.Self(), configDefaults)
+		mod.Self().WorkspaceDefaults = core.ConfigMapToEnvFile(configDefaults)
+		mod.Self().DefaultsFromDotEnv = defaultsFromDotEnv
+		mod.Self().ApplyWorkspaceDefaultsToTypeDefs()
 	}
 
 	// Only serve the module itself — its dependencies are internal and should
@@ -1737,51 +1742,12 @@ func (srv *Server) loadRemoteWorkspace(
 			}
 		}
 
-		if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config); err != nil {
+		if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config, cfg.DefaultsFromDotEnv); err != nil {
 			return fmt.Errorf("loading remote workspace module %q: %w", name, err)
 		}
 	}
 
 	return nil
-}
-
-// applyWorkspaceConfigDefaults sets default values on the module's constructor
-// arguments from workspace config entries (config.* keys in config.toml).
-// Each key in the map is matched (case-insensitively) against constructor arg
-// names. Values are stored as JSON strings or parsed as JSON if valid.
-func applyWorkspaceConfigDefaults(mod *core.Module, defaults map[string]any) {
-	for _, objDef := range mod.ObjectDefs {
-		if !objDef.AsObject.Valid {
-			continue
-		}
-		obj := objDef.AsObject.Value
-		if !obj.Constructor.Valid {
-			continue
-		}
-		ctor := obj.Constructor.Value
-		for _, arg := range ctor.Args {
-			val, ok := defaults[arg.OriginalName]
-			if !ok {
-				// Try case-insensitive match
-				for k, v := range defaults {
-					if strings.EqualFold(k, arg.OriginalName) || strings.EqualFold(k, arg.Name) {
-						val = v
-						ok = true
-						break
-					}
-				}
-			}
-			if !ok {
-				continue
-			}
-			// Marshal the value to JSON directly (supports strings, bools, ints, arrays)
-			marshaled, err := json.Marshal(val)
-			if err != nil {
-				continue
-			}
-			arg.DefaultValue = core.JSON(marshaled)
-		}
-	}
 }
 
 // If the current client is coming from a function, return the module that function is from
