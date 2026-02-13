@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 )
@@ -94,12 +98,18 @@ var moduleInstallCmd = &cobra.Command{
 	},
 }
 
+var migrateList bool
+
 var migrateCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Migrate a legacy dagger.json project to the workspace format",
 	Long:  "Converts a legacy dagger.json to the .dagger/config.toml workspace format.",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if migrateList {
+			return migrateListModules(cmd)
+		}
+
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
@@ -125,6 +135,56 @@ var migrateCmd = &cobra.Command{
 			return nil
 		})
 	},
+}
+
+// migrateListModules walks the current directory tree, finds all dagger.json
+// files that match migration triggers, and prints their paths.
+func migrateListModules(cmd *cobra.Command) error {
+	root, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
+
+	found := 0
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable dirs
+		}
+		if d.IsDir() {
+			// Skip .dagger workspace config dirs and hidden dirs (e.g. .git)
+			if d.Name() == workspace.WorkspaceDirName || (d.Name() != "." && strings.HasPrefix(d.Name(), ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != workspace.LegacyConfigFileName {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil // skip unreadable files
+		}
+
+		dir := filepath.Dir(path)
+		if triggerErr := workspace.CheckMigrationTriggers(data, path, dir); triggerErr != nil {
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				rel = path
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), rel)
+			found++
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walking directory tree: %w", err)
+	}
+
+	if found == 0 {
+		fmt.Fprintln(cmd.ErrOrStderr(), "No migrateable modules found.")
+	}
+	return nil
 }
 
 var workspaceConfigCmd = &cobra.Command{
@@ -177,6 +237,8 @@ Works like "git config" for workspace settings.`,
 func init() {
 	workspaceCmd.AddCommand(workspaceInfoCmd)
 	workspaceCmd.AddCommand(workspaceConfigCmd)
+
+	migrateCmd.Flags().BoolVarP(&migrateList, "list", "l", false, "List migrateable modules instead of performing migration")
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
