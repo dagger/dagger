@@ -14016,6 +14016,48 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// WorkspaceChecksOpts contains options for Workspace.Checks
+type WorkspaceChecksOpts struct {
+	// Only include checks matching the specified patterns
+	Include []string
+}
+
+// Return all checks from modules loaded in the workspace.
+func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
+	q := r.query.Select("checks")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &CheckGroup{
+		query: q,
+	}
+}
+
+// WorkspaceGeneratorsOpts contains options for Workspace.Generators
+type WorkspaceGeneratorsOpts struct {
+	// Only include generators matching the specified patterns
+	Include []string
+}
+
+// Return all generators from modules loaded in the workspace.
+func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup {
+	q := r.query.Select("generators")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &GeneratorGroup{
+		query: q,
+	}
+}
+
 // WorkspaceConfigReadOpts contains options for Workspace.ConfigRead
 type WorkspaceConfigReadOpts struct {
 	// Dotted key path to read (e.g. "modules.foo.source"). Empty reads the full config.

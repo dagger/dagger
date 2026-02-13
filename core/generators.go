@@ -150,7 +150,9 @@ func (gg *GeneratorGroup) Changes(ctx context.Context, conflictStrategy WithChan
 
 func (gg *GeneratorGroup) Clone() *GeneratorGroup {
 	c := *gg
-	c.Node = gg.Node.Clone()
+	if gg.Node != nil {
+		c.Node = gg.Node.Clone()
+	}
 	c.Generators = make([]*Generator, len(gg.Generators))
 	for i := range c.Generators {
 		c.Generators[i] = gg.Generators[i].Clone()

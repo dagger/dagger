@@ -37,28 +37,30 @@ Examples:
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		params := client.Params{
+			EnableCloudScaleOut: enableScaleOut,
+		}
+		if !moduleNoURL {
+			if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
+				params.Module = modRef
+			}
+		}
 		return withEngine(
 			cmd.Context(),
-			client.Params{
-				EnableCloudScaleOut: enableScaleOut,
-			},
+			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				mod, err := loadModule(ctx, dag)
-				if err != nil {
-					return err
-				}
+				ws := dag.CurrentWorkspace()
 				var generators *dagger.GeneratorGroup
 				if len(args) > 0 {
-					generators = mod.Generators(dagger.ModuleGeneratorsOpts{Include: args})
+					generators = ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: args})
 				} else {
-					generators = mod.Generators()
+					generators = ws.Generators()
 				}
 				if generateListMode {
 					return listGenerators(ctx, generators, cmd)
-				} else {
-					return runGenerators(ctx, dag, generators, cmd)
 				}
+				return runGenerators(ctx, dag, generators, cmd)
 			},
 		)
 	},
