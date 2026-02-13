@@ -1,7 +1,0 @@
-{
-  "name": "gowstest",
-  "engineVersion": "v0.19.12-20260211224712-dev-18d03121b078",
-  "sdk": {
-    "source": "go"
-  }
-}
