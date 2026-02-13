@@ -616,8 +616,25 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		remote, isRemote := ref.Repo.Self().Backend.(*core.RemoteGitRepository)
 		effectiveDiscard := ref.Repo.Self().DiscardGitDir || args.DiscardGitDir
 		needsResolvedCommit := effectiveDiscard && treeCommit(ref) == ""
+		needsResolvedRefName := !effectiveDiscard &&
+			treeCommit(ref) == "" &&
+			ref.Ref != nil &&
+			ref.Ref.Name != "" &&
+			!strings.HasPrefix(ref.Ref.Name, "refs/")
+		canUseFastTree := !needsResolvedCommit && !needsResolvedRefName && (!isRemote || remote.URL != nil)
 
-		if !needsResolvedCommit && (!isRemote || remote.URL != nil) {
+		// Fast __tree is safe when auth is explicit on the git() call.
+		// If auth is implicit (client credential helpers / SSH_AUTH_SOCK), force
+		// __resolve first so auth is bound in repo identity and not reused across
+		// clients through shared cache.
+		if canUseFastTree && isRemote {
+			hasExplicitAuth := remote.AuthToken.Valid || remote.AuthHeader.Valid || remote.SSHAuthSocket.Valid
+			if !hasExplicitAuth {
+				canUseFastTree = false
+			}
+		}
+
+		if canUseFastTree {
 			treeSelector := dagql.Selector{Field: "__tree"}
 			if len(selectorArgs) > 0 {
 				treeSelector.Args = selectorArgs
