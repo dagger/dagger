@@ -2459,7 +2459,9 @@ var brailleDots = []rune{
 }
 
 // renderRollUpDots renders a visual summary of child span states using pre-computed state
-func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, _ *dagui.TraceRow, prefix string, _ dagui.FrontendOpts) string {
+//
+//nolint:unparam
+func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row *dagui.TraceRow, prefix string, _ dagui.FrontendOpts) string {
 	if !span.RollUpSpans {
 		return ""
 	}

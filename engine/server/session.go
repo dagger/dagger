@@ -1608,6 +1608,7 @@ func (srv *Server) loadExtraModule(
 // to the client. This adds the module's constructor as a Query root field.
 // If configDefaults is non-nil, its entries are applied as default values for
 // the module constructor's arguments.
+//nolint:unparam
 func (srv *Server) loadWorkspaceModule(
 	ctx context.Context,
 	client *daggerClient,
