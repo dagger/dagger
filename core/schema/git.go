@@ -723,6 +723,27 @@ func (s *gitSchema) checkoutTree(ctx context.Context, parent dagql.ObjectResult[
 			if remote.URL != nil && remote.URL.Scheme == gitutil.SSHProtocol && remote.URL.User == nil {
 				remote.URL.User = url.User("git")
 			}
+			// tree() can run before repo.__resolve; scope/inject SSH auth here
+			// so the fast __tree path can fetch private refs without eager ls-remote.
+			if remote.URL != nil && remote.URL.Scheme == gitutil.SSHProtocol {
+				if remote.SSHAuthSocket.Valid {
+					if err := s.scopeProvidedSSHAuthSocket(ctx, srv, remote); err != nil {
+						return inst, err
+					}
+				} else {
+					var scopedSock dagql.ObjectResult[*core.Socket]
+					if err := srv.Select(ctx, srv.Root(), &scopedSock,
+						dagql.Selector{Field: "host"},
+						dagql.Selector{Field: "_sshAuthSocket"},
+					); err != nil {
+						if errors.Is(err, errSSHAuthSocketNotSet) {
+							return inst, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+						}
+						return inst, fmt.Errorf("%w: failed to get SSH socket: %w", gitutil.ErrGitAuthFailed, err)
+					}
+					remote.SSHAuthSocket = dagql.Opt(dagql.NewID[*core.Socket](scopedSock.ID()))
+				}
+			}
 			// tree() can run before repo.__resolve; inject parent-client HTTP auth here
 			// so the fast __tree path can fetch private refs without eager ls-remote.
 			if remote.URL != nil &&
