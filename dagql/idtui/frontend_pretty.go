@@ -107,7 +107,7 @@ type frontendPretty struct {
 	window       tea.WindowSizeMsg // set by BubbleTea
 	contentWidth int
 	sidebarWidth int
-	rollUpScale  int // global scale for all rollup dot displays
+	rollUpScale  int              // global scale for all rollup dot displays
 	view         *strings.Builder // rendered async
 	viewOut      *termenv.Output
 	browserBuf   *strings.Builder      // logs if browser fails

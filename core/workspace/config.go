@@ -436,6 +436,7 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 //   - modules.<name>.source
 //   - modules.<name>.alias
 //   - modules.<name>.config.<key>
+//
 // validateConfigKey ensures the given dotted key path corresponds to a valid
 // config.toml schema path, derived from Config and ModuleEntry struct tags.
 func validateConfigKey(key string) error {
