@@ -6,4 +6,5 @@ public record FunctionInfo(
     String description,
     TypeInfo returnType,
     ParameterInfo[] parameters,
-    boolean isCheck) {}
+    boolean isCheck,
+    boolean isGenerate) {}

@@ -33,6 +33,28 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return the generator with the given name from the installed modules. Must match exactly one generator.
+     */
+    public function generator(string $name): Generator
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generator');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return all generators defined by the installed modules
+     */
+    public function generators(?array $include = null): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Env.
      */
     public function id(): EnvId

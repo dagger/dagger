@@ -1235,6 +1235,13 @@ export type EnvChecksOpts = {
   include?: string[]
 }
 
+export type EnvGeneratorsOpts = {
+  /**
+   * Only include generators matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type EnvFileGetOpts = {
   /**
    * Return the value exactly as written to the file. No quote removal or variable expansion
@@ -6265,6 +6272,26 @@ export class Env extends BaseClient {
   checks = (opts?: EnvChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })
     return new CheckGroup(ctx)
+  }
+
+  /**
+   * Return the generator with the given name from the installed modules. Must match exactly one generator.
+   * @param name The name of the generator to retrieve
+   * @experimental
+   */
+  generator = (name: string): Generator => {
+    const ctx = this._ctx.select("generator", { name })
+    return new Generator(ctx)
+  }
+
+  /**
+   * Return all generators defined by the installed modules
+   * @param opts.include Only include generators matching the specified patterns
+   * @experimental
+   */
+  generators = (opts?: EnvGeneratorsOpts): GeneratorGroup => {
+    const ctx = this._ctx.select("generators", { ...opts })
+    return new GeneratorGroup(ctx)
   }
 
   /**

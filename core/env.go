@@ -218,6 +218,30 @@ func (env *Env) Check(ctx context.Context, name string) (*Check, error) {
 	}
 }
 
+// Generators returns a GeneratorGroup from the main module
+func (env *Env) Generators(ctx context.Context, include []string) (*GeneratorGroup, error) {
+	if env.MainModule == nil {
+		return nil, fmt.Errorf("no main module set on environment")
+	}
+	return env.MainModule.Generators(ctx, include)
+}
+
+// Generator returns a single generator by name from the main module
+func (env *Env) Generator(ctx context.Context, name string) (*Generator, error) {
+	generatorGroup, err := env.Generators(ctx, []string{name})
+	if err != nil {
+		return nil, err
+	}
+	switch len(generatorGroup.Generators) {
+	case 1:
+		return generatorGroup.Generators[0].Clone(), nil
+	case 0:
+		return nil, fmt.Errorf("generate function %q not found", name)
+	default:
+		return nil, fmt.Errorf("multiple generate functions found with name %q", name)
+	}
+}
+
 type Binding struct {
 	Key         string
 	Value       dagql.Typed
