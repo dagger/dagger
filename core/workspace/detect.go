@@ -120,8 +120,7 @@ func CheckMigrationTriggers(data []byte, legacyConfigPath, projectRoot string) e
 		Toolchains []any  `json:"toolchains"`
 	}
 	if err := json.Unmarshal(data, &legacy); err != nil {
-		// Can't parse it — ignore it
-		return nil
+		return err
 	}
 
 	hasToolchains := len(legacy.Toolchains) > 0

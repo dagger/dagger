@@ -148,7 +148,7 @@ func migrateListModules(cmd *cobra.Command) error {
 	found := 0
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip unreadable dirs
+			return err
 		}
 		if d.IsDir() {
 			// Skip .dagger workspace config dirs and hidden dirs (e.g. .git)
@@ -163,7 +163,7 @@ func migrateListModules(cmd *cobra.Command) error {
 
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil // skip unreadable files
+			return err
 		}
 
 		dir := filepath.Dir(path)
