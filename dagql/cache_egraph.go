@@ -299,11 +299,14 @@ func (c *cache) repairClassTermsLocked(root eqClassID) (merges []eqMergePair) {
 	return merges
 }
 
-func (c *cache) chooseTermFromSetLocked(set map[egraphTermID]struct{}) *egraphTerm {
+func (c *cache) chooseTermFromSetLocked(set map[egraphTermID]struct{}, acceptResult func(*sharedResult) bool) *egraphTerm {
 	var best *egraphTerm
 	for termID := range set {
 		term := c.egraphTerms[termID]
 		if term == nil || term.result == nil {
+			continue
+		}
+		if acceptResult != nil && !acceptResult(term.result) {
 			continue
 		}
 		if best == nil || term.id < best.id {
@@ -313,7 +316,7 @@ func (c *cache) chooseTermFromSetLocked(set map[egraphTermID]struct{}) *egraphTe
 	return best
 }
 
-func (c *cache) lookupEquivalentResultLocked(proto callTermProto) *sharedResult {
+func (c *cache) lookupEquivalentResultLocked(proto callTermProto, acceptResult func(*sharedResult) bool) *sharedResult {
 	if len(c.egraphTermsByDigest) == 0 {
 		return nil
 	}
@@ -336,7 +339,7 @@ func (c *cache) lookupEquivalentResultLocked(proto callTermProto) *sharedResult 
 	if len(set) == 0 {
 		return nil
 	}
-	best := c.chooseTermFromSetLocked(set)
+	best := c.chooseTermFromSetLocked(set, acceptResult)
 	if best == nil {
 		return nil
 	}
@@ -465,21 +468,22 @@ func (c *cache) outputEqClassForResultLocked(res *sharedResult) eqClassID {
 
 	if res.requestID != nil {
 		add(res.requestID.Digest().String())
-		add(res.requestID.CacheDigest().String())
 		for _, extra := range res.requestID.ExtraDigests() {
+			if extra.Kind != call.ExtraDigestKindOutputEquivalence {
+				continue
+			}
 			add(extra.Digest.String())
 		}
 	}
 	if res.constructor != nil {
 		add(res.constructor.Digest().String())
-		add(res.constructor.CacheDigest().String())
-		add(res.constructor.ContentDigest().String())
 		for _, extra := range res.constructor.ExtraDigests() {
+			if extra.Kind != call.ExtraDigestKindOutputEquivalence {
+				continue
+			}
 			add(extra.Digest.String())
 		}
 	}
-	add(res.resultCallKey)
-	add(res.contentDigestKey)
 
 	if len(digestSet) == 0 {
 		return 0
@@ -514,13 +518,10 @@ func (c *cache) aliasRequestIDToResultLocked(requestID *call.ID, res *sharedResu
 	if dig := requestID.Digest().String(); dig != "" {
 		outputEqID = c.mergeEqClassesLocked(outputEqID, c.ensureEqClassForDigestLocked(dig))
 	}
-	if dig := requestID.CacheDigest().String(); dig != "" {
-		outputEqID = c.mergeEqClassesLocked(outputEqID, c.ensureEqClassForDigestLocked(dig))
-	}
-	if dig := requestID.ContentDigest().String(); dig != "" {
-		outputEqID = c.mergeEqClassesLocked(outputEqID, c.ensureEqClassForDigestLocked(dig))
-	}
 	for _, extra := range requestID.ExtraDigests() {
+		if extra.Kind != call.ExtraDigestKindOutputEquivalence {
+			continue
+		}
 		if d := extra.Digest.String(); d != "" {
 			outputEqID = c.mergeEqClassesLocked(outputEqID, c.ensureEqClassForDigestLocked(d))
 		}

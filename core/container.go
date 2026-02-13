@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -1715,6 +1716,14 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 	if container.FS == nil {
 		return nil, nil
 	}
+	curID := dagql.CurrentID(ctx)
+	callPath := ""
+	callDigest := digest.Digest("")
+	if curID != nil {
+		callPath = curID.Path()
+		callDigest = curID.Digest()
+	}
+	slog.Info("container evaluate", "step", "start", "callPath", callPath, "callDigest", callDigest, "platform", container.Platform.Spec())
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -1735,11 +1744,17 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	return bk.Solve(ctx, bkgw.SolveRequest{
+	slog.Info("container evaluate", "step", "solve-start", "callPath", callPath, "callDigest", callDigest)
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: def.ToPB(),
 	})
+	if err != nil {
+		slog.Error("container evaluate", "step", "solve-error", "callPath", callPath, "callDigest", callDigest, "err", err)
+		return nil, err
+	}
+	slog.Info("container evaluate", "step", "solve-done", "callPath", callPath, "callDigest", callDigest, "hasRef", res != nil && res.Ref != nil, "refCount", len(res.Refs))
+	return res, nil
 }
 
 func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {

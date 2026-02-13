@@ -3,14 +3,12 @@ package dagql_test
 import (
 	"bytes"
 	"context"
-	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"math/rand/v2"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,7 +16,6 @@ import (
 	"time"
 
 	"github.com/99designs/gqlgen/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -2195,6 +2192,8 @@ func TestIDAdditionalDigestsMergeOnSameRecipeCallInDAG(t *testing.T) {
 	assert.Equal(t, callPB.ExtraDigests[1].Digest, digest.FromString("additional-b").String())
 	assert.Equal(t, callPB.ExtraDigests[0].Label, "")
 	assert.Equal(t, callPB.ExtraDigests[1].Label, "")
+	assert.Equal(t, callPB.ExtraDigests[0].Kind, call.ExtraDigestKindOutputEquivalence)
+	assert.Equal(t, callPB.ExtraDigests[1].Kind, call.ExtraDigestKindOutputEquivalence)
 
 	var decoded call.ID
 	assert.NilError(t, decoded.FromProto(pbDag))
@@ -2216,8 +2215,8 @@ func TestIDWithContentDigestAddsKnownDigest(t *testing.T) {
 
 	assert.Equal(t, withContent.ContentDigest().String(), second.String())
 	assert.DeepEqual(t, withContent.ExtraDigests(), []call.ExtraDigest{
-		{Digest: first, Label: "content"},
-		{Digest: second, Label: "content"},
+		{Digest: first, Label: "content", Kind: call.ExtraDigestKindOutputEquivalence},
+		{Digest: second, Label: "content", Kind: call.ExtraDigestKindOutputEquivalence},
 	})
 }
 
@@ -2585,152 +2584,6 @@ func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
 	req(t, gql, `query { rewrittenArg(val: 1) }`, &res)
 	assert.Equal(t, 7, res.RewrittenArg)
 	assert.DeepEqual(t, calls, []int{7})
-}
-
-func TestCustomDigest(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
-
-	type argsType struct {
-		Val      int
-		OtherArg string // used in test to force different IDs
-	}
-
-	dagql.Fields[*CoolInt]{}.Install(srv)
-	dagql.Fields[Query]{
-		dagql.NodeFunc("coolInt", func(ctx context.Context, self dagql.ObjectResult[Query], args argsType) (inst dagql.Result[*CoolInt], err error) {
-			inst, err = dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
-			if err != nil {
-				return inst, err
-			}
-			return inst, nil
-		}).DoNotCache("caching is too hard"),
-
-		// like coolInt but set custom digest to the arg % 2 so we cache by whether it's even or odd
-		dagql.NodeFuncWithCacheKey("modInt",
-			func(ctx context.Context, self dagql.ObjectResult[Query], args argsType) (inst dagql.Result[*CoolInt], err error) {
-				inst, err = dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
-				if err != nil {
-					return inst, err
-				}
-				return inst.WithDigest(digest.Digest(strconv.Itoa(args.Val % 2))), nil
-			},
-			func(ctx context.Context, _ dagql.ObjectResult[Query], _ argsType, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
-				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
-				resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(digest.FromString(cryptorand.Text()))
-				return resp, nil
-			}),
-
-		dagql.NodeFunc("returnTheArg", func(ctx context.Context, self dagql.ObjectResult[Query], args struct {
-			CoolInt dagql.ID[*CoolInt]
-		}) (dagql.ObjectResult[*CoolInt], error) {
-			return args.CoolInt.Load(ctx, srv)
-		}),
-	}.Install(srv)
-
-	gql := client.New(dagql.NewDefaultHandler(srv))
-
-	// sanity test version without custom digest first
-	{
-		makeReq := func(t *testing.T, i int) (int, string) {
-			t.Helper()
-			var res struct {
-				CoolInt struct {
-					Val int
-					ID  string
-				}
-			}
-			req(t, gql, `query {
-			coolInt(val: `+strconv.Itoa(i)+`, otherArg: "`+identity.NewID()+`") {
-				val
-				id
-			}
-		}`, &res)
-			return res.CoolInt.Val, res.CoolInt.ID
-		}
-
-		s1a, s1aID := makeReq(t, 1)
-		assert.Assert(t, s1a == 1)
-		s1b, s1bID := makeReq(t, 1)
-		assert.Assert(t, s1b == 1)
-		s2, s2ID := makeReq(t, 2)
-		assert.Assert(t, s2 == 2)
-
-		assert.Assert(t, s1aID != s1bID)
-		assert.Assert(t, s1bID != s2ID)
-	}
-
-	// now test the custom digest version
-	{
-		makeReq := func(t *testing.T, i int) (int, string) {
-			t.Helper()
-			var res struct {
-				ModInt struct {
-					Val int
-					ID  string
-				}
-			}
-			req(t, gql, `query {
-			modInt(val: `+strconv.Itoa(i)+`, otherArg: "`+identity.NewID()+`") {
-				val
-				id
-			}
-		}`, &res)
-			return res.ModInt.Val, res.ModInt.ID
-		}
-
-		s1, s1ID := makeReq(t, 1)
-		assert.Assert(t, s1 == 1)
-		s3, s3ID := makeReq(t, 3)
-		assert.Assert(t, s3 == 1)   // all odd numbers are cached the same
-		assert.Equal(t, s1ID, s3ID) // odd IDs are the same now too
-
-		s2, s2ID := makeReq(t, 2)
-		assert.Assert(t, s2 == 2)
-		s4, s4ID := makeReq(t, 4)
-		assert.Assert(t, s4 == 2)   // all even numbers are cached the same
-		assert.Equal(t, s2ID, s4ID) // even IDs are the same now too
-
-		// make sure that the caching by custom digest works when IDs are passed as args
-		type returnTheArgRes struct {
-			ReturnTheArg struct {
-				Val int
-				ID  string
-			}
-		}
-		res := returnTheArgRes{}
-		req(t, gql, `query {
-			returnTheArg(coolInt: "`+s4ID+`") {
-				val
-				id
-			}
-		}`, &res)
-		assert.Equal(t, s2, res.ReturnTheArg.Val)
-		assert.Equal(t, s2ID, res.ReturnTheArg.ID)
-
-		// also cover the case when just an ID is selected, no other fields
-		type idOnlyRes struct {
-			ModInt struct {
-				ID string
-			}
-		}
-		idOnly := idOnlyRes{}
-		req(t, gql, `query {
-			modInt(val: 5, otherArg: "`+identity.NewID()+`") {
-				id
-			}
-		}`, &idOnly)
-		s5ID := idOnly.ModInt.ID
-
-		res = returnTheArgRes{}
-		req(t, gql, `query {
-			returnTheArg(coolInt: "`+s5ID+`") {
-				val
-				id
-			}
-		}`, &res)
-		assert.Equal(t, s1, res.ReturnTheArg.Val)
-		assert.Equal(t, s1ID, res.ReturnTheArg.ID)
-	}
 }
 
 func TestImplicitInputCachePerClient(t *testing.T) {

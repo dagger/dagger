@@ -95,6 +95,14 @@ message ExtraDigest {
   string digest = 1;
   // informative label, e.g. "content"
   string label = 2;
+  // semantic kind for cache/equivalence behavior.
+  ExtraDigestKind kind = 3;
+}
+
+enum ExtraDigestKind {
+  EXTRA_DIGEST_KIND_UNSPECIFIED = 0;
+  EXTRA_DIGEST_KIND_OUTPUT_EQUIVALENCE = 1;
+  EXTRA_DIGEST_KIND_AUXILIARY = 2;
 }
 
 // Module represents a self-contained logical module that can be dynamically

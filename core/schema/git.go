@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -1035,7 +1036,11 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 			if err != nil {
 				return inst, fmt.Errorf("failed to get content hash: %w", err)
 			}
-			inst = inst.WithContentDigest(hashutil.HashStrings(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
+			inst = inst.WithExtraDigest(call.ExtraDigest{
+				Digest: hashutil.HashStrings(dagql.CurrentID(ctx).Digest().String(), dgst.String()),
+				Label:  "privateGitTree",
+				Kind:   call.ExtraDigestKindOutputEquivalence,
+			})
 		}
 	}
 

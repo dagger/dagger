@@ -7,6 +7,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/util/hashutil"
 )
 
@@ -134,5 +135,127 @@ func TestEquivalentDigestAliasesOutputEquivalentDigest(t *testing.T) {
 
 	if id.EquivalentDigest() != id.OutputEquivalentDigest() {
 		t.Fatalf("EquivalentDigest should alias OutputEquivalentDigest: %s vs %s", id.EquivalentDigest(), id.OutputEquivalentDigest())
+	}
+}
+
+func TestSelfDigestAndInputsIgnoreAuxiliaryExtraDigests(t *testing.T) {
+	sharedContent := digest.FromString("shared-output")
+	auxA := digest.FromString("aux-a")
+	auxB := digest.FromString("aux-b")
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+
+	recvA := New().Append(typ, "receiver").
+		With(WithContentDigest(sharedContent)).
+		With(WithExtraDigest(ExtraDigest{
+			Digest: auxA,
+			Label:  "aux",
+			Kind:   ExtraDigestKindAuxiliary,
+		}))
+	recvB := New().Append(typ, "receiver").
+		With(WithContentDigest(sharedContent)).
+		With(WithExtraDigest(ExtraDigest{
+			Digest: auxB,
+			Label:  "aux",
+			Kind:   ExtraDigestKindAuxiliary,
+		}))
+
+	childA := recvA.Append(typ, "child")
+	childB := recvB.Append(typ, "child")
+
+	selfA, inputsA, err := childA.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("childA self+inputs: %v", err)
+	}
+	selfB, inputsB, err := childB.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("childB self+inputs: %v", err)
+	}
+
+	if selfA != selfB {
+		t.Fatalf("self digest should match when only auxiliary digests differ: %s vs %s", selfA, selfB)
+	}
+	if len(inputsA) != len(inputsB) {
+		t.Fatalf("input count mismatch: %d vs %d", len(inputsA), len(inputsB))
+	}
+	for i := range inputsA {
+		if inputsA[i] != inputsB[i] {
+			t.Fatalf("input digest mismatch at %d: %s vs %s", i, inputsA[i], inputsB[i])
+		}
+	}
+}
+
+func TestExtraDigestKindsDefaultForLegacyUnspecifiedEntries(t *testing.T) {
+	contentDigest := digest.FromString("legacy-content")
+	customDigest := digest.FromString("legacy-custom")
+	additionalDigest := digest.FromString("legacy-additional")
+
+	id := &ID{
+		pb: &callpbv1.Call{
+			ExtraDigests: []*callpbv1.ExtraDigest{
+				{Digest: contentDigest.String(), Label: "content"},
+				{Digest: customDigest.String(), Label: "custom"},
+				{Digest: additionalDigest.String(), Label: ""},
+			},
+		},
+	}
+
+	extras := id.ExtraDigests()
+	if len(extras) != 3 {
+		t.Fatalf("expected 3 extra digests, got %d", len(extras))
+	}
+
+	byDigest := map[digest.Digest]ExtraDigest{}
+	for _, extra := range extras {
+		byDigest[extra.Digest] = extra
+	}
+
+	if got := byDigest[contentDigest].Kind; got != ExtraDigestKindOutputEquivalence {
+		t.Fatalf("content digest should default to output-equivalence kind, got %s", got)
+	}
+	if got := byDigest[customDigest].Kind; got != ExtraDigestKindAuxiliary {
+		t.Fatalf("custom digest should default to auxiliary kind, got %s", got)
+	}
+	if got := byDigest[additionalDigest].Kind; got != ExtraDigestKindOutputEquivalence {
+		t.Fatalf("additional digest should default to output-equivalence kind, got %s", got)
+	}
+}
+
+func TestExtraDigestKindsRoundTripThroughProto(t *testing.T) {
+	auxDigest := digest.FromString("explicit-aux")
+	orig := New().Append(
+		&ast.Type{
+			NamedType: "String",
+			NonNull:   true,
+		},
+		"field",
+		WithExtraDigest(ExtraDigest{
+			Digest: auxDigest,
+			Label:  "auxiliary-example",
+			Kind:   ExtraDigestKindAuxiliary,
+		}),
+	)
+
+	enc, err := orig.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	decoded := new(ID)
+	if err := decoded.Decode(enc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	extras := decoded.ExtraDigests()
+	if len(extras) != 1 {
+		t.Fatalf("expected 1 extra digest, got %d", len(extras))
+	}
+	if extras[0].Digest != auxDigest {
+		t.Fatalf("digest mismatch: got %s, want %s", extras[0].Digest, auxDigest)
+	}
+	if extras[0].Kind != ExtraDigestKindAuxiliary {
+		t.Fatalf("kind mismatch: got %s, want %s", extras[0].Kind, ExtraDigestKindAuxiliary)
 	}
 }

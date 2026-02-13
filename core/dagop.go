@@ -604,8 +604,8 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 		if err != nil {
 			return nil, fmt.Errorf("marshal exec metadata: %w", err)
 		}
-		loadID = loadID.WithArgument(call.NewArgument("execMD", call.NewLiteralString(string(execMDJSON)), false))
-	}
+			loadID = loadID.WithArgument(call.NewArgument("execMD", call.NewLiteralString(string(execMDJSON)), true))
+		}
 
 	obj, err := opt.Server.LoadType(loadCtx, loadID)
 	if err != nil {

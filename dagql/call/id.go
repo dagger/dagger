@@ -60,9 +60,18 @@ const (
 	extraDigestLabelCustom  = "custom"
 )
 
+type ExtraDigestKind = callpbv1.ExtraDigestKind
+
+const (
+	ExtraDigestKindUnspecified       = callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_UNSPECIFIED
+	ExtraDigestKindOutputEquivalence = callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_OUTPUT_EQUIVALENCE
+	ExtraDigestKindAuxiliary         = callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_AUXILIARY
+)
+
 type ExtraDigest struct {
 	Digest digest.Digest
 	Label  string
+	Kind   ExtraDigestKind
 }
 
 type View string
@@ -192,6 +201,7 @@ func (id *ID) ExtraDigests() []ExtraDigest {
 		out = append(out, ExtraDigest{
 			Digest: digest.Digest(extra.Digest),
 			Label:  extra.Label,
+			Kind:   normalizeExtraDigestKind(extra.Kind, extra.Label),
 		})
 	}
 	return out
@@ -203,13 +213,7 @@ func (id *ID) CacheDigest() digest.Digest {
 	if id == nil {
 		return ""
 	}
-	// Preserve legacy cache-key semantics while custom digest rewrites still
-	// exist: a custom digest explicitly overrides the recipe digest for cache
-	// identity.
-	if custom := id.CustomDigest(); custom != "" {
-		return custom
-	}
-	extras := normalizedExtraDigestStrings(id.pb.ExtraDigests)
+	extras := normalizedExtraDigestStringsByKind(id.pb.ExtraDigests, callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_OUTPUT_EQUIVALENCE)
 	if len(extras) == 0 {
 		return id.Digest()
 	}
@@ -227,7 +231,7 @@ func (id *ID) inputDigest() digest.Digest {
 	if content := id.ContentDigest(); content != "" {
 		base = content
 	}
-	extras := normalizedExtraDigestStrings(id.pb.ExtraDigests)
+	extras := normalizedExtraDigestStringsByKind(id.pb.ExtraDigests, callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_OUTPUT_EQUIVALENCE)
 	if len(extras) == 0 {
 		return base
 	}
@@ -259,17 +263,13 @@ func (id *ID) StructuralEquivalentDigest() digest.Digest {
 // OutputEquivalentDigest returns the digest used when outputs can be treated as
 // interchangeable across different recipes:
 // 1. content digest (if set)
-// 2. custom digest (if set)
-// 3. structural-equivalent digest
+// 2. structural-equivalent digest
 func (id *ID) OutputEquivalentDigest() digest.Digest {
 	if id == nil {
 		return ""
 	}
 	if content := id.ContentDigest(); content != "" {
 		return content
-	}
-	if custom := id.CustomDigest(); custom != "" {
-		return custom
 	}
 	return id.StructuralEquivalentDigest()
 }
@@ -406,7 +406,7 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	if id.receiver != nil {
 		inputs = append(inputs, id.receiver.inputDigest())
 	}
-	for _, dig := range normalizedExtraDigestStrings(id.pb.ExtraDigests) {
+	for _, dig := range normalizedExtraDigestStringsByKind(id.pb.ExtraDigests, callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_OUTPUT_EQUIVALENCE) {
 		inputs = append(inputs, digest.Digest(dig))
 	}
 	h = h.WithDelim()
@@ -493,7 +493,7 @@ func (id *ID) SelfDigestAndEquivalentInputs() (digest.Digest, []digest.Digest, e
 	if id.receiver != nil {
 		inputs = append(inputs, id.receiver.OutputEquivalentDigest())
 	}
-	for _, dig := range normalizedExtraDigestStrings(id.pb.ExtraDigests) {
+	for _, dig := range normalizedExtraDigestStringsByKind(id.pb.ExtraDigests, callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_OUTPUT_EQUIVALENCE) {
 		inputs = append(inputs, digest.Digest(dig))
 	}
 	h = h.WithDelim()
@@ -686,7 +686,7 @@ func WithView(view View) IDOpt {
 func WithCustomDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
 		if dig != "" {
-			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelCustom)
+			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelCustom, ExtraDigestKindAuxiliary)
 		} else {
 			id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extraDigestLabelCustom)
 		}
@@ -696,7 +696,7 @@ func WithCustomDigest(dig digest.Digest) IDOpt {
 func WithContentDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
 		if dig != "" {
-			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelContent)
+			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelContent, ExtraDigestKindOutputEquivalence)
 		} else {
 			id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extraDigestLabelContent)
 		}
@@ -708,7 +708,7 @@ func WithAdditionalDigest(dig digest.Digest) IDOpt {
 		if dig == "" {
 			return
 		}
-		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), "")
+		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), "", ExtraDigestKindOutputEquivalence)
 	}
 }
 
@@ -717,7 +717,12 @@ func WithExtraDigest(extra ExtraDigest) IDOpt {
 		if extra.Digest == "" {
 			return
 		}
-		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, extra.Digest.String(), extra.Label)
+		id.pb.ExtraDigests = appendExtraDigest(
+			id.pb.ExtraDigests,
+			extra.Digest.String(),
+			extra.Label,
+			normalizeExtraDigestKind(extra.Kind, extra.Label),
+		)
 	}
 }
 
@@ -1395,26 +1400,29 @@ func cloneExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest {
 		out = append(out, &callpbv1.ExtraDigest{
 			Digest: extra.Digest,
 			Label:  extra.Label,
+			Kind:   normalizeExtraDigestKind(extra.Kind, extra.Label),
 		})
 	}
 	return out
 }
 
-func appendExtraDigest(existing []*callpbv1.ExtraDigest, dig, label string) []*callpbv1.ExtraDigest {
+func appendExtraDigest(existing []*callpbv1.ExtraDigest, dig, label string, kind callpbv1.ExtraDigestKind) []*callpbv1.ExtraDigest {
 	if dig == "" {
 		return existing
 	}
+	kind = normalizeExtraDigestKind(kind, label)
 	for _, existingExtra := range existing {
 		if existingExtra == nil {
 			continue
 		}
-		if existingExtra.Digest == dig && existingExtra.Label == label {
+		if existingExtra.Digest == dig && existingExtra.Label == label && normalizeExtraDigestKind(existingExtra.Kind, existingExtra.Label) == kind {
 			return existing
 		}
 	}
 	return append(existing, &callpbv1.ExtraDigest{
 		Digest: dig,
 		Label:  label,
+		Kind:   kind,
 	})
 }
 
@@ -1433,6 +1441,7 @@ func removeExtraDigestsByLabel(existing []*callpbv1.ExtraDigest, label string) [
 		out = append(out, &callpbv1.ExtraDigest{
 			Digest: extra.Digest,
 			Label:  extra.Label,
+			Kind:   normalizeExtraDigestKind(extra.Kind, extra.Label),
 		})
 	}
 	return out
@@ -1447,7 +1456,7 @@ func mergeExtraDigests(existing []*callpbv1.ExtraDigest, extra []*callpbv1.Extra
 		if x == nil {
 			continue
 		}
-		merged = appendExtraDigest(merged, x.Digest, x.Label)
+		merged = appendExtraDigest(merged, x.Digest, x.Label, x.Kind)
 	}
 	return normalizedExtraDigests(merged)
 }
@@ -1459,13 +1468,18 @@ func normalizedExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest 
 	type key struct {
 		digest string
 		label  string
+		kind   callpbv1.ExtraDigestKind
 	}
 	set := make(map[key]struct{}, len(in))
 	for _, extra := range in {
 		if extra == nil || extra.Digest == "" {
 			continue
 		}
-		set[key{digest: extra.Digest, label: extra.Label}] = struct{}{}
+		set[key{
+			digest: extra.Digest,
+			label:  extra.Label,
+			kind:   normalizeExtraDigestKind(extra.Kind, extra.Label),
+		}] = struct{}{}
 	}
 	if len(set) == 0 {
 		return nil
@@ -1487,6 +1501,12 @@ func normalizedExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest 
 		if a.label > b.label {
 			return 1
 		}
+		if a.kind < b.kind {
+			return -1
+		}
+		if a.kind > b.kind {
+			return 1
+		}
 		return 0
 	})
 	out := make([]*callpbv1.ExtraDigest, 0, len(keys))
@@ -1494,9 +1514,20 @@ func normalizedExtraDigests(in []*callpbv1.ExtraDigest) []*callpbv1.ExtraDigest 
 		out = append(out, &callpbv1.ExtraDigest{
 			Digest: k.digest,
 			Label:  k.label,
+			Kind:   k.kind,
 		})
 	}
 	return out
+}
+
+func normalizeExtraDigestKind(kind callpbv1.ExtraDigestKind, label string) callpbv1.ExtraDigestKind {
+	if kind != callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_UNSPECIFIED {
+		return kind
+	}
+	if label == extraDigestLabelCustom {
+		return callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_AUXILIARY
+	}
+	return callpbv1.ExtraDigestKind_EXTRA_DIGEST_KIND_OUTPUT_EQUIVALENCE
 }
 
 func normalizedExtraDigestStrings(in []*callpbv1.ExtraDigest) []string {
@@ -1506,6 +1537,31 @@ func normalizedExtraDigestStrings(in []*callpbv1.ExtraDigest) []string {
 	set := make(map[string]struct{}, len(in))
 	for _, extra := range in {
 		if extra == nil || extra.Digest == "" {
+			continue
+		}
+		set[extra.Digest] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for dig := range set {
+		out = append(out, dig)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func normalizedExtraDigestStringsByKind(in []*callpbv1.ExtraDigest, kind callpbv1.ExtraDigestKind) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(in))
+	for _, extra := range in {
+		if extra == nil || extra.Digest == "" {
+			continue
+		}
+		if normalizeExtraDigestKind(extra.Kind, extra.Label) != kind {
 			continue
 		}
 		set[extra.Digest] = struct{}{}

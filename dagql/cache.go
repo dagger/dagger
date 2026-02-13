@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/protobuf/proto"
 )
 
 type Cache interface {
@@ -116,6 +118,134 @@ func ctxWithStorageKey(ctx context.Context, key string) context.Context {
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 
+func shouldTraceCacheFlow(id *call.ID) bool {
+	if id == nil {
+		return false
+	}
+	path := id.Path()
+	return strings.Contains(path, "testAlwaysCache") ||
+		strings.Contains(path, "testTtl") ||
+		strings.Contains(path, "testSetSecret") ||
+		strings.Contains(path, "Test.fn") ||
+		strings.Contains(path, "Test.rand") ||
+		strings.Contains(path, "Container.withExec") ||
+		strings.Contains(path, "withExec(") ||
+		strings.Contains(path, "Container.from") ||
+		strings.Contains(path, "from(address:") ||
+		strings.Contains(path, ".asModule") ||
+		strings.Contains(path, "_contextDirectory") ||
+		strings.Contains(path, "_contextFile")
+}
+
+func cacheLookupImplicitInputsMatch(requestID *call.ID, res *sharedResult) bool {
+	if requestID == nil || res == nil {
+		return true
+	}
+
+	reqInputs := requestID.ImplicitInputs()
+	candidateID := res.requestID
+	if candidateID == nil {
+		candidateID = res.constructor
+	}
+	if candidateID == nil {
+		return len(reqInputs) == 0
+	}
+
+	candidateInputs := candidateID.ImplicitInputs()
+	if len(reqInputs) != len(candidateInputs) {
+		return false
+	}
+
+	for i := range reqInputs {
+		reqIn := reqInputs[i]
+		candIn := candidateInputs[i]
+		if reqIn == nil || candIn == nil {
+			if reqIn != candIn {
+				return false
+			}
+			continue
+		}
+		if reqIn.Name() != candIn.Name() {
+			return false
+		}
+		if reqIn.IsSensitive() != candIn.IsSensitive() {
+			return false
+		}
+		if !proto.Equal(reqIn.PB(), candIn.PB()) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func callBoolArg(id *call.ID, name string) (bool, bool) {
+	if id == nil {
+		return false, false
+	}
+	arg := id.Arg(name)
+	if arg == nil {
+		return false, false
+	}
+	lit, ok := arg.Value().(*call.LiteralBool)
+	if !ok {
+		return false, false
+	}
+	return lit.Value(), true
+}
+
+func idIsDagOp(id *call.ID) bool {
+	v, _ := callBoolArg(id, "isDagOp")
+	return v
+}
+
+func cacheLookupExecutionModeMatch(requestID *call.ID, res *sharedResult) bool {
+	if requestID == nil || res == nil {
+		return true
+	}
+	candidateID := res.requestID
+	if candidateID == nil {
+		candidateID = res.constructor
+	}
+	if candidateID == nil {
+		return true
+	}
+	// Calls inside dagop execution are not payload-compatible with non-dagop
+	// calls, even when output-equivalent digests overlap.
+	return idIsDagOp(requestID) == idIsDagOp(candidateID)
+}
+
+func idShapeMismatchForTrace(requestID, candidateID *call.ID) bool {
+	if requestID == nil || candidateID == nil {
+		return false
+	}
+	reqPB, err := requestID.ToProto()
+	if err != nil {
+		return false
+	}
+	candPB, err := candidateID.ToProto()
+	if err != nil {
+		return false
+	}
+	return !proto.Equal(reqPB, candPB)
+}
+
+func implicitInputsTraceStrings(id *call.ID) []string {
+	if id == nil {
+		return nil
+	}
+	inputs := id.ImplicitInputs()
+	out := make([]string, 0, len(inputs))
+	for _, in := range inputs {
+		if in == nil {
+			out = append(out, "<nil>")
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s=%s", in.Name(), in.Value().Display()))
+	}
+	return out
+}
+
 // preserveIDWithResultDigests keeps the caller's recipe ID while carrying over
 // known digest annotations from the cached constructor. This allows downstream
 // calls to still participate in equivalence/content-based cache hits.
@@ -131,178 +261,72 @@ func preserveIDWithResultDigests(requestID *call.ID, cachedRes *sharedResult) *c
 		if extra.Digest == "" {
 			continue
 		}
-		// Custom digests are still used as call-key scoping in parts of the
-		// engine. Do not copy them across equivalent/content hits, or we can
-		// leak one caller's scope into another caller's recipe ID.
-		if extra.Label == "custom" {
+		if extra.Kind != call.ExtraDigestKindOutputEquivalence {
 			continue
 		}
 		id = id.With(call.WithExtraDigest(extra))
 	}
-	if dig := cachedRes.constructor.ContentDigest(); dig != "" {
-		id = id.With(call.WithContentDigest(dig))
-	}
 	return id
 }
 
-func shouldReuseEquivalentObjectPayload(res *sharedResult) bool {
-	if res == nil || res.objType == nil {
-		return true
+// cacheIndexIDForResult returns the ID view to use for secondary cache indexes.
+// Keep semantic constructor identity for recipe-rewritten results, but preserve
+// request-attached output-equivalence digests when the recipe itself is unchanged.
+func cacheIndexIDForResult(requestID *call.ID, cachedRes *sharedResult) *call.ID {
+	if cachedRes == nil || cachedRes.constructor == nil {
+		return nil
 	}
-	// Some objects carry caller-local/provenance metadata in payload fields
-	// (e.g. module source paths). Reusing an equivalent-hit payload for these
-	// types can return values from a different caller recipe even if IDs are
-	// overridden.
-	switch res.objType.TypeName() {
-	case "Module", "ModuleSource":
-		return false
-	default:
-		return true
+	if requestID == nil || requestID.Digest() != cachedRes.constructor.Digest() {
+		return cachedRes.constructor
 	}
+	return preserveIDWithResultDigests(requestID, cachedRes)
 }
 
-func shouldReuseExactObjectPayload(res *sharedResult) bool {
-	if res == nil || res.objType == nil {
-		return true
+// presentationIDForResult returns the caller-facing ID for this cache return.
+// When allowRecipeRemap is false, only digest-annotation drift on the same
+// recipe is remapped; recipe rewrites (e.g. tag->digest canonicalization) keep
+// the semantic constructor ID.
+func presentationIDForResult(requestID *call.ID, cachedRes *sharedResult, allowRecipeRemap bool) *call.ID {
+	if requestID == nil || cachedRes == nil || cachedRes.constructor == nil {
+		return nil
 	}
-	// Container payloads can contain mutable buildkit refs. Reusing the exact
-	// payload across cache hits can cause multiple callers to race finalization
-	// of the same active snapshot.
-	return res.objType.TypeName() != "Container"
-}
-
-func shouldReuseEquivalentHitForCall(keyID *call.ID, res *sharedResult) bool {
-	if !shouldReuseEquivalentObjectPayload(res) {
-		return false
+	if !allowRecipeRemap && requestID.Digest() != cachedRes.constructor.Digest() {
+		return nil
 	}
-	// Query.http is intentionally scoped per client/session for call execution
-	// (network fetch + HTTP revalidation behavior). Do not short-circuit it via
-	// equivalent/known-digest lookup.
-	if keyID != nil && keyID.Field() == "http" {
-		return false
-	}
-	if keyID == nil || res == nil || res.constructor == nil {
-		return true
-	}
-	// Equivalent/content-digest reuse must not cross call paths. Path remapping
-	// can leak wrong contextual/provenance payloads (e.g. moduleSource context).
-	if keyID.Path() != res.constructor.Path() {
-		isContainer := false
-		if res.objType != nil && res.objType.TypeName() == "Container" {
-			isContainer = true
-		}
-		if res.constructor != nil && res.constructor.Type() != nil && res.constructor.Type().NamedType() == "Container" {
-			isContainer = true
-		}
-		if isContainer {
-			// DagOp and non-DagOp container calls are not interchangeable even
-			// when they converge to the same known digest. Reusing across this
-			// boundary can break nested execution lifecycles.
-			if isDagOpCall(keyID) != isDagOpCall(res.constructor) {
-				return false
+	if allowRecipeRemap && requestID.Digest() != cachedRes.constructor.Digest() {
+		reqMod := requestID.Module()
+		resMod := cachedRes.constructor.Module()
+		switch {
+		case reqMod == nil && resMod == nil:
+			// safe to remap
+		case reqMod != nil && resMod != nil:
+			reqModID := reqMod.ID()
+			resModID := resMod.ID()
+			if reqModID == nil || resModID == nil || reqModID.Digest() != resModID.Digest() {
+				return nil
 			}
-			// Container results can be reached through equivalent recipes with
-			// different call paths (e.g. module function wrappers vs underlying
-			// container builder calls). Allow cross-path reuse.
-		} else {
-			return false
+		default:
+			// One side is module-scoped and the other is not. Returning the request
+			// recipe here can produce IDs that cannot be replayed in the current
+			// schema context (e.g. module field paths in core-only contexts).
+			return nil
 		}
 	}
-	// Avoid reusing constructor payloads for non-core object instances.
-	// These values can embed contextual defaults (e.g. _contextDirectory IDs)
-	// that are session-specific and become stale across sessions.
-	if res.objType != nil {
-		typeName := res.objType.TypeName()
-		if typeName != "" && keyID.Type() != nil && keyID.Type().NamedType() == typeName {
-			if keyID.Field() == lowerFirstASCII(typeName) && !isCoreConstructorType(typeName) {
-				return false
-			}
-		}
+	if requestID.CacheDigest() == cachedRes.constructor.CacheDigest() && requestID.Path() == cachedRes.constructor.Path() {
+		return nil
 	}
-	// Identity/provenance introspection fields must preserve exact recipe-bound
-	// payload values and should not reuse equivalent-hit payloads.
-	switch keyID.Field() {
-	case "id", "asString":
-		return false
-	default:
-		return true
-	}
-}
-
-func shouldPreserveRequestIDOnEquivalentHit(keyID *call.ID, res *sharedResult) bool {
-	if keyID == nil {
-		return false
-	}
-	if res != nil && res.objType != nil && res.objType.TypeName() == "Container" {
-		return false
-	}
-	// Module-provided calls can include client-scoped receiver digests in the
-	// recipe path. Preserving request IDs for equivalent hits there causes
-	// stable cached payloads to appear as different IDs across callers.
-	return keyID.Module() == nil
-}
-
-func lowerFirstASCII(s string) string {
-	if s == "" {
-		return s
-	}
-	b := []byte(s)
-	if b[0] >= 'A' && b[0] <= 'Z' {
-		b[0] = b[0] - 'A' + 'a'
-	}
-	return string(b)
-}
-
-func isDagOpCall(id *call.ID) bool {
-	if id == nil {
-		return false
-	}
-	arg := id.Arg("isDagOp")
-	if arg == nil {
-		return false
-	}
-	lit, ok := arg.Value().(*call.LiteralBool)
-	if !ok {
-		return false
-	}
-	return lit.Value()
-}
-
-func isCoreConstructorType(typeName string) bool {
-	switch typeName {
-	case "Address",
-		"CacheVolume",
-		"Container",
-		"CurrentModule",
-		"Directory",
-		"Engine",
-		"EnvFile",
-		"File",
-		"Function",
-		"FunctionCall",
-		"GeneratedCode",
-		"GitRef",
-		"GitRepository",
-		"Host",
-		"HTTP",
-		"LLM",
-		"Module",
-		"ModuleSource",
-		"PortForward",
-		"Query",
-		"Secret",
-		"Service",
-		"Socket",
-		"SourceMap",
-		"TypeDef":
-		return true
-	default:
-		return false
-	}
+	return preserveIDWithResultDigests(requestID, cachedRes)
 }
 
 func persistentKnownDigestCallKey(knownDigest string) string {
 	return hashutil.HashStrings("known-digest", knownDigest).String()
+}
+
+func knownDigestIndexKey(kind call.ExtraDigestKind, knownDigest string) string {
+	if knownDigest == "" {
+		return ""
+	}
+	return fmt.Sprintf("%d:%s", kind, knownDigest)
 }
 
 func NewCache(ctx context.Context, dbPath string) (Cache, error) {
@@ -367,7 +391,7 @@ type cache struct {
 	completedCalls map[string]*resultList
 
 	// calls that have completed successfully and are cached, keyed by known digest key
-	// (e.g. content digests and additional digests attached to IDs/results).
+	// encoded as "<digest-kind>:<digest-value>".
 	completedCallsByKnownDigest map[string]*resultList
 
 	// e-graph index for call-result equivalence.
@@ -421,7 +445,6 @@ type sharedResult struct {
 	err error
 
 	safeToPersistCache bool
-	contentDigestKey   string
 	knownDigestKeys    []string
 	resultCallKey      string
 	onRelease          OnReleaseFunc
@@ -524,33 +547,61 @@ func (res *sharedResult) release(ctx context.Context) error {
 	res.refCount--
 	var onRelease OnReleaseFunc
 	if res.refCount == 0 && res.waiters == 0 {
-		// no refs left and no one waiting on it, delete from cache
-		delete(res.cache.ongoingCalls, res.callConcurrencyKeys)
-		if lst := res.cache.completedCalls[res.storageKey]; lst != nil {
-			lst.remove(res)
-			if lst.empty() {
-				delete(res.cache.completedCalls, res.storageKey)
+		// Persist-safe entries in a persistent cache should survive session closes so
+		// they can be reused cross-session. Everything else is released immediately.
+		keepInCache := res.safeToPersistCache && res.cache.db != nil
+		if !keepInCache {
+			if shouldTraceCacheFlow(res.requestID) {
+				slog.Info("cache trace release-evict",
+					"requestPath", func() string {
+						if res.requestID == nil {
+							return ""
+						}
+						return res.requestID.Path()
+					}(),
+					"requestDigest", func() digest.Digest {
+						if res.requestID == nil {
+							return ""
+						}
+						return res.requestID.Digest()
+					}(),
+					"requestCacheDigest", func() digest.Digest {
+						if res.requestID == nil {
+							return ""
+						}
+						return res.requestID.CacheDigest()
+					}(),
+					"storageKey", res.storageKey,
+					"resultCallKey", res.resultCallKey,
+				)
 			}
-		}
-		if res.resultCallKey != "" && res.resultCallKey != res.storageKey {
-			key := res.resultCallKey
-			if lst := res.cache.completedCalls[key]; lst != nil {
+			delete(res.cache.ongoingCalls, res.callConcurrencyKeys)
+			if lst := res.cache.completedCalls[res.storageKey]; lst != nil {
 				lst.remove(res)
 				if lst.empty() {
-					delete(res.cache.completedCalls, key)
+					delete(res.cache.completedCalls, res.storageKey)
 				}
 			}
-		}
-		for _, key := range res.knownDigestKeys {
-			if lst := res.cache.completedCallsByKnownDigest[key]; lst != nil {
-				lst.remove(res)
-				if lst.empty() {
-					delete(res.cache.completedCallsByKnownDigest, key)
+			if res.resultCallKey != "" && res.resultCallKey != res.storageKey {
+				key := res.resultCallKey
+				if lst := res.cache.completedCalls[key]; lst != nil {
+					lst.remove(res)
+					if lst.empty() {
+						delete(res.cache.completedCalls, key)
+					}
 				}
 			}
+			for _, key := range res.knownDigestKeys {
+				if lst := res.cache.completedCallsByKnownDigest[key]; lst != nil {
+					lst.remove(res)
+					if lst.empty() {
+						delete(res.cache.completedCallsByKnownDigest, key)
+					}
+				}
+			}
+			res.cache.removeResultFromEgraphLocked(res)
+			onRelease = res.onRelease
 		}
-		res.cache.removeResultFromEgraphLocked(res)
-		onRelease = res.onRelease
 	}
 	res.cache.mu.Unlock()
 
@@ -564,10 +615,9 @@ type Result[T Typed] struct {
 	// shared points at immutable payload + lifecycle state shared by all per-call Result values.
 	shared *sharedResult
 
-	// TODO: Remove idOverride once equivalence-graph cache identity lands.
-	// We should record equivalent IDs instead of per-result ID overrides.
-	// If set, overrides shared.constructor for this one call result.
-	idOverride *call.ID
+	// presentationID is the caller-facing ID for this specific returned result.
+	// When nil, shared.constructor is presented.
+	presentationID *call.ID
 
 	// per-call fields
 	hitCache              bool
@@ -586,8 +636,8 @@ func (r Result[T]) Type() *ast.Type {
 
 // ID returns the ID of the instance.
 func (r Result[T]) ID() *call.ID {
-	if r.idOverride != nil {
-		return r.idOverride
+	if r.presentationID != nil {
+		return r.presentationID
 	}
 	if r.shared == nil {
 		return nil
@@ -664,7 +714,7 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 	if id != nil {
 		r.shared.constructor = id
 	}
-	r.idOverride = nil
+	r.presentationID = nil
 	return r
 }
 
@@ -1077,7 +1127,7 @@ func (c *cache) GetOrInitCall(
 		concurrencyKey: key.ConcurrencyKey,
 	}
 
-	knownLookupKeys := make([]string, 0, 1+len(key.ID.ExtraDigests()))
+	knownLookupKeys := make([]string, 0, len(key.ID.ExtraDigests()))
 	knownLookupSet := make(map[string]struct{}, cap(knownLookupKeys))
 	addKnownLookupKey := func(k string) {
 		if k == "" {
@@ -1089,9 +1139,11 @@ func (c *cache) GetOrInitCall(
 		knownLookupSet[k] = struct{}{}
 		knownLookupKeys = append(knownLookupKeys, k)
 	}
-	addKnownLookupKey(key.ID.ContentDigest().String())
 	for _, extra := range key.ID.ExtraDigests() {
-		addKnownLookupKey(extra.Digest.String())
+		if extra.Kind != call.ExtraDigestKindOutputEquivalence {
+			continue
+		}
+		addKnownLookupKey(knownDigestIndexKey(extra.Kind, extra.Digest.String()))
 	}
 	persistCallKeys := make([]string, 0, 1+len(knownLookupKeys))
 	persistCallKeySet := make(map[string]struct{}, cap(persistCallKeys))
@@ -1226,67 +1278,231 @@ func (c *cache) GetOrInitCall(
 	if c.completedCallsByKnownDigest == nil {
 		c.completedCallsByKnownDigest = make(map[string]*resultList)
 	}
+	acceptLookupResult := func(res *sharedResult) bool {
+		if res == nil {
+			return false
+		}
+		if !cacheLookupExecutionModeMatch(key.ID, res) {
+			if shouldTraceCacheFlow(key.ID) {
+				candidateID := res.requestID
+				if candidateID == nil {
+					candidateID = res.constructor
+				}
+				slog.Info("cache trace reject",
+					"reason", "execution-mode-mismatch",
+					"requestPath", key.ID.Path(),
+					"requestIsDagOp", idIsDagOp(key.ID),
+					"candidatePath", func() string {
+						if candidateID == nil {
+							return ""
+						}
+						return candidateID.Path()
+					}(),
+					"candidateIsDagOp", idIsDagOp(candidateID),
+				)
+			}
+			return false
+		}
+		if !cacheLookupImplicitInputsMatch(key.ID, res) {
+			if shouldTraceCacheFlow(key.ID) {
+				candidateID := res.requestID
+				if candidateID == nil {
+					candidateID = res.constructor
+				}
+				slog.Info("cache trace reject",
+					"reason", "implicit-input-mismatch",
+					"requestPath", key.ID.Path(),
+					"requestDigest", key.ID.Digest(),
+					"requestCacheDigest", key.ID.CacheDigest(),
+					"requestInputs", implicitInputsTraceStrings(key.ID),
+					"candidatePath", func() string {
+						if candidateID == nil {
+							return ""
+						}
+						return candidateID.Path()
+					}(),
+					"candidateDigest", func() digest.Digest {
+						if candidateID == nil {
+							return ""
+						}
+						return candidateID.Digest()
+					}(),
+					"candidateCacheDigest", func() digest.Digest {
+						if candidateID == nil {
+							return ""
+						}
+						return candidateID.CacheDigest()
+					}(),
+					"candidateInputs", implicitInputsTraceStrings(candidateID),
+				)
+			}
+			return false
+		}
+		if key.TTL == 0 {
+			return true
+		}
+		// TTL selects a specific storage key version. Equivalent/known-digest hits
+		// must not bypass that version boundary for persistable entries. In-memory
+		// only entries are not versioned by TTL metadata and can be reused.
+		if res.storageKey == storageKey {
+			return true
+		}
+		if !res.safeToPersistCache {
+			if shouldTraceCacheFlow(key.ID) {
+				slog.Info("cache trace ttl-storage-key-mismatch-allowed",
+					"requestPath", key.ID.Path(),
+					"requestDigest", key.ID.Digest(),
+					"requestCacheDigest", key.ID.CacheDigest(),
+					"requestStorageKey", storageKey,
+					"candidateStorageKey", res.storageKey,
+				)
+			}
+			return true
+		}
+		if shouldTraceCacheFlow(key.ID) {
+			slog.Info("cache trace reject",
+				"reason", "ttl-storage-key-mismatch",
+				"requestPath", key.ID.Path(),
+				"requestDigest", key.ID.Digest(),
+				"requestCacheDigest", key.ID.CacheDigest(),
+				"requestStorageKey", storageKey,
+				"candidateStorageKey", res.storageKey,
+			)
+		}
+		return false
+	}
 
 	if lst, ok := c.completedCalls[storageKey]; ok {
-		if res := lst.first(); res != nil {
-			if shouldReuseExactObjectPayload(res) {
-				res.refCount++
-				c.mu.Unlock()
-				if !res.hasValue {
-					if shouldTrackNilResult(ctx) {
-						return Result[Typed]{
-							shared:   res,
-							hitCache: true,
-						}, nil
-					}
-					return nil, nil
+		if res := lst.firstMatch(acceptLookupResult); res != nil {
+			if shouldTraceCacheFlow(key.ID) {
+				if idShapeMismatchForTrace(key.ID, res.constructor) {
+					slog.Info("cache trace id-shape-mismatch",
+						"kind", "storage",
+						"requestPath", key.ID.Path(),
+						"requestDigest", key.ID.Digest(),
+						"requestCacheDigest", key.ID.CacheDigest(),
+						"resultPath", res.constructor.Path(),
+						"resultDigest", res.constructor.Digest(),
+						"resultCacheDigest", res.constructor.CacheDigest(),
+					)
 				}
-				retRes := Result[Typed]{
-					shared:   res,
-					hitCache: true,
-				}
-				if res.objType != nil {
-					retObjRes, err := res.objType.New(retRes)
-					if err != nil {
-						return nil, fmt.Errorf("reconstruct object result from cache: %w", err)
-					}
-					return retObjRes, nil
-				}
-				return retRes, nil
+				slog.Info("cache trace hit",
+					"kind", "storage",
+					"requestPath", key.ID.Path(),
+					"requestDigest", key.ID.Digest(),
+					"requestCacheDigest", key.ID.CacheDigest(),
+					"storageKey", storageKey,
+					"resultPath", func() string {
+						if res.constructor == nil {
+							return ""
+						}
+						return res.constructor.Path()
+					}(),
+					"resultDigest", func() digest.Digest {
+						if res.constructor == nil {
+							return ""
+						}
+						return res.constructor.Digest()
+					}(),
+					"resultCacheDigest", func() digest.Digest {
+						if res.constructor == nil {
+							return ""
+						}
+						return res.constructor.CacheDigest()
+					}(),
+				)
 			}
+			res.refCount++
+			c.mu.Unlock()
+			presentationID := presentationIDForResult(key.ID, res, false)
+			if !res.hasValue {
+				if shouldTrackNilResult(ctx) {
+					return Result[Typed]{
+						shared:         res,
+						presentationID: presentationID,
+						hitCache:       true,
+					}, nil
+				}
+				return nil, nil
+			}
+			retRes := Result[Typed]{
+				shared:         res,
+				presentationID: presentationID,
+				hitCache:       true,
+			}
+			if res.objType != nil {
+				retObjRes, err := res.objType.New(retRes)
+				if err != nil {
+					return nil, fmt.Errorf("reconstruct object result from cache: %w", err)
+				}
+				return retObjRes, nil
+			}
+			return retRes, nil
 		}
 	}
 
 	if lookupTerm != nil {
-		res := c.lookupEquivalentResultLocked(*lookupTerm)
+		res := c.lookupEquivalentResultLocked(*lookupTerm, acceptLookupResult)
 		if res != nil {
-			if !shouldReuseEquivalentHitForCall(key.ID, res) {
-				goto knownDigestLookup
+			if shouldTraceCacheFlow(key.ID) {
+				if idShapeMismatchForTrace(key.ID, res.constructor) {
+					slog.Info("cache trace id-shape-mismatch",
+						"kind", "equivalent",
+						"requestPath", key.ID.Path(),
+						"requestDigest", key.ID.Digest(),
+						"requestCacheDigest", key.ID.CacheDigest(),
+						"resultPath", res.constructor.Path(),
+						"resultDigest", res.constructor.Digest(),
+						"resultCacheDigest", res.constructor.CacheDigest(),
+					)
+				}
+				slog.Info("cache trace hit",
+					"kind", "equivalent",
+					"requestPath", key.ID.Path(),
+					"requestDigest", key.ID.Digest(),
+					"requestCacheDigest", key.ID.CacheDigest(),
+					"storageKey", storageKey,
+					"resultPath", func() string {
+						if res.constructor == nil {
+							return ""
+						}
+						return res.constructor.Path()
+					}(),
+					"resultDigest", func() digest.Digest {
+						if res.constructor == nil {
+							return ""
+						}
+						return res.constructor.Digest()
+					}(),
+					"resultCacheDigest", func() digest.Digest {
+						if res.constructor == nil {
+							return ""
+						}
+						return res.constructor.CacheDigest()
+					}(),
+				)
 			}
 			res.refCount++
 			c.mu.Unlock()
 
 			hitEquivalent := res.constructor != nil && res.constructor.CacheDigest() != key.ID.CacheDigest()
-			var idOverride *call.ID
-			if hitEquivalent && shouldPreserveRequestIDOnEquivalentHit(key.ID, res) {
-				idOverride = preserveIDWithResultDigests(key.ID, res)
-				if key.ID != nil && res.constructor != nil && key.ID.Path() != res.constructor.Path() {
-					slog.Info("cache equivalent hit remapped call",
-						"requestPath", key.ID.Path(),
-						"requestDigest", key.ID.Digest(),
-						"resultPath", res.constructor.Path(),
-						"resultDigest", res.constructor.Digest(),
-						"requestType", key.ID.Type().NamedType(),
-						"resultType", res.constructor.Type().NamedType(),
-					)
-				}
+			presentationID := presentationIDForResult(key.ID, res, true)
+			if shouldTraceCacheFlow(key.ID) && presentationID != nil && key.ID != nil && res.constructor != nil && key.ID.Path() != res.constructor.Path() {
+				slog.Info("cache equivalent hit remapped call",
+					"requestPath", key.ID.Path(),
+					"requestDigest", key.ID.Digest(),
+					"resultPath", res.constructor.Path(),
+					"resultDigest", res.constructor.Digest(),
+					"requestType", key.ID.Type().NamedType(),
+					"resultType", res.constructor.Type().NamedType(),
+				)
 			}
 
 			if !res.hasValue {
 				if shouldTrackNilResult(ctx) {
 					return Result[Typed]{
 						shared:                res,
-						idOverride:            idOverride,
+						presentationID:        presentationID,
 						hitCache:              true,
 						hitContentDigestCache: hitEquivalent,
 					}, nil
@@ -1295,7 +1511,7 @@ func (c *cache) GetOrInitCall(
 			}
 			retRes := Result[Typed]{
 				shared:                res,
-				idOverride:            idOverride,
+				presentationID:        presentationID,
 				hitCache:              true,
 				hitContentDigestCache: hitEquivalent,
 			}
@@ -1310,21 +1526,53 @@ func (c *cache) GetOrInitCall(
 		}
 	}
 
-knownDigestLookup:
 	for _, knownKey := range knownLookupKeys {
 		if lst, ok := c.completedCallsByKnownDigest[knownKey]; ok {
-			if res := lst.first(); res != nil {
-				if !shouldReuseEquivalentHitForCall(key.ID, res) {
-					continue
+			if res := lst.firstMatch(acceptLookupResult); res != nil {
+				if shouldTraceCacheFlow(key.ID) {
+					if idShapeMismatchForTrace(key.ID, res.constructor) {
+						slog.Info("cache trace id-shape-mismatch",
+							"kind", "known-digest",
+							"requestPath", key.ID.Path(),
+							"requestDigest", key.ID.Digest(),
+							"requestCacheDigest", key.ID.CacheDigest(),
+							"resultPath", res.constructor.Path(),
+							"resultDigest", res.constructor.Digest(),
+							"resultCacheDigest", res.constructor.CacheDigest(),
+						)
+					}
+					slog.Info("cache trace hit",
+						"kind", "known-digest",
+						"knownKey", knownKey,
+						"requestPath", key.ID.Path(),
+						"requestDigest", key.ID.Digest(),
+						"requestCacheDigest", key.ID.CacheDigest(),
+						"storageKey", storageKey,
+						"resultPath", func() string {
+							if res.constructor == nil {
+								return ""
+							}
+							return res.constructor.Path()
+						}(),
+						"resultDigest", func() digest.Digest {
+							if res.constructor == nil {
+								return ""
+							}
+							return res.constructor.Digest()
+						}(),
+						"resultCacheDigest", func() digest.Digest {
+							if res.constructor == nil {
+								return ""
+							}
+							return res.constructor.CacheDigest()
+						}(),
+					)
 				}
 				res.refCount++
 				c.aliasRequestIDToResultLocked(key.ID, res)
 				c.mu.Unlock()
-				var idOverride *call.ID
-				if shouldPreserveRequestIDOnEquivalentHit(key.ID, res) {
-					idOverride = preserveIDWithResultDigests(key.ID, res)
-				}
-				if key.ID != nil && res.constructor != nil && key.ID.Path() != res.constructor.Path() {
+				presentationID := presentationIDForResult(key.ID, res, true)
+				if shouldTraceCacheFlow(key.ID) && key.ID != nil && res.constructor != nil && key.ID.Path() != res.constructor.Path() {
 					slog.Info("cache known-digest hit remapped call",
 						"knownKey", knownKey,
 						"requestPath", key.ID.Path(),
@@ -1339,7 +1587,7 @@ knownDigestLookup:
 					if shouldTrackNilResult(ctx) {
 						return Result[Typed]{
 							shared:                res,
-							idOverride:            idOverride,
+							presentationID:        presentationID,
 							hitCache:              true,
 							hitContentDigestCache: true,
 						}, nil
@@ -1352,7 +1600,7 @@ knownDigestLookup:
 				// have the same content, while still allowing the underlying result be re-used.
 				retRes := Result[Typed]{
 					shared:                res,
-					idOverride:            idOverride,
+					presentationID:        presentationID,
 					hitCache:              true,
 					hitContentDigestCache: true,
 				}
@@ -1365,12 +1613,39 @@ knownDigestLookup:
 				}
 				return retRes, nil
 			}
+			if shouldTraceCacheFlow(key.ID) {
+				slog.Info("cache trace known-digest-no-match",
+					"knownKey", knownKey,
+					"requestPath", key.ID.Path(),
+					"requestDigest", key.ID.Digest(),
+					"requestCacheDigest", key.ID.CacheDigest(),
+					"candidateCount", lst.len(),
+				)
+			}
+			continue
+		}
+		if shouldTraceCacheFlow(key.ID) {
+			slog.Info("cache trace known-digest-empty",
+				"knownKey", knownKey,
+				"requestPath", key.ID.Path(),
+				"requestDigest", key.ID.Digest(),
+				"requestCacheDigest", key.ID.CacheDigest(),
+			)
 		}
 	}
 
 	if key.ConcurrencyKey != "" {
 		if res, ok := c.ongoingCalls[callConcKeys]; ok {
 			// already an ongoing call
+			if shouldTraceCacheFlow(key.ID) {
+				slog.Info("cache trace wait-ongoing",
+					"requestPath", key.ID.Path(),
+					"requestDigest", key.ID.Digest(),
+					"requestCacheDigest", key.ID.CacheDigest(),
+					"storageKey", storageKey,
+					"concurrencyKey", key.ConcurrencyKey,
+				)
+			}
 			res.waiters++
 			c.mu.Unlock()
 			return c.wait(ctx, res, false)
@@ -1396,6 +1671,15 @@ knownDigestLookup:
 
 	if key.ConcurrencyKey != "" {
 		c.ongoingCalls[callConcKeys] = res
+	}
+	if shouldTraceCacheFlow(key.ID) {
+		slog.Info("cache trace miss-init",
+			"requestPath", key.ID.Path(),
+			"requestDigest", key.ID.Digest(),
+			"requestCacheDigest", key.ID.CacheDigest(),
+			"storageKey", storageKey,
+			"concurrencyKey", key.ConcurrencyKey,
+		)
 	}
 
 	go func() {
@@ -1426,26 +1710,33 @@ knownDigestLookup:
 				res.objType = obj.ObjectType()
 			}
 			if res.constructor != nil {
-				if res.requestID != nil {
-					for _, extra := range res.requestID.ExtraDigests() {
-						res.constructor = res.constructor.With(call.WithExtraDigest(extra))
-					}
-				}
-				res.contentDigestKey = res.constructor.ContentDigest().String()
 				knownDigestSet := map[string]struct{}{}
-				if res.contentDigestKey != "" {
-					knownDigestSet[res.contentDigestKey] = struct{}{}
-				}
-				for _, extra := range res.constructor.ExtraDigests() {
-					if d := extra.Digest.String(); d != "" {
-						knownDigestSet[d] = struct{}{}
+				addKnownDigests := func(id *call.ID) {
+					if id == nil {
+						return
+					}
+					for _, extra := range id.ExtraDigests() {
+						if extra.Kind != call.ExtraDigestKindOutputEquivalence {
+							continue
+						}
+						if key := knownDigestIndexKey(extra.Kind, extra.Digest.String()); key != "" {
+							knownDigestSet[key] = struct{}{}
+						}
 					}
 				}
+				addKnownDigests(res.constructor)
+				addKnownDigests(preserveIDWithResultDigests(res.requestID, res))
+
 				res.knownDigestKeys = make([]string, 0, len(knownDigestSet))
 				for knownDig := range knownDigestSet {
 					res.knownDigestKeys = append(res.knownDigestKeys, knownDig)
 				}
-				res.resultCallKey = res.constructor.CacheDigest().String()
+
+				indexID := cacheIndexIDForResult(res.requestID, res)
+				if indexID == nil {
+					indexID = res.constructor
+				}
+				res.resultCallKey = indexID.CacheDigest().String()
 			}
 		}
 	}()
@@ -1534,17 +1825,21 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, isFirstCaller bool)
 			hitCache = false
 		}
 		if !res.hasValue {
+			presentationID := presentationIDForResult(res.requestID, res, false)
 			if shouldTrackNilResult(ctx) {
 				return Result[Typed]{
-					shared:   res,
-					hitCache: hitCache,
+					shared:         res,
+					presentationID: presentationID,
+					hitCache:       hitCache,
 				}, nil
 			}
 			return nil, nil
 		}
+		presentationID := presentationIDForResult(res.requestID, res, false)
 		retRes := Result[Typed]{
-			shared:   res,
-			hitCache: hitCache,
+			shared:         res,
+			presentationID: presentationID,
+			hitCache:       hitCache,
 		}
 		if res.objType != nil {
 			retObjRes, err := res.objType.New(retRes)
@@ -1554,6 +1849,33 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, isFirstCaller bool)
 			return retObjRes, nil
 		}
 		return retRes, nil
+	}
+
+	if shouldTraceCacheFlow(res.requestID) {
+		slog.Info("cache trace wait-error",
+			"requestPath", func() string {
+				if res.requestID == nil {
+					return ""
+				}
+				return res.requestID.Path()
+			}(),
+			"requestDigest", func() digest.Digest {
+				if res.requestID == nil {
+					return ""
+				}
+				return res.requestID.Digest()
+			}(),
+			"requestCacheDigest", func() digest.Digest {
+				if res.requestID == nil {
+					return ""
+				}
+				return res.requestID.CacheDigest()
+			}(),
+			"storageKey", res.storageKey,
+			"err", err,
+			"waiters", res.waiters,
+			"refCount", res.refCount,
+		)
 	}
 
 	if res.refCount == 0 && res.waiters == 0 {

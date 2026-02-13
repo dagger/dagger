@@ -712,10 +712,8 @@ func TestCacheContentDigestHitOverridesIDPerCall(t *testing.T) {
 
 	contentDigest := digest.FromString("shared-content-digest")
 	keyA := cacheTestID("content-a").
-		WithDigest(digest.FromString("call-a")).
 		With(call.WithContentDigest(contentDigest))
 	keyB := cacheTestID("content-b").
-		WithDigest(digest.FromString("call-b")).
 		With(call.WithContentDigest(contentDigest))
 
 	resA, err := c.GetOrInitCall(ctx, CacheKey{ID: keyA}, func(context.Context) (AnyResult, error) {
@@ -756,8 +754,8 @@ func TestCacheEgraphRepairsExistingTermsOnInputMerge(t *testing.T) {
 	assert.NilError(t, err)
 	c := cacheIface.(*cache)
 
-	recv1 := cacheTestID("egraph-recv-1").WithDigest(digest.FromString("egraph-recv-digest-1"))
-	recv2 := cacheTestID("egraph-recv-2").WithDigest(digest.FromString("egraph-recv-digest-2"))
+	recv1 := cacheTestID("egraph-recv-1")
+	recv2 := cacheTestID("egraph-recv-2")
 
 	f1Key := recv1.Append(Int(0).Type(), "egraph-f")
 	f2Key := recv2.Append(Int(0).Type(), "egraph-f")
@@ -772,10 +770,8 @@ func TestCacheEgraphRepairsExistingTermsOnInputMerge(t *testing.T) {
 
 	sharedContent := digest.FromString("egraph-shared-content")
 	f1Out := f1Key.
-		WithDigest(digest.FromString("egraph-f-out-1")).
 		With(call.WithContentDigest(sharedContent))
 	f2Out := f2Key.
-		WithDigest(digest.FromString("egraph-f-out-2")).
 		With(call.WithContentDigest(sharedContent))
 
 	fInitCalls := 0
@@ -810,6 +806,225 @@ func TestCacheEgraphRepairsExistingTermsOnInputMerge(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheEgraphOutputEquivalenceDigestUnionsAcrossRecipeDigests(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	recv1 := cacheTestID("egraph-outputeq-recv-1")
+	recv2 := cacheTestID("egraph-outputeq-recv-2")
+
+	f1Key := recv1.Append(Int(0).Type(), "egraph-outputeq-f")
+	f2Key := recv2.Append(Int(0).Type(), "egraph-outputeq-f")
+	g1Key := f1Key.Append(Int(0).Type(), "egraph-outputeq-g")
+	g2Key := f2Key.Append(Int(0).Type(), "egraph-outputeq-g")
+
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(g1Key, NewInt(710)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !g1Res.HitCache())
+
+	sharedOutputEq := digest.FromString("egraph-shared-output-equivalence")
+	f1Out := f1Key.With(call.WithAdditionalDigest(sharedOutputEq))
+	f2Out := f2Key.With(call.WithAdditionalDigest(sharedOutputEq))
+
+	fInitCalls := 0
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f1Out, NewInt(1)), nil
+	})
+	assert.NilError(t, err)
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f2Out, NewInt(2)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, fInitCalls)
+
+	g2InitCalls := 0
+	g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		g2InitCalls++
+		return newDetachedResult(g2Key, NewInt(711)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, g2InitCalls)
+	assert.Assert(t, g2Res.HitCache())
+	assert.Assert(t, g2Res.HitContentDigestCache())
+	assert.Equal(t, 710, cacheTestUnwrapInt(t, g2Res))
+	assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
+
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.NilError(t, g2Res.Release(ctx))
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.NilError(t, f2Res.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheEgraphAuxiliaryDigestDoesNotUnionAcrossRecipeDigests(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	recv1 := cacheTestID("egraph-aux-recv-1")
+	recv2 := cacheTestID("egraph-aux-recv-2")
+
+	f1Key := recv1.Append(Int(0).Type(), "egraph-aux-f")
+	f2Key := recv2.Append(Int(0).Type(), "egraph-aux-f")
+	g1Key := f1Key.Append(Int(0).Type(), "egraph-aux-g")
+	g2Key := f2Key.Append(Int(0).Type(), "egraph-aux-g")
+
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(g1Key, NewInt(810)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !g1Res.HitCache())
+
+	sharedAux := digest.FromString("egraph-shared-aux-only")
+	auxDigest := call.ExtraDigest{
+		Digest: sharedAux,
+		Label:  "aux-shared",
+		Kind:   call.ExtraDigestKindAuxiliary,
+	}
+	f1Out := f1Key.With(call.WithExtraDigest(auxDigest))
+	f2Out := f2Key.With(call.WithExtraDigest(auxDigest))
+
+	fInitCalls := 0
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f1Out, NewInt(1)), nil
+	})
+	assert.NilError(t, err)
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f2Out, NewInt(2)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, fInitCalls)
+
+	g2InitCalls := 0
+	g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		g2InitCalls++
+		return newDetachedResult(g2Key, NewInt(811)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, g2InitCalls)
+	assert.Assert(t, !g2Res.HitCache())
+	assert.Assert(t, !g2Res.HitContentDigestCache())
+	assert.Equal(t, 811, cacheTestUnwrapInt(t, g2Res))
+
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.NilError(t, g2Res.Release(ctx))
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.NilError(t, f2Res.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheEgraphMixedDigestSetsOnlyUnionOnOutputEquivalence(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	recv1 := cacheTestID("egraph-mixed-recv-1")
+	recv2 := cacheTestID("egraph-mixed-recv-2")
+	recv3 := cacheTestID("egraph-mixed-recv-3")
+
+	f1Key := recv1.Append(Int(0).Type(), "egraph-mixed-f")
+	f2Key := recv2.Append(Int(0).Type(), "egraph-mixed-f")
+	f3Key := recv3.Append(Int(0).Type(), "egraph-mixed-f")
+
+	g1Key := f1Key.Append(Int(0).Type(), "egraph-mixed-g")
+	g2Key := f2Key.Append(Int(0).Type(), "egraph-mixed-g")
+	g3Key := f3Key.Append(Int(0).Type(), "egraph-mixed-g")
+
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(g1Key, NewInt(910)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !g1Res.HitCache())
+
+	outputEqA := digest.FromString("egraph-mixed-output-a")
+	outputEqB := digest.FromString("egraph-mixed-output-b")
+	auxShared := digest.FromString("egraph-mixed-aux-shared")
+	auxOther := digest.FromString("egraph-mixed-aux-other")
+
+	f1Out := f1Key.
+		With(call.WithAdditionalDigest(outputEqA)).
+		With(call.WithExtraDigest(call.ExtraDigest{
+			Digest: auxShared,
+			Label:  "aux-shared",
+			Kind:   call.ExtraDigestKindAuxiliary,
+		}))
+	f2Out := f2Key.
+		With(call.WithAdditionalDigest(outputEqB)).
+		With(call.WithExtraDigest(call.ExtraDigest{
+			Digest: auxShared,
+			Label:  "aux-shared",
+			Kind:   call.ExtraDigestKindAuxiliary,
+		}))
+	f3Out := f3Key.
+		With(call.WithAdditionalDigest(outputEqA)).
+		With(call.WithExtraDigest(call.ExtraDigest{
+			Digest: auxOther,
+			Label:  "aux-other",
+			Kind:   call.ExtraDigestKindAuxiliary,
+		}))
+
+	fInitCalls := 0
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f1Out, NewInt(1)), nil
+	})
+	assert.NilError(t, err)
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f2Out, NewInt(2)), nil
+	})
+	assert.NilError(t, err)
+	f3Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f3Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f3Out, NewInt(3)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 3, fInitCalls)
+
+	g2InitCalls := 0
+	g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		g2InitCalls++
+		return newDetachedResult(g2Key, NewInt(911)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, g2InitCalls)
+	assert.Assert(t, !g2Res.HitCache())
+	assert.Equal(t, 911, cacheTestUnwrapInt(t, g2Res))
+
+	g3InitCalls := 0
+	g3Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g3Key}, func(context.Context) (AnyResult, error) {
+		g3InitCalls++
+		return newDetachedResult(g3Key, NewInt(912)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, g3InitCalls)
+	assert.Assert(t, g3Res.HitCache())
+	assert.Assert(t, g3Res.HitContentDigestCache())
+	assert.Equal(t, 910, cacheTestUnwrapInt(t, g3Res))
+	assert.Equal(t, g3Key.Digest().String(), g3Res.ID().Digest().String())
+
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.NilError(t, g2Res.Release(ctx))
+	assert.NilError(t, g3Res.Release(ctx))
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.NilError(t, f2Res.Release(ctx))
+	assert.NilError(t, f3Res.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestCacheEgraphSkipsZeroInputTerms(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -818,8 +1033,8 @@ func TestCacheEgraphSkipsZeroInputTerms(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	base := cacheTestID("egraph-zero-input")
-	key1 := base.WithDigest(digest.FromString("egraph-zero-input-k1"))
-	key2 := base.WithDigest(digest.FromString("egraph-zero-input-k2"))
+	key1 := base.With(call.WithAdditionalDigest(digest.FromString("egraph-zero-input-k1")))
+	key2 := base.With(call.WithAdditionalDigest(digest.FromString("egraph-zero-input-k2")))
 
 	initCalls := 0
 	res1, err := c.GetOrInitCall(ctx, CacheKey{ID: key1}, func(context.Context) (AnyResult, error) {
@@ -848,7 +1063,7 @@ func TestCacheEgraphSkipsZeroInputTerms(t *testing.T) {
 	assert.Equal(t, 0, len(c.egraphTermsByDigest))
 }
 
-func TestCacheEgraphCustomDigestAffectsTermIdentity(t *testing.T) {
+func TestCacheEgraphAdditionalDigestAffectsTermIdentity(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
@@ -858,10 +1073,10 @@ func TestCacheEgraphCustomDigestAffectsTermIdentity(t *testing.T) {
 	recv := cacheTestID("egraph-custom-recv")
 	base := recv.Append(Int(0).Type(), "egraph-custom")
 	keyA := base.
-		WithDigest(digest.FromString("egraph-custom-a")).
+		With(call.WithAdditionalDigest(digest.FromString("egraph-custom-a"))).
 		With(call.WithContentDigest(digest.FromString("egraph-custom-content-a")))
 	keyB := base.
-		WithDigest(digest.FromString("egraph-custom-b")).
+		With(call.WithAdditionalDigest(digest.FromString("egraph-custom-b"))).
 		With(call.WithContentDigest(digest.FromString("egraph-custom-content-b")))
 
 	initCalls := 0
@@ -997,6 +1212,136 @@ func TestCacheAdditionalDigestDirectHitPreservesRequestID(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheSeparatesSemanticConstructorFromPresentedRequestID(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sharedAdditional := digest.FromString("presentation-shared-additional")
+	requestA := cacheTestID("presentation-request-a").With(call.WithAdditionalDigest(sharedAdditional))
+	requestB := cacheTestID("presentation-request-b").With(call.WithAdditionalDigest(sharedAdditional))
+	semantic := cacheTestID("presentation-semantic-result")
+
+	initCalls := 0
+	resA, err := c.GetOrInitCall(ctx, CacheKey{ID: requestA}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(semantic, NewInt(91)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resA.HitCache())
+	assert.Equal(t, semantic.Digest().String(), resA.ID().Digest().String())
+	assert.Equal(t, semantic.CacheDigest().String(), resA.ID().CacheDigest().String())
+
+	storageEntry := c.completedCalls[requestA.CacheDigest().String()]
+	assert.Assert(t, storageEntry != nil)
+	cached := storageEntry.first()
+	assert.Assert(t, cached != nil)
+	assert.Assert(t, cached.constructor != nil)
+	assert.Equal(t, semantic.CacheDigest().String(), cached.constructor.CacheDigest().String())
+
+	resB, err := c.GetOrInitCall(ctx, CacheKey{ID: requestB}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(cacheTestID("presentation-unexpected"), NewInt(92)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCalls)
+	assert.Assert(t, resB.HitCache())
+	assert.Assert(t, resB.HitContentDigestCache())
+	assert.Equal(t, requestB.Digest().String(), resB.ID().Digest().String())
+	assert.Equal(t, requestB.CacheDigest().String(), resB.ID().CacheDigest().String())
+	assert.Equal(t, 91, cacheTestUnwrapInt(t, resB))
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheAuxiliaryDigestDoesNotLookupAcrossDistinctRecipeIDs(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sharedAux := digest.FromString("aux-shared")
+	keyA := cacheTestID("aux-lookup-a").With(call.WithExtraDigest(call.ExtraDigest{
+		Digest: sharedAux,
+		Label:  "aux-shared",
+		Kind:   call.ExtraDigestKindAuxiliary,
+	}))
+	keyB := cacheTestID("aux-lookup-b").With(call.WithExtraDigest(call.ExtraDigest{
+		Digest: sharedAux,
+		Label:  "aux-shared",
+		Kind:   call.ExtraDigestKindAuxiliary,
+	}))
+
+	initCalls := 0
+	resA, err := c.GetOrInitCall(ctx, CacheKey{ID: keyA}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(cacheTestID("aux-lookup-result-a"), NewInt(81)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resA.HitCache())
+
+	resB, err := c.GetOrInitCall(ctx, CacheKey{ID: keyB}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(cacheTestID("aux-lookup-result-b"), NewInt(82)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resB.HitCache())
+	assert.Assert(t, !resB.HitContentDigestCache())
+	assert.Equal(t, 2, initCalls)
+	assert.Equal(t, 82, cacheTestUnwrapInt(t, resB))
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheKnownDigestLookupDistinguishesDigestKind(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	shared := digest.FromString("kind-shared")
+	auxKey := cacheTestID("kind-lookup-aux").With(call.WithExtraDigest(call.ExtraDigest{
+		Digest: shared,
+		Label:  "aux-shared",
+		Kind:   call.ExtraDigestKindAuxiliary,
+	}))
+	outputKey := cacheTestID("kind-lookup-output").With(call.WithExtraDigest(call.ExtraDigest{
+		Digest: shared,
+		Label:  "output-shared",
+		Kind:   call.ExtraDigestKindOutputEquivalence,
+	}))
+
+	initCalls := 0
+	resAux, err := c.GetOrInitCall(ctx, CacheKey{ID: auxKey}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(cacheTestID("kind-lookup-result-aux"), NewInt(71)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resAux.HitCache())
+
+	resOutput, err := c.GetOrInitCall(ctx, CacheKey{ID: outputKey}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(cacheTestID("kind-lookup-result-output"), NewInt(72)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resOutput.HitCache())
+	assert.Assert(t, !resOutput.HitContentDigestCache())
+	assert.Equal(t, 2, initCalls)
+	assert.Equal(t, 72, cacheTestUnwrapInt(t, resOutput))
+
+	assert.NilError(t, resAux.Release(ctx))
+	assert.NilError(t, resOutput.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestCacheEgraphConcurrentRepairStress(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -1010,10 +1355,9 @@ func TestCacheEgraphConcurrentRepairStress(t *testing.T) {
 	fOuts := make([]*call.ID, 0, count)
 	gKeys := make([]*call.ID, 0, count)
 	for i := 0; i < count; i++ {
-		recv := cacheTestID(fmt.Sprintf("egraph-stress-recv-%d", i)).WithDigest(digest.FromString(fmt.Sprintf("egraph-stress-recv-digest-%d", i)))
+		recv := cacheTestID(fmt.Sprintf("egraph-stress-recv-%d", i))
 		fKey := recv.Append(Int(0).Type(), "egraph-stress-f")
 		fOut := fKey.
-			WithDigest(digest.FromString(fmt.Sprintf("egraph-stress-f-out-%d", i))).
 			With(call.WithContentDigest(sharedContent))
 		gKey := fKey.Append(Int(0).Type(), "egraph-stress-g")
 		fKeys = append(fKeys, fKey)
@@ -1094,10 +1438,9 @@ func BenchmarkCacheEgraphConcurrentRepair(b *testing.B) {
 	c := cacheIface.(*cache)
 
 	sharedContent := digest.FromString("egraph-bench-shared-content")
-	recv0 := cacheTestID("egraph-bench-recv-0").WithDigest(digest.FromString("egraph-bench-recv-digest-0"))
+	recv0 := cacheTestID("egraph-bench-recv-0")
 	f0Key := recv0.Append(Int(0).Type(), "egraph-bench-f")
 	f0Out := f0Key.
-		WithDigest(digest.FromString("egraph-bench-f-out-0")).
 		With(call.WithContentDigest(sharedContent))
 	g0Key := f0Key.Append(Int(0).Type(), "egraph-bench-g")
 
@@ -1125,11 +1468,9 @@ func BenchmarkCacheEgraphConcurrentRepair(b *testing.B) {
 		for pb.Next() {
 			i := seq.Add(1)
 
-			recv := cacheTestID(fmt.Sprintf("egraph-bench-recv-%d", i)).
-				WithDigest(digest.FromString(fmt.Sprintf("egraph-bench-recv-digest-%d", i)))
+			recv := cacheTestID(fmt.Sprintf("egraph-bench-recv-%d", i))
 			fKey := recv.Append(Int(0).Type(), "egraph-bench-f")
 			fOut := fKey.
-				WithDigest(digest.FromString(fmt.Sprintf("egraph-bench-f-out-%d", i))).
 				With(call.WithContentDigest(sharedContent))
 			gKey := fKey.Append(Int(0).Type(), "egraph-bench-g")
 
@@ -1167,10 +1508,8 @@ func TestCacheEgraphAliasesContentHitIDsForDownstreamTerms(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	sharedContent := digest.FromString("egraph-content-hit-alias")
-	base := cacheTestID("egraph-alias-base")
-
-	f1Key := base.WithDigest(digest.FromString("egraph-alias-f1"))
-	f2Key := base.WithDigest(digest.FromString("egraph-alias-f2"))
+	f1Key := cacheTestID("egraph-alias-f1")
+	f2Key := cacheTestID("egraph-alias-f2")
 	f1Out := f1Key.With(call.WithContentDigest(sharedContent))
 	f2LookupID := f2Key.With(call.WithContentDigest(sharedContent))
 
@@ -1204,7 +1543,6 @@ func TestCacheEgraphAliasesContentHitIDsForDownstreamTerms(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 0, g2InitCalls)
 	assert.Assert(t, g2Res.HitCache())
-	assert.Assert(t, !g2Res.HitContentDigestCache())
 	assert.Equal(t, 111, cacheTestUnwrapInt(t, g2Res))
 	assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
 
@@ -1378,7 +1716,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 
 	storageID := cacheTestID("storage-key")
 	resultID := storageID.
-		WithDigest(digest.FromString("result-digest")).
+		With(call.WithAdditionalDigest(digest.FromString("result-digest"))).
 		With(call.WithContentDigest(digest.FromString("result-content")))
 
 	res, err := c.GetOrInitCall(ctx, CacheKey{ID: storageID}, func(context.Context) (AnyResult, error) {
@@ -1388,7 +1726,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 
 	storageKey := storageID.Digest().String()
 	resultKey := resultID.CacheDigest().String()
-	contentKey := resultID.ContentDigest().String()
+	contentKey := knownDigestIndexKey(call.ExtraDigestKindOutputEquivalence, resultID.ContentDigest().String())
 
 	assert.Assert(t, c.completedCalls[storageKey] != nil)
 	assert.Assert(t, c.completedCalls[resultKey] != nil)
@@ -1516,8 +1854,11 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 
 	assert.NilError(t, res1.Release(ctx))
 	assert.NilError(t, res2.Release(ctx))
-	assert.Equal(t, 0, len(c.completedCalls))
-	assert.Equal(t, 0, c.Size())
+	// Persist-safe entries stay resident when a DB-backed cache is enabled so
+	// later sessions can reuse them.
+	assert.Assert(t, c.completedCalls[callKey] != nil)
+	assert.Equal(t, 2, len(c.completedCalls))
+	assert.Equal(t, 2, c.Size())
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
