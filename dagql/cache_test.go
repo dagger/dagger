@@ -703,7 +703,7 @@ func TestCacheDoNotCacheSkipsStorage(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestCacheContentDigestHitOverridesIDPerCall(t *testing.T) {
+func TestCacheContentDigestDoesNotLookupAcrossDistinctRecipeIDs(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
@@ -723,14 +723,17 @@ func TestCacheContentDigestHitOverridesIDPerCall(t *testing.T) {
 	assert.Assert(t, !resA.HitCache())
 	assert.Equal(t, keyA.Digest().String(), resA.ID().Digest().String())
 
+	initCalls := 0
 	resB, err := c.GetOrInitCall(ctx, CacheKey{ID: keyB}, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("unexpected initializer call")
+		initCalls++
+		return newDetachedResult(keyB, NewInt(22)), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, resB.HitCache())
-	assert.Assert(t, resB.HitContentDigestCache())
+	assert.Equal(t, 1, initCalls)
+	assert.Assert(t, !resB.HitCache())
+	assert.Assert(t, !resB.HitContentDigestCache())
 	assert.Equal(t, keyB.Digest().String(), resB.ID().Digest().String())
-	assert.Equal(t, 11, cacheTestUnwrapInt(t, resB))
+	assert.Equal(t, 22, cacheTestUnwrapInt(t, resB))
 
 	resAHit, err := c.GetOrInitCall(ctx, CacheKey{ID: keyA}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
@@ -1025,42 +1028,183 @@ func TestCacheEgraphMixedDigestSetsOnlyUnionOnOutputEquivalence(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestCacheEgraphSkipsZeroInputTerms(t *testing.T) {
+func TestCacheZeroInputCallsStillParticipateInUnifiedLookup(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+
+	key := cacheTestID("egraph-zero-input")
+	c := cacheIface.(*cache)
+
+	// Acceptance criteria:
+	// 1. A zero-input call can be cached and looked up without requiring any
+	//    separate lookup branch.
+	// 2. A repeat request for the same recipe returns a normal cache hit (not an
+	//    output-equivalence hit), and preserves request recipe identity.
+	initCalls := 0
+	res1, err := c.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(key, NewInt(1)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !res1.HitCache())
+	assert.Equal(t, 1, initCalls)
+	assert.Equal(t, 1, cacheTestUnwrapInt(t, res1))
+
+	res2, err := c.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(key, NewInt(2)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res2.HitCache())
+	assert.Assert(t, !res2.HitContentDigestCache())
+	assert.Equal(t, 1, initCalls)
+	assert.Equal(t, 1, cacheTestUnwrapInt(t, res2))
+	assert.Equal(t, key.Digest().String(), res2.ID().Digest().String())
+
+	assert.NilError(t, res1.Release(ctx))
+	assert.NilError(t, res2.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheStructuralLookupPrefersExactStorageKeyCandidate(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	c := cacheIface.(*cache)
 
-	base := cacheTestID("egraph-zero-input")
-	key1 := base.With(call.WithAdditionalDigest(digest.FromString("egraph-zero-input-k1")))
-	key2 := base.With(call.WithAdditionalDigest(digest.FromString("egraph-zero-input-k2")))
+	recv1 := cacheTestID("egraph-prefer-exact-recv-1")
+	recv2 := cacheTestID("egraph-prefer-exact-recv-2")
 
-	initCalls := 0
-	res1, err := c.GetOrInitCall(ctx, CacheKey{ID: key1}, func(context.Context) (AnyResult, error) {
-		initCalls++
-		return newDetachedResult(key1, NewInt(1)), nil
+	f1Key := recv1.Append(Int(0).Type(), "egraph-prefer-exact-f")
+	f2Key := recv2.Append(Int(0).Type(), "egraph-prefer-exact-f")
+	g1Key := f1Key.Append(Int(0).Type(), "egraph-prefer-exact-g")
+	g2Key := f2Key.Append(Int(0).Type(), "egraph-prefer-exact-g")
+
+	sharedContent := digest.FromString("egraph-prefer-exact-shared-content")
+	f1Out := f1Key.With(call.WithContentDigest(sharedContent))
+	f2Out := f2Key.With(call.WithContentDigest(sharedContent))
+
+	fInitCalls := 0
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f1Out, NewInt(1)), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, !res1.HitCache())
-
-	res2, err := c.GetOrInitCall(ctx, CacheKey{ID: key2}, func(context.Context) (AnyResult, error) {
-		initCalls++
-		return newDetachedResult(key2, NewInt(2)), nil
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f2Out, NewInt(2)), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, !res2.HitCache())
-	assert.Assert(t, !res2.HitContentDigestCache())
-	assert.Equal(t, 2, initCalls)
-	assert.Equal(t, 2, cacheTestUnwrapInt(t, res2))
+	assert.Equal(t, 2, fInitCalls)
 
-	assert.NilError(t, res1.Release(ctx))
-	assert.NilError(t, res2.Release(ctx))
+	g1InitCalls := 0
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		g1InitCalls++
+		return newDetachedResult(g1Key, NewInt(100)).WithSafeToPersistCache(true), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, g1InitCalls)
+	assert.Assert(t, !g1Res.HitCache())
+
+	g2InitCalls := 0
+	g2MissRes, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key, TTL: 1}, func(context.Context) (AnyResult, error) {
+		g2InitCalls++
+		return newDetachedResult(g2Key, NewInt(200)).WithSafeToPersistCache(true), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, g2InitCalls)
+	assert.Assert(t, !g2MissRes.HitCache())
+	assert.Equal(t, 200, cacheTestUnwrapInt(t, g2MissRes))
+
+	g2HitRes, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected initializer call")
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, g2HitRes.HitCache())
+	assert.Assert(t, !g2HitRes.HitContentDigestCache())
+	assert.Equal(t, 200, cacheTestUnwrapInt(t, g2HitRes))
+	assert.Equal(t, g2Key.Digest().String(), g2HitRes.ID().Digest().String())
+
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.NilError(t, g2MissRes.Release(ctx))
+	assert.NilError(t, g2HitRes.Release(ctx))
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.NilError(t, f2Res.Release(ctx))
 	assert.Equal(t, 0, c.Size())
-	assert.Equal(t, 0, len(c.egraphTerms))
-	assert.Equal(t, 0, len(c.egraphDigestToClass))
-	assert.Equal(t, 0, len(c.egraphParents))
-	assert.Equal(t, 0, len(c.egraphTermsByDigest))
+}
+
+func TestCachePrefersExactRecipeHitWhenExactAndEquivalentCandidatesExist(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	recv1 := cacheTestID("egraph-prefer-exact-recipe-recv-1")
+	recv2 := cacheTestID("egraph-prefer-exact-recipe-recv-2")
+
+	f1Key := recv1.Append(Int(0).Type(), "egraph-prefer-exact-recipe-f")
+	f2Key := recv2.Append(Int(0).Type(), "egraph-prefer-exact-recipe-f")
+	g1Key := f1Key.Append(Int(0).Type(), "egraph-prefer-exact-recipe-g")
+	g2Key := f2Key.Append(Int(0).Type(), "egraph-prefer-exact-recipe-g")
+
+	// Acceptance criteria:
+	// 1. After structural equivalence is discovered, if both an exact-recipe
+	//    result and an equivalent-recipe result are available for a request,
+	//    the exact-recipe result is preferred.
+	// 2. The selected hit remains a normal cache hit (not content-digest hit),
+	//    and request recipe identity is preserved on the returned ID.
+	gInitCalls := 0
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		gInitCalls++
+		return newDetachedResult(g1Key, NewInt(700)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !g1Res.HitCache())
+
+	g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		gInitCalls++
+		return newDetachedResult(g2Key, NewInt(701)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !g2Res.HitCache())
+	assert.Equal(t, 2, gInitCalls)
+
+	sharedOutputEq := digest.FromString("egraph-prefer-exact-recipe-shared-output-eq")
+	f1Out := f1Key.With(call.WithAdditionalDigest(sharedOutputEq))
+	f2Out := f2Key.With(call.WithAdditionalDigest(sharedOutputEq))
+
+	fInitCalls := 0
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f1Out, NewInt(1)), nil
+	})
+	assert.NilError(t, err)
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		fInitCalls++
+		return newDetachedResult(f2Out, NewInt(2)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, fInitCalls)
+
+	g2HitRes, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected initializer call")
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, g2HitRes.HitCache())
+	assert.Assert(t, !g2HitRes.HitContentDigestCache())
+	assert.Equal(t, 701, cacheTestUnwrapInt(t, g2HitRes))
+	assert.Equal(t, g2Key.Digest().String(), g2HitRes.ID().Digest().String())
+
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.NilError(t, g2Res.Release(ctx))
+	assert.NilError(t, g2HitRes.Release(ctx))
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.NilError(t, f2Res.Release(ctx))
+	assert.Equal(t, 0, c.Size())
 }
 
 func TestCacheEgraphAdditionalDigestAffectsTermIdentity(t *testing.T) {
@@ -1145,7 +1289,7 @@ func TestCacheAdditionalDigestKeysAffectLookupIdentity(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestCacheAdditionalDigestLookupAcrossDistinctRecipeIDs(t *testing.T) {
+func TestCacheAdditionalDigestDoesNotLookupAcrossDistinctRecipeIDs(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
@@ -1170,11 +1314,10 @@ func TestCacheAdditionalDigestLookupAcrossDistinctRecipeIDs(t *testing.T) {
 		return newDetachedResult(cacheTestID("additional-lookup-result-b"), NewInt(82)), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, resB.HitCache())
-	assert.Assert(t, resB.HitContentDigestCache())
-	assert.Equal(t, 1, initCalls)
-	assert.Equal(t, 81, cacheTestUnwrapInt(t, resB))
-	assert.Equal(t, keyB.Digest().String(), resB.ID().Digest().String())
+	assert.Assert(t, !resB.HitCache())
+	assert.Assert(t, !resB.HitContentDigestCache())
+	assert.Equal(t, 2, initCalls)
+	assert.Equal(t, 82, cacheTestUnwrapInt(t, resB))
 
 	assert.NilError(t, resA.Release(ctx))
 	assert.NilError(t, resB.Release(ctx))
@@ -1263,6 +1406,112 @@ func TestCacheOutputEquivalenceLookupSeparatesDagOpExecutionMode(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheOutputEquivalenceDigestDoesNotBypassStructuralLookup(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sharedOutputEq := digest.FromString("output-eq-class-only")
+	keyA := cacheTestID("output-eq-class-a").With(call.WithAdditionalDigest(sharedOutputEq))
+	keyB := cacheTestID("output-eq-class-b").With(call.WithAdditionalDigest(sharedOutputEq))
+
+	initCalls := 0
+	resA, err := c.GetOrInitCall(ctx, CacheKey{ID: keyA}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(keyA, NewInt(501)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resA.HitCache())
+
+	resB, err := c.GetOrInitCall(ctx, CacheKey{ID: keyB}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return newDetachedResult(keyB, NewInt(502)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, initCalls)
+	assert.Assert(t, !resB.HitCache())
+	assert.Assert(t, !resB.HitContentDigestCache())
+	assert.Equal(t, 502, cacheTestUnwrapInt(t, resB))
+	assert.Equal(t, keyB.CacheDigest().String(), resB.ID().CacheDigest().String())
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheStructuralLookupByTermPrefersRequestStorageKey(t *testing.T) {
+	t.Parallel()
+	c := &cache{}
+	requestID := cacheTestID("structural-term-request")
+	proto, err := termProtoForID(requestID)
+	assert.NilError(t, err)
+	inputEqIDs := c.ensureTermInputEqIDsLocked(proto)
+	termDigest := calcEgraphTermDigest(proto.selfDigest, inputEqIDs)
+
+	older := &sharedResult{
+		storageKey:         "storage-older",
+		safeToPersistCache: true,
+		expiration:         time.Now().Unix() + 120,
+	}
+	preferred := &sharedResult{
+		storageKey:         "storage-preferred",
+		safeToPersistCache: true,
+		expiration:         time.Now().Unix() + 120,
+	}
+
+	c.initEgraphLocked()
+	olderTerm := newEgraphTerm(1, proto, inputEqIDs, 0, older)
+	preferredTerm := newEgraphTerm(2, proto, inputEqIDs, 0, preferred)
+	c.egraphTerms[olderTerm.id] = olderTerm
+	c.egraphTerms[preferredTerm.id] = preferredTerm
+	c.egraphTermsByDigest[termDigest] = map[egraphTermID]struct{}{
+		olderTerm.id:     {},
+		preferredTerm.id: {},
+	}
+
+	requestNow := time.Now().Unix()
+	acceptWithPreferredStorage := func(res *sharedResult) bool {
+		return evaluateCacheLookupCandidate(60, requestNow, "storage-preferred", "", res).accepted
+	}
+	hit := c.lookupResultByTermLocked(proto, "storage-preferred", acceptWithPreferredStorage)
+	assert.Equal(t, preferred, hit)
+
+	acceptWithMissingStorage := func(res *sharedResult) bool {
+		return evaluateCacheLookupCandidate(60, requestNow, "storage-missing", "", res).accepted
+	}
+	fallbackHit := c.lookupResultByTermLocked(proto, "storage-missing", acceptWithMissingStorage)
+	assert.Equal(t, older, fallbackHit)
+}
+
+func TestCacheStructuralLookupByTermFallsBackDeterministicallyByTermID(t *testing.T) {
+	t.Parallel()
+
+	c := &cache{}
+	requestID := cacheTestID("structural-term-deterministic-fallback-request")
+	proto, err := termProtoForID(requestID)
+	assert.NilError(t, err)
+	inputEqIDs := c.ensureTermInputEqIDsLocked(proto)
+	termDigest := calcEgraphTermDigest(proto.selfDigest, inputEqIDs)
+
+	lowID := &sharedResult{storageKey: "storage-a"}
+	highID := &sharedResult{storageKey: "storage-b"}
+
+	c.initEgraphLocked()
+	highTerm := newEgraphTerm(9, proto, inputEqIDs, 0, highID)
+	lowTerm := newEgraphTerm(2, proto, inputEqIDs, 0, lowID)
+	c.egraphTerms[highTerm.id] = highTerm
+	c.egraphTerms[lowTerm.id] = lowTerm
+	c.egraphTermsByDigest[termDigest] = map[egraphTermID]struct{}{
+		highTerm.id: {},
+		lowTerm.id:  {},
+	}
+
+	fallbackHit := c.lookupResultByTermLocked(proto, "storage-missing", nil)
+	assert.Equal(t, lowID, fallbackHit)
+}
+
 func TestCacheAdditionalDigestDirectHitPreservesRequestID(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -1294,7 +1543,7 @@ func TestCacheAdditionalDigestDirectHitPreservesRequestID(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestCacheSeparatesSemanticConstructorFromPresentedRequestID(t *testing.T) {
+func TestCacheSemanticConstructorDoesNotEnableCrossRecipeLookup(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
@@ -1328,12 +1577,10 @@ func TestCacheSeparatesSemanticConstructorFromPresentedRequestID(t *testing.T) {
 		return newDetachedResult(cacheTestID("presentation-unexpected"), NewInt(92)), nil
 	})
 	assert.NilError(t, err)
-	assert.Equal(t, 1, initCalls)
-	assert.Assert(t, resB.HitCache())
-	assert.Assert(t, resB.HitContentDigestCache())
-	assert.Equal(t, requestB.Digest().String(), resB.ID().Digest().String())
-	assert.Equal(t, requestB.CacheDigest().String(), resB.ID().CacheDigest().String())
-	assert.Equal(t, 91, cacheTestUnwrapInt(t, resB))
+	assert.Equal(t, 2, initCalls)
+	assert.Assert(t, !resB.HitCache())
+	assert.Assert(t, !resB.HitContentDigestCache())
+	assert.Equal(t, 92, cacheTestUnwrapInt(t, resB))
 
 	assert.NilError(t, resA.Release(ctx))
 	assert.NilError(t, resB.Release(ctx))
@@ -1422,6 +1669,49 @@ func TestCacheKnownDigestLookupDistinguishesDigestKind(t *testing.T) {
 	assert.NilError(t, resAux.Release(ctx))
 	assert.NilError(t, resOutput.Release(ctx))
 	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheEgraphTermDigestPreservesInputOrder(t *testing.T) {
+	t.Parallel()
+	selfDigest := digest.FromString("egraph-term-order-self")
+
+	ab := calcEgraphTermDigest(selfDigest, []eqClassID{9, 4})
+	ba := calcEgraphTermDigest(selfDigest, []eqClassID{4, 9})
+	assert.Assert(t, ab != ba)
+}
+
+func TestCacheStructuralTermDigestSeparatesDistinctBoundaryInputs(t *testing.T) {
+	t.Parallel()
+	base := cacheTestID("structural-boundary-separation")
+
+	idA := base.With(call.WithImplicitInputs(
+		call.NewArgument("cachePerClient", call.NewLiteralString("client-a"), false),
+	))
+	idB := base.With(call.WithImplicitInputs(
+		call.NewArgument("cachePerClient", call.NewLiteralString("client-b"), false),
+	))
+
+	protoA, err := termProtoForID(idA)
+	assert.NilError(t, err)
+	protoB, err := termProtoForID(idB)
+	assert.NilError(t, err)
+	termDigestA := calcEgraphTermDigest(protoA.selfDigest, nil)
+	termDigestB := calcEgraphTermDigest(protoB.selfDigest, nil)
+
+	assert.Assert(t, termDigestA != termDigestB)
+
+	normalID := base
+	dagOpID := base.With(call.WithArgs(
+		call.NewArgument("isDagOp", call.NewLiteralBool(true), false),
+	))
+	protoNormal, err := termProtoForID(normalID)
+	assert.NilError(t, err)
+	protoDagOp, err := termProtoForID(dagOpID)
+	assert.NilError(t, err)
+	termDigestNormal := calcEgraphTermDigest(protoNormal.selfDigest, nil)
+	termDigestDagOp := calcEgraphTermDigest(protoDagOp.selfDigest, nil)
+
+	assert.Assert(t, termDigestNormal != termDigestDagOp)
 }
 
 func TestCacheEgraphConcurrentRepairStress(t *testing.T) {
@@ -1582,7 +1872,7 @@ func BenchmarkCacheEgraphConcurrentRepair(b *testing.B) {
 	})
 }
 
-func TestCacheEgraphAliasesContentHitIDsForDownstreamTerms(t *testing.T) {
+func TestCacheEgraphDownstreamReuseAfterPostExecContentUnion(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
@@ -1608,12 +1898,15 @@ func TestCacheEgraphAliasesContentHitIDsForDownstreamTerms(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !g1Res.HitCache())
 
+	f2InitCalls := 0
 	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2LookupID}, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("unexpected initializer call")
+		f2InitCalls++
+		return newDetachedResult(f2LookupID, NewInt(22)), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, f2Res.HitCache())
-	assert.Assert(t, f2Res.HitContentDigestCache())
+	assert.Equal(t, 1, f2InitCalls)
+	assert.Assert(t, !f2Res.HitCache())
+	assert.Assert(t, !f2Res.HitContentDigestCache())
 	assert.Equal(t, f2LookupID.Digest().String(), f2Res.ID().Digest().String())
 
 	g2Key := f2Key.Append(Int(0).Type(), "egraph-alias-g")
@@ -1808,17 +2101,17 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 
 	storageKey := storageID.Digest().String()
 	resultKey := resultID.CacheDigest().String()
-	contentKey := knownDigestIndexKey(call.ExtraDigestKindOutputEquivalence, resultID.ContentDigest().String())
 
 	assert.Assert(t, c.completedCalls[storageKey] != nil)
 	assert.Assert(t, c.completedCalls[resultKey] != nil)
-	assert.Assert(t, c.completedCallsByKnownDigest[contentKey] != nil)
-	assert.Equal(t, 2+len(resultID.ExtraDigests()), c.Size())
+	assert.Assert(t, len(c.egraphTerms) > 0)
+	assert.Assert(t, c.Size() > 0)
 
 	assert.NilError(t, res.Release(ctx))
 	assert.Equal(t, 0, len(c.ongoingCalls))
 	assert.Equal(t, 0, len(c.completedCalls))
-	assert.Equal(t, 0, len(c.completedCallsByKnownDigest))
+	assert.Equal(t, 0, len(c.egraphTerms))
+	assert.Equal(t, 0, len(c.egraphResultTerms))
 }
 
 func TestCacheArrayResultRoundTrip(t *testing.T) {
@@ -1941,6 +2234,69 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	assert.Assert(t, c.completedCalls[callKey] != nil)
 	assert.Equal(t, 2, len(c.completedCalls))
 	assert.Equal(t, 2, c.Size())
+}
+
+func TestCacheTTLNonPersistableEquivalentIDsDoNotCrossRecipeLookup(t *testing.T) {
+	t.Parallel()
+	baseCtx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheIface, err := NewCache(baseCtx, dbPath)
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sharedOutputEq := digest.FromString("ttl-nonpersist-session-scoped")
+	keyA := cacheTestID("ttl-nonpersist-a").With(call.WithAdditionalDigest(sharedOutputEq))
+	keyB := cacheTestID("ttl-nonpersist-b").With(call.WithAdditionalDigest(sharedOutputEq))
+
+	ctxSessionA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "cache-test-client-a",
+		SessionID: "cache-test-session-a",
+	})
+	ctxSessionB := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "cache-test-client-b",
+		SessionID: "cache-test-session-b",
+	})
+
+	resA, err := c.GetOrInitCall(ctxSessionA, CacheKey{
+		ID:  keyA,
+		TTL: 60,
+	}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(keyA, NewInt(11)).WithSafeToPersistCache(false), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resA.HitCache())
+	assert.Equal(t, 11, cacheTestUnwrapInt(t, resA))
+
+	sameSessionInits := 0
+	resSameSession, err := c.GetOrInitCall(ctxSessionA, CacheKey{
+		ID:  keyB,
+		TTL: 60,
+	}, func(context.Context) (AnyResult, error) {
+		sameSessionInits++
+		return newDetachedResult(keyB, NewInt(22)).WithSafeToPersistCache(false), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, sameSessionInits)
+	assert.Assert(t, !resSameSession.HitCache())
+	assert.Equal(t, 22, cacheTestUnwrapInt(t, resSameSession))
+
+	crossSessionInits := 0
+	resCrossSession, err := c.GetOrInitCall(ctxSessionB, CacheKey{
+		ID:  keyB,
+		TTL: 60,
+	}, func(context.Context) (AnyResult, error) {
+		crossSessionInits++
+		return newDetachedResult(keyB, NewInt(33)).WithSafeToPersistCache(false), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, crossSessionInits)
+	assert.Assert(t, !resCrossSession.HitCache())
+	assert.Equal(t, 33, cacheTestUnwrapInt(t, resCrossSession))
+
+	assert.NilError(t, resA.Release(ctxSessionA))
+	assert.NilError(t, resSameSession.Release(ctxSessionA))
+	assert.NilError(t, resCrossSession.Release(ctxSessionB))
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {

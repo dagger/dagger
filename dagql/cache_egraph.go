@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -12,7 +13,7 @@ import (
 type eqClassID uint64
 type egraphTermID uint64
 
-type callTermProto struct {
+type egraphTermProto struct {
 	selfDigest   digest.Digest
 	inputDigests []digest.Digest
 }
@@ -33,31 +34,88 @@ type eqMergePair struct {
 	b eqClassID
 }
 
-func termProtoForID(id *call.ID) (callTermProto, error) {
-	if id == nil {
-		return callTermProto{}, nil
+func canonicalizeEgraphTermInputDigests(inputDigests []digest.Digest) []digest.Digest {
+	if len(inputDigests) == 0 {
+		return nil
 	}
-	// Module call digests can vary across clients/sessions even when the
-	// recipe-equivalent call is otherwise the same. Ignore module metadata for
-	// term-shape matching; module identity is still captured by input digests
-	// (e.g. custom/content digests added by cache-key config).
-	selfDigest, inputDigests, err := id.With(call.WithModule(nil)).SelfDigestAndInputs()
-	if err != nil {
-		return callTermProto{}, err
+	return slices.Clone(inputDigests)
+}
+
+func canonicalizeEgraphTermInputEqIDs(inputEqIDs []eqClassID) []eqClassID {
+	if len(inputEqIDs) == 0 {
+		return nil
 	}
-	return callTermProto{
+	return slices.Clone(inputEqIDs)
+}
+
+func newEgraphTermProto(selfDigest digest.Digest, inputDigests []digest.Digest) egraphTermProto {
+	return egraphTermProto{
 		selfDigest:   selfDigest,
-		inputDigests: inputDigests,
-	}, nil
+		inputDigests: canonicalizeEgraphTermInputDigests(inputDigests),
+	}
+}
+
+func termProtoForID(id *call.ID) (egraphTermProto, error) {
+	if id == nil {
+		return newEgraphTermProto("", nil), nil
+	}
+	selfDigest, inputDigests, err := id.SelfDigestAndInputs()
+	if err != nil {
+		return egraphTermProto{}, err
+	}
+	return newEgraphTermProto(selfDigest, inputDigests), nil
 }
 
 func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) string {
-	h := hashutil.NewHasher().
-		WithString(selfDigest.String())
-	for _, in := range inputEqIDs {
-		h = h.WithString(strconv.FormatUint(uint64(in), 10))
+	canonicalInputs := canonicalizeEgraphTermInputEqIDs(inputEqIDs)
+	h := hashutil.NewHasher().WithString(selfDigest.String())
+	for _, in := range canonicalInputs {
+		h = h.WithDelim().
+			WithString(strconv.FormatUint(uint64(in), 10))
 	}
 	return h.DigestAndClose()
+}
+
+func (c *cache) resolveTermInputEqIDsLocked(proto egraphTermProto) ([]eqClassID, bool) {
+	inputEqIDs := make([]eqClassID, len(proto.inputDigests))
+	for i, inDig := range proto.inputDigests {
+		classID, ok := c.egraphDigestToClass[inDig.String()]
+		if !ok {
+			return nil, false
+		}
+		root := c.findEqClassLocked(classID)
+		if root == 0 {
+			return nil, false
+		}
+		inputEqIDs[i] = root
+	}
+	return canonicalizeEgraphTermInputEqIDs(inputEqIDs), true
+}
+
+func (c *cache) ensureTermInputEqIDsLocked(proto egraphTermProto) []eqClassID {
+	inputEqIDs := make([]eqClassID, len(proto.inputDigests))
+	for i, inDig := range proto.inputDigests {
+		inputEqIDs[i] = c.findEqClassLocked(c.ensureEqClassForDigestLocked(inDig.String()))
+	}
+	return canonicalizeEgraphTermInputEqIDs(inputEqIDs)
+}
+
+func newEgraphTerm(
+	id egraphTermID,
+	proto egraphTermProto,
+	inputEqIDs []eqClassID,
+	outputEqID eqClassID,
+	res *sharedResult,
+) *egraphTerm {
+	inputEqIDs = canonicalizeEgraphTermInputEqIDs(inputEqIDs)
+	return &egraphTerm{
+		id:         id,
+		selfDigest: proto.selfDigest,
+		inputEqIDs: inputEqIDs,
+		outputEqID: outputEqID,
+		termDigest: calcEgraphTermDigest(proto.selfDigest, inputEqIDs),
+		result:     res,
+	}
 }
 
 func (c *cache) initEgraphLocked() {
@@ -217,14 +275,12 @@ func (c *cache) repairClassTermsLocked(root eqClassID) (merges []eqMergePair) {
 
 		oldInputs := term.inputEqIDs
 		newInputs := make([]eqClassID, len(oldInputs))
-		inputsChanged := false
 		for i, in := range oldInputs {
 			rootIn := c.findEqClassLocked(in)
 			newInputs[i] = rootIn
-			if rootIn != in {
-				inputsChanged = true
-			}
 		}
+		newInputs = canonicalizeEgraphTermInputEqIDs(newInputs)
+		inputsChanged := !slices.Equal(newInputs, oldInputs)
 
 		if inputsChanged {
 			// Re-home this term under canonical input classes.
@@ -299,8 +355,13 @@ func (c *cache) repairClassTermsLocked(root eqClassID) (merges []eqMergePair) {
 	return merges
 }
 
-func (c *cache) chooseTermFromSetLocked(set map[egraphTermID]struct{}, acceptResult func(*sharedResult) bool) *egraphTerm {
-	var best *egraphTerm
+func (c *cache) chooseTermFromSetLocked(
+	set map[egraphTermID]struct{},
+	preferredStorageKey string,
+	acceptResult func(*sharedResult) bool,
+) *egraphTerm {
+	var preferred *egraphTerm
+	var fallback *egraphTerm
 	for termID := range set {
 		term := c.egraphTerms[termID]
 		if term == nil || term.result == nil {
@@ -309,37 +370,41 @@ func (c *cache) chooseTermFromSetLocked(set map[egraphTermID]struct{}, acceptRes
 		if acceptResult != nil && !acceptResult(term.result) {
 			continue
 		}
-		if best == nil || term.id < best.id {
-			best = term
+		if preferredStorageKey != "" && term.result.storageKey == preferredStorageKey {
+			if preferred == nil || term.id < preferred.id {
+				preferred = term
+			}
+			continue
+		}
+		if fallback == nil || term.id < fallback.id {
+			fallback = term
 		}
 	}
-	return best
+	if preferred != nil {
+		return preferred
+	}
+	return fallback
 }
 
-func (c *cache) lookupEquivalentResultLocked(proto callTermProto, acceptResult func(*sharedResult) bool) *sharedResult {
+func (c *cache) lookupResultByTermLocked(
+	proto egraphTermProto,
+	preferredStorageKey string,
+	acceptResult func(*sharedResult) bool,
+) *sharedResult {
 	if len(c.egraphTermsByDigest) == 0 {
 		return nil
 	}
 
-	inputEqIDs := make([]eqClassID, len(proto.inputDigests))
-	for i, inDig := range proto.inputDigests {
-		classID, ok := c.egraphDigestToClass[inDig.String()]
-		if !ok {
-			return nil
-		}
-		root := c.findEqClassLocked(classID)
-		if root == 0 {
-			return nil
-		}
-		inputEqIDs[i] = root
-	}
-
-	termDigest := calcEgraphTermDigest(proto.selfDigest, inputEqIDs)
-	set := c.egraphTermsByDigest[termDigest]
-	if len(set) == 0 {
+	inputEqIDs, ok := c.resolveTermInputEqIDsLocked(proto)
+	if !ok {
 		return nil
 	}
-	best := c.chooseTermFromSetLocked(set, acceptResult)
+	termDigest := calcEgraphTermDigest(proto.selfDigest, inputEqIDs)
+	termSet := c.egraphTermsByDigest[termDigest]
+	if len(termSet) == 0 {
+		return nil
+	}
+	best := c.chooseTermFromSetLocked(termSet, preferredStorageKey, acceptResult)
 	if best == nil {
 		return nil
 	}
@@ -385,24 +450,12 @@ func (c *cache) mergeOutputsForTermDigestLocked(termDigest string, outputEqID eq
 	return root
 }
 
-func (c *cache) indexResultForIDLocked(id *call.ID, outputEqID eqClassID, res *sharedResult) {
-	if id == nil || outputEqID == 0 || res == nil {
+func (c *cache) indexResultForTermProtoLocked(proto egraphTermProto, outputEqID eqClassID, res *sharedResult) {
+	if outputEqID == 0 || res == nil {
 		return
 	}
 
-	proto, err := termProtoForID(id)
-	if err != nil {
-		slog.Warn("failed to derive e-graph term proto", "err", err)
-		return
-	}
-	if len(proto.inputDigests) == 0 {
-		return
-	}
-
-	inputEqIDs := make([]eqClassID, len(proto.inputDigests))
-	for i, inDig := range proto.inputDigests {
-		inputEqIDs[i] = c.findEqClassLocked(c.ensureEqClassForDigestLocked(inDig.String()))
-	}
+	inputEqIDs := c.ensureTermInputEqIDsLocked(proto)
 	termDigest := calcEgraphTermDigest(proto.selfDigest, inputEqIDs)
 
 	if c.resultHasTermDigestLocked(res, termDigest) {
@@ -416,24 +469,17 @@ func (c *cache) indexResultForIDLocked(id *call.ID, outputEqID eqClassID, res *s
 	termID := c.nextEgraphTermID
 	c.nextEgraphTermID++
 
-	term := &egraphTerm{
-		id:         termID,
-		selfDigest: proto.selfDigest,
-		inputEqIDs: inputEqIDs,
-		outputEqID: outputEqID,
-		termDigest: termDigest,
-		result:     res,
-	}
+	term := newEgraphTerm(termID, proto, inputEqIDs, outputEqID, res)
 	c.egraphTerms[termID] = term
 
-	digestSet := c.egraphTermsByDigest[termDigest]
+	digestSet := c.egraphTermsByDigest[term.termDigest]
 	if digestSet == nil {
 		digestSet = make(map[egraphTermID]struct{})
-		c.egraphTermsByDigest[termDigest] = digestSet
+		c.egraphTermsByDigest[term.termDigest] = digestSet
 	}
 	digestSet[termID] = struct{}{}
 
-	for _, in := range inputEqIDs {
+	for _, in := range term.inputEqIDs {
 		if in == 0 {
 			continue
 		}
@@ -451,6 +497,19 @@ func (c *cache) indexResultForIDLocked(id *call.ID, outputEqID eqClassID, res *s
 		c.egraphResultTerms[res] = resultSet
 	}
 	resultSet[termID] = struct{}{}
+}
+
+func (c *cache) indexResultForIDLocked(id *call.ID, outputEqID eqClassID, res *sharedResult) {
+	if id == nil || outputEqID == 0 || res == nil {
+		return
+	}
+
+	proto, err := termProtoForID(id)
+	if err != nil {
+		slog.Warn("failed to derive e-graph term proto", "err", err)
+		return
+	}
+	c.indexResultForTermProtoLocked(proto, outputEqID, res)
 }
 
 func (c *cache) outputEqClassForResultLocked(res *sharedResult) eqClassID {
@@ -505,36 +564,15 @@ func (c *cache) indexResultInEgraphLocked(res *sharedResult) {
 		return
 	}
 	c.indexResultForIDLocked(res.requestID, outputEqID, res)
-}
-
-func (c *cache) aliasRequestIDToResultLocked(requestID *call.ID, res *sharedResult) {
-	if requestID == nil || res == nil {
-		return
-	}
-	outputEqID := c.outputEqClassForResultLocked(res)
-	if outputEqID == 0 {
-		return
-	}
-	if dig := requestID.Digest().String(); dig != "" {
-		outputEqID = c.mergeEqClassesLocked(outputEqID, c.ensureEqClassForDigestLocked(dig))
-	}
-	for _, extra := range requestID.ExtraDigests() {
-		if extra.Kind != call.ExtraDigestKindOutputEquivalence {
-			continue
-		}
-		if d := extra.Digest.String(); d != "" {
-			outputEqID = c.mergeEqClassesLocked(outputEqID, c.ensureEqClassForDigestLocked(d))
-		}
-	}
-	c.indexResultForIDLocked(requestID, outputEqID, res)
+	c.indexResultForIDLocked(res.constructor, outputEqID, res)
 }
 
 func (c *cache) removeResultFromEgraphLocked(res *sharedResult) {
-	if len(c.egraphTerms) == 0 {
-		c.maybeResetEgraphLocked()
+	if res == nil {
 		return
 	}
-	if res == nil || len(c.egraphResultTerms) == 0 {
+	if len(c.egraphTerms) == 0 || len(c.egraphResultTerms) == 0 {
+		c.maybeResetEgraphLocked()
 		return
 	}
 

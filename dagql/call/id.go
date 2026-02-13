@@ -58,6 +58,7 @@ type ID struct {
 const (
 	extraDigestLabelContent = "content"
 	extraDigestLabelCustom  = "custom"
+	moduleIdentityInputName = "__dagger.module"
 )
 
 type ExtraDigestKind = callpbv1.ExtraDigestKind
@@ -242,7 +243,7 @@ func (id *ID) inputDigest() digest.Digest {
 }
 
 // StructuralEquivalentDigest returns a digest that encodes the call's own shape
-// (field/type/args/implicit-input names/module/view/etc.) plus equivalent input
+// (field/type/args/implicit-input names/view/etc.) plus equivalent input
 // digests. This is appropriate for keying operation identity where call self
 // semantics must still matter.
 func (id *ID) StructuralEquivalentDigest() digest.Digest {
@@ -278,6 +279,47 @@ func (id *ID) OutputEquivalentDigest() digest.Digest {
 // OutputEquivalentDigest.
 func (id *ID) EquivalentDigest() digest.Digest {
 	return id.OutputEquivalentDigest()
+}
+
+func (id *ID) moduleIdentityID() *ID {
+	if id == nil || id.module == nil {
+		return nil
+	}
+	return id.module.ID()
+}
+
+func (id *ID) moduleRecipeDigest() digest.Digest {
+	return id.moduleInputDigest()
+}
+
+func (id *ID) moduleInputDigest() digest.Digest {
+	if id == nil || id.pb == nil || id.pb.Module == nil {
+		return ""
+	}
+	if modID := id.moduleIdentityID(); modID != nil {
+		return modID.inputDigest()
+	}
+	return digest.Digest(id.pb.Module.CallDigest)
+}
+
+func (id *ID) moduleEquivalentDigest() digest.Digest {
+	if id == nil || id.pb == nil || id.pb.Module == nil {
+		return ""
+	}
+	if modID := id.moduleIdentityID(); modID != nil {
+		return modID.OutputEquivalentDigest()
+	}
+	return digest.Digest(id.pb.Module.CallDigest)
+}
+
+func appendSyntheticModuleRecipeBytes(h *hashutil.Hasher, moduleDigest digest.Digest) *hashutil.Hasher {
+	// Synthetic reserved input:
+	// argument name + literal-ID prefix + referenced digest bytes.
+	const literalIDPrefix = '0'
+	return h.WithString(moduleIdentityInputName).
+		WithByte(literalIDPrefix).
+		WithString(moduleDigest.String()).
+		WithDelim()
 }
 
 // EffectIDs returns the effect IDs directly attached to this call.
@@ -456,20 +498,17 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 		}
 		h = h.WithDelim()
 	}
+
+	// Synthetic module identity input (input lane only; no self-shape bytes).
+	if moduleDigest := id.moduleInputDigest(); moduleDigest != "" {
+		inputs = append(inputs, moduleDigest)
+	}
+	// End implicit input section.
 	h = h.WithDelim()
 
 	// Nth
 	h = h.WithInt64(id.pb.Nth).
 		WithDelim()
-
-	// Module
-	if id.pb.Module != nil {
-		h = h.WithString(id.pb.Module.CallDigest).
-			WithString(id.pb.Module.Name).
-			WithString(id.pb.Module.Ref).
-			WithString(id.pb.Module.Pin)
-	}
-	h = h.WithDelim()
 
 	// View
 	h = h.WithString(id.pb.View).
@@ -543,20 +582,17 @@ func (id *ID) SelfDigestAndEquivalentInputs() (digest.Digest, []digest.Digest, e
 		}
 		h = h.WithDelim()
 	}
+
+	// Synthetic module identity input (input lane only; no self-shape bytes).
+	if moduleDigest := id.moduleEquivalentDigest(); moduleDigest != "" {
+		inputs = append(inputs, moduleDigest)
+	}
+	// End implicit input section.
 	h = h.WithDelim()
 
 	// Nth
 	h = h.WithInt64(id.pb.Nth).
 		WithDelim()
-
-	// Module
-	if id.pb.Module != nil {
-		h = h.WithString(id.pb.Module.CallDigest).
-			WithString(id.pb.Module.Name).
-			WithString(id.pb.Module.Ref).
-			WithString(id.pb.Module.Pin)
-	}
-	h = h.WithDelim()
 
 	// View
 	h = h.WithString(id.pb.View).
@@ -1105,20 +1141,18 @@ func (id *ID) calcDigest() (string, error) {
 		}
 		h = h.WithDelim()
 	}
+
+	// Synthetic module identity input.
+	if moduleDigest := id.moduleRecipeDigest(); moduleDigest != "" {
+		h = appendSyntheticModuleRecipeBytes(h, moduleDigest)
+		h = h.WithDelim()
+	}
+	// End implicit input section (including synthetic module input).
 	h = h.WithDelim()
 
 	// Nth
 	h = h.WithInt64(id.pb.Nth).
 		WithDelim()
-
-	// Module
-	if id.pb.Module != nil {
-		h = h.WithString(id.pb.Module.CallDigest).
-			WithString(id.pb.Module.Name).
-			WithString(id.pb.Module.Ref).
-			WithString(id.pb.Module.Pin)
-	}
-	h = h.WithDelim()
 
 	// View
 	h = h.WithString(id.pb.View).

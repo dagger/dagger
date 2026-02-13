@@ -2747,7 +2747,16 @@ func UpdatedRootFS(
 	rootfsID := curID.Append(
 		astType, "rootfs",
 		call.WithView(view),
-		call.WithModule(fieldSpec.Module))
+	)
+	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, rootfsID)
+	if err != nil {
+		return nil, fmt.Errorf("decode rootfs input args: %w", err)
+	}
+	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve rootfs identity: %w", err)
+	}
+	rootfsID = rootfsID.With(identityOpt)
 	updatedRootfs, err := dagql.NewObjectResultForID(dir, curSrv, rootfsID)
 	if err != nil {
 		return nil, err
@@ -2787,8 +2796,17 @@ func updatedDirMount(
 	dirID := curID.Append(
 		astType, "directory",
 		call.WithView(view),
-		call.WithModule(fieldSpec.Module),
-		call.WithArgs(dirIDPathArg))
+		call.WithArgs(dirIDPathArg),
+	)
+	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, dirID)
+	if err != nil {
+		return nil, fmt.Errorf("decode directory input args: %w", err)
+	}
+	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve directory identity: %w", err)
+	}
+	dirID = dirID.With(identityOpt)
 	updatedDirMnt, err := dagql.NewObjectResultForID(dir, curSrv, dirID)
 	if err != nil {
 		return nil, err
@@ -2828,8 +2846,17 @@ func updatedFileMount(
 	fileID := curID.Append(
 		astType, "file",
 		call.WithView(view),
-		call.WithModule(fieldSpec.Module),
-		call.WithArgs(fileIDPathArg))
+		call.WithArgs(fileIDPathArg),
+	)
+	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, fileID)
+	if err != nil {
+		return nil, fmt.Errorf("decode file input args: %w", err)
+	}
+	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve file identity: %w", err)
+	}
+	fileID = fileID.With(identityOpt)
 	updatedFileMnt, err := dagql.NewObjectResultForID(file, curSrv, fileID)
 	if err != nil {
 		return nil, err

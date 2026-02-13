@@ -974,7 +974,7 @@ func (s *moduleSourceSchema) contextDirectory(
 	if dirDgst == "" {
 		dirDgst = dir.ID().Digest()
 	}
-	dgst := hashutil.HashStrings(dirDgst.String(), "contextualDir")
+	dgst := hashutil.HashStrings(dirDgst.String(), args.Digest, "contextualDir")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
@@ -1019,7 +1019,7 @@ func (s *moduleSourceSchema) contextFile(
 	if fDgst == "" {
 		fDgst = f.ID().Digest()
 	}
-	dgst := hashutil.HashStrings(fDgst.String(), "contextualFile")
+	dgst := hashutil.HashStrings(fDgst.String(), args.Digest, "contextualFile")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
@@ -1059,7 +1059,7 @@ func (s *moduleSourceSchema) contextGitRepository(
 	if fDgst == "" {
 		fDgst = f.ID().Digest()
 	}
-	dgst := hashutil.HashStrings(fDgst.String(), "contextualGitRepository")
+	dgst := hashutil.HashStrings(fDgst.String(), args.Digest, "contextualGitRepository")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }
@@ -1109,7 +1109,7 @@ func (s *moduleSourceSchema) contextGitRef(
 	if fDgst == "" {
 		fDgst = f.ID().Digest()
 	}
-	dgst := hashutil.HashStrings(fDgst.String(), "contextualGitRef")
+	dgst := hashutil.HashStrings(fDgst.String(), args.Digest, "contextualGitRef")
 	inst = inst.WithContentDigest(dgst)
 	return inst, nil
 }

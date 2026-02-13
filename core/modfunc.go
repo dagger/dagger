@@ -33,9 +33,6 @@ import (
 const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
 const MinFunctionCacheTTLSeconds = 1
 
-const moduleFunctionScopeInputName = "moduleFunctionScope"
-const moduleFunctionEquivalentDigestLabel = "moduleFunctionEquivalent"
-
 func shouldTraceModuleCacheFunction(name string) bool {
 	return strings.HasPrefix(name, "test") ||
 		name == "fn" ||
@@ -149,22 +146,9 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 		return nil
 	}
 
-	sourceDigest := ""
-	if source := fn.mod.GetSource(); source != nil {
-		sourceDigest = source.Digest
-	}
-	moduleScope := hashutil.HashStrings(sourceDigest, fn.mod.NameField).String()
-	implicitInputs := []dagql.ImplicitInput{
-		{
-			Name: moduleFunctionScopeInputName,
-			Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
-				return dagql.NewString(moduleScope), nil
-			},
-		},
-	}
-
+	var implicitInputs []dagql.ImplicitInput
 	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod)
-	if cachePolicy == FunctionCachePolicyPerSession || fn.metadata.Name == "" {
+	if cachePolicy == FunctionCachePolicyPerSession {
 		implicitInputs = append(implicitInputs, dagql.CachePerSession)
 	}
 	if shouldTraceModuleCacheFunction(fn.metadata.Name) {
@@ -172,9 +156,8 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 			"module", fn.mod.Name(),
 			"function", fn.metadata.Name,
 			"cachePolicy", string(cachePolicy),
-			"moduleScope", moduleScope,
-			"sourceDigest", sourceDigest,
-			"usesCachePerSession", cachePolicy == FunctionCachePolicyPerSession || fn.metadata.Name == "",
+			"usesCachePerSession", cachePolicy == FunctionCachePolicyPerSession,
+			"implicitInputs", len(implicitInputs),
 		)
 	}
 
@@ -645,53 +628,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	baseID := cacheCfgResp.CacheKey.ID.With(
-		call.WithModule(nil),
-	)
-	selfDigest, inputDigests, err := baseID.SelfDigestAndEquivalentInputs()
-	if err != nil {
-		return nil, fmt.Errorf("compute equivalent digest for %s.%s: %w", fn.mod.Name(), fn.metadata.Name, err)
-	}
-	dgstInputs := make([]string, 0, 2+len(inputDigests))
-	dgstInputs = append(dgstInputs, selfDigest.String())
-	startInputIdx := 0
-	var normalizedRecvDigest digest.Digest
-	if recv := baseID.Receiver(); recv != nil {
-		recvDigest, err := fn.normalizedReceiverDigest(recv)
-		if err != nil {
-			return nil, fmt.Errorf("compute normalized receiver digest for %s.%s: %w", fn.mod.Name(), fn.metadata.Name, err)
-		}
-		normalizedRecvDigest = recvDigest
-		dgstInputs = append(dgstInputs, recvDigest.String())
-		startInputIdx = 1
-	}
-	for _, in := range inputDigests[startInputIdx:] {
-		dgstInputs = append(dgstInputs, in.String())
-	}
-	sourceDigest := ""
-	if source := fn.mod.GetSource(); source != nil {
-		sourceDigest = source.Digest
-	}
-	dgstInputs = append(dgstInputs, sourceDigest, fn.mod.NameField)
-	var equivalentDigest digest.Digest
-	if fn.metadata.Name != "" {
-		equivalentDigest = hashutil.HashStrings(dgstInputs...)
-		cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.With(call.WithExtraDigest(call.ExtraDigest{
-			Digest: equivalentDigest,
-			Label:  moduleFunctionEquivalentDigestLabel,
-			Kind:   call.ExtraDigestKindOutputEquivalence,
-		}))
-	}
-	if normalizedRecvDigest != "" {
-		recv := cacheCfgResp.CacheKey.ID.Receiver()
-		if recv != nil {
-			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.With(
-				call.WithReceiver(recv.With(call.WithContentDigest(normalizedRecvDigest))),
-			)
-		}
-	}
 	if shouldTraceModuleCacheFunction(fn.metadata.Name) {
-		idNoModule := cacheCfgResp.CacheKey.ID.With(call.WithModule(nil))
 		moduleIDDigest := digest.Digest("")
 		moduleName := ""
 		if modRef := cacheCfgResp.CacheKey.ID.Module(); modRef != nil {
@@ -701,10 +638,8 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			}
 		}
 		var receiverDigest digest.Digest
-		var receiverNoModuleDigest digest.Digest
 		if recv := cacheCfgResp.CacheKey.ID.Receiver(); recv != nil {
 			receiverDigest = recv.Digest()
-			receiverNoModuleDigest = recv.With(call.WithModule(nil)).Digest()
 		}
 		slog.Info("modfn cache key",
 			"module", fn.mod.Name(),
@@ -712,71 +647,13 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			"path", cacheCfgResp.CacheKey.ID.Path(),
 			"cacheDigest", cacheCfgResp.CacheKey.ID.CacheDigest(),
 			"recipeDigest", cacheCfgResp.CacheKey.ID.Digest(),
-			"cacheDigestNoModule", idNoModule.CacheDigest(),
-			"recipeDigestNoModule", idNoModule.Digest(),
-			"sourceDigest", sourceDigest,
-			"normalizedReceiverDigest", normalizedRecvDigest,
 			"receiverDigest", receiverDigest,
-			"receiverDigestNoModule", receiverNoModuleDigest,
 			"moduleIDDigest", moduleIDDigest,
 			"moduleName", moduleName,
-			"equivalentDigest", equivalentDigest,
 			"implicitInputs", len(cacheCfgResp.CacheKey.ID.ImplicitInputs()),
 		)
 	}
 	return cacheCfgResp, nil
-}
-
-func (fn *ModuleFunction) normalizedReceiverDigest(id *call.ID) (digest.Digest, error) {
-	if id == nil {
-		return "", nil
-	}
-	idNoMod := id.With(
-		call.WithModule(nil),
-	)
-	if len(idNoMod.ImplicitInputs()) > 0 {
-		filteredInputs := make([]*call.Argument, 0, len(idNoMod.ImplicitInputs()))
-		for _, input := range idNoMod.ImplicitInputs() {
-			if input != nil && input.Name() == dagql.CachePerSession.Name {
-				continue
-			}
-			filteredInputs = append(filteredInputs, input)
-		}
-		idNoMod = idNoMod.With(call.WithImplicitInputs(filteredInputs...))
-	}
-
-	// Root module identity should be based on module source content, not per-client
-	// module source call identity.
-	if idNoMod.Field() == "asModule" {
-		if recv := idNoMod.Receiver(); recv != nil && recv.Field() == "moduleSource" {
-			return digest.Digest(hashutil.HashStrings(
-				"moduleSourceAsModule",
-				fn.mod.Source.Value.Self().Digest,
-				fn.mod.NameField,
-			)), nil
-		}
-	}
-
-	selfDigest, inputDigests, err := idNoMod.SelfDigestAndEquivalentInputs()
-	if err != nil {
-		return "", err
-	}
-	digestInputs := make([]string, 0, 1+len(inputDigests))
-	digestInputs = append(digestInputs, selfDigest.String())
-	startInputIdx := 0
-	if recv := idNoMod.Receiver(); recv != nil {
-		recvDigest, err := fn.normalizedReceiverDigest(recv)
-		if err != nil {
-			return "", err
-		}
-		digestInputs = append(digestInputs, recvDigest.String())
-		startInputIdx = 1
-	}
-	for _, in := range inputDigests[startInputIdx:] {
-		digestInputs = append(digestInputs, in.String())
-	}
-
-	return digest.Digest(hashutil.HashStrings(digestInputs...)), nil
 }
 
 func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], rerr error) {

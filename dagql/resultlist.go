@@ -48,6 +48,19 @@ func (rl *resultList) add(res *sharedResult) {
 	rl.idx[res] = rl.l.PushBack(res)
 }
 
+func (rl *resultList) addAll(other *resultList) {
+	if rl == nil || other == nil || other.l == nil {
+		return
+	}
+	for el := other.l.Front(); el != nil; el = el.Next() {
+		res, ok := el.Value.(*sharedResult)
+		if !ok || res == nil {
+			continue
+		}
+		rl.add(res)
+	}
+}
+
 func (rl *resultList) remove(res *sharedResult) {
 	if rl == nil || rl.l == nil || res == nil {
 		return

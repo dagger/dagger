@@ -322,35 +322,6 @@ func (r ObjectResult[T]) sortArgsToSchema(fieldSpec *FieldSpec, view call.View, 
 	})
 }
 
-func (r ObjectResult[T]) implicitInputArgs(ctx context.Context, fieldSpec *FieldSpec, inputArgs map[string]Input) ([]*call.Argument, error) {
-	if len(fieldSpec.ImplicitInputs) == 0 {
-		return nil, nil
-	}
-
-	inputIdxByName := make(map[string]int, len(fieldSpec.ImplicitInputs))
-	implicitArgs := make([]*call.Argument, 0, len(fieldSpec.ImplicitInputs))
-	for _, implicitInput := range fieldSpec.ImplicitInputs {
-		inputVal, err := implicitInput.Resolver(ctx, inputArgs)
-		if err != nil {
-			return nil, fmt.Errorf("resolve implicit input %q: %w", implicitInput.Name, err)
-		}
-		if inputVal == nil {
-			return nil, fmt.Errorf("implicit input %q resolved to nil", implicitInput.Name)
-		}
-		newInput := call.NewArgument(implicitInput.Name, inputVal.ToLiteral(), false)
-		if idx, ok := inputIdxByName[implicitInput.Name]; ok {
-			implicitArgs[idx] = newInput
-			continue
-		}
-		inputIdxByName[implicitInput.Name] = len(implicitArgs)
-		implicitArgs = append(implicitArgs, newInput)
-	}
-	sort.Slice(implicitArgs, func(i, j int) bool {
-		return implicitArgs[i].Name() < implicitArgs[j].Name()
-	})
-	return implicitArgs, nil
-}
-
 func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
 	view := sel.View
 	field, ok := r.class.Field(sel.Field, view)
@@ -401,23 +372,22 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		astType = astType.Elem
 	}
 
-	implicitInputArgs, err := r.implicitInputArgs(ctx, field.Spec, inputArgs)
+	identityOpt, err := field.Spec.IdentityOpt(ctx, inputArgs)
 	if err != nil {
 		typ := r.Type()
 		if typ == nil {
-			return nil, fmt.Errorf("failed to resolve implicit inputs for <nil>.%s: %w", sel.Field, err)
+			return nil, fmt.Errorf("failed to resolve identity inputs for <nil>.%s: %w", sel.Field, err)
 		}
-		return nil, fmt.Errorf("failed to resolve implicit inputs for %s.%s: %w", typ.Name(), sel.Field, err)
+		return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 
 	newID := r.ID().Append(
 		astType,
 		sel.Field,
 		call.WithView(view),
-		call.WithModule(field.Spec.Module),
 		call.WithNth(sel.Nth),
 		call.WithArgs(idArgs...),
-		call.WithImplicitInputs(implicitInputArgs...),
+		identityOpt,
 	)
 
 	cacheKey := newCacheKey(ctx, newID, field.Spec)
@@ -449,15 +419,15 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			return nil, err
 		}
 
-		implicitInputArgs, err = r.implicitInputArgs(ctx, field.Spec, inputArgs)
+		identityOpt, err = field.Spec.IdentityOpt(ctx, inputArgs)
 		if err != nil {
 			typ := r.Type()
 			if typ == nil {
-				return nil, fmt.Errorf("failed to resolve implicit inputs for <nil>.%s after cache config: %w", sel.Field, err)
+				return nil, fmt.Errorf("failed to resolve identity inputs for <nil>.%s after cache config: %w", sel.Field, err)
 			}
-			return nil, fmt.Errorf("failed to resolve implicit inputs for %s.%s after cache config: %w", typ.Name(), sel.Field, err)
+			return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s after cache config: %w", typ.Name(), sel.Field, err)
 		}
-		newID = newID.With(call.WithImplicitInputs(implicitInputArgs...))
+		newID = newID.With(identityOpt)
 		cacheKey.ID = newID
 	}
 
@@ -826,6 +796,55 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 		def.Directives = append(def.Directives, experimental(spec.ExperimentalReason))
 	}
 	return def
+}
+
+func (spec *FieldSpec) resolveImplicitInputArgs(ctx context.Context, inputArgs map[string]Input) ([]*call.Argument, error) {
+	if spec == nil || len(spec.ImplicitInputs) == 0 {
+		return nil, nil
+	}
+
+	inputIdxByName := make(map[string]int, len(spec.ImplicitInputs))
+	implicitArgs := make([]*call.Argument, 0, len(spec.ImplicitInputs))
+	for _, implicitInput := range spec.ImplicitInputs {
+		inputVal, err := implicitInput.Resolver(ctx, inputArgs)
+		if err != nil {
+			return nil, fmt.Errorf("resolve implicit input %q: %w", implicitInput.Name, err)
+		}
+		if inputVal == nil {
+			return nil, fmt.Errorf("implicit input %q resolved to nil", implicitInput.Name)
+		}
+
+		newInput := call.NewArgument(implicitInput.Name, inputVal.ToLiteral(), false)
+		if idx, ok := inputIdxByName[implicitInput.Name]; ok {
+			implicitArgs[idx] = newInput
+			continue
+		}
+		inputIdxByName[implicitInput.Name] = len(implicitArgs)
+		implicitArgs = append(implicitArgs, newInput)
+	}
+	sort.Slice(implicitArgs, func(i, j int) bool {
+		return implicitArgs[i].Name() < implicitArgs[j].Name()
+	})
+	return implicitArgs, nil
+}
+
+// IdentityOpt resolves field-scoped identity inputs and returns an ID option
+// that applies them deterministically.
+func (spec *FieldSpec) IdentityOpt(ctx context.Context, inputArgs map[string]Input) (call.IDOpt, error) {
+	implicitArgs, err := spec.resolveImplicitInputArgs(ctx, inputArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	module := (*call.Module)(nil)
+	if spec != nil {
+		module = spec.Module
+	}
+
+	return func(id *call.ID) {
+		call.WithModule(module)(id)
+		call.WithImplicitInputs(implicitArgs...)(id)
+	}, nil
 }
 
 // InputSpec specifies a field argument, or an input field.

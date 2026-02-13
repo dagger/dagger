@@ -76,6 +76,98 @@ func TestImplicitInputsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestModuleMetadataDoesNotAffectIdentity(t *testing.T) {
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+	moduleID := New().Append(typ, "module")
+	moduleA := NewModule(moduleID, "mod-a", "ref-a", "pin-a")
+	moduleB := NewModule(moduleID, "mod-b", "ref-b", "pin-b")
+
+	base := New().Append(typ, "field")
+	idA := base.With(WithModule(moduleA))
+	idB := base.With(WithModule(moduleB))
+
+	if idA.Digest() != idB.Digest() {
+		t.Fatalf("module metadata should not affect digest: %s vs %s", idA.Digest(), idB.Digest())
+	}
+
+	selfA, inputsA, err := idA.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("idA self+inputs: %v", err)
+	}
+	selfB, inputsB, err := idB.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("idB self+inputs: %v", err)
+	}
+
+	if selfA != selfB {
+		t.Fatalf("module metadata should not affect self digest: %s vs %s", selfA, selfB)
+	}
+	if len(inputsA) != len(inputsB) {
+		t.Fatalf("input count mismatch: %d vs %d", len(inputsA), len(inputsB))
+	}
+	for i := range inputsA {
+		if inputsA[i] != inputsB[i] {
+			t.Fatalf("input digest mismatch at %d: %s vs %s", i, inputsA[i], inputsB[i])
+		}
+	}
+}
+
+func TestModuleIdentityContributesAsSyntheticInput(t *testing.T) {
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+	moduleAID := New().Append(typ, "moduleA")
+	moduleBID := New().Append(typ, "moduleB")
+	idNoModule := New().Append(typ, "field")
+	idWithModuleA := idNoModule.With(WithModule(NewModule(moduleAID, "mod", "ref", "pin")))
+	idWithModuleB := idNoModule.With(WithModule(NewModule(moduleBID, "mod", "ref", "pin")))
+
+	if idNoModule.Digest() == idWithModuleA.Digest() {
+		t.Fatalf("expected module-scoped digest to differ from unscoped digest: %s", idWithModuleA.Digest())
+	}
+	if idWithModuleA.Digest() == idWithModuleB.Digest() {
+		t.Fatalf("different module IDs should produce different digests: %s", idWithModuleA.Digest())
+	}
+
+	selfNoModule, inputsNoModule, err := idNoModule.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("no-module self+inputs: %v", err)
+	}
+	selfModuleA, inputsModuleA, err := idWithModuleA.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("moduleA self+inputs: %v", err)
+	}
+	selfModuleB, inputsModuleB, err := idWithModuleB.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("moduleB self+inputs: %v", err)
+	}
+
+	if selfNoModule != selfModuleA {
+		t.Fatalf("module identity should not affect self digest")
+	}
+	if selfNoModule != selfModuleB {
+		t.Fatalf("module identity should not affect self digest: %s vs %s", selfNoModule, selfModuleB)
+	}
+
+	if len(inputsModuleA) != len(inputsNoModule)+1 {
+		t.Fatalf("module synthetic input should append one input digest: %d vs %d", len(inputsNoModule), len(inputsModuleA))
+	}
+	if len(inputsModuleA) != len(inputsModuleB) {
+		t.Fatalf("module input count mismatch: %d vs %d", len(inputsModuleA), len(inputsModuleB))
+	}
+	last := len(inputsModuleA) - 1
+	if inputsModuleA[last] != moduleAID.inputDigest() {
+		t.Fatalf("unexpected moduleA synthetic input digest: got %s, want %s", inputsModuleA[last], moduleAID.inputDigest())
+	}
+	if inputsModuleB[last] != moduleBID.inputDigest() {
+		t.Fatalf("unexpected moduleB synthetic input digest: got %s, want %s", inputsModuleB[last], moduleBID.inputDigest())
+	}
+}
+
 func TestStructuralEquivalentDigestKeepsSelfShapeWhenContentMatches(t *testing.T) {
 	commonContent := digest.FromString("shared-content")
 	idA := New().Append(&ast.Type{
