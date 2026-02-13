@@ -57,7 +57,6 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache *SessionCache
-
 }
 
 type ServerSchema struct {

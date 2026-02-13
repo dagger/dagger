@@ -54,8 +54,8 @@ var (
 		Title: "Execution Commands",
 	}
 
-	workdir        string
-	remoteWorkdir  string
+	workdir       string
+	remoteWorkdir string
 
 	silent                   bool
 	verbose                  int

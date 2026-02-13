@@ -185,10 +185,10 @@ type daggerClient struct {
 	workspaceLoaded      bool
 	workspaceErr         error
 
-	pendingExtraModules  []engine.ExtraModule
-	extraModulesMu       sync.Mutex
-	extraModulesLoaded   bool
-	extraModulesErr      error
+	pendingExtraModules []engine.ExtraModule
+	extraModulesMu      sync.Mutex
+	extraModulesLoaded  bool
+	extraModulesErr     error
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
