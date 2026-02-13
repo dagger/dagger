@@ -167,6 +167,14 @@ func migrateListModules(cmd *cobra.Command) error {
 		}
 
 		dir := filepath.Dir(path)
+
+		// If .dagger/config.toml already exists, this module has already been
+		// migrated. The dagger.json is kept for compatibility with older engines.
+		configPath := filepath.Join(dir, workspace.WorkspaceDirName, workspace.ConfigFileName)
+		if _, err := os.Stat(configPath); err == nil {
+			return nil
+		}
+
 		if triggerErr := workspace.CheckMigrationTriggers(data, path, dir); triggerErr != nil {
 			rel, err := filepath.Rel(root, path)
 			if err != nil {
