@@ -79,6 +79,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.mymod.source)."),
 				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
 			),
+		dagql.Func("checks", s.checks).
+			Doc("Return all checks from modules loaded in the workspace.").
+			Args(
+				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+			),
+		dagql.Func("generators", s.generators).
+			Doc("Return all generators from modules loaded in the workspace.").
+			Args(
+				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+			),
 	}.Install(srv)
 }
 
@@ -637,6 +647,94 @@ func (s *workspaceSchema) configWrite(
 	}
 
 	return dagql.String(args.Value), nil
+}
+
+func (s *workspaceSchema) checks(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.CheckGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := query.Server.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current served deps: %w", err)
+	}
+
+	var allChecks []*core.Check
+	for _, mod := range deps.Mods {
+		userMod, ok := mod.(*core.Module)
+		if !ok {
+			continue
+		}
+		if mod.Name() == core.ModuleName {
+			continue
+		}
+		checkGroup, err := userMod.Checks(ctx, include)
+		if err != nil {
+			return nil, fmt.Errorf("checks from module %q: %w", mod.Name(), err)
+		}
+		allChecks = append(allChecks, checkGroup.Checks...)
+	}
+
+	return &core.CheckGroup{
+		Checks: allChecks,
+	}, nil
+}
+
+func (s *workspaceSchema) generators(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.GeneratorGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := query.Server.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current served deps: %w", err)
+	}
+
+	var allGenerators []*core.Generator
+	for _, mod := range deps.Mods {
+		userMod, ok := mod.(*core.Module)
+		if !ok {
+			continue
+		}
+		if mod.Name() == core.ModuleName {
+			continue
+		}
+		generatorGroup, err := userMod.Generators(ctx, include)
+		if err != nil {
+			return nil, fmt.Errorf("generators from module %q: %w", mod.Name(), err)
+		}
+		allGenerators = append(allGenerators, generatorGroup.Generators...)
+	}
+
+	return &core.GeneratorGroup{
+		Generators: allGenerators,
+	}, nil
 }
 
 // readWorkspaceConfig reads the current workspace config from host, or returns a fresh empty config.
