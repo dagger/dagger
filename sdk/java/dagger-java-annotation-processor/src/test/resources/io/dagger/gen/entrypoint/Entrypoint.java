@@ -3,6 +3,7 @@ package io.dagger.gen.entrypoint;
 
 import static io.dagger.client.Dagger.dag;
 
+import io.dagger.client.Changeset;
 import io.dagger.client.Container;
 import io.dagger.client.Directory;
 import io.dagger.client.Function;
@@ -153,6 +154,10 @@ public class Entrypoint {
             dag().function("validate", dag().typeDef().withKind(TypeDefKind.VOID_KIND).withOptional(true))
                 .withDescription("Validates the module configuration")
                 .withCheck())
+        .withFunction(
+            dag().function("generateCode", dag().typeDef().withObject("Changeset"))
+                .withDescription("Generates code from the module configuration")
+                .withGenerator())
         .withField("source", dag().typeDef().withObject("Directory"),
             new TypeDef.WithFieldArguments().withDescription("Project source directory"))
         .withField("version", dag().typeDef().withKind(TypeDefKind.STRING_KIND))
@@ -319,6 +324,11 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         obj.validate();
         return JsonConverter.toJSON(null);
+      } else if (fnName.equals("generateCode")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        Changeset res = obj.generateCode();
+        return JsonConverter.toJSON(res);
       }
       if (fnName.equals("")) {
         Directory source = null;
