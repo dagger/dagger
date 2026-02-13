@@ -122,6 +122,9 @@ def _build_function_def(func_meta: FunctionMetadata) -> dagger.Function:
     if func_meta.is_check:
         func_def = func_def.with_check()
 
+    if func_meta.is_generate:
+        func_def = func_def.with_generator()
+
     # Handle cache policy
     if func_meta.cache_policy is not None:
         if func_meta.cache_policy == "never":
@@ -147,9 +150,8 @@ def _add_parameter(
     """Add a parameter to a function definition."""
     arg_typedef = _resolved_type_to_typedef(param_meta.resolved_type)
 
-    # Mark optional if nullable
-    if param_meta.is_nullable:
-        arg_typedef = arg_typedef.with_optional(True)
+    # Note: optionality from type (T | None) is already handled by
+    # _resolved_type_to_typedef via resolved.is_optional.
 
     # Convert default value to JSON if present
     default_value = None
