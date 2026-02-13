@@ -1017,3 +1017,76 @@ type Myapp {
 	require.NoError(t, err)
 	require.Contains(t, out, "Migration complete")
 }
+
+// TestNestedModuleBeneathWorkspace verifies that a standalone dagger.json
+// module nested inside a workspace takes precedence over the outer workspace
+// when running from the module's directory. This tests the precedence rule:
+//
+//	./dagger.json > ../../.dagger/config.toml
+//
+// The user should be able to `cd` into the nested module and run `dagger call`
+// / `dagger functions` without `-m .`.
+func (WorkspaceSuite) TestNestedModuleBeneathWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a workspace at /work with a module in .dagger/modules/outer.
+	base := workspaceBase(t, c).
+		With(initDangModule("outer", `
+type Outer {
+  pub greet: String! {
+    "hello from outer"
+  }
+}
+`))
+
+	// Now create a standalone dagger.json module nested beneath the workspace.
+	// Using "dagger module init" with a path creates the module WITHOUT adding
+	// it to the workspace config.
+	base = base.
+		With(daggerExec("module", "init", "--sdk="+dangSDK, "inner", "./nested/inner")).
+		WithNewFile("/work/nested/inner/main.dang", `
+type Inner {
+  pub msg: String!
+
+  new(msg: String! = "hello from inner") {
+    self.msg = msg
+    self
+  }
+
+  pub greet: String! {
+    msg
+  }
+}
+`).
+		WithWorkdir("/work/nested/inner")
+
+	t.Run("standalone module not added to workspace config", func(ctx context.Context, t *testctx.T) {
+		// The standalone module should NOT appear in the workspace config.
+		out, err := base.
+			WithWorkdir("/work").
+			WithExec([]string{"cat", ".dagger/config.toml"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "inner")
+	})
+
+	t.Run("dagger functions lists the nested module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "greet")
+		// Should NOT show the outer workspace module's functions.
+		require.NotContains(t, out, "outer")
+	})
+
+	t.Run("dagger call works without -m", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from inner", strings.TrimSpace(out))
+	})
+
+	t.Run("constructor flags work at top level", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("--msg", "custom message", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "custom message", strings.TrimSpace(out))
+	})
+}
