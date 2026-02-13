@@ -48,3 +48,6 @@ go.work.sum
 
 # compiled binaries (LLMs tend to pollute here)
 /dagger
+
+# pi configuration (maybe we centralize later)
+/.pi
