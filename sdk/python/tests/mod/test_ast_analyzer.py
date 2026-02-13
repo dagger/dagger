@@ -781,13 +781,16 @@ class Foo:
 
 
 def test_ast_module_name():
-    metadata = _analyze("""
+    metadata = _analyze(
+        """
 import dagger
 
 @dagger.object_type
 class Foo:
     pass
-""", module_name="my-module")
+""",
+        module_name="my-module",
+    )
     assert metadata.module_name == "my-module"
     assert metadata.main_object == "Foo"
 
@@ -834,13 +837,16 @@ def test_ast_empty_source_files():
 
 def test_ast_main_object_not_found():
     with pytest.raises(ValidationError, match="Main object 'Missing' not found"):
-        _analyze("""
+        _analyze(
+            """
 import dagger
 
 @dagger.object_type
 class Foo:
     pass
-""", main="Missing")
+""",
+            main="Missing",
+        )
 
 
 def test_ast_syntax_error():
