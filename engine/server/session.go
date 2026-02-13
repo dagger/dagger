@@ -1464,15 +1464,34 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 			var migErr *workspace.ErrMigrationRequired
 			if errors.As(err, &migErr) && clientMD != nil && clientMD.AutoMigrate {
 				// Auto-migrate: perform migration instead of erroring.
-				introspect := workspace.ConstructorIntrospector(func(ctx context.Context, ref string) ([]workspace.ConstructorArgHint, error) {
+				// Create visible spans so the TUI shows migration progress.
+				tracer := client.tracerProvider.Tracer(InstrumentationLibrary)
+				var migRunErr error
+				migCtx, migSpan := tracer.Start(ctx, "migrating workspace",
+					trace.WithAttributes(
+						attribute.String("workspace.path", migErr.ProjectRoot),
+					))
+				defer telemetry.EndWithCause(migSpan, &migRunErr)
+				stdio := telemetry.SpanStdio(migCtx, InstrumentationLibrary)
+				defer stdio.Close()
+
+				// Wrap introspector to create per-toolchain sub-spans.
+				introspect := workspace.ConstructorIntrospector(func(ctx context.Context, ref string) (_ []workspace.ConstructorArgHint, tcErr error) {
+					ctx, tcSpan := tracer.Start(ctx, fmt.Sprintf("introspecting %s", ref),
+						trace.WithAttributes(attribute.String("toolchain.ref", ref)))
+					defer telemetry.EndWithCause(tcSpan, &tcErr)
 					return schema.IntrospectConstructorArgs(ctx, client.dag, ref)
 				})
-				result, migRunErr := workspace.Migrate(ctx, client.bkClient, migErr, introspect)
+
+				var result *workspace.MigrationResult
+				result, migRunErr = workspace.Migrate(migCtx, client.bkClient, migErr, introspect)
 				if migRunErr != nil {
 					client.workspaceErr = fmt.Errorf("migration failed: %w", migRunErr)
 					client.workspaceLoaded = true
 					return client.workspaceErr
 				}
+
+				fmt.Fprint(stdio.Stdout, result.Summary())
 				slog.Info(result.Summary())
 				// Migration done; don't load modules in this session.
 				client.workspaceLoaded = true
