@@ -13936,12 +13936,15 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
-	configPath *string
-	hasConfig  *bool
-	id         *WorkspaceID
-	install    *string
-	moduleInit *string
-	root       *string
+	configPath  *string
+	hasConfig   *bool
+	id          *WorkspaceID
+	init_       *string
+	initialized *bool
+	install     *string
+	moduleInit  *string
+	path        *string
+	sandboxRoot *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -13969,6 +13972,32 @@ func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
 		return *r.hasConfig, nil
 	}
 	q := r.query.Select("hasConfig")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Initialize a new workspace, creating .dagger/config.toml.
+func (r *Workspace) Init(ctx context.Context) (string, error) {
+	if r.init_ != nil {
+		return *r.init_, nil
+	}
+	q := r.query.Select("init")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether .dagger/config.toml exists.
+func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
+	if r.initialized != nil {
+		return *r.initialized, nil
+	}
+	q := r.query.Select("initialized")
 
 	var response bool
 
@@ -14155,12 +14184,25 @@ func (r *Workspace) ModuleInit(ctx context.Context, name string, sdk string, opt
 	return response, q.Execute(ctx)
 }
 
-// Absolute path to the workspace root directory.
-func (r *Workspace) Root(ctx context.Context) (string, error) {
-	if r.root != nil {
-		return *r.root, nil
+// Workspace path relative to sandbox root.
+func (r *Workspace) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
 	}
-	q := r.query.Select("root")
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Root of the sandbox filesystem (git root or workspace dir).
+func (r *Workspace) SandboxRoot(ctx context.Context) (string, error) {
+	if r.sandboxRoot != nil {
+		return *r.sandboxRoot, nil
+	}
+	q := r.query.Select("sandboxRoot")
 
 	var response string
 

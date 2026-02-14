@@ -4,9 +4,11 @@ import "github.com/vektah/gqlparser/v2/ast"
 
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
-	Root       string `field:"true" doc:"Absolute path to the workspace root directory."`
-	ConfigPath string `field:"true" doc:"Path to config.toml (empty string if no config exists)."`
-	HasConfig  bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
+	SandboxRoot string `field:"true" doc:"Root of the sandbox filesystem (git root or workspace dir)."`
+	Path        string `field:"true" doc:"Workspace path relative to sandbox root."`
+	Initialized bool   `field:"true" doc:"Whether .dagger/config.toml exists."`
+	ConfigPath  string `field:"true" doc:"Path to config.toml relative to sandbox root (empty if not initialized)."`
+	HasConfig   bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
 
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session

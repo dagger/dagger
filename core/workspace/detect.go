@@ -22,7 +22,15 @@ const (
 
 // Workspace represents a detected workspace with its root directory and config.
 type Workspace struct {
-	Root   string  // absolute path to workspace root
+	// SandboxRoot is the outer filesystem boundary (git root, or workspace dir if no git).
+	SandboxRoot string
+
+	// Path is the workspace location relative to SandboxRoot (e.g., "apps/frontend" or ".").
+	Path string
+
+	// Initialized is true if .dagger/config.toml was found.
+	Initialized bool
+
 	Config *Config // parsed config (nil if no config.toml)
 
 	// StandaloneModule is the path to a dagger.json that should be auto-loaded as
@@ -68,6 +76,23 @@ func Detect(
 	// workspace from swallowing a nested module's dagger.json.
 	legacyCloser := hasLegacy && hasDaggerDir && len(legacyDir) > len(daggerDir)
 
+	// Helper: find sandbox root (git root or fallback to workspace dir).
+	gitDir, hasGit := found[".git"]
+	sandboxFor := func(workspaceDir string) string {
+		if hasGit {
+			return gitDir
+		}
+		return workspaceDir
+	}
+	// Helper: compute workspace path relative to sandbox root.
+	relPath := func(sandboxRoot, workspaceDir string) string {
+		rel, err := filepath.Rel(sandboxRoot, workspaceDir)
+		if err != nil {
+			return "."
+		}
+		return rel
+	}
+
 	if legacyCloser {
 		legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
 		data, err := readFile(ctx, legacyPath)
@@ -80,7 +105,12 @@ func Detect(
 		// directory as the workspace root and auto-load the legacy module.
 		// This provides backwards compat: `dagger call` in a module dir
 		// targets that module without needing `-m .`.
-		return &Workspace{Root: legacyDir, StandaloneModule: legacyDir}, nil
+		sandbox := sandboxFor(legacyDir)
+		return &Workspace{
+			SandboxRoot:      sandbox,
+			Path:             relPath(sandbox, legacyDir),
+			StandaloneModule: legacyDir,
+		}, nil
 	}
 
 	// Step 1: .dagger/ found → look for config.toml
@@ -92,9 +122,12 @@ func Detect(
 			if err != nil {
 				return nil, fmt.Errorf("parsing %s: %w", configPath, err)
 			}
+			sandbox := sandboxFor(daggerDir)
 			return &Workspace{
-				Root:   daggerDir,
-				Config: cfg,
+				SandboxRoot: sandbox,
+				Path:        relPath(sandbox, daggerDir),
+				Initialized: true,
+				Config:      cfg,
 			}, nil
 		}
 		// config.toml doesn't exist inside .dagger/ — but a legacy dagger.json
@@ -110,7 +143,11 @@ func Detect(
 				}
 			}
 		}
-		return &Workspace{Root: daggerDir}, nil
+		sandbox := sandboxFor(daggerDir)
+		return &Workspace{
+			SandboxRoot: sandbox,
+			Path:        relPath(sandbox, daggerDir),
+		}, nil
 	}
 
 	// Step 2: No .dagger/ → check for legacy dagger.json
@@ -123,22 +160,28 @@ func Detect(
 			}
 		}
 		// dagger.json without migration triggers — auto-load as legacy module
-		// for backwards compat. The workspace root is the legacy dir or a
-		// surrounding .git dir (if found).
-		root := legacyDir
-		if gitDir, ok := found[".git"]; ok {
-			root = gitDir
-		}
-		return &Workspace{Root: root, StandaloneModule: legacyDir}, nil
+		// for backwards compat. Workspace = dagger.json dir, sandbox = git root.
+		sandbox := sandboxFor(legacyDir)
+		return &Workspace{
+			SandboxRoot:      sandbox,
+			Path:             relPath(sandbox, legacyDir),
+			StandaloneModule: legacyDir,
+		}, nil
 	}
 
-	// Step 3: .git found → workspace root = directory containing .git
-	if gitDir, ok := found[".git"]; ok {
-		return &Workspace{Root: gitDir}, nil
+	// Step 3: .git found → workspace = CWD, sandbox = git root
+	if hasGit {
+		return &Workspace{
+			SandboxRoot: gitDir,
+			Path:        relPath(gitDir, cwd),
+		}, nil
 	}
 
-	// Step 4: nothing found → cwd is workspace root
-	return &Workspace{Root: cwd}, nil
+	// Step 4: nothing found → cwd is both workspace and sandbox root
+	return &Workspace{
+		SandboxRoot: cwd,
+		Path:        ".",
+	}, nil
 }
 
 // ErrMigrationRequired indicates a legacy dagger.json needs migration
