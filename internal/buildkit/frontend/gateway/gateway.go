@@ -45,12 +45,12 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/distribution/reference"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/gogo/googleapis/google/rpc"
 	gogotypes "github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/ptypes/any"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/sys/signal"
+	"github.com/moby/sys/user"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -406,7 +406,7 @@ func (b *bindMount) Mount() ([]mount.Mount, func() error, error) {
 		Options: []string{"bind", "ro", "nosuid", "nodev", "noexec"},
 	}}, func() error { return nil }, nil
 }
-func (b *bindMount) IdentityMapping() *idtools.IdentityMapping {
+func (b *bindMount) IdentityMapping() *user.IdentityMapping {
 	return nil
 }
 

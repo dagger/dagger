@@ -9,7 +9,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/moby/sys/user"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
 )
@@ -30,17 +30,17 @@ type Snapshotter interface {
 	Remove(ctx context.Context, key string) error
 	Walk(ctx context.Context, fn snapshots.WalkFunc, filters ...string) error
 	Close() error
-	IdentityMapping() *idtools.IdentityMapping
+	IdentityMapping() *user.IdentityMapping
 }
 
-func FromContainerdSnapshotter(name string, s snapshots.Snapshotter, idmap *idtools.IdentityMapping) Snapshotter {
+func FromContainerdSnapshotter(name string, s snapshots.Snapshotter, idmap *user.IdentityMapping) Snapshotter {
 	return &fromContainerd{name: name, Snapshotter: s, idmap: idmap}
 }
 
 type fromContainerd struct {
 	name string
 	snapshots.Snapshotter
-	idmap *idtools.IdentityMapping
+	idmap *user.IdentityMapping
 }
 
 func (s *fromContainerd) Name() string {
@@ -66,7 +66,7 @@ func (s *fromContainerd) View(ctx context.Context, key, parent string, opts ...s
 	}
 	return &staticMountable{mounts: mounts, idmap: s.idmap, id: key}, nil
 }
-func (s *fromContainerd) IdentityMapping() *idtools.IdentityMapping {
+func (s *fromContainerd) IdentityMapping() *user.IdentityMapping {
 	return s.idmap
 }
 

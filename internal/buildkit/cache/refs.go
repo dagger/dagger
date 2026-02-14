@@ -32,9 +32,9 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/hashicorp/go-multierror"
 	"github.com/moby/sys/mountinfo"
+	"github.com/moby/sys/user"
 	"github.com/moby/sys/userns"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -50,7 +50,7 @@ type Ref interface {
 	Mountable
 	RefMetadata
 	Release(context.Context) error
-	IdentityMapping() *idtools.IdentityMapping
+	IdentityMapping() *user.IdentityMapping
 	DescHandler(digest.Digest) *DescHandler
 }
 
@@ -325,7 +325,7 @@ func (cr *cacheRecord) isLazy(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-func (cr *cacheRecord) IdentityMapping() *idtools.IdentityMapping {
+func (cr *cacheRecord) IdentityMapping() *user.IdentityMapping {
 	return cr.cm.IdentityMapping()
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/moby/sys/user"
 
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/cache/contenthash"
@@ -22,7 +23,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
-	"github.com/docker/docker/pkg/idtools"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/time/rate"
@@ -248,15 +248,12 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, caller session.Calle
 
 	if idmap := mount.IdentityMapping(); idmap != nil {
 		opt.Filter = func(p string, stat *fstypes.Stat) bool {
-			identity, err := idmap.ToHost(idtools.Identity{
-				UID: int(stat.Uid),
-				GID: int(stat.Gid),
-			})
+			uid, gid, err := idmap.ToHost(int(stat.Uid), int(stat.Gid))
 			if err != nil {
 				return false
 			}
-			stat.Uid = uint32(identity.UID)
-			stat.Gid = uint32(identity.GID)
+			stat.Uid = uint32(uid)
+			stat.Gid = uint32(gid)
 			return true
 		}
 	}
@@ -319,7 +316,7 @@ func newProgressHandler(ctx context.Context, id string) func(int, bool) {
 
 type cacheUpdater struct {
 	contenthash.CacheContext
-	idmap *idtools.IdentityMapping
+	idmap *user.IdentityMapping
 }
 
 func (cu *cacheUpdater) MarkSupported(bool) {
