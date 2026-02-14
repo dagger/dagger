@@ -168,7 +168,7 @@ func TestModuleIdentityContributesAsSyntheticInput(t *testing.T) {
 	}
 }
 
-func TestStructuralEquivalentDigestKeepsSelfShapeWhenContentMatches(t *testing.T) {
+func TestDagOpDigestKeepsSelfShapeWhenContentMatches(t *testing.T) {
 	commonContent := digest.FromString("shared-content")
 	idA := New().Append(&ast.Type{
 		NamedType: "String",
@@ -182,12 +182,12 @@ func TestStructuralEquivalentDigestKeepsSelfShapeWhenContentMatches(t *testing.T
 	if idA.OutputEquivalentDigest() != idB.OutputEquivalentDigest() {
 		t.Fatalf("expected matching output-equivalent digest: %s vs %s", idA.OutputEquivalentDigest(), idB.OutputEquivalentDigest())
 	}
-	if idA.StructuralEquivalentDigest() == idB.StructuralEquivalentDigest() {
-		t.Fatalf("expected structural-equivalent digest to differ for different call self shape: %s", idA.StructuralEquivalentDigest())
+	if idA.DagOpDigest() == idB.DagOpDigest() {
+		t.Fatalf("expected dag-op digest to differ for different call self shape: %s", idA.DagOpDigest())
 	}
 }
 
-func TestStructuralEquivalentDigestMatchesSelfPlusEquivalentInputsHash(t *testing.T) {
+func TestDagOpDigestMatchesSelfPlusDagOpInputsHash(t *testing.T) {
 	receiver := New().Append(&ast.Type{
 		NamedType: "String",
 		NonNull:   true,
@@ -204,9 +204,9 @@ func TestStructuralEquivalentDigestMatchesSelfPlusEquivalentInputsHash(t *testin
 		WithImplicitInputs(NewArgument("scope", NewLiteralString("scope-a"), false)),
 	)
 
-	selfDigest, inputDigests, err := id.SelfDigestAndEquivalentInputs()
+	selfDigest, inputDigests, err := id.DagOpSelfDigestAndInputs()
 	if err != nil {
-		t.Fatalf("self+equivalent-input digests: %v", err)
+		t.Fatalf("self+dag-op-input digests: %v", err)
 	}
 	h := hashutil.NewHasher().WithString(selfDigest.String())
 	for _, in := range inputDigests {
@@ -214,19 +214,8 @@ func TestStructuralEquivalentDigestMatchesSelfPlusEquivalentInputsHash(t *testin
 	}
 	expected := digest.Digest(h.DigestAndClose())
 
-	if got := id.StructuralEquivalentDigest(); got != expected {
-		t.Fatalf("unexpected structural-equivalent digest: got %s, want %s", got, expected)
-	}
-}
-
-func TestEquivalentDigestAliasesOutputEquivalentDigest(t *testing.T) {
-	id := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "field").With(WithContentDigest(digest.FromString("field-content")))
-
-	if id.EquivalentDigest() != id.OutputEquivalentDigest() {
-		t.Fatalf("EquivalentDigest should alias OutputEquivalentDigest: %s vs %s", id.EquivalentDigest(), id.OutputEquivalentDigest())
+	if got := id.DagOpDigest(); got != expected {
+		t.Fatalf("unexpected dag-op digest: got %s, want %s", got, expected)
 	}
 }
 

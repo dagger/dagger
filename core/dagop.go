@@ -39,7 +39,7 @@ func dagOpStructuralDigest(id *call.ID) digest.Digest {
 	if id == nil {
 		return ""
 	}
-	return id.StructuralEquivalentDigest()
+	return id.DagOpDigest()
 }
 
 func dagOpContentOrStructuralDigest(id *call.ID) digest.Digest {
@@ -604,8 +604,8 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 		if err != nil {
 			return nil, fmt.Errorf("marshal exec metadata: %w", err)
 		}
-			loadID = loadID.WithArgument(call.NewArgument("execMD", call.NewLiteralString(string(execMDJSON)), true))
-		}
+		loadID = loadID.WithArgument(call.NewArgument("execMD", call.NewLiteralString(string(execMDJSON)), true))
+	}
 
 	obj, err := opt.Server.LoadType(loadCtx, loadID)
 	if err != nil {
