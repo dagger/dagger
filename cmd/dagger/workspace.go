@@ -139,6 +139,10 @@ var migrateCmd = &cobra.Command{
 			return migrateListModules(cmd)
 		}
 
+		if remoteWorkdir != "" {
+			return fmt.Errorf("workspace on git remote cannot be modified")
+		}
+
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
