@@ -1007,11 +1007,44 @@ func (s *directorySchema) changesetLayer(ctx context.Context, parent dagql.Objec
 		return inst, err
 	}
 
-	dir, err := parent.Self().Before.Self().Diff(ctx, parent.Self().After.Self())
+	changes := parent.Self()
+	scopedPath := changes.Before.Self().Dir
+
+	var scopedDiff dagql.ObjectResult[*core.Directory]
+	err = srv.Select(ctx, changes.Before, &scopedDiff,
+		dagql.Selector{Field: "diff", Args: []dagql.NamedInput{
+			{Name: "other", Value: dagql.NewID[*core.Directory](changes.After.ID())},
+		}},
+	)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+
+	if scopedPath == "" || scopedPath == "/" {
+		return dagql.NewObjectResultForCurrentID(ctx, srv, scopedDiff.Self())
+	}
+
+	entries, err := scopedDiff.Self().Entries(ctx, "")
+	if err != nil {
+		return inst, err
+	}
+	if len(entries) == 0 {
+		return dagql.NewObjectResultForCurrentID(ctx, srv, scopedDiff.Self())
+	}
+
+	var layer dagql.ObjectResult[*core.Directory]
+	err = srv.Select(ctx, srv.Root(), &layer,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(scopedPath)},
+			{Name: "source", Value: dagql.NewID[*core.Directory](scopedDiff.ID())},
+		}},
+	)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, layer.Self())
 }
 
 type changesetAsPatchArgs struct {
