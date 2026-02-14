@@ -8,9 +8,9 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -55,7 +55,7 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 
 	resultID := dagql.CurrentID(ctx)
 	if resultID != nil {
-		resultID = resultID.AppendEffectIDs(curIDForRawDagOp.Digest().String())
+		resultID = resultID.AppendEffectIDs(curIDForRawDagOp.DagOpDigest().String())
 	}
 
 	val, err := core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
@@ -156,7 +156,7 @@ func DagOpFile[T dagql.Typed, A any](
 	if err != nil {
 		return nil, "", err
 	}
-	return f, curIDForFSDagOp.Digest().String(), nil
+	return f, curIDForFSDagOp.DagOpDigest().String(), nil
 }
 
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
@@ -387,7 +387,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 	if err != nil {
 		return nil, "", err
 	}
-	return dir, curIDForFSDagOp.Digest().String(), nil
+	return dir, curIDForFSDagOp.DagOpDigest().String(), nil
 }
 
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
@@ -439,11 +439,19 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, "", err
 	}
-	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, deps, ctr)
+
+	var execMD *buildkit.ExecutionMetadata
+	if withExecMD, ok := any(args).(interface {
+		DagOpExecutionMetadata() *buildkit.ExecutionMetadata
+	}); ok {
+		execMD = withExecMD.DagOpExecutionMetadata()
+	}
+
+	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, deps, ctr, execMD)
 	if err != nil {
 		return nil, "", err
 	}
-	return ctrRes, curIDForContainerDagOp.Digest().String(), nil
+	return ctrRes, curIDForContainerDagOp.DagOpDigest().String(), nil
 }
 
 const (
@@ -473,16 +481,22 @@ type RawDagOpInternalArgs struct {
 	DagOpFilename string `internal:"true" default:"" name:"dagOpFilename"`
 }
 
+// dagOpIDWithInternalArgs returns a copy of id with dag-op internal args applied.
+func dagOpIDWithInternalArgs(id *call.ID, args ...*call.Argument) (*call.ID, error) {
+	if id == nil {
+		return nil, fmt.Errorf("current ID is nil")
+	}
+	newID := id
+	for _, arg := range args {
+		newID = newID.WithArgument(arg)
+	}
+	return newID, nil
+}
+
 func currentIDForRawDagOp(
 	ctx context.Context,
 	filename string,
 ) (*call.ID, error) {
-	// we want to honor any custom digest on the currentID, but also need to modify it to
-	// indicate this is a dagOp.
-	newID := dagql.CurrentID(ctx)
-	h := hashutil.NewHasher()
-	h = h.WithString(newID.Digest().String())
-
 	args := []*call.Argument{
 		call.NewArgument(
 			IsDagOpArgName,
@@ -495,21 +509,7 @@ func currentIDForRawDagOp(
 			false,
 		),
 	}
-
-	var err error
-	for _, arg := range args {
-		newID = newID.WithArgument(arg)
-		h, err = call.AppendArgumentBytes(arg, h)
-		if err != nil {
-			h.Close()
-			return nil, err
-		}
-		h = h.WithDelim()
-	}
-
-	dgst := h.DigestAndClose()
-
-	return newID.WithDigest(digest.Digest(dgst)), nil
+	return dagOpIDWithInternalArgs(dagql.CurrentID(ctx), args...)
 }
 
 const (
@@ -526,12 +526,6 @@ func currentIDForFSDagOp(
 	ctx context.Context,
 	path string,
 ) (*call.ID, error) {
-	// we want to honor any custom digest on the currentID, but also need to modify it to
-	// indicate this is a dagOp.
-	newID := dagql.CurrentID(ctx)
-	h := hashutil.NewHasher()
-	h = h.WithString(newID.Digest().String())
-
 	args := []*call.Argument{
 		call.NewArgument(
 			IsDagOpArgName,
@@ -544,20 +538,7 @@ func currentIDForFSDagOp(
 			false,
 		),
 	}
-
-	var err error
-	for _, arg := range args {
-		newID = newID.WithArgument(arg)
-		h, err = call.AppendArgumentBytes(arg, h)
-		if err != nil {
-			h.Close()
-			return nil, err
-		}
-		h = h.WithDelim()
-	}
-
-	dgst := h.DigestAndClose()
-	return newID.WithDigest(digest.Digest(dgst)), nil
+	return dagOpIDWithInternalArgs(dagql.CurrentID(ctx), args...)
 }
 
 type ContainerDagOpInternalArgs struct {
@@ -567,12 +548,6 @@ type ContainerDagOpInternalArgs struct {
 func currentIDForContainerDagOp(
 	ctx context.Context,
 ) (*call.ID, error) {
-	// we want to honor any custom digest on the currentID, but also need to modify it to
-	// indicate this is a dagOp.
-	newID := dagql.CurrentID(ctx)
-	h := hashutil.NewHasher()
-	h = h.WithString(newID.Digest().String())
-
 	args := []*call.Argument{
 		call.NewArgument(
 			IsDagOpArgName,
@@ -580,20 +555,7 @@ func currentIDForContainerDagOp(
 			false,
 		),
 	}
-
-	var err error
-	for _, arg := range args {
-		newID = newID.WithArgument(arg)
-		h, err = call.AppendArgumentBytes(arg, h)
-		if err != nil {
-			h.Close()
-			return nil, err
-		}
-		h = h.WithDelim()
-	}
-
-	dgst := h.DigestAndClose()
-	return newID.WithDigest(digest.Digest(dgst)), nil
+	return dagOpIDWithInternalArgs(dagql.CurrentID(ctx), args...)
 }
 
 // DagOpChangesetWrapper caches a changeset field as a buildkit operation.

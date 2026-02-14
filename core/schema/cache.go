@@ -6,7 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 type cacheSchema struct{}
@@ -57,9 +57,11 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 		return nil, err
 	}
 	namespaceKey := namespaceFromModule(m)
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(
-		hashutil.HashStrings(resp.CacheKey.ID.Digest().String(), namespaceKey),
-	)
+	resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+		"namespace",
+		dagql.NewString(namespaceKey).ToLiteral(),
+		false,
+	))
 	return resp, nil
 }
 

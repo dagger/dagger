@@ -98,6 +98,12 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyRe
 	if value == nil {
 		return nil
 	}
+
+	var runtimeObjType dagql.ObjectType
+	if objVal, ok := value.(dagql.AnyObjectResult); ok {
+		runtimeObjType = objVal.ObjectType()
+	}
+
 	var objFields map[string]any
 	switch value := value.Unwrap().(type) {
 	case nil:
@@ -130,8 +136,26 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyRe
 			fieldTypeDef.TypeDef.ToType(),
 			fieldTypeDef.Name,
 			call.WithView(curID.View()),
-			call.WithModule(curID.Module()),
 		)
+		if runtimeObjType != nil {
+			if runtimeFieldSpec, found := runtimeObjType.FieldSpec(fieldTypeDef.Name, curID.View()); found {
+				inputArgs, err := dagql.ExtractIDArgs(runtimeFieldSpec.Args, fieldID)
+				if err != nil {
+					return fmt.Errorf("failed to decode field %q identity args: %w", k, err)
+				}
+				identityOpt, err := runtimeFieldSpec.IdentityOpt(ctx, inputArgs)
+				if err != nil {
+					return fmt.Errorf("failed to resolve field %q identity: %w", k, err)
+				}
+				fieldID = fieldID.With(identityOpt)
+			} else {
+				// Best-effort fallback for field specs unavailable from runtime object type.
+				fieldID = fieldID.With(call.WithModule(curID.Module()))
+			}
+		} else {
+			// Best-effort fallback for non-object runtime values.
+			fieldID = fieldID.With(call.WithModule(curID.Module()))
+		}
 		ctx := dagql.ContextWithID(ctx, fieldID)
 
 		typed, err := modType.ConvertFromSDKResult(ctx, v)
@@ -327,6 +351,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	spec.Name = gqlFieldName(mod.Name())
 	spec.Module = obj.Module.IDModule()
 	spec.GetCacheConfig = fn.CacheConfigForCall
+	spec.ImplicitInputs = append(spec.ImplicitInputs, fn.cacheImplicitInputs()...)
 
 	dag.Root().ObjectType().Extend(
 		spec,
@@ -454,6 +479,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	}
 	spec.Module = mod.IDModule()
 	spec.GetCacheConfig = modFun.CacheConfigForCall
+	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,

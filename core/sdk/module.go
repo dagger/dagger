@@ -65,7 +65,19 @@ func newModuleSDK(
 			Args:  constructorArgs,
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to get sdk object for sdk module %s: %w", sdkModMeta.Self().Name(), err)
+		var resultDigest any
+		if id := sdkModMeta.ID(); id != nil {
+			resultDigest = id.Digest()
+		}
+		return nil, fmt.Errorf(
+			"failed to get sdk object for sdk module %s (objects=%d interfaces=%d enums=%d resultDigest=%v): %w",
+			sdkModMeta.Self().Name(),
+			len(sdkModMeta.Self().ObjectDefs),
+			len(sdkModMeta.Self().InterfaceDefs),
+			len(sdkModMeta.Self().EnumDefs),
+			resultDigest,
+			err,
+		)
 	}
 
 	return (&module{

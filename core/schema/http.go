@@ -19,7 +19,8 @@ type httpSchema struct{}
 
 func (s *httpSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("http", s.http, dagql.CachePerClient).
+		dagql.NodeFunc("http", s.http).
+			WithInput(dagql.CachePerClient).
 			Doc(`Returns a file containing an http remote url content.`).
 			Args(
 				dagql.Arg("url").Doc(`HTTP url to get the content from (e.g., "https://docs.dagger.io").`),
@@ -142,20 +143,25 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	defer resp.Body.Close()
 	defer snap.Release(context.WithoutCancel(ctx))
 
-	// also mixin the checksum
-	newID := dagql.CurrentID(ctx).
-		WithArgument(call.NewArgument(
-			"refID",
-			call.NewLiteralString(snap.ID()),
-			false,
-		)).
-		WithDigest(hashutil.HashStrings(
-			filename,
-			fmt.Sprint(permissions),
-			dgst.String(),
-			resp.Header.Get("Last-Modified"),
-		))
-	ctxDagOp := dagql.ContextWithID(ctx, newID)
+	// Keep recipe digest as the authoritative call identity.
+	// Attach HTTP output identity as content digest so equivalent outputs can
+	// still converge in cache/egraph flows.
+	outputDigest := hashutil.HashStrings(
+		filename,
+		fmt.Sprint(permissions),
+		dgst.String(),
+		resp.Header.Get("Last-Modified"),
+	)
+	resultID := dagql.CurrentID(ctx).With(call.WithContentDigest(outputDigest))
+
+	// refID is runtime transport for dag-op execution only; do not return it on
+	// the final user-facing ID.
+	execID := resultID.WithArgument(call.NewArgument(
+		"refID",
+		call.NewLiteralString(snap.ID()),
+		false,
+	))
+	ctxDagOp := dagql.ContextWithID(ctx, execID)
 
 	file, effectID, err := DagOpFile(ctxDagOp, srv, parent.Self(), args, s.http, WithPathFn(s.httpPath))
 	if err != nil {
@@ -168,9 +174,9 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	}
 
 	if effectID != "" {
-		newID = newID.AppendEffectIDs(effectID)
+		resultID = resultID.AppendEffectIDs(effectID)
 	}
-	inst, err = dagql.NewObjectResultForID(file, srv, newID)
+	inst, err = dagql.NewObjectResultForID(file, srv, resultID)
 	if err != nil {
 		return inst, err
 	}

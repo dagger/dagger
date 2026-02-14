@@ -21,6 +21,23 @@ func (rl *resultList) first() *sharedResult {
 	return rl.l.Front().Value.(*sharedResult)
 }
 
+func (rl *resultList) firstMatch(accept func(*sharedResult) bool) *sharedResult {
+	if rl == nil || rl.l == nil || rl.l.Len() == 0 {
+		return nil
+	}
+	for el := rl.l.Front(); el != nil; el = el.Next() {
+		res, ok := el.Value.(*sharedResult)
+		if !ok || res == nil {
+			continue
+		}
+		if accept != nil && !accept(res) {
+			continue
+		}
+		return res
+	}
+	return nil
+}
+
 func (rl *resultList) add(res *sharedResult) {
 	if rl == nil || rl.l == nil || res == nil {
 		return
@@ -29,6 +46,19 @@ func (rl *resultList) add(res *sharedResult) {
 		return
 	}
 	rl.idx[res] = rl.l.PushBack(res)
+}
+
+func (rl *resultList) addAll(other *resultList) {
+	if rl == nil || other == nil || other.l == nil {
+		return
+	}
+	for el := other.l.Front(); el != nil; el = el.Next() {
+		res, ok := el.Value.(*sharedResult)
+		if !ok || res == nil {
+			continue
+		}
+		rl.add(res)
+	}
 }
 
 func (rl *resultList) remove(res *sharedResult) {
