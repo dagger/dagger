@@ -34,7 +34,15 @@ var workspaceInfoCmd = &cobra.Command{
 			dag := engineClient.Dagger()
 			ws := dag.CurrentWorkspace()
 
-			root, err := ws.Root(ctx)
+			sandboxRoot, err := ws.SandboxRoot(ctx)
+			if err != nil {
+				return fmt.Errorf("workspace: %w", err)
+			}
+			wsPath, err := ws.Path(ctx)
+			if err != nil {
+				return fmt.Errorf("workspace: %w", err)
+			}
+			initialized, err := ws.Initialized(ctx)
 			if err != nil {
 				return fmt.Errorf("workspace: %w", err)
 			}
@@ -43,16 +51,42 @@ var workspaceInfoCmd = &cobra.Command{
 				return fmt.Errorf("workspace: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Root:   %s\n", root)
+			fmt.Fprintf(cmd.OutOrStdout(), "Sandbox root: %s\n", sandboxRoot)
+			fmt.Fprintf(cmd.OutOrStdout(), "Workspace:    %s\n", filepath.Join(sandboxRoot, wsPath))
+			fmt.Fprintf(cmd.OutOrStdout(), "Initialized:  %t\n", initialized)
 			if hasConfig {
 				configPath, err := ws.ConfigPath(ctx)
 				if err != nil {
 					return fmt.Errorf("workspace: %w", err)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Config: %s\n", configPath)
+				fmt.Fprintf(cmd.OutOrStdout(), "Config:       %s\n", configPath)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Config: none\n")
+				fmt.Fprintf(cmd.OutOrStdout(), "Config:       none\n")
 			}
+			return nil
+		})
+	},
+}
+
+var workspaceInitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Initialize a new workspace",
+	Long:  "Initialize a new workspace in the current directory, creating .dagger/config.toml.",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+			ws := dag.CurrentWorkspace()
+
+			path, err := ws.Init(ctx)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Initialized workspace in %s\n", path)
 			return nil
 		})
 	},
@@ -243,6 +277,7 @@ Works like "git config" for workspace settings.`,
 }
 
 func init() {
+	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 

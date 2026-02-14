@@ -1512,8 +1512,9 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 				// Everything else is passed through as-is (remote git refs like
 				// github.com/org/repo).
 				var sourcePath string
+				workspaceAbsPath := filepath.Join(ws.SandboxRoot, ws.Path)
 				if strings.HasPrefix(entry.Source, ".") || strings.HasPrefix(entry.Source, "/") || !strings.Contains(entry.Source, ".") {
-					sourcePath = filepath.Join(ws.Root, workspace.WorkspaceDirName, entry.Source)
+					sourcePath = filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName, entry.Source)
 				} else {
 					sourcePath = entry.Source
 				}
