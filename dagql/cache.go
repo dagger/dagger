@@ -425,29 +425,26 @@ func (res *sharedResult) release(ctx context.Context) error {
 	res.refCount--
 	var onRelease OnReleaseFunc
 	if res.refCount == 0 && res.waiters == 0 {
-		// Persist-safe entries in a persistent cache should survive session closes so
-		// they can be reused cross-session. Everything else is released immediately.
-		keepInCache := res.safeToPersistCache && res.cache.db != nil
-		if !keepInCache {
-			delete(res.cache.ongoingCalls, res.callConcurrencyKeys)
-			if lst := res.cache.completedCalls[res.storageKey]; lst != nil {
+		// Always release in-memory dagql/egraph state when refs drain. The
+		// safe-to-persist flag only governs persistence metadata behavior.
+		delete(res.cache.ongoingCalls, res.callConcurrencyKeys)
+		if lst := res.cache.completedCalls[res.storageKey]; lst != nil {
+			lst.remove(res)
+			if lst.empty() {
+				delete(res.cache.completedCalls, res.storageKey)
+			}
+		}
+		if res.resultCallKey != "" && res.resultCallKey != res.storageKey {
+			key := res.resultCallKey
+			if lst := res.cache.completedCalls[key]; lst != nil {
 				lst.remove(res)
 				if lst.empty() {
-					delete(res.cache.completedCalls, res.storageKey)
+					delete(res.cache.completedCalls, key)
 				}
 			}
-			if res.resultCallKey != "" && res.resultCallKey != res.storageKey {
-				key := res.resultCallKey
-				if lst := res.cache.completedCalls[key]; lst != nil {
-					lst.remove(res)
-					if lst.empty() {
-						delete(res.cache.completedCalls, key)
-					}
-				}
-			}
-			res.cache.removeResultFromEgraphLocked(res)
-			onRelease = res.onRelease
 		}
+		res.cache.removeResultFromEgraphLocked(res)
+		onRelease = res.onRelease
 	}
 	res.cache.mu.Unlock()
 
