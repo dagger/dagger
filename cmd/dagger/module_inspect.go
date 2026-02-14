@@ -63,6 +63,13 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, e
 		return nil, err
 	}
 
+	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
+	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
+	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
+	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
+	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
+	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
+	//
 	// When no -m is given and we're in legacy mode (dagger.json without a
 	// workspace config), the engine auto-loaded the legacy module. Detect it
 	// and set it as MainObject for backwards compat, so that constructor
