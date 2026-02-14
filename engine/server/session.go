@@ -920,6 +920,12 @@ func (srv *Server) getOrInitClient(
 		if opts.SkipWorkspaceModules {
 			client.clientMetadata.SkipWorkspaceModules = true
 		}
+		// ExtraModules may arrive on a later request (e.g. /init) after the
+		// session attachable request already created the client without them.
+		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.extraModulesLoaded {
+			client.clientMetadata.ExtraModules = opts.ExtraModules
+			client.pendingExtraModules = opts.ExtraModules
+		}
 	}
 
 	// increment the number of active connections from this client
