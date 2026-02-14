@@ -1098,8 +1098,8 @@ func (WorkspaceSuite) TestFunctionsWithModFlag(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
-		With(nonNestedDevEngine(c)).
-		With(daggerNonNestedExec("module", "init", "--sdk="+dangSDK, "greeter", "./greeter")).
+		With(nonNestedDevEngine(c)). // TODO(LLM): WE WANT THIS DISABLED
+		With(daggerExec("module", "init", "--sdk="+dangSDK, "greeter", "./greeter")).
 		WithNewFile("/work/greeter/main.dang", `
 type Greeter {
   pub name: String!
@@ -1120,9 +1120,24 @@ type Greeter {
 `).
 		WithWorkdir("/work")
 
-	t.Run("shows promoted functions not constructor", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerNonNestedExec("-m", "./greeter", "functions")).Stdout(ctx)
+	runWithNiceFailure := func(ctx context.Context, base *dagger.Container, t *testctx.T, cmd ...string) string {
+		exec := base.WithExec(append([]string{"dagger"}, cmd...), dagger.ContainerWithExecOpts{
+			// TODO(LLM): WE WANT THIS ENABLED
+			// ExperimentalPrivilegedNesting: true,
+			Expect: dagger.ReturnTypeAny,
+		})
+		out, err := exec.CombinedOutput(ctx)
 		require.NoError(t, err)
+		code, err := exec.ExitCode(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0, code, "Command should not have failed. Output:\n\n%s", out)
+		out, err = exec.Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("shows promoted functions not constructor", func(ctx context.Context, t *testctx.T) {
+		out := runWithNiceFailure(ctx, base, t, "-m", "./greeter", "functions")
 		lines := strings.Split(out, "\n")
 		// The promoted functions should be listed.
 		require.Contains(t, lines, "greet   -")
@@ -1134,14 +1149,12 @@ type Greeter {
 	})
 
 	t.Run("call works with promoted functions", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerNonNestedExec("-m", "./greeter", "call", "greet")).Stdout(ctx)
-		require.NoError(t, err)
+		out := runWithNiceFailure(ctx, base, t, "-m", "./greeter", "call", "greet")
 		require.Equal(t, "hello, world", strings.TrimSpace(out))
 	})
 
 	t.Run("call works with constructor args and promoted functions", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerNonNestedExec("-m", "./greeter", "call", "--name", "dagger", "shout")).Stdout(ctx)
-		require.NoError(t, err)
+		out := runWithNiceFailure(ctx, base, t, "-m", "./greeter", "call", "--name", "dagger", "shout")
 		require.Equal(t, "HELLO, dagger", strings.TrimSpace(out))
 	})
 }
