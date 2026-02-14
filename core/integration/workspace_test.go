@@ -1098,7 +1098,6 @@ func (WorkspaceSuite) TestFunctionsWithModFlag(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
-		With(nonNestedDevEngine(c)). // TODO(LLM): WE WANT THIS DISABLED
 		With(daggerExec("module", "init", "--sdk="+dangSDK, "greeter", "./greeter")).
 		WithNewFile("/work/greeter/main.dang", `
 type Greeter {
@@ -1122,9 +1121,8 @@ type Greeter {
 
 	runWithNiceFailure := func(ctx context.Context, base *dagger.Container, t *testctx.T, cmd ...string) string {
 		exec := base.WithExec(append([]string{"dagger"}, cmd...), dagger.ContainerWithExecOpts{
-			// TODO(LLM): WE WANT THIS ENABLED
-			// ExperimentalPrivilegedNesting: true,
-			Expect: dagger.ReturnTypeAny,
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeAny,
 		})
 		out, err := exec.CombinedOutput(ctx)
 		require.NoError(t, err)
