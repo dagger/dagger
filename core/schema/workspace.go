@@ -282,12 +282,13 @@ func ensureWorkspaceInitialized(ctx context.Context, bk *buildkit.Client, ws *co
 [modules]
 `)
 
+	ws.ConfigPath = filepath.Join(ws.Path, workspace.WorkspaceDirName, workspace.ConfigFileName)
 	if err := exportConfigToHost(ctx, bk, ws, sampleConfig); err != nil {
+		ws.ConfigPath = ""
 		return fmt.Errorf("initializing workspace: %w", err)
 	}
 	ws.Initialized = true
 	ws.HasConfig = true
-	ws.ConfigPath = filepath.Join(ws.Path, workspace.WorkspaceDirName, workspace.ConfigFileName)
 	return nil
 }
 
