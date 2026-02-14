@@ -1547,10 +1547,21 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		// Handle migration (auto-migrate only if local + AutoMigrate flag).
 		if isLocal {
 			if migrated, migErr := srv.handleMigration(ctx, client, err); migrated {
-				return migErr
+				if migErr != nil {
+					return migErr
+				}
+				// Migration succeeded; re-detect to pick up the new config.
+				ws, err = workspace.Detect(ctx, statFS, readFile, cwd)
+				if err != nil {
+					return fmt.Errorf("post-migration workspace detection: %w", err)
+				}
+				// Fall through to build workspace object.
+				// Module loading is skipped via SkipWorkspaceModules.
 			}
 		}
-		return err
+		if err != nil {
+			return err
+		}
 	}
 
 	// Build + cache core.Workspace with Rootfs.
@@ -1565,7 +1576,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		dag := client.dag
 		for name, entry := range ws.Config.Modules {
 			sourcePath := entry.Source
-			if core.FastModuleSourceKindCheck(entry.Source, "") != core.ModuleSourceKindGit {
+			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
 				sourcePath = resolveLocalRef(ws, filepath.Join(workspace.WorkspaceDirName, entry.Source))
 			}
 			if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config, ws.Config.DefaultsFromDotEnv); err != nil {
@@ -1577,7 +1588,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// Auto-load standalone module (legacy dagger.json for backwards compat).
 	if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.StandaloneModule != "" {
 		ref := ws.StandaloneModule
-		if core.FastModuleSourceKindCheck(ref, "") != core.ModuleSourceKindGit {
+		if core.FastModuleSourceKindCheck(ref, "") == core.ModuleSourceKindLocal {
 			ref = resolveLocalRef(ws, ref)
 		}
 		extra := engine.ExtraModule{
