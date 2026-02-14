@@ -57,7 +57,8 @@ func (dev *EngineDev) Test(
 	ebpfProgs []string,
 ) error {
 	// FIXME: use the damn standard Go toolchain
-	ctr, _, err := dev.testContainer(ctx, ebpfProgs)
+	ctr, debugEndpoint, err := dev.testContainer(ctx, ebpfProgs)
+	_ = debugEndpoint
 	if err != nil {
 		return err
 	}
