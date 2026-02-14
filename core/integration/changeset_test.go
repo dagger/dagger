@@ -456,6 +456,79 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, entries, "root.txt")
 	})
 
+	t.Run("layer is scoped to subdirectory changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithDirectory("public", c.Directory())
+
+		newDir := oldDir.
+			WithNewFile("Gemfile", "source \"https://rubygems.org\"").
+			WithDirectory("public", c.Directory().
+				WithNewFile("asset_foo", "foo").
+				WithNewFile("asset_bar", "bar"))
+
+		changes := newDir.Directory("/public").Changes(oldDir.Directory("/public"))
+		layer := changes.Layer()
+
+		entries, err := layer.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"public/"}, entries)
+		require.NotContains(t, entries, "Gemfile")
+		require.NotContains(t, entries, "asset_foo")
+
+		publicEntries, err := layer.Directory("public").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"asset_foo", "asset_bar"}, publicEntries)
+	})
+
+	t.Run("layer ignores out-of-scope changes when scoped to subdirectory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithDirectory("public", c.Directory())
+
+		newDir := oldDir.
+			WithNewFile("Gemfile", "source \"https://rubygems.org\"")
+
+		changes := newDir.Directory("/public").Changes(oldDir.Directory("/public"))
+		layer := changes.Layer()
+
+		entries, err := layer.Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, entries)
+	})
+
+	t.Run("layer preserves nested scoped path", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithDirectory("assets", c.Directory().
+				WithDirectory("public", c.Directory()))
+
+		newDir := oldDir.
+			WithNewFile("Gemfile", "source \"https://rubygems.org\"").
+			WithDirectory("assets", c.Directory().
+				WithDirectory("public", c.Directory().
+					WithNewFile("asset_foo", "foo").
+					WithNewFile("asset_bar", "bar")))
+
+		changes := newDir.Directory("/assets/public").Changes(oldDir.Directory("/assets/public"))
+		layer := changes.Layer()
+
+		entries, err := layer.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"assets/"}, entries)
+
+		assetsEntries, err := layer.Directory("assets").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"public/"}, assetsEntries)
+
+		publicEntries, err := layer.Directory("assets/public").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"asset_foo", "asset_bar"}, publicEntries)
+	})
+
 	t.Run("test withChanges can be applied on subdir", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
