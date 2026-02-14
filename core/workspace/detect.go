@@ -22,10 +22,10 @@ const (
 
 // Workspace represents a detected workspace with its root directory and config.
 type Workspace struct {
-	// SandboxRoot is the outer filesystem boundary (git root, or workspace dir if no git).
-	SandboxRoot string
+	// Root is the outer filesystem boundary (git root, or workspace dir if no git).
+	Root string
 
-	// Path is the workspace location relative to SandboxRoot (e.g., "apps/frontend" or ".").
+	// Path is the workspace location relative to Root (e.g., "apps/frontend" or ".").
 	Path string
 
 	// Initialized is true if .dagger/config.toml was found.
@@ -107,7 +107,7 @@ func Detect(
 		// targets that module without needing `-m .`.
 		sandbox := sandboxFor(legacyDir)
 		return &Workspace{
-			SandboxRoot:      sandbox,
+			Root:      sandbox,
 			Path:             relPath(sandbox, legacyDir),
 			StandaloneModule: legacyDir,
 		}, nil
@@ -124,7 +124,7 @@ func Detect(
 			}
 			sandbox := sandboxFor(daggerDir)
 			return &Workspace{
-				SandboxRoot: sandbox,
+				Root: sandbox,
 				Path:        relPath(sandbox, daggerDir),
 				Initialized: true,
 				Config:      cfg,
@@ -145,7 +145,7 @@ func Detect(
 		}
 		sandbox := sandboxFor(daggerDir)
 		return &Workspace{
-			SandboxRoot: sandbox,
+			Root: sandbox,
 			Path:        relPath(sandbox, daggerDir),
 		}, nil
 	}
@@ -163,7 +163,7 @@ func Detect(
 		// for backwards compat. Workspace = dagger.json dir, sandbox = git root.
 		sandbox := sandboxFor(legacyDir)
 		return &Workspace{
-			SandboxRoot:      sandbox,
+			Root:      sandbox,
 			Path:             relPath(sandbox, legacyDir),
 			StandaloneModule: legacyDir,
 		}, nil
@@ -172,14 +172,14 @@ func Detect(
 	// Step 3: .git found → workspace = CWD, sandbox = git root
 	if hasGit {
 		return &Workspace{
-			SandboxRoot: gitDir,
+			Root: gitDir,
 			Path:        relPath(gitDir, cwd),
 		}, nil
 	}
 
 	// Step 4: nothing found → cwd is both workspace and sandbox root
 	return &Workspace{
-		SandboxRoot: cwd,
+		Root: cwd,
 		Path:        ".",
 	}, nil
 }

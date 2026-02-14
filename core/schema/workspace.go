@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -34,7 +33,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
 			), dagql.CacheAsRequested).
 			Doc(`Returns a Directory from the workspace.`,
-				`Relative paths resolve from the workspace root. Absolute paths resolve from the sandbox root.`).
+				`Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
@@ -42,7 +41,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
 			Doc(`Returns a File from the workspace.`,
-				`Relative paths resolve from the workspace root. Absolute paths resolve from the sandbox root.`).
+				`Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.`),
 			),
@@ -100,45 +99,7 @@ func (s *workspaceSchema) currentWorkspace(
 	parent *core.Query,
 	_ struct{},
 ) (*core.Workspace, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("buildkit: %w", err)
-	}
-	cwd, err := bk.AbsPath(ctx, ".")
-	if err != nil {
-		return nil, fmt.Errorf("cwd: %w", err)
-	}
-
-	statFS := core.NewCallerStatFS(bk)
-	ws, err := workspace.Detect(ctx, statFS, bk.ReadCallerHostFile, cwd)
-	if err != nil {
-		return nil, fmt.Errorf("workspace detection: %w", err)
-	}
-
-	// Capture the current client ID so that when this workspace is passed to
-	// a module function, the directory/file resolvers can route host filesystem
-	// operations through the correct (original) client session.
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("client metadata: %w", err)
-	}
-
-	result := &core.Workspace{
-		SandboxRoot: ws.SandboxRoot,
-		Path:        ws.Path,
-		Initialized: ws.Initialized,
-		HasConfig:   ws.Config != nil,
-		ClientID:    clientMetadata.ClientID,
-	}
-	if ws.Config != nil {
-		result.ConfigPath = filepath.Join(ws.SandboxRoot, ws.Path, workspace.WorkspaceDirName, workspace.ConfigFileName)
-	}
-
-	return result, nil
+	return parent.Server.CurrentWorkspace(ctx)
 }
 
 type workspaceDirectoryArgs struct {
@@ -156,52 +117,57 @@ func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
 func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	ws := parent.Self()
 
-	// Override the client metadata in context to the workspace's owning client
-	// so that host filesystem operations route through the correct session.
-	// This is necessary when the workspace is passed to a module function —
-	// the module's own session doesn't have access to the host filesystem.
-	ctx, err := s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return inst, err
-	}
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	absPath, err := resolveWorkspacePath(args.Path, ws.SandboxRoot, ws.Path)
-	if err != nil {
-		return inst, err
-	}
+	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
 
-	dirArgs := []dagql.NamedInput{
-		{Name: "path", Value: dagql.NewString(absPath)},
-	}
-	if len(args.Include) > 0 {
-		includes := make(dagql.ArrayInput[dagql.String], len(args.Include))
-		for i, p := range args.Include {
-			includes[i] = dagql.String(p)
+	// Select subdirectory from Rootfs.
+	var ctxDir dagql.ObjectResult[*core.Directory] = ws.Rootfs
+	if resolvedPath != "." && resolvedPath != "" {
+		err = srv.Select(ctx, ctxDir, &ctxDir,
+			dagql.Selector{
+				Field: "directory",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("workspace directory %q: %w", args.Path, err)
 		}
-		dirArgs = append(dirArgs, dagql.NamedInput{Name: "include", Value: includes})
 	}
-	if len(args.Exclude) > 0 {
-		excludes := make(dagql.ArrayInput[dagql.String], len(args.Exclude))
-		for i, p := range args.Exclude {
-			excludes[i] = dagql.String(p)
+
+	// Apply include/exclude filters via withDirectory (same pattern as modulesource.go).
+	if len(args.Include) > 0 || len(args.Exclude) > 0 {
+		withDirArgs := []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "directory", Value: dagql.NewID[*core.Directory](ctxDir.ID())},
 		}
-		dirArgs = append(dirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
+		if len(args.Include) > 0 {
+			includes := make(dagql.ArrayInput[dagql.String], len(args.Include))
+			for i, p := range args.Include {
+				includes[i] = dagql.String(p)
+			}
+			withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "include", Value: includes})
+		}
+		if len(args.Exclude) > 0 {
+			excludes := make(dagql.ArrayInput[dagql.String], len(args.Exclude))
+			for i, p := range args.Exclude {
+				excludes[i] = dagql.String(p)
+			}
+			withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
+		}
+		err = srv.Select(ctx, srv.Root(), &ctxDir,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{Field: "withDirectory", Args: withDirArgs},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("workspace directory %q (filtering): %w", args.Path, err)
+		}
 	}
 
-	err = srv.Select(ctx, srv.Root(), &inst,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "directory", Args: dirArgs},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("workspace directory %q: %w", args.Path, err)
-	}
-
-	return inst, nil
+	return ctxDir, nil
 }
 
 type workspaceFileArgs struct {
@@ -215,35 +181,19 @@ func (workspaceFileArgs) CacheType() dagql.CacheControlType {
 func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFileArgs) (inst dagql.Result[*core.File], _ error) {
 	ws := parent.Self()
 
-	ctx, err := s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return inst, err
-	}
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	absPath, err := resolveWorkspacePath(args.Path, ws.SandboxRoot, ws.Path)
-	if err != nil {
-		return inst, err
-	}
-	fileDir, fileName := filepath.Split(absPath)
+	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
 
-	if err := srv.Select(ctx, srv.Root(), &inst,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(fileDir)},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString(fileName)}},
-			},
-		},
+	// Select file from Rootfs.
+	if err := srv.Select(ctx, ws.Rootfs, &inst,
 		dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(fileName)},
+				{Name: "path", Value: dagql.NewString(resolvedPath)},
 			},
 		},
 	); err != nil {
@@ -253,65 +203,37 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	return inst, nil
 }
 
-// resolveWorkspacePath resolves a path with two scopes:
-//   - Relative paths resolve relative to the workspace directory (sandboxRoot/workspacePath).
-//   - Absolute paths resolve relative to the sandbox root.
+// resolveWorkspacePath resolves a path within the workspace's Rootfs:
+//   - Relative paths resolve from the workspace root (Rootfs/workspacePath/).
+//   - Absolute paths resolve from the Rootfs root (sandbox root).
 //
-// All resolved paths are clamped to the sandbox root.
-func resolveWorkspacePath(path, sandboxRoot, workspacePath string) (string, error) {
+// Returns a path relative to Rootfs root.
+func resolveWorkspacePath(path, workspacePath string) string {
 	clean := filepath.Clean(path)
-
-	// Reject .. traversal
-	if containsDotDot(clean) {
-		return "", fmt.Errorf("path %q: '..' traversal not allowed", path)
-	}
-
-	var resolved string
 	if filepath.IsAbs(clean) {
-		// Absolute path: relative to sandbox root
-		resolved = filepath.Join(sandboxRoot, clean[1:])
-	} else {
-		// Relative path: relative to workspace path within sandbox
-		resolved = filepath.Join(sandboxRoot, workspacePath, clean)
+		// Absolute path: relative to Rootfs root (strip leading /)
+		return clean[1:]
 	}
-
-	// Clamp to sandbox root
-	rootPrefix := filepath.Clean(sandboxRoot) + string(filepath.Separator)
-	if resolved != filepath.Clean(sandboxRoot) && !strings.HasPrefix(resolved, rootPrefix) {
-		return "", fmt.Errorf("path %q resolves outside sandbox root %q", path, sandboxRoot)
-	}
-
-	return resolved, nil
+	// Relative path: relative to workspace within Rootfs
+	return filepath.Join(workspacePath, clean)
 }
 
-// containsDotDot reports whether the cleaned path contains a ".." component.
-func containsDotDot(cleanPath string) bool {
-	for _, part := range strings.Split(cleanPath, string(filepath.Separator)) {
-		if part == ".." {
-			return true
-		}
+// workspaceHostPath returns the absolute host path for a workspace-relative path.
+// Returns an error if the workspace is remote (read-only).
+func workspaceHostPath(ws *core.Workspace) (string, error) {
+	if ws.HostPath() == "" {
+		return "", fmt.Errorf("workspace is read-only (remote)")
 	}
-	return false
+	return ws.HostPath(), nil
 }
 
-// withWorkspaceClientContext overrides the client metadata in context to the
-// workspace's owning client ID. This ensures host filesystem operations route
-// through the correct client session, even when called from a module context.
-func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
-	if ws.ClientID == "" {
-		return ctx, nil
-	}
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+// configHostPath returns the absolute host path for the workspace config file.
+func configHostPath(ws *core.Workspace) (string, error) {
+	hp, err := workspaceHostPath(ws)
 	if err != nil {
-		return ctx, fmt.Errorf("get client metadata: %w", err)
+		return "", err
 	}
-	if clientMetadata.ClientID == ws.ClientID {
-		return ctx, nil // already in the right context
-	}
-	// Clone metadata and override the client ID to the workspace owner's
-	override := *clientMetadata
-	override.ClientID = ws.ClientID
-	return engine.ContextWithClientMetadata(ctx, &override), nil
+	return filepath.Join(hp, ws.ConfigPath), nil
 }
 
 func (s *workspaceSchema) workspaceInit(
@@ -319,8 +241,12 @@ func (s *workspaceSchema) workspaceInit(
 	parent *core.Workspace,
 	args struct{},
 ) (dagql.String, error) {
+	hp, err := workspaceHostPath(parent)
+	if err != nil {
+		return "", err
+	}
 	if parent.Initialized {
-		daggerDir := filepath.Join(parent.SandboxRoot, parent.Path, workspace.WorkspaceDirName)
+		daggerDir := filepath.Join(hp, parent.Path, workspace.WorkspaceDirName)
 		return "", fmt.Errorf("workspace already initialized at %s", daggerDir)
 	}
 
@@ -337,7 +263,7 @@ func (s *workspaceSchema) workspaceInit(
 		return "", err
 	}
 
-	daggerDir := filepath.Join(parent.SandboxRoot, parent.Path, workspace.WorkspaceDirName)
+	daggerDir := filepath.Join(hp, parent.Path, workspace.WorkspaceDirName)
 	return dagql.String(daggerDir), nil
 }
 
@@ -361,8 +287,7 @@ func ensureWorkspaceInitialized(ctx context.Context, bk *buildkit.Client, ws *co
 	}
 	ws.Initialized = true
 	ws.HasConfig = true
-	workspaceAbsPath := filepath.Join(ws.SandboxRoot, ws.Path)
-	ws.ConfigPath = filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName, workspace.ConfigFileName)
+	ws.ConfigPath = filepath.Join(ws.Path, workspace.WorkspaceDirName, workspace.ConfigFileName)
 	return nil
 }
 
@@ -440,6 +365,11 @@ func (s *workspaceSchema) install(
 	}
 
 	if kind == core.ModuleSourceKindLocal {
+		hp, err := workspaceHostPath(parent)
+		if err != nil {
+			return "", err
+		}
+
 		var contextDirPath dagql.String
 		err = srv.Select(ctx, srv.Root(), &contextDirPath,
 			dagql.Selector{
@@ -471,7 +401,7 @@ func (s *workspaceSchema) install(
 		}
 
 		depAbsPath := filepath.Join(string(contextDirPath), string(depRootSubpath))
-		workspaceAbsPath := filepath.Join(parent.SandboxRoot, parent.Path)
+		workspaceAbsPath := filepath.Join(hp, parent.Path)
 		daggerDir := filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName)
 		relPath, err := filepath.Rel(daggerDir, depAbsPath)
 		if err != nil {
@@ -502,7 +432,10 @@ func (s *workspaceSchema) install(
 	// Read existing raw TOML for comment preservation
 	var existingTOML []byte
 	if parent.HasConfig {
-		existingTOML, _ = bk.ReadCallerHostFile(ctx, parent.ConfigPath)
+		cfgPath, err := configHostPath(parent)
+		if err == nil {
+			existingTOML, _ = bk.ReadCallerHostFile(ctx, cfgPath)
+		}
 	}
 
 	// Write config with hints (preserving existing comments)
@@ -510,9 +443,8 @@ func (s *workspaceSchema) install(
 		return "", err
 	}
 
-	workspaceAbsPath := filepath.Join(parent.SandboxRoot, parent.Path)
-	configPath := filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName, workspace.ConfigFileName)
-	return dagql.String(fmt.Sprintf("Installed module %q in %s", name, configPath)), nil
+	cfgPath, _ := configHostPath(parent)
+	return dagql.String(fmt.Sprintf("Installed module %q in %s", name, cfgPath)), nil
 }
 
 type moduleInitArgs struct {
@@ -541,8 +473,13 @@ func (s *workspaceSchema) moduleInit(
 		return "", err
 	}
 
+	hp, err := workspaceHostPath(parent)
+	if err != nil {
+		return "", err
+	}
+
 	// Module lives at .dagger/modules/<name>/ relative to workspace root
-	workspaceAbsPath := filepath.Join(parent.SandboxRoot, parent.Path)
+	workspaceAbsPath := filepath.Join(hp, parent.Path)
 	modulePath := filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName, "modules", args.Name)
 
 	// Make path relative to cwd for the moduleSource resolver
@@ -684,6 +621,11 @@ func (s *workspaceSchema) configRead(
 		return "", fmt.Errorf("no config.toml found in workspace")
 	}
 
+	cfgPath, err := configHostPath(parent)
+	if err != nil {
+		return "", err
+	}
+
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", err
@@ -693,7 +635,7 @@ func (s *workspaceSchema) configRead(
 		return "", fmt.Errorf("buildkit: %w", err)
 	}
 
-	data, err := bk.ReadCallerHostFile(ctx, parent.ConfigPath)
+	data, err := bk.ReadCallerHostFile(ctx, cfgPath)
 	if err != nil {
 		return "", fmt.Errorf("reading config: %w", err)
 	}
@@ -716,6 +658,11 @@ func (s *workspaceSchema) configWrite(
 	parent *core.Workspace,
 	args configWriteArgs,
 ) (dagql.String, error) {
+	cfgPath, err := configHostPath(parent)
+	if err != nil {
+		return "", err
+	}
+
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", err
@@ -727,7 +674,7 @@ func (s *workspaceSchema) configWrite(
 
 	var existingData []byte
 	if parent.HasConfig {
-		existingData, _ = bk.ReadCallerHostFile(ctx, parent.ConfigPath)
+		existingData, _ = bk.ReadCallerHostFile(ctx, cfgPath)
 	}
 
 	result, err := workspace.WriteConfigValue(existingData, args.Key, args.Value)
@@ -836,7 +783,11 @@ func readWorkspaceConfig(ctx context.Context, bk interface {
 }, parent *core.Workspace) (*workspace.Config, error) {
 	var cfg *workspace.Config
 	if parent.HasConfig {
-		data, err := bk.ReadCallerHostFile(ctx, parent.ConfigPath)
+		cfgPath, err := configHostPath(parent)
+		if err != nil {
+			return nil, err
+		}
+		data, err := bk.ReadCallerHostFile(ctx, cfgPath)
 		if err != nil {
 			return nil, fmt.Errorf("reading config: %w", err)
 		}
@@ -876,8 +827,10 @@ func writeWorkspaceConfigWithHints(ctx context.Context, bk *buildkit.Client, par
 
 // exportConfigToHost writes config bytes to config.toml on the host via temp file + LocalFileExport.
 func exportConfigToHost(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, configBytes []byte) error {
-	workspaceAbsPath := filepath.Join(parent.SandboxRoot, parent.Path)
-	configHostPath := filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName, workspace.ConfigFileName)
+	cfgHostPath, err := configHostPath(parent)
+	if err != nil {
+		return err
+	}
 
 	tmpFile, err := os.CreateTemp("", "workspace-config-*.toml")
 	if err != nil {
@@ -891,7 +844,7 @@ func exportConfigToHost(ctx context.Context, bk *buildkit.Client, parent *core.W
 	}
 	tmpFile.Close()
 
-	if err := bk.LocalFileExport(ctx, tmpFile.Name(), workspace.ConfigFileName, configHostPath, true); err != nil {
+	if err := bk.LocalFileExport(ctx, tmpFile.Name(), workspace.ConfigFileName, cfgHostPath, true); err != nil {
 		return fmt.Errorf("export config: %w", err)
 	}
 	return nil

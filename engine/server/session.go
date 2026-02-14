@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -184,6 +183,9 @@ type daggerClient struct {
 	workspaceMu          sync.Mutex
 	workspaceLoaded      bool
 	workspaceErr         error
+
+	// Cached workspace result from ensureWorkspaceLoaded.
+	workspace *core.Workspace
 
 	pendingExtraModules []engine.ExtraModule
 	extraModulesMu      sync.Mutex
@@ -1441,109 +1443,282 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 		return fmt.Errorf("waiting for client session: %w", err)
 	}
 
+	var err error
 	clientMD := client.clientMetadata
 	if clientMD != nil && clientMD.RemoteWorkdir != "" {
-		// Remote workspace: clone git repo and load workspace from it.
-		if err := srv.loadRemoteWorkspace(ctx, client, clientMD.RemoteWorkdir); err != nil {
-			client.workspaceErr = fmt.Errorf("remote workspace %q: %w", clientMD.RemoteWorkdir, err)
-			client.workspaceLoaded = true
-			return client.workspaceErr
-		}
+		err = srv.loadWorkspaceFromRemote(ctx, client, clientMD.RemoteWorkdir)
 	} else {
-		// Local workspace: always detect, even if SkipWorkspaceModules is set.
-		cwd, err := client.bkClient.AbsPath(ctx, ".")
-		if err != nil {
-			client.workspaceErr = fmt.Errorf("workspace detection: %w", err)
-			client.workspaceLoaded = true
-			return client.workspaceErr
-		}
+		err = srv.loadWorkspaceFromHost(ctx, client)
+	}
+	if err != nil {
+		client.workspaceErr = err
+	}
 
-		statFS := core.NewCallerStatFS(client.bkClient)
-		ws, err := workspace.Detect(ctx, statFS, client.bkClient.ReadCallerHostFile, cwd)
-		if err != nil {
-			var migErr *workspace.ErrMigrationRequired
-			if errors.As(err, &migErr) && clientMD != nil && clientMD.AutoMigrate {
-				// Auto-migrate: perform migration instead of erroring.
-				// Create visible spans so the TUI shows migration progress.
-				tracer := client.tracerProvider.Tracer(InstrumentationLibrary)
-				var migRunErr error
-				migCtx, migSpan := tracer.Start(ctx, "migrating workspace",
-					trace.WithAttributes(
-						attribute.String("workspace.path", migErr.ProjectRoot),
-					))
-				defer telemetry.EndWithCause(migSpan, &migRunErr)
-				stdio := telemetry.SpanStdio(migCtx, InstrumentationLibrary)
-				defer stdio.Close()
+	client.workspaceLoaded = true
+	return client.workspaceErr
+}
 
-				// Wrap introspector to create per-toolchain sub-spans.
-				introspect := workspace.ConstructorIntrospector(func(ctx context.Context, ref string) (_ []workspace.ConstructorArgHint, tcErr error) {
-					ctx, tcSpan := tracer.Start(ctx, fmt.Sprintf("introspecting %s", ref),
-						trace.WithAttributes(attribute.String("toolchain.ref", ref)))
-					defer telemetry.EndWithCause(tcSpan, &tcErr)
-					return schema.IntrospectConstructorArgs(ctx, client.dag, ref)
-				})
+// loadWorkspaceFromHost detects and loads the workspace from the client's host filesystem.
+func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClient) error {
+	cwd, err := client.bkClient.AbsPath(ctx, ".")
+	if err != nil {
+		return fmt.Errorf("workspace detection: %w", err)
+	}
 
-				var result *workspace.MigrationResult
-				result, migRunErr = workspace.Migrate(migCtx, client.bkClient, migErr, introspect)
-				if migRunErr != nil {
-					client.workspaceErr = fmt.Errorf("migration failed: %w", migRunErr)
-					client.workspaceLoaded = true
-					return client.workspaceErr
-				}
+	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
+		return filepath.Join(ws.Root, ws.Path, relPath)
+	}
 
-				fmt.Fprint(stdio.Stdout, result.Summary())
-				slog.Info(result.Summary())
-				// Migration done; don't load modules in this session.
-				client.workspaceLoaded = true
-				return nil
+	return srv.detectAndLoadWorkspace(ctx, client,
+		core.NewCallerStatFS(client.bkClient),
+		client.bkClient.ReadCallerHostFile,
+		cwd,
+		resolveLocalRef,
+		true, // isLocal
+	)
+}
+
+// loadWorkspaceFromRemote clones a git repo and detects/loads the workspace from it.
+func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerClient, remoteRef string) error {
+	parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
+	if err != nil {
+		return fmt.Errorf("remote workspace %q: parsing git ref: %w", remoteRef, err)
+	}
+
+	tree, err := srv.cloneGitTree(ctx, client.dag, &parsedRef)
+	if err != nil {
+		return fmt.Errorf("remote workspace %q: %w", remoteRef, err)
+	}
+
+	cwd := "."
+	if parsedRef.RepoRootSubdir != "/" && parsedRef.RepoRootSubdir != "." {
+		cwd = parsedRef.RepoRootSubdir
+	}
+
+	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
+		subPath := filepath.Join(ws.Root, ws.Path, relPath)
+		return core.GitRefString(parsedRef.SourceCloneRef, subPath, parsedRef.ModVersion)
+	}
+
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
+		&core.DirectoryStatFS{Dir: tree},
+		func(ctx context.Context, path string) ([]byte, error) {
+			return core.DirectoryReadFile(ctx, tree, path)
+		},
+		cwd,
+		resolveLocalRef,
+		false, // isLocal
+		tree,  // pre-built rootfs for remote
+	)
+}
+
+// detectAndLoadWorkspace is the unified core of workspace detection and module loading
+// for local workspaces (where Rootfs is built from host.directory).
+func (srv *Server) detectAndLoadWorkspace(
+	ctx context.Context,
+	client *daggerClient,
+	statFS core.StatFS,
+	readFile func(context.Context, string) ([]byte, error),
+	cwd string,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	isLocal bool,
+) error {
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, isLocal, dagql.ObjectResult[*core.Directory]{})
+}
+
+// detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection and module loading.
+// It works for both local and remote workspaces, parameterized by the filesystem
+// abstraction (statFS/readFile) and reference resolution (resolveLocalRef).
+// For remote workspaces, prebuiltRootfs provides the already-cloned git tree.
+func (srv *Server) detectAndLoadWorkspaceWithRootfs(
+	ctx context.Context,
+	client *daggerClient,
+	statFS core.StatFS,
+	readFile func(context.Context, string) ([]byte, error),
+	cwd string,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	isLocal bool,
+	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+) error {
+	clientMD := client.clientMetadata
+
+	ws, err := workspace.Detect(ctx, statFS, readFile, cwd)
+	if err != nil {
+		// Handle migration (auto-migrate only if local + AutoMigrate flag).
+		if isLocal {
+			if migrated, migErr := srv.handleMigration(ctx, client, err); migrated {
+				return migErr
 			}
-			client.workspaceErr = err
-			client.workspaceLoaded = true
-			return client.workspaceErr
 		}
+		return err
+	}
 
-		// Load modules from workspace config (skip if SkipWorkspaceModules).
-		if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.Config != nil && len(ws.Config.Modules) > 0 {
-			dag := client.dag
-			for name, entry := range ws.Config.Modules {
-				// Determine if the source is local or remote.
-				// Local sources (starting with . or / or containing no dots) are
-				// resolved relative to the .dagger/ directory.
-				// Everything else is passed through as-is (remote git refs like
-				// github.com/org/repo).
-				var sourcePath string
-				workspaceAbsPath := filepath.Join(ws.SandboxRoot, ws.Path)
-				if strings.HasPrefix(entry.Source, ".") || strings.HasPrefix(entry.Source, "/") || !strings.Contains(entry.Source, ".") {
-					sourcePath = filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName, entry.Source)
-				} else {
-					sourcePath = entry.Source
-				}
-				if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config, ws.Config.DefaultsFromDotEnv); err != nil {
-					client.workspaceErr = fmt.Errorf("loading workspace module %q: %w", name, err)
-					client.workspaceLoaded = true
-					return client.workspaceErr
-				}
-			}
-		}
+	// Build + cache core.Workspace with Rootfs.
+	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs)
+	if err != nil {
+		return fmt.Errorf("building workspace: %w", err)
+	}
+	client.workspace = coreWS
 
-		// Auto-load legacy module from dagger.json for backwards compat.
-		// This handles the case where no workspace config exists but a
-		// dagger.json was found (pre-workspace project).
-		if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.StandaloneModule != "" {
-			extra := engine.ExtraModule{
-				Ref:   ws.StandaloneModule,
-				Alias: true,
+	// Load modules from workspace config (skip if SkipWorkspaceModules).
+	if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.Config != nil && len(ws.Config.Modules) > 0 {
+		dag := client.dag
+		for name, entry := range ws.Config.Modules {
+			sourcePath := entry.Source
+			if core.FastModuleSourceKindCheck(entry.Source, "") != core.ModuleSourceKindGit {
+				sourcePath = resolveLocalRef(ws, filepath.Join(workspace.WorkspaceDirName, entry.Source))
 			}
-			if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
-				client.workspaceErr = fmt.Errorf("loading legacy module from %s: %w", ws.StandaloneModule, err)
-				client.workspaceLoaded = true
-				return client.workspaceErr
+			if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config, ws.Config.DefaultsFromDotEnv); err != nil {
+				return fmt.Errorf("loading workspace module %q: %w", name, err)
 			}
 		}
 	}
 
-	client.workspaceLoaded = true
+	// Auto-load standalone module (legacy dagger.json for backwards compat).
+	if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.StandaloneModule != "" {
+		ref := ws.StandaloneModule
+		if core.FastModuleSourceKindCheck(ref, "") != core.ModuleSourceKindGit {
+			ref = resolveLocalRef(ws, ref)
+		}
+		extra := engine.ExtraModule{
+			Ref:   ref,
+			Alias: true,
+		}
+		if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
+			return fmt.Errorf("loading legacy module from %s: %w", ws.StandaloneModule, err)
+		}
+	}
+
 	return nil
+}
+
+// buildCoreWorkspace converts the internal workspace detection result into
+// the public core.Workspace with its concrete Rootfs Directory.
+// For local workspaces, it creates Rootfs from host.directory(). For remote,
+// it uses the prebuiltRootfs (the cloned git tree).
+func (srv *Server) buildCoreWorkspace(
+	ctx context.Context,
+	client *daggerClient,
+	detected *workspace.Workspace,
+	isLocal bool,
+	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+) (*core.Workspace, error) {
+	dag := client.dag
+
+	var rootfs dagql.ObjectResult[*core.Directory]
+	var hostPath string
+
+	if isLocal {
+		// Local: Rootfs = host.directory(detected.Root)
+		hostPath = detected.Root
+		err := dag.Select(ctx, dag.Root(), &rootfs,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(detected.Root)},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("creating rootfs directory: %w", err)
+		}
+	} else {
+		// Remote: Rootfs = the cloned git tree passed in.
+		rootfs = prebuiltRootfs
+	}
+
+	// Capture the current client ID for routing host filesystem operations.
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("client metadata: %w", err)
+	}
+
+	coreWS := &core.Workspace{
+		Rootfs:      rootfs,
+		Path:        detected.Path,
+		Initialized: detected.Initialized,
+		HasConfig:   detected.Config != nil,
+		ClientID:    clientMetadata.ClientID,
+	}
+	coreWS.SetHostPath(hostPath)
+
+	if detected.Config != nil {
+		coreWS.ConfigPath = filepath.Join(detected.Path, workspace.WorkspaceDirName, workspace.ConfigFileName)
+	}
+
+	return coreWS, nil
+}
+
+// handleMigration checks if a workspace detection error is a migration-required
+// error and performs auto-migration if the client has AutoMigrate set.
+// Returns (true, nil) if migration was handled (successfully or not), (false, nil)
+// if no migration was needed.
+func (srv *Server) handleMigration(ctx context.Context, client *daggerClient, detectErr error) (bool, error) {
+	clientMD := client.clientMetadata
+	var migErr *workspace.ErrMigrationRequired
+	if !errors.As(detectErr, &migErr) || clientMD == nil || !clientMD.AutoMigrate {
+		return false, nil
+	}
+
+	// Auto-migrate: perform migration instead of erroring.
+	// Create visible spans so the TUI shows migration progress.
+	tracer := client.tracerProvider.Tracer(InstrumentationLibrary)
+	var migRunErr error
+	migCtx, migSpan := tracer.Start(ctx, "migrating workspace",
+		trace.WithAttributes(
+			attribute.String("workspace.path", migErr.ProjectRoot),
+		))
+	defer telemetry.EndWithCause(migSpan, &migRunErr)
+	stdio := telemetry.SpanStdio(migCtx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	// Wrap introspector to create per-toolchain sub-spans.
+	introspect := workspace.ConstructorIntrospector(func(ctx context.Context, ref string) (_ []workspace.ConstructorArgHint, tcErr error) {
+		ctx, tcSpan := tracer.Start(ctx, fmt.Sprintf("introspecting %s", ref),
+			trace.WithAttributes(attribute.String("toolchain.ref", ref)))
+		defer telemetry.EndWithCause(tcSpan, &tcErr)
+		return schema.IntrospectConstructorArgs(ctx, client.dag, ref)
+	})
+
+	var result *workspace.MigrationResult
+	result, migRunErr = workspace.Migrate(migCtx, client.bkClient, migErr, introspect)
+	if migRunErr != nil {
+		return true, fmt.Errorf("migration failed: %w", migRunErr)
+	}
+
+	fmt.Fprint(stdio.Stdout, result.Summary())
+	slog.Info(result.Summary())
+	// Migration done; don't load modules in this session.
+	return true, nil
+}
+
+// cloneGitTree clones a git repository and returns its directory tree.
+func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, parsedRef *core.ParsedGitRefString) (dagql.ObjectResult[*core.Directory], error) {
+	// Build the ref selector — use "head" if no version specified.
+	refSelector := dagql.Selector{Field: "head"}
+	if parsedRef.ModVersion != "" {
+		refSelector = dagql.Selector{
+			Field: "ref",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(parsedRef.ModVersion)}},
+		}
+	}
+
+	var tree dagql.ObjectResult[*core.Directory]
+	err := dag.Select(ctx, dag.Root(), &tree,
+		dagql.Selector{
+			Field: "git",
+			Args: []dagql.NamedInput{
+				{Name: "url", Value: dagql.String(parsedRef.SourceCloneRef)},
+			},
+		},
+		refSelector,
+		dagql.Selector{Field: "tree"},
+	)
+	if err != nil {
+		return tree, fmt.Errorf("cloning repo: %w", err)
+	}
+	return tree, nil
 }
 
 // ensureExtraModulesLoaded loads any pending extra modules (from -m flag).
@@ -1669,101 +1844,16 @@ func (srv *Server) loadWorkspaceModule(
 	return srv.serveModule(client, mod.Self())
 }
 
-// loadRemoteWorkspace clones a git repo specified by remoteRef, reads
-// .dagger/config.toml from it, and loads all configured workspace modules.
-// For local module sources in the config, it constructs full git refs
-// pointing to the correct subpath within the repo.
-func (srv *Server) loadRemoteWorkspace(
-	ctx context.Context,
-	client *daggerClient,
-	remoteRef string,
-) error {
-	dag := client.dag
-
-	// 1. Parse the remote ref to get repo URL, version, and subdir.
-	parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
+// CurrentWorkspace returns the cached workspace for the current client.
+func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error) {
+	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return fmt.Errorf("parsing git ref: %w", err)
+		return nil, err
 	}
-
-	// 2. Clone the repo and get the directory tree.
-	// Build the ref selector — use "head" if no version specified.
-	refSelector := dagql.Selector{Field: "head"}
-	if parsedRef.ModVersion != "" {
-		refSelector = dagql.Selector{
-			Field: "ref",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(parsedRef.ModVersion)}},
-		}
+	if client.workspace == nil {
+		return nil, fmt.Errorf("workspace not loaded")
 	}
-
-	var tree dagql.ObjectResult[*core.Directory]
-	err = dag.Select(ctx, dag.Root(), &tree,
-		dagql.Selector{
-			Field: "git",
-			Args: []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(parsedRef.SourceCloneRef)},
-			},
-		},
-		refSelector,
-		dagql.Selector{Field: "tree"},
-	)
-	if err != nil {
-		return fmt.Errorf("cloning repo: %w", err)
-	}
-
-	// 3. Determine the workspace root within the cloned tree.
-	// RepoRootSubdir is "/" when pointing at the repo root, or a subpath like "subdir".
-	wsRoot := ""
-	if parsedRef.RepoRootSubdir != "/" && parsedRef.RepoRootSubdir != "." {
-		wsRoot = parsedRef.RepoRootSubdir
-	}
-
-	// 4. Read .dagger/config.toml from the cloned tree.
-	configPath := filepath.Join(wsRoot, workspace.WorkspaceDirName, workspace.ConfigFileName)
-
-	var configContents dagql.String
-	err = dag.Select(ctx, tree, &configContents,
-		dagql.Selector{
-			Field: "file",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(configPath)}},
-		},
-		dagql.Selector{Field: "contents"},
-	)
-	if err != nil {
-		// No config.toml — valid but empty workspace, nothing to load.
-		slog.Debug("remote workspace has no config", "ref", remoteRef, "err", err)
-		return nil
-	}
-
-	cfg, err := workspace.ParseConfig([]byte(configContents))
-	if err != nil {
-		return fmt.Errorf("parsing remote workspace config: %w", err)
-	}
-
-	// 5. Load each configured module.
-	for name, entry := range cfg.Modules {
-		sourcePath := entry.Source
-
-		// For local sources (relative paths within the repo), construct a
-		// full git ref so the module resolver can clone and load it.
-		if strings.HasPrefix(entry.Source, ".") || strings.HasPrefix(entry.Source, "/") || !strings.Contains(entry.Source, ".") {
-			// Local source: resolve relative to .dagger/ directory within the workspace root.
-			subPath := filepath.Join(wsRoot, workspace.WorkspaceDirName, entry.Source)
-			subPath = filepath.Clean(subPath)
-
-			// Construct a full git ref: repoRoot/subPath@version
-			sourcePath = parsedRef.RepoRoot.Root + "/" + subPath
-			if parsedRef.ModVersion != "" {
-				sourcePath += "@" + parsedRef.ModVersion
-			}
-		}
-
-		if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config, cfg.DefaultsFromDotEnv); err != nil {
-			return fmt.Errorf("loading remote workspace module %q: %w", name, err)
-		}
-	}
-
-	return nil
+	return client.workspace, nil
 }
 
 // If the current client is coming from a function, return the module that function is from
