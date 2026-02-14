@@ -34,10 +34,6 @@ var workspaceInfoCmd = &cobra.Command{
 			dag := engineClient.Dagger()
 			ws := dag.CurrentWorkspace()
 
-			sandboxRoot, err := ws.SandboxRoot(ctx)
-			if err != nil {
-				return fmt.Errorf("workspace: %w", err)
-			}
 			wsPath, err := ws.Path(ctx)
 			if err != nil {
 				return fmt.Errorf("workspace: %w", err)
@@ -51,17 +47,16 @@ var workspaceInfoCmd = &cobra.Command{
 				return fmt.Errorf("workspace: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Sandbox root: %s\n", sandboxRoot)
-			fmt.Fprintf(cmd.OutOrStdout(), "Workspace:    %s\n", filepath.Join(sandboxRoot, wsPath))
-			fmt.Fprintf(cmd.OutOrStdout(), "Initialized:  %t\n", initialized)
+			fmt.Fprintf(cmd.OutOrStdout(), "Workspace path: %s\n", wsPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Initialized:    %t\n", initialized)
 			if hasConfig {
 				configPath, err := ws.ConfigPath(ctx)
 				if err != nil {
 					return fmt.Errorf("workspace: %w", err)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Config:       %s\n", configPath)
+				fmt.Fprintf(cmd.OutOrStdout(), "Config:         %s\n", configPath)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Config:       none\n")
+				fmt.Fprintf(cmd.OutOrStdout(), "Config:         none\n")
 			}
 			return nil
 		})
