@@ -43,6 +43,10 @@ func (c *Config) Close() error {
 	return nil
 }
 
+func (c *Config) IsPortableDaggerAPI() bool {
+	return c.ModuleConfig != nil && c.ModuleConfig.PortableDaggerAPI
+}
+
 // Specific configuration for module generation.
 type ModuleGeneratorConfig struct {
 	// Name of the module to generate code for.
@@ -62,6 +66,8 @@ type ModuleGeneratorConfig struct {
 
 	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
 	LibVersion string
+
+	PortableDaggerAPI bool
 }
 
 type ModuleSourceDependency struct {

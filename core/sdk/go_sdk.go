@@ -36,8 +36,9 @@ executing the codegen binary inside it to generate user code and then execute
 it with the resulting /runtime binary.
 */
 type goSDK struct {
-	root      *core.Query
-	rawConfig map[string]any
+	root         *core.Query
+	rawConfig    map[string]any
+	experimental map[string]bool
 }
 
 type goSDKConfig struct {
@@ -206,22 +207,37 @@ func (sdk *goSDK) Codegen(
 		return nil, fmt.Errorf("failed to get modified source directory for go module sdk codegen: %w", err)
 	}
 
-	return &core.GeneratedCode{
-		Code: modifiedSrcDir,
-		VCSGeneratedPaths: []string{
-			"dagger.gen.go",
-			"internal/dagger/**",
-			"internal/querybuilder/**",
-			"internal/telemetry/**",
-		},
-		VCSIgnoredPaths: []string{
-			"dagger.gen.go",
-			"internal/dagger",
-			"internal/querybuilder",
-			"internal/telemetry",
-			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
-		},
-	}, nil
+	if sdk.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeaturePortableAPI) {
+		return &core.GeneratedCode{
+			Code: modifiedSrcDir,
+			VCSGeneratedPaths: []string{
+				"dagger.gen.go",
+				"internal/dagger/**",
+			},
+			VCSIgnoredPaths: []string{
+				"dagger.gen.go",
+				"internal/dagger",
+				".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
+			},
+		}, nil
+	} else {
+		return &core.GeneratedCode{
+			Code: modifiedSrcDir,
+			VCSGeneratedPaths: []string{
+				"dagger.gen.go",
+				"internal/dagger/**",
+				"internal/querybuilder/**",
+				"internal/telemetry/**",
+			},
+			VCSIgnoredPaths: []string{
+				"dagger.gen.go",
+				"internal/dagger",
+				"internal/querybuilder",
+				"internal/telemetry",
+				".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
+			},
+		}, nil
+	}
 }
 
 func (sdk *goSDK) ModuleTypes(
@@ -260,6 +276,13 @@ func (sdk *goSDK) ModuleTypes(
 	execMD.EncodedModuleID, err = currentModuleID.Encode()
 	if err != nil {
 		return inst, err
+	}
+
+	var portableAPIArg dagql.String
+	if sdk.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeaturePortableAPI) {
+		portableAPIArg = "--portable-api"
+	} else {
+		portableAPIArg = "--portable-api=false"
 	}
 
 	var modDefsID string
@@ -329,6 +352,7 @@ func (sdk *goSDK) ModuleTypes(
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
 						"--output", GoSDKModuleIDPath,
+						portableAPIArg,
 					},
 				},
 				{
@@ -565,23 +589,13 @@ func (sdk *goSDK) baseWithCodegen(
 		},
 	}
 
-	var config goSDKConfig
-	var mapstructureMetadata mapstructure.Metadata
-	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Metadata: &mapstructureMetadata,
-		Result:   &config,
-	})
-	if err != nil {
-		return ctr, err
+	if sdk.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeaturePortableAPI) {
+		codegenArgs = append(codegenArgs, "--portable-api")
 	}
 
-	err = decoder.Decode(sdk.rawConfig)
+	config, err := sdk.parseSdkConfig()
 	if err != nil {
 		return ctr, err
-	}
-
-	if len(mapstructureMetadata.Unused) > 0 {
-		return ctr, fmt.Errorf("unknown sdk config keys found %v", mapstructureMetadata.Unused)
 	}
 
 	configSelectors := getSDKConfigSelectors(ctx, config)
@@ -635,6 +649,28 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	return ctr, nil
+}
+
+func (sdk *goSDK) parseSdkConfig() (goSDKConfig, error) {
+	var config goSDKConfig
+	var mapstructureMetadata mapstructure.Metadata
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Metadata: &mapstructureMetadata,
+		Result:   &config,
+	})
+	if err != nil {
+		return config, err
+	}
+
+	err = decoder.Decode(sdk.rawConfig)
+	if err != nil {
+		return config, err
+	}
+
+	if len(mapstructureMetadata.Unused) > 0 {
+		return config, fmt.Errorf("unknown sdk config keys found %v", mapstructureMetadata.Unused)
+	}
+	return config, nil
 }
 
 func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container], error) {
@@ -914,6 +950,13 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 		},
 	}
 	return set, unset, nil
+}
+
+func (sdk *goSDK) ExperimentalFeatureEnabled(feature core.ModuleSourceExperimentalFeature) bool {
+	if sdk.experimental == nil {
+		return false
+	}
+	return sdk.experimental[feature.String()]
 }
 
 func getSDKConfigSelectors(_ context.Context, config goSDKConfig) []dagql.Selector {
