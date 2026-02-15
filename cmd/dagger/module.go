@@ -368,25 +368,29 @@ dagger init --sdk=go
 
 // moduleModInitCmd is the "dagger module init" subcommand.
 //
-// With just a name, it creates a workspace module inside
+// With no name or just a name, it creates a workspace module inside
 // .dagger/modules/<name>/ and auto-installs it in .dagger/config.toml.
+// If no name is given, it defaults to the current working directory name.
 //
 // With a name and a path, it creates a standalone module at that path
 // WITHOUT adding it to the workspace config.
 var moduleModInitCmd = &cobra.Command{
-	Use:   "init [options] --sdk=<sdk> <name> [path]",
+	Use:   "init [options] --sdk=<sdk> [name] [path]",
 	Short: "Create a new module",
 	Long: `Create a new module, either in the workspace or at a standalone path.
 
-With just a name, the module is created at .dagger/modules/<name>/ and
-automatically added to .dagger/config.toml.
+If no name is given, the current working directory name is used.
+
+With just a name (or no name), the module is created at .dagger/modules/<name>/
+and automatically added to .dagger/config.toml.
 
 With a name and a path, the module is created at that path as a standalone
 module with its own dagger.json — it is NOT added to the workspace config.`,
-	Example: `  dagger module init --sdk=go ci
+	Example: `  dagger module init --sdk=go
+  dagger module init --sdk=go ci
   dagger module init --sdk=python deploy
   dagger module init --sdk=go mymod ./sub/mymod`,
-	Args: cobra.RangeArgs(1, 2),
+	Args: cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
@@ -398,7 +402,16 @@ module with its own dagger.json — it is NOT added to the workspace config.`,
 			return fmt.Errorf("--sdk is required; specify the SDK to use (go, python, typescript)")
 		}
 
-		modName := extraArgs[0]
+		var modName string
+		if len(extraArgs) >= 1 {
+			modName = extraArgs[0]
+		} else {
+			wd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get working directory: %w", err)
+			}
+			modName = filepath.Base(wd)
+		}
 
 		if len(extraArgs) >= 2 {
 			return initStandaloneModule(ctx, cmd, modName, extraArgs[1])
