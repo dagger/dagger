@@ -49,7 +49,9 @@ var (
 
 	installName string
 
-	initBlueprint        string
+	moduleModInitPath string
+
+	initBlueprint string
 	toolchainInstallName string
 
 	developSDK        string
@@ -161,7 +163,8 @@ func init() {
 	// dagger module init
 	moduleCmd.AddCommand(moduleModInitCmd)
 	moduleModInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK to use (go, python, typescript)")
-	moduleModInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK")
+	moduleModInitCmd.Flags().StringVar(&moduleName, "name", "", "Module name (defaults to working directory name)")
+	moduleModInitCmd.Flags().StringVar(&moduleModInitPath, "source", "", "Standalone module path (alternative to positional path argument)")
 	moduleModInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleModInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module")
 
@@ -379,17 +382,21 @@ var moduleModInitCmd = &cobra.Command{
 	Short: "Create a new module",
 	Long: `Create a new module, either in the workspace or at a standalone path.
 
-If no name is given, the current working directory name is used.
+The module name can be given as the first positional argument or via --name.
+If neither is given, it defaults to the current working directory name.
 
-With just a name (or no name), the module is created at .dagger/modules/<name>/
-and automatically added to .dagger/config.toml.
+The standalone path can be given as the second positional argument or via
+--source. With just a name (or no name and no path), the module is created at
+.dagger/modules/<name>/ and automatically added to .dagger/config.toml.
 
-With a name and a path, the module is created at that path as a standalone
-module with its own dagger.json — it is NOT added to the workspace config.`,
+With a path, the module is created at that path as a standalone module with
+its own dagger.json — it is NOT added to the workspace config.`,
 	Example: `  dagger module init --sdk=go
   dagger module init --sdk=go ci
+  dagger module init --sdk=go --name=ci
   dagger module init --sdk=python deploy
-  dagger module init --sdk=go mymod ./sub/mymod`,
+  dagger module init --sdk=go mymod ./sub/mymod
+  dagger module init --sdk=go --name=mymod --source=./sub/mymod`,
 	Args: cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
@@ -402,10 +409,15 @@ module with its own dagger.json — it is NOT added to the workspace config.`,
 			return fmt.Errorf("--sdk is required; specify the SDK to use (go, python, typescript)")
 		}
 
-		var modName string
+		// Resolve module name: positional arg > --name flag > workdir basename
+		modName := moduleName
 		if len(extraArgs) >= 1 {
+			if modName != "" {
+				return fmt.Errorf("cannot specify module name as both a positional argument and --name flag")
+			}
 			modName = extraArgs[0]
-		} else {
+		}
+		if modName == "" {
 			wd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get working directory: %w", err)
@@ -413,8 +425,17 @@ module with its own dagger.json — it is NOT added to the workspace config.`,
 			modName = filepath.Base(wd)
 		}
 
+		// Resolve standalone path: positional arg > --source flag
+		modPath := moduleModInitPath
 		if len(extraArgs) >= 2 {
-			return initStandaloneModule(ctx, cmd, modName, extraArgs[1])
+			if modPath != "" {
+				return fmt.Errorf("cannot specify module path as both a positional argument and --source flag")
+			}
+			modPath = extraArgs[1]
+		}
+
+		if modPath != "" {
+			return initStandaloneModule(ctx, cmd, modName, modPath)
 		}
 
 		return initWorkspaceModule(ctx, cmd, modName)
