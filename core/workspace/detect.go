@@ -33,10 +33,11 @@ type Workspace struct {
 
 	Config *Config // parsed config (nil if no config.toml)
 
-	// StandaloneModule is the path to a dagger.json that should be auto-loaded as
-	// the default module. Set when workspace detection finds a dagger.json
-	// without a config.toml, and the dagger.json is not a migration candidate.
-	StandaloneModule string
+	// StandaloneModule indicates that a legacy dagger.json was found at Path
+	// and should be auto-loaded as the default module. Set when workspace
+	// detection finds a dagger.json without a config.toml (or closer than
+	// any config.toml), and the dagger.json is not a migration candidate.
+	StandaloneModule bool
 }
 
 // Detect finds the workspace root and config from the given working directory.
@@ -107,9 +108,9 @@ func Detect(
 		// targets that module without needing `-m .`.
 		sandbox := sandboxFor(legacyDir)
 		return &Workspace{
-			Root:      sandbox,
+			Root:             sandbox,
 			Path:             relPath(sandbox, legacyDir),
-			StandaloneModule: legacyDir,
+			StandaloneModule: true,
 		}, nil
 	}
 
@@ -163,9 +164,9 @@ func Detect(
 		// for backwards compat. Workspace = dagger.json dir, sandbox = git root.
 		sandbox := sandboxFor(legacyDir)
 		return &Workspace{
-			Root:      sandbox,
+			Root:             sandbox,
 			Path:             relPath(sandbox, legacyDir),
-			StandaloneModule: legacyDir,
+			StandaloneModule: true,
 		}, nil
 	}
 
