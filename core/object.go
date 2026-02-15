@@ -268,6 +268,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
 			Name:             gqlFieldName(mod.Name()),
+			Description:      formatGqlDescription(objDef.Description),
 			Type:             obj,
 			Module:           obj.Module.IDModule(),
 			GetCacheConfig:   mod.CacheConfigForCall,
