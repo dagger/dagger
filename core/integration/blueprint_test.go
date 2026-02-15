@@ -32,7 +32,7 @@ func (BlueprintSuite) TestBlueprintUseLocal(ctx context.Context, t *testctx.T) {
 	t.Run("use local blueprint", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../hello"))
+			With(daggerExec("module", "init", "--blueprint=../hello"))
 		// Verify blueprint was installed by calling function
 		out, err := modGen.
 			With(daggerExec("call", "message")).
@@ -77,7 +77,7 @@ func (BlueprintSuite) TestBlueprintInit(ctx context.Context, t *testctx.T) {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			modGen := blueprintTestEnv(t, c).
 				WithWorkdir("app").
-				With(daggerExec("init", "--blueprint="+tc.blueprintPath))
+				With(daggerExec("module", "init", "--blueprint="+tc.blueprintPath))
 			// Verify blueprint was installed by calling function
 			out, err := modGen.
 				With(daggerExec("call", "hello")).
@@ -94,7 +94,7 @@ func (BlueprintSuite) TestBlueprintNoSDK(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
 			WithExec(
-				[]string{"dagger", "init", "--sdk=go", "--blueprint=../myblueprint"},
+				[]string{"dagger", "module", "init", "--sdk=go", "--blueprint=../myblueprint"},
 				dagger.ContainerWithExecOpts{
 					ExperimentalPrivilegedNesting: true,
 					Expect:                        dagger.ReturnTypeFailure,

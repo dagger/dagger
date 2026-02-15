@@ -16,7 +16,10 @@ import (
 	"github.com/dagger/dagger/engine/vcs"
 )
 
-func fastModuleSourceKindCheck(
+// FastModuleSourceKindCheck performs a quick heuristic check to determine
+// whether a module ref string refers to a local path or a git source.
+// Returns "" if the kind cannot be determined without further inspection.
+func FastModuleSourceKindCheck(
 	refString string,
 	refPin string,
 ) ModuleSourceKind {
@@ -58,7 +61,7 @@ func ParseRefString(
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	kind := fastModuleSourceKindCheck(refString, refPin)
+	kind := FastModuleSourceKindCheck(refString, refPin)
 	switch kind {
 	case ModuleSourceKindLocal:
 		return &ParsedRefString{

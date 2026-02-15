@@ -127,6 +127,17 @@ type Params struct {
 
 	EagerRuntime bool
 
+	SkipWorkspaceModules bool
+
+	// AutoMigrate triggers automatic migration when a legacy dagger.json
+	// is detected during workspace loading.
+	AutoMigrate bool
+
+	// RemoteWorkdir is a git ref string (e.g. "github.com/foo/bar@v1.0")
+	// for loading a workspace from a remote git repository instead of the
+	// client's local filesystem.
+	RemoteWorkdir string
+
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
 }
@@ -1379,7 +1390,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		remoteEngineID = c.connector.EngineID()
 	}
 
-	return engine.ClientMetadata{
+	md := engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
 		SessionID:                 c.SessionID,
@@ -1400,6 +1411,22 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
 	}
+
+	if c.Module != "" {
+		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Alias: true}}
+		md.SkipWorkspaceModules = true
+	}
+	if c.SkipWorkspaceModules {
+		md.SkipWorkspaceModules = true
+	}
+	if c.AutoMigrate {
+		md.AutoMigrate = true
+	}
+	if c.RemoteWorkdir != "" {
+		md.RemoteWorkdir = c.RemoteWorkdir
+	}
+
+	return md
 }
 
 func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {

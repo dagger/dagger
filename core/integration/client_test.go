@@ -138,7 +138,7 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 		WithUser("auser").
 		WithWorkdir("/work").
-		WithExec([]string{"dagger", "init", "--sdk=go"}).
+		WithExec([]string{"dagger", "module", "init", "--sdk=go"}).
 		File("/home/auser/.local/state/dagger/stable_client_id").
 		Contents(ctx)
 	require.NoError(t, err)

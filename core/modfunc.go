@@ -436,7 +436,33 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	if !ok {
 		return nil, false, fmt.Errorf("lookup default: function %q has no argument %q", fn.metadata.Name, argName)
 	}
-	// Lookup user default for the requested arg
+
+	isConstructor := fn.metadata.Name == ""
+
+	// TODO(workspace-env-expansion): Implement ${VAR} expansion for workspace config string values.
+	//
+	// Spec:
+	// - $VAR and ${VAR} in string config values should resolve to system environment variables
+	// - NO cascading: $FOO always means the system env var FOO, never another config key
+	// - Resolution should go through the Workspace type (gateway for client context access)
+	// - The Workspace type should expose a method for resolving system env vars,
+	//   which can later be gated by interactive prompts, allow/deny policies, value injection
+	// - Consider docker-compose's variable substitution spec as reference for syntax
+	// - For now, string values pass through as-is (no expansion)
+
+	// PATH A: Workspace config (constructor only, no EnvFile)
+	if fn.mod.WorkspaceConfig != nil && isConstructor {
+		val, ok := lookupConfigCaseInsensitive(fn.mod.WorkspaceConfig, arg.OriginalName, arg.Name)
+		if ok {
+			return fn.newUserDefault(arg, configValueToString(val)), true, nil
+		}
+		// Not in workspace config — only fall through to .env if enabled
+		if !fn.mod.DefaultsFromDotEnv {
+			return nil, false, nil
+		}
+	}
+
+	// PATH B: existing .env pipeline (completely unchanged)
 	// We need access to the main client's context for resolving system env variables
 	// (otherwise we may resolve them in the module container's context)
 	// so we upgrade the context to the main client.
@@ -499,6 +525,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	dgstInputs := []string{cacheCfgResp.CacheKey.ID.Digest().String()}
 
 	var ctxArgs []*FunctionArg
+	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
 
 	for _, argMetadata := range fn.metadata.Args {
@@ -513,6 +540,12 @@ func (fn *ModuleFunction) CacheConfigForCall(
 			// This applies to both types of object defaults:
 			//  1) "contextual args" from `defaultPath` annotations
 			//  2) "user defaults" from user-defined .env
+			//  3) "workspace args" that are automatically injected
+			continue
+		}
+		// Check for Workspace arguments first - they're always injected
+		if argMetadata.IsWorkspace() {
+			workspaceArgs = append(workspaceArgs, argMetadata)
 			continue
 		}
 		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
@@ -531,7 +564,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	if len(ctxArgs) > 0 || len(userDefaults) > 0 {
+	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 {
 		type argInput struct {
 			argName  string
 			origName string
@@ -554,6 +587,25 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					argName:  arg.Name,
 					origName: arg.OriginalName,
 					val:      ctxVal,
+				}
+
+				return nil
+			})
+		}
+
+		// Process workspace arguments - automatically inject workspace when not set
+		workspaceArgVals := make([]*argInput, len(workspaceArgs))
+		for i, arg := range workspaceArgs {
+			eg.Go(func() error {
+				wsVal, err := fn.loadWorkspaceArg(ctx, srv)
+				if err != nil {
+					return fmt.Errorf("load workspace arg %q: %w", arg.Name, err)
+				}
+
+				workspaceArgVals[i] = &argInput{
+					argName:  arg.Name,
+					origName: arg.OriginalName,
+					val:      wsVal,
 				}
 
 				return nil
@@ -583,6 +635,20 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 
 		for _, arg := range ctxArgVals {
+			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
+				arg.argName,
+				dagql.Opt(arg.val).ToLiteral(),
+				false,
+			))
+			id := arg.val.ID()
+			// prefer content digest if available
+			dgst := id.ContentDigest()
+			if dgst == "" {
+				dgst = id.Digest()
+			}
+			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
+		}
+		for _, arg := range workspaceArgVals {
 			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
 				arg.argName,
 				dagql.Opt(arg.val).ToLiteral(),
@@ -718,9 +784,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if !ok {
 			return nil, fmt.Errorf("find mod type for parent %q", fn.objDef.Name)
 		}
-		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
+		parentContent := NewCollectedContent()
+		if err := parentModType.CollectContent(ctx, opts.ParentTyped, parentContent); err != nil {
 			return nil, fmt.Errorf("collect IDs from parent fields: %w", err)
 		}
+		execMD.ParentIDs = parentContent.IDs
 	}
 
 	if mod.ResultID != nil {
@@ -867,15 +935,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 		// If the function returned anything that's isolated per-client, this caller client should
 		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
-		returnedIDs := map[digest.Digest]*resource.ID{}
-		if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
-			return nil, fmt.Errorf("collect IDs: %w", err)
+		returnedContent := NewCollectedContent()
+		if err := fn.returnType.CollectContent(ctx, returnValue, returnedContent); err != nil {
+			return nil, fmt.Errorf("collect content: %w", err)
 		}
 
 		// Function calls are cached per-session, but every client caller needs to add
 		// secret/socket/etc. resources from the result to their store.
-		returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
-		for _, id := range returnedIDs {
+		returnedIDsList := make([]*resource.ID, 0, len(returnedContent.IDs))
+		for _, id := range returnedContent.IDs {
 			returnedIDsList = append(returnedIDsList, id)
 		}
 		resourceTransferPostCall, hasNamedSecrets, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
@@ -889,12 +957,31 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 
 		returnValue = returnValue.WithPostCall(resourceTransferPostCall)
+
+		// If this function accepts Workspace args, set a content digest on the
+		// result derived from all content it returned — both core object IDs
+		// (Directory, File, etc.) and primitive scalar values (String, Int, etc.).
+		// This ensures downstream calls that reference this result get a different
+		// cache key when the underlying content changes.
+		if fn.hasWorkspaceArgs() {
+			returnValue = returnValue.WithContentDigestAny(returnedContent.Digest())
+		}
 	}
 	if returnValue != nil {
 		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
 	}
 
 	return returnValue, nil
+}
+
+// hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
+func (fn *ModuleFunction) hasWorkspaceArgs() bool {
+	for _, arg := range fn.metadata.Args {
+		if arg.IsWorkspace() {
+			return true
+		}
+	}
+	return false
 }
 
 func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {
@@ -1202,6 +1289,33 @@ func (fn *ModuleFunction) loadContextualArg(
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
 }
 
+// loadWorkspaceArg loads a workspace argument by resolving it through the
+// currentWorkspace query. The workspace is automatically injected into
+// module functions that declare a Workspace parameter.
+func (fn *ModuleFunction) loadWorkspaceArg(
+	ctx context.Context,
+	dag *dagql.Server,
+) (dagql.IDType, error) {
+	if dag == nil {
+		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
+	}
+
+	var ws dagql.ObjectResult[*Workspace]
+	err := dag.Select(ctx, dag.Root(), &ws,
+		dagql.Selector{
+			Field: "currentWorkspace",
+			Args: []dagql.NamedInput{
+				{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load workspace: %w", err)
+	}
+
+	return dagql.NewID[*Workspace](ws.ID()), nil
+}
+
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
 	if kind := arg.TypeDef.Kind; kind != TypeDefKindObject {
 		return nil, fmt.Errorf("[kind=%v] argument %q must be of type Directory to apply ignore pattern: [%s]", kind, arg.OriginalName, strings.Join(arg.Ignore, ","))
@@ -1275,5 +1389,50 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		}
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
+	}
+}
+
+// lookupConfigCaseInsensitive performs a case-insensitive lookup in a workspace
+// config map, trying each of the provided names in order.
+func lookupConfigCaseInsensitive(m map[string]any, names ...string) (any, bool) {
+	for _, name := range names {
+		for k, v := range m {
+			if strings.EqualFold(k, name) {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// configValueToString converts a typed config value to its string representation.
+// Strings pass through as-is, bools become "true"/"false", numbers their decimal
+// representation, and arrays are JSON-encoded.
+func configValueToString(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		return strconv.FormatBool(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case int:
+		return strconv.Itoa(val)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case []any:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(encoded)
+	case []string:
+		encoded, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(encoded)
+	default:
+		return fmt.Sprint(v)
 	}
 }

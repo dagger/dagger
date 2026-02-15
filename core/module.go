@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,19 @@ type Module struct {
 	// If true, disable the new default function caching behavior for this module. Functions will
 	// instead default to the old behavior of per-session caching.
 	DisableDefaultFunctionCaching bool
+
+	// AutoAlias causes the module's functions to be aliased to the Query root,
+	// so they can be called directly without going through the module constructor.
+	AutoAlias bool
+
+	// Config values from workspace config.toml [modules.<name>.config].
+	// Typed map: strings, bools, ints, floats as-is from TOML.
+	// When set, constructor args are resolved from this map first.
+	WorkspaceConfig map[string]any
+
+	// When true and WorkspaceConfig is set, also load .env defaults
+	// for args not found in WorkspaceConfig. Off by default.
+	DefaultsFromDotEnv bool
 }
 
 func (*Module) Type() *ast.Type {
@@ -259,6 +273,80 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 		return modDefaults, nil
 	}
 	return modDefaults.Namespace(ctx, objName)
+}
+
+// ApplyWorkspaceDefaultsToTypeDefs updates constructor arg typedefs based on
+// WorkspaceConfig, so that --help displays the correct default values.
+// For primitive types (string, int, bool, float), it sets arg.DefaultValue
+// to the JSON representation. For object types (Secret, Directory, etc.),
+// it marks the arg as optional (since a default will be resolved at call time).
+func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
+	if mod.WorkspaceConfig == nil {
+		return
+	}
+	for _, objDef := range mod.ObjectDefs {
+		if !objDef.AsObject.Valid {
+			continue
+		}
+		obj := objDef.AsObject.Value
+		if !obj.Constructor.Valid {
+			continue
+		}
+		ctor := obj.Constructor.Value
+		for _, arg := range ctor.Args {
+			val, ok := lookupConfigCaseInsensitive(mod.WorkspaceConfig, arg.OriginalName, arg.Name)
+			if !ok {
+				continue
+			}
+			if arg.TypeDef.Kind == TypeDefKindObject {
+				// Object types (Secret, Directory, etc.): mark optional
+				// so --help shows it's not required
+				arg.TypeDef.Optional = true
+			} else {
+				// Primitive types: set the JSON default value
+				userInput := configValueToString(val)
+				var jsonValue JSON
+				switch arg.TypeDef.Kind {
+				case TypeDefKindString:
+					marshaled, err := json.Marshal(userInput)
+					if err != nil {
+						continue
+					}
+					jsonValue = JSON(marshaled)
+				case TypeDefKindInteger:
+					if n, err := strconv.Atoi(userInput); err == nil {
+						marshaled, _ := json.Marshal(n)
+						jsonValue = JSON(marshaled)
+					} else {
+						continue
+					}
+				case TypeDefKindFloat:
+					if f, err := strconv.ParseFloat(userInput, 64); err == nil {
+						marshaled, _ := json.Marshal(f)
+						jsonValue = JSON(marshaled)
+					} else {
+						continue
+					}
+				case TypeDefKindBoolean:
+					b := userInput == "true"
+					marshaled, _ := json.Marshal(b)
+					jsonValue = JSON(marshaled)
+				default:
+					// For other types, try to use the raw value as JSON
+					if json.Valid([]byte(userInput)) {
+						jsonValue = JSON(userInput)
+					} else {
+						marshaled, err := json.Marshal(userInput)
+						if err != nil {
+							continue
+						}
+						jsonValue = JSON(marshaled)
+					}
+				}
+				arg.DefaultValue = jsonValue
+			}
+		}
+	}
 }
 
 func (mod *Module) IDModule() *call.Module {
@@ -595,6 +683,13 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 	for _, field := range obj.Fields {
 		if gqlFieldName(field.Name) == "id" {
 			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
+		}
+		// Workspace cannot be stored as a field on a module object
+		if field.TypeDef.Kind == TypeDefKindObject && field.TypeDef.AsObject.Value.Name == "Workspace" {
+			return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
+				obj.OriginalName,
+				field.OriginalName,
+			)
 		}
 		fieldType, ok, err := mod.Deps.ModTypeFor(ctx, field.TypeDef)
 		if err != nil {
@@ -958,6 +1053,13 @@ func (mod Module) Clone() *Module {
 
 	if cp.SDKConfig != nil {
 		cp.SDKConfig = cp.SDKConfig.Clone()
+	}
+
+	if mod.WorkspaceConfig != nil {
+		cp.WorkspaceConfig = make(map[string]any, len(mod.WorkspaceConfig))
+		for k, v := range mod.WorkspaceConfig {
+			cp.WorkspaceConfig[k] = v
+		}
 	}
 
 	return &cp

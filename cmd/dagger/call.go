@@ -57,7 +57,9 @@ available functions.
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) (rerr error) {
-			mod, err := initializeDefaultModule(ctx, engineClient.Dagger())
+			// -m is now handled at engine connect time (ExtraModules with AutoAlias),
+			// so the CLI always uses initializeWorkspace — no branching needed.
+			mod, err := initializeWorkspace(ctx, engineClient.Dagger())
 			if err != nil {
 				return err
 			}
@@ -87,13 +89,33 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			return functionListRun(o, cmd.OutOrStdout())
+			// Only filter core functions when listing the Query root in
+			// workspace mode (multiple modules as sub-commands). When a
+			// main module is set (single module or -m), or when navigating
+			// into a module type, show all functions.
+			filterCore := len(cmd.Flags().Args()) == 0 &&
+				mod.MainObject.AsObject != nil &&
+				mod.MainObject.AsObject.Name == "Query"
+			return functionListRun(o, cmd.OutOrStdout(), filterCore)
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer) error {
+func functionListRun(o functionProvider, writer io.Writer, filterCore bool) error {
 	fns, skipped := GetSupportedFunctions(o)
+
+	// At the Query root, filter out core API constructors — only show module
+	// constructors. When navigating into a module type, show all functions.
+	if filterCore {
+		filtered := make([]*modFunction, 0, len(fns))
+		for _, fn := range fns {
+			if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
+				filtered = append(filtered, fn)
+			}
+		}
+		fns = filtered
+		skipped = nil // don't show core "skipped" noise either
+	}
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",
@@ -105,9 +127,18 @@ func functionListRun(o functionProvider, writer io.Writer) error {
 		return fns[i].Name < fns[j].Name
 	})
 	for _, fn := range fns {
+		desc := fn.Short()
+		// When listing module constructors at the Query root, the constructor
+		// function itself usually has no description. Fall back to the return
+		// type's object description (the module type's doc comment).
+		if desc == "-" && fn.ReturnType != nil && fn.ReturnType.AsObject != nil {
+			if objDesc := shortDescription(fn.ReturnType.AsObject.Description); objDesc != "-" {
+				desc = objDesc
+			}
+		}
 		fmt.Fprintf(tw, "%s\t%s\n",
 			fn.CmdName(),
-			fn.Short(),
+			desc,
 		)
 	}
 	if len(skipped) > 0 {

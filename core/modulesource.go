@@ -1313,6 +1313,32 @@ func CallDirStat(ctx context.Context, dir dagql.ObjectResult[*Directory], path s
 	return filepath.Dir(path), info, nil
 }
 
+// DirectoryStatFS implements StatFS over a dagql Directory.
+type DirectoryStatFS struct {
+	Dir dagql.ObjectResult[*Directory]
+}
+
+func (dfs *DirectoryStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	return CallDirStat(ctx, dfs.Dir, path)
+}
+
+// DirectoryReadFile reads file contents from a dagql Directory.
+func DirectoryReadFile(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) ([]byte, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var contents dagql.String
+	err = dag.Select(ctx, dir, &contents,
+		dagql.Selector{Field: "file", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(path)}}},
+		dagql.Selector{Field: "contents"},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(contents), nil
+}
+
 func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	if fs.src == nil {
 		return "", nil, os.ErrNotExist

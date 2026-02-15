@@ -212,7 +212,7 @@ func (ServiceSuite) TestContentAddressedModuleScoping(ctx context.Context, t *te
 		_, err := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/hoster").
-			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=hoster", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -267,7 +267,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		_, err := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/caller").
-			With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=caller", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -300,7 +300,7 @@ func (m *Caller) Count(ctx context.Context, service *dagger.Service, buster stri
 `,
 			).
 			WithWorkdir("/work/hoster").
-			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=hoster", "--sdk=go")).
 			With(daggerExec("install", "../caller")).
 			WithNewFile("counter/main.go", counterMain).
 			WithNewFile("main.go", `package main
@@ -386,7 +386,7 @@ func (ServiceSuite) TestWithHostnameModuleScoping(ctx context.Context, t *testct
 		_, err := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/hoster").
-			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=hoster", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -437,7 +437,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		_, err := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/caller").
-			With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=caller", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -488,7 +488,7 @@ func (m *Caller) Run(ctx context.Context) error {
 `,
 			).
 			WithWorkdir("/work/hoster").
-			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=hoster", "--sdk=go")).
 			With(daggerExec("install", "../caller")).
 			WithNewFile("main.go", `package main
 
@@ -551,7 +551,7 @@ func (ServiceSuite) TestWithHostnameCircular(ctx context.Context, t *testctx.T) 
 	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/relayer").
-		With(daggerExec("init", "--source=.", "--name=relayer", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--name=relayer", "--sdk=go")).
 		WithNewFile("relay/main.go", relayMain).
 		WithNewFile("main.go", `package main
 
@@ -578,7 +578,7 @@ func (m *Relayer) Service() *dagger.Service {
 `,
 		).
 		WithWorkdir("/work/caller").
-		With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--name=caller", "--sdk=go")).
 		With(daggerExec("install", "../relayer")).
 		WithNewFile("main.go", `package main
 
@@ -653,7 +653,7 @@ func (ServiceSuite) TestServiceTunnelStartsOnceForDifferentClients(ctx context.C
 	out, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/starter").
-		With(daggerExec("init", "--source=.", "--name=starter", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--name=starter", "--sdk=go")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -672,7 +672,7 @@ func (m *Starter) Start(ctx context.Context, s *dagger.Service) {
 `,
 		).
 		WithWorkdir("/work/caller").
-		With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--name=caller", "--sdk=go")).
 		With(daggerExec("install", "../starter")).
 		WithNewFile("main.go", `package main
 
