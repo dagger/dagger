@@ -1592,17 +1592,14 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// Auto-load standalone module (legacy dagger.json for backwards compat).
-	if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.StandaloneModule != "" {
-		ref := ws.StandaloneModule
-		if core.FastModuleSourceKindCheck(ref, "") == core.ModuleSourceKindLocal {
-			ref = resolveLocalRef(ws, ref)
-		}
+	if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.StandaloneModule {
+		ref := resolveLocalRef(ws, ".")
 		extra := engine.ExtraModule{
 			Ref:   ref,
 			Alias: true,
 		}
 		if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
-			return fmt.Errorf("loading legacy module from %s: %w", ws.StandaloneModule, err)
+			return fmt.Errorf("loading legacy module from %s: %w", ref, err)
 		}
 	}
 
