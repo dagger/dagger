@@ -120,6 +120,7 @@ require (
 	github.com/morikuni/aec v1.0.0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
+	github.com/neongreen/mono/lib/toml v0.0.0-20251026210731-4c1679aeef5c
 	github.com/openai/openai-go v1.12.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -308,7 +309,6 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/neongreen/mono/lib/toml v0.0.0-20251026210731-4c1679aeef5c // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
