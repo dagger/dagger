@@ -821,7 +821,7 @@ export class Test {
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
+				With(daggerExec("module", "init", "--name=test", "--sdk="+tc.sdk)).
 				With(sdkSource(tc.sdk, tc.source))
 
 			out, err := modGen.With(daggerQuery(`{test{sayHello(name: "world"){id}}}`)).Stdout(ctx)

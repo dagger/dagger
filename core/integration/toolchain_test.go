@@ -34,7 +34,7 @@ func (ToolchainSuite) TestToolchainConstructor(ctx context.Context, t *testctx.T
 	t.Run("use toolchain constructor", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init")).
+			With(daggerExec("module", "init")).
 			With(daggerExec("toolchain", "install", "../hello-with-constructor"))
 		modGen = modGen.WithNewFile("app-config.txt", "this is the app configuration").
 			WithNewFile("other-config.txt", "this is the other app configuration")
@@ -68,7 +68,7 @@ func (ToolchainSuite) TestMultipleToolchains(ctx context.Context, t *testctx.T) 
 	t.Run("install multiple toolchains", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init")).
+			With(daggerExec("module", "init")).
 			With(daggerExec("toolchain", "install", "../hello"))
 		// Verify toolchain was installed by calling function
 		out, err := modGen.
@@ -113,7 +113,7 @@ func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 	t.Run("use blueprint with sdk", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--sdk=go")).
+			With(daggerExec("module", "init", "--sdk=go")).
 			With(daggerExec("toolchain", "install", "../hello"))
 		// verify we can call function from our module code
 		out, err := modGen.
@@ -141,7 +141,7 @@ func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 			WithDirectory(".", c.Host().Directory("./testdata/checks")).
 			WithDirectory("app", c.Directory()).
 			WithWorkdir("app").
-			With(daggerExec("init", "--sdk=go", "--name=test", "--source=.")).
+			With(daggerExec("module", "init", "--sdk=go", "--name=test", "--source=.")).
 			WithNewFile("main.go", `package main
 
 type Test struct {
@@ -191,7 +191,7 @@ func (ToolchainSuite) TestToolchainsWithMultipleObjects(ctx context.Context, t *
 	t.Run("use toolchain with multiple objects", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init")).
+			With(daggerExec("module", "init")).
 			With(daggerExec("toolchain", "install", "../hello-with-objects"))
 		// verify we can call a function from our blueprint
 		out, err := modGen.
@@ -207,7 +207,7 @@ func (ToolchainSuite) TestToolchainsWithBlueprint(ctx context.Context, t *testct
 	t.Run("use toolchains with blueprint", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../hello")).
+			With(daggerExec("module", "init", "--blueprint=../hello")).
 			With(daggerExec("toolchain", "install", "../myblueprint-py"))
 		// verify we can call function from our module code
 		out, err := modGen.
@@ -229,7 +229,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 	t.Run("override function default argument", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init")).
+			With(daggerExec("module", "init")).
 			WithNewFile("dagger.json", `
 {
   "name": "app",
@@ -260,7 +260,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 	t.Run("override constructor defaultPath argument", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init")).
+			With(daggerExec("module", "init")).
 			WithNewFile("dagger.json", `
 {
   "name": "app",
@@ -291,7 +291,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 	t.Run("override function default argument in chained function", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init")).
+			With(daggerExec("module", "init")).
 			WithNewFile("dagger.json", `
 {
   "name": "app",
@@ -322,7 +322,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 	t.Run("override container default with address", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init")).
+			With(daggerExec("module", "init")).
 			WithNewFile("dagger.json", `
 {
   "name": "app",
@@ -364,7 +364,7 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 			WithDirectory(".", c.Host().Directory("./testdata/checks")).
 			WithDirectory("app", c.Directory()).
 			WithWorkdir("app").
-			With(daggerExec("init"))
+			With(daggerExec("module", "init"))
 
 		// Install hello-with-checks as a toolchain
 		modGen = modGen.With(daggerExec("toolchain", "install", "../hello-with-checks"))
@@ -426,7 +426,7 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 			WithDirectory(".", c.Host().Directory("./testdata/checks")).
 			WithDirectory("app", c.Directory()).
 			WithWorkdir("app").
-			With(daggerExec("init"))
+			With(daggerExec("module", "init"))
 
 		// Install hello-with-checks as a toolchain
 		modGen = modGen.With(daggerExec("toolchain", "install", "../hello-with-checks"))
@@ -474,7 +474,7 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test-app", "--sdk=go"))
+			With(daggerExec("module", "init", "--name=test-app", "--sdk=go"))
 
 		// Install first commit
 		modGen = modGen.With(daggerExec(
@@ -497,7 +497,7 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test-app", "--sdk=go"))
+			With(daggerExec("module", "init", "--name=test-app", "--sdk=go"))
 
 		// Install first commit
 		modGen = modGen.With(daggerExec(
@@ -600,7 +600,7 @@ func (ToolchainSuite) TestToolchainLocalModuleHints(ctx context.Context, t *test
 	t.Run("DAGGER_MODULE hint and --mod dot bypass", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init"))
+			With(daggerExec("module", "init"))
 
 		_, err := modGen.
 			WithEnvVariable("DAGGER_MODULE", "github.com/dagger/dagger@main").
@@ -621,7 +621,7 @@ func (ToolchainSuite) TestToolchainLocalModuleHints(ctx context.Context, t *test
 	t.Run("--mod hint", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init"))
+			With(daggerExec("module", "init"))
 
 		_, err := modGen.
 			With(daggerExec("toolchain", "list", "--mod", "github.com/dagger/dagger@main")).
