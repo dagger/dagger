@@ -199,9 +199,10 @@ func insertHintComments(tomlStr string, cfg *Config, hints map[string][]Construc
 				continue
 			}
 			if useRelativeKeys {
-				// Under a section header, use bare key names
+				// Under a section header, use config-prefixed key names
+				// so uncommenting produces config.<key> under [modules.<name>]
 				commentLines = append(commentLines,
-					fmt.Sprintf("# %s = %s # %s", hint.Name, hint.ExampleValue, hint.TypeLabel))
+					fmt.Sprintf("# config.%s = %s # %s", hint.Name, hint.ExampleValue, hint.TypeLabel))
 			} else {
 				commentLines = append(commentLines,
 					fmt.Sprintf("# %s.config.%s = %s # %s", moduleName, hint.Name, hint.ExampleValue, hint.TypeLabel))
