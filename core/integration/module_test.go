@@ -8268,7 +8268,7 @@ func withModInitAt(dir, sdk, contents string, extra ...string) dagger.WithContai
 		if name == "." {
 			name = "test"
 		}
-		args := []string{"init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir}
+		args := []string{"module", "init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir}
 		args = append(args, extra...)
 		args = append(args, dir)
 		ctr = ctr.With(daggerExec(args...))
