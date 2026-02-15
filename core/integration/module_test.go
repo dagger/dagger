@@ -981,10 +981,10 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 			modGen := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dep").
-				With(daggerExec("module", "init", "--name=dep", "--sdk=go")).
+				With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
 				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--name=test", "--sdk="+tc.sdk, "--source=.")).
+				With(daggerExec("module", "init", "--sdk="+tc.sdk, "test", ".")).
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 

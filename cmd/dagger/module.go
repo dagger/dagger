@@ -49,9 +49,7 @@ var (
 
 	installName string
 
-	moduleModInitPath string
-
-	initBlueprint string
+	initBlueprint        string
 	toolchainInstallName string
 
 	developSDK        string
@@ -164,7 +162,7 @@ func init() {
 	moduleCmd.AddCommand(moduleModInitCmd)
 	moduleModInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK to use (go, python, typescript)")
 	moduleModInitCmd.Flags().StringVar(&moduleName, "name", "", "Module name (defaults to working directory name)")
-	moduleModInitCmd.Flags().StringVar(&moduleModInitPath, "source", "", "Standalone module path (alternative to positional path argument)")
+	moduleModInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	moduleModInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleModInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module")
 
@@ -410,35 +408,33 @@ its own dagger.json — it is NOT added to the workspace config.`,
 		}
 
 		// Resolve module name: positional arg > --name flag > workdir basename
-		modName := moduleName
 		if len(extraArgs) >= 1 {
-			if modName != "" {
+			if moduleName != "" {
 				return fmt.Errorf("cannot specify module name as both a positional argument and --name flag")
 			}
-			modName = extraArgs[0]
+			moduleName = extraArgs[0]
 		}
-		if modName == "" {
+		if moduleName == "" {
 			wd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get working directory: %w", err)
 			}
-			modName = filepath.Base(wd)
+			moduleName = filepath.Base(wd)
 		}
 
 		// Resolve standalone path: positional arg > --source flag
-		modPath := moduleModInitPath
 		if len(extraArgs) >= 2 {
-			if modPath != "" {
+			if moduleSourcePath != "" {
 				return fmt.Errorf("cannot specify module path as both a positional argument and --source flag")
 			}
-			modPath = extraArgs[1]
+			moduleSourcePath = extraArgs[1]
 		}
 
-		if modPath != "" {
-			return initStandaloneModule(ctx, cmd, modName, modPath)
+		if moduleSourcePath != "" {
+			return initStandaloneModule(ctx, cmd, moduleName, moduleSourcePath)
 		}
 
-		return initWorkspaceModule(ctx, cmd, modName)
+		return initWorkspaceModule(ctx, cmd, moduleName)
 	},
 }
 
@@ -497,14 +493,6 @@ func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName strin
 			return fmt.Errorf("failed to get source root subpath: %w", err)
 		}
 		srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
-
-		// Infer source path if not specified
-		if moduleSourcePath == "" {
-			moduleSourcePath, err = inferSourcePathDir(srcRootAbsPath)
-			if err != nil {
-				return err
-			}
-		}
 
 		modSrc = modSrc.WithName(modName)
 		modSrc = modSrc.WithSDK(sdk)
