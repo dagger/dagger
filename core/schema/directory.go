@@ -197,7 +197,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc(`Changes to apply to the directory`),
 			),
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.export), dagql.CachePerClient).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.export)).
+			WithInput(dagql.CachePerClient).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
@@ -205,7 +206,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
 				dagql.Arg("wipe").Doc(`If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
 			),
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.exportLegacy), dagql.CachePerClient).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.exportLegacy)).
+			WithInput(dagql.CachePerClient).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("dockerBuild", s.dockerBuild).
@@ -299,7 +301,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asPatch", DagOpFileWrapper(srv, s.changesetAsPatch,
 			WithStaticPath[*core.Changeset, changesetAsPatchArgs](core.ChangesetPatchFilename))).
 			Doc(`Return a Git-compatible patch of the changes`),
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.changesetExport), dagql.CachePerClient).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.changesetExport)).
+			WithInput(dagql.CachePerClient).
 			DoNotCache("Writes to the local host.").
 			Doc(`Applies the diff represented by this changeset to a path on the host.`).
 			Args(
@@ -1550,9 +1553,6 @@ func maintainContentHashing[A any](
 			res, err = core.MakeDirectoryContentHashed(ctx, bk, res)
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
-			}
-			if res.ID().ContentDigest() == parent.ID().ContentDigest() { // if this didn't change anything, return the parent, making this a no-op
-				return parent, nil
 			}
 		}
 		return res, nil

@@ -372,13 +372,22 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		astType = astType.Elem
 	}
 
+	identityOpt, err := field.Spec.IdentityOpt(ctx, inputArgs)
+	if err != nil {
+		typ := r.Type()
+		if typ == nil {
+			return nil, fmt.Errorf("failed to resolve identity inputs for <nil>.%s: %w", sel.Field, err)
+		}
+		return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
+	}
+
 	newID := r.ID().Append(
 		astType,
 		sel.Field,
 		call.WithView(view),
-		call.WithModule(field.Spec.Module),
 		call.WithNth(sel.Nth),
 		call.WithArgs(idArgs...),
+		identityOpt,
 	)
 
 	cacheKey := newCacheKey(ctx, newID, field.Spec)
@@ -409,6 +418,17 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		if err != nil {
 			return nil, err
 		}
+
+		identityOpt, err = field.Spec.IdentityOpt(ctx, inputArgs)
+		if err != nil {
+			typ := r.Type()
+			if typ == nil {
+				return nil, fmt.Errorf("failed to resolve identity inputs for <nil>.%s after cache config: %w", sel.Field, err)
+			}
+			return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s after cache config: %w", typ.Name(), sel.Field, err)
+		}
+		newID = newID.With(identityOpt)
+		cacheKey.ID = newID
 	}
 
 	return &preselectResult{
@@ -612,7 +632,8 @@ func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] 
 	return FuncWithCacheKey(name, fn, nil)
 }
 
-// FuncWithCacheKey is like Func but allows specifying a custom digest that will be used to cache the operation in dagql.
+// FuncWithCacheKey is like Func but lets a resolver customize cache behavior
+// for each call (e.g. ID rewrites, TTL, do-not-cache, concurrency key).
 func FuncWithCacheKey[T Typed, A any, R any](
 	name string,
 	fn FuncHandler[T, A, R],
@@ -629,7 +650,9 @@ func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) F
 	return NodeFuncWithCacheKey(name, fn, nil)
 }
 
-// NodeFuncWithCacheKey is like NodeFunc but allows specifying a custom digest that will be used to cache the operation in dagql.
+// NodeFuncWithCacheKey is like NodeFunc but lets a resolver customize cache
+// behavior for each call (e.g. ID rewrites, TTL, do-not-cache, concurrency
+// key).
 func NodeFuncWithCacheKey[T Typed, A any, R any](
 	name string,
 	fn NodeFuncHandler[T, A, R],
@@ -747,6 +770,10 @@ type FieldSpec struct {
 	// any dynamic adjustments to the cache key or args
 	GetCacheConfig GenericGetCacheConfigFunc
 
+	// ImplicitInputs are engine-computed inputs that are attached to the call
+	// identity but are not explicit GraphQL field args.
+	ImplicitInputs []ImplicitInput
+
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
 	extend bool
@@ -769,6 +796,55 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 		def.Directives = append(def.Directives, experimental(spec.ExperimentalReason))
 	}
 	return def
+}
+
+func (spec *FieldSpec) resolveImplicitInputArgs(ctx context.Context, inputArgs map[string]Input) ([]*call.Argument, error) {
+	if spec == nil || len(spec.ImplicitInputs) == 0 {
+		return nil, nil
+	}
+
+	inputIdxByName := make(map[string]int, len(spec.ImplicitInputs))
+	implicitArgs := make([]*call.Argument, 0, len(spec.ImplicitInputs))
+	for _, implicitInput := range spec.ImplicitInputs {
+		inputVal, err := implicitInput.Resolver(ctx, inputArgs)
+		if err != nil {
+			return nil, fmt.Errorf("resolve implicit input %q: %w", implicitInput.Name, err)
+		}
+		if inputVal == nil {
+			return nil, fmt.Errorf("implicit input %q resolved to nil", implicitInput.Name)
+		}
+
+		newInput := call.NewArgument(implicitInput.Name, inputVal.ToLiteral(), false)
+		if idx, ok := inputIdxByName[implicitInput.Name]; ok {
+			implicitArgs[idx] = newInput
+			continue
+		}
+		inputIdxByName[implicitInput.Name] = len(implicitArgs)
+		implicitArgs = append(implicitArgs, newInput)
+	}
+	sort.Slice(implicitArgs, func(i, j int) bool {
+		return implicitArgs[i].Name() < implicitArgs[j].Name()
+	})
+	return implicitArgs, nil
+}
+
+// IdentityOpt resolves field-scoped identity inputs and returns an ID option
+// that applies them deterministically.
+func (spec *FieldSpec) IdentityOpt(ctx context.Context, inputArgs map[string]Input) (call.IDOpt, error) {
+	implicitArgs, err := spec.resolveImplicitInputArgs(ctx, inputArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	module := (*call.Module)(nil)
+	if spec != nil {
+		module = spec.Module
+	}
+
+	return func(id *call.ID) {
+		call.WithModule(module)(id)
+		call.WithImplicitInputs(implicitArgs...)(id)
+	}, nil
 }
 
 // InputSpec specifies a field argument, or an input field.
@@ -1107,6 +1183,13 @@ type GetCacheConfigResponse struct {
 	CacheKey CacheKey
 }
 
+type ImplicitInputResolver func(context.Context, map[string]Input) (Input, error)
+
+type ImplicitInput struct {
+	Name     string
+	Resolver ImplicitInputResolver
+}
+
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
 	Spec *FieldSpec
@@ -1179,6 +1262,22 @@ func (field Field[T]) Args(args ...Argument) Field[T] {
 	}
 
 	field.Spec.Args = InputSpecs{newArgs}
+	return field
+}
+
+func (field Field[T]) WithInput(inputs ...ImplicitInput) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	for _, input := range inputs {
+		if input.Name == "" {
+			panic("implicit input name cannot be empty")
+		}
+		if input.Resolver == nil {
+			panic(fmt.Sprintf("implicit input %q resolver cannot be nil", input.Name))
+		}
+		field.Spec.ImplicitInputs = append(field.Spec.ImplicitInputs, input)
+	}
 	return field
 }
 

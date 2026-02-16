@@ -31,7 +31,8 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.EngineCache]{
-		dagql.NodeFuncWithCacheKey("entrySet", s.cacheEntrySet, dagql.CachePerCall).
+		dagql.NodeFunc("entrySet", s.cacheEntrySet).
+			WithInput(dagql.CachePerCall).
 			Doc("The current set of entries in the cache"),
 		dagql.Func("prune", s.cachePrune).
 			DoNotCache("Mutates mutable state").
