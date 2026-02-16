@@ -133,9 +133,22 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		}
 
 		return upstream.Host, nil
-	case svc.Container != nil, // container=>container
-		len(svc.HostSockets) > 0: // container=>host
-		return network.HostHash(id.Digest()), nil
+		case svc.Container != nil, // container=>container
+			len(svc.HostSockets) > 0: // container=>host
+			if id == nil {
+				return "", errors.New("service ID is nil")
+			}
+			// Hostname identity should follow output-equivalence identity
+			// (e.g. content digests) rather than strict recipe identity so
+			// equivalent services converge across sessions.
+			// TODO: Carry a stable service-identity digest on Service (set at
+			// construction time from canonical output/structural identity) and
+			// use it here instead of deriving host identity ad hoc from call.ID.
+			hostDigest := id.OutputEquivalentDigest()
+			if hostDigest == "" {
+				hostDigest = id.Digest()
+			}
+		return network.HostHash(hostDigest), nil
 	default:
 		return "", errors.New("unknown service type")
 	}

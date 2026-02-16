@@ -43,25 +43,30 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("column").Doc("The column number within the line."),
 			),
 
-		dagql.FuncWithCacheKey("currentModule", s.currentModule, dagql.CachePerClient).
+		dagql.Func("currentModule", s.currentModule).
+			WithInput(dagql.CachePerClient).
 			Doc(`The module currently being served in the session, if any.`),
 
-		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
+		dagql.Func("currentTypeDefs", s.currentTypeDefs).
+			WithInput(dagql.CachePerCall).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
-		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
+		dagql.Func("currentFunctionCall", s.currentFunctionCall).
+			WithInput(dagql.CachePerClient).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.FunctionCall]{
-		dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, dagql.CachePerClient).
+		dagql.Func("returnValue", s.functionCallReturnValue).
+			WithInput(dagql.CachePerClient).
 			Doc(`Set the return value of the function call to the provided value.`).
 			Args(
 				dagql.Arg("value").Doc(`JSON serialization of the return value.`),
 			),
-		dagql.FuncWithCacheKey("returnError", s.functionCallReturnError, dagql.CachePerClient).
+		dagql.Func("returnError", s.functionCallReturnError).
+			WithInput(dagql.CachePerClient).
 			Doc(`Return an error from the function.`).
 			Args(
 				dagql.Arg("error").Doc(`The error to return.`),
@@ -155,7 +160,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
-		dagql.NodeFuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
+		dagql.NodeFunc("workdir", s.currentModuleWorkdir).
+			WithInput(dagql.CachePerClient).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -164,7 +170,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
-		dagql.NodeFuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
+		dagql.NodeFunc("workdirFile", s.currentModuleWorkdirFile).
+			WithInput(dagql.CachePerClient).
 			Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),

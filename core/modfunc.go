@@ -33,6 +33,12 @@ import (
 const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
 const MinFunctionCacheTTLSeconds = 1
 
+func shouldTraceModuleCacheFunction(name string) bool {
+	return strings.HasPrefix(name, "test") ||
+		name == "fn" ||
+		name == "rand"
+}
+
 type ModuleFunction struct {
 	mod    *Module
 	objDef *ObjectTypeDef // may be nil for special functions like the module definition function call
@@ -133,6 +139,29 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 		props["caller_type"] = "direct"
 	}
 	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
+}
+
+func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
+	if fn == nil || fn.mod == nil || fn.metadata == nil {
+		return nil
+	}
+
+	var implicitInputs []dagql.ImplicitInput
+	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod)
+	if cachePolicy == FunctionCachePolicyPerSession {
+		implicitInputs = append(implicitInputs, dagql.CachePerSession)
+	}
+	if shouldTraceModuleCacheFunction(fn.metadata.Name) {
+		slog.Info("modfn cache implicit inputs",
+			"module", fn.mod.Name(),
+			"function", fn.metadata.Name,
+			"cachePolicy", string(cachePolicy),
+			"usesCachePerSession", cachePolicy == FunctionCachePolicyPerSession,
+			"implicitInputs", len(implicitInputs),
+		)
+	}
+
+	return implicitInputs
 }
 
 // setCallInputs sets the call inputs for the function call.
@@ -496,8 +525,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		return nil, fmt.Errorf("cache key ID is nil for %s.%s", fn.mod.Name(), fn.metadata.Name)
 	}
 
-	dgstInputs := []string{cacheCfgResp.CacheKey.ID.Digest().String()}
-
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -540,27 +567,29 @@ func (fn *ModuleFunction) CacheConfigForCall(
 
 	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 {
 		type argInput struct {
-			argName  string
-			origName string
-			val      dagql.IDType
+			argName string
+			val     dagql.IDType
 		}
 
 		srv := dagql.CurrentDagqlServer(ctx)
 		eg, ctx := errgroup.WithContext(ctx)
 
-		// Process "contextual arguments", aka objects with a `defaulPath`
+		// Resolve once so all contextual args for this call key against the same
+		// module content identity.
+		contentCacheKey := fn.mod.ContentDigestCacheKey()
+
+		// Process "contextual arguments", aka objects with a `defaultPath`
 		ctxArgVals := make([]*argInput, len(ctxArgs))
 		for i, arg := range ctxArgs {
 			eg.Go(func() error {
-				ctxVal, err := fn.loadContextualArg(ctx, srv, arg)
+				ctxVal, err := fn.loadContextualArg(ctx, srv, arg, contentCacheKey)
 				if err != nil {
 					return fmt.Errorf("load contextual arg %q: %w", arg.Name, err)
 				}
 
 				ctxArgVals[i] = &argInput{
-					argName:  arg.Name,
-					origName: arg.OriginalName,
-					val:      ctxVal,
+					argName: arg.Name,
+					val:     ctxVal,
 				}
 
 				return nil
@@ -596,9 +625,8 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				}
 				arg := userDefault.Arg
 				userDefaultVals[i] = &argInput{
-					argName:  arg.Name,
-					origName: arg.OriginalName,
-					val:      id,
+					argName: arg.Name,
+					val:     id,
 				}
 				return nil
 			})
@@ -614,13 +642,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				dagql.Opt(arg.val).ToLiteral(),
 				false,
 			))
-			id := arg.val.ID()
-			// prefer content digest if available
-			dgst := id.ContentDigest()
-			if dgst == "" {
-				dgst = id.Digest()
-			}
-			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 		}
 		for _, arg := range workspaceArgVals {
 			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
@@ -643,25 +664,34 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					dagql.Opt(arg.val).ToLiteral(),
 					false,
 				))
-				id := arg.val.ID()
-				dgst := id.ContentDigest()
-				if dgst == "" {
-					dgst = id.Digest()
-				}
-				dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 			}
 		}
 	}
 
-	if cachePolicy := fn.metadata.derivedCachePolicy(fn.mod); cachePolicy == FunctionCachePolicyPerSession {
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, err
+	if shouldTraceModuleCacheFunction(fn.metadata.Name) {
+		moduleIDDigest := digest.Digest("")
+		moduleName := ""
+		if modRef := cacheCfgResp.CacheKey.ID.Module(); modRef != nil {
+			moduleName = modRef.Name()
+			if modID := modRef.ID(); modID != nil {
+				moduleIDDigest = modID.Digest()
+			}
 		}
-		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
+		var receiverDigest digest.Digest
+		if recv := cacheCfgResp.CacheKey.ID.Receiver(); recv != nil {
+			receiverDigest = recv.Digest()
+		}
+		slog.Info("modfn cache key",
+			"module", fn.mod.Name(),
+			"function", fn.metadata.Name,
+			"path", cacheCfgResp.CacheKey.ID.Path(),
+			"recipeDigest", cacheCfgResp.CacheKey.ID.Digest(),
+			"receiverDigest", receiverDigest,
+			"moduleIDDigest", moduleIDDigest,
+			"moduleName", moduleName,
+			"implicitInputs", len(cacheCfgResp.CacheKey.ID.ImplicitInputs()),
+		)
 	}
-
-	cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithDigest(hashutil.HashStrings(dgstInputs...))
 	return cacheCfgResp, nil
 }
 
@@ -724,13 +754,16 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	} else {
 		cacheMixins = append(cacheMixins, dagql.CurrentStorageKey(ctx))
 	}
-
+	if callID != nil {
+		cacheMixins = append(cacheMixins, callID.Digest().String())
+	}
 	execMD.CacheMixin = hashutil.HashStrings(cacheMixins...)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("set call inputs: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "call-inputs-ready", "callID", callID.Digest(), "inputCount", len(callInputs))
 
 	bklog.G(ctx).Debug("function call")
 	defer func() {
@@ -794,12 +827,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
 
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "load-runtime-start", "callID", callID.Digest())
 	runtime, err := fn.loadFunctionRuntime(hideCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "load-runtime-done", "callID", callID.Digest())
 
 	var metaDir dagql.ObjectResult[*Directory]
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "meta-dir-select-start", "callID", callID.Digest())
 	err = srv.Select(hideCtx, srv.Root(), &metaDir,
 		dagql.Selector{
 			Field: "directory",
@@ -808,8 +844,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("create mod metadata directory: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "meta-dir-select-done", "callID", callID.Digest())
 
 	var ctr dagql.ObjectResult[*Container]
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "mount-meta-dir-start", "callID", callID.Digest())
 	err = srv.Select(hideCtx, runtime, &ctr,
 		dagql.Selector{
 			Field: "withMountedDirectory",
@@ -822,7 +860,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "mount-meta-dir-done", "callID", callID.Digest())
 
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "with-exec-select-start", "callID", callID.Digest(), "execClientID", execMD.ClientID, "execID", execMD.ExecID)
 	err = srv.Select(hideCtx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
@@ -837,6 +877,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "with-exec-select-done", "callID", callID.Digest(), "execClientID", execMD.ClientID)
+	if ctrID := ctr.ID(); ctrID != nil {
+		slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "with-exec-select-result",
+			"callID", callID.Digest(),
+			"execClientID", execMD.ClientID,
+			"ctrDigest", ctrID.Digest(),
+			"ctrPath", ctrID.Path(),
+		)
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -847,6 +896,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("get buildkit client: %w", err)
 	}
 
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "evaluate-start", "callID", callID.Digest())
 	_, err = ctr.Self().Evaluate(ctx)
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
@@ -868,22 +918,29 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("call function %q: %w", fn.metadata.OriginalName, err)
 		}
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "evaluate-done", "callID", callID.Digest())
 
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-dir-start", "callID", callID.Digest())
 	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("get function output directory: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-dir-done", "callID", callID.Digest())
 
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-file-start", "callID", callID.Digest())
 	modMetaFile, err := ctrOutputDir.File(ctx, modMetaOutputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mod meta file: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-file-done", "callID", callID.Digest())
 
 	// Read the output of the function
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-contents-start", "callID", callID.Digest())
 	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read function output file: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-contents-done", "callID", callID.Digest(), "bytes", len(outputBytes))
 
 	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
@@ -896,6 +953,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "convert-return-done", "callID", callID.Digest())
 
 	safeToPersistCache := true
 	if returnValue != nil {
@@ -925,9 +983,24 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
 		if hasNamedSecrets {
-			// Named secrets indicate a direct SetSecret result in the returned value.
-			// Those cannot be persisted safely across sessions.
-			safeToPersistCache = false
+			// Named secrets are only safe to persist across sessions when the return value is
+			// itself secret/socket data. If they're embedded in other objects (e.g. container
+			// state), persisting can incorrectly reuse secret-dependent results across sessions.
+			for _, id := range returnedIDsList {
+				typ := id.Type()
+				if typ == nil {
+					safeToPersistCache = false
+					break
+				}
+				switch typ.NamedType() {
+				case "Secret", "Socket":
+				default:
+					safeToPersistCache = false
+				}
+				if !safeToPersistCache {
+					break
+				}
+			}
 		}
 
 		returnValue = returnValue.WithPostCall(resourceTransferPostCall)
@@ -944,6 +1017,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if returnValue != nil {
 		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
 	}
+	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "return-ready", "callID", callID.Digest(), "hasValue", returnValue != nil, "safeToPersistCache", safeToPersistCache)
 
 	return returnValue, nil
 }
@@ -1080,6 +1154,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	ctx context.Context,
 	dag *dagql.Server,
 	arg *FunctionArg,
+	contentCacheKey string,
 ) (dagql.IDType, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be an object", arg.OriginalName)
@@ -1102,7 +1177,6 @@ func (fn *ModuleFunction) loadContextualArg(
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		contentCacheKey := fn.mod.ContentDigestCacheKey()
 		var dir dagql.ObjectResult[*Directory]
 		err := dag.Select(ctx, dag.Root(), &dir,
 			dagql.Selector{
@@ -1133,7 +1207,6 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*Directory](dir.ID()), nil
 
 	case "File":
-		contentCacheKey := fn.mod.ContentDigestCacheKey()
 		var f dagql.ObjectResult[*File]
 		err := dag.Select(ctx, dag.Root(), &f,
 			dagql.Selector{
@@ -1166,7 +1239,6 @@ func (fn *ModuleFunction) loadContextualArg(
 		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
 		isLocalGit := cleanedPath == "." || cleanedPath == ".git"
 		if isLocalMod && isLocalGit {
-			contentCacheKey := fn.mod.ContentDigestCacheKey()
 			switch arg.TypeDef.AsObject.Value.Name {
 			case "GitRepository":
 				var f dagql.ObjectResult[*GitRepository]

@@ -35,11 +35,12 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		dagql.NodeFuncWithCacheKey("directory",
+		dagql.NodeFunc("directory",
 			DagOpDirectoryWrapper(
 				srv, s.directory,
 				WithHashContentDir[*core.Host, hostDirectoryArgs](),
-			), dagql.CacheAsRequested).
+			)).
+			WithInput(dagql.CacheAsRequested("noCache")).
 			Doc(`Accesses a directory on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -49,26 +50,30 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
-		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
+		dagql.NodeFunc("file", s.file).
+			WithInput(dagql.CacheAsRequested("noCache")).
 			Doc(`Accesses a file on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 				dagql.Arg("noCache").Doc(`If true, the file will always be reloaded from the host.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CacheAsRequested).
+		dagql.NodeFunc("findUp", s.findUp).
+			WithInput(dagql.CacheAsRequested("noCache")).
 			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null`).
 			Args(
 				dagql.Arg("name").Doc(`name of the file or directory to search for`),
 			),
 
-		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
+		dagql.NodeFunc("unixSocket", s.socket).
+			WithInput(dagql.CachePerClient).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 			),
 
-		dagql.NodeFuncWithCacheKey("_sshAuthSocket", s.sshAuthSocket, dagql.CachePerCall).
+		dagql.NodeFunc("_sshAuthSocket", s.sshAuthSocket).
+			WithInput(dagql.CachePerCall).
 			Doc(`Accesses the SSH auth socket on the host and returns a socket scoped to SSH identities.`).
 			Args(
 				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
@@ -77,7 +82,8 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		dagql.Func("__internalSocket", s.internalSocket).
 			Doc(`(Internal-only) Accesses a socket on the host (unix or ip) with the given internal client resource name.`),
 
-		dagql.FuncWithCacheKey("tunnel", s.tunnel, dagql.CachePerClient).
+		dagql.Func("tunnel", s.tunnel).
+			WithInput(dagql.CachePerClient).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
 			Args(
 				dagql.Arg("service").Doc(`Service to send traffic from the tunnel.`),
@@ -94,7 +100,8 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 					`If ports are given and native is true, the ports are additive.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("service", s.service, dagql.CachePerClient).
+		dagql.NodeFunc("service", s.service).
+			WithInput(dagql.CachePerClient).
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			Args(
 				dagql.Arg("ports").Doc(
@@ -105,7 +112,8 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("host").Doc(`Upstream host to forward traffic to.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("containerImage", s.containerImage, dagql.CachePerClient).
+		dagql.NodeFunc("containerImage", s.containerImage).
+			WithInput(dagql.CachePerClient).
 			Doc(`Accesses a container image on the host.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the image to access.`),
@@ -474,13 +482,6 @@ type hostFileArgs struct {
 
 type HostDirCacheConfig struct {
 	NoCache bool `default:"false"`
-}
-
-func (cc HostDirCacheConfig) CacheType() dagql.CacheControlType {
-	if cc.NoCache {
-		return dagql.CacheTypePerCall
-	}
-	return dagql.CacheTypePerClient
 }
 
 func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFileArgs) (i dagql.Result[*core.File], err error) {

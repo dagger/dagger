@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -1716,6 +1717,14 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 	if container.FS == nil {
 		return nil, nil
 	}
+	curID := dagql.CurrentID(ctx)
+	callPath := ""
+	callDigest := digest.Digest("")
+	if curID != nil {
+		callPath = curID.Path()
+		callDigest = curID.Digest()
+	}
+	slog.Info("container evaluate", "step", "start", "callPath", callPath, "callDigest", callDigest, "platform", container.Platform.Spec())
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -1736,11 +1745,17 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	return bk.Solve(ctx, bkgw.SolveRequest{
+	slog.Info("container evaluate", "step", "solve-start", "callPath", callPath, "callDigest", callDigest)
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: def.ToPB(),
 	})
+	if err != nil {
+		slog.Error("container evaluate", "step", "solve-error", "callPath", callPath, "callDigest", callDigest, "err", err)
+		return nil, err
+	}
+	slog.Info("container evaluate", "step", "solve-done", "callPath", callPath, "callDigest", callDigest, "hasRef", res != nil && res.Ref != nil, "refCount", len(res.Refs))
+	return res, nil
 }
 
 func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
@@ -2733,7 +2748,16 @@ func UpdatedRootFS(
 	rootfsID := curID.Append(
 		astType, "rootfs",
 		call.WithView(view),
-		call.WithModule(fieldSpec.Module))
+	)
+	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, rootfsID)
+	if err != nil {
+		return nil, fmt.Errorf("decode rootfs input args: %w", err)
+	}
+	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve rootfs identity: %w", err)
+	}
+	rootfsID = rootfsID.With(identityOpt)
 	updatedRootfs, err := dagql.NewObjectResultForID(dir, curSrv, rootfsID)
 	if err != nil {
 		return nil, err
@@ -2773,8 +2797,17 @@ func updatedDirMount(
 	dirID := curID.Append(
 		astType, "directory",
 		call.WithView(view),
-		call.WithModule(fieldSpec.Module),
-		call.WithArgs(dirIDPathArg))
+		call.WithArgs(dirIDPathArg),
+	)
+	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, dirID)
+	if err != nil {
+		return nil, fmt.Errorf("decode directory input args: %w", err)
+	}
+	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve directory identity: %w", err)
+	}
+	dirID = dirID.With(identityOpt)
 	updatedDirMnt, err := dagql.NewObjectResultForID(dir, curSrv, dirID)
 	if err != nil {
 		return nil, err
@@ -2814,8 +2847,17 @@ func updatedFileMount(
 	fileID := curID.Append(
 		astType, "file",
 		call.WithView(view),
-		call.WithModule(fieldSpec.Module),
-		call.WithArgs(fileIDPathArg))
+		call.WithArgs(fileIDPathArg),
+	)
+	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, fileID)
+	if err != nil {
+		return nil, fmt.Errorf("decode file input args: %w", err)
+	}
+	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve file identity: %w", err)
+	}
+	fileID = fileID.With(identityOpt)
 	updatedFileMnt, err := dagql.NewObjectResultForID(file, curSrv, fileID)
 	if err != nil {
 		return nil, err

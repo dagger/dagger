@@ -29,7 +29,8 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("raw").Doc("Return values exactly as written to the file. No quote removal or variable expansion"),
 			),
-		dagql.NodeFuncWithCacheKey("withVariable", envFileContentHashWrapper(s.withVariable), dagql.CachePerClient).
+		dagql.NodeFunc("withVariable", envFileContentHashWrapper(s.withVariable)).
+			WithInput(dagql.CachePerClient).
 			Doc("Add a variable").
 			Args(
 				dagql.Arg("name").Doc("Variable name"),
@@ -73,7 +74,8 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.File]{
-		dagql.NodeFuncWithCacheKey("asEnvFile", envFileContentHashWrapper(s.asEnvFile), dagql.CachePerClient).
+		dagql.NodeFunc("asEnvFile", envFileContentHashWrapper(s.asEnvFile)).
+			WithInput(dagql.CachePerClient).
 			Args(
 				dagql.Arg("expand").
 					Doc(`Replace "${VAR}" or "$VAR" with the value of other vars`).

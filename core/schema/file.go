@@ -77,7 +77,8 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("all").Doc(`Replace all occurrences of the pattern.`),
 				dagql.Arg("firstFrom").Doc(`Replace the first match starting from the specified line.`),
 			),
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.export), dagql.CachePerClient).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.export)).
+			WithInput(dagql.CachePerClient).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the file to a file path on the host.`).
@@ -87,7 +88,8 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 					`If allowParentDirPath is true, the path argument can be a directory
 				path, in which case the file will be created in that directory.`),
 			),
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.exportLegacy), dagql.CachePerClient).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.exportLegacy)).
+			WithInput(dagql.CachePerClient).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("withTimestamps", DagOpFileWrapper(srv, s.withTimestamps, WithPathFn(keepParentFile[fileWithTimestampsArgs]))).

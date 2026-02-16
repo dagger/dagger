@@ -27,8 +27,8 @@ func (s *querySchema) Install(srv *dagql.Server) {
 		// JSON and written to a core.File. This is currently used internally for calling
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
-		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile,
-			dagql.CachePerSchema[*core.Query, schemaJSONArgs](srv)).
+		dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
+			WithInput(dagql.CachePerSchema(srv)).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),

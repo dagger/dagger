@@ -18,9 +18,6 @@ type SessionCache struct {
 	isClosed bool
 
 	seenKeys sync.Map
-
-	// noCacheNext keeps track of keys for which the next cache attempt should bypass the cache.
-	noCacheNext sync.Map
 }
 
 func NewSessionCache(
@@ -131,39 +128,11 @@ func (c *SessionCache) GetOrInitCall(
 		ctx = telemetryCtx
 	}
 
-	// If this callKey previously failed, force the next attempt to be DoNotCache
-	// to bypass any potentially stale cached error.
-	forcedDoNotCache := false
-	if _, ok := c.noCacheNext.Load(callKey); ok && !key.DoNotCache {
-		key.DoNotCache = true
-		forcedDoNotCache = true
-	}
-
 	ctx = withTrackNilResult(ctx)
 
 	res, err = c.cache.GetOrInitCall(ctx, key, fn)
 	if err != nil {
-		// mark that the next attempt should run with DoNotCache
-		c.noCacheNext.Store(callKey, struct{}{})
 		return nil, err
-	}
-
-	// success: we're in a good state now, allow normal caching again
-	c.noCacheNext.Delete(callKey)
-
-	// If we forced DoNotCache due to a prior failure, we need to re-insert the successful
-	// result into the underlying cache under the original key so subsequent calls find it.
-	// The call above used a random storage key (due to DoNotCache=true), so the result
-	// won't be found by future lookups using the original key.
-	// NOTE: this complication can be removed once we are off the buildkit solver as errors
-	// won't be cached for the duration of a session.
-	if forcedDoNotCache {
-		key.DoNotCache = false
-		cachedRes, cacheErr := c.cache.GetOrInitCall(ctx, key, ValueFunc(res))
-		if cacheErr == nil {
-			res = cachedRes
-		}
-		// If caching fails, we still return the successful result, just won't be cached
 	}
 
 	nilResult := false
@@ -183,7 +152,7 @@ func (c *SessionCache) GetOrInitCall(
 		return nil, err
 	}
 
-	if res != nil && (!key.DoNotCache || forcedDoNotCache) {
+	if res != nil && !key.DoNotCache {
 		c.results = append(c.results, res)
 	}
 

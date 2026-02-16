@@ -29,6 +29,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -62,7 +63,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
 			),
 
-		dagql.NodeFuncWithCacheKey("from", s.from, s.fromCacheKey).
+		dagql.NodeFunc("from", s.from).
+			WithInput(fromSessionScopeInput).
 			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
 			Args(
 				dagql.Arg("address").Doc(
@@ -453,7 +455,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("withExec", s.withExec, s.withExecCacheKey).
+		dagql.NodeFunc("withExec", s.withExec).
+			WithInput(withExecCacheMixinInput).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -544,7 +547,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the annotation.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("publish", DagOpWrapper(srv, s.publish), dagql.CachePerCall).
+		dagql.NodeFunc("publish", DagOpWrapper(srv, s.publish)).
+			WithInput(dagql.CachePerCall).
 			DoNotCache("side effect on an external system (OCI registry)").
 			Doc(`Package the container state as an OCI image, and publish it to a registry`,
 				`Returns the fully qualified address of the published image, with digest`).
@@ -573,7 +577,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("platform", s.platform).
 			Doc(`The platform this container executes and publishes as.`),
 
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.export), dagql.CachePerCall).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.export)).
+			WithInput(dagql.CachePerCall).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
@@ -601,7 +606,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
-		dagql.NodeFuncWithCacheKey("export", DagOpWrapper(srv, s.exportLegacy), dagql.CachePerCall).
+		dagql.NodeFunc("export", DagOpWrapper(srv, s.exportLegacy)).
+			WithInput(dagql.CachePerCall).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
@@ -804,33 +810,38 @@ type containerFromArgs struct {
 	ContainerDagOpInternalArgs
 }
 
-func (s *containerSchema) fromCacheKey(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Container],
-	args containerFromArgs,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	refName, err := reference.ParseNormalizedNamed(args.Address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
-	}
+var fromSessionScopeInput = dagql.ImplicitInput{
+	Name: "fromSessionScope",
+	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+		rawAddress, ok := args["address"]
+		if !ok || rawAddress == nil {
+			return nil, errors.New("missing required address argument")
+		}
+		address, ok := rawAddress.(dagql.String)
+		if !ok {
+			return nil, fmt.Errorf("unexpected address input type %T", rawAddress)
+		}
 
-	var imageRef string
-	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		imageRef = "digest:" + string(refName.Digest())
-	} else {
-		imageRef = args.Address
-	}
+		refName, err := reference.ParseNormalizedNamed(address.String())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse image address %s: %w", address.String(), err)
+		}
+		refName = reference.TagNameOnly(refName)
+		if _, isCanonical := refName.(reference.Canonical); isCanonical {
+			// Digest-addressed refs are immutable and don't need session scoping.
+			return dagql.NewString(""), nil
+		}
 
-	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
-	if resp.CacheKey.ID == nil {
-		return nil, errors.New("cache key ID is nil")
-	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
-		parent.ID().Digest().String(),
-		imageRef,
-	))
-	return resp, nil
+		clientMD, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		if clientMD.SessionID == "" {
+			return nil, errors.New("session ID not found in context")
+		}
+		// Tag-only refs are mutable; resolve once per session.
+		return dagql.NewString(clientMD.SessionID), nil
+	},
 }
 
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
@@ -861,7 +872,15 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			if err != nil {
 				return inst, err
 			}
-			return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+			inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+			if err != nil {
+				return inst, err
+			}
+			return inst.WithContentDigest(hashutil.HashStrings(
+				"container.from",
+				refName.Digest().String(),
+				ctr.Platform.Format(),
+			)), nil
 		}
 
 		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, s.from)
@@ -888,7 +907,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, err
 		}
-		return inst, nil
+		return inst.WithContentDigest(hashutil.HashStrings(
+			"container.from",
+			refName.Digest().String(),
+			ctr.Platform.Format(),
+		)), nil
 	}
 
 	if args.InDagOp() {
@@ -1022,9 +1045,49 @@ type containerExecArgs struct {
 	// calling it with args
 	SkipEntrypoint *bool `default:"false"`
 
-	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
+	// ExecMD carries runtime-only execution metadata; it is excluded from ID
+	// digests so cache identity only depends on explicit withExec args plus
+	// execCacheMixin implicit input.
+	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" sensitive:"true" default:"null"`
 
 	ContainerDagOpInternalArgs
+}
+
+func (args containerExecArgs) DagOpExecutionMetadata() *buildkit.ExecutionMetadata {
+	return args.ExecMD.Self
+}
+
+var withExecCacheMixinInput = dagql.ImplicitInput{
+	Name: "execCacheMixin",
+	Resolver: func(_ context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+		rawExecMD, ok := args["execMD"]
+		if !ok || rawExecMD == nil {
+			return dagql.NewString(""), nil
+		}
+
+		execMD, ok := rawExecMD.(dagql.SerializedString[*buildkit.ExecutionMetadata])
+		if !ok {
+			return nil, fmt.Errorf("unexpected execMD input type %T", rawExecMD)
+		}
+		if execMD.Self == nil || execMD.Self.CacheMixin == "" {
+			return dagql.NewString(""), nil
+		}
+		if len(execMD.Self.EncodedFunctionCall) > 0 {
+			callDigest := digest.Digest("")
+			callPath := ""
+			if execMD.Self.CallID != nil {
+				callDigest = execMD.Self.CallID.Digest()
+				callPath = execMD.Self.CallID.Path()
+			}
+			slog.Info("withExec cache mixin implicit input",
+				"callDigest", callDigest,
+				"callPath", callPath,
+				"execClientID", execMD.Self.ClientID,
+				"cacheMixin", execMD.Self.CacheMixin,
+			)
+		}
+		return dagql.NewString(execMD.Self.CacheMixin.String()), nil
+	},
 }
 
 var _ core.Digestable = containerExecArgs{}
@@ -1042,6 +1105,20 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 
 	if args.ExecMD.Self != nil {
 		inputs = append(inputs, string(args.ExecMD.Self.CacheMixin))
+		if len(args.ExecMD.Self.EncodedFunctionCall) > 0 {
+			callDigest := digest.Digest("")
+			callPath := ""
+			if args.ExecMD.Self.CallID != nil {
+				callDigest = args.ExecMD.Self.CallID.Digest()
+				callPath = args.ExecMD.Self.CallID.Path()
+			}
+			slog.Info("withExec args digest includes exec cache mixin",
+				"callDigest", callDigest,
+				"callPath", callPath,
+				"execClientID", args.ExecMD.Self.ClientID,
+				"cacheMixin", args.ExecMD.Self.CacheMixin,
+			)
+		}
 	}
 
 	return hashutil.HashStrings(inputs...), nil
@@ -1111,28 +1188,6 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
-}
-
-func (s *containerSchema) withExecCacheKey(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Container],
-	args containerExecArgs,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	argDigest, err := args.Digest()
-	if err != nil {
-		return nil, err
-	}
-
-	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
-	if resp.CacheKey.ID == nil {
-		return nil, errors.New("cache key ID is nil")
-	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
-		parent.ID().Digest().String(),
-		string(argDigest),
-	))
-	return resp, nil
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {

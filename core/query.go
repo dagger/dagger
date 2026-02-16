@@ -184,6 +184,13 @@ func CurrentQuery(ctx context.Context) (*Query, error) {
 }
 
 func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
+	// Prefer the dagql server explicitly attached to this resolver context.
+	// This is required for dynamic schemas (e.g. SDKs implemented as modules)
+	// that run selections against a server different from the session's default.
+	if srv := dagql.CurrentDagqlServer(ctx); srv != nil {
+		return srv, nil
+	}
+
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("current query: %w", err)
@@ -254,7 +261,11 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	}
 	deps := defaultDeps
 	for _, modID := range id.Modules() {
-		inst, err := GetModuleFromContentDigest(ctx, bootstrap, modID.Name(), string(modID.ID().Digest()))
+		modDigest := modID.ID().ContentDigest()
+		if modDigest == "" {
+			modDigest = modID.ID().Digest()
+		}
+		inst, err := GetModuleFromContentDigest(ctx, bootstrap, modID.Name(), string(modDigest))
 		if err != nil {
 			return nil, err
 		}
