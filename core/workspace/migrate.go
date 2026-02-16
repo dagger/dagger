@@ -70,7 +70,7 @@ type ConstructorIntrospector func(ctx context.Context, ref string) ([]Constructo
 // constructor arguments and generate commented-out config hints.
 func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, introspect ConstructorIntrospector) (*MigrationResult, error) {
 	// 1. Read and parse legacy config
-	data, err := bk.ReadCallerHostFile(ctx, migErr.LegacyConfigPath)
+	data, err := bk.ReadCallerHostFile(ctx, migErr.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading legacy config: %w", err)
 	}
@@ -209,7 +209,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 	}
 
 	// 5. Delete root dagger.json
-	if err := deleteHostFile(ctx, bk, migErr.LegacyConfigPath); err != nil {
+	if err := deleteHostFile(ctx, bk, migErr.ConfigPath); err != nil {
 		return nil, fmt.Errorf("removing legacy config: %w", err)
 	}
 	result.RemovedFiles = append(result.RemovedFiles, "dagger.json")

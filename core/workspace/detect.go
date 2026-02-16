@@ -16,8 +16,8 @@ const (
 	// ConfigFileName is the name of the workspace config file within .dagger/.
 	ConfigFileName = "config.toml"
 
-	// LegacyConfigFileName is the legacy module config filename.
-	LegacyConfigFileName = "dagger.json"
+	// ModuleConfigFileName is the module config filename.
+	ModuleConfigFileName = "dagger.json"
 )
 
 // Workspace represents a detected workspace with its root directory and config.
@@ -32,53 +32,34 @@ type Workspace struct {
 	Initialized bool
 
 	Config *Config // parsed config (nil if no config.toml)
-
-	// StandaloneModule indicates that a legacy dagger.json was found at Path
-	// and should be auto-loaded as the default module. Set when workspace
-	// detection finds a dagger.json without a config.toml (or closer than
-	// any config.toml), and the dagger.json is not a migration candidate.
-	StandaloneModule bool
 }
 
 // Detect finds the workspace root and config from the given working directory.
 //
-// Uses a 4-step fallback chain:
+// Uses a 3-step fallback chain:
 //  1. FindUp .dagger/ → stat .dagger/config.toml → parse config, workspace root = parent of .dagger/
-//  2. No .dagger/ → FindUp dagger.json → check migration triggers → fail or ignore
-//  3. FindUp .git → workspace root = directory containing .git (empty workspace)
-//  4. No .git → cwd is workspace root (empty workspace)
+//  2. FindUp .git → workspace root = directory containing .git (empty workspace)
+//  3. No .git → cwd is workspace root (empty workspace)
 func Detect(
 	ctx context.Context,
 	statFS core.StatFS,
 	readFile func(ctx context.Context, path string) ([]byte, error),
 	cwd string,
 ) (*Workspace, error) {
-	// Single-pass find-up for all markers
+	// Single-pass find-up for workspace markers
 	soughtNames := map[string]struct{}{
-		WorkspaceDirName:     {},
-		LegacyConfigFileName: {},
-		".git":               {},
+		WorkspaceDirName: {},
+		".git":           {},
 	}
 	found, err := core.Host{}.FindUpAll(ctx, statFS, cwd, soughtNames)
 	if err != nil {
 		return nil, fmt.Errorf("workspace detection: %w", err)
 	}
 
-	// Determine precedence between .dagger/ and dagger.json based on proximity
-	// to cwd. A marker found closer to cwd (deeper path) wins. Within the same
-	// directory, .dagger/config.toml takes precedence over dagger.json.
-	//
-	// Desired order: ./.dagger/config.toml > ./dagger.json > ../../.dagger/config.toml > ../../dagger.json
 	daggerDir, hasDaggerDir := found[WorkspaceDirName]
-	legacyDir, hasLegacy := found[LegacyConfigFileName]
-
-	// If dagger.json is strictly closer to cwd than .dagger/, it takes
-	// precedence — the closer project boundary wins. This prevents a distant
-	// workspace from swallowing a nested module's dagger.json.
-	legacyCloser := hasLegacy && hasDaggerDir && len(legacyDir) > len(daggerDir)
+	gitDir, hasGit := found[".git"]
 
 	// Helper: find sandbox root (git root or fallback to workspace dir).
-	gitDir, hasGit := found[".git"]
 	sandboxFor := func(workspaceDir string) string {
 		if hasGit {
 			return gitDir
@@ -94,26 +75,6 @@ func Detect(
 		return rel
 	}
 
-	if legacyCloser {
-		legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
-		data, err := readFile(ctx, legacyPath)
-		if err == nil {
-			if err := CheckMigrationTriggers(data, legacyPath, legacyDir); err != nil {
-				return nil, err
-			}
-		}
-		// dagger.json is closer but has no migration triggers — treat its
-		// directory as the workspace root and auto-load the legacy module.
-		// This provides backwards compat: `dagger call` in a module dir
-		// targets that module without needing `-m .`.
-		sandbox := sandboxFor(legacyDir)
-		return &Workspace{
-			Root:             sandbox,
-			Path:             relPath(sandbox, legacyDir),
-			StandaloneModule: true,
-		}, nil
-	}
-
 	// Step 1: .dagger/ found → look for config.toml
 	if hasDaggerDir {
 		configPath := filepath.Join(daggerDir, WorkspaceDirName, ConfigFileName)
@@ -125,80 +86,49 @@ func Detect(
 			}
 			sandbox := sandboxFor(daggerDir)
 			return &Workspace{
-				Root: sandbox,
+				Root:        sandbox,
 				Path:        relPath(sandbox, daggerDir),
 				Initialized: true,
 				Config:      cfg,
 			}, nil
 		}
-		// config.toml doesn't exist inside .dagger/ — but a legacy dagger.json
-		// may still be present (e.g. .dagger/ is a module source dir, not a
-		// workspace config dir). Check migration triggers before treating as
-		// empty workspace.
-		if hasLegacy {
-			legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
-			data, err := readFile(ctx, legacyPath)
-			if err == nil {
-				if err := CheckMigrationTriggers(data, legacyPath, legacyDir); err != nil {
-					return nil, err
-				}
-			}
-		}
+		// .dagger/ exists but no config.toml — empty workspace
 		sandbox := sandboxFor(daggerDir)
 		return &Workspace{
 			Root: sandbox,
-			Path:        relPath(sandbox, daggerDir),
+			Path: relPath(sandbox, daggerDir),
 		}, nil
 	}
 
-	// Step 2: No .dagger/ → check for legacy dagger.json
-	if hasLegacy {
-		legacyPath := filepath.Join(legacyDir, LegacyConfigFileName)
-		data, err := readFile(ctx, legacyPath)
-		if err == nil {
-			if err := CheckMigrationTriggers(data, legacyPath, legacyDir); err != nil {
-				return nil, err
-			}
-		}
-		// dagger.json without migration triggers — auto-load as legacy module
-		// for backwards compat. Workspace = dagger.json dir, sandbox = git root.
-		sandbox := sandboxFor(legacyDir)
-		return &Workspace{
-			Root:             sandbox,
-			Path:             relPath(sandbox, legacyDir),
-			StandaloneModule: true,
-		}, nil
-	}
-
-	// Step 3: .git found → workspace = CWD, sandbox = git root
+	// Step 2: .git found → workspace = CWD, sandbox = git root
 	if hasGit {
 		return &Workspace{
 			Root: gitDir,
-			Path:        relPath(gitDir, cwd),
+			Path: relPath(gitDir, cwd),
 		}, nil
 	}
 
-	// Step 4: nothing found → cwd is both workspace and sandbox root
+	// Step 3: nothing found → cwd is both workspace and sandbox root
 	return &Workspace{
 		Root: cwd,
-		Path:        ".",
+		Path: ".",
 	}, nil
 }
 
-// ErrMigrationRequired indicates a legacy dagger.json needs migration
+// ErrMigrationRequired indicates a dagger.json needs migration
 // to the workspace format.
 type ErrMigrationRequired struct {
-	LegacyConfigPath string // absolute path to the dagger.json
-	ProjectRoot      string // directory containing it
+	ConfigPath  string // absolute path to the dagger.json
+	ProjectRoot string // directory containing it
 }
 
 func (e *ErrMigrationRequired) Error() string {
 	return `Migration required: run "dagger migrate" to update this project to the workspace format.`
 }
 
-// CheckMigrationTriggers checks if a legacy dagger.json requires migration.
+// CheckMigrationTriggers checks if a dagger.json requires migration.
 // Returns *ErrMigrationRequired if migration triggers are present.
-func CheckMigrationTriggers(data []byte, legacyConfigPath, projectRoot string) error {
+func CheckMigrationTriggers(data []byte, configPath, projectRoot string) error {
 	var legacy struct {
 		Source     string `json:"source"`
 		Toolchains []any  `json:"toolchains"`
@@ -212,8 +142,8 @@ func CheckMigrationTriggers(data []byte, legacyConfigPath, projectRoot string) e
 
 	if hasToolchains || hasNonDotSource {
 		return &ErrMigrationRequired{
-			LegacyConfigPath: legacyConfigPath,
-			ProjectRoot:      projectRoot,
+			ConfigPath:  configPath,
+			ProjectRoot: projectRoot,
 		}
 	}
 

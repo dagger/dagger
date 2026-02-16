@@ -187,10 +187,11 @@ type daggerClient struct {
 	// Cached workspace result from ensureWorkspaceLoaded.
 	workspace *core.Workspace
 
-	pendingExtraModules []engine.ExtraModule
-	extraModulesMu      sync.Mutex
-	extraModulesLoaded  bool
-	extraModulesErr     error
+	pendingModules      []pendingModule      // gathered in detectAndLoadWorkspaceWithRootfs
+	pendingExtraModules []engine.ExtraModule // populated from clientMD, can arrive late
+	modulesMu           sync.Mutex
+	modulesLoaded       bool
+	modulesErr          error
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -922,7 +923,7 @@ func (srv *Server) getOrInitClient(
 		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
 		// session attachable request already created the client without them.
-		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.extraModulesLoaded {
+		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
 		}
@@ -1251,8 +1252,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
 	}
-	if err := srv.ensureExtraModulesLoaded(ctx, client); err != nil {
-		return gqlErr(fmt.Errorf("loading extra modules: %w", err), http.StatusInternalServerError)
+	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
+		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
 	}
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
@@ -1532,7 +1533,32 @@ func (srv *Server) detectAndLoadWorkspace(
 	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, isLocal, dagql.ObjectResult[*core.Directory]{})
 }
 
-// detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection and module loading.
+// pendingModule represents a module to be loaded, from any source
+// (workspace config, -m flag, or implicit CWD module).
+type pendingModule struct {
+	// Source reference (local path or git URL).
+	Ref string
+
+	// Name override (empty = derive from module).
+	Name string
+
+	// If true, alias the module's functions to the Query root.
+	Alias bool
+
+	// If true, disable find-up when resolving the module source.
+	// Used for workspace config modules where the path is explicit.
+	DisableFindUp bool
+
+	// Workspace config defaults to apply to the module.
+	ConfigDefaults   map[string]any
+	DefaultsFromDotEnv bool
+}
+
+// detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
+// and module gathering. It detects the workspace (pure — no dagger.json
+// knowledge), checks for migration triggers, and gathers all modules to be
+// loaded later by ensureModulesLoaded.
+//
 // It works for both local and remote workspaces, parameterized by the filesystem
 // abstraction (statFS/readFile) and reference resolution (resolveLocalRef).
 // For remote workspaces, prebuiltRootfs provides the already-cloned git tree.
@@ -1547,26 +1573,44 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 ) error {
 	clientMD := client.clientMetadata
+	skipModules := clientMD != nil && clientMD.SkipWorkspaceModules
 
+	// --- Detect workspace (pure — no dagger.json knowledge) ---
 	ws, err := workspace.Detect(ctx, statFS, readFile, cwd)
 	if err != nil {
-		// Handle migration (auto-migrate only if local + AutoMigrate flag).
-		if isLocal {
-			if migrated, migErr := srv.handleMigration(ctx, client, err); migrated {
-				if migErr != nil {
-					return migErr
+		return err
+	}
+
+	// --- Check for migration triggers when no workspace config exists ---
+	// When CWD is near a dagger.json with migration triggers and no workspace
+	// config has been found, prompt migration (or auto-migrate if enabled).
+	if !ws.Initialized {
+		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+		if hasModuleConfig {
+			cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
+			if data, readErr := readFile(ctx, cfgPath); readErr == nil {
+				if triggerErr := workspace.CheckMigrationTriggers(data, cfgPath, moduleDir); triggerErr != nil {
+					if isLocal {
+						migrated, migErr := srv.handleMigration(ctx, client, triggerErr)
+						if migrated {
+							if migErr != nil {
+								return migErr
+							}
+							// Migration succeeded; re-detect to pick up the new config.
+							ws, err = workspace.Detect(ctx, statFS, readFile, cwd)
+							if err != nil {
+								return fmt.Errorf("post-migration workspace detection: %w", err)
+							}
+							// Fall through to build workspace object.
+							// Module loading is skipped via SkipWorkspaceModules.
+						} else {
+							return triggerErr
+						}
+					} else {
+						return triggerErr
+					}
 				}
-				// Migration succeeded; re-detect to pick up the new config.
-				ws, err = workspace.Detect(ctx, statFS, readFile, cwd)
-				if err != nil {
-					return fmt.Errorf("post-migration workspace detection: %w", err)
-				}
-				// Fall through to build workspace object.
-				// Module loading is skipped via SkipWorkspaceModules.
 			}
-		}
-		if err != nil {
-			return err
 		}
 	}
 
@@ -1577,32 +1621,54 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 	client.workspace = coreWS
 
-	// Load modules from workspace config (skip if SkipWorkspaceModules).
-	if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.Config != nil && len(ws.Config.Modules) > 0 {
-		dag := client.dag
+	if skipModules {
+		return nil
+	}
+
+	// --- Gather all modules to load ---
+	var pending []pendingModule
+
+	// (1) Workspace config modules
+	if ws.Config != nil {
 		for name, entry := range ws.Config.Modules {
-			sourcePath := entry.Source
+			ref := entry.Source
 			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
-				sourcePath = resolveLocalRef(ws, filepath.Join(workspace.WorkspaceDirName, entry.Source))
+				ref = resolveLocalRef(ws, filepath.Join(workspace.WorkspaceDirName, entry.Source))
 			}
-			if err := srv.loadWorkspaceModule(ctx, client, dag, name, sourcePath, entry.Alias, entry.Config, ws.Config.DefaultsFromDotEnv); err != nil {
-				return fmt.Errorf("loading workspace module %q: %w", name, err)
-			}
+			pending = append(pending, pendingModule{
+				Ref:                ref,
+				Name:               name,
+				Alias:              entry.Alias,
+				DisableFindUp:      true,
+				ConfigDefaults:     entry.Config,
+				DefaultsFromDotEnv: ws.Config.DefaultsFromDotEnv,
+			})
 		}
 	}
 
-	// Auto-load standalone module (legacy dagger.json for backwards compat).
-	if (clientMD == nil || !clientMD.SkipWorkspaceModules) && ws.StandaloneModule {
-		ref := resolveLocalRef(ws, ".")
-		extra := engine.ExtraModule{
-			Ref:   ref,
-			Alias: true,
-		}
-		if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
-			return fmt.Errorf("loading legacy module from %s: %w", ref, err)
+	// (2) Implicit CWD module (dagger.json near CWD, no migration triggers)
+	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+	if hasModuleConfig {
+		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
+		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
+			triggerErr := workspace.CheckMigrationTriggers(data, cfgPath, moduleDir)
+			if triggerErr == nil {
+				wsDir := filepath.Join(ws.Root, ws.Path)
+				rel, _ := filepath.Rel(wsDir, moduleDir)
+				pending = append(pending, pendingModule{
+					Ref:   resolveLocalRef(ws, rel),
+					Alias: true,
+				})
+			}
+			// triggerErr != nil: ignore dagger.json with triggers when workspace exists
 		}
 	}
 
+	// (3) Extra modules from -m flag are stored separately in
+	//     client.pendingExtraModules (already populated from clientMD).
+	//     They go through the same loadModule chokepoint in ensureModulesLoaded.
+
+	client.pendingModules = pending
 	return nil
 }
 
@@ -1735,20 +1801,20 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, parsedRe
 	return tree, nil
 }
 
-// ensureExtraModulesLoaded loads any pending extra modules (from -m flag).
-// Called from serveQuery after ensureWorkspaceLoaded.
-// Uses a mutex+flag instead of sync.Once so that transient failures
-// (e.g. session not yet registered) can be retried on subsequent requests.
-func (srv *Server) ensureExtraModulesLoaded(ctx context.Context, client *daggerClient) error {
-	if len(client.pendingExtraModules) == 0 {
+// ensureModulesLoaded loads all pending modules (from workspace config,
+// implicit CWD module, and -m flag). Called from serveQuery after
+// ensureWorkspaceLoaded. Uses a mutex+flag instead of sync.Once so that
+// transient failures (e.g. session not yet registered) can be retried.
+func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient) error {
+	if len(client.pendingModules) == 0 && len(client.pendingExtraModules) == 0 {
 		return nil
 	}
 
-	client.extraModulesMu.Lock()
-	defer client.extraModulesMu.Unlock()
+	client.modulesMu.Lock()
+	defer client.modulesMu.Unlock()
 
-	if client.extraModulesLoaded {
-		return client.extraModulesErr
+	if client.modulesLoaded {
+		return client.modulesErr
 	}
 
 	// Wait for the client's buildkit session to be available.
@@ -1757,105 +1823,72 @@ func (srv *Server) ensureExtraModulesLoaded(ctx context.Context, client *daggerC
 		return fmt.Errorf("waiting for client session: %w", err)
 	}
 
-	for _, extra := range client.pendingExtraModules {
-		if err := srv.loadExtraModule(ctx, client, client.dag, extra); err != nil {
-			// Module loading failure is permanent — mark as loaded with error.
-			client.extraModulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
-			client.extraModulesLoaded = true
-			return client.extraModulesErr
+	// Load gathered modules (workspace config + implicit CWD).
+	for _, mod := range client.pendingModules {
+		if err := srv.loadModule(ctx, client, client.dag, mod); err != nil {
+			client.modulesErr = fmt.Errorf("loading module %q: %w", mod.Ref, err)
+			client.modulesLoaded = true
+			return client.modulesErr
 		}
 	}
 
-	client.extraModulesLoaded = true
+	// Load extra modules (-m flag, may arrive late).
+	for _, extra := range client.pendingExtraModules {
+		if err := srv.loadModule(ctx, client, client.dag, pendingModule{
+			Ref:   extra.Ref,
+			Name:  extra.Name,
+			Alias: extra.Alias,
+		}); err != nil {
+			client.modulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
+			client.modulesLoaded = true
+			return client.modulesErr
+		}
+	}
+
+	client.modulesLoaded = true
 	return nil
 }
 
-// loadExtraModule resolves an extra module (e.g. from -m flag) and serves it.
-// Unlike workspace modules, it does not set disableFindUp (supports relative paths,
-// `.`, git URLs). If Alias is true, the module's AutoAlias flag is set so that
-// its functions are aliased to the Query root.
-//
-// Only the module itself is served to the client — its dependencies are internal
-// to the module and should not appear at the Query root.
-func (srv *Server) loadExtraModule(
+// loadModule resolves a module through the dagql pipeline and serves it
+// to the client. Handles all module sources uniformly: workspace config
+// modules, implicit CWD modules, and -m flag modules.
+func (srv *Server) loadModule(
 	ctx context.Context,
 	client *daggerClient,
 	dag *dagql.Server,
-	extra engine.ExtraModule,
+	mod pendingModule,
 ) error {
-	var mod dagql.ObjectResult[*core.Module]
-	err := dag.Select(ctx, dag.Root(), &mod,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(extra.Ref)},
-			},
-		},
+	args := []dagql.NamedInput{
+		{Name: "refString", Value: dagql.String(mod.Ref)},
+	}
+	if mod.DisableFindUp {
+		args = append(args, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
+	}
+
+	var resolved dagql.ObjectResult[*core.Module]
+	err := dag.Select(ctx, dag.Root(), &resolved,
+		dagql.Selector{Field: "moduleSource", Args: args},
 		dagql.Selector{Field: "asModule"},
 	)
 	if err != nil {
-		return fmt.Errorf("resolving module source %q: %w", extra.Ref, err)
+		return fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
-	if extra.Name != "" {
-		mod.Self().NameField = extra.Name
+	if mod.Name != "" {
+		resolved.Self().NameField = mod.Name
 	}
-	if extra.Alias {
-		mod.Self().AutoAlias = true
+	if mod.Alias {
+		resolved.Self().AutoAlias = true
+	}
+	if len(mod.ConfigDefaults) > 0 {
+		resolved.Self().WorkspaceConfig = mod.ConfigDefaults
+		resolved.Self().DefaultsFromDotEnv = mod.DefaultsFromDotEnv
+		resolved.Self().ApplyWorkspaceDefaultsToTypeDefs()
 	}
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
-	return srv.serveModule(client, mod.Self())
-}
-
-// loadWorkspaceModule resolves a module through the dagql pipeline and serves it
-// to the client. This adds the module's constructor as a Query root field.
-// If configDefaults is non-nil, its entries are stored as WorkspaceConfig on
-// the module, which feeds into the user defaults pipeline for env://, ${VAR},
-// and path resolution.
-//
-//nolint:unparam
-func (srv *Server) loadWorkspaceModule(
-	ctx context.Context,
-	client *daggerClient,
-	dag *dagql.Server,
-	name, sourcePath string,
-	alias bool,
-	configDefaults map[string]any,
-	defaultsFromDotEnv bool,
-) error {
-	var mod dagql.ObjectResult[*core.Module]
-	err := dag.Select(ctx, dag.Root(), &mod,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(sourcePath)},
-				{Name: "disableFindUp", Value: dagql.Boolean(true)},
-			},
-		},
-		dagql.Selector{Field: "asModule"},
-	)
-	if err != nil {
-		return fmt.Errorf("resolving module source %q: %w", sourcePath, err)
-	}
-
-	if alias {
-		mod.Self().AutoAlias = true
-	}
-
-	// Apply workspace config defaults.
-	if len(configDefaults) > 0 {
-		mod.Self().WorkspaceConfig = configDefaults
-		mod.Self().DefaultsFromDotEnv = defaultsFromDotEnv
-		mod.Self().ApplyWorkspaceDefaultsToTypeDefs()
-	}
-
-	// Only serve the module itself — its dependencies are internal and should
-	// not appear at the Query root.
-	client.stateMu.Lock()
-	defer client.stateMu.Unlock()
-	return srv.serveModule(client, mod.Self())
+	return srv.serveModule(client, resolved.Self())
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.

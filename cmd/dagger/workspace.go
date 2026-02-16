@@ -190,7 +190,7 @@ func migrateListModules(cmd *cobra.Command) error {
 			}
 			return nil
 		}
-		if d.Name() != workspace.LegacyConfigFileName {
+		if d.Name() != workspace.ModuleConfigFileName {
 			return nil
 		}
 
