@@ -14,16 +14,16 @@ import (
 
 func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[T]{
-		dagql.FuncWithCacheKey("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 			return WrapSchema(srv.Schema()), nil
-		}, dagql.CachePerCall),
+		}).WithInput(dagql.CachePerCall),
 
 		// custom dagger field
 		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
 			return string(dagql.CurrentID(ctx).View()), nil
 		}).View(dagql.AllView{}),
 
-		dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
+		dagql.Func("__type", func(ctx context.Context, self T, args struct {
 			Name string
 		}) (*Type, error) {
 			def, ok := srv.Schema().Types[args.Name]
@@ -31,7 +31,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return nil, fmt.Errorf("unknown type: %q", args.Name)
 			}
 			return WrapTypeFromDef(srv.Schema(), def), nil
-		}, dagql.CachePerCall),
+		}).WithInput(dagql.CachePerCall),
 	}.Install(srv)
 
 	TypeKinds.Install(srv)

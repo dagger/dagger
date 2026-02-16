@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
 	imagesapi "github.com/containerd/containerd/api/services/images/v1"
@@ -196,10 +197,57 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	if v := SSHTranslatorFromContext(ctx); v != nil {
 		gw.sshTranslator = v
 	}
+
+	defOpCount := 0
+	if req.Definition != nil {
+		defOpCount = len(req.Definition.Def)
+	}
+	solveStart := time.Now()
+	bklog.G(ctx).Debugf(
+		"bk solve start client_id=%s evaluate=%t def_ops=%d frontend_inputs=%d",
+		c.ID(),
+		req.Evaluate,
+		defOpCount,
+		len(req.FrontendInputs),
+	)
+	solveDone := make(chan struct{})
+	defer close(solveDone)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-solveDone:
+				return
+			case <-ticker.C:
+				bklog.G(ctx).Debugf(
+					"bk solve waiting client_id=%s evaluate=%t elapsed=%s ctx_err=%v",
+					c.ID(),
+					req.Evaluate,
+					time.Since(solveStart).Round(time.Millisecond),
+					context.Cause(ctx),
+				)
+			}
+		}
+	}()
+
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
+		bklog.G(ctx).WithError(err).Debugf(
+			"bk solve error client_id=%s evaluate=%t elapsed=%s ctx_err=%v",
+			c.ID(),
+			req.Evaluate,
+			time.Since(solveStart).Round(time.Millisecond),
+			context.Cause(ctx),
+		)
 		return nil, WrapError(ctx, err, c)
 	}
+	bklog.G(ctx).Debugf(
+		"bk solve done client_id=%s evaluate=%t elapsed=%s",
+		c.ID(),
+		req.Evaluate,
+		time.Since(solveStart).Round(time.Millisecond),
+	)
 
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
 		return newRef(rp, c), nil

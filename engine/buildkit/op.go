@@ -82,7 +82,11 @@ func NewCustomLLB(ctx context.Context, dagOpID *call.ID, op CustomOp, inputs []l
 		a = a.Copy(input, "/", "/")
 	}
 	st := llb.Scratch().File(a)
-	customOpOpt, err := opWrapped.AsConstraintsOpt(dagOpID.Digest().String())
+	effectID := ""
+	if dagOpID != nil {
+		effectID = dagOpID.DagOpDigest().String()
+	}
+	customOpOpt, err := opWrapped.AsConstraintsOpt(effectID)
 	if err != nil {
 		return llb.State{}, fmt.Errorf("constraints opt: %w", err)
 	}
