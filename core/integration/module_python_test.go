@@ -779,7 +779,7 @@ class Test:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.13", out)
+		require.Equal(t, "3.14", out)
 	})
 }
 
