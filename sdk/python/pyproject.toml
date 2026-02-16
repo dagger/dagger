@@ -30,6 +30,7 @@ dependencies = [
     "anyio>=3.6.2",
     "cattrs>=25.1.0",
     "gql[httpx]>=4.0",
+    "httpcore>=1.0.8",
     "beartype>=0.22.0",
     "platformdirs>=2.6.2",
     "typing_extensions>=4.13.0",
