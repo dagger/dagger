@@ -1267,6 +1267,15 @@ func (r *Check) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The original module in which the check has been defined
+func (r *Check) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
 // Whether the check passed
 func (r *Check) Passed(ctx context.Context) (bool, error) {
 	if r.passed != nil {
@@ -7952,6 +7961,25 @@ func (r *Generator) Name(ctx context.Context) (string, error) {
 	q := r.query.Select("name")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original module in which the generator has been defined
+func (r *Generator) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the generator within its module
+func (r *Generator) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

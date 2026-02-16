@@ -3447,6 +3447,14 @@ export class Check extends BaseClient {
   }
 
   /**
+   * The original module in which the check has been defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
    * Whether the check passed
    */
   passed = async (): Promise<boolean> => {
@@ -8612,6 +8620,25 @@ export class Generator extends BaseClient {
     const ctx = this._ctx.select("name")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The original module in which the generator has been defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The path of the generator within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
 
     return response
   }

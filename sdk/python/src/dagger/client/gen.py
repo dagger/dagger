@@ -1353,6 +1353,12 @@ class Check(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    def original_module(self) -> "Module":
+        """The original module in which the check has been defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
     async def passed(self) -> bool:
         """Whether the check passed
 
@@ -8340,6 +8346,33 @@ class Generator(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    def original_module(self) -> "Module":
+        """The original module in which the generator has been defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The path of the generator within its module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
 
     def run(self) -> Self:
         """Execute the generator"""

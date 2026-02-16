@@ -36,8 +36,14 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 		dagql.Func("name", s.name).
 			Doc("Return the fully qualified name of the generator"),
 
+		dagql.Func("path", s.path).
+			Doc("The path of the generator within its module"),
+
 		dagql.Func("description", s.description).
 			Doc("Return the description of the generator"),
+
+		dagql.Func("originalModule", s.originalModule).
+			Doc("The original module in which the generator has been defined"),
 
 		dagql.Func("run", s.runSingleGenerator).
 			Doc("Execute the generator"),
@@ -78,8 +84,16 @@ func (s generatorsSchema) name(_ context.Context, parent *core.Generator, args s
 	return parent.Name(), nil
 }
 
+func (s generatorsSchema) path(_ context.Context, parent *core.Generator, args struct{}) ([]string, error) {
+	return parent.Path(), nil
+}
+
 func (s generatorsSchema) description(_ context.Context, parent *core.Generator, args struct{}) (string, error) {
 	return parent.Description(), nil
+}
+
+func (s generatorsSchema) originalModule(_ context.Context, parent *core.Generator, args struct{}) (*core.Module, error) {
+	return parent.OriginalModule(), nil
 }
 
 func (s generatorsSchema) runSingleGenerator(ctx context.Context, parent *core.Generator, args struct{}) (*core.Generator, error) {

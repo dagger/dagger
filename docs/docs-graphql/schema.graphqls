@@ -335,6 +335,9 @@ type Check {
   """Return the fully qualified name of the check"""
   name: String!
 
+  """The original module in which the check has been defined"""
+  originalModule: Module!
+
   """Whether the check passed"""
   passed: Boolean!
 
@@ -3502,6 +3505,12 @@ type Generator {
 
   """Return the fully qualified name of the generator"""
   name: String!
+
+  """The original module in which the generator has been defined"""
+  originalModule: Module!
+
+  """The path of the generator within its module"""
+  path: [String!]!
 
   """Execute the generator"""
   run: Generator!

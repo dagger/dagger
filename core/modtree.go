@@ -25,10 +25,13 @@ type ModTreeNode struct {
 	Name        string
 	Description string
 	DagqlServer *dagql.Server
-	Module      *Module
-	Type        *TypeDef
-	IsCheck     bool
-	IsGenerator bool
+	// This module is the same across all ModTreeNode, this is the root module.
+	Module *Module
+	// This original module is the one in which the node has been defined. Could be one from a toolchain for instance.
+	OriginalModule *Module
+	Type           *TypeDef
+	IsCheck        bool
+	IsGenerator    bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -51,8 +54,9 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 		return nil, err
 	}
 	return &ModTreeNode{
-		DagqlServer: srv,
-		Module:      mod,
+		DagqlServer:    srv,
+		Module:         mod,
+		OriginalModule: mod,
 		Type: &TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(mainObj),
@@ -547,6 +551,13 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	return nil
 }
 
+func originalModule(parent *ModTreeNode, name string) *Module {
+	if tc, ok := parent.Module.Toolchains.Get(name); ok {
+		return tc.Module
+	}
+	return parent.OriginalModule
+}
+
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
@@ -559,10 +570,15 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Name:        fn.Name,
 				DagqlServer: node.DagqlServer,
 				Module:      node.Module,
-				Type:        fn.ReturnType,
-				IsCheck:     fn.IsCheck,
-				IsGenerator: fn.IsGenerator,
-				Description: fn.Description,
+				// toolchains are exposed as a function, this is the only place we set a
+				// different original module.
+				// other functions can't return a type not defined in the module itself (or core)
+				// so the original module is always the parent one in other cases
+				OriginalModule: originalModule(node, fn.Name),
+				Type:           fn.ReturnType,
+				IsCheck:        fn.IsCheck,
+				IsGenerator:    fn.IsGenerator,
+				Description:    fn.Description,
 			})
 			// if the type returned by the function is an object, check the children of the return type
 			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
@@ -570,28 +586,30 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				fn.ReturnType.ToType().Name() != node.Type.Type().Name() {
 				if subObj, ok := node.Module.ObjectByName(fn.ReturnType.ToType().Name()); ok {
 					children = append(children, &ModTreeNode{
-						Parent:      node,
-						Name:        fn.Name, // use the name of the function and not the name of the type as we want the chain
-						DagqlServer: node.DagqlServer,
-						Module:      node.Module,
-						Type:        &TypeDef{AsObject: dagql.NonNull(subObj)},
-						IsCheck:     false,
-						IsGenerator: false,
-						Description: subObj.Description,
+						Parent:         node,
+						Name:           fn.Name, // use the name of the function and not the name of the type as we want the chain
+						DagqlServer:    node.DagqlServer,
+						Module:         node.Module,
+						OriginalModule: node.OriginalModule,
+						Type:           &TypeDef{AsObject: dagql.NonNull(subObj)},
+						IsCheck:        false,
+						IsGenerator:    false,
+						Description:    subObj.Description,
 					})
 				}
 			}
 		}
 		for _, field := range objType.Fields {
 			children = append(children, &ModTreeNode{
-				Parent:      node,
-				Name:        field.Name,
-				DagqlServer: node.DagqlServer,
-				Module:      node.Module,
-				Type:        field.TypeDef,
-				IsCheck:     false,
-				IsGenerator: false,
-				Description: field.Description,
+				Parent:         node,
+				Name:           field.Name,
+				DagqlServer:    node.DagqlServer,
+				Module:         node.Module,
+				OriginalModule: node.OriginalModule,
+				Type:           field.TypeDef,
+				IsCheck:        false,
+				IsGenerator:    false,
+				Description:    field.Description,
 			})
 		}
 	}

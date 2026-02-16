@@ -47,6 +47,15 @@ class Check extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The original module in which the check has been defined
+     */
+    public function originalModule(): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Whether the check passed
      */
     public function passed(): bool
