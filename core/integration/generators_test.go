@@ -28,6 +28,7 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 		{"go", "hello-with-generators"},
 		{"typescript", "hello-with-generators-ts"},
 		{"python", "hello-with-generators-py"},
+		{"java", "hello-with-generators-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			modGen, err := generatorsTestEnv(t, c)
@@ -122,6 +123,7 @@ func (GeneratorsSuite) TestGeneratorsAsBlueprint(ctx context.Context, t *testctx
 		{"go", "hello-with-generators"},
 		{"typescript", "hello-with-generators-ts"},
 		{"python", "hello-with-generators-py"},
+		{"java", "hello-with-generators-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			modGen, err := generatorsTestEnv(t, c)
@@ -174,6 +176,7 @@ func (GeneratorsSuite) TestGeneratorsAsToolchain(ctx context.Context, t *testctx
 		{"go", "hello-with-generators"},
 		{"typescript", "hello-with-generators-ts"},
 		{"python", "hello-with-generators-py"},
+		{"java", "hello-with-generators-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			modGen, err := generatorsTestEnv(t, c)
