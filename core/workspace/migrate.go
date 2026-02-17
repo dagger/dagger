@@ -309,21 +309,20 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 		warningsByTC[w.toolchain] = append(warningsByTC[w.toolchain], w)
 	}
 
-	needsBlank := false
+	b.WriteString("[modules]\n")
 
 	// Project module entry (if there is an SDK)
 	if cfg.SDK != nil && cfg.SDK.Source != "" {
+		b.WriteString("\n")
 		fmt.Fprintf(&b, "[modules.%s]\n", cfg.Name)
 		fmt.Fprintf(&b, "source = \"modules/%s\"\n", cfg.Name)
 		b.WriteString("alias = true\n")
-		needsBlank = true
 	}
 
 	// Toolchain entries
 	for _, tc := range cfg.Toolchains {
-		if needsBlank {
-			b.WriteString("\n")
-		}
+		b.WriteString("\n")
+
 		// Add warning comments before the section header
 		for _, w := range warningsByTC[tc.Name] {
 			b.WriteString(w.tomlComment())
@@ -365,7 +364,6 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 				b.WriteString(line)
 			}
 		}
-		needsBlank = true
 	}
 
 	return b.String()
