@@ -1593,6 +1593,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			if data, readErr := readFile(ctx, cfgPath); readErr == nil {
 				legacyToolchains, _ = workspace.ParseLegacyToolchains(data)
 			}
+			slog.Warn("Inferring workspace configuration from legacy module config. Run 'dagger migrate' soon.",
+				"config", cfgPath)
+		} else {
+			wsDir := filepath.Join(ws.Root, ws.Path)
+			slog.Info("No workspace configured.", "path", wsDir)
 		}
 	}
 

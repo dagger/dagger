@@ -216,7 +216,7 @@ Warnings  Migrate cmd |
   CWD module check loads dagger.json modules unconditionally. Remove `handleMigration()`
   from `session.go`.
 
-- [ ] **#4: Add workspace loading warnings** (blocked by #3) — Emit info/warn messages
+- [x] **#4: Add workspace loading warnings** (blocked by #3) — Emit info/warn messages
   based on workspace detection state. No `.dagger/` + no dagger.json = info. No
   `.dagger/` + dagger.json = warn with migrate nudge.
 
