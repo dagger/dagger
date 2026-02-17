@@ -8,8 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/util/parallel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // MigrationIO abstracts host file operations needed for migration.
@@ -184,20 +187,30 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 		result.ToolchainCount++
 	}
 
-	// 3c. Introspect constructor args for config hints
+	// 3c. Introspect constructor args for config hints (in parallel)
 	var allHints map[string][]ConstructorArgHint
 	if introspect != nil {
 		allHints = make(map[string][]ConstructorArgHint)
+		var mu sync.Mutex
+		jobs := parallel.New().WithContextualTracer(true)
 		for _, tc := range cfg.Toolchains {
-			hints, err := introspect(ctx, tc.Source)
-			if err != nil {
-				slog.Warn("could not introspect constructor args for config hints",
-					"toolchain", tc.Name, "error", err)
-				continue
-			}
-			if len(hints) > 0 {
-				allHints[tc.Name] = hints
-			}
+			jobs = jobs.WithJob(fmt.Sprintf("introspecting %s", tc.Source), func(ctx context.Context) error {
+				hints, err := introspect(ctx, tc.Source)
+				if err != nil {
+					slog.Warn("could not introspect constructor args for config hints",
+						"toolchain", tc.Name, "error", err)
+					return nil
+				}
+				if len(hints) > 0 {
+					mu.Lock()
+					allHints[tc.Name] = hints
+					mu.Unlock()
+				}
+				return nil
+			}, attribute.String("toolchain.ref", tc.Source))
+		}
+		if err := jobs.Run(ctx); err != nil {
+			return nil, fmt.Errorf("introspecting toolchains: %w", err)
 		}
 	}
 

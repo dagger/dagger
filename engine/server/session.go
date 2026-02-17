@@ -1550,7 +1550,7 @@ type pendingModule struct {
 	DisableFindUp bool
 
 	// Workspace config defaults to apply to the module.
-	ConfigDefaults   map[string]any
+	ConfigDefaults     map[string]any
 	DefaultsFromDotEnv bool
 }
 
@@ -1753,11 +1753,10 @@ func (srv *Server) handleMigration(ctx context.Context, client *daggerClient, de
 	stdio := telemetry.SpanStdio(migCtx, InstrumentationLibrary)
 	defer stdio.Close()
 
-	// Wrap introspector to create per-toolchain sub-spans.
 	introspect := workspace.ConstructorIntrospector(func(ctx context.Context, ref string) (_ []workspace.ConstructorArgHint, tcErr error) {
-		ctx, tcSpan := tracer.Start(ctx, fmt.Sprintf("introspecting %s", ref),
-			trace.WithAttributes(attribute.String("toolchain.ref", ref)))
-		defer telemetry.EndWithCause(tcSpan, &tcErr)
+		// ensure error is raised to the span
+		span := trace.SpanFromContext(ctx)
+		defer telemetry.EndWithCause(span, &tcErr)
 		return schema.IntrospectConstructorArgs(ctx, client.dag, ref)
 	})
 
