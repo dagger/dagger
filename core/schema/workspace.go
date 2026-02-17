@@ -20,7 +20,7 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.Func("workspace", s.workspace).
+		dagql.Func("currentWorkspace", s.currentWorkspace).
 			Doc("Detect and return the current workspace.").
 			Args(
 				dagql.Arg("skipMigrationCheck").Doc("If true, skip legacy dagger.json migration checks."),
@@ -53,7 +53,7 @@ type workspaceArgs struct {
 	SkipMigrationCheck bool `default:"false"`
 }
 
-func (s *workspaceSchema) workspace(
+func (s *workspaceSchema) currentWorkspace(
 	ctx context.Context,
 	parent *core.Query,
 	args workspaceArgs,
