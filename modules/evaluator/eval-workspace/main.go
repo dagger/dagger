@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"dagger/workspace/internal/dagger"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -19,9 +18,11 @@ import (
 	"time"
 
 	"dagger.io/dagger/telemetry"
+
+	"dagger/workspace/internal/dagger"
 )
 
-type Workspace struct {
+type EvalWorkspace struct {
 	// +private
 	Model string
 
@@ -59,26 +60,26 @@ var testedModels = []string{
 }
 
 // Set the system prompt for future evaluations.
-func (w *Workspace) WithoutDefaultSystemPrompt() *Workspace {
+func (w *EvalWorkspace) WithoutDefaultSystemPrompt() *EvalWorkspace {
 	w.DisableDefaultSystemPrompt = true
 	return w
 }
 
 // Set the system prompt for future evaluations.
-func (w *Workspace) WithSystemPrompt(
+func (w *EvalWorkspace) WithSystemPrompt(
 	// The system prompt to use for evaluations.
 	prompt string,
-) *Workspace {
+) *EvalWorkspace {
 	w.SystemPrompt = prompt
 	return w
 }
 
 // Set the system prompt for future evaluations.
-func (w *Workspace) WithSystemPromptFile(
+func (w *EvalWorkspace) WithSystemPromptFile(
 	ctx context.Context,
 	// The file containing the system prompt to use.
 	file *dagger.File,
-) (*Workspace, error) {
+) (*EvalWorkspace, error) {
 	content, err := file.Contents(ctx)
 	if err != nil {
 		return nil, err
@@ -90,34 +91,34 @@ func (w *Workspace) WithSystemPromptFile(
 // Backoff sleeps for the given duration in seconds.
 //
 // Use this if you're getting rate limited and have nothing better to do.
-func (w *Workspace) Backoff(
+func (w *EvalWorkspace) Backoff(
 	// Number of seconds to sleep.
 	seconds int,
-) *Workspace {
+) *EvalWorkspace {
 	time.Sleep(time.Duration(seconds) * time.Second)
 	return w
 }
 
 // Register an eval to perform.
-func (w *Workspace) WithEval(
+func (w *EvalWorkspace) WithEval(
 	// The evaluation to add to the workspace.
 	eval Eval,
-) *Workspace {
+) *EvalWorkspace {
 	w.Evals = append(w.Evals, eval)
 	return w
 }
 
 // Register evals to perform.
-func (w *Workspace) WithEvals(
+func (w *EvalWorkspace) WithEvals(
 	// The list of evaluations to add to the workspace.
 	evals []Eval,
-) *Workspace {
+) *EvalWorkspace {
 	w.Evals = append(w.Evals, evals...)
 	return w
 }
 
 // The list of possible evals you can run.
-func (w *Workspace) EvalNames(ctx context.Context) ([]string, error) {
+func (w *EvalWorkspace) EvalNames(ctx context.Context) ([]string, error) {
 	var names []string
 	for _, eval := range w.Evals {
 		name, err := eval.Name(ctx)
@@ -131,22 +132,22 @@ func (w *Workspace) EvalNames(ctx context.Context) ([]string, error) {
 }
 
 // The list of models that you can run evaluations against.
-func (w *Workspace) KnownModels() []string {
+func (w *EvalWorkspace) KnownModels() []string {
 	return testedModels
 }
 
 // Record an interesting finding after performing evaluations.
-func (w *Workspace) WithFinding(
+func (w *EvalWorkspace) WithFinding(
 	// The finding or observation to record.
 	finding string,
-) *Workspace {
+) *EvalWorkspace {
 	w.Findings = append(w.Findings, finding)
 	return w
 }
 
 // defaultAttempts configures a sane(?) default number of attempts to run for
 // each provider.
-func (*Workspace) defaultAttempts(provider string) int {
+func (*EvalWorkspace) defaultAttempts(provider string) int {
 	switch strings.ToLower(provider) {
 	case "google":
 		// Gemini has no token usage limit, just an API rate limit.
@@ -176,7 +177,7 @@ type AttemptsReport struct {
 }
 
 // Run an evaluation and return its report.
-func (w *Workspace) Evaluate(
+func (w *EvalWorkspace) Evaluate(
 	ctx context.Context,
 	// The evaluation to run. For a list of possible values, call evalNames.
 	name string,
@@ -340,7 +341,7 @@ func (w *Workspace) Evaluate(
 }
 
 // baseLLM configures a base LLM instance with the workspace's settings.
-func (w *Workspace) baseLLM(base *dagger.LLM, modelOverride string) *dagger.LLM {
+func (w *EvalWorkspace) baseLLM(base *dagger.LLM, modelOverride string) *dagger.LLM {
 	if base == nil {
 		base = dag.LLM()
 	}
