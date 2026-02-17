@@ -11595,6 +11595,10 @@ class Client(Root):
     ) -> "Workspace":
         """Detect and return the current workspace.
 
+        .. caution::
+            Experimental: Highly experimental API extracted from a more
+            ambitious workspace implementation.
+
         Parameters
         ----------
         skip_migration_check:

@@ -11509,6 +11509,7 @@ export class Client extends BaseClient {
   /**
    * Detect and return the current workspace.
    * @param opts.skipMigrationCheck If true, skip legacy dagger.json migration checks.
+   * @experimental
    */
   currentWorkspace = (opts?: ClientCurrentWorkspaceOpts): Workspace => {
     const ctx = this._ctx.select("currentWorkspace", { ...opts })

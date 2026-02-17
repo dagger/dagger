@@ -105,6 +105,8 @@ func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
 }
 
 // Detect and return the current workspace.
+//
+// Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
 func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
 	client := initClient()
 	return client.CurrentWorkspace(opts...)

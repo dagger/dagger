@@ -4676,7 +4676,7 @@ type Query {
   currentWorkspace(
     """If true, skip legacy dagger.json migration checks."""
     skipMigrationCheck: Boolean = false
-  ): Workspace!
+  ): Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
 
   """The default platform of the engine."""
   defaultPlatform: Platform!

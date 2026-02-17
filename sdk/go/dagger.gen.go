@@ -11424,6 +11424,8 @@ type CurrentWorkspaceOpts struct {
 }
 
 // Detect and return the current workspace.
+//
+// Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
 func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
 	q := r.query.Select("currentWorkspace")
 	for i := len(opts) - 1; i >= 0; i-- {
