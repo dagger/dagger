@@ -4,9 +4,10 @@ package main
 
 import (
 	"context"
-	"dagger/nested-context-middle/internal/dagger"
 	"fmt"
 	"strings"
+
+	"dagger/nested-context-middle/internal/dagger"
 )
 
 type NestedContextMiddle struct {
@@ -23,7 +24,7 @@ func New(
 }
 
 // Update the content of the marker file.
-func (m *NestedContextMiddle) UpdateMarker(ctx context.Context, value string) *dagger.Changeset {
+func (m *NestedContextMiddle) UpdateMarker(value string) *dagger.Changeset {
 	return m.Source.
 		// make a non-telegraphed tweak to the marker to ensure the LLM doesn't just
 		// hallucinate it
