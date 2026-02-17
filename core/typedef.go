@@ -128,12 +128,6 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 
 		argTypeDef := modType.TypeDef()
 
-		// Workspace arguments are always optional, regardless of how they're declared in code.
-		// They are automatically injected when not explicitly set.
-		if arg.IsWorkspace() {
-			argTypeDef = argTypeDef.WithOptional(true)
-		}
-
 		input := argTypeDef.ToInput()
 		var defaultVal dagql.Input
 		if arg.DefaultValue != nil {
@@ -223,6 +217,11 @@ func (fn *Function) WithGenerator() *Function {
 
 func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore []string, sourceMap *SourceMap, deprecated *string) *Function {
 	fn = fn.Clone()
+	// Workspace arguments are always optional — they're automatically injected
+	// by the engine when not explicitly set by the caller.
+	if typeDef.Kind == TypeDefKindObject && typeDef.AsObject.Value.Name == "Workspace" {
+		typeDef = typeDef.WithOptional(true)
+	}
 	arg := &FunctionArg{
 		Name:           strcase.ToLowerCamel(name),
 		Description:    desc,
