@@ -14,13 +14,14 @@ import (
 )
 
 func New(
-	// The dagger helm chart directory
+	ws *dagger.Workspace,
+	// Path to the helm chart directory in the workspace
 	// +optional
-	// +defaultPath="/helm/dagger"
-	chart *dagger.Directory,
+	// +default="helm/dagger"
+	chartPath string,
 ) *HelmDev {
 	return &HelmDev{
-		Chart: chart,
+		Chart: ws.Directory(chartPath),
 	}
 }
 
