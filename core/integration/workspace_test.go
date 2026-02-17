@@ -48,6 +48,71 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 	}
 }
 
+// TestWorkspaceFindUp verifies that Workspace.findUp searches up from the
+// start path and stops at the workspace root.
+func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("root.txt", "at root").
+		WithNewFile("a/target.txt", "in a").
+		WithNewFile("a/b/other.txt", "in a/b").
+		WithExec([]string{"mkdir", "-p", "a/b/c"}).
+		WithNewFile("a/b/c/leaf.txt", "leaf").
+		WithExec([]string{"mkdir", "-p", "a/somedir"}).
+		WithNewFile("a/somedir/hi.txt", "hi").
+		With(initDangModule("finder", `
+type Finder {
+  pub ws: Workspace!
+
+  new(ws: Workspace!) {
+    self.ws = ws
+    self
+  }
+
+  pub find(name: String!, start: String!): String! {
+    ws.findUp(name: name, start: start) ?? ""
+  }
+}
+`))
+
+	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "find", "--name=other.txt", "--from=a/b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a/b/other.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "find", "--name=target.txt", "--from=a/b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a/target.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("find file at workspace root", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "find", "--name=root.txt", "--from=a/b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "root.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("find directory in parent", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "find", "--name=somedir", "--from=a/b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a/somedir", strings.TrimSpace(out))
+	})
+
+	t.Run("do not find file in child directory", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "find", "--name=leaf.txt", "--from=a/b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+
+	t.Run("do not find non-existent file", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "find", "--name=nonexistent.txt", "--from=a/b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+}
+
 // TestWorkspaceArg verifies that a module function accepting a Workspace
 // argument can access the host filesystem.
 func (WorkspaceSuite) TestWorkspaceArg(ctx context.Context, t *testctx.T) {

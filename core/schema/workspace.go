@@ -48,6 +48,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
 			),
+		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CacheAsRequested).
+			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
+				`Returns the path relative to the workspace root if found, or null if not found.`,
+				`The search stops at the workspace root and will not traverse above it.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
+				dagql.Arg("from").Doc(`Path to start the search from, relative to the workspace root.`),
+			),
 		dagql.Func("install", s.install).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Install a module into the workspace, writing config.toml to the host.").
@@ -230,6 +238,72 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	return inst, nil
+}
+
+type workspaceFindUpArgs struct {
+	Name string
+	From string `default:"."`
+}
+
+func (workspaceFindUpArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFindUpArgs) (dagql.Nullable[dagql.String], error) {
+	none := dagql.Null[dagql.String]()
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return none, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return none, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return none, fmt.Errorf("buildkit: %w", err)
+	}
+
+	// Resolve start path relative to workspace root
+	absStart, err := resolveWorkspacePath(args.From, ws.Root)
+	if err != nil {
+		return none, err
+	}
+
+	statFS := core.NewCallerStatFS(bk)
+	cleanRoot := filepath.Clean(ws.Root)
+
+	// Walk up from absStart, stopping at workspace root
+	curDir := absStart
+	for {
+		candidate := filepath.Join(curDir, args.Name)
+		_, _, err := statFS.Stat(ctx, candidate)
+		if err == nil {
+			// Found it — return path relative to workspace root
+			relPath, err := filepath.Rel(cleanRoot, candidate)
+			if err != nil {
+				return none, fmt.Errorf("compute relative path: %w", err)
+			}
+			return dagql.NonNull(dagql.NewString(relPath)), nil
+		}
+
+		// Stop at workspace root
+		if filepath.Clean(curDir) == cleanRoot {
+			break
+		}
+
+		nextDir := filepath.Dir(curDir)
+		if nextDir == curDir {
+			// hit filesystem root (shouldn't happen since we check workspace root first)
+			break
+		}
+		curDir = nextDir
+	}
+
+	return none, nil
 }
 
 // resolveWorkspacePath resolves a path relative to the workspace root.
