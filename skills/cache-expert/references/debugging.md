@@ -79,9 +79,9 @@ dagger --progress=plain call engine-dev --source 'https://github.com/dagger/dagg
 
 Do not run multiple suites in parallel unless necessary; each suite is CPU-heavy and concurrent runs significantly degrade performance.
 
-Avoid broad `./...` when debugging cache; use focused package/test slices.
+DO NOT EVER USE broad `./...` WHEN RUNNING TESTS AS YOU WILL ACCIDENTALLY CAPTURE INTEGRATION TESTS OR OTHER TESTS YOU DID NOT MEAN TO RUN.
 
-`./dagql/idtui` and `./dagql/idtui/multiprefixw` are integration-style test packages (not quick unit loops). Avoid running them during tight cache-debug cycles unless you explicitly need those integration paths.
+`./core/integration`, `./dagql/idtui` and `./dagql/idtui/multiprefixw` are integration-style test packages (not quick unit loops). Avoid running them during tight cache-debug cycles unless you explicitly need those integration paths.
 
 ## Metrics-First Leak Triage
 

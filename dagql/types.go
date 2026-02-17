@@ -102,7 +102,6 @@ type AnyResult interface {
 	WithContentDigestAny(digest.Digest) AnyResult
 
 	HitCache() bool
-	HitContentDigestCache() bool
 	Release(context.Context) error
 }
 

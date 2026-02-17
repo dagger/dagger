@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -104,147 +103,6 @@ func ctxWithStorageKey(ctx context.Context, key string) context.Context {
 }
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
-
-const (
-	// Enable concise cache lookup tracing. Pair this with focused path filters below.
-	cacheLookupTraceEnabled = false
-	// Enable high-volume per-hit/per-candidate tracing for short-lived deep dives only.
-	cacheLookupVerboseTraceEnabled = false
-)
-
-var cacheLookupTracePathContains = []string{
-	// Add focused path substrings temporarily while debugging.
-	// Example: "Container.from"
-}
-
-func shouldTraceCacheFlow(id *call.ID) bool {
-	if !cacheLookupTraceEnabled {
-		return false
-	}
-	if id == nil || len(cacheLookupTracePathContains) == 0 {
-		return false
-	}
-	path := id.Path()
-	for _, needle := range cacheLookupTracePathContains {
-		if needle != "" && strings.Contains(path, needle) {
-			return true
-		}
-	}
-	return false
-}
-
-func shouldTraceCacheFlowVerbose(id *call.ID) bool {
-	return cacheLookupVerboseTraceEnabled && shouldTraceCacheFlow(id)
-}
-
-type cacheLookupRejectReason string
-
-const (
-	cacheLookupRejectReasonNone                  cacheLookupRejectReason = ""
-	cacheLookupRejectReasonTTLStorageKeyMismatch cacheLookupRejectReason = "ttl-storage-key-mismatch"
-)
-
-type cacheLookupDecision struct {
-	accepted           bool
-	rejectReason       cacheLookupRejectReason
-	ttlMismatchAllowed bool
-}
-
-type lookupRejectSummary struct {
-	ttlMismatchAllowed         int
-	rejectedTTLStorageMismatch int
-	rejectedOther              int
-}
-
-func evaluateCacheLookupCandidate(
-	requestTTL int64,
-	requestNow int64,
-	requestStorageKey string,
-	requestSessionID string,
-	res *sharedResult,
-) cacheLookupDecision {
-	if res == nil {
-		return cacheLookupDecision{
-			accepted:     false,
-			rejectReason: cacheLookupRejectReasonNone,
-		}
-	}
-
-	if requestTTL == 0 {
-		return cacheLookupDecision{
-			accepted:     true,
-			rejectReason: cacheLookupRejectReasonNone,
-		}
-	}
-	if res.storageKey == requestStorageKey {
-		return cacheLookupDecision{
-			accepted:     true,
-			rejectReason: cacheLookupRejectReasonNone,
-		}
-	}
-	if !res.safeToPersistCache {
-		// Non-persistable entries (e.g. secret-dependent call results) may need
-		// storage-key mismatch reuse within a session, but must not bleed across
-		// sessions.
-		if requestSessionID != "" && res.sessionID != "" && requestSessionID != res.sessionID {
-			return cacheLookupDecision{
-				accepted:     false,
-				rejectReason: cacheLookupRejectReasonTTLStorageKeyMismatch,
-			}
-		}
-		return cacheLookupDecision{
-			accepted:           true,
-			rejectReason:       cacheLookupRejectReasonNone,
-			ttlMismatchAllowed: true,
-		}
-	}
-	// Equivalent hits (from call-term/output-witness evidence) may come from a
-	// different storage-key version; allow that reuse as long as the candidate
-	// entry is still within its TTL window.
-	if requestNow != 0 && res.expiration != 0 && res.expiration >= requestNow {
-		return cacheLookupDecision{
-			accepted:           true,
-			rejectReason:       cacheLookupRejectReasonNone,
-			ttlMismatchAllowed: true,
-		}
-	}
-	return cacheLookupDecision{
-		accepted:     false,
-		rejectReason: cacheLookupRejectReasonTTLStorageKeyMismatch,
-	}
-}
-
-// withExtraDigests preserves the caller's ID shape while carrying over
-// additional digest facts.
-func withExtraDigests(baseID *call.ID, extras []call.ExtraDigest) *call.ID {
-	if baseID == nil {
-		return nil
-	}
-	if len(extras) == 0 {
-		return baseID
-	}
-	id := baseID
-	for _, extra := range extras {
-		if extra.Digest == "" {
-			continue
-		}
-		id = id.With(call.WithExtraDigest(extra))
-	}
-	return id
-}
-
-type cacheHitKind uint8
-
-const (
-	cacheHitKindStorage cacheHitKind = iota
-	cacheHitKindEquivalent
-)
-
-// resultIDForRequest returns the caller-facing ID by preserving request recipe
-// shape and mixing in learned output-equivalence digests.
-func resultIDForRequest(requestID *call.ID, outputExtraDigests []call.ExtraDigest) *call.ID {
-	return withExtraDigests(requestID, outputExtraDigests)
-}
 
 func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 	c := &cache{}
@@ -342,7 +200,6 @@ type sharedResult struct {
 
 	storageKey          string              // persistent cache storage key for this result
 	callConcurrencyKeys callConcurrencyKeys // key to cache.ongoingCalls
-	sessionID           string              // originating client session ID (if available)
 	expiration          int64               // unix timestamp for ttl-based entries (0 means no ttl)
 
 	// Immutable payload shared by all per-call Result values.
@@ -417,8 +274,7 @@ type Result[T Typed] struct {
 	id *call.ID
 
 	// per-call fields
-	hitCache              bool
-	hitContentDigestCache bool
+	hitCache bool
 }
 
 var _ AnyResult = Result[Typed]{}
@@ -579,10 +435,6 @@ func (r Result[T]) HitCache() bool {
 	return r.hitCache
 }
 
-func (r Result[T]) HitContentDigestCache() bool {
-	return r.hitContentDigestCache
-}
-
 func (r Result[T]) Release(ctx context.Context) error {
 	if r.shared == nil {
 		// malformed result, nothing to do
@@ -685,53 +537,6 @@ type cacheValueResult interface {
 type cacheContextKey struct {
 	key   string
 	cache *cache
-}
-
-type trackNilResultCtxKey struct{}
-
-func withTrackNilResult(ctx context.Context) context.Context {
-	return context.WithValue(ctx, trackNilResultCtxKey{}, struct{}{})
-}
-
-func shouldTrackNilResult(ctx context.Context) bool {
-	return ctx.Value(trackNilResultCtxKey{}) != nil
-}
-
-func materializeCacheHitResult(
-	ctx context.Context,
-	res *sharedResult,
-	id *call.ID,
-	hitCache bool,
-	hitContentDigestCache bool,
-	objectReconstructErrPrefix string,
-) (AnyResult, error) {
-	if !res.hasValue {
-		if shouldTrackNilResult(ctx) {
-			return Result[Typed]{
-				shared:                res,
-				id:                    id,
-				hitCache:              hitCache,
-				hitContentDigestCache: hitContentDigestCache,
-			}, nil
-		}
-		return nil, nil
-	}
-
-	retRes := Result[Typed]{
-		shared:                res,
-		id:                    id,
-		hitCache:              hitCache,
-		hitContentDigestCache: hitContentDigestCache,
-	}
-	if res.objType == nil {
-		return retRes, nil
-	}
-
-	retObjRes, err := res.objType.New(retRes)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", objectReconstructErrPrefix, err)
-	}
-	return retObjRes, nil
 }
 
 func (c *cache) GCLoop(ctx context.Context) {
@@ -919,62 +724,22 @@ func (c *cache) GetOrInitCall(
 
 	ctx = ctxWithStorageKey(ctx, storageKey)
 
-	requestSessionID := ""
-	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		requestSessionID = md.SessionID
-	}
-
 	if ctx.Value(cacheContextKey{storageKey, c}) != nil {
 		return nil, ErrCacheRecursiveCall
-	}
-
-	/*
-		Derive the structural term used for e-graph lookup.
-
-		We always attempt to derive self digest + input digests from the request ID.
-		(self digest + input digests). If derivation fails, we fail fast because
-		equivalence matching would be unsafe.
-	*/
-	lookupSelfDigest, lookupInputDigests, err := key.ID.SelfDigestAndInputs()
-	if err != nil {
-		return nil, fmt.Errorf("derive call term: %w", err)
 	}
 
 	c.mu.Lock()
 	if c.ongoingCalls == nil {
 		c.ongoingCalls = make(map[callConcurrencyKeys]*sharedResult)
 	}
-	requestNow := int64(0)
-	if key.TTL != 0 {
-		requestNow = time.Now().Unix()
-	}
-	hitTerm, rejectSummary := c.lookupResultByTermLocked(
-		lookupSelfDigest,
-		lookupInputDigests,
-		storageKey,
-		key.TTL,
-		requestNow,
-		requestSessionID,
-	)
-	if hitTerm != nil {
-		res := hitTerm.result
-		res.refCount++
-		c.mergeRequestIntoHitLocked(key.ID, hitTerm)
+	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID)
+	if err != nil {
 		c.mu.Unlock()
-
-		hitKind := cacheHitKindEquivalent
-		if res.storageKey == storageKey {
-			hitKind = cacheHitKindStorage
-		}
-		retID := resultIDForRequest(key.ID, hitTerm.outputExtraDigests)
-		return materializeCacheHitResult(
-			ctx,
-			res,
-			retID,
-			true,
-			hitKind == cacheHitKindEquivalent,
-			"reconstruct structural-hit object result from cache",
-		)
+		return nil, err
+	}
+	if hit {
+		c.mu.Unlock()
+		return hitRes, nil
 	}
 
 	if key.ConcurrencyKey != "" {
@@ -994,7 +759,6 @@ func (c *cache) GetOrInitCall(
 
 		storageKey:          storageKey,
 		callConcurrencyKeys: callConcKeys,
-		sessionID:           requestSessionID,
 		expiration:          storageExpiration,
 
 		persistToDB: persistToDB,
@@ -1006,18 +770,6 @@ func (c *cache) GetOrInitCall(
 
 	if key.ConcurrencyKey != "" {
 		c.ongoingCalls[callConcKeys] = res
-	}
-	if shouldTraceCacheFlow(key.ID) {
-		slog.Info("cache trace miss",
-			"requestPath", key.ID.Path(),
-			"requestDigest", key.ID.Digest(),
-			"storageKey", storageKey,
-			"concurrencyKey", key.ConcurrencyKey,
-			"lookupInputCount", len(lookupInputDigests),
-			"rejectedTTLStorageKeyMismatch", rejectSummary.rejectedTTLStorageMismatch,
-			"rejectedOther", rejectSummary.rejectedOther,
-			"ttlStorageKeyMismatchAllowed", rejectSummary.ttlMismatchAllowed,
-		)
 	}
 
 	go func() {
@@ -1098,7 +850,15 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, requestID *call.ID,
 		c.indexResultInEgraphLocked(requestID, res)
 
 		res.refCount++
-		retID := resultIDForRequest(requestID, res.outputExtraDigests)
+		retID := requestID
+		if retID != nil {
+			for _, extra := range res.outputExtraDigests {
+				if extra.Digest == "" {
+					continue
+				}
+				retID = retID.With(call.WithExtraDigest(extra))
+			}
+		}
 		c.mu.Unlock()
 
 		if isFirstCaller && res.persistToDB != nil && safeToPersistCache {
@@ -1111,35 +871,26 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, requestID *call.ID,
 		if isFirstCaller {
 			hitCache = false
 		}
-		return materializeCacheHitResult(
-			ctx,
-			res,
-			retID,
-			hitCache,
-			false,
-			"reconstruct object result from cache wait",
-		)
-	}
-
-	if shouldTraceCacheFlow(requestID) {
-		slog.Info("cache trace wait-error",
-			"requestPath", func() string {
-				if requestID == nil {
-					return ""
-				}
-				return requestID.Path()
-			}(),
-			"requestDigest", func() digest.Digest {
-				if requestID == nil {
-					return ""
-				}
-				return requestID.Digest()
-			}(),
-			"storageKey", res.storageKey,
-			"err", err,
-			"waiters", res.waiters,
-			"refCount", res.refCount,
-		)
+		if !res.hasValue {
+			return Result[Typed]{
+				shared:   res,
+				id:       retID,
+				hitCache: hitCache,
+			}, nil
+		}
+		retRes := Result[Typed]{
+			shared:   res,
+			id:       retID,
+			hitCache: hitCache,
+		}
+		if res.objType == nil {
+			return retRes, nil
+		}
+		retObjRes, err := res.objType.New(retRes)
+		if err != nil {
+			return nil, fmt.Errorf("reconstruct object result from cache wait: %w", err)
+		}
+		return retObjRes, nil
 	}
 
 	if res.refCount == 0 && res.waiters == 0 {

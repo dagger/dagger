@@ -1,6 +1,8 @@
 package dagql
 
 import (
+	"context"
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -37,22 +39,6 @@ func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) stri
 			WithString(strconv.FormatUint(uint64(in), 10))
 	}
 	return h.DigestAndClose()
-}
-
-func (c *cache) resolveTermInputEqIDsLocked(inputDigests []digest.Digest) ([]eqClassID, bool) {
-	inputEqIDs := make([]eqClassID, len(inputDigests))
-	for i, inDig := range inputDigests {
-		classID, ok := c.egraphDigestToClass[inDig.String()]
-		if !ok {
-			return nil, false
-		}
-		root := c.findEqClassLocked(classID)
-		if root == 0 {
-			return nil, false
-		}
-		inputEqIDs[i] = root
-	}
-	return inputEqIDs, true
 }
 
 func (c *cache) ensureTermInputEqIDsLocked(inputDigests []digest.Digest) []eqClassID {
@@ -344,77 +330,95 @@ func (c *cache) repairClassTermsLocked(root eqClassID) (merges []eqMergePair) {
 	return merges
 }
 
-func (c *cache) lookupResultByTermLocked(
-	selfDigest digest.Digest,
-	inputDigests []digest.Digest,
-	requestStorageKey string,
-	requestTTL int64,
-	requestNow int64,
-	requestSessionID string,
-) (*egraphTerm, lookupRejectSummary) {
-	if len(c.egraphTermsByDigest) == 0 {
-		return nil, lookupRejectSummary{}
+// lookupCacheForID checks if the given call ID has an equivalent result in the cache. If so,
+// it returns that result. It may also update the e-graph with a new known digest if this is
+// the first time we've seen this call ID digest resolve to this cached result.
+//
+// This method assumes c.mu is already held by the caller.
+func (c *cache) lookupCacheForID(
+	ctx context.Context,
+	id *call.ID,
+) (AnyResult, bool, error) {
+	// (self digest, input eqSet IDs) are digested to create the "real" cache key we do a lookup on.
+	// Figure those out first.
+	if id == nil {
+		return nil, false, nil
 	}
-
-	inputEqIDs, ok := c.resolveTermInputEqIDsLocked(inputDigests)
-	if !ok {
-		return nil, lookupRejectSummary{}
+	selfDigest, inputDigests, err := id.SelfDigestAndInputs()
+	if err != nil {
+		return nil, false, fmt.Errorf("derive call term: %w", err)
+	}
+	inputEqIDs := make([]eqClassID, len(inputDigests))
+	for i, inDig := range inputDigests {
+		classID, ok := c.egraphDigestToClass[inDig.String()]
+		if !ok {
+			return nil, false, nil
+		}
+		root := c.findEqClassLocked(classID)
+		if root == 0 {
+			return nil, false, nil
+		}
+		inputEqIDs[i] = root
 	}
 	termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
+
+	// Lookup whether we have a cache hit
 	termSet := c.egraphTermsByDigest[termDigest]
 	if len(termSet) == 0 {
-		return nil, lookupRejectSummary{}
+		return nil, false, nil
 	}
-
-	var preferred *egraphTerm
-	var fallback *egraphTerm
-	rejectSummary := lookupRejectSummary{}
+	var hitTerm *egraphTerm
 	for termID := range termSet {
 		term := c.egraphTerms[termID]
 		if term == nil || term.result == nil {
 			continue
 		}
+		hitTerm = term
+		break
+	}
+	if hitTerm == nil {
+		// no hit
+		return nil, false, nil
+	}
 
-		decision := evaluateCacheLookupCandidate(
-			requestTTL,
-			requestNow,
-			requestStorageKey,
-			requestSessionID,
-			term.result,
-		)
-		if decision.ttlMismatchAllowed {
-			rejectSummary.ttlMismatchAllowed++
-		}
-		if !decision.accepted {
-			switch decision.rejectReason {
-			case cacheLookupRejectReasonTTLStorageKeyMismatch:
-				// TTL selects a specific storage key version. Equivalent hits found via
-				// egraph evidence must not bypass that version boundary for persistable entries.
-				rejectSummary.rejectedTTLStorageMismatch++
-			default:
-				rejectSummary.rejectedOther++
-			}
+	// We have a cache hit, make sure that the requested ID digest is in the same eq class as the
+	// cached result's output digest, and if not, merge them since we know them now to be equivalent
+	res := hitTerm.result
+	res.refCount++
+
+	// NOTE: we skip id.ExtraDigests() here because we assume that an incoming ID with multiple digests
+	// already has all those digests merged in the e-graph from previous operations.
+	requestEqID := c.ensureEqClassForDigestLocked(id.Digest().String())
+	c.mergeOutputsForTermDigestLocked(termDigest, requestEqID)
+
+	// Materialize caller-facing result preserving request recipe identity.
+	retID := id
+	for _, extra := range hitTerm.outputExtraDigests {
+		if extra.Digest == "" {
 			continue
 		}
-
-		if requestStorageKey != "" && term.result.storageKey == requestStorageKey {
-			if preferred == nil || term.id < preferred.id {
-				preferred = term
-			}
-			continue
-		}
-		if fallback == nil || term.id < fallback.id {
-			fallback = term
-		}
+		retID = retID.With(call.WithExtraDigest(extra))
 	}
-
-	if preferred != nil {
-		return preferred, rejectSummary
+	if !res.hasValue {
+		return Result[Typed]{
+			shared:   res,
+			id:       retID,
+			hitCache: true,
+		}, true, nil
 	}
-	if fallback != nil {
-		return fallback, rejectSummary
+	retRes := Result[Typed]{
+		shared:   res,
+		id:       retID,
+		hitCache: true,
 	}
-	return nil, rejectSummary
+	if res.objType == nil {
+		return retRes, true, nil
+	}
+	retObjRes, err := res.objType.New(retRes)
+	if err != nil {
+		return nil, false, fmt.Errorf("reconstruct structural-hit object result from cache: %w", err)
+	}
+	return retObjRes, true, nil
 }
 
 func (c *cache) resultTermByDigestLocked(res *sharedResult, termDigest string) *egraphTerm {
@@ -581,24 +585,6 @@ func (c *cache) indexResultInEgraphLocked(requestID *call.ID, res *sharedResult)
 			res,
 		)
 	}
-}
-
-func (c *cache) mergeRequestIntoHitLocked(requestID *call.ID, hitTerm *egraphTerm) {
-	if requestID == nil || hitTerm == nil || hitTerm.result == nil {
-		return
-	}
-
-	mergeIDs := []eqClassID{hitTerm.outputEqID}
-	mergeIDs = append(mergeIDs, c.ensureEqClassForDigestLocked(requestID.Digest().String()))
-	for _, extra := range requestID.ExtraDigests() {
-		if extra.Digest == "" {
-			continue
-		}
-		mergeIDs = append(mergeIDs, c.ensureEqClassForDigestLocked(extra.Digest.String()))
-	}
-	root := c.mergeEqClassesLocked(mergeIDs...)
-	hitTerm.outputEqID = root
-	c.indexResultForIDLocked(requestID, root, hitTerm.outputExtraDigests, hitTerm.result)
 }
 
 func (c *cache) removeResultFromEgraphLocked(res *sharedResult) {
