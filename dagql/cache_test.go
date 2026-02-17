@@ -1913,3 +1913,82 @@ func TestEquivalentCandidateSelectionIdentityInvariant(t *testing.T) {
 	assert.NilError(t, f3Res.Release(ctx))
 	assert.Equal(t, 0, c.Size())
 }
+
+func TestExtraDigestLabelIsolation(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sharedBytes := digest.FromString("label-isolation-shared-bytes")
+	sharedA := call.ExtraDigest{Digest: sharedBytes, Label: "label-a"}
+	sharedB := call.ExtraDigest{Digest: sharedBytes, Label: "label-b"}
+	noiseA := call.ExtraDigest{Digest: digest.FromString("label-isolation-noise-a"), Label: "noise-a"}
+	noiseB := call.ExtraDigest{Digest: digest.FromString("label-isolation-noise-b"), Label: "noise-b"}
+	contentA := digest.FromString("label-isolation-content-a")
+	contentB := digest.FromString("label-isolation-content-b")
+
+	f1Key := cacheTestID("label-isolation-f-1")
+	f2Key := cacheTestID("label-isolation-f-2")
+	assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+
+	// Labels differ for the shared digest bytes, while content digests are also
+	// present and intentionally different. This verifies label-only differences
+	// are informational and do not block equivalence/hits.
+	f1Out := f1Key.
+		With(call.WithContentDigest(contentA)).
+		With(call.WithExtraDigest(sharedA)).
+		With(call.WithExtraDigest(noiseA))
+	f2Out := f2Key.
+		With(call.WithContentDigest(contentB)).
+		With(call.WithExtraDigest(sharedB)).
+		With(call.WithExtraDigest(noiseB))
+	assert.Assert(t, contentA != contentB)
+	assert.Equal(t, contentA.String(), f1Out.ContentDigest().String())
+	assert.Equal(t, contentB.String(), f2Out.ContentDigest().String())
+	assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, sharedBytes, sharedA.Label))
+	assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, sharedBytes, sharedB.Label))
+	assert.Assert(t, !cacheTestIDHasExtraDigest(f1Out, sharedBytes, sharedB.Label))
+	assert.Assert(t, !cacheTestIDHasExtraDigest(f2Out, sharedBytes, sharedA.Label))
+
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f1Out, NewInt(501)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !f1Res.HitCache())
+
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f2Out, NewInt(502)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !f2Res.HitCache())
+
+	g1Key := f1Key.Append(Int(0).Type(), "label-isolation-g")
+	g2Key := f2Key.Append(Int(0).Type(), "label-isolation-g")
+	assert.Assert(t, g1Key.Digest() != g2Key.Digest())
+
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(g1Key, NewInt(601)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !g1Res.HitCache())
+
+	g2InitCalls := 0
+	g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		g2InitCalls++
+		return newDetachedResult(g2Key, NewInt(602)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, g2InitCalls)
+	assert.Assert(t, g2Res.HitCache())
+	assert.Equal(t, 601, cacheTestUnwrapInt(t, g2Res))
+	assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
+
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.NilError(t, f2Res.Release(ctx))
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.NilError(t, g2Res.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
