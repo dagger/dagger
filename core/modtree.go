@@ -27,7 +27,7 @@ type ModTreeNode struct {
 	DagqlServer *dagql.Server
 	// This module is the same across all ModTreeNode, this is the root module.
 	Module *Module
-	// This original module is the one in which the node has been defined. Could be one from a toolchain for instance.
+	// This original module is the one in which the node has been defined.
 	OriginalModule *Module
 	Type           *TypeDef
 	IsCheck        bool
@@ -330,14 +330,6 @@ func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, erro
 			return nil, fmt.Errorf("%q: serve core schema: %w", mod.Name(), err)
 		}
 	}
-	// Install toolchains
-	if mod.Toolchains != nil {
-		for _, entry := range mod.Toolchains.Entries() {
-			if err := entry.Module.Install(ctx, srv); err != nil {
-				return nil, fmt.Errorf("%q: serve toolchain module %q: %w", mod.Name(), entry.Module.Name(), err)
-			}
-		}
-	}
 	// Install the main module
 	if err := mod.Install(ctx, srv); err != nil {
 		return nil, fmt.Errorf("%q: serve module: %w", mod.Name(), err)
@@ -554,12 +546,6 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	return nil
 }
 
-func originalModule(parent *ModTreeNode, name string) *Module {
-	if tc, ok := parent.Module.Toolchains.Get(name); ok {
-		return tc.Module
-	}
-	return parent.OriginalModule
-}
 
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
@@ -572,12 +558,8 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Parent:      node,
 				Name:        fn.Name,
 				DagqlServer: node.DagqlServer,
-				Module:      node.Module,
-				// toolchains are exposed as a function, this is the only place we set a
-				// different original module.
-				// other functions can't return a type not defined in the module itself (or core)
-				// so the original module is always the parent one in other cases
-				OriginalModule: originalModule(node, fn.Name),
+				Module:         node.Module,
+				OriginalModule: node.OriginalModule,
 				Type:           fn.ReturnType,
 				IsCheck:        fn.IsCheck,
 				IsGenerator:    fn.IsGenerator,

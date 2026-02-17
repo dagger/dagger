@@ -220,7 +220,7 @@ Warnings  Migrate cmd |
   based on workspace detection state. No `.dagger/` + no dagger.json = info. No
   `.dagger/` + dagger.json = warn with migrate nudge.
 
-- [ ] **#5: Remove toolchain-awareness from module loading** (blocked by #2) — The big
+- [x] **#5: Remove toolchain-awareness from module loading** (blocked by #2) — The big
   cleanup. Remove `ConfigToolchains`, `Toolchains`, `ToolchainRegistry`, `IsToolchain`,
   `integrateToolchains`, `CreateProxyField`, `extractToolchainModules`,
   `applyArgumentConfigToFunction`, `createNoSDKModuleWithToolchains`, toolchain API
@@ -236,3 +236,16 @@ Warnings  Migrate cmd |
   dagger.json with toolchains loads correctly, warnings emitted). Update tests that
   relied on `CheckMigrationTriggers` blocking. Remove tests for deleted toolchain
   code.
+
+### Further simplification opportunities
+
+- [ ] **#8: Simplify `ModuleRelationType` abstraction** — The `ModuleRelationType`
+  enum, `moduleRelationTypeAccessor`, `GetRelatedModules()`, and `SetRelatedModules()`
+  abstraction was designed to share code between dependency and toolchain operations.
+  Now that toolchains are removed, only dependencies remain. This abstraction can be
+  collapsed: replace `GetRelatedModules()`/`SetRelatedModules()` with direct
+  `Dependencies` field access, remove the accessor pattern and enum.
+
+- [ ] **#9: Review `ContextSource` on Module** — The `ContextSource` field on `Module`
+  was used for both toolchain context and blueprint context. With toolchain use removed,
+  review whether this field can be simplified or removed.

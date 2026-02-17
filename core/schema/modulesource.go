@@ -28,7 +28,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -171,24 +170,6 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`Set a blueprint for the module source.`).
 			Args(
 				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
-			),
-
-		dagql.Func("withToolchains", s.moduleSourceWithToolchains).
-			Doc(`Add toolchains to the module source.`).
-			Args(
-				dagql.Arg("toolchains").Doc(`The toolchain modules to add.`),
-			),
-
-		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
-			Doc(`Update one or more toolchains.`).
-			Args(
-				dagql.Arg("toolchains").Doc(`The toolchains to update.`),
-			),
-
-		dagql.Func("withoutToolchains", s.moduleSourceWithoutToolchains).
-			Doc(`Remove the provided toolchains from the module source.`).
-			Args(
-				dagql.Arg("toolchains").Doc(`The toolchains to remove.`),
 			),
 
 		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
@@ -767,24 +748,6 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 			return nil
 		})
 	}
-	// Load toolchains array
-	if len(src.ConfigToolchains) > 0 {
-		jobs = jobs.WithJob("load toolchains", func(ctx context.Context) error {
-			src.Toolchains = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigToolchains))
-			toolchainJobs := parallel.New().WithReveal(false).WithContextualTracer(true)
-			for i, pcfg := range src.ConfigToolchains {
-				toolchainJobs = toolchainJobs.WithJob(pcfg.Name, func(ctx context.Context) error {
-					toolchain, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
-					if err != nil {
-						return fmt.Errorf("failed to resolve toolchain to source: %w", err)
-					}
-					src.Toolchains[i] = toolchain
-					return nil
-				})
-			}
-			return toolchainJobs.Run(ctx)
-		})
-	}
 	return jobs.Run(ctx)
 }
 
@@ -1137,7 +1100,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
 	src.ConfigBlueprint = modCfg.Blueprint
-	src.ConfigToolchains = modCfg.Toolchains
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -1629,7 +1591,7 @@ func (s *moduleSourceSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Contex
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
-// moduleRelationTypeAccessor provides unified access to dependencies or toolchains in a ModuleSource
+// moduleRelationTypeAccessor provides unified access to related modules in a ModuleSource
 type moduleRelationTypeAccessor struct {
 	typ core.ModuleRelationType
 }
@@ -1724,15 +1686,6 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 			if item.Self().SourceRootSubpath != "" {
 				symbolicItemStr += "/" + strings.TrimPrefix(item.Self().SourceRootSubpath, "/")
 			}
-			// This enables toolchains to install multiple versions from the same source
-			// For dependencies, we want to deduplicate by base path (without version) so updates work correctly
-			if accessor.typ == core.ModuleRelationTypeToolchain {
-				if item.Self().Git.Version != "" {
-					symbolicItemStr += "@" + item.Self().Git.Version
-				} else if item.Self().Git.Commit != "" {
-					symbolicItemStr += "@" + item.Self().Git.Commit
-				}
-			}
 		}
 
 		_, isDuplicateSymbolic := symbolicItems[symbolicItemStr]
@@ -1763,7 +1716,7 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 	return finalItems, nil
 }
 
-// moduleSourceUpdateItems processes update requests for items (dependencies or toolchains)
+// moduleSourceUpdateItems processes update requests for items (dependencies)
 func (s *moduleSourceSchema) moduleSourceUpdateItems(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
@@ -1912,7 +1865,7 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 	return newUpdatedArgs, nil
 }
 
-// moduleSourceRemoveItems processes removal requests for items (dependencies or toolchains)
+// moduleSourceRemoveItems processes removal requests for items (dependencies)
 func (s *moduleSourceSchema) moduleSourceRemoveItems(
 	ctx context.Context,
 	parentSrc *core.ModuleSource,
@@ -1922,9 +1875,8 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 	parentSrc = parentSrc.Clone()
 
 	var filteredItems []dagql.ObjectResult[*core.ModuleSource]
-	var filteredConfigItems []*modules.ModuleConfigDependency
 
-	for i, existingItem := range accessor.getItems(parentSrc) {
+	for _, existingItem := range accessor.getItems(parentSrc) {
 		existingName := existingItem.Self().ModuleName
 		var existingSymbolic, existingVersion string
 
@@ -2001,17 +1953,10 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 
 		if keep {
 			filteredItems = append(filteredItems, existingItem)
-			// Keep config items for toolchains
-			if accessor.typ == core.ModuleRelationTypeToolchain && i < len(parentSrc.ConfigToolchains) {
-				filteredConfigItems = append(filteredConfigItems, parentSrc.ConfigToolchains[i])
-			}
 		}
 	}
 
 	accessor.setItems(parentSrc, filteredItems)
-	if accessor.typ == core.ModuleRelationTypeToolchain {
-		parentSrc.ConfigToolchains = filteredConfigItems
-	}
 	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
 }
@@ -2090,119 +2035,6 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	parentSrc.Blueprint = tmpSrc.Dependencies[0]
 
 	return parentSrc, nil
-}
-
-func (s *moduleSourceSchema) moduleSourceWithToolchains(
-	ctx context.Context,
-	parentSrc *core.ModuleSource,
-	args struct {
-		Toolchains []core.ModuleSourceID
-	},
-) (*core.ModuleSource, error) {
-	parentSrc = parentSrc.Clone()
-
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
-	}
-
-	newToolchains, err := collectIDObjectResults(ctx, dag, args.Toolchains)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load module source toolchains from ids: %w", err)
-	}
-
-	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeToolchain}
-
-	// Validate and collect all items (new + existing)
-	allToolchains, err := s.validateAndCollectRelatedModules(parentSrc, newToolchains, accessor)
-	if err != nil {
-		return nil, err
-	}
-
-	// Deduplicate and sort
-	finalToolchains, err := s.deduplicateAndSortItems(allToolchains, accessor)
-	if err != nil {
-		return nil, err
-	}
-
-	accessor.setItems(parentSrc, finalToolchains)
-
-	// Load the config for all toolchains to populate ConfigToolchains
-	// We need to convert each toolchain into a config entry by loading it as a dependency
-	// Also preserve any existing Customizations configuration
-	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
-	for i, toolchain := range finalToolchains {
-		// Load as a dependency to get the proper config format
-		tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
-			Dependencies: []core.ModuleSourceID{dagql.NewID[*core.ModuleSource](toolchain.ID())},
-		}
-		tmpSrc := parentSrc.Clone()
-		tmpSrc.Dependencies = nil
-		tmpSrc, err := s.moduleSourceWithDependencies(ctx, tmpSrc, tmpArgs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load toolchain config: %w", err)
-		}
-		tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load toolchain config: %w", err)
-		}
-		if len(tmpConfig.Dependencies) > 0 {
-			configToolchains[i] = tmpConfig.Dependencies[0]
-
-			// Preserve Customization from the original ConfigToolchains if they exist
-			for _, origToolchain := range parentSrc.ConfigToolchains {
-				if origToolchain.Name == configToolchains[i].Name {
-					configToolchains[i].Customizations = origToolchain.Customizations
-					break
-				}
-			}
-		}
-	}
-	parentSrc.ConfigToolchains = configToolchains
-
-	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
-	return parentSrc, nil
-}
-
-func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
-	ctx context.Context,
-	parentSrc dagql.ObjectResult[*core.ModuleSource],
-	args struct {
-		Toolchains []string
-	},
-) (inst dagql.Result[*core.ModuleSource], _ error) {
-	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeToolchain}
-	newUpdatedArgs, err := s.moduleSourceUpdateItems(ctx, parentSrc, args.Toolchains, accessor)
-	if err != nil {
-		return inst, err
-	}
-
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-
-	err = dag.Select(ctx, parentSrc, &inst,
-		dagql.Selector{
-			Field: "withToolchains",
-			Args: []dagql.NamedInput{{
-				Name:  "toolchains",
-				Value: dagql.ArrayInput[core.ModuleSourceID](newUpdatedArgs),
-			}},
-		},
-	)
-	return inst, err
-}
-
-func (s *moduleSourceSchema) moduleSourceWithoutToolchains(
-	ctx context.Context,
-	parentSrc *core.ModuleSource,
-	args struct {
-		Toolchains []string
-	},
-) (*core.ModuleSource, error) {
-	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeToolchain}
-	return s.moduleSourceRemoveItems(ctx, parentSrc, args.Toolchains, accessor)
 }
 
 func (s *moduleSourceSchema) moduleSourceWithoutBlueprint(
@@ -2379,11 +2211,10 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		}
 	}
 
-	// Copy blueprint and toolchains configuration
+	// Copy blueprint configuration
 	if src.ConfigBlueprint != nil {
 		modCfg.Blueprint = src.ConfigBlueprint
 	}
-	modCfg.Toolchains = src.ConfigToolchains
 
 	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
@@ -3012,17 +2843,11 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	return file, nil
 }
 
-// toolchainContext holds information about toolchain handling for a module
-type toolchainContext struct {
-	originalSrc dagql.ObjectResult[*core.ModuleSource]
-	src         dagql.ObjectResult[*core.ModuleSource]
-}
-
 // createBaseModule creates the initial module structure with dependencies
 func (s *moduleSourceSchema) createBaseModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	tcCtx toolchainContext,
+	originalSrc dagql.ObjectResult[*core.ModuleSource],
 ) (*core.Module, error) {
 	sdk := src.Self().SDK
 	if sdk == nil {
@@ -3031,8 +2856,8 @@ func (s *moduleSourceSchema) createBaseModule(
 
 	mod := &core.Module{
 		Source:                        dagql.NonNull(src),
-		ContextSource:                 dagql.NonNull(tcCtx.originalSrc),
-		NameField:                     tcCtx.originalSrc.Self().ModuleName,
+		ContextSource:                 dagql.NonNull(originalSrc),
+		NameField:                     originalSrc.Self().ModuleName,
 		OriginalName:                  src.Self().ModuleOriginalName,
 		SDKConfig:                     sdk,
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
@@ -3111,457 +2936,6 @@ func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) 
 	return mod, nil
 }
 
-// extractToolchainModules finds all blueprint modules from dependencies
-func extractToolchainModules(mod *core.Module) []*core.Module {
-	var toolchainMods []*core.Module
-	for _, depMod := range mod.Deps.Mods {
-		if userMod, ok := depMod.(*core.Module); ok && userMod.IsToolchain {
-			toolchainMods = append(toolchainMods, userMod)
-		}
-	}
-	return toolchainMods
-}
-
-// applyArgumentConfigToFunction applies argument configuration overrides to a function
-func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.ModuleConfigArgument, functionChain []string) *core.Function {
-	fn = fn.Clone()
-
-	// Apply configs that match the function chain (or empty for constructor)
-	for _, argCfg := range argConfigs {
-		// Check if this config applies to this function
-		// Empty function chain in config means constructor
-		if len(argCfg.Function) == 0 && len(functionChain) == 0 {
-			// This is for the constructor
-		} else if len(argCfg.Function) > 0 && len(functionChain) > 0 {
-			// Check if function chains match
-			if len(argCfg.Function) != len(functionChain) {
-				continue
-			}
-			match := true
-			for i, fnName := range argCfg.Function {
-				if !strings.EqualFold(fnName, functionChain[i]) {
-					match = false
-					break
-				}
-			}
-			if !match {
-				continue
-			}
-		} else {
-			// One is constructor, one is not - skip
-			continue
-		}
-
-		// Find the matching argument and apply overrides
-		for _, arg := range fn.Args {
-			if strings.EqualFold(arg.Name, argCfg.Argument) || strings.EqualFold(arg.OriginalName, argCfg.Argument) {
-				// Apply default value if specified
-				if argCfg.Default != "" {
-					// Parse the default value as JSON to determine its type
-					var defaultValue any
-					if err := json.Unmarshal([]byte(argCfg.Default), &defaultValue); err != nil {
-						// If it's not valid JSON, treat it as a string literal
-						defaultValue = argCfg.Default
-					}
-
-					// Validate the type matches the argument type
-					_, err := arg.TypeDef.ToInput().Decoder().DecodeInput(defaultValue)
-					if err != nil {
-						// Log warning but don't fail - allow for flexibility
-						slog.Warn("default value type mismatch",
-							"function", fn.Name,
-							"argument", arg.Name,
-							"error", err)
-					}
-
-					// Marshal back to JSON for storage
-					marshaledValue, err := json.Marshal(defaultValue)
-					if err != nil {
-						slog.Warn("failed to marshal default value",
-							"function", fn.Name,
-							"argument", arg.Name,
-							"error", err)
-					} else {
-						arg.DefaultValue = core.JSON(marshaledValue)
-					}
-				}
-
-				// Apply defaultPath if specified
-				if argCfg.DefaultPath != "" {
-					arg.DefaultPath = argCfg.DefaultPath
-				}
-
-				// Apply defaultAddress if specified
-				if argCfg.DefaultAddress != "" {
-					arg.DefaultAddress = argCfg.DefaultAddress
-				}
-
-				// Apply ignore patterns if specified
-				if len(argCfg.Ignore) > 0 {
-					arg.Ignore = argCfg.Ignore
-				}
-				break
-			}
-		}
-	}
-
-	return fn
-}
-
-// applyArgumentConfigsToObjectFunctions applies argument configurations to all functions in an object
-func applyArgumentConfigsToObjectFunctions(objDef *core.TypeDef, argConfigs []*modules.ModuleConfigArgument) *core.TypeDef {
-	if !objDef.AsObject.Valid {
-		return objDef
-	}
-
-	objDef = objDef.Clone()
-	obj := objDef.AsObject.Value
-
-	// Apply to constructor if it exists
-	if obj.Constructor.Valid {
-		obj.Constructor.Value = applyArgumentConfigToFunction(obj.Constructor.Value, argConfigs, []string{})
-	}
-
-	// Apply to all regular functions
-	for i, fn := range obj.Functions {
-		// Function chain is just the function's original name for direct functions
-		obj.Functions[i] = applyArgumentConfigToFunction(fn, argConfigs, []string{fn.OriginalName})
-	}
-
-	return objDef
-}
-
-// applyArgumentConfigsToModule applies argument configurations to all functions in a module, including chained functions
-func applyArgumentConfigsToModule(mod *core.Module, argConfigs []*modules.ModuleConfigArgument) {
-	// Group configs by chain length for efficiency
-	directConfigs := []*modules.ModuleConfigArgument{}
-	chainedConfigs := []*modules.ModuleConfigArgument{}
-
-	for _, cfg := range argConfigs {
-		if len(cfg.Function) <= 1 {
-			directConfigs = append(directConfigs, cfg)
-		} else {
-			chainedConfigs = append(chainedConfigs, cfg)
-		}
-	}
-
-	// Apply direct configs (constructor and single-level functions)
-	for objIdx, objDef := range mod.ObjectDefs {
-		mod.ObjectDefs[objIdx] = applyArgumentConfigsToObjectFunctions(objDef, directConfigs)
-	}
-
-	// Apply chained configs
-	for _, cfg := range chainedConfigs {
-		applyChainedArgumentConfig(mod, cfg)
-	}
-}
-
-// applyChainedArgumentConfig applies a configuration to a function in a chain
-func applyChainedArgumentConfig(mod *core.Module, cfg *modules.ModuleConfigArgument) {
-	if len(cfg.Function) < 2 {
-		return // Not a chain
-	}
-
-	// Find the starting object that has the first function in the chain
-	for _, objDef := range mod.ObjectDefs {
-		if !objDef.AsObject.Valid {
-			continue
-		}
-
-		obj := objDef.AsObject.Value
-
-		// Find the first function in the chain
-		firstFn := findFunction(obj, cfg.Function[0])
-		if firstFn == nil {
-			continue
-		}
-
-		// Follow the chain to find the target function
-		targetObj, targetFnIdx := followFunctionChain(mod, firstFn.ReturnType, cfg.Function[1:])
-		if targetObj == nil {
-			continue
-		}
-
-		// Apply the configuration to the target function
-		targetFn := targetObj.Functions[targetFnIdx]
-		updatedFn := applyArgumentConfigToFunction(targetFn, []*modules.ModuleConfigArgument{cfg}, cfg.Function)
-		targetObj.Functions[targetFnIdx] = updatedFn
-	}
-}
-
-// findFunction finds a function by name (case-insensitive) in an object
-func findFunction(obj *core.ObjectTypeDef, name string) *core.Function {
-	for _, fn := range obj.Functions {
-		if strings.EqualFold(fn.OriginalName, name) {
-			return fn
-		}
-	}
-	return nil
-}
-
-// findObjectInModule finds an object in mod.ObjectDefs by OriginalName
-func findObjectInModule(mod *core.Module, originalName string) *core.ObjectTypeDef {
-	for _, objDef := range mod.ObjectDefs {
-		if objDef.AsObject.Valid && objDef.AsObject.Value.OriginalName == originalName {
-			return objDef.AsObject.Value
-		}
-	}
-	return nil
-}
-
-// followFunctionChain traverses a chain of functions through return types
-// Returns the target object and function index if the chain is valid, nil otherwise
-func followFunctionChain(mod *core.Module, startType *core.TypeDef, chain []string) (*core.ObjectTypeDef, int) {
-	currentType := startType
-
-	for i, fnName := range chain {
-		// Unwrap the type to get to the object
-		currentType = unwrapType(currentType)
-		if currentType == nil || !currentType.AsObject.Valid {
-			return nil, -1
-		}
-
-		// Get the actual module object (not the cloned return type instance)
-		obj := findObjectInModule(mod, currentType.AsObject.Value.OriginalName)
-		if obj == nil {
-			return nil, -1
-		}
-
-		// Find the next function in the chain
-		fnIdx := findFunctionIndex(obj, fnName)
-		if fnIdx < 0 {
-			return nil, -1
-		}
-
-		// If this is the last function in the chain, we found our target
-		if i == len(chain)-1 {
-			return obj, fnIdx
-		}
-
-		// Otherwise, continue following the chain
-		currentType = obj.Functions[fnIdx].ReturnType
-	}
-
-	return nil, -1
-}
-
-// unwrapType unwraps optional and list types to get to the underlying type
-func unwrapType(t *core.TypeDef) *core.TypeDef {
-	if t == nil {
-		return nil
-	}
-
-	// Unwrap optional
-	if t.Optional {
-		unwrapped := t.Clone()
-		unwrapped.Optional = false
-		t = unwrapped
-	}
-
-	// Unwrap list
-	if t.AsList.Valid {
-		return unwrapType(t.AsList.Value.ElementTypeDef)
-	}
-
-	return t
-}
-
-// findFunctionIndex finds the index of a function by name (case-insensitive) in an object
-func findFunctionIndex(obj *core.ObjectTypeDef, name string) int {
-	for i, fn := range obj.Functions {
-		if strings.EqualFold(fn.OriginalName, name) {
-			return i
-		}
-	}
-	return -1
-}
-
-// addToolchainFieldsToObject adds toolchain fields/functions to an existing TypeDef
-func addToolchainFieldsToObject(
-	objectDef *core.TypeDef,
-	toolchainMods []*core.Module,
-	mod *core.Module,
-) (*core.TypeDef, error) {
-	objectDef = objectDef.Clone()
-
-	for _, tcMod := range toolchainMods {
-		for _, obj := range tcMod.ObjectDefs {
-			if obj.AsObject.Value.Name == strcase.ToCamel(tcMod.NameField) {
-				// Use the original name (with hyphens) as the map key,
-				// but use camelCase for the GraphQL field name
-				originalName := tcMod.NameField
-				fieldName := strcase.ToLowerCamel(tcMod.NameField)
-
-				// Always add toolchains as functions (treating them as zero-argument constructors
-				// if they don't have an explicit constructor). This ensures consistent behavior
-				// and proper routing to the blueprint module's runtime.
-				var constructor *core.Function
-				if obj.AsObject.Value.Constructor.Valid {
-					constructor = obj.AsObject.Value.Constructor.Value.Clone()
-				} else {
-					// Create a zero-argument function for toolchains without constructors
-					constructor = &core.Function{
-						Args: []*core.FunctionArg{},
-					}
-				}
-
-				// Apply argument configuration overrides if present (from registry)
-				if mod.Toolchains != nil {
-					if entry, ok := mod.Toolchains.Get(originalName); ok && entry.ArgumentConfigs != nil {
-						constructor = applyArgumentConfigToFunction(constructor, entry.ArgumentConfigs, []string{})
-					}
-				}
-
-				constructor.Name = fieldName
-				constructor.OriginalName = originalName
-				constructor.Description = tcMod.Description
-				constructor.ReturnType = obj
-
-				var err error
-				objectDef, err = objectDef.WithFunction(constructor)
-				if err != nil {
-					return nil, fmt.Errorf("failed to add toolchain function %q: %w", fieldName, err)
-				}
-
-				break
-			}
-		}
-	}
-
-	return objectDef, nil
-}
-
-// mergeToolchainsWithSDK merges toolchain fields into SDK's main object
-func mergeToolchainsWithSDK(
-	mod *core.Module,
-	toolchainMods []*core.Module,
-) error {
-	mainModuleObjectName := strcase.ToCamel(mod.NameField)
-
-	for i, obj := range mod.ObjectDefs {
-		if obj.AsObject.Valid && obj.AsObject.Value.Name == mainModuleObjectName {
-			mergedObj, err := addToolchainFieldsToObject(obj, toolchainMods, mod)
-			if err != nil {
-				return err
-			}
-			mod.ObjectDefs[i] = mergedObj
-			return nil
-		}
-	}
-
-	return fmt.Errorf("main module object %q not found", mainModuleObjectName)
-}
-
-// createShadowModuleForToolchains creates a new module object to hold toolchain fields
-func createShadowModuleForToolchains(
-	ctx context.Context,
-	mod *core.Module,
-	toolchainMods []*core.Module,
-	dag *dagql.Server,
-) (*core.Module, error) {
-	shadowTypeDef := &core.ObjectTypeDef{
-		Name:         mod.NameField,
-		OriginalName: mod.OriginalName,
-	}
-
-	shadowModule := &core.TypeDef{
-		Kind: core.TypeDefKindObject,
-		AsObject: dagql.Nullable[*core.ObjectTypeDef]{
-			Value: shadowTypeDef,
-			Valid: true,
-		},
-	}
-
-	shadowModule, err := addToolchainFieldsToObject(shadowModule, toolchainMods, mod)
-	if err != nil {
-		return nil, err
-	}
-
-	mod, err = mod.WithObject(ctx, shadowModule)
-	if err != nil {
-		return nil, fmt.Errorf("failed to add toolchains to module: %w", err)
-	}
-
-	obj := &core.ModuleObject{
-		Module:  mod,
-		TypeDef: shadowTypeDef,
-	}
-	mod.ResultID = dagql.CurrentID(ctx)
-	if err := obj.Install(ctx, dag); err != nil {
-		return nil, fmt.Errorf("failed to install no-sdk module with toolchains %q: %w", mod.NameField, err)
-	}
-
-	return mod, nil
-}
-
-// integrateToolchains adds toolchain modules as fields to the main module
-func (s *moduleSourceSchema) integrateToolchains(
-	ctx context.Context,
-	mod *core.Module,
-	dag *dagql.Server,
-) (*core.Module, error) {
-	// Initialize toolchain registry
-	mod.Toolchains = core.NewToolchainRegistry(mod)
-
-	toolchainMods := extractToolchainModules(mod)
-	if len(toolchainMods) == 0 {
-		return mod, nil
-	}
-
-	// Register all toolchains in the registry
-	for _, tcMod := range toolchainMods {
-		originalName := tcMod.NameField
-		fieldName := strcase.ToLowerCamel(tcMod.NameField)
-
-		mod.Toolchains.Register(originalName, fieldName, tcMod)
-
-		// Apply configurations from config
-		if entry, ok := mod.Toolchains.Get(originalName); ok {
-			// Read configs from the module source
-			src := mod.GetSource()
-			if src != nil {
-				for _, tcCfg := range src.ConfigToolchains {
-					if tcCfg.Name == originalName {
-						if len(tcCfg.Customizations) > 0 {
-							entry.ArgumentConfigs = tcCfg.Customizations
-						}
-						if len(tcCfg.IgnoreChecks) > 0 {
-							entry.IgnoreChecks = tcCfg.IgnoreChecks
-						}
-						if len(tcCfg.IgnoreGenerators) > 0 {
-							entry.IgnoreGenerators = tcCfg.IgnoreGenerators
-						}
-						break
-					}
-				}
-			}
-		}
-	}
-
-	// Check if we have an SDK module (has object definitions)
-	hasSDK := len(mod.ObjectDefs) > 0
-
-	var err error
-	if hasSDK {
-		// Merge toolchain fields into SDK's main object
-		err = mergeToolchainsWithSDK(mod, toolchainMods)
-	} else {
-		// No SDK - create shadow module to hold toolchain fields
-		mod, err = createShadowModuleForToolchains(ctx, mod, toolchainMods, dag)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Ensure ResultID is set
-	if mod.ResultID == nil {
-		mod.ResultID = dagql.CurrentID(ctx)
-	}
-
-	return mod, nil
-}
-
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3591,44 +2965,18 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
-	// Set up toolchain context
-	originalSrc := src
 	// Blueprint mode is ONLY when we have the Blueprint field set (from `dagger init --blueprint`)
+	originalSrc := src
 	isBlueprintMode := src.Self().Blueprint.Self() != nil
-
-	tcCtx := toolchainContext{
-		originalSrc: originalSrc,
-		src:         src,
-	}
 
 	// In blueprint mode, use the blueprint as the main source
 	// This must happen before creating the module so the SDK loads from blueprint source
 	if isBlueprintMode {
 		src = src.Self().Blueprint
-		tcCtx.src = src
-		// Copy toolchains from original source to blueprint source
-		var sourceIDs []core.ModuleSourceID
-		for _, src := range tcCtx.originalSrc.Self().Toolchains {
-			sourceIDs = append(sourceIDs, dagql.NewID[*core.ModuleSource](src.ID()))
-		}
-		err := dag.Select(ctx, tcCtx.src, &tcCtx.src, dagql.Selector{
-			Field: "withToolchains",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "toolchains",
-					Value: dagql.ArrayInput[core.ModuleSourceID](sourceIDs),
-				},
-			},
-		})
-		if err != nil {
-			return inst, fmt.Errorf("unable to set toolchains with blueprint: %w", err)
-		}
-		// Update src to use the modified blueprint with toolchains
-		src = tcCtx.src
 	}
 
 	// Create base module with dependencies
-	mod, err := s.createBaseModule(ctx, src, tcCtx)
+	mod, err := s.createBaseModule(ctx, src, originalSrc)
 	if err != nil {
 		return inst, err
 	}
@@ -3644,18 +2992,12 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err != nil {
 			return inst, err
 		}
-	} else if len(originalSrc.Self().Toolchains) == 0 {
-		// No SDK, no toolchains, and no blueprint - create stub module
+	} else {
+		// No SDK - create stub module
 		mod, err = createStubModule(ctx, mod, dag)
 		if err != nil {
 			return inst, err
 		}
-	}
-
-	// Integrate toolchain modules as fields
-	mod, err = s.integrateToolchains(ctx, mod, dag)
-	if err != nil {
-		return inst, err
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, mod)
@@ -3695,19 +3037,6 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		})
 	}
 
-	// Load all toolchains as dependencies
-	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
-	if len(src.Self().Toolchains) > 0 {
-		for i, tcSrc := range src.Self().Toolchains {
-			eg.Go(func() error {
-				err := dag.Select(ctx, tcSrc, &tcMods[i],
-					dagql.Selector{Field: "asModule"},
-				)
-				return err
-			})
-		}
-	}
-
 	if err := eg.Wait(); err != nil {
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
@@ -3719,23 +3048,6 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	deps := core.NewModDeps(query, defaultDeps.Mods)
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
-	}
-	for i, tcMod := range tcMods {
-		clone := tcMod.Self().Clone()
-		clone.IsToolchain = true
-		clone.ContextSource = dagql.NonNull(src)
-
-		// Apply argument configurations from the parent module's toolchain config
-		// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
-		if i < len(src.Self().ConfigToolchains) {
-			tcCfg := src.Self().ConfigToolchains[i]
-			if len(tcCfg.Customizations) > 0 {
-				// Apply configurations to the toolchain module's functions, including chained functions
-				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
-			}
-		}
-
-		deps = deps.Append(clone)
 	}
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {

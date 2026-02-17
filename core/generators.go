@@ -63,16 +63,7 @@ func NewGeneratorGroup(ctx context.Context, mod *Module, include []string) (*Gen
 		return nil, err
 	}
 
-	var exclude []string
-	if mod.Toolchains != nil {
-		for _, entry := range mod.Toolchains.Entries() {
-			for _, ignorePattern := range entry.IgnoreGenerators {
-				exclude = append(exclude, entry.FieldName+":"+ignorePattern)
-			}
-		}
-	}
-
-	generatorNodes, err := rootNode.RollupGenerator(ctx, include, exclude)
+	generatorNodes, err := rootNode.RollupGenerator(ctx, include, nil)
 	if err != nil {
 		return nil, err
 	}

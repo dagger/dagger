@@ -25,7 +25,7 @@ type Module struct {
 	// The source of the module
 	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
-	// The source to load contextual dirs/files from, which may be different than Source for blueprints or toolchains
+	// The source to load contextual dirs/files from, which may be different than Source for blueprints
 	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
 
 	// The name of the module
@@ -57,13 +57,6 @@ type Module struct {
 
 	// The module's enumerations
 	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
-
-	// IsToolchain indicates this module was loaded as a toolchain dependency.
-	// Toolchain modules are allowed to share types with the modules that depend on them.
-	IsToolchain bool
-
-	// Toolchains manages all toolchain modules and their configuration.
-	Toolchains *ToolchainRegistry
 
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
@@ -101,13 +94,6 @@ var _ Mod = (*Module)(nil)
 
 func (mod *Module) Name() string {
 	return mod.NameField
-}
-
-// isToolchainModule checks if a Mod is a toolchain Module.
-// This centralizes the validation logic that was scattered across the codebase.
-func isToolchainModule(m Mod) bool {
-	tcMod, ok := m.(*Module)
-	return ok && tcMod.IsToolchain
 }
 
 func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
@@ -697,17 +683,13 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		}
 		if ok {
 			sourceMod := fieldType.SourceMod()
-			// fields can reference core types and local types, but not types from
-			// other modules (unless the source module is a toolchain)
+			// fields can reference core types and local types, but not types from other modules
 			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				// Allow types from toolchain modules
-				if !isToolchainModule(sourceMod) {
-					return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
-						obj.OriginalName,
-						field.OriginalName,
-						sourceMod.Name(),
-					)
-				}
+				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+					obj.OriginalName,
+					field.OriginalName,
+					sourceMod.Name(),
+				)
 			}
 		}
 		if err := mod.validateTypeDef(ctx, field.TypeDef); err != nil {
@@ -726,14 +708,11 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		}
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				// Allow types from toolchain modules
-				if !isToolchainModule(sourceMod) {
-					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-						obj.OriginalName,
-						fn.OriginalName,
-						sourceMod.Name(),
-					)
-				}
+				return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
+					obj.OriginalName,
+					fn.OriginalName,
+					sourceMod.Name(),
+				)
 			}
 		}
 		if err := mod.validateTypeDef(ctx, fn.ReturnType); err != nil {
@@ -747,15 +726,12 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			}
 			if ok {
 				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-					// Allow types from toolchain modules
-					if !isToolchainModule(sourceMod) {
-						return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-							obj.OriginalName,
-							fn.OriginalName,
-							arg.OriginalName,
-							sourceMod.Name(),
-						)
-					}
+					return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+						obj.OriginalName,
+						fn.OriginalName,
+						arg.OriginalName,
+						sourceMod.Name(),
+					)
 				}
 			}
 			if err := mod.validateTypeDef(ctx, arg.TypeDef); err != nil {
