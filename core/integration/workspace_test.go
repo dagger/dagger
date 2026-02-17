@@ -887,7 +887,7 @@ count = 42
 	require.Equal(t, "42", strings.TrimSpace(out))
 }
 
-// TestWorkspaceMigrateNonLocalSource verifies that `dagger workspace migrate`
+// TestWorkspaceMigrateNonLocalSource verifies that `dagger migrate`
 // moves source files from a non-"." source directory to .dagger/modules/<name>/
 // and removes the old source directory.
 func (WorkspaceSuite) TestWorkspaceMigrateNonLocalSource(ctx context.Context, t *testctx.T) {
@@ -914,7 +914,7 @@ type Myapp {
 		WithExec([]string{"git", "commit", "-m", "initial"})
 
 	// Run migration
-	ctr = ctr.With(daggerExec("workspace", "migrate"))
+	ctr = ctr.With(daggerExec("migrate"))
 
 	// Verify: old ci/ directory should be removed
 	_, err := ctr.WithExec([]string{"test", "-d", "ci"}).Sync(ctx)
@@ -942,7 +942,7 @@ type Myapp {
 	require.Error(t, err, "root dagger.json should have been removed")
 }
 
-// TestWorkspaceMigrateLocalSource verifies that `dagger workspace migrate`
+// TestWorkspaceMigrateLocalSource verifies that `dagger migrate`
 // does NOT move source files when source = "." (the default case).
 func (WorkspaceSuite) TestWorkspaceMigrateLocalSource(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
@@ -968,7 +968,7 @@ type Myapp {
 		WithExec([]string{"git", "commit", "-m", "initial"})
 
 	// Run migration
-	ctr = ctr.With(daggerExec("workspace", "migrate"))
+	ctr = ctr.With(daggerExec("migrate"))
 
 	// Verify: main.dang should still be at root (not moved)
 	_, err := ctr.WithExec([]string{"test", "-f", "main.dang"}).Sync(ctx)
@@ -1012,10 +1012,10 @@ type Myapp {
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "initial"})
 
-	// Run migration — should print "Migration complete"
-	out, err := ctr.With(daggerExec("workspace", "migrate")).Stdout(ctx)
+	// Run migration — should print summary
+	out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "Migration complete")
+	require.Contains(t, out, "Migrated to workspace format")
 }
 
 // TestNestedModuleBeneathWorkspace verifies that a standalone dagger.json

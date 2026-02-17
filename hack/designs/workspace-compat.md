@@ -232,7 +232,7 @@ Warnings  Migrate cmd |
   `ClientMetadata`. Remove `handleMigration()`. Migration is explicitly invoked, not
   auto-triggered.
 
-- [ ] **#7: Update tests** (blocked by #4, #5, #6) — Add compat mode tests (legacy
+- [x] **#7: Update tests** (blocked by #4, #5, #6) — Add compat mode tests (legacy
   dagger.json with toolchains loads correctly, warnings emitted). Update tests that
   relied on `CheckMigrationTriggers` blocking. Remove tests for deleted toolchain
   code.
