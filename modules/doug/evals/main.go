@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"dagger/evals/internal/dagger"
-	"dagger/evals/internal/querybuilder"
+
+	"dagger.io/dagger/querybuilder"
 )
 
 // Doug's eval suite.

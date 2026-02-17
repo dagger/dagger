@@ -22,7 +22,6 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
@@ -160,7 +159,8 @@ func (ls *FileSyncer) sync(
 
 	// now sync in the clientPath dir
 	remote := newRemoteFS(caller, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.GitIgnore)
-	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.GitIgnore, opts.RelativePath)
+	// local mirror should not apply gitignore; remote stats carry ignore metadata.
+	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.RelativePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local fs: %w", err)
 	}
@@ -192,17 +192,13 @@ func (ls *FileSyncer) syncParentDirs(
 	include := strings.TrimPrefix(strings.TrimSuffix(clientPath, "/"), "/")
 	includes := []string{include}
 	excludes := []string{include + "/*"}
-	if opts.GitIgnore {
-		excludes = append(excludes, "!"+include+"/**/.gitignore", include+"/**/.git")
-	}
-
 	root := "/"
 	if drive != "" {
 		root = drive + "/"
 	}
 
 	remote := newRemoteFS(caller, root, includes, excludes, false)
-	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, false, opts.RelativePath)
+	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, opts.RelativePath)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}
@@ -303,13 +299,9 @@ func (ls *FileSyncer) getRef(
 			return nil, nil, fmt.Errorf("failed to mount: %w", err)
 		}
 
-		changeCache, err := cache.NewCache[string, *ChangeWithStat](ctx, "") // in-memory only
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create change cache: %w", err)
-		}
 		ref.sharedState = &localFSSharedState{
 			rootPath:    ref.mntPath,
-			changeCache: changeCache,
+			changeCache: newChangeCache(),
 		}
 
 		ls.mu.Lock()

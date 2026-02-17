@@ -6,7 +6,6 @@ require (
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
 	github.com/netlify/open-api/v2 v2.36.0
-	github.com/vektah/gqlparser/v2 v2.5.30
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.14.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0
@@ -26,6 +25,7 @@ require (
 )
 
 require (
+	dagger.io/dagger v0.19.11
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef // indirect
@@ -49,6 +49,7 @@ require (
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/mitchellh/mapstructure v1.4.0 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.30
 	go.mongodb.org/mongo-driver v1.4.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.38.0 // indirect

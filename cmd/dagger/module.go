@@ -255,7 +255,7 @@ dagger init --sdk=go
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if alreadyExists {
 				return fmt.Errorf("module already exists")
@@ -263,7 +263,7 @@ dagger init --sdk=go
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
 			if err != nil {
@@ -383,7 +383,7 @@ var moduleInstallCmd = &cobra.Command{
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
@@ -391,7 +391,7 @@ var moduleInstallCmd = &cobra.Command{
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 
 			depRefStr := extraArgs[0]
@@ -503,7 +503,7 @@ If no dependency is specified, all dependencies are updated, as well as the modu
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
@@ -511,7 +511,7 @@ If no dependency is specified, all dependencies are updated, as well as the modu
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 
 			// If no dependency is specified, also update the blueprint
@@ -557,7 +557,7 @@ var moduleUnInstallCmd = &cobra.Command{
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
@@ -565,7 +565,7 @@ var moduleUnInstallCmd = &cobra.Command{
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 
 			modSrc = modSrc.WithoutDependencies(extraArgs)
@@ -635,7 +635,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
 			if err != nil {
@@ -736,7 +736,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 
 					contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 					if err != nil {
-						return fmt.Errorf("failed to get local context directory path: %w", err)
+						return localModuleErrorf("failed to get local context directory path: %w", err)
 					}
 					_, err = modSrc.
 						GeneratedContextDirectory().
@@ -790,7 +790,7 @@ var toolchainInstallCmd = &cobra.Command{
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
@@ -798,7 +798,7 @@ var toolchainInstallCmd = &cobra.Command{
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 
 			toolchainRefStr := extraArgs[0]
@@ -850,7 +850,7 @@ var toolchainUpdateCmd = &cobra.Command{
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
@@ -858,7 +858,7 @@ var toolchainUpdateCmd = &cobra.Command{
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 
 			modSrc = modSrc.WithUpdateBlueprint()
@@ -901,7 +901,7 @@ var toolchainUninstallCmd = &cobra.Command{
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
@@ -909,7 +909,7 @@ var toolchainUninstallCmd = &cobra.Command{
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 
 			toolchainRefStr := extraArgs[0]
@@ -937,7 +937,7 @@ func loadToolchainInfo(ctx context.Context, dag *dagger.Client, modSrc *dagger.M
 	err := parallel.Run(ctx, "fetch toolchain information", func(ctx context.Context) error {
 		alreadyExists, err := modSrc.ConfigExists(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to check if module already exists: %w", err)
+			return localModuleErrorf("failed to check if module already exists: %w", err)
 		}
 		if !alreadyExists {
 			return fmt.Errorf("module must be fully initialized")
@@ -1026,7 +1026,7 @@ func collectLocalModulesRecursive(ctx context.Context, base *dagger.ModuleSource
 
 	contextDirPath, err := base.LocalContextDirectoryPath(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get local context directory path: %w", err)
+		return localModuleErrorf("failed to get local context directory path: %w", err)
 	}
 	srcRootSubPath, err := base.SourceRootSubpath(ctx)
 	if err != nil {
@@ -1085,7 +1085,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to check if module already exists: %w", err)
+				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
@@ -1093,7 +1093,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
+				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
 			if err != nil {
@@ -1230,6 +1230,21 @@ func getModuleSourceRefWithDefault() (string, error) {
 	return moduleURLDefault, nil
 }
 
+func localModuleErrorf(format string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	wrapped := fmt.Errorf(format, err)
+	if moduleURL != "" {
+		return fmt.Errorf("%w\nhint: module source came from --mod=%q; if you intended local, pass `--mod .`", wrapped, moduleURL)
+	}
+	if envRef, ok := os.LookupEnv("DAGGER_MODULE"); ok {
+		return fmt.Errorf("%w\nhint: module source came from DAGGER_MODULE=%q; if you intended local, pass `--mod .`", wrapped, envRef)
+	}
+	return wrapped
+}
+
 // Wraps a command with optional module loading. If a module was explicitly specified by the user,
 // it will try to load it and error out if it's not found or invalid. If no module was specified,
 // it will try the current directory as a module but provide a nil module if it's not found, not
@@ -1275,10 +1290,12 @@ func optionalModCmdWrapper(
 			}
 			switch {
 			case configExists:
+				serveCtx, span := Tracer().Start(ctx, "load module: "+modRef)
 				mod := modSrc.AsModule()
-				err := mod.Serve(ctx, dagger.ModuleServeOpts{IncludeDependencies: true})
-				if err != nil {
-					return fmt.Errorf("failed to serve module: %w", err)
+				serveErr := mod.Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
+				telemetry.EndWithCause(span, &serveErr)
+				if serveErr != nil {
+					return fmt.Errorf("failed to serve module: %w", serveErr)
 				}
 				return fn(ctx, engineClient, mod, cmd, cmdArgs)
 			case explicitModRefSet:

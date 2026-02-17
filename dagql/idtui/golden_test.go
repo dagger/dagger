@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -77,6 +78,11 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		exec.Command("rm", "-rf", ".git").Run()
 	})
 
+	listDir := t.TempDir()
+	os.Create(filepath.Join(listDir, "test.txt"))
+	os.Create(filepath.Join(listDir, "test2.txt"))
+	os.Create(filepath.Join(listDir, "test3.txt"))
+
 	for _, ex := range []Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
@@ -86,10 +92,10 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "encapsulate"},
 		{Function: "fail-encapsulated", Fail: true},
 		{Function: "pending", Fail: true, RevealNoisySpans: true},
-		{Function: "list", Args: []string{"--dir", "."}},
+		{Function: "list", Args: []string{"--dir", listDir}},
 		{Function: "object-lists"},
 		{Function: "nested-calls"},
-		{Function: "path-args", Args: []string{"--file", "golden_test.go", "--dir", "."}},
+		{Function: "path-args", Args: []string{"--file", "golden_test.go", "--dir", listDir}},
 		{
 			Function: "custom-span",
 			Env: []string{

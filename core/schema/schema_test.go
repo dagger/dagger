@@ -8,13 +8,12 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/cache"
 )
 
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	root := &core.Query{}
-	baseCache, err := cache.NewCache[string, dagql.AnyResult](ctx, "")
+	baseCache, err := dagql.NewCache(ctx, "")
 	require.NoError(t, err)
 	dag := dagql.NewServer(root, dagql.NewSessionCache(baseCache))
 	coreMod := &CoreMod{Dag: dag}

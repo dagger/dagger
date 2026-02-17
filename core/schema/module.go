@@ -87,6 +87,20 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("name").Doc("The name of the check to retrieve"),
 			),
 
+		dagql.Func("generators", s.moduleGenerators).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return all generators defined by the module`).
+			Args(
+				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+			),
+
+		dagql.Func("generator", s.moduleGenerator).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return the generator defined by the module with the given name. Must match to exactly one generator.`).
+			Args(
+				dagql.Arg("name").Doc("The name of the generator to retrieve"),
+			),
+
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
 
@@ -155,6 +169,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
+
+		dagql.Func("generators", s.currentModuleGenerators).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return all generators defined by the module`).
+			Args(
+				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+			),
 	}.Install(dag)
 
 	dagql.Fields[*core.Function]{
@@ -172,6 +193,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withCheck", s.functionWithCheck).
 			Doc(`Returns the function with a flag indicating it's a check.`),
+
+		dagql.Func("withGenerator", s.functionWithGenerator).
+			Doc(`Returns the function with a flag indicating it's a generator.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
@@ -533,6 +557,10 @@ func (s *moduleSchema) functionWithCheck(ctx context.Context, fn *core.Function,
 	return fn.WithCheck(), nil
 }
 
+func (s *moduleSchema) functionWithGenerator(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithGenerator(), nil
+}
+
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
 	Name           string
 	TypeDef        core.TypeDefID
@@ -813,6 +841,60 @@ func (s *moduleSchema) moduleCheck(
 		return nil, fmt.Errorf("check %q not found in module %q", args.Name, mod.Name())
 	default:
 		return nil, fmt.Errorf("multiple checks found with name %q in module %q", args.Name, mod.Name())
+	}
+}
+
+func (s *moduleSchema) moduleGenerators(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.GeneratorGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	return mod.Generators(ctx, include)
+}
+
+func (s *moduleSchema) currentModuleGenerators(
+	ctx context.Context,
+	mod *core.CurrentModule,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.GeneratorGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	return mod.Module.Generators(ctx, include)
+}
+
+func (s *moduleSchema) moduleGenerator(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Name string
+	},
+) (*core.Generator, error) {
+	generatorGroup, err := mod.Generators(ctx, []string{args.Name})
+	if err != nil {
+		return nil, err
+	}
+
+	switch len(generatorGroup.Generators) {
+	case 1:
+		return generatorGroup.Generators[0].Clone(), nil
+	case 0:
+		return nil, fmt.Errorf("generator %q not found in module %q", args.Name, mod.Name())
+	default:
+		return nil, fmt.Errorf("multiple generators found with name %q in module %q", args.Name, mod.Name())
 	}
 }
 

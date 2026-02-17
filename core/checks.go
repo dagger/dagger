@@ -2,9 +2,9 @@ package core
 
 import (
 	"context"
-	"io/fs"
 	"strings"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -93,12 +93,27 @@ func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
 			check.ResultEmoji(),
 		})
 	}
-	contents := []byte(markdownTable(headers, rows...))
-	q, err := CurrentQuery(ctx)
+	contents := markdownTable(headers, rows...)
+
+	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return NewFileWithContents(ctx, "checks.md", contents, fs.FileMode(0644), nil, q.Platform())
+
+	var file *File
+	err = srv.Select(ctx, srv.Root(), &file,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String("checks.md")},
+				{Name: "contents", Value: dagql.String(contents)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
 }
 
 func markdownTable(headers []string, rows ...[]string) string {
@@ -130,6 +145,10 @@ func (c *Check) Path() []string {
 
 func (c *Check) Description() string {
 	return c.Node.Description
+}
+
+func (c *Check) OriginalModule() *Module {
+	return c.Node.OriginalModule
 }
 
 func (*Check) Type() *ast.Type {

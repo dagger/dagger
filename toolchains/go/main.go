@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/modules/go/internal/dagger"
-	"github.com/dagger/dagger/modules/go/internal/telemetry"
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -27,7 +27,7 @@ func New(
 	source *dagger.Directory,
 	// Go version
 	// +optional
-	// +default="1.25.5"
+	// +default="1.25.7"
 	version string,
 	// Use a custom module cache
 	// +optional

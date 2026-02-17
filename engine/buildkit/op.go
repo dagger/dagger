@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -62,7 +63,7 @@ func RegisterCustomOp(op CustomOp) {
 	customOps[op.Name()] = op
 }
 
-func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...llb.ConstraintsOpt) (llb.State, error) {
+func NewCustomLLB(ctx context.Context, dagOpID *call.ID, op CustomOp, inputs []llb.State, opts ...llb.ConstraintsOpt) (llb.State, error) {
 	opWrapped := CustomOpWrapper{
 		Name:    op.Name(),
 		Backend: op.Backend(),
@@ -70,18 +71,18 @@ func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...
 
 	// generate a uniqued digest of the op to use in the buildkit id (this
 	// prevents all our ops merging together in the solver)
-	id, err := opWrapped.Digest()
+	bkID, err := opWrapped.Digest()
 	if err != nil {
 		return llb.State{}, err
 	}
 
 	// pre-populate a reasonable underlying representation that has some inputs
-	a := llb.Rm("/" + id.Encoded())
+	a := llb.Rm("/" + bkID.Encoded())
 	for _, input := range inputs {
 		a = a.Copy(input, "/", "/")
 	}
 	st := llb.Scratch().File(a)
-	customOpOpt, err := opWrapped.AsConstraintsOpt()
+	customOpOpt, err := opWrapped.AsConstraintsOpt(dagOpID.Digest().String())
 	if err != nil {
 		return llb.State{}, fmt.Errorf("constraints opt: %w", err)
 	}
@@ -253,13 +254,14 @@ func customOpFromDescription(desc map[string]string) (*CustomOpWrapper, bool, er
 	return &wrapper.CustomOpWrapper, true, nil
 }
 
-func (op CustomOpWrapper) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
+func (op CustomOpWrapper) AsConstraintsOpt(effectID string) (llb.ConstraintsOpt, error) {
 	bs, err := json.Marshal(op)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal custom op: %w", err)
 	}
 	return llb.WithDescription(map[string]string{
 		customOpKey: string(bs),
+		"effectID":  effectID,
 	}), nil
 }
 

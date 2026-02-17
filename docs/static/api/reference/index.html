@@ -78,6 +78,8 @@
               <li><a href="#query-loadFunctionCallFromID">loadFunctionCallFromID</a></li>
               <li><a href="#query-loadFunctionFromID">loadFunctionFromID</a></li>
               <li><a href="#query-loadGeneratedCodeFromID">loadGeneratedCodeFromID</a></li>
+              <li><a href="#query-loadGeneratorFromID">loadGeneratorFromID</a></li>
+              <li><a href="#query-loadGeneratorGroupFromID">loadGeneratorGroupFromID</a></li>
               <li><a href="#query-loadGitRefFromID">loadGitRefFromID</a></li>
               <li><a href="#query-loadGitRepositoryFromID">loadGitRepositoryFromID</a></li>
               <li><a href="#query-loadHostFromID">loadHostFromID</a></li>
@@ -180,6 +182,10 @@
               <li><a href="#definition-FunctionID">FunctionID</a></li>
               <li><a href="#definition-GeneratedCode">GeneratedCode</a></li>
               <li><a href="#definition-GeneratedCodeID">GeneratedCodeID</a></li>
+              <li><a href="#definition-Generator">Generator</a></li>
+              <li><a href="#definition-GeneratorGroup">GeneratorGroup</a></li>
+              <li><a href="#definition-GeneratorGroupID">GeneratorGroupID</a></li>
+              <li><a href="#definition-GeneratorID">GeneratorID</a></li>
               <li><a href="#definition-GitRef">GitRef</a></li>
               <li><a href="#definition-GitRefID">GitRefID</a></li>
               <li><a href="#definition-GitRepository">GitRepository</a></li>
@@ -2889,6 +2895,112 @@
               </div>
             </div>
           </section>
+          <section id="query-loadGeneratorFromID" class="operation operation-query" data-traverse-target="query-loadGeneratorFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadGeneratorFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Generator from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Generator"><code>Generator!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-GeneratorID"><code>GeneratorID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadGeneratorGroupFromID" class="operation operation-query" data-traverse-target="query-loadGeneratorGroupFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadGeneratorGroupFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a GeneratorGroup from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-GeneratorGroup"><code>GeneratorGroup!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-GeneratorGroupID"><code>GeneratorGroupID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadGitRefFromID" class="operation operation-query" data-traverse-target="query-loadGitRefFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -4816,6 +4928,14 @@
                         <td> Retrieve the binding value, as type File </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asGenerator" href="#Binding-asGenerator"><code>asGenerator</code></a> - <span class="property-type"><a href="#definition-Generator"><code>Generator!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Generator </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asGeneratorGroup" href="#Binding-asGeneratorGroup"><code>asGeneratorGroup</code></a> - <span class="property-type"><a href="#definition-GeneratorGroup"><code>GeneratorGroup!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type GeneratorGroup </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asGitRef" href="#Binding-asGitRef"><code>asGitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
                         <td> Retrieve the binding value, as type GitRef </td>
                       </tr>
@@ -5356,6 +5476,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Check-name" href="#Check-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Return the fully qualified name of the check </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-originalModule" href="#Check-originalModule"><code>originalModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
+                        <td> The original module in which the check has been defined </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Check-passed" href="#Check-passed"><code>passed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
@@ -7106,6 +7230,23 @@
                         <td data-property-name=""><a class="property-name" id="CurrentModule-generatedContextDirectory" href="#CurrentModule-generatedContextDirectory"><code>generatedContextDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> The generated files and directories made on top of the module source's context directory. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="CurrentModule-generators" href="#CurrentModule-generators"><code>generators</code></a> - <span class="property-type"><a href="#definition-GeneratorGroup"><code>GeneratorGroup!</code></a></span> </td>
+                        <td> Return all generators defined by the module </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include generators matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="CurrentModule-id" href="#CurrentModule-id"><code>id</code></a> - <span class="property-type"><a href="#definition-CurrentModuleID"><code>CurrentModuleID!</code></a></span> </td>
                         <td> A unique identifier for this CurrentModule. </td>
@@ -7360,6 +7501,12 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>noInit</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>If set, skip the automatic init process injected into containers created by RUN statements.</p>
                                 <p>This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>ssh</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID</code></a></span></h6>
+                                <p>A socket to use for SSH authentication during the build</p>
+                                <p>(e.g., for Dockerfile RUN --mount=type=ssh instructions).</p>
+                                <p>Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.</p>
                               </div>
                             </div>
                           </div>
@@ -8053,6 +8200,22 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>useDefaultPolicy</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>maxUsedSpace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override the maximum disk space to keep before pruning (e.g. &quot;200GB&quot; or &quot;80%&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>reservedSpace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override the minimum disk space to retain during pruning (e.g. &quot;500GB&quot; or &quot;10%&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>minFreeSpace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override the minimum free disk space target during pruning (e.g. &quot;20GB&quot; or &quot;20%&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>targetSpace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override the target disk space to keep after pruning (e.g. &quot;200GB&quot; or &quot;50%&quot;).</p>
                               </div>
                             </div>
                           </div>
@@ -8948,6 +9111,98 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withFileOutput" href="#Env-withFileOutput"><code>withFileOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired File output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGeneratorGroupInput" href="#Env-withGeneratorGroupInput"><code>withGeneratorGroupInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type GeneratorGroup in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GeneratorGroupID"><code>GeneratorGroupID!</code></a></span></h6>
+                                <p>The GeneratorGroup value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGeneratorGroupOutput" href="#Env-withGeneratorGroupOutput"><code>withGeneratorGroupOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired GeneratorGroup output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGeneratorInput" href="#Env-withGeneratorInput"><code>withGeneratorInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Generator in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GeneratorID"><code>GeneratorID!</code></a></span></h6>
+                                <p>The Generator value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGeneratorOutput" href="#Env-withGeneratorOutput"><code>withGeneratorOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Generator output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -10619,6 +10874,10 @@
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Function-withGenerator" href="#Function-withGenerator"><code>withGenerator</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Returns the function with a flag indicating it's a generator. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Function-withSourceMap" href="#Function-withSourceMap"><code>withSourceMap</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
                         <td> Returns the function with the given source map. </td>
@@ -11026,6 +11285,153 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>GeneratedCodeID</code> scalar type represents an identifier for an object of type GeneratedCode.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Generator" class="definition definition-object" data-traverse-target="definition-Generator">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Generator</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-changes" href="#Generator-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> The generated changeset </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-completed" href="#Generator-completed"><code>completed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether the generator complete </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-description" href="#Generator-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Return the description of the generator </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-id" href="#Generator-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GeneratorID"><code>GeneratorID!</code></a></span> </td>
+                        <td> A unique identifier for this Generator. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-isEmpty" href="#Generator-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Wether changeset from the generator execution is empty or not </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-name" href="#Generator-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Return the fully qualified name of the generator </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-originalModule" href="#Generator-originalModule"><code>originalModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
+                        <td> The original module in which the generator has been defined </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-path" href="#Generator-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> The path of the generator within its module </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Generator-run" href="#Generator-run"><code>run</code></a> - <span class="property-type"><a href="#definition-Generator"><code>Generator!</code></a></span> </td>
+                        <td> Execute the generator </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-GeneratorGroup" class="definition definition-object" data-traverse-target="definition-GeneratorGroup">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">GeneratorGroup</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GeneratorGroup-changes" href="#GeneratorGroup-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td>
+                          <p>The combined changes from the generators execution</p>
+                          <p>If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.</p>
+                          <p>Set &#39;continueOnConflicts&#39; flag to force to merge the changes in a &#39;last write wins&#39; strategy.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>onConflict</code></span> - <span class="property-type"><a href="#definition-ChangesetsMergeConflict"><code>ChangesetsMergeConflict</code></a></span></h6>
+                                <p>Strategy to apply on conflicts between generators</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GeneratorGroup-id" href="#GeneratorGroup-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GeneratorGroupID"><code>GeneratorGroupID!</code></a></span> </td>
+                        <td> A unique identifier for this GeneratorGroup. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GeneratorGroup-isEmpty" href="#GeneratorGroup-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether the generated changeset is empty or not </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GeneratorGroup-list" href="#GeneratorGroup-list"><code>list</code></a> - <span class="property-type"><a href="#definition-Generator"><code>[Generator!]!</code></a></span> </td>
+                        <td> Return a list of individual generators and their details </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GeneratorGroup-run" href="#GeneratorGroup-run"><code>run</code></a> - <span class="property-type"><a href="#definition-GeneratorGroup"><code>GeneratorGroup!</code></a></span> </td>
+                        <td> Execute all selected generators </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-GeneratorGroupID" class="definition definition-scalar" data-traverse-target="definition-GeneratorGroupID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">GeneratorGroupID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>GeneratorGroupID</code> scalar type represents an identifier for an object of type GeneratorGroup.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-GeneratorID" class="definition definition-scalar" data-traverse-target="definition-GeneratorID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">GeneratorID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>GeneratorID</code> scalar type represents an identifier for an object of type Generator.</p>
                 </div>
               </div>
             </div>
@@ -12478,6 +12884,40 @@
                         <td data-property-name=""><a class="property-name" id="Module-generatedContextDirectory" href="#Module-generatedContextDirectory"><code>generatedContextDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> The generated files and directories made on top of the module source's context directory. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Module-generator" href="#Module-generator"><code>generator</code></a> - <span class="property-type"><a href="#definition-Generator"><code>Generator!</code></a></span> </td>
+                        <td> Return the generator defined by the module with the given name. Must match to exactly one generator. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the generator to retrieve</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Module-generators" href="#Module-generators"><code>generators</code></a> - <span class="property-type"><a href="#definition-GeneratorGroup"><code>GeneratorGroup!</code></a></span> </td>
+                        <td> Return all generators defined by the module </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include generators matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-id" href="#Module-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span> </td>
                         <td> A unique identifier for this Module. </td>
@@ -13612,13 +14052,13 @@
                         <td>
                           <p><code>FAILURE</code></p>
                         </td>
-                        <td> A failed execution (exit codes 1-127) </td>
+                        <td> A failed execution (exit codes 1-127 and 192-255) </td>
                       </tr>
                       <tr>
                         <td>
                           <p><code>ANY</code></p>
                         </td>
-                        <td> Any execution (exit codes 0-127) </td>
+                        <td> Any execution (exit codes 0-127 and 192-255) </td>
                       </tr>
                     </tbody>
                   </table>

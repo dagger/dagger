@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fix git SSH socket not found errors when different clients use different SSH
+  auth sock paths on the same repo.
+time: 2026-02-09T14:39:45.018427027-08:00
+custom:
+  Author: sipsma
+  PR: "11828"

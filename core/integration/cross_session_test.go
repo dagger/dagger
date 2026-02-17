@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/testutil"
@@ -1817,4 +1818,146 @@ func (DirectorySuite) TestContentHashedDirectoryFile(ctx context.Context, t *tes
 	contents, err := c2.Host().Directory(rootB).Directory("subdirB").File(rando).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, rando, contents)
+}
+
+func (DockerfileSuite) TestCrossSessionDockerbuildSockets(ctx context.Context, t *testctx.T) {
+	tmp := t.TempDir()
+	sock := filepath.Join(tmp, "test.sock")
+
+	l, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+
+	defer l.Close()
+
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					t.Logf("accept: %s", err)
+					panic(err)
+				}
+				return
+			}
+
+			n, err := io.Copy(c, c)
+			if err != nil {
+				t.Logf("copy: %s", err)
+				panic(err)
+			}
+
+			t.Logf("copied %d bytes", n)
+
+			err = c.Close()
+			if err != nil {
+				t.Logf("close: %s", err)
+				panic(err)
+			}
+		}
+	}()
+
+	modTmpdir := filepath.Join(tmp, "mod")
+	err = os.MkdirAll(modTmpdir, 0755)
+	require.NoError(t, err)
+
+	initModCmd := hostDaggerCommand(ctx, t, modTmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+	initModOutput, err := initModCmd.CombinedOutput()
+	require.NoError(t, err, string(initModOutput))
+
+	err = os.WriteFile(filepath.Join(modTmpdir, "main.go"), []byte(`package main
+import (
+	"context"
+	"strconv"
+	"time"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, error) {
+	dockerfile := "FROM alpine:3.20\n" +
+		"RUN apk add netcat-openbsd\n" +
+		"ARG MSG\n" +
+		"ARG CACHEBUST\n" +
+		"RUN --mount=type=ssh sh -c 'echo -n $MSG | nc -w1 -N -U $SSH_AUTH_SOCK > /result'\n"
+
+	return dag.Directory().
+		WithNewFile("Dockerfile", dockerfile).
+		DockerBuild(dagger.DirectoryDockerBuildOpts{
+			SSH: sock,
+			BuildArgs: []dagger.BuildArg{
+				{Name: "MSG", Value: msg},
+				{Name: "CACHEBUST", Value: strconv.Itoa(int(time.Now().UnixNano()))},
+			},
+		}).
+		File("/result").
+		Contents(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	c1 := connect(ctx, t)
+	err = c1.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+	sockID1, err := c1.Host().UnixSocket(sock).ID(ctx)
+	require.NoError(t, err)
+	res1, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c1, t, `{test{fn(sock: "`+string(sockID1)+`", msg: "blah")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "blah", res1.Test.Fn)
+
+	c2 := connect(ctx, t)
+	err = c2.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+	sockID2, err := c2.Host().UnixSocket(sock).ID(ctx)
+	require.NoError(t, err)
+	res2, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c2, t, `{test{fn(sock: "`+string(sockID2)+`", msg: "blah")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "blah", res2.Test.Fn)
+
+	require.NoError(t, c1.Close())
+
+	res2b, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c2, t, `{test{fn(sock: "`+string(sockID2)+`", msg: "omg")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "omg", res2b.Test.Fn)
+}
+
+func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T) {
+	tc := getVCSTestCase(t, "git@bitbucket.org:dagger-modules/private-modules-test.git")
+	url := tc.gitTestRepoRef
+	ref := tc.gitTestRepoCommit
+
+	agentSockPath1, cleanup1 := setupPrivateRepoSSHAgent(t)
+	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath1))
+	ref1ID, err := c1.Git(url).Commit(ref).ID(ctx)
+	require.NoError(t, err)
+	var id1 call.ID
+	err = id1.Decode(string(ref1ID))
+	require.NoError(t, err)
+
+	agentSockPath2, _ := setupPrivateRepoSSHAgent(t)
+	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath2))
+	ref2ID, err := c2.Git(url).Commit(ref).ID(ctx)
+	require.NoError(t, err)
+	var id2 call.ID
+	err = id2.Decode(string(ref2ID))
+	require.NoError(t, err)
+
+	cleanup1()
+	require.NoError(t, c1.Close())
+
+	_, err = c2.LoadGitRefFromID(ref2ID).Tree().Sync(ctx)
+	require.NoError(t, err)
 }

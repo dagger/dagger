@@ -520,18 +520,12 @@ func (sdk *goSDK) baseWithCodegen(
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
 
-	var engineVersion dagql.String
-	if err := dag.Select(ctx, dag.Root(), &engineVersion,
-		dagql.Selector{
-			Field: "version",
-		},
-	); err != nil {
-		return ctr, fmt.Errorf("failed to get engine version: %w", err)
+	/* FIXME: dev version handling is broken because it requires changing imports in code
+	if !engine.IsDevVersion(engine.Version) {
+		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engine.Version))
 	}
-
-	if !engine.IsDevVersion(engineVersion.String()) {
-		codegenArgs = append(codegenArgs, "--lib-version", engineVersion)
-	}
+	*/
+	codegenArgs = append(codegenArgs, "--lib-version", dagql.String("v0.19.11"))
 
 	selectors := []dagql.Selector{
 		{
@@ -860,13 +854,7 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 			Field: "host",
 		},
 		dagql.Selector{
-			Field: "unixSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
-				},
-			},
+			Field: "_sshAuthSocket",
 		},
 	); err != nil {
 		return nil, nil, fmt.Errorf("failed to select internal socket: %w", err)

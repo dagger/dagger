@@ -25,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/util/sortutil"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at
@@ -125,7 +126,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		NoIDs: true,
 	})
 	srv.root = ObjectResult[T]{
-		Result: Result[T]{self: root},
+		Result: newDetachedResult(nil, root),
 		class:  rootClass,
 	}
 	srv.InstallObject(rootClass)
@@ -322,6 +323,14 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationFieldDefinition,
 		},
 	},
+	{
+		Name:        "generate",
+		Description: FormatDescription(`Indicates that this function is a generate function.`),
+		Args:        NewInputSpecs(), // none
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
@@ -457,10 +466,13 @@ var _ graphql.ExecutableSchema = (*Server)(nil)
 
 // Schema returns the current schema of the server.
 func (s *Server) Schema() *ast.Schema {
+	return s.SchemaForView(s.View)
+}
+
+func (s *Server) SchemaForView(view call.View) *ast.Schema {
 	s.schemaLock.Lock()
 	defer s.schemaLock.Unlock()
 
-	view := s.View
 	if s.schemaOnces[view] == nil {
 		s.schemaOnces[view] = &sync.Once{}
 	}
@@ -471,28 +483,28 @@ func (s *Server) Schema() *ast.Schema {
 			Types:         make(map[string]*ast.Definition),
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
-		for _, t := range s.objects { // TODO stable order
+		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
 			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
 				schema.Query = def
 			}
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
-		}
-		for _, t := range s.scalars {
+		})
+		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
 			def := definition(ast.Scalar, t, view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
-		}
-		for _, t := range s.typeDefs {
+		})
+		sortutil.RangeSorted(s.typeDefs, func(_ string, t TypeDef) {
 			def := t.TypeDefinition(view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
-		}
+		})
 		schema.Directives = map[string]*ast.DirectiveDefinition{}
-		for n, d := range s.directives {
+		sortutil.RangeSorted(s.directives, func(n string, d DirectiveSpec) {
 			schema.Directives[n] = d.DirectiveDefinition(view)
-		}
+		})
 		h := xxh3.New()
 		json.NewEncoder(h).Encode(schema)
 		s.schemas[view] = schema
@@ -907,10 +919,7 @@ func NewResultForID[T Typed](
 		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
 	}
 
-	return Result[T]{
-		constructor: id,
-		self:        self,
-	}, nil
+	return newDetachedResult(id, self), nil
 }
 
 func NewObjectResultForCurrentID[T Typed](

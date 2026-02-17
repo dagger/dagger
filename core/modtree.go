@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"go.opentelemetry.io/otel/attribute"
@@ -22,9 +25,13 @@ type ModTreeNode struct {
 	Name        string
 	Description string
 	DagqlServer *dagql.Server
-	Module      *Module
-	Type        *TypeDef
-	IsCheck     bool
+	// This module is the same across all ModTreeNode, this is the root module.
+	Module *Module
+	// This original module is the one in which the node has been defined. Could be one from a toolchain for instance.
+	OriginalModule *Module
+	Type           *TypeDef
+	IsCheck        bool
+	IsGenerator    bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -47,8 +54,9 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 		return nil, err
 	}
 	return &ModTreeNode{
-		DagqlServer: srv,
-		Module:      mod,
+		DagqlServer:    srv,
+		Module:         mod,
+		OriginalModule: mod,
 		Type: &TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(mainObj),
@@ -57,29 +65,41 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 	}, nil
 }
 
-func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) (rerr error) {
+func (node *ModTreeNode) Run(
+	ctx context.Context,
+	// should return true if that's a leaf we need to execute
+	// for instance if we want to run a check, return true if IsCheck is true
+	isLeaf func(*ModTreeNode) bool,
+	// run the right function on the leaf. For instance run as a check, or run as a generator
+	// clientMetadata is used to know if we want to try to scale out
+	// this callback is used to keep this function generic and allow to return different values
+	runLeaf func(context.Context, *ModTreeNode, *engine.ClientMetadata) error,
+	// called inside a defer. Used to set properties to traces, for instance the CheckPassed attribute for checks.
+	// if there's an error, it's already added to the telemetry, no need to do it here
+	onDefer func(trace.Span, error),
+	// telemetry attribute to set with the name of the node
+	telemetryNameAttr string,
+	include, exclude []string,
+) (rerr error) {
 	clientMD, _ := engine.ClientMetadataFromContext(ctx)
 
-	// Only create telemetry span if we're NOT a scale-out target (to avoid duplication)
-	var span trace.Span
-	if clientMD == nil || clientMD.CloudScaleOutEngineID == "" {
-		ctx, span = Tracer(ctx).Start(ctx, node.PathString(),
-			telemetry.Reveal(),
-			trace.WithAttributes(
-				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				attribute.String(telemetry.CheckNameAttr, node.PathString()),
-			),
-		)
-		defer func() {
-			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
-			telemetry.EndWithCause(span, &rerr)
-		}()
+	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.String(telemetryNameAttr, node.PathString()),
+		),
+	)
+	defer func() {
+		onDefer(span, rerr)
+		telemetry.EndWithCause(span, &rerr)
+	}()
+
+	if isLeaf(node) {
+		return runLeaf(ctx, node, clientMD)
 	}
 
-	if node.IsCheck {
-		return node.runLeafCheck(ctx)
-	}
 	children, err := node.Children(ctx)
 	if err != nil {
 		return err
@@ -102,29 +122,32 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 			}
 		}
 		jobs = jobs.WithJob(child.Name, func(ctx context.Context) error {
-			return child.RunCheck(ctx, nil, nil)
+			return child.Run(ctx, isLeaf, runLeaf, onDefer, telemetryNameAttr, nil, nil)
 		})
 	}
 	return jobs.Run(ctx) // don't suppress the error. That can be handled by the top-level caller if necessary
 }
 
-func (node *ModTreeNode) runLeafCheck(ctx context.Context) error {
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Try scale-out if enabled (will be false for scaled-out sessions)
-	if clientMD.EnableCloudScaleOut {
-		if ok, err := node.tryScaleOut(ctx); ok {
-			return err
-		}
-	}
-
-	return node.runLeafCheckLocally(ctx)
+func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
+	return node.Run(ctx,
+		func(n *ModTreeNode) bool { return n.IsCheck },
+		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) error {
+			// Try scale-out if enabled (will be false for scaled-out sessions)
+			if clientMD != nil && clientMD.EnableCloudScaleOut {
+				if ok, err := node.tryRunCheckScaleOut(ctx); ok {
+					return err
+				}
+			}
+			return n.runCheckLocally(ctx)
+		},
+		func(span trace.Span, err error) {
+			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, err == nil))
+		},
+		telemetry.CheckNameAttr,
+		include, exclude)
 }
 
-func (node *ModTreeNode) runLeafCheckLocally(ctx context.Context) error {
+func (node *ModTreeNode) runCheckLocally(ctx context.Context) error {
 	var status dagql.AnyResult
 	if err := node.DagqlValue(ctx, &status); err != nil {
 		return err
@@ -148,7 +171,7 @@ func (node *ModTreeNode) runLeafCheckLocally(ctx context.Context) error {
 	return nil
 }
 
-func (node *ModTreeNode) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
+func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return true, err
@@ -169,9 +192,96 @@ func (node *ModTreeNode) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 		rerr = errors.Join(rerr, cloudClient.Close())
 	}()
 
-	query := cloudClient.Dagger().QueryBuilder()
+	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
+	if err != nil {
+		return true, err
+	}
 
-	// Load the module based on its source kind
+	query = query.Select("check").Arg("name", node.PathString())
+	query = query.Select("run")
+	query = query.SelectMultiple("completed", "passed")
+
+	var res struct{ Completed, Passed bool }
+	return true, query.Bind(&res).Execute(ctx)
+}
+
+func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {
+	var cs *Changeset
+	err := node.Run(ctx,
+		func(n *ModTreeNode) bool { return n.IsGenerator },
+		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) error {
+			// Try scale-out if enabled (will be false for scaled-out sessions)
+			if clientMD != nil && clientMD.EnableCloudScaleOut {
+				if ok, changes, err := node.tryRunGeneratorScaleOut(ctx); ok {
+					cs = changes
+					return err
+				}
+			}
+			changes, err := n.runGeneratorLocally(ctx)
+			cs = changes
+			return err
+		},
+		func(_ trace.Span, _ error) {},
+		telemetry.GeneratorNameAttr,
+		include, exclude)
+	return cs, err
+}
+
+func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (*Changeset, error) {
+	var changes dagql.ObjectResult[*Changeset]
+	if err := node.DagqlValue(ctx, &changes); err != nil {
+		return nil, err
+	}
+	return changes.Self(), nil
+}
+
+func (node *ModTreeNode) tryRunGeneratorScaleOut(ctx context.Context) (_ bool, _ *Changeset, rerr error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return true, nil, err
+	}
+
+	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
+		node.RootAddress(),
+		node.PathString(),
+		nil,
+	)
+	if err != nil {
+		return true, nil, fmt.Errorf("engine-to-engine connect: %w", err)
+	}
+	if !useCloud {
+		return false, nil, nil
+	}
+	defer func() {
+		rerr = errors.Join(rerr, cloudClient.Close())
+	}()
+
+	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
+	if err != nil {
+		return true, nil, err
+	}
+
+	query = query.Select("generator").Arg("name", node.PathString())
+	query = query.Select("run")
+	query = query.Select("changes")
+
+	var cs Changeset
+	if err := query.Bind(&cs).Execute(ctx); err != nil {
+		return true, nil, err
+	}
+
+	// ResolveRefs to load Directory objects from IDs
+	if err := cs.ResolveRefs(ctx, node.DagqlServer); err != nil {
+		return true, nil, fmt.Errorf("resolve changeset refs: %w", err)
+	}
+
+	return true, &cs, nil
+}
+
+// buildScaleOutModuleQuery builds a query to load a module for scale-out execution.
+// It handles all module source kinds (Local, Git, Dir) and returns a query
+// positioned at the "asModule" selection, ready for check/generator-specific queries.
+func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection) (*querybuilder.Selection, error) {
 	modSrc := node.Module.Source.Value.Self()
 	switch modSrc.Kind {
 	case ModuleSourceKindLocal:
@@ -188,20 +298,13 @@ func (node *ModTreeNode) tryScaleOut(ctx context.Context) (_ bool, rerr error) {
 	case ModuleSourceKindDir:
 		dirIDEnc, err := modSrc.DirSrc.OriginalContextDir.ID().Encode()
 		if err != nil {
-			return true, fmt.Errorf("encode dir ID: %w", err)
+			return nil, fmt.Errorf("encode dir ID: %w", err)
 		}
 		query = query.Select("loadDirectoryFromID").Arg("id", dirIDEnc)
 		query = query.Select("asModuleSource").
 			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
 	}
-
-	query = query.Select("asModule")
-	query = query.Select("check").Arg("name", node.PathString())
-	query = query.Select("run")
-	query = query.SelectMultiple("completed", "passed")
-
-	var res struct{ Completed, Passed bool }
-	return true, query.Bind(&res).Execute(ctx)
+	return query.Select("asModule"), nil
 }
 
 // Initialize a standalone dagql server for querying the given module
@@ -289,13 +392,13 @@ func debugTrace(ctx context.Context, msg string, args ...any) {
 		Run(ctx)
 }
 
-// Walk the tree and return all check nodes, with include and exclude filters applied.
-func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
-	var checks []*ModTreeNode
+// Walk the tree and return all matching nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeNode) bool, include []string, exclude []string) ([]*ModTreeNode, error) {
+	var res []*ModTreeNode
 	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) (bool, error) {
 		// FIXME: prune the search tree more aggressively, for efficiency
 		// BUT be careful to not break matching!
-		if n.IsCheck {
+		if matches(n) {
 			if len(include) > 0 {
 				if match, err := n.Match(ctx, include); err != nil {
 					return false, err
@@ -311,12 +414,29 @@ func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exc
 					return false, nil
 				}
 			}
-			checks = append(checks, n)
-			return false, nil // checks are always leaves - no point in trying to walk
+			res = append(res, n)
+			return false, nil // always looking for leaves - no point in trying to walk
 		}
 		return true, nil
 	})
-	return checks, err
+	slices.SortStableFunc(res, func(a, b *ModTreeNode) int {
+		return strings.Compare(a.PathString(), b.PathString())
+	})
+	return res, err
+}
+
+// Walk the tree and return all check nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
+		return n.IsCheck
+	}, include, exclude)
+}
+
+// Walk the tree and return all generator nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
+		return n.IsGenerator
+	}, include, exclude)
 }
 
 type ModTreePath []string
@@ -431,6 +551,13 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	return nil
 }
 
+func originalModule(parent *ModTreeNode, name string) *Module {
+	if tc, ok := parent.Module.Toolchains.Get(name); ok {
+		return tc.Module
+	}
+	return parent.OriginalModule
+}
+
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
@@ -443,20 +570,46 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				Name:        fn.Name,
 				DagqlServer: node.DagqlServer,
 				Module:      node.Module,
-				Type:        fn.ReturnType,
-				IsCheck:     fn.IsCheck,
-				Description: fn.Description,
+				// toolchains are exposed as a function, this is the only place we set a
+				// different original module.
+				// other functions can't return a type not defined in the module itself (or core)
+				// so the original module is always the parent one in other cases
+				OriginalModule: originalModule(node, fn.Name),
+				Type:           fn.ReturnType,
+				IsCheck:        fn.IsCheck,
+				IsGenerator:    fn.IsGenerator,
+				Description:    fn.Description,
 			})
+			// if the type returned by the function is an object, check the children of the return type
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
+				// avoid cycles (X.withFoo: X)
+				fn.ReturnType.ToType().Name() != node.Type.Type().Name() {
+				if subObj, ok := node.Module.ObjectByName(fn.ReturnType.ToType().Name()); ok {
+					children = append(children, &ModTreeNode{
+						Parent:         node,
+						Name:           fn.Name, // use the name of the function and not the name of the type as we want the chain
+						DagqlServer:    node.DagqlServer,
+						Module:         node.Module,
+						OriginalModule: node.OriginalModule,
+						Type:           &TypeDef{AsObject: dagql.NonNull(subObj)},
+						IsCheck:        false,
+						IsGenerator:    false,
+						Description:    subObj.Description,
+					})
+				}
+			}
 		}
 		for _, field := range objType.Fields {
 			children = append(children, &ModTreeNode{
-				Parent:      node,
-				Name:        field.Name,
-				DagqlServer: node.DagqlServer,
-				Module:      node.Module,
-				Type:        field.TypeDef,
-				IsCheck:     false,
-				Description: field.Description,
+				Parent:         node,
+				Name:           field.Name,
+				DagqlServer:    node.DagqlServer,
+				Module:         node.Module,
+				OriginalModule: node.OriginalModule,
+				Type:           field.TypeDef,
+				IsCheck:        false,
+				IsGenerator:    false,
+				Description:    field.Description,
 			})
 		}
 	}

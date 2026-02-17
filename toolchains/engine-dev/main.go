@@ -117,7 +117,9 @@ func (dev *EngineDev) Playground(
 ) (*dagger.Container, error) {
 	ctr := base
 	if ctr == nil {
-		ctr = dag.Alpine().Container().WithEnvVariable("HOME", "/root")
+		ctr = dag.Wolfi().Container(dagger.WolfiContainerOpts{
+			Packages: []string{"apk-tools", "git"},
+		}).WithEnvVariable("HOME", "/root")
 	}
 	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
 	svc, err := dev.Service(
@@ -298,7 +300,7 @@ func (dev *EngineDev) InstallClient(
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliPath, dag.DaggerCli().Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
-		WithExec([]string{"ln", "-s", cliPath, "/usr/local/bin/dagger"})
+		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
 		client = client.WithMountedSecret(
 			"${HOME}/.docker/config.json",
@@ -367,6 +369,7 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
+// +generate
 func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	// ebpf object files are actually expected to only be generated during a build, not
 	// committed, so we remove stubs and real ones before+after go generate

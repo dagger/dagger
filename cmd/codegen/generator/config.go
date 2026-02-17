@@ -83,4 +83,8 @@ type ClientGeneratorConfig struct {
 
 	// The directory where the client will be generated.
 	ClientDir string
+
+	// The engine version from dagger.json, used to pin the dagger.io/dagger dependency.
+	// This is only populated when generating from a module source (not in tests).
+	EngineVersion string
 }

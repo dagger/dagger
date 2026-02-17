@@ -4,10 +4,11 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 
-	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"github.com/dagger/dagger/util/parallel"
+	"github.com/dagger/dagger/util/patchpreview"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -15,71 +16,22 @@ type DaggerDev struct{}
 
 // Verify that generated code is up to date
 // +check
-func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
-	_, err := dev.Generate(ctx, true)
-	return err
-}
-
-// Run all code generation - SDKs, docs, grpc stubs, changelog
-func (dev *DaggerDev) Generate(ctx context.Context,
-	// +optional
-	check bool,
-) (*dagger.Changeset, error) {
-	var genDocs, genEngine, genChangelog, genSDKs *dagger.Changeset
-	maybeCheck := func(ctx context.Context, changes *dagger.Changeset) error {
-		if !check {
-			return nil
-		}
-		return assertNoChanges(ctx, changes, os.Stderr)
-	}
-	err := parallel.New().
-		WithJob("docs", func(ctx context.Context) error {
-			var err error
-			genDocs, err = dag.Docs().Generate().Sync(ctx)
-			if err != nil {
-				return err
-			}
-			return maybeCheck(ctx, genDocs)
-		}).
-		WithJob("engine", func(ctx context.Context) error {
-			var err error
-			genEngine, err = dag.EngineDev().Generate().Sync(ctx)
-			if err != nil {
-				return err
-			}
-			return maybeCheck(ctx, genEngine)
-		}).
-		WithJob("changelog", func(ctx context.Context) error {
-			var err error
-			genChangelog, err = dag.Changelog().Generate().Sync(ctx)
-			if err != nil {
-				return err
-			}
-			return maybeCheck(ctx, genChangelog)
-		}).
-		WithJob("SDKs", func(ctx context.Context) error {
-			var err error
-			genSDKs, err = dag.Sdks().Generate().Sync(ctx)
-			if err != nil {
-				return err
-			}
-			return maybeCheck(ctx, genSDKs)
-		}).
-		Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if check {
-		return nil, nil
-	}
-	var result *dagger.Changeset
-	// FIXME: this is a workaround to TUI being too noisy
-	err = parallel.Run(ctx, "merge all changesets", func(ctx context.Context) error {
-		var err error
-		var gen []*dagger.Changeset
-		gen = append(gen, genDocs, genEngine, genChangelog, genSDKs)
-		result, err = changesetMerge(gen...).Sync(ctx)
+func (dev *DaggerDev) Generated(ctx context.Context) error {
+	generated := dag.CurrentModule().Generators().Run()
+	if empty, err := generated.IsEmpty(ctx); err != nil {
 		return err
-	})
-	return result, err
+	} else if !empty {
+		changes := generated.Changes()
+		rawPatch, err := changes.AsPatch().Contents(ctx)
+		if err != nil {
+			return err
+		}
+		preview, err := patchpreview.SummarizeString(ctx, rawPatch, changes)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, preview)
+		return errors.New("generated files are not up-to-date")
+	}
+	return nil
 }

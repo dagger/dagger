@@ -252,9 +252,7 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 
 func unpackTar(tarball *dagger.File) *dagger.Directory {
 	return dag.
-		Alpine(dagger.AlpineOpts{
-			Branch: consts.AlpineVersion,
-		}).
+		Wolfi().
 		Container().
 		WithMountedDirectory("/out", dag.Directory()).
 		WithMountedFile("/target.tar", tarball).

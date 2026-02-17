@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  support kernels without legacy xtables (Linux 6.17+ and older ones with iptables disabled)
-time: 2026-01-21T21:40:39.097979296-08:00
-custom:
-  Author: shepherdjerred + sipsma
-  PR: "11731"

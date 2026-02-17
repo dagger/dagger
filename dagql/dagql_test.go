@@ -31,7 +31,6 @@ import (
 	"github.com/dagger/dagger/dagql/internal/pipes"
 	"github.com/dagger/dagger/dagql/internal/points"
 	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -69,7 +68,7 @@ func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
 }
 
 func newCache(t *testing.T) *dagql.SessionCache {
-	baseCache, err := cache.NewCache[string, dagql.AnyResult](t.Context(), "")
+	baseCache, err := dagql.NewCache(t.Context(), "")
 	assert.NilError(t, err)
 	return dagql.NewSessionCache(baseCache)
 }
@@ -2454,6 +2453,86 @@ func (*CoolInt) TypeDescription() string {
 	return "idk"
 }
 
+func TestNodeFuncResultZeroValueTypeInference(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	dagql.Fields[*CoolInt]{}.Install(srv)
+	dagql.Fields[Query]{
+		dagql.NodeFunc("typedResult", func(ctx context.Context, _ dagql.ObjectResult[Query], args struct {
+			Val int
+		}) (dagql.Result[*CoolInt], error) {
+			return dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	var res struct {
+		TypedResult struct {
+			Val int
+		}
+	}
+	req(t, gql, `query {
+		typedResult(val: 123) {
+			val
+		}
+	}`, &res)
+	assert.Equal(t, 123, res.TypedResult.Val)
+}
+
+func TestNullResultCachePathDoesNotPanic(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+	dagql.Fields[Query]{
+		dagql.Func("alwaysNull", func(context.Context, Query, struct{}) (dagql.Nullable[dagql.String], error) {
+			return dagql.Null[dagql.String](), nil
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	for range 2 {
+		var res struct {
+			AlwaysNull *string
+		}
+		req(t, gql, `query {
+			alwaysNull
+		}`, &res)
+		assert.Assert(t, res.AlwaysNull == nil)
+	}
+}
+
+func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	calls := []int{}
+	dagql.Fields[Query]{
+		dagql.NodeFuncWithCacheKey(
+			"rewrittenArg",
+			func(_ context.Context, _ dagql.ObjectResult[Query], args struct{ Val int }) (dagql.Int, error) {
+				calls = append(calls, args.Val)
+				return dagql.Int(args.Val), nil
+			},
+			func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{ Val int }, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
+				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+				resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+					"val",
+					dagql.Int(7).ToLiteral(),
+					false,
+				))
+				return resp, nil
+			},
+		),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+	var res struct {
+		RewrittenArg int
+	}
+	req(t, gql, `query { rewrittenArg(val: 1) }`, &res)
+	assert.Equal(t, 7, res.RewrittenArg)
+	assert.DeepEqual(t, calls, []int{7})
+}
+
 func TestCustomDigest(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
 
@@ -2483,7 +2562,7 @@ func TestCustomDigest(t *testing.T) {
 			},
 			func(ctx context.Context, _ dagql.ObjectResult[Query], _ argsType, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
 				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
-				resp.CacheKey.CallKey = cryptorand.Text()
+				resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(digest.FromString(cryptorand.Text()))
 				return resp, nil
 			}),
 

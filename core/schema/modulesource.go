@@ -26,7 +26,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/iancoleman/strcase"
@@ -736,7 +735,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	secretTransferPostCall, err := core.ResourceTransferPostCall(ctx, query.Self(), clientMetadata.ClientID, &resource.ID{
+	secretTransferPostCall, _, err := core.ResourceTransferPostCall(ctx, query.Self(), clientMetadata.ClientID, &resource.ID{
 		ID: *gitSrc.ContextDirectory.ID(),
 	})
 	if err != nil {
@@ -1229,13 +1228,16 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		src.SourceRootSubpath + "/" + modules.Filename,
 	}
 
-	if src.SourceSubpath != "" {
+	if src.SourceSubpath == "." {
+		// "." ends up matching nothing, so we convert it to "*"
+		fullIncludePaths = append(fullIncludePaths, "*")
+	} else if src.SourceSubpath != "" {
 		// load the source dir if set
-		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath+"/**/*")
+		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath)
 	} else {
 		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
 		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
-		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**/*")
+		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath)
 	}
 
 	switch src.Kind {
@@ -2517,17 +2519,18 @@ func (s *moduleSourceSchema) runCodegen(
 		return res, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
 
-	// cache the current source instance by it's digest before passing to codegen
-	// this scopes the cache key of codegen calls to an exact content hash detached
-	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: srcInst.Self().Digest,
-	}
-	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, srcInst)
+	// cache the current source instance by its scoped content digest before passing
+	// to codegen so we preserve provenance for git sources while still collapsing
+	// irrelevant caller details.
+	scopedSourceDigest := srcInst.Self().ContentScopedDigest()
+	cacheKeyID := srcInst.ID().WithDigest(digest.Digest(scopedSourceDigest))
+	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
+		ID: cacheKeyID,
+	}, dagql.ValueFunc(srcInst))
 	if err != nil {
 		return res, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	srcInstContentHashed := srcInst.WithObjectDigest(digest.Digest(srcInst.Self().Digest))
+	srcInstContentHashed := srcInst.WithObjectDigest(digest.Digest(scopedSourceDigest))
 
 	generatedCodeImpl, ok := srcInst.Self().SDKImpl.AsCodeGenerator()
 	if !ok {
@@ -2682,6 +2685,9 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	clientGeneratorImpl, ok := sdk.AsClientGenerator()
 	if !ok {
+		if srcInst.Self() == nil || srcInst.Self().SDK == nil {
+			return genDirInst, fmt.Errorf("module source has no SDK configured")
+		}
 		return genDirInst, ErrSDKClientGeneratorNotImplemented{SDK: srcInst.Self().SDK.Source}
 	}
 
@@ -2856,10 +2862,9 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
 	}
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: string(tmpModInst.ID().Digest()),
-	}
-	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, tmpModInst)
+	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
+		ID: tmpModInst.ID(),
+	}, dagql.ValueFunc(tmpModInst))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2912,11 +2917,8 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
 			}
-			postCall := result.GetPostCall()
-			if postCall != nil {
-				if err := postCall(ctx); err != nil {
-					return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
-				}
+			if err := result.PostCall(ctx); err != nil {
+				return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
 			}
 
 			resultInst, ok := result.(dagql.Result[*core.Module])
@@ -3046,15 +3048,17 @@ func (s *moduleSourceSchema) initializeSDKModule(
 	mod *core.Module,
 	dag *dagql.Server,
 ) (*core.Module, error) {
-	// Cache the source instance by digest
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: src.Self().Digest,
-	}
-	_, err := dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
+	// Cache the source instance by scoped content digest so git provenance is
+	// preserved for same-content sources from different remotes.
+	scopedSourceDigest := src.Self().ContentScopedDigest()
+	cacheKeyID := src.ID().WithDigest(digest.Digest(scopedSourceDigest))
+	_, err := dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
+		ID: cacheKeyID,
+	}, dagql.ValueFunc(src))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
 
 	// Run SDK codegen
 	mod, err = s.runModuleDefInSDK(ctx, src, srcInstContentHashed, mod)
@@ -3489,13 +3493,13 @@ func (s *moduleSourceSchema) integrateToolchains(
 	mod *core.Module,
 	dag *dagql.Server,
 ) (*core.Module, error) {
+	// Initialize toolchain registry
+	mod.Toolchains = core.NewToolchainRegistry(mod)
+
 	toolchainMods := extractToolchainModules(mod)
 	if len(toolchainMods) == 0 {
 		return mod, nil
 	}
-
-	// Initialize toolchain registry
-	mod.Toolchains = core.NewToolchainRegistry(mod)
 
 	// Register all toolchains in the registry
 	for _, tcMod := range toolchainMods {
@@ -3516,6 +3520,9 @@ func (s *moduleSourceSchema) integrateToolchains(
 						}
 						if len(tcCfg.IgnoreChecks) > 0 {
 							entry.IgnoreChecks = tcCfg.IgnoreChecks
+						}
+						if len(tcCfg.IgnoreGenerators) > 0 {
+							entry.IgnoreGenerators = tcCfg.IgnoreGenerators
 						}
 						break
 					}

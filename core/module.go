@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -18,7 +17,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -102,6 +100,10 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	return NewCheckGroup(ctx, mod, include)
 }
 
+func (mod *Module) Generators(ctx context.Context, include []string) (*GeneratorGroup, error) {
+	return NewGeneratorGroup(ctx, mod, include)
+}
+
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	return mod.ObjectByName(mod.Name())
 }
@@ -156,16 +158,23 @@ func (mod *Module) GetContextSource() *ModuleSource {
 	return mod.ContextSource.Value.Self()
 }
 
-func (mod *Module) ContentDigestCacheKey() cache.CacheKey[dagql.CacheKeyType] {
-	return cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: string(hashutil.HashStrings(
-			mod.ContextSource.Value.Self().Digest,
-			"asModule",
-		)),
+func (mod *Module) ContentDigestCacheKey() string {
+	contextSource := mod.ContextSource.Value.Self()
+	contentDigest := ""
+	contentCacheScope := ""
+	if contextSource != nil {
+		contentDigest = contextSource.Digest
+		contentCacheScope = contextSource.ContentCacheScope()
 	}
+
+	return hashutil.HashStrings(
+		contentDigest,
+		contentCacheScope,
+		"asModule",
+	).String()
 }
 
-// GetModuleFromContentDigest loads a module based on its content hashed key as saved
+// GetModuleFromContentDigest loads a module based on the same content+provenance key used
 // in ModuleSource.asModule. We sometimes can't directly load a Module because the current
 // caching logic will result in that Module being re-loaded by clients (due to it being
 // CachePerClient) and then possibly trying to load it from the wrong context (in the case
@@ -176,31 +185,30 @@ func GetModuleFromContentDigest(
 	modName string,
 	dgst string,
 ) (inst dagql.ObjectResult[*Module], err error) {
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: dgst,
-	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, err
 	}
-	cacheKey.CallKey = hashutil.HashStrings(cacheKey.CallKey, md.SessionID).String()
-
-	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
+	cacheKey := hashutil.HashStrings(dgst, md.SessionID).String()
+	cacheRes, err := dag.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
 		return nil, fmt.Errorf("module not found: %s", modName)
 	})
 	if err != nil {
 		return inst, err
 	}
-	inst, ok := modRes.Result().(dagql.ObjectResult[*Module])
+	if cacheRes == nil {
+		return inst, fmt.Errorf("module cache returned nil result for key %q", cacheKey)
+	}
+	inst, ok := cacheRes.Value().(dagql.ObjectResult[*Module])
 	if !ok {
-		return inst, fmt.Errorf("cached module has unexpected type: %T", modRes.Result())
+		return inst, fmt.Errorf("cached module has unexpected type: %T", cacheRes.Value())
 	}
 
 	return inst, nil
 }
 
-// CacheModuleByContentDigest caches the given module instance using its content digest + session ID, corresponding to
-// the getter above (GetModuleFromContentDigest).
+// CacheModuleByContentDigest caches the given module instance using its content+provenance
+// key + session ID, corresponding to the getter above (GetModuleFromContentDigest).
 func CacheModuleByContentDigest(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -210,10 +218,8 @@ func CacheModuleByContentDigest(
 	if err != nil {
 		return err
 	}
-	perSessionContentCacheKey := mod.Self().ContentDigestCacheKey()
-	perSessionContentCacheKey.CallKey = dagql.CacheKeyType(hashutil.HashStrings(perSessionContentCacheKey.CallKey, md.SessionID))
-	perSessionContentHashedInst := mod.WithObjectDigest(digest.Digest(perSessionContentCacheKey.CallKey))
-	_, err = dag.Cache.GetOrInitializeValue(ctx, perSessionContentCacheKey, perSessionContentHashedInst)
+	perSessionContentCacheKey := hashutil.HashStrings(mod.Self().ContentDigestCacheKey(), md.SessionID).String()
+	_, err = dag.Cache.GetOrInitArbitrary(ctx, perSessionContentCacheKey, dagql.ArbitraryValueFunc(mod))
 	if err != nil {
 		return err
 	}
@@ -290,7 +296,7 @@ func (mod *Module) IDModule() *call.Module {
 	}
 
 	contentCacheKey := mod.ContentDigestCacheKey()
-	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey.CallKey)), mod.Name(), ref, pin)
+	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey)), mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -421,11 +427,14 @@ func (mod *Module) CacheConfigForCall(
 	resp := &dagql.GetCacheConfigResponse{
 		CacheKey: req.CacheKey,
 	}
-	resp.CacheKey.CallKey = hashutil.HashStrings(
+	if resp.CacheKey.ID == nil {
+		resp.CacheKey.ID = curIDNoMod
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
 		curIDNoMod.Digest().String(),
 		mod.Source.Value.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
-	).String()
+	))
 	return resp, nil
 }
 
@@ -880,7 +889,8 @@ func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[
 	}
 
 	src = mod.Source.Value
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+	scopedSourceDigest := src.Self().ContentScopedDigest()
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
 	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return runtime, fmt.Errorf("failed to load runtime: %w", err)
@@ -918,34 +928,6 @@ type Mod interface {
 
 	// Source returns the ModuleSource for this module
 	GetSource() *ModuleSource
-}
-
-var _ HasPBDefinitions = (*Module)(nil)
-
-func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var defs []*pb.Definition
-	if mod.Source.Valid && mod.Source.Value.Self() != nil {
-		dirDefs, err := mod.Source.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	if mod.ContextSource.Valid && mod.ContextSource.Value.Self() != nil {
-		dirDefs, err := mod.ContextSource.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	if mod.Runtime.Valid && mod.Runtime.Value.Self() != nil {
-		dirDefs, err := mod.Runtime.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	return defs, nil
 }
 
 func (mod Module) Clone() *Module {

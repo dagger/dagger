@@ -15,10 +15,13 @@ import (
 )
 
 func New(
+	ctx context.Context,
+
 	// A git repository containing the source code of the artifact to be versioned.
 	// +optional
-	// +defaultPath="/.git"
-	git *dagger.Directory,
+	// +defaultPath="/"
+	// +ignore=["*", "!.git"]
+	gitParent *dagger.Directory,
 
 	// A directory containing all the inputs of the artifact to be versioned.
 	// An input is any file that changes the artifact if it changes.
@@ -35,12 +38,17 @@ func New(
 	// +defaultPath="/.changes/.next"
 	nextVersionFile *dagger.File,
 ) *Version {
-	return &Version{
-		Git:             git.AsGit(),
-		GitDir:          git,
+	v := &Version{
 		Inputs:          inputs.Filter(dagger.DirectoryFilterOpts{Gitignore: true}),
 		NextVersionFile: nextVersionFile,
 	}
+
+	if git, err := gitParent.Directory(".git").Sync(ctx); err == nil {
+		v.Git = git.AsGit()
+		v.GitDir = git
+	}
+
+	return v
 }
 
 type Version struct {
@@ -57,6 +65,10 @@ type Version struct {
 
 // Generate a version string from the current context
 func (v Version) Version(ctx context.Context) (string, error) {
+	if v.Git == nil {
+		return v.fallbackVersion(ctx)
+	}
+
 	dirty, err := v.Dirty(ctx)
 	if err != nil {
 		return "", err
@@ -106,8 +118,40 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(commitDate), commit[:12]), nil
 }
 
+func (v Version) fallbackVersion(ctx context.Context) (string, error) {
+	// Try to get next release version from .changes/.next
+	next := "v0.0.0"
+	if v.NextVersionFile != nil {
+		if content, err := v.NextVersionFile.Contents(ctx); err == nil {
+			for _, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "v") && semver.IsValid(line) {
+					next = line
+					break
+				}
+			}
+		}
+	}
+
+	// Generate a version based on inputs digest
+	rawDigest, err := v.Inputs.Digest(ctx)
+	if err != nil {
+		return "", err
+	}
+	_, digest, ok := strings.Cut(rawDigest, ":")
+	if !ok {
+		return "", fmt.Errorf("invalid digest: %s", rawDigest)
+	}
+
+	return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Now()), digest[:12]), nil
+}
+
 // Return the tag to use when auto-downloading the engine image from the CLI
 func (v Version) ImageTag(ctx context.Context) (string, error) {
+	if v.Git == nil {
+		return v.fallbackVersion(ctx)
+	}
+
 	if tag, err := v.CurrentTag(ctx); err != nil {
 		return "", err
 	} else if tag != "" {
@@ -130,6 +174,10 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 }
 
 func (v Version) Dirty(ctx context.Context) (bool, error) {
+	if v.Git == nil {
+		return true, nil
+	}
+
 	committed := v.Git.Head().Tree()
 
 	// Overlay local inputs onto committed tree, then diff.
@@ -147,6 +195,10 @@ func (v Version) Dirty(ctx context.Context) (bool, error) {
 }
 
 func (v Version) CurrentTag(ctx context.Context) (string, error) {
+	if v.Git == nil {
+		return "", nil
+	}
+
 	commit, err := v.Git.Head().Commit(ctx)
 	if err != nil {
 		return "", err

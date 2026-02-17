@@ -66,6 +66,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&envfileSchema{},
 		&addressSchema{},
 		&checksSchema{},
+		&generatorsSchema{},
 	} {
 		schema.Install(dag)
 	}
@@ -202,10 +203,22 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 		schema.QueryType.Name = *queryName
 	}
 	for _, dagqlType := range dagqlSchema.Types() {
-		schema.Types = append(schema.Types, dagqlToCodegenType(dagqlType))
+		codeGenType, err := dagqlToCodegenType(dagqlType)
+		if err != nil {
+			return nil, err
+		}
+		schema.Types = append(schema.Types, codeGenType)
 	}
-	for _, dagqlDirective := range dagqlSchema.Directives() {
-		schema.Directives = append(schema.Directives, dagqlToCodegenDirectiveDef(dagqlDirective))
+	directives, err := dagqlSchema.Directives()
+	if err != nil {
+		return nil, err
+	}
+	for _, dagqlDirective := range directives {
+		dd, err := dagqlToCodegenDirectiveDef(dagqlDirective)
+		if err != nil {
+			return nil, err
+		}
+		schema.Directives = append(schema.Directives, dd)
 	}
 
 	typeDefs := make([]*core.TypeDef, 0, len(schema.Types))

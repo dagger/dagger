@@ -1,8 +1,0 @@
-kind: Added
-body: |-
-    Merge multiple changesets using changeset.withChangest(other) or changeset.withChangesets(others...)
-    Multiple strategies are available in case of conflict, and uses git under the hood to merge the changesets.
-time: 2026-01-26T16:21:07.146023+01:00
-custom:
-    Author: eunomie
-    PR: "11577"

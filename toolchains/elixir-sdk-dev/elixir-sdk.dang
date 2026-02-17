@@ -1,14 +1,13 @@
 pub description = "Develop the Dagger Elixir SDK (experimental)"
 
 type ElixirSdkDev {
-
   pub baseImage: String! = "elixir:1.18.4-otp-28-alpine@sha256:35777d29cf6c00c66b2c4ae135bf187dd9e3d5d4b75d0922b75e073732a1613a"
 
   pub workspace: Directory!
     @defaultPath(path: "/")
     @ignorePatterns(patterns: [
       "*",
-      "!sdk/elixir"
+      "!sdk/elixir",
     ])
 
   pub sourcePath: String! = "sdk/elixir"
@@ -21,7 +20,9 @@ type ElixirSdkDev {
     withBase(source)
   }
 
-  """Test the SDK"""
+  """
+  Test the SDK
+  """
   pub test: Void! {
     # Run SDK and codegen tests in parallel
     let sdkResult = sdkTest
@@ -29,67 +30,88 @@ type ElixirSdkDev {
     null
   }
 
-  """Lint the SDK"""
+  """
+  Lint the SDK
+  """
   pub lint: Void! {
-    devContainer.
-      withExec(["mix", "credo"]).
-      sync
+    devContainer
+      .withExec(["mix", "credo"])
+      .sync
+
     null
   }
 
-  """Regenerate the Elixir SDK API"""
-  pub generate(introspectionJson: File!): Changeset! {
+  """
+  Regenerate the Elixir SDK API
+  """
+  pub generate(introspectionJson: File!): Changeset! @generate {
     # Make sure everything is relative to git root
-    let before = directory.
-      withDirectory(sourcePath, source)
+    let before = directory
+      .withDirectory(sourcePath, source)
 
-    let gen = withCodegen(devContainer).
-      withMountedFile("/schema.json", introspectionJson).
-      withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"]).
-      withExec(["mix", "format", "gen/*.ex"]).
-      directory("gen")
+    let gen = withCodegen(devContainer)
+      .withMountedFile("/schema.json", introspectionJson)
+      .withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"])
+      .withExec(["mix", "format", "gen/*.ex"])
+      .directory("gen")
 
-    let layer = directory.
-      withDirectory(sourcePath + "/lib/dagger/gen", gen)
+    let layer = directory
+      .withDirectory(sourcePath + "/lib/dagger/gen", gen)
 
     let after = before.withDirectory("", layer)
 
     after.changes(before)
   }
 
-  """Run the SDK tests"""
+  """
+  Run the SDK tests
+  """
   pub sdkTest: Void! {
-    devContainer.
-      withExec(["mix", "test"]).
-      sync
+    devContainer
+      .withExec(["mix", "test"])
+      .sync
+
     null
   }
 
-  """Run dagger_codegen tests"""
+  """
+  Run dagger_codegen tests
+  """
   pub codegenTest: Void! {
-    withCodegen(devContainer).
-      withExec(["mix", "test"]).
-      sync
+    withCodegen(devContainer)
+      .withExec(["mix", "test"])
+      .sync
+
     null
   }
 
-  """Test the publishing process"""
+  """
+  Test the publishing process
+  """
   pub releaseDryRun: Void! {
     publish(
       tag: "HEAD",
       dryRun: true,
-      hexApiKey: null
+      hexApiKey: null,
     )
   }
 
-  """Publish the Elixir SDK"""
+  """
+  Publish the Elixir SDK
+  """
   pub publish(
-    """Source git tag to release"""
+    """
+    Source git tag to release
+    """
     tag: String!,
-    """Hex.pm API key for publishing"""
+    """
+    Hex.pm API key for publishing
+    """
     hexApiKey: Secret!,
-    """Execute a dry-run release, with no side effects"""
-    dryRun: Boolean
+    """
+    Execute a dry-run release, with no side effects
+    """
+    dryRun: Boolean,
   ): Void! {
     let version = versionFromTag(tag)
     let ctr = devContainer
@@ -100,80 +122,84 @@ type ElixirSdkDev {
       let mixExs = workspace.file(sourcePath + "/mix.exs")
       let newMixExs = mixExs.withReplaced(
         "@version \"0.0.0\"",
-        "@version \"" + version.trimPrefix("v") + "\""
+        "@version \"" + version.trimPrefix("v") + "\"",
       )
       ctr = ctr.withFile(mixFile, newMixExs)
     }
 
     # Publish or dry-run
     if (dryRun == true) {
-      ctr = ctr.
-        withEnvVariable("HEX_API_KEY", "").
-        withExec(["mix", "hex.publish", "--yes", "--dry-run"])
+      ctr = ctr
+        .withEnvVariable("HEX_API_KEY", "")
+        .withExec(["mix", "hex.publish", "--yes", "--dry-run"])
     } else {
-      ctr = ctr.
-        withSecretVariable("HEX_API_KEY", hexApiKey).
-        withExec(["mix", "hex.publish", "--yes"])
+      ctr = ctr
+        .withSecretVariable("HEX_API_KEY", hexApiKey)
+        .withExec(["mix", "hex.publish", "--yes"])
     }
 
     ctr.sync
     null
   }
 
-  """Bump the Elixir SDK's Engine dependency"""
+  """
+  Bump the Elixir SDK's Engine dependency
+  """
   pub bump(version: String!): Changeset! {
     let versionFilePath = "lib/dagger/core/version.ex"
-    container.
-    from(baseImage).
-    withWorkdir("/app").
-    withDirectory(".", source).
-    withExec(["sed", "-E", "-i", "-e", "s/@dagger_cli_version \"([^\"]+)\"/@dagger_cli_version \"" + version + "\"/g", versionFilePath]).
-    directory(".").
-    changes(source)
+    container
+      .from(baseImage)
+      .withWorkdir("/app")
+      .withDirectory(".", source)
+      .withExec(["sed", "-E", "-i", "-e", "s/@dagger_cli_version \"([^\"]+)\"/@dagger_cli_version \"" + version + "\"/g", versionFilePath])
+      .directory(".")
+      .changes(source)
   }
 
-  """Sync Elixir image to keep both dev and runtime modules consistent"""
+  """
+  Sync Elixir image to keep both dev and runtime modules consistent
+  """
   pub syncImage: File! {
     let path = "runtime/main.go"
-    let runtimeMainGo = withBase(source).
-      file(path)
+    let runtimeMainGo = withBase(source)
+      .file(path)
 
     # Replace the elixirImage line with the new base image
     let newRuntimeMainGo = runtimeMainGo.withReplaced(
       "elixirImage = ",
-      "elixirImage = \"" + baseImage + "\"\n"
+      "elixirImage = \"" + baseImage + "\"\n",
     ).contents
 
-    devContainer.
-      from("golang:1.23-alpine").
-      withNewFile(path, newRuntimeMainGo).
-      withExec(["go", "fmt", path]).
-      file(path)
+    devContainer
+      .from("golang:1.23-alpine")
+      .withNewFile(path, newRuntimeMainGo)
+      .withExec(["go", "fmt", path])
+      .file(path)
   }
 
   let withCodegen(ctr: Container!): Container! {
-    ctr.
-      withWorkdir("dagger_codegen").
-      withExec(["mix", "deps.get"])
+    ctr
+      .withWorkdir("dagger_codegen")
+      .withExec(["mix", "deps.get"])
   }
 
   let withBase(src: Directory!): Container! {
-    container.
-      from(baseImage).
-      withWorkdir("/sdk/elixir").
-      withDirectory(".", src).
-      withExec(["mix", "local.hex", "--force"]).
-      withExec(["mix", "local.rebar", "--force"]).
-      withExec(["mix", "deps.get"])
+    container
+      .from(baseImage)
+      .withWorkdir("/sdk/elixir")
+      .withDirectory(".", src)
+      .withExec(["mix", "local.hex", "--force"])
+      .withExec(["mix", "local.rebar", "--force"])
+      .withExec(["mix", "deps.get"])
   }
 
   let isSemver(version: String!): Boolean! {
-    let binary=go(source:currentModule.source.directory("is-semver")).binary("is-semver")
-    let exitCode = devContainer.
-      from("alpine:3").
-      withFile("/bin/is-semver", binary).
-      withExec(["is-semver", version], expect: ReturnType.ANY).
-      exitCode
+    let binary = go(source: currentModule.source.directory("is-semver")).binary("is-semver")
+    let exitCode = devContainer
+      .from("alpine:3")
+      .withFile("/bin/is-semver", binary)
+      .withExec(["is-semver", version], expect: ReturnType.ANY)
+      .exitCode
     exitCode == 0
   }
 

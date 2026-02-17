@@ -71,27 +71,6 @@ func (dir *Directory) IsRootDir() bool {
 	return dir.Dir == "" || dir.Dir == "/"
 }
 
-var _ HasPBDefinitions = (*Directory)(nil)
-
-func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var defs []*pb.Definition
-	if dir.LLB != nil {
-		defs = append(defs, dir.LLB)
-	}
-	for _, bnd := range dir.Services {
-		ctr := bnd.Service.Self().Container
-		if ctr == nil {
-			continue
-		}
-		ctrDefs, err := ctr.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, ctrDefs...)
-	}
-	return defs, nil
-}
-
 func NewDirectory(def *pb.Definition, dir string, platform Platform, services ServiceBindings) *Directory {
 	return &Directory{
 		LLB:      def,
@@ -101,8 +80,11 @@ func NewDirectory(def *pb.Definition, dir string, platform Platform, services Se
 	}
 }
 
-func NewScratchDirectory(ctx context.Context, platform Platform) (*Directory, error) {
-	return NewDirectorySt(ctx, llb.Scratch(), "/", platform, nil)
+func NewScratchDirectoryDagOp(ctx context.Context, platform Platform) (*Directory, error) {
+	return &Directory{
+		Dir:      "/",
+		Platform: platform,
+	}, nil
 }
 
 func NewDirectorySt(ctx context.Context, st llb.State, dir string, platform Platform, services ServiceBindings) (*Directory, error) {
@@ -351,46 +333,6 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 }
 
 func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
-	dir = dir.Clone()
-
-	err := validateFileName(dest)
-	if err != nil {
-		return nil, err
-	}
-
-	if permissions == 0 {
-		permissions = 0o644
-	}
-
-	// be sure to create the file under the working directory
-	dest = path.Join(dir.Dir, dest)
-
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	parent, _ := path.Split(dest)
-	if parent != "" {
-		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)))
-	}
-
-	opts := []llb.MkfileOption{}
-	if ownership != nil {
-		opts = append(opts, ownership.Opt())
-	}
-
-	st = st.File(llb.Mkfile(dest, permissions, content, opts...))
-
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	return dir, nil
-}
-
-func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
 	dir = dir.Clone()
 
 	err := validateFileName(dest)
@@ -1229,44 +1171,6 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 		}
 		return TrimErrPathPrefix(os.MkdirAll(resolvedDir, permissions), root)
 	}, withSavedSnapshot("withNewDirectory %s", dest))
-}
-
-// DiffLLB is legacy and will be deleted once all ops are dagops
-func (dir *Directory) DiffLLB(ctx context.Context, other *Directory) (*Directory, error) {
-	dir = dir.Clone()
-
-	thisDirPath := dir.Dir
-	if thisDirPath == "" {
-		thisDirPath = "/"
-	}
-	otherDirPath := other.Dir
-	if otherDirPath == "" {
-		otherDirPath = "/"
-	}
-	if thisDirPath != otherDirPath {
-		// TODO(vito): work around with llb.Copy shenanigans?
-		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
-	}
-
-	lowerSt, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	upperSt, err := other.State()
-	if err != nil {
-		return nil, err
-	}
-
-	st := llb.
-		Diff(lowerSt, upperSt).
-		File(llb.Mkdir(dir.Dir, 0755, llb.WithParents(true)))
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	return dir, nil
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {

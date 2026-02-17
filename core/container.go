@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -119,52 +118,6 @@ func (*Container) TypeDescription() string {
 	return "An OCI-compatible container, also known as a Docker container."
 }
 
-var _ HasPBDefinitions = (*Container)(nil)
-
-func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	if container == nil {
-		return nil, nil
-	}
-	var defs []*pb.Definition
-	if fs := container.FS; fs != nil && fs.Self().LLB != nil {
-		defs = append(defs, fs.Self().LLB)
-	} else {
-		defs = append(defs, nil)
-	}
-	for _, mnt := range container.Mounts {
-		handleMount(mnt,
-			func(dir *dagql.ObjectResult[*Directory]) {
-				if dir.Self().LLB != nil {
-					defs = append(defs, dir.Self().LLB)
-				}
-			},
-			func(file *dagql.ObjectResult[*File]) {
-				if file.Self().LLB != nil {
-					defs = append(defs, file.Self().LLB)
-				}
-			},
-			func(cache *CacheMountSource) {
-				if cache.Base != nil {
-					defs = append(defs, cache.Base)
-				}
-			},
-			func(tmpfs *TmpfsMountSource) {},
-		)
-	}
-	for _, bnd := range container.Services {
-		ctr := bnd.Service.Self().Container
-		if ctr == nil {
-			continue
-		}
-		ctrDefs, err := ctr.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, ctrDefs...)
-	}
-	return defs, nil
-}
-
 func NewContainer(platform Platform) *Container {
 	return &Container{Platform: platform}
 }
@@ -268,10 +221,6 @@ type Ownership struct {
 	GID int
 }
 
-func (owner Ownership) Opt() llb.ChownOption {
-	return llb.WithUIDGID(owner.UID, owner.GID)
-}
-
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
@@ -337,10 +286,7 @@ type ContainerMount struct {
 
 type CacheMountSource struct {
 	// The base layers underneath the cache mount, if any
-	Base *pb.Definition
-
-	// The path from the Base to use, if any
-	BasePath string
+	Base *dagql.ObjectResult[*Directory]
 
 	// The ID of the cache mount
 	ID string
@@ -454,7 +400,9 @@ func (mnt *ContainerMount) GetLLB() *pb.Definition {
 			}
 		},
 		func(cacheMount *CacheMountSource) {
-			llb = cacheMount.Base
+			if cacheMount != nil && cacheMount.Base != nil && cacheMount.Base.Self() != nil {
+				llb = cacheMount.Base.Self().LLB
+			}
 		},
 		func(tmpMount *TmpfsMountSource) {
 			// no LLB
@@ -693,20 +641,22 @@ func (container *Container) Build(
 	secrets []dagql.ObjectResult[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
+	sshSocket *Socket,
 ) (*Container, error) {
 	container = container.Clone()
 
 	secretNameToLLBID := make(map[string]string)
 	for _, secret := range secrets {
-		secretName, ok := secretStore.GetSecretName(secret.ID().Digest())
+		secretDgst := SecretIDDigest(secret.ID())
+		secretName, ok := secretStore.GetSecretName(secretDgst)
 		if !ok {
-			return nil, fmt.Errorf("secret not found: %s", secret.ID().Digest())
+			return nil, fmt.Errorf("secret not found: %s", secretDgst)
 		}
 		container.Secrets = append(container.Secrets, ContainerSecret{
 			Secret:    secret,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
 		})
-		secretNameToLLBID[secretName] = secret.ID().Digest().String()
+		secretNameToLLBID[secretName] = secretDgst.String()
 	}
 
 	// set image ref to empty string
@@ -759,6 +709,12 @@ func (container *Container) Build(
 		}
 		return llbID, nil
 	})
+
+	if sshSocket != nil {
+		solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
+			return sshSocket.LLBID(), nil
+		})
+	}
 
 	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
@@ -822,7 +778,6 @@ func (container *Container) Build(
 				buildkit.DaggerNoInitEnv+"=true",
 			)
 		}
-
 		dag.Metadata.Description = desc
 		return nil
 	}); err != nil {
@@ -859,7 +814,7 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	if container.FS != nil {
 		return container.FS.Self(), nil
 	}
-	return NewScratchDirectory(ctx, container.Platform)
+	return NewScratchDirectoryDagOp(ctx, container.Platform)
 }
 
 func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResult[*Directory]) (*Container, error) {
@@ -1316,11 +1271,16 @@ func (container *Container) WithMountedCache(
 	ctx context.Context,
 	target string,
 	cache *CacheVolume,
-	source *Directory,
+	source dagql.ObjectResult[*Directory],
 	sharingMode CacheSharingMode,
 	owner string,
 ) (*Container, error) {
 	container = container.Clone()
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -1336,25 +1296,25 @@ func (container *Container) WithMountedCache(
 		},
 	}
 
-	if source != nil {
-		mount.CacheSource.Base = source.LLB
-		mount.CacheSource.BasePath = source.Dir
-	}
-
 	if owner != "" {
+		if source.Self() == nil {
+			// create a scratch directory for chownDir to operate on
+			err = srv.Select(ctx, srv.Root(), &source,
+				dagql.Selector{
+					Field: "directory",
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
 		var err error
-		mount.CacheSource.Base, mount.CacheSource.BasePath, err = container.chownLLB(
-			ctx,
-			mount.CacheSource.Base,
-			mount.CacheSource.BasePath,
-			owner,
-			llb.Platform(container.Platform.Spec()),
-		)
+		source, err = container.chownDir(ctx, source, owner)
 		if err != nil {
 			return nil, err
 		}
 	}
-
+	mount.CacheSource.Base = &source
 	container.Mounts = container.Mounts.With(mount)
 
 	// set image ref to empty string
@@ -1543,7 +1503,7 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 	switch {
 	case mnt == nil: // rootfs
 		if container.FS == nil {
-			dir, err = NewScratchDirectory(ctx, container.Platform)
+			dir, err = NewScratchDirectoryDagOp(ctx, container.Platform)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create scratch directory: %w", err)
 			}
@@ -1726,92 +1686,6 @@ func (container *Container) chownFile(
 	}
 
 	return res, nil
-}
-
-func (container *Container) chownLLB(
-	ctx context.Context,
-	srcDef *pb.Definition,
-	srcPath string,
-	owner string,
-	opts ...llb.ConstraintsOpt,
-) (*pb.Definition, string, error) {
-	ownership, err := container.ownership(ctx, owner)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if ownership == nil {
-		return srcDef, srcPath, nil
-	}
-
-	var srcSt llb.State
-	if srcDef == nil {
-		// e.g. empty cache mount
-		srcSt = llb.Scratch().File(
-			llb.Mkdir("/chown", 0o755, ownership.Opt()),
-		)
-
-		srcPath = "/chown"
-	} else {
-		srcSt, err = defToState(srcDef)
-		if err != nil {
-			return nil, "", err
-		}
-
-		def, err := srcSt.Marshal(ctx, opts...)
-		if err != nil {
-			return nil, "", err
-		}
-
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return nil, "", err
-		}
-		bk, err := query.Buildkit(ctx)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get buildkit client: %w", err)
-		}
-		ref, err := bkRef(ctx, bk, def.ToPB())
-		if err != nil {
-			return nil, "", err
-		}
-
-		stat, err := ref.StatFile(ctx, bkgw.StatRequest{
-			Path: srcPath,
-		})
-		if err != nil {
-			return nil, "", err
-		}
-
-		if stat.IsDir() {
-			chowned := "/chown"
-
-			// NB(vito): need to create intermediate directory with correct ownership
-			// to handle the directory case, otherwise the mount will be owned by
-			// root
-			srcSt = llb.Scratch().File(
-				llb.Mkdir(chowned, os.FileMode(stat.Mode), ownership.Opt()).
-					Copy(srcSt, srcPath, chowned, &llb.CopyInfo{
-						CopyDirContentsOnly: true,
-					}, ownership.Opt()),
-			)
-
-			srcPath = chowned
-		} else {
-			srcSt = llb.Scratch().File(
-				llb.Copy(srcSt, srcPath, ".", ownership.Opt()),
-			)
-
-			srcPath = filepath.Base(srcPath)
-		}
-	}
-
-	def, err := srcSt.Marshal(ctx, opts...)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return def.ToPB(), srcPath, nil
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -2755,10 +2629,10 @@ var (
 		`A successful execution (exit code 0)`,
 	)
 	ReturnFailure = ReturnTypesEnum.Register("FAILURE",
-		`A failed execution (exit codes 1-127)`,
+		`A failed execution (exit codes 1-127 and 192-255)`,
 	)
 	ReturnAny = ReturnTypesEnum.Register("ANY",
-		`Any execution (exit codes 0-127)`,
+		`Any execution (exit codes 0-127 and 192-255)`,
 	)
 )
 
@@ -2783,21 +2657,28 @@ func (expect ReturnTypes) ToLiteral() call.Literal {
 
 // ReturnCodes gets the valid exit codes allowed for a specific return status
 //
-// NOTE: exit status codes above 128 are likely from exiting via a signal - we
-// shouldn't try and handle these.
+// NOTE: exit status codes 128-191 are likely from exiting via a signal - we
+// shouldn't try and handle these. Codes 192-255 are safe to handle to support
+// tools that return exit codes >127, such as AWS CLI.
 func (expect ReturnTypes) ReturnCodes() []int {
 	switch expect {
 	case ReturnSuccess:
 		return []int{0}
 	case ReturnFailure:
-		codes := make([]int, 0, 128)
-		for i := 1; i <= 128; i++ {
+		codes := make([]int, 0, 127+64)
+		for i := 1; i <= 127; i++ {
+			codes = append(codes, i)
+		}
+		for i := 192; i <= 255; i++ {
 			codes = append(codes, i)
 		}
 		return codes
 	case ReturnAny:
-		codes := make([]int, 0, 129)
-		for i := 0; i <= 128; i++ {
+		codes := make([]int, 0, 128+64)
+		for i := 0; i <= 127; i++ {
+			codes = append(codes, i)
+		}
+		for i := 192; i <= 255; i++ {
 			codes = append(codes, i)
 		}
 		return codes

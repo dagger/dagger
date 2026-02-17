@@ -61,4 +61,32 @@ class HelloWithChecksTs {
       .from(this.baseImage)
       .withExec(["sh", "-c", "exit 1"]);
   }
+
+  @func()
+  test(): Test {
+    return new Test();
+  }
+}
+
+@object()
+class Test {
+  @func()
+  @check()
+  async lint(): Promise<void> {
+    await dag
+      .container()
+      .from("alpine")
+      .withExec(["sh", "-c", "exit 0"])
+      .sync();
+  }
+
+  @func()
+  @check()
+  async unit(): Promise<void> {
+    await dag
+      .container()
+      .from("alpine")
+      .withExec(["sh", "-c", "exit 0"])
+      .sync();
+  }
 }

@@ -80,6 +80,9 @@ message Call {
   // on e.g. filesystem contents rather than the "recipe" of the call. This field
   // does not affect the call's digest.
   string contentDigest = 12;
+
+  // Effect IDs associated with this call. These do not affect the call's digest.
+  repeated string effectIds = 13;
 }
 
 // Module represents a self-contained logical module that can be dynamically

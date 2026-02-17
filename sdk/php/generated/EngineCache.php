@@ -55,11 +55,28 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble
     /**
      * Prune the cache of releaseable entries
      */
-    public function prune(?bool $useDefaultPolicy = false): void
-    {
+    public function prune(
+        ?bool $useDefaultPolicy = false,
+        ?string $maxUsedSpace = '',
+        ?string $reservedSpace = '',
+        ?string $minFreeSpace = '',
+        ?string $targetSpace = '',
+    ): void {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('prune');
         if (null !== $useDefaultPolicy) {
         $leafQueryBuilder->setArgument('useDefaultPolicy', $useDefaultPolicy);
+        }
+        if (null !== $maxUsedSpace) {
+        $leafQueryBuilder->setArgument('maxUsedSpace', $maxUsedSpace);
+        }
+        if (null !== $reservedSpace) {
+        $leafQueryBuilder->setArgument('reservedSpace', $reservedSpace);
+        }
+        if (null !== $minFreeSpace) {
+        $leafQueryBuilder->setArgument('minFreeSpace', $minFreeSpace);
+        }
+        if (null !== $targetSpace) {
+        $leafQueryBuilder->setArgument('targetSpace', $targetSpace);
         }
         $this->queryLeaf($leafQueryBuilder, 'prune');
     }

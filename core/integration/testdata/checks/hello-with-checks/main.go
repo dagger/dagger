@@ -64,3 +64,22 @@ func (m *HelloWithChecks) CurrentEnvChecks(ctx context.Context) ([]string, error
 	sort.Strings(names)
 	return names, nil
 }
+
+func (m *HelloWithChecks) Test() *Test {
+	return &Test{}
+}
+
+type Test struct {
+}
+
+// +check
+func (t *Test) Lint(ctx context.Context) error {
+	_, err := dag.Container().From("alpine").WithExec([]string{"sh", "-c", "exit 0"}).Sync(ctx)
+	return err
+}
+
+// +check
+func (t *Test) Unit(ctx context.Context) error {
+	_, err := dag.Container().From("alpine").WithExec([]string{"sh", "-c", "exit 0"}).Sync(ctx)
+	return err
+}

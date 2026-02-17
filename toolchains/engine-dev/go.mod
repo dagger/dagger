@@ -3,7 +3,7 @@ module dagger/engine-dev
 go 1.24.4
 
 require (
-	github.com/dagger/dagger/engine/distconsts v0.19.10
+	github.com/dagger/dagger/engine/distconsts v0.19.11
 	github.com/dagger/dagger/sdk/typescript/runtime v0.15.3
 )
 
@@ -27,6 +27,7 @@ require (
 )
 
 require (
+	dagger.io/dagger v0.19.11
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -56,7 +57,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.38.0
 	go.opentelemetry.io/proto/otlp v1.8.0
 	golang.org/x/net v0.46.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250825161204-c5933d9347a5 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5 // indirect

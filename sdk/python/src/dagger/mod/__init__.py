@@ -15,6 +15,7 @@ check = _default_mod.check
 enum_type = _default_mod.enum_type
 function = _default_mod.function
 field = _default_mod.field
+generate = _default_mod.generate
 interface = _default_mod.interface
 object_type = _default_mod.object_type
 
@@ -36,6 +37,7 @@ __all__ = [
     "enum_type",
     "field",
     "function",
+    "generate",
     "interface",
     "object_type",
 ]
