@@ -211,7 +211,7 @@ Warnings  Migrate cmd |
   has toolchains, extract them as workspace-level `pendingModule` entries using shared
   helpers.
 
-- [ ] **#3: Remove CheckMigrationTriggers as a loading gate** (blocked by #2) — Remove
+- [x] **#3: Remove CheckMigrationTriggers as a loading gate** (blocked by #2) — Remove
   the migration trigger block from `detectAndLoadWorkspaceWithRootfs()`. The implicit
   CWD module check loads dagger.json modules unconditionally. Remove `handleMigration()`
   from `session.go`.

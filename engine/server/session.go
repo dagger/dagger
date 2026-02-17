@@ -1641,21 +1641,16 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		})
 	}
 
-	// (3) Implicit CWD module (dagger.json near CWD, no migration triggers)
-	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
-	if hasModuleConfig {
-		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
-		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
-			triggerErr := workspace.CheckMigrationTriggers(data, cfgPath, moduleDir)
-			if triggerErr == nil {
-				wsDir := filepath.Join(ws.Root, ws.Path)
-				rel, _ := filepath.Rel(wsDir, moduleDir)
-				pending = append(pending, pendingModule{
-					Ref:   resolveLocalRef(ws, rel),
-					Alias: true,
-				})
-			}
-			// triggerErr != nil: ignore dagger.json with triggers when workspace exists
+	// (3) Implicit CWD module (dagger.json near CWD)
+	{
+		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+		if hasModuleConfig {
+			wsDir := filepath.Join(ws.Root, ws.Path)
+			rel, _ := filepath.Rel(wsDir, moduleDir)
+			pending = append(pending, pendingModule{
+				Ref:   resolveLocalRef(ws, rel),
+				Alias: true,
+			})
 		}
 	}
 
@@ -1723,48 +1718,6 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	return coreWS, nil
-}
-
-// handleMigration checks if a workspace detection error is a migration-required
-// error and performs auto-migration if the client has AutoMigrate set.
-// Returns (true, nil) if migration was handled (successfully or not), (false, nil)
-// if no migration was needed.
-func (srv *Server) handleMigration(ctx context.Context, client *daggerClient, detectErr error) (bool, error) {
-	clientMD := client.clientMetadata
-	var migErr *workspace.ErrMigrationRequired
-	if !errors.As(detectErr, &migErr) || clientMD == nil || !clientMD.AutoMigrate {
-		return false, nil
-	}
-
-	// Auto-migrate: perform migration instead of erroring.
-	// Create visible spans so the TUI shows migration progress.
-	tracer := client.tracerProvider.Tracer(InstrumentationLibrary)
-	var migRunErr error
-	migCtx, migSpan := tracer.Start(ctx, "migrating workspace",
-		trace.WithAttributes(
-			attribute.String("workspace.path", migErr.ProjectRoot),
-		))
-	defer telemetry.EndWithCause(migSpan, &migRunErr)
-	stdio := telemetry.SpanStdio(migCtx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	introspect := workspace.ConstructorIntrospector(func(ctx context.Context, ref string) (_ []workspace.ConstructorArgHint, tcErr error) {
-		// ensure error is raised to the span
-		span := trace.SpanFromContext(ctx)
-		defer telemetry.EndWithCause(span, &tcErr)
-		return schema.IntrospectConstructorArgs(ctx, client.dag, ref)
-	})
-
-	var result *workspace.MigrationResult
-	result, migRunErr = workspace.Migrate(migCtx, client.bkClient, migErr, introspect)
-	if migRunErr != nil {
-		return true, fmt.Errorf("migration failed: %w", migRunErr)
-	}
-
-	fmt.Fprint(stdio.Stdout, result.Summary())
-	slog.Info(result.Summary())
-	// Migration done; don't load modules in this session.
-	return true, nil
 }
 
 // cloneGitTree clones a git repository and returns its directory tree.
