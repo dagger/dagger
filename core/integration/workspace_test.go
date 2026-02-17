@@ -70,8 +70,8 @@ type Finder {
     self
   }
 
-  pub find(name: String!, start: String!): String! {
-    ws.findUp(name: name, start: start) ?? ""
+  pub find(name: String!, from: String!): String! {
+    ws.findUp(name: name, from: from) ?? ""
   }
 }
 `))

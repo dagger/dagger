@@ -306,6 +306,11 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class WorkspaceID(Scalar):
+    """The `WorkspaceID` scalar type represents an identifier for an
+    object of type Workspace."""
+
+
 class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
@@ -886,6 +891,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str | None)
+
+    def as_workspace(self) -> "Workspace":
+        """Retrieve the binding value, as type Workspace"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspace", _args)
+        return Workspace(_ctx)
 
     async def digest(self) -> str:
         """Returns the digest of the binding value
@@ -6582,6 +6593,48 @@ class Env(Type):
         _ctx = self._select("withWorkspace", _args)
         return Env(_ctx)
 
+    def with_workspace_input(
+        self,
+        name: str,
+        value: "Workspace",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Workspace in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Workspace value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_output(self, name: str, description: str) -> Self:
+        """Declare a desired Workspace output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceOutput", _args)
+        return Env(_ctx)
+
     def without_outputs(self) -> Self:
         """Returns a new environment without any outputs"""
         _args: list[Arg] = []
@@ -11535,6 +11588,28 @@ class Client(Root):
         _ctx = self._select("currentTypeDefs", _args)
         return await _ctx.execute_object_list(TypeDef)
 
+    def current_workspace(
+        self,
+        *,
+        skip_migration_check: bool | None = False,
+    ) -> "Workspace":
+        """Detect and return the current workspace.
+
+        .. caution::
+            Experimental: Highly experimental API extracted from a more
+            ambitious workspace implementation.
+
+        Parameters
+        ----------
+        skip_migration_check:
+            If true, skip legacy dagger.json migration checks.
+        """
+        _args = [
+            Arg("skipMigrationCheck", skip_migration_check, False),
+        ]
+        _ctx = self._select("currentWorkspace", _args)
+        return Workspace(_ctx)
+
     async def default_platform(self) -> Platform:
         """The default platform of the engine.
 
@@ -12260,6 +12335,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadTypeDefFromID", _args)
         return TypeDef(_ctx)
+
+    def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
+        """Load a Workspace from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadWorkspaceFromID", _args)
+        return Workspace(_ctx)
 
     def module(self) -> Module:
         """Create a new module."""
@@ -13771,6 +13854,210 @@ class TypeDef(Type):
         return cb(self)
 
 
+@typecheck
+class Workspace(Type):
+    """A Dagger workspace detected from the current working directory."""
+
+    async def client_id(self) -> str:
+        """The client ID that owns this workspace's host filesystem.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("clientId", _args)
+        return await _ctx.execute(str)
+
+    async def config_path(self) -> str:
+        """Path to config.toml (empty string if no config exists).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("configPath", _args)
+        return await _ctx.execute(str)
+
+    def directory(
+        self,
+        path: str,
+        *,
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
+        gitignore: bool | None = False,
+    ) -> Directory:
+        """Returns a Directory from the workspace.
+
+        Path is relative to workspace root. Use "." for the root directory.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory to retrieve, relative to the workspace
+            root (e.g., "src", ".").
+        exclude:
+            Exclude artifacts that match the given pattern (e.g.,
+            ["node_modules/", ".git*"]).
+        include:
+            Include only artifacts that match the given pattern (e.g.,
+            ["app/", "package.*"]).
+        gitignore:
+        """
+        _args = [
+            Arg("path", path),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
+            Arg("gitignore", gitignore, False),
+        ]
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
+
+    def file(self, path: str) -> File:
+        """Returns a File from the workspace.
+
+        Path is relative to workspace root.
+
+        Parameters
+        ----------
+        path:
+            Location of the file to retrieve, relative to the workspace root
+            (e.g., "go.mod").
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("file", _args)
+        return File(_ctx)
+
+    async def find_up(
+        self,
+        name: str,
+        *,
+        from_: str | None = ".",
+    ) -> str | None:
+        """Search for a file or directory by walking up from the start path
+        within the workspace.
+
+        Returns the path relative to the workspace root if found, or null if
+        not found.
+
+        The search stops at the workspace root and will not traverse above it.
+
+        Parameters
+        ----------
+        name:
+            The name of the file or directory to search for.
+        from_:
+            Path to start the search from, relative to the workspace root.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("from", from_, "."),
+        ]
+        _ctx = self._select("findUp", _args)
+        return await _ctx.execute(str | None)
+
+    async def has_config(self) -> bool:
+        """Whether a config.toml file exists in the workspace.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hasConfig", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> WorkspaceID:
+        """A unique identifier for this Workspace.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        WorkspaceID
+            The `WorkspaceID` scalar type represents an identifier for an
+            object of type Workspace.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(WorkspaceID)
+
+    async def root(self) -> str:
+        """Absolute path to the workspace root directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("root", _args)
+        return await _ctx.execute(str)
+
+
 dag = Client()
 """The global client instance."""
 
@@ -13907,5 +14194,7 @@ __all__ = [
     "TypeDefID",
     "TypeDefKind",
     "Void",
+    "Workspace",
+    "WorkspaceID",
     "dag",
 ]
