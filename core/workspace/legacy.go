@@ -5,6 +5,65 @@ import (
 	"fmt"
 )
 
+// LegacyToolchain represents a toolchain extracted from a legacy dagger.json,
+// with constructor arg defaults already resolved from customizations.
+type LegacyToolchain struct {
+	Name           string
+	Source         string
+	Pin            string
+	ConfigDefaults map[string]any
+}
+
+// ParseLegacyToolchains parses a legacy dagger.json and extracts its toolchains
+// with their constructor arg defaults. Returns nil if no toolchains are present.
+func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
+	cfg, err := parseLegacyConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg.Toolchains) == 0 {
+		return nil, nil
+	}
+	result := make([]LegacyToolchain, len(cfg.Toolchains))
+	for i, tc := range cfg.Toolchains {
+		result[i] = LegacyToolchain{
+			Name:           tc.Name,
+			Source:         tc.Source,
+			Pin:            tc.Pin,
+			ConfigDefaults: extractConfigDefaults(tc.Customizations),
+		}
+	}
+	return result, nil
+}
+
+// parseLegacyConfig parses a legacy dagger.json into the internal representation.
+func parseLegacyConfig(data []byte) (*legacyConfig, error) {
+	var cfg legacyConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing legacy config: %w", err)
+	}
+	// Normalize: if SDK is set but Source isn't, Source was implicitly "."
+	if cfg.SDK != nil && cfg.SDK.Source != "" && cfg.Source == "" {
+		cfg.Source = "."
+	}
+	return &cfg, nil
+}
+
+// extractConfigDefaults extracts constructor arg defaults from legacy customizations.
+// Only constructor-level customizations with a non-empty Default value are included.
+func extractConfigDefaults(customizations []*legacyCustomization) map[string]any {
+	config := make(map[string]any)
+	for _, cust := range customizations {
+		if cust.IsConstructor() && cust.Default != "" {
+			config[cust.Argument] = cust.Default
+		}
+	}
+	if len(config) == 0 {
+		return nil
+	}
+	return config
+}
+
 // legacyConfig is the dagger.json config format used before the workspace model.
 type legacyConfig struct {
 	Name          string              `json:"name"`

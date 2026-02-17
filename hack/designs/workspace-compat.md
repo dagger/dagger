@@ -202,7 +202,7 @@ Warnings  Migrate cmd |
 
 ### Task list
 
-- [ ] **#1: Extract shared helpers from Migrate()** — Extract `parseLegacyConfig()` and
+- [x] **#1: Extract shared helpers from Migrate()** — Extract `parseLegacyConfig()` and
   `extractConfigDefaults()` from `core/workspace/migrate.go` so both real migration
   and compat mode can use them.
 

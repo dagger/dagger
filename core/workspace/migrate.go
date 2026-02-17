@@ -78,14 +78,9 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 		return nil, fmt.Errorf("reading legacy config: %w", err)
 	}
 
-	var cfg legacyConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing legacy config: %w", err)
-	}
-
-	// Normalize: if SDK is set but Source isn't, Source was implicitly "."
-	if cfg.SDK != nil && cfg.SDK.Source != "" && cfg.Source == "" {
-		cfg.Source = "."
+	cfg, err := parseLegacyConfig(data)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &MigrationResult{
@@ -116,7 +111,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 		}
 
 		// Build new dagger.json for the module at its new location
-		newJSON, depCount, incCount, err := buildMigratedModuleJSON(&cfg, modulePath)
+		newJSON, depCount, incCount, err := buildMigratedModuleJSON(cfg, modulePath)
 		if err != nil {
 			return nil, fmt.Errorf("building migrated module JSON: %w", err)
 		}
@@ -172,16 +167,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 		}
 		entry := ModuleEntry{
 			Source: source,
-		}
-		// Migrate constructor customizations to config entries
-		config := make(map[string]any)
-		for _, cust := range tc.Customizations {
-			if cust.IsConstructor() && cust.Default != "" {
-				config[cust.Argument] = cust.Default
-			}
-		}
-		if len(config) > 0 {
-			entry.Config = config
+			Config: extractConfigDefaults(tc.Customizations),
 		}
 		wsCfg.Modules[tc.Name] = entry
 		result.ToolchainCount++
@@ -215,7 +201,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 	}
 
 	// 4. Write .dagger/config.toml
-	configContent := generateMigrationConfigTOML(&cfg, warnings, allHints)
+	configContent := generateMigrationConfigTOML(cfg, warnings, allHints)
 	configPath := filepath.Join(migErr.ProjectRoot, WorkspaceDirName, ConfigFileName)
 	if err := writeHostFile(ctx, bk, configPath, []byte(configContent)); err != nil {
 		return nil, fmt.Errorf("writing workspace config: %w", err)
