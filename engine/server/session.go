@@ -1581,35 +1581,17 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return err
 	}
 
-	// --- Check for migration triggers when no workspace config exists ---
-	// When CWD is near a dagger.json with migration triggers and no workspace
-	// config has been found, prompt migration (or auto-migrate if enabled).
+	// --- Compat mode: extract toolchains from legacy dagger.json ---
+	// When no workspace config exists but a nearby dagger.json has toolchains,
+	// extract them as workspace-level modules (loaded alongside the implicit
+	// CWD module in the gathering phase below).
+	var legacyToolchains []workspace.LegacyToolchain
 	if !ws.Initialized {
 		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 		if hasModuleConfig {
 			cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 			if data, readErr := readFile(ctx, cfgPath); readErr == nil {
-				if triggerErr := workspace.CheckMigrationTriggers(data, cfgPath, moduleDir); triggerErr != nil {
-					if isLocal {
-						migrated, migErr := srv.handleMigration(ctx, client, triggerErr)
-						if migrated {
-							if migErr != nil {
-								return migErr
-							}
-							// Migration succeeded; re-detect to pick up the new config.
-							ws, err = workspace.Detect(ctx, statFS, readFile, cwd)
-							if err != nil {
-								return fmt.Errorf("post-migration workspace detection: %w", err)
-							}
-							// Fall through to build workspace object.
-							// Module loading is skipped via SkipWorkspaceModules.
-						} else {
-							return triggerErr
-						}
-					} else {
-						return triggerErr
-					}
-				}
+				legacyToolchains, _ = workspace.ParseLegacyToolchains(data)
 			}
 		}
 	}
@@ -1646,7 +1628,20 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// (2) Implicit CWD module (dagger.json near CWD, no migration triggers)
+	// (2) Legacy toolchains (from compat mode, extracted above)
+	for _, tc := range legacyToolchains {
+		ref := tc.Source
+		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
+			ref = resolveLocalRef(ws, tc.Source)
+		}
+		pending = append(pending, pendingModule{
+			Ref:            ref,
+			Name:           tc.Name,
+			ConfigDefaults: tc.ConfigDefaults,
+		})
+	}
+
+	// (3) Implicit CWD module (dagger.json near CWD, no migration triggers)
 	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 	if hasModuleConfig {
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
@@ -1664,7 +1659,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// (3) Extra modules from -m flag are stored separately in
+	// (4) Extra modules from -m flag are stored separately in
 	//     client.pendingExtraModules (already populated from clientMD).
 	//     They go through the same loadModule chokepoint in ensureModulesLoaded.
 

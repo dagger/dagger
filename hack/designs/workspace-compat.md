@@ -206,7 +206,7 @@ Warnings  Migrate cmd |
   `extractConfigDefaults()` from `core/workspace/migrate.go` so both real migration
   and compat mode can use them.
 
-- [ ] **#2: Add compat-mode toolchain extraction** (blocked by #1) — In
+- [x] **#2: Add compat-mode toolchain extraction** (blocked by #1) — In
   `detectAndLoadWorkspaceWithRootfs()`, when `!ws.Initialized` and nearby dagger.json
   has toolchains, extract them as workspace-level `pendingModule` entries using shared
   helpers.
