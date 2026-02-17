@@ -90,8 +90,16 @@ func SerializeConfig(cfg *Config) []byte {
 // for generating commented-out hint lines in config.toml.
 type ConstructorArgHint struct {
 	Name         string // lowerCamelCase arg name (used as config key)
-	TypeLabel    string // e.g. "string", "Container", "MyType (not configurable via config)"
 	ExampleValue string // TOML-formatted example value, e.g. `""`, `false`, `"alpine:latest"`
+	Configurable bool   // whether this arg type can be set via config.toml
+}
+
+// CommentSuffix returns the trailing comment for this hint (empty if configurable).
+func (h ConstructorArgHint) CommentSuffix() string {
+	if !h.Configurable {
+		return " # not configurable via config"
+	}
+	return ""
 }
 
 // SerializeConfigWithHints serializes a Config to TOML bytes, preserving existing
@@ -202,10 +210,10 @@ func insertHintComments(tomlStr string, cfg *Config, hints map[string][]Construc
 				// Under a section header, use config-prefixed key names
 				// so uncommenting produces config.<key> under [modules.<name>]
 				commentLines = append(commentLines,
-					fmt.Sprintf("# config.%s = %s # %s", hint.Name, hint.ExampleValue, hint.TypeLabel))
+					fmt.Sprintf("# config.%s = %s%s", hint.Name, hint.ExampleValue, hint.CommentSuffix()))
 			} else {
 				commentLines = append(commentLines,
-					fmt.Sprintf("# %s.config.%s = %s # %s", moduleName, hint.Name, hint.ExampleValue, hint.TypeLabel))
+					fmt.Sprintf("# %s.config.%s = %s%s", moduleName, hint.Name, hint.ExampleValue, hint.CommentSuffix()))
 			}
 		}
 		if len(commentLines) == 0 {

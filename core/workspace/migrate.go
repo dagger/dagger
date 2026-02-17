@@ -349,8 +349,8 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 				if hasCustomization(tc, hint.Name) {
 					continue
 				}
-				hintLines = append(hintLines, fmt.Sprintf("# %s = %s # %s\n",
-					hint.Name, hint.ExampleValue, hint.TypeLabel))
+				hintLines = append(hintLines, fmt.Sprintf("# %s = %s%s\n",
+					hint.Name, hint.ExampleValue, hint.CommentSuffix()))
 			}
 		}
 

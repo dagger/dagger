@@ -913,7 +913,7 @@ var configurableObjectTypes = map[string]string{
 
 // buildHintFromArg converts a FunctionArg into a ConstructorArgHint.
 func buildHintFromArg(arg *core.FunctionArg) workspace.ConstructorArgHint {
-	typeLabel, exampleValue, configurable := typeInfoFromTypeDef(arg.TypeDef)
+	_, exampleValue, configurable := typeInfoFromTypeDef(arg.TypeDef)
 
 	// If arg has a non-null default value, format it as TOML instead of using the type example
 	if arg.DefaultValue != nil {
@@ -922,14 +922,10 @@ func buildHintFromArg(arg *core.FunctionArg) workspace.ConstructorArgHint {
 		}
 	}
 
-	if !configurable {
-		typeLabel += " (not configurable via config)"
-	}
-
 	return workspace.ConstructorArgHint{
 		Name:         arg.Name,
-		TypeLabel:    typeLabel,
 		ExampleValue: exampleValue,
+		Configurable: configurable,
 	}
 }
 
@@ -966,7 +962,10 @@ func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, conf
 		return "object", `"..."`, false
 	case core.TypeDefKindList:
 		if td.AsList.Valid {
-			elemLabel, _, _ := typeInfoFromTypeDef(td.AsList.Value.ElementTypeDef)
+			elemLabel, elemExample, elemConfigurable := typeInfoFromTypeDef(td.AsList.Value.ElementTypeDef)
+			if elemConfigurable {
+				return "[]" + elemLabel, "[" + elemExample + "]", true
+			}
 			return "[]" + elemLabel, `"..."`, false
 		}
 		return "list", `"..."`, false
@@ -1000,6 +999,25 @@ func formatDefaultAsToml(defaultValue core.JSON) string {
 		return "false"
 	case json.Number:
 		return v.String()
+	case []any:
+		var parts []string
+		for _, elem := range v {
+			switch e := elem.(type) {
+			case string:
+				parts = append(parts, fmt.Sprintf("%q", e))
+			case bool:
+				if e {
+					parts = append(parts, "true")
+				} else {
+					parts = append(parts, "false")
+				}
+			case json.Number:
+				parts = append(parts, e.String())
+			default:
+				return "" // can't format complex array elements
+			}
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
 	case nil:
 		return "" // null means no default
 	default:
