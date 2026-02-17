@@ -1445,6 +1445,13 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	}
 	src.SDK.Source = args.Source
 
+	// Default source subpath to source root when an SDK is set but no explicit
+	// source path was configured (e.g. during module init before dagger.json exists).
+	// This mirrors the logic in initFromModConfig for the sdkSource != "" && modCfg.Source == "" case.
+	if src.SourceSubpath == "" {
+		src.SourceSubpath = src.SourceRootSubpath
+	}
+
 	// reload the sdk implementation too
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
