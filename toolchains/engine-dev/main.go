@@ -117,7 +117,9 @@ func (dev *EngineDev) Playground(
 ) (*dagger.Container, error) {
 	ctr := base
 	if ctr == nil {
-		ctr = dag.Wolfi().Container().WithEnvVariable("HOME", "/root")
+		ctr = dag.Wolfi().Container(dagger.WolfiContainerOpts{
+			Packages: []string{"apk-tools", "git"},
+		}).WithEnvVariable("HOME", "/root")
 	}
 	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
 	svc, err := dev.Service(
