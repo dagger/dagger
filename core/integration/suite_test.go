@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -27,60 +28,116 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// Preserve original SSH_AUTH_SOCK value and
-	// Ensure SSH_AUTH_SOCK does not pollute tests state
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
 	ctx := context.Background()
 
-	// Set repo path for tests to access via c.Host().Directory()
-	// Tests run from core/integration, so go up two levels to repo root
-	// With privileged nesting, we use "." which resolves to where dagger was invoked
+	// Create shared registry services (must happen before unsetting session vars,
+	// since dag.* needs the outer session to function)
+	registrySvc := dag.Container().
+		From("registry:2").
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
+	privateRegistrySvc := dag.Container().
+		From("registry:2").
+		WithNewFile("/auth/htpasswd", htpasswd).
+		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	// Start registries to get their endpoints for the test process
+	// (the test container doesn't have service bindings, so tests that need
+	// direct HTTP access to registries use these endpoints)
+	startedRegistry, err := registrySvc.Start(ctx)
+	if err != nil {
+		panic(err)
+	}
+	startedPrivateRegistry, err := privateRegistrySvc.Start(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	registryEndpoint, err := startedRegistry.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 5000, Scheme: "tcp"})
+	if err != nil {
+		panic(err)
+	}
+	privateRegistryEndpoint, err := startedPrivateRegistry.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 5000, Scheme: "tcp"})
+	if err != nil {
+		panic(err)
+	}
+
+	// Strip tcp:// scheme to get host:port for use as registry addresses.
+	// These are set as package-level vars so tests can build registry refs
+	// that are reachable from both the test process and the inner engine.
+	registryHost = mustParseEndpointHost(registryEndpoint)
+	privateRegistryHost = mustParseEndpointHost(privateRegistryEndpoint)
+
+	// Start inner engine with shared registries and buildkit HTTP config
+	// for the endpoint addresses (so the engine can push/pull via HTTP)
+	engineSvc, err := dag.EngineDev().
+		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
+		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
+		TestEngine(dagger.EngineDevTestEngineOpts{
+			RegistrySvc:        startedRegistry,
+			PrivateRegistrySvc: startedPrivateRegistry,
+		}).Start(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	// Export CLI binary
+	_, err = dag.Cli().Binary().Export(ctx, "/.dagger-cli")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", "/.dagger-cli")
+	os.Setenv("_TEST_DAGGER_CLI_LINUX_BIN", "/.dagger-cli")
+
+	// Compute version/tag once for consistent values
+	version, err := dag.Version().Version(ctx)
+	if err != nil {
+		panic(err)
+	}
+	tag, err := dag.Version().ImageTag(ctx)
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("_EXPERIMENTAL_DAGGER_VERSION", version)
+	os.Setenv("_EXPERIMENTAL_DAGGER_TAG", tag)
+
+	// Export engine tar for tests that spin up additional dev engines
+	engineTar := dag.EngineDev().
+		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
+		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
+		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+		Container(dagger.EngineDevContainerOpts{Version: version, Tag: tag}).
+		AsTarball()
+	_, err = engineTar.Export(ctx, "/tmp/engine.tar")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("_DAGGER_TESTS_ENGINE_TAR", "/tmp/engine.tar")
+
+	// Set inner engine as runner host
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
+
+	// Set repo path
 	os.Setenv("_TEST_REPO_PATH", ".")
 
-	// Export the dagger CLI binary using dag.Cli()
-	cliBinary := dag.Cli().Binary()
-	cliPath, err := cliBinary.Export(ctx, "/tmp/dagger-cli-test")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to export CLI binary: %v\n", err)
-		os.Exit(1)
-	}
-
-	os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath)
-	os.Setenv("_TEST_DAGGER_CLI_LINUX_BIN", cliPath)
-
-	// Export engine.tar for tests that need to spin up dev engines
-	engineContainer := dag.EngineDev().Container()
-	engineTar := engineContainer.AsTarball()
-	engineTarPath, err := engineTar.Export(ctx, "/tmp/dagger-test-engine.tar")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to export engine tar: %v\n", err)
-		os.Exit(1)
-	}
-	os.Setenv("_DAGGER_TESTS_ENGINE_TAR", engineTarPath)
-
-	// Start inner test engine with registries for isolated test sessions
-	engine, err := dag.EngineDev().TestEngine().Start(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start test engine: %v\n", err)
-		os.Exit(1)
-	}
-	engineEndpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Connect to test engine: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Point tests to the inner engine
-	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint)
-
-	// Unset DAGGER_SESSION_PORT so tests create fresh sessions in the inner engine
-	// instead of reusing the outer engine's session
+	// Unset session vars so tests create fresh sessions against inner engine
+	// (must happen after all dag.* calls above, which need the outer session)
 	os.Unsetenv("DAGGER_SESSION_PORT")
 	os.Unsetenv("DAGGER_SESSION_TOKEN")
 
-	// Run tests
 	res := oteltest.Main(m)
 
 	if origAuthSock != "" {
@@ -202,9 +259,10 @@ func newFile(t *testctx.T, path, contents string) core.FileID {
 	return fileID
 }
 
-const (
-	registryHost        = "registry:5000"
-	privateRegistryHost = "privateregistry:5000"
+var (
+	// Set by TestMain to the registry endpoints reachable from the test process.
+	registryHost        string
+	privateRegistryHost string
 )
 
 func registryRef(name string) string {
@@ -348,6 +406,14 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
+}
+
+func mustParseEndpointHost(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse endpoint %q: %v", endpoint, err))
+	}
+	return u.Host
 }
 
 func limitTicker(interval time.Duration, limit int) <-chan time.Time {

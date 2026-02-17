@@ -1724,9 +1724,9 @@ require (
 replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
-		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
-		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
-		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
+		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "engine/session/git"))).
+		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "util/netrc"))).
+		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "util/grpcutil"))).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file

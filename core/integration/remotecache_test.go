@@ -199,7 +199,7 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 		devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, s3, "s3")
 		require.NoError(t, err)
 
-		daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
+		daggerCli := daggerCliFile(t, c)
 
 		outputA, err := c.Container().From(alpineImage).
 			WithServiceBinding("dev-engine", devEngineA).

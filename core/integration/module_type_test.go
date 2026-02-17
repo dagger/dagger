@@ -392,7 +392,6 @@ func (TypeSuite) TestReturnCompositeCore(ctx context.Context, t *testctx.T) {
 			source: `package main
 
 import (
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"dagger/test/internal/dagger"
 )
 
@@ -500,7 +499,6 @@ func (TypeSuite) TestReturnComplexThing(ctx context.Context, t *testctx.T) {
 			source: `package main
 
 import (
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"dagger/test/internal/dagger"
 )
 
@@ -1124,7 +1122,6 @@ export class Test {
 				source: `package main
 
 import (
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
   "dagger/test/internal/dagger"
 )
 
@@ -1485,7 +1482,6 @@ func (m *Dep) Invert(status Status) Status {
 				source: `package main
 
 import (
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"context"
 	"dagger/test/internal/dagger"
 )
@@ -1610,7 +1606,6 @@ func (m *Dep) Thing(f MyEnum) MyEnum {
 		src := `package main
 
 import (
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"context"
 	"fmt"
 	"dagger/test/internal/dagger"

@@ -387,6 +387,9 @@ type TypeDefID string
 // The `TypescriptSdkID` scalar type represents an identifier for an object of type TypescriptSdk.
 type TypescriptSDKID string
 
+// The `VersionID` scalar type represents an identifier for an object of type Version.
+type VersionID string
+
 // The absence of a value.
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
@@ -1104,6 +1107,15 @@ func (r *Binding) AsTypescriptSDK() *TypescriptSDK {
 	q := r.query.Select("asTypescriptSdk")
 
 	return &TypescriptSDK{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Version
+func (r *Binding) AsVersion() *Version {
+	q := r.query.Select("asVersion")
+
+	return &Version{
 		query: q,
 	}
 }
@@ -4342,6 +4354,18 @@ func (r *DaggerDev) Cli(opts ...DaggerDevCliOpts) *Cli { // cli (../../toolchain
 	}
 }
 
+// Return a directory from the module's context directory. Used by integration
+// tests running in nested containers to access files excluded from toolchain
+// sources but present in the root module's context.
+func (r *DaggerDev) ContextDir(path string) *Directory { // dagger-dev (../../.dagger/main.go:26:1)
+	q := r.query.Select("contextDir")
+	q = q.Arg("path", path)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // DaggerDevDocsOpts contains options for DaggerDev.Docs
 type DaggerDevDocsOpts struct {
 	Source *Directory // docs (../../toolchains/docs-dev/main.go:26:2)
@@ -4439,11 +4463,11 @@ func (r *DaggerDev) EngineDev(opts ...DaggerDevEngineDevOpts) *EngineDev { // en
 
 // DaggerDevGenerateOpts contains options for DaggerDev.Generate
 type DaggerDevGenerateOpts struct {
-	Check bool // dagger-dev (../../.dagger/main.go:26:2)
+	Check bool // dagger-dev (../../.dagger/main.go:131:2)
 }
 
 // Run all code generation - SDKs, docs, grpc stubs, changelog
-func (r *DaggerDev) Generate(opts ...DaggerDevGenerateOpts) *Changeset { // dagger-dev (../../.dagger/main.go:24:1)
+func (r *DaggerDev) Generate(opts ...DaggerDevGenerateOpts) *Changeset { // dagger-dev (../../.dagger/main.go:129:1)
 	q := r.query.Select("generate")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `check` optional argument
@@ -4821,6 +4845,20 @@ func (r *DaggerDev) Security() *Security {
 	q := r.query.Select("security")
 
 	return &Security{
+		query: q,
+	}
+}
+
+// Return a Go env container with testdata directories that are excluded from
+// the Go toolchain's source by dagger.json customization ignore patterns.
+// These dirs are excluded to prevent the Go toolchain from processing test
+// Go modules, but integration tests need them present in the container.
+// Also sets up the inner test engine, CLI binary, engine tar, and registry
+// service bindings so integration tests have everything pre-configured.
+func (r *DaggerDev) TestGoEnv() *Container { // dagger-dev (../../.dagger/main.go:36:1)
+	q := r.query.Select("testGoEnv")
+
+	return &Container{
 		query: q,
 	}
 }
@@ -6605,7 +6643,6 @@ func (r *EngineCacheEntrySet) MarshalJSON() ([]byte, error) {
 type EngineDev struct { // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 	query *querybuilder.Selection
 
-	benchmark     *Void
 	id            *EngineDevID
 	networkCidr   *string
 	publish       *Void
@@ -6624,222 +6661,6 @@ func (r *EngineDev) With(f WithEngineDevFunc) *EngineDev {
 
 func (r *EngineDev) WithGraphQLQuery(q *querybuilder.Selection) *EngineDev {
 	return &EngineDev{
-		query: q,
-	}
-}
-
-// EngineDevBenchmarkOpts contains options for EngineDev.Benchmark
-type EngineDevBenchmarkOpts struct {
-	//
-	// Only run these benchmarks
-	//
-	Run string // engine-dev (../../toolchains/engine-dev/bench.go:17:2)
-	//
-	// Skip these benchmarks
-	//
-	Skip string // engine-dev (../../toolchains/engine-dev/bench.go:20:2)
-
-	// Default: "./..."
-	Pkg string // engine-dev (../../toolchains/engine-dev/bench.go:23:2)
-	//
-	// Abort bench run on first failure
-	//
-	Failfast bool // engine-dev (../../toolchains/engine-dev/bench.go:26:2)
-	//
-	// How long before timing out the benchmark run
-	//
-	Timeout string // engine-dev (../../toolchains/engine-dev/bench.go:29:2)
-
-	Race bool // engine-dev (../../toolchains/engine-dev/bench.go:31:2)
-
-	// Default: 1
-	Count int // engine-dev (../../toolchains/engine-dev/bench.go:34:2)
-	//
-	// Enable verbose output
-	//
-	TestVerbose bool // engine-dev (../../toolchains/engine-dev/bench.go:37:2)
-	//
-	// run benchmarks once with metrics tagged "prewarm" before running for real
-	//
-	Prewarm bool // engine-dev (../../toolchains/engine-dev/bench.go:40:2)
-	//
-	// notify this discord webhook on failure
-	//
-	DiscordWebhook *Secret // engine-dev (../../toolchains/engine-dev/bench.go:43:2)
-	//
-	// Git repository to extract git metadata for discord notification
-	//
-	Repo *GitRepository // engine-dev (../../toolchains/engine-dev/bench.go:46:2)
-}
-
-// Perform a benchmark of the given test run
-func (r *EngineDev) Benchmark(ctx context.Context, opts ...EngineDevBenchmarkOpts) error { // engine-dev (../../toolchains/engine-dev/bench.go:13:1)
-	if r.benchmark != nil {
-		return nil
-	}
-	q := r.query.Select("benchmark")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `pkg` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkg) {
-			q = q.Arg("pkg", opts[i].Pkg)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `testVerbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
-			q = q.Arg("testVerbose", opts[i].TestVerbose)
-		}
-		// `prewarm` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Prewarm) {
-			q = q.Arg("prewarm", opts[i].Prewarm)
-		}
-		// `discordWebhook` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DiscordWebhook) {
-			q = q.Arg("discordWebhook", opts[i].DiscordWebhook)
-		}
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// EngineDevBenchmarkDumpOpts contains options for EngineDev.BenchmarkDump
-type EngineDevBenchmarkDumpOpts struct {
-	//
-	// Only run these tests
-	//
-	Run string // engine-dev (../../toolchains/engine-dev/bench.go:105:2)
-	//
-	// Skip these tests
-	//
-	Skip string // engine-dev (../../toolchains/engine-dev/bench.go:108:2)
-
-	// Default: "./..."
-	Pkg string // engine-dev (../../toolchains/engine-dev/bench.go:111:2)
-	//
-	// Abort test run on first failure
-	//
-	Failfast bool // engine-dev (../../toolchains/engine-dev/bench.go:114:2)
-	//
-	// How long before timing out the test run
-	//
-	Timeout string // engine-dev (../../toolchains/engine-dev/bench.go:117:2)
-
-	Race bool // engine-dev (../../toolchains/engine-dev/bench.go:119:2)
-
-	// Default: 1
-	Count int // engine-dev (../../toolchains/engine-dev/bench.go:122:2)
-	//
-	// Enable verbose output
-	//
-	TestVerbose bool // engine-dev (../../toolchains/engine-dev/bench.go:125:2)
-	//
-	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
-	//
-	//
-	// Default: "pprof/heap"
-	Route string // engine-dev (../../toolchains/engine-dev/bench.go:129:2)
-	//
-	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
-	//
-	NoFinal bool // engine-dev (../../toolchains/engine-dev/bench.go:133:2)
-	//
-	// wait this long before starting to take dumps. delay does not include engine startup.
-	//
-	//
-	// Default: "1s"
-	Delay string // engine-dev (../../toolchains/engine-dev/bench.go:137:2)
-	//
-	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
-	//
-	//
-	// Default: "-1s"
-	Interval string // engine-dev (../../toolchains/engine-dev/bench.go:141:2)
-}
-
-// Run specific benchmarks while curling (pprof) dumps from their associated dev engine:
-// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
-// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(datebut also works for profiles:
-// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date
-func (r *EngineDev) BenchmarkDump(opts ...EngineDevBenchmarkDumpOpts) *Directory { // engine-dev (../../toolchains/engine-dev/bench.go:101:1)
-	q := r.query.Select("benchmarkDump")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `pkg` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkg) {
-			q = q.Arg("pkg", opts[i].Pkg)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `testVerbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
-			q = q.Arg("testVerbose", opts[i].TestVerbose)
-		}
-		// `route` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Route) {
-			q = q.Arg("route", opts[i].Route)
-		}
-		// `noFinal` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoFinal) {
-			q = q.Arg("noFinal", opts[i].NoFinal)
-		}
-		// `delay` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Delay) {
-			q = q.Arg("delay", opts[i].Delay)
-		}
-		// `interval` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Interval) {
-			q = q.Arg("interval", opts[i].Interval)
-		}
-	}
-
-	return &Directory{
 		query: q,
 	}
 }
@@ -7319,133 +7140,18 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 	return q.Execute(ctx)
 }
 
-// EngineDevTestDumpOpts contains options for EngineDev.TestDump
-type EngineDevTestDumpOpts struct {
-	//
-	// Only run these tests
-	//
-	Run string // engine-dev (../../toolchains/engine-dev/pprof.go:24:2)
-	//
-	// Skip these tests
-	//
-	Skip string // engine-dev (../../toolchains/engine-dev/pprof.go:27:2)
-
-	// Default: "./..."
-	Pkg string // engine-dev (../../toolchains/engine-dev/pprof.go:30:2)
-	//
-	// Abort test run on first failure
-	//
-	Failfast bool // engine-dev (../../toolchains/engine-dev/pprof.go:33:2)
-	//
-	// How many tests to run in parallel - defaults to the number of CPUs
-	//
-	Parallel int // engine-dev (../../toolchains/engine-dev/pprof.go:36:2)
-	//
-	// How long before timing out the test run
-	//
-	Timeout string // engine-dev (../../toolchains/engine-dev/pprof.go:39:2)
-
-	Race bool // engine-dev (../../toolchains/engine-dev/pprof.go:41:2)
-
-	// Default: 1
-	Count int // engine-dev (../../toolchains/engine-dev/pprof.go:44:2)
-	//
-	// Enable verbose output
-	//
-	TestVerbose bool // engine-dev (../../toolchains/engine-dev/pprof.go:47:2)
-	//
-	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
-	//
-	//
-	// Default: "pprof/heap"
-	Route string // engine-dev (../../toolchains/engine-dev/pprof.go:51:2)
-	//
-	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
-	//
-	NoFinal bool // engine-dev (../../toolchains/engine-dev/pprof.go:55:2)
-	//
-	// wait this long before starting to take dumps. delay does not include engine startup.
-	//
-	//
-	// Default: "1s"
-	Delay string // engine-dev (../../toolchains/engine-dev/pprof.go:59:2)
-	//
-	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
-	//
-	//
-	// Default: "-1s"
-	Interval string // engine-dev (../../toolchains/engine-dev/pprof.go:63:2)
-}
-
-// Run specific tests while curling (pprof) dumps from their associated dev engine:
-// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
-// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(datebut also works for profiles:
-// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date
-func (r *EngineDev) TestDump(opts ...EngineDevTestDumpOpts) *Directory { // engine-dev (../../toolchains/engine-dev/pprof.go:20:1)
-	q := r.query.Select("testDump")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `pkg` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkg) {
-			q = q.Arg("pkg", opts[i].Pkg)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `parallel` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Parallel) {
-			q = q.Arg("parallel", opts[i].Parallel)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `testVerbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
-			q = q.Arg("testVerbose", opts[i].TestVerbose)
-		}
-		// `route` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Route) {
-			q = q.Arg("route", opts[i].Route)
-		}
-		// `noFinal` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoFinal) {
-			q = q.Arg("noFinal", opts[i].NoFinal)
-		}
-		// `delay` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Delay) {
-			q = q.Arg("delay", opts[i].Delay)
-		}
-		// `interval` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Interval) {
-			q = q.Arg("interval", opts[i].Interval)
-		}
-	}
-
-	return &Directory{
-		query: q,
-	}
-}
-
 // EngineDevTestEngineOpts contains options for EngineDev.TestEngine
 type EngineDevTestEngineOpts struct {
 	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:247:2)
+
+	RegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:248:2)
+
+	PrivateRegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:249:2)
+	//
+	// Cache volume for /run, shared between engine and test container
+	// so the test container can access /run/dagger-engine.sock
+	//
+	EngineRunVol *CacheVolume // engine-dev (../../toolchains/engine-dev/test.go:252:2)
 }
 
 // Build and start a dev instance of the dagger engine, suitable
@@ -7456,6 +7162,18 @@ func (r *EngineDev) TestEngine(opts ...EngineDevTestEngineOpts) *Service { // en
 		// `ebpfProgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+		// `registrySvc` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RegistrySvc) {
+			q = q.Arg("registrySvc", opts[i].RegistrySvc)
+		}
+		// `privateRegistrySvc` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PrivateRegistrySvc) {
+			q = q.Arg("privateRegistrySvc", opts[i].PrivateRegistrySvc)
+		}
+		// `engineRunVol` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineRunVol) {
+			q = q.Arg("engineRunVol", opts[i].EngineRunVol)
 		}
 	}
 
@@ -9461,6 +9179,30 @@ func (r *Env) WithTypescriptSDKInput(name string, value *TypescriptSDK, descript
 // Declare a desired TypescriptSdk output to be assigned in the environment
 func (r *Env) WithTypescriptSDKOutput(name string, description string) *Env {
 	q := r.query.Select("withTypescriptSdkOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Version in the environment
+func (r *Env) WithVersionInput(name string, value *Version, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withVersionInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Version output to be assigned in the environment
+func (r *Env) WithVersionOutput(name string, description string) *Env {
+	q := r.query.Select("withVersionOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -18401,6 +18143,16 @@ func (r *Client) LoadTypescriptSDKFromID(id TypescriptSDKID) *TypescriptSDK {
 	}
 }
 
+// Load a Version from its ID.
+func (r *Client) LoadVersionFromID(id VersionID) *Version {
+	q := r.query.Select("loadVersionFromID")
+	q = q.Arg("id", id)
+
+	return &Version{
+		query: q,
+	}
+}
+
 // Create a new module.
 func (r *Client) Module() *Module {
 	q := r.query.Select("module")
@@ -18689,14 +18441,46 @@ func (r *Client) TypescriptSDK(opts ...TypescriptSDKOpts) *TypescriptSDK {
 	}
 }
 
-// Get the current Dagger Engine version.
-func (r *Client) Version(ctx context.Context) (string, error) {
+// VersionOpts contains options for Client.Version
+type VersionOpts struct {
+	//
+	// A git repository containing the source code of the artifact to be versioned.
+	//
+	Git *Directory // version (../../version/main.go:21:2)
+	//
+	// A directory containing all the inputs of the artifact to be versioned.
+	// An input is any file that changes the artifact if it changes.
+	// This directory is used to compute a digest. If any input changes, the digest changes.
+	// - To avoid false positives, only include actual inputs
+	// - To avoid false negatives, include *all* inputs
+	//
+	Inputs *Directory // version (../../version/main.go:31:2)
+	//
+	// File containing the next release version (e.g. .changes/.next)
+	//
+	NextVersionFile *File // version (../../version/main.go:36:2)
+}
+
+func (r *Client) Version(opts ...VersionOpts) *Version { // version (../../version/main.go:17:1)
 	q := r.query.Select("version")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `git` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Git) {
+			q = q.Arg("git", opts[i].Git)
+		}
+		// `inputs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Inputs) {
+			q = q.Arg("inputs", opts[i].Inputs)
+		}
+		// `nextVersionFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NextVersionFile) {
+			q = q.Arg("nextVersionFile", opts[i].NextVersionFile)
+		}
+	}
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &Version{
+		query: q,
+	}
 }
 
 type Release struct { // release (../../toolchains/release/main.go:21:6)
@@ -21800,6 +21584,134 @@ func (r *TypescriptSDK) Workspace() *Directory {
 	}
 }
 
+type Version struct { // version (../../version/main.go:46:6)
+	query *querybuilder.Selection
+
+	currentTag         *string
+	dirty              *bool
+	id                 *VersionID
+	imageTag           *string
+	nextReleaseVersion *string
+	version            *string
+}
+
+func (r *Version) WithGraphQLQuery(q *querybuilder.Selection) *Version {
+	return &Version{
+		query: q,
+	}
+}
+
+func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (../../version/main.go:149:1)
+	if r.currentTag != nil {
+		return *r.currentTag, nil
+	}
+	q := r.query.Select("currentTag")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../version/main.go:132:1)
+	if r.dirty != nil {
+		return *r.dirty, nil
+	}
+	q := r.query.Select("dirty")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *Version) GitDir() *Directory { // version (../../version/main.go:49:2)
+	q := r.query.Select("gitDir")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// A unique identifier for this Version.
+func (r *Version) ID(ctx context.Context) (VersionID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response VersionID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Version) XXX_GraphQLType() string {
+	return "Version"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Version) XXX_GraphQLIDType() string {
+	return "VersionID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Version) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Version) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return the tag to use when auto-downloading the engine image from the CLI
+func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (../../version/main.go:110:1)
+	if r.imageTag != nil {
+		return *r.imageTag, nil
+	}
+	q := r.query.Select("imageTag")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// NextReleaseVersion returns the next release version from .changes/.next
+func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../version/main.go:211:1)
+	if r.nextReleaseVersion != nil {
+		return *r.nextReleaseVersion, nil
+	}
+	q := r.query.Select("nextReleaseVersion")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Generate a version string from the current context
+func (r *Version) Version(ctx context.Context) (string, error) { // version (../../version/main.go:59:1)
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Sharing mode of the cache volume.
 type CacheSharingMode string
 
@@ -22864,7 +22776,10 @@ func serveModuleDependencies(ctx context.Context, client *Client) error {
 		return err
 	}
 	if !configExist {
-		return fmt.Errorf("dagger.json not found but is required to load local dependencies or the module itself")
+		// No dagger.json found - this is fine when using the client as a
+		// library (e.g. tests using WithWorkdir to a temp dir). Module
+		// dependency types won't be available but base types still work.
+		return nil
 	}
 
 	if configExist {

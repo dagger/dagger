@@ -245,9 +245,13 @@ func (dev *EngineDev) test(
 func (dev *EngineDev) TestEngine(
 	ctx context.Context,
 	ebpfProgs []string, // +optional
+	registrySvc *dagger.Service, // +optional
+	privateRegistrySvc *dagger.Service, // +optional
+	// Cache volume for /run, shared between engine and test container
+	// so the test container can access /run/dagger-engine.sock
+	engineRunVol *dagger.CacheVolume, // +optional
 ) (*dagger.Service, error) {
 	// Build the dev engine container with configured eBPF programs and buildkit settings
-	// (copied from testContainer lines 247-263)
 	devEngine, err := dev.
 		WithEBPFProgs(ebpfProgs).
 		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
@@ -265,24 +269,24 @@ func (dev *EngineDev) TestEngine(
 	}
 
 	// Mitigation for https://github.com/dagger/dagger/issues/8031 during test suite
-	// (copied from testContainer lines 265-267)
 	devEngine = devEngine.
 		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
 
-	// Create cache volume for engine runtime data
-	// (copied from testContainer line 283)
-	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + rand.Text())
+	if engineRunVol == nil {
+		engineRunVol = dag.CacheVolume("dagger-dev-engine-test-varrun" + rand.Text())
+	}
 
-	// Create registry service for the engine
-	// (copied from testContainer line 284)
-	registrySvc := registry()
+	// Use provided registries or create internal ones
+	if registrySvc == nil {
+		registrySvc = registry()
+	}
+	if privateRegistrySvc == nil {
+		privateRegistrySvc = privateRegistry()
+	}
 
-	// Configure and start the dev engine as a service with exposed ports,
-	// mounted caches, and service bindings
-	// (copied from testContainer lines 285-301)
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
-		WithServiceBinding("privateregistry", privateRegistry()).
+		WithServiceBinding("privateregistry", privateRegistrySvc).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+rand.Text())).
 		WithMountedCache("/run", engineRunVol).

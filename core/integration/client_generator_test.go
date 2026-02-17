@@ -105,7 +105,7 @@ main()`, defaultGenDir))
 
 				// Mount SDK for go generator tests so SDK replace directives work
 				if tc.generator == "go" {
-					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 				}
 
 				moduleSrc = moduleSrc.With(tc.postSetup)
@@ -226,7 +226,7 @@ main()
 
 				// Mount SDK for go generator tests so SDK replace directives work
 				if tc.generator == "go" {
-					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 				}
 
 				moduleSrc = moduleSrc.With(tc.postSetup)
@@ -365,7 +365,7 @@ main()
 
 				// Mount SDK for go generator tests so SDK replace directives work
 				if tc.generator == "go" {
-					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 				}
 
 				moduleSrc = moduleSrc.With(tc.postSetup)
@@ -494,7 +494,7 @@ main()
 
 				// Mount SDK for go generator tests so SDK replace directives work
 				if tc.generator == "go" {
-					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 				}
 
 				moduleSrc = moduleSrc.With(tc.postSetup)
@@ -608,7 +608,7 @@ main()
 
 				// Mount SDK for go generator tests so SDK replace directives work
 				if tc.generator == "go" {
-					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 				}
 
 				moduleSrc = moduleSrc.With(tc.postSetup)
@@ -631,7 +631,7 @@ main()
 				// The SDK was removed by WithoutDirectory earlier
 				if tc.generator == "go" {
 					regeneratedSrc = regeneratedSrc.
-						WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
+						WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go")).
 						// Add SDK replace directive to regenerated client
 						With(addSDKReplaceToClient(defaultGenDir))
 				}
@@ -755,7 +755,7 @@ main()
 
 				// Mount SDK for go generator tests so SDK replace directives work
 				if tc.generator == "go" {
-					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+					moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 				}
 
 				moduleSrc = moduleSrc.With(tc.postSetup)
@@ -777,7 +777,7 @@ main()
 				// Re-mount SDK after regeneration for go tests
 				if tc.generator == "go" {
 					regeneratedSrc = regeneratedSrc.
-						WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
+						WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go")).
 						// Add SDK replace directive to regenerated client
 						With(addSDKReplaceToClient(defaultGenDir))
 				}
@@ -906,7 +906,7 @@ main()`, "./"+outputDir))
 
 					// Mount SDK for go generator tests so SDK replace directives work
 					if ts.generator == "go" {
-						moduleSrc = moduleSrc.WithDirectory(filepath.Join(ts.outputDir, "sdk"), c.Host().Directory("../../sdk/go"))
+						moduleSrc = moduleSrc.WithDirectory(filepath.Join(ts.outputDir, "sdk"), c.Host().Directory("sdk/go"))
 					}
 
 					moduleSrc = moduleSrc.With(ts.postSetup)
@@ -1210,8 +1210,8 @@ func (ClientGeneratorTest) TestMultipleClient(ctx context.Context, t *testctx.T)
 			With(daggerClientInstallAt("go", "client1")).
 			With(daggerClientInstallAt("go", "client2")).
 			// Mount SDK for both clients so their replace directives work
-			WithDirectory("client1/sdk", c.Host().Directory("../../sdk/go")).
-			WithDirectory("client2/sdk", c.Host().Directory("../../sdk/go")).
+			WithDirectory("client1/sdk", c.Host().Directory("sdk/go")).
+			WithDirectory("client2/sdk", c.Host().Directory("sdk/go")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -1376,7 +1376,7 @@ func main() {
 }`)).
 			With(daggerClientInstall("go")).
 			// Mount SDK so replace directive works
-			WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go")).
+			WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go")).
 			With(addSDKReplaceToClient(defaultGenDir))
 
 		t.Run("dagger run go run .", func(ctx context.Context, t *testctx.T) {
@@ -1451,8 +1451,8 @@ func main() {
 		With(daggerClientInstallAt("go", "./dagger")).
 		With(daggerClientInstallAt("go", "./dagger2")).
 		// Mount SDK for both clients so their replace directives work
-		WithDirectory("dagger/sdk", c.Host().Directory("../../sdk/go")).
-		WithDirectory("dagger2/sdk", c.Host().Directory("../../sdk/go")).
+		WithDirectory("dagger/sdk", c.Host().Directory("sdk/go")).
+		WithDirectory("dagger2/sdk", c.Host().Directory("sdk/go")).
 		WithNewFile("main.go", mainGoFile).
 		With(func(ctr *dagger.Container) *dagger.Container {
 			// Add SDK replace to clients' go.mod for testing
@@ -1743,7 +1743,7 @@ main()`, defaultGenDir))
 
 			// Mount SDK for go generator tests so SDK replace directives work
 			if tc.generator == "go" {
-				moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+				moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 			}
 
 			moduleSrc = moduleSrc.
@@ -1916,7 +1916,7 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 			With(daggerClientInstall("go"))
 
 		// Mount SDK for go generator tests so SDK replace directives work
-		moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+		moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 
 		// Read the generated go.mod
 		goModContents, err := moduleSrc.
@@ -1946,7 +1946,7 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 			With(daggerClientInstall("go"))
 
 		// Mount SDK for go generator tests so SDK replace directives work
-		moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("../../sdk/go"))
+		moduleSrc = moduleSrc.WithDirectory(filepath.Join(defaultGenDir, "sdk"), c.Host().Directory("sdk/go"))
 
 		// Read the generated go.mod
 		goModContents, err := moduleSrc.

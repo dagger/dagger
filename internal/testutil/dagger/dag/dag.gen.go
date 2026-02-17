@@ -745,6 +745,12 @@ func LoadTypescriptSDKFromID(id dagger.TypescriptSDKID) *dagger.TypescriptSDK {
 	return client.LoadTypescriptSDKFromID(id)
 }
 
+// Load a Version from its ID.
+func LoadVersionFromID(id dagger.VersionID) *dagger.Version {
+	client := initClient()
+	return client.LoadVersionFromID(id)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()
@@ -824,8 +830,7 @@ func TypescriptSDK(opts ...dagger.TypescriptSDKOpts) *dagger.TypescriptSDK {
 	return client.TypescriptSDK(opts...)
 }
 
-// Get the current Dagger Engine version.
-func Version(ctx context.Context) (string, error) {
+func Version(opts ...dagger.VersionOpts) *dagger.Version {
 	client := initClient()
-	return client.Version(ctx)
+	return client.Version(opts...)
 }

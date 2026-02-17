@@ -50,9 +50,7 @@
             "docs/**",
             "dagql/idtui/viztest/broken/**",
             "modules/evals/**",
-            "**/broken*/**",
-            "core/integration/testdata/checks/hello-with-checks/",
-            "core/integration/testdata/generators/hello-with-generators/"
+            "**/broken*/**"
           ]
         }
       ]
@@ -155,6 +153,10 @@
     {
       "name": "cli",
       "source": "toolchains/cli-dev"
+    },
+    {
+      "name": "version",
+      "source": "version"
     }
   ],
   "source": ".dagger",
