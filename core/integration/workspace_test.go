@@ -33,13 +33,18 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 }
 
 // initDangModule creates a Dang module in the workspace with the given name
-// and source code. Uses "dagger module init" to scaffold the workspace and
-// module, then overwrites main.dang with the provided source.
+// and source code. Uses "dagger init" and "dagger toolchain install" to
+// scaffold the workspace and module, then overwrites main.dang with the
+// provided source.
 func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
-			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
+			WithWorkdir("toolchains/"+name).
+			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
+			WithNewFile("main.dang", source).
+			WithWorkdir("../../").
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "./toolchains/"+name))
 	}
 }
 
@@ -337,6 +342,7 @@ type Magic {
 	require.NoError(t, err)
 	require.NotContains(t, help, "--source")
 }
+
 // TestWorkspaceContentAddressed verifies that when a module constructor takes
 // a Workspace argument, the result is content-addressed: calling a function
 // twice with the same workspace content should be cached (the function body
