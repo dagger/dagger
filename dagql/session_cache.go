@@ -128,8 +128,6 @@ func (c *SessionCache) GetOrInitCall(
 		ctx = telemetryCtx
 	}
 
-	ctx = withTrackNilResult(ctx)
-
 	res, err = c.cache.GetOrInitCall(ctx, key, fn)
 	if err != nil {
 		return nil, err
