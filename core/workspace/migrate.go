@@ -68,7 +68,6 @@ func (r *MigrationResult) Summary() string {
 type ConstructorIntrospector func(ctx context.Context, ref string) ([]ConstructorArgHint, error)
 
 // Migrate performs the legacy dagger.json -> workspace format migration.
-// Called when AutoMigrate is set and ErrMigrationRequired was detected.
 // If introspect is non-nil, it is called for each toolchain to discover
 // constructor arguments and generate commented-out config hints.
 func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, introspect ConstructorIntrospector) (*MigrationResult, error) {
@@ -489,4 +488,74 @@ func deleteHostDir(ctx context.Context, bk MigrationIO, dirPath string) error {
 	defer os.RemoveAll(tmpDir)
 
 	return bk.LocalDirExport(ctx, tmpDir, parentDir, true, []string{dirName})
+}
+
+// LocalMigrationIO implements MigrationIO using direct filesystem operations.
+// Used by the CLI to perform migration without needing the engine.
+type LocalMigrationIO struct{}
+
+func (LocalMigrationIO) ReadCallerHostFile(_ context.Context, path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
+func (LocalMigrationIO) LocalFileExport(_ context.Context, srcPath, _ string, destPath string, allowParentDirPath bool) error {
+	if allowParentDirPath {
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return err
+		}
+	}
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(destPath, data, 0644)
+}
+
+func (LocalMigrationIO) LocalDirExport(_ context.Context, srcPath, destPath string, merge bool, removePaths []string) error {
+	for _, p := range removePaths {
+		target := filepath.Join(destPath, p)
+		os.RemoveAll(target)
+	}
+	if !merge {
+		os.RemoveAll(destPath)
+	}
+	return copyDirLocal(srcPath, destPath)
+}
+
+func (LocalMigrationIO) ImportCallerHostDir(_ context.Context, hostPath string) (string, error) {
+	tmpDir, err := os.MkdirTemp("", "dagger-migrate-import-*")
+	if err != nil {
+		return "", err
+	}
+	if err := copyDirLocal(hostPath, tmpDir); err != nil {
+		os.RemoveAll(tmpDir)
+		return "", err
+	}
+	return tmpDir, nil
+}
+
+// copyDirLocal recursively copies a directory.
+func copyDirLocal(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode())
+	})
 }

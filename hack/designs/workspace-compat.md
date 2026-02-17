@@ -227,7 +227,7 @@ Warnings  Migrate cmd |
   resolvers, type validation exceptions. Keep `ModuleConfig.Toolchains` for JSON parse
   compat but ignore it.
 
-- [ ] **#6: Update dagger migrate command** (blocked by #3) — Simplify detection
+- [x] **#6: Update dagger migrate command** (blocked by #3) — Simplify detection
   (structural check: dagger.json exists + no config.toml). Remove `AutoMigrate` from
   `ClientMetadata`. Remove `handleMigration()`. Migration is explicitly invoked, not
   auto-triggered.

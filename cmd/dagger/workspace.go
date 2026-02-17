@@ -143,30 +143,33 @@ var migrateCmd = &cobra.Command{
 			return fmt.Errorf("workspace on git remote cannot be modified")
 		}
 
-		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{
-			SkipWorkspaceModules: true,
-			AutoMigrate:          true,
-		}, func(ctx context.Context, engineClient *client.Client) error {
-			// AutoMigrate causes ensureWorkspaceLoaded to perform migration.
-			// Query the workspace to confirm success.
-			dag := engineClient.Dagger()
-			ws := dag.CurrentWorkspace()
-			hasConfig, err := ws.HasConfig(ctx)
-			if err != nil {
-				return fmt.Errorf("migration: %w", err)
-			}
-			if hasConfig {
-				configPath, err := ws.ConfigPath(ctx)
-				if err != nil {
-					return fmt.Errorf("migration: %w", err)
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Migration complete: %s\n", configPath)
-			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "No migration needed.")
-			}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("getting working directory: %w", err)
+		}
+
+		// Structural detection: dagger.json exists, no .dagger/config.toml
+		configPath := filepath.Join(cwd, workspace.ModuleConfigFileName)
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			fmt.Fprintln(cmd.OutOrStdout(), "No migration needed: no dagger.json found.")
 			return nil
-		})
+		}
+		tomlPath := filepath.Join(cwd, workspace.WorkspaceDirName, workspace.ConfigFileName)
+		if _, err := os.Stat(tomlPath); err == nil {
+			fmt.Fprintln(cmd.OutOrStdout(), "No migration needed: workspace already initialized.")
+			return nil
+		}
+
+		migErr := &workspace.ErrMigrationRequired{
+			ConfigPath:  configPath,
+			ProjectRoot: cwd,
+		}
+		result, err := workspace.Migrate(cmd.Context(), workspace.LocalMigrationIO{}, migErr, nil)
+		if err != nil {
+			return fmt.Errorf("migration failed: %w", err)
+		}
+		fmt.Fprint(cmd.OutOrStdout(), result.Summary())
+		return nil
 	},
 }
 
@@ -194,11 +197,6 @@ func migrateListModules(cmd *cobra.Command) error {
 			return nil
 		}
 
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
 		dir := filepath.Dir(path)
 
 		// If .dagger/config.toml already exists, this module has already been
@@ -208,14 +206,12 @@ func migrateListModules(cmd *cobra.Command) error {
 			return nil
 		}
 
-		if triggerErr := workspace.CheckMigrationTriggers(data, path, dir); triggerErr != nil {
-			rel, err := filepath.Rel(root, path)
-			if err != nil {
-				rel = path
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), rel)
-			found++
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			rel = path
 		}
+		fmt.Fprintln(cmd.OutOrStdout(), rel)
+		found++
 		return nil
 	})
 	if err != nil {

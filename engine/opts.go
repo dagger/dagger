@@ -119,10 +119,6 @@ type ClientMetadata struct {
 	// SkipWorkspaceModules skips loading workspace modules when true.
 	SkipWorkspaceModules bool `json:"skip_workspace_modules,omitempty"`
 
-	// AutoMigrate triggers automatic migration when a legacy dagger.json
-	// is detected during workspace loading.
-	AutoMigrate bool `json:"auto_migrate,omitempty"`
-
 	// RemoteWorkdir is a git ref for loading a workspace from a remote
 	// repository (e.g. "github.com/foo/bar@v1.0"). When set, the engine
 	// clones this repo and performs workspace detection within it instead

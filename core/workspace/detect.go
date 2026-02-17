@@ -2,7 +2,6 @@ package workspace
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -126,26 +125,3 @@ func (e *ErrMigrationRequired) Error() string {
 	return `Migration required: run "dagger migrate" to update this project to the workspace format.`
 }
 
-// CheckMigrationTriggers checks if a dagger.json requires migration.
-// Returns *ErrMigrationRequired if migration triggers are present.
-func CheckMigrationTriggers(data []byte, configPath, projectRoot string) error {
-	var legacy struct {
-		Source     string `json:"source"`
-		Toolchains []any  `json:"toolchains"`
-	}
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		return err
-	}
-
-	hasToolchains := len(legacy.Toolchains) > 0
-	hasNonDotSource := legacy.Source != "" && legacy.Source != "."
-
-	if hasToolchains || hasNonDotSource {
-		return &ErrMigrationRequired{
-			ConfigPath:  configPath,
-			ProjectRoot: projectRoot,
-		}
-	}
-
-	return nil
-}
