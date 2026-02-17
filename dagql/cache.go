@@ -160,7 +160,7 @@ type cache struct {
 
 	// calls that are in progress, keyed by a combination of the call key and the concurrency key
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
-	ongoingCalls map[callConcurrencyKeys]*sharedResult
+	ongoingCalls map[callConcurrencyKeys]*ongoingCall
 
 	// e-graph index for call-result equivalence.
 	egraphDigestToClass map[string]eqClassID
@@ -198,18 +198,12 @@ type OnReleaseFunc = func(context.Context) error
 type sharedResult struct {
 	cache *cache
 
-	storageKey          string              // persistent cache storage key for this result
-	callConcurrencyKeys callConcurrencyKeys // key to cache.ongoingCalls
-	expiration          int64               // unix timestamp for ttl-based entries (0 means no ttl)
-
 	// Immutable payload shared by all per-call Result values.
 	self    Typed
 	objType ObjectType
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
 	hasValue bool
 	postCall PostCallFunc
-
-	err error
 
 	safeToPersistCache bool
 	onRelease          OnReleaseFunc
@@ -222,13 +216,28 @@ type sharedResult struct {
 	resultTermInputs   []digest.Digest
 	hasResultTerm      bool
 
-	persistToDB func(context.Context) error
+	refCount int
+}
+
+// ongoingCall tracks one in-flight GetOrInitCall execution and points at the
+// shared result payload that will be returned to waiters.
+type ongoingCall struct {
+	callConcurrencyKeys callConcurrencyKeys
+	persistToDB         func(context.Context) error
 
 	waitCh  chan struct{}
 	cancel  context.CancelCauseFunc
 	waiters int
+	err     error
 
-	refCount int
+	shared *sharedResult
+
+	// If true, one reference from a returned attached value has been transferred
+	// into this call and should be consumed by one successful waiter result.
+	pendingAdoptedRef bool
+	// Used to give back the adopted ref if the call fails before any waiter
+	// claims it.
+	releaseAdoptedRef func(context.Context) error
 }
 
 // newDetachedResult creates a non-cache-backed Result from an explicit call ID and value.
@@ -251,10 +260,9 @@ func (res *sharedResult) release(ctx context.Context) error {
 	res.cache.mu.Lock()
 	res.refCount--
 	var onRelease OnReleaseFunc
-	if res.refCount == 0 && res.waiters == 0 {
+	if res.refCount == 0 {
 		// Always release in-memory dagql/egraph state when refs drain. The
 		// safe-to-persist flag only governs persistence metadata behavior.
-		delete(res.cache.ongoingCalls, res.callConcurrencyKeys)
 		res.cache.removeResultFromEgraphLocked(res)
 		onRelease = res.onRelease
 	}
@@ -502,6 +510,154 @@ type cacheBackedResult interface {
 	cacheSharedResult() *sharedResult
 }
 
+type cacheAttachment struct {
+	shared            *sharedResult
+	pendingAdoptedRef bool
+	releaseAdoptedRef func(context.Context) error
+}
+
+type cacheAttachableResult interface {
+	attachToCache(*cache) (cacheAttachment, error)
+}
+
+func attachAnyResultToCache(c *cache, val AnyResult) (cacheAttachment, error) {
+	attachable, ok := val.(cacheAttachableResult)
+	if !ok {
+		attached := &sharedResult{
+			cache:              c,
+			self:               val.Unwrap(),
+			hasValue:           true,
+			postCall:           val.PostCall,
+			safeToPersistCache: val.IsSafeToPersistCache(),
+		}
+		if id := val.ID(); id != nil {
+			attached.outputDigest = id.Digest()
+			attached.outputExtraDigests = cloneExtraDigests(id.ExtraDigests())
+			selfDigest, inputDigests, err := id.SelfDigestAndInputs()
+			if err == nil {
+				attached.resultTermSelf = selfDigest
+				attached.resultTermInputs = inputDigests
+				attached.hasResultTerm = true
+			} else {
+				slog.Warn("failed to derive result term digests", "err", err)
+			}
+		}
+		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
+			attached.onRelease = onReleaser.OnRelease
+		}
+		if obj, ok := val.(AnyObjectResult); ok {
+			attached.objType = obj.ObjectType()
+		}
+		return cacheAttachment{shared: attached}, nil
+	}
+
+	attached, err := attachable.attachToCache(c)
+	if err != nil {
+		return cacheAttachment{}, err
+	}
+	if attached.shared == nil {
+		return cacheAttachment{}, fmt.Errorf("attach result to cache: missing shared result")
+	}
+	if attached.shared.onRelease == nil {
+		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
+			attached.shared.onRelease = onReleaser.OnRelease
+		}
+	}
+	if attached.shared.objType == nil {
+		if obj, ok := val.(AnyObjectResult); ok {
+			attached.shared.objType = obj.ObjectType()
+		}
+	}
+	return attached, nil
+}
+
+func cloneExtraDigests(in []call.ExtraDigest) []call.ExtraDigest {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]call.ExtraDigest, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneDigestSlice(in []digest.Digest) []digest.Digest {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]digest.Digest, len(in))
+	copy(out, in)
+	return out
+}
+
+func (r Result[T]) attachToCache(c *cache) (cacheAttachment, error) {
+	if r.shared != nil && r.shared.cache == c {
+		return cacheAttachment{
+			shared:            r.shared,
+			pendingAdoptedRef: true,
+			releaseAdoptedRef: r.Release,
+		}, nil
+	}
+
+	attached := &sharedResult{
+		cache:              c,
+		self:               r.Unwrap(),
+		hasValue:           true,
+		safeToPersistCache: r.IsSafeToPersistCache(),
+	}
+	if r.shared != nil {
+		attached.hasValue = r.shared.hasValue
+		attached.postCall = r.shared.postCall
+		attached.safeToPersistCache = r.shared.safeToPersistCache
+		attached.onRelease = r.shared.onRelease
+		attached.outputDigest = r.shared.outputDigest
+		attached.outputExtraDigests = cloneExtraDigests(r.shared.outputExtraDigests)
+		attached.resultTermSelf = r.shared.resultTermSelf
+		attached.resultTermInputs = cloneDigestSlice(r.shared.resultTermInputs)
+		attached.hasResultTerm = r.shared.hasResultTerm
+		attached.objType = r.shared.objType
+	}
+
+	if id := r.ID(); id != nil {
+		if attached.outputDigest == "" {
+			attached.outputDigest = id.Digest()
+		}
+		if len(attached.outputExtraDigests) == 0 {
+			attached.outputExtraDigests = cloneExtraDigests(id.ExtraDigests())
+		}
+		if !attached.hasResultTerm {
+			selfDigest, inputDigests, err := id.SelfDigestAndInputs()
+			if err == nil {
+				attached.resultTermSelf = selfDigest
+				attached.resultTermInputs = inputDigests
+				attached.hasResultTerm = true
+			} else {
+				slog.Warn("failed to derive result term digests", "err", err)
+			}
+		}
+	}
+
+	if r.shared != nil && r.shared.cache != nil && r.shared.cache != c {
+		// Keep this detached from a foreign cache entry but transfer release of the
+		// foreign cache ref to the attached result.
+		attached.onRelease = r.Release
+	}
+
+	return cacheAttachment{
+		shared: attached,
+	}, nil
+}
+
+func (r ObjectResult[T]) attachToCache(c *cache) (cacheAttachment, error) {
+	attached, err := r.Result.attachToCache(c)
+	if err != nil {
+		return cacheAttachment{}, err
+	}
+	if attached.shared != nil && attached.shared.objType == nil {
+		attached.shared.objType = r.class
+	}
+	return attached, nil
+}
+
 func (r Result[T]) cacheHasValue() bool {
 	return r.shared != nil && r.shared.hasValue
 }
@@ -629,7 +785,6 @@ func (c *cache) GetOrInitCall(
 	// can be different results stored on disk for a single call key, necessitating
 	// this separate storage key.
 	storageKey := callKey
-	storageExpiration := int64(0)
 
 	var persistToDB func(context.Context) error
 	if key.TTL != 0 && c.db != nil {
@@ -651,7 +806,6 @@ func (c *cache) GetOrInitCall(
 		// from engine client metadata.
 		switch {
 		case cachedCall == nil:
-			storageExpiration = expiration
 			md, err := engine.ClientMetadataFromContext(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("get client metadata: %w", err)
@@ -673,7 +827,6 @@ func (c *cache) GetOrInitCall(
 			}
 
 		case cachedCall.Expiration < now:
-			storageExpiration = expiration
 			md, err := engine.ClientMetadataFromContext(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("get client metadata: %w", err)
@@ -698,7 +851,6 @@ func (c *cache) GetOrInitCall(
 		default:
 			// We have a cached entry and it hasn't expired yet, use it
 			storageKey = cachedCall.StorageKey
-			storageExpiration = cachedCall.Expiration
 		}
 	}
 
@@ -710,7 +862,7 @@ func (c *cache) GetOrInitCall(
 
 	c.mu.Lock()
 	if c.ongoingCalls == nil {
-		c.ongoingCalls = make(map[callConcurrencyKeys]*sharedResult)
+		c.ongoingCalls = make(map[callConcurrencyKeys]*ongoingCall)
 	}
 	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID)
 	if err != nil {
@@ -723,93 +875,90 @@ func (c *cache) GetOrInitCall(
 	}
 
 	if key.ConcurrencyKey != "" {
-		if res, ok := c.ongoingCalls[callConcKeys]; ok {
+		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
 			// already an ongoing call
-			res.waiters++
+			oc.waiters++
 			c.mu.Unlock()
-			return c.wait(ctx, res, key.ID, false)
+			return c.wait(ctx, oc, key.ID, false)
 		}
 	}
 
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
 	callCtx := context.WithValue(ctx, cacheContextKey{storageKey, c}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
-	res := &sharedResult{
-		cache: c,
-
-		storageKey:          storageKey,
+	oc := &ongoingCall{
 		callConcurrencyKeys: callConcKeys,
-		expiration:          storageExpiration,
-
-		persistToDB: persistToDB,
-
-		waitCh:  make(chan struct{}),
-		cancel:  cancel,
-		waiters: 1,
+		persistToDB:         persistToDB,
+		waitCh:              make(chan struct{}),
+		cancel:              cancel,
+		waiters:             1,
+		shared: &sharedResult{
+			cache: c,
+		},
 	}
 
 	if key.ConcurrencyKey != "" {
-		c.ongoingCalls[callConcKeys] = res
+		c.ongoingCalls[callConcKeys] = oc
 	}
 
 	go func() {
-		defer close(res.waitCh)
+		defer close(oc.waitCh)
 		val, err := fn(callCtx)
-		res.err = err
-		if val != nil {
-			// Normalize nested call metadata at this outer call boundary.
-			res.self = val.Unwrap()
-			res.postCall = val.PostCall
-			res.safeToPersistCache = val.IsSafeToPersistCache()
-			res.hasValue = true
-			if id := val.ID(); id != nil {
-				res.outputDigest = id.Digest()
-				res.outputExtraDigests = id.ExtraDigests()
-				selfDigest, inputDigests, err := id.SelfDigestAndInputs()
-				if err == nil {
-					res.resultTermSelf = selfDigest
-					res.resultTermInputs = inputDigests
-					res.hasResultTerm = true
-				} else {
-					slog.Warn("failed to derive result term digests", "err", err)
-				}
-			}
-			if cacheBackedRes, ok := val.(cacheBackedResult); ok {
-				if shared := cacheBackedRes.cacheSharedResult(); shared != nil && shared.cache != nil {
-					// Transfer ownership of the inner cache ref to this outer cache entry.
-					res.onRelease = val.Release
-				}
-			}
-			if res.onRelease == nil {
-				if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
-					res.onRelease = onReleaser.OnRelease
-				}
-			}
-			if obj, ok := val.(AnyObjectResult); ok {
-				res.objType = obj.ObjectType()
-			}
+		oc.err = err
+		if err != nil || val == nil {
+			return
 		}
+
+		attached, attachErr := attachAnyResultToCache(c, val)
+		if attachErr != nil {
+			oc.err = attachErr
+			return
+		}
+
+		var releaseFn func(context.Context) error
+		c.mu.Lock()
+		if oc.waiters == 0 {
+			// Nobody can consume this completed call anymore; release any acquired
+			// value ownership immediately.
+			switch {
+			case attached.pendingAdoptedRef && attached.releaseAdoptedRef != nil:
+				releaseFn = attached.releaseAdoptedRef
+			case attached.shared != nil && attached.shared.onRelease != nil:
+				releaseFn = attached.shared.onRelease
+			}
+			c.mu.Unlock()
+			if releaseFn != nil {
+				if err := releaseFn(context.WithoutCancel(callCtx)); err != nil {
+					slog.Warn("failed to release completed cache call with no waiters", "err", err)
+				}
+			}
+			return
+		}
+		oc.shared = attached.shared
+		oc.pendingAdoptedRef = attached.pendingAdoptedRef
+		oc.releaseAdoptedRef = attached.releaseAdoptedRef
+		c.mu.Unlock()
 	}()
 
 	c.mu.Unlock()
-	return c.wait(ctx, res, key.ID, true)
+	return c.wait(ctx, oc, key.ID, true)
 }
 
-func (c *cache) wait(ctx context.Context, res *sharedResult, requestID *call.ID, isFirstCaller bool) (AnyResult, error) {
+func (c *cache) wait(ctx context.Context, oc *ongoingCall, requestID *call.ID, isFirstCaller bool) (AnyResult, error) {
 	var hitCache bool
 	var err error
 
 	// first check just if the call is done already, if it is we consider it a cache hit
 	select {
-	case <-res.waitCh:
+	case <-oc.waitCh:
 		hitCache = true
-		err = res.err
+		err = oc.err
 	default:
 		// call wasn't done in fast path check, wait for either the call to
-		// be done or the caller's ctx to be cancelee
+		// be done or the caller's ctx to be canceled
 		select {
-		case <-res.waitCh:
-			err = res.err
+		case <-oc.waitCh:
+			err = oc.err
 		case <-ctx.Done():
 			err = context.Cause(ctx)
 		}
@@ -817,22 +966,32 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, requestID *call.ID,
 
 	c.mu.Lock()
 
-	res.waiters--
-	if res.waiters == 0 {
+	oc.waiters--
+	if oc.waiters == 0 {
 		// no one else is waiting, can cancel the callCtx
-		res.cancel(err)
+		oc.cancel(err)
 	}
 
 	if err == nil {
-		safeToPersistCache := res.safeToPersistCache
+		shared := oc.shared
+		if shared == nil {
+			c.mu.Unlock()
+			return nil, fmt.Errorf("cache wait: missing shared result")
+		}
+		safeToPersistCache := shared.safeToPersistCache
 
-		delete(c.ongoingCalls, res.callConcurrencyKeys)
-		c.indexResultInEgraphLocked(requestID, res)
+		delete(c.ongoingCalls, oc.callConcurrencyKeys)
+		c.indexResultInEgraphLocked(requestID, shared)
 
-		res.refCount++
+		if oc.pendingAdoptedRef {
+			oc.pendingAdoptedRef = false
+			oc.releaseAdoptedRef = nil
+		} else {
+			shared.refCount++
+		}
 		retID := requestID
 		if retID != nil {
-			for _, extra := range res.outputExtraDigests {
+			for _, extra := range shared.outputExtraDigests {
 				if extra.Digest == "" {
 					continue
 				}
@@ -841,8 +1000,8 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, requestID *call.ID,
 		}
 		c.mu.Unlock()
 
-		if isFirstCaller && res.persistToDB != nil && safeToPersistCache {
-			err := res.persistToDB(ctx)
+		if isFirstCaller && oc.persistToDB != nil && safeToPersistCache {
+			err := oc.persistToDB(ctx)
 			if err != nil {
 				slog.Error("failed to persist cache expiration", "err", err)
 			}
@@ -851,33 +1010,43 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, requestID *call.ID,
 		if isFirstCaller {
 			hitCache = false
 		}
-		if !res.hasValue {
+		if !shared.hasValue {
 			return Result[Typed]{
-				shared:   res,
+				shared:   shared,
 				id:       retID,
 				hitCache: hitCache,
 			}, nil
 		}
 		retRes := Result[Typed]{
-			shared:   res,
+			shared:   shared,
 			id:       retID,
 			hitCache: hitCache,
 		}
-		if res.objType == nil {
+		if shared.objType == nil {
 			return retRes, nil
 		}
-		retObjRes, err := res.objType.New(retRes)
+		retObjRes, err := shared.objType.New(retRes)
 		if err != nil {
 			return nil, fmt.Errorf("reconstruct object result from cache wait: %w", err)
 		}
 		return retObjRes, nil
 	}
 
-	if res.refCount == 0 && res.waiters == 0 {
-		// error happened and no refs left, delete it now
-		delete(c.ongoingCalls, res.callConcurrencyKeys)
+	var releaseAdoptedRef func(context.Context) error
+	if oc.waiters == 0 {
+		delete(c.ongoingCalls, oc.callConcurrencyKeys)
+		if oc.pendingAdoptedRef && oc.releaseAdoptedRef != nil {
+			releaseAdoptedRef = oc.releaseAdoptedRef
+			oc.pendingAdoptedRef = false
+			oc.releaseAdoptedRef = nil
+		}
 	}
 
 	c.mu.Unlock()
+	if releaseAdoptedRef != nil {
+		if releaseErr := releaseAdoptedRef(context.WithoutCancel(ctx)); releaseErr != nil {
+			return nil, errors.Join(err, releaseErr)
+		}
+	}
 	return nil, err
 }

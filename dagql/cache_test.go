@@ -1436,8 +1436,8 @@ func TestCacheStructuralLookupByIDReturnsLiveTerm(t *testing.T) {
 	inputEqIDs := c.ensureTermInputEqIDsLocked(inputDigests)
 	termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
 
-	older := &sharedResult{storageKey: "storage-older", self: NewInt(1), hasValue: true}
-	other := &sharedResult{storageKey: "storage-other", self: NewInt(2), hasValue: true}
+	older := &sharedResult{self: NewInt(1), hasValue: true}
+	other := &sharedResult{self: NewInt(2), hasValue: true}
 
 	c.initEgraphLocked()
 	olderTerm := newEgraphTerm(1, selfDigest, inputEqIDs, 0, nil, older)
@@ -1467,7 +1467,7 @@ func TestCacheStructuralLookupByIDSkipsStaleTerms(t *testing.T) {
 	inputEqIDs := c.ensureTermInputEqIDsLocked(inputDigests)
 	termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
 
-	live := &sharedResult{storageKey: "storage-live", self: NewInt(3), hasValue: true}
+	live := &sharedResult{self: NewInt(3), hasValue: true}
 
 	c.initEgraphLocked()
 	staleTerm := newEgraphTerm(9, selfDigest, inputEqIDs, 0, nil, nil)
