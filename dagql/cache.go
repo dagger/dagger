@@ -224,6 +224,7 @@ type sharedResult struct {
 type ongoingCall struct {
 	callConcurrencyKeys callConcurrencyKeys
 	persistToDB         func(context.Context) error
+	persistToDBOnce     sync.Once
 
 	waitCh  chan struct{}
 	cancel  context.CancelCauseFunc
@@ -275,7 +276,7 @@ type Result[T Typed] struct {
 	// id is the caller-facing ID for this specific returned result.
 	id *call.ID
 
-	// per-call fields
+	// per-call cache-hit signal for callers/tests.
 	hitCache bool
 }
 
@@ -709,7 +710,7 @@ func (c *cache) GetOrInitCall(
 			// already an ongoing call
 			oc.waiters++
 			c.mu.Unlock()
-			return c.wait(ctx, oc, key.ID, false)
+			return c.wait(ctx, oc, key.ID)
 		}
 	}
 
@@ -736,125 +737,146 @@ func (c *cache) GetOrInitCall(
 	}()
 
 	c.mu.Unlock()
-	return c.wait(ctx, oc, key.ID, true)
+	return c.wait(ctx, oc, key.ID)
 }
 
-func (c *cache) wait(ctx context.Context, oc *ongoingCall, requestID *call.ID, isFirstCaller bool) (AnyResult, error) {
-	var hitCache bool
-	var err error
+func (c *cache) wait(
+	ctx context.Context,
+	oc *ongoingCall,
+	requestID *call.ID,
+) (AnyResult, error) {
+	var waitErr error
 
-	// first check just if the call is done already, if it is we consider it a cache hit
+	// wait for completion or caller cancellation.
 	select {
 	case <-oc.waitCh:
-		hitCache = !isFirstCaller
-		err = oc.err
-	default:
-		// call wasn't done in fast path check, wait for either the call to
-		// be done or the caller's ctx to be canceled
-		select {
-		case <-oc.waitCh:
-			err = oc.err
-		case <-ctx.Done():
-			err = context.Cause(ctx)
-		}
+		waitErr = oc.err
+	case <-ctx.Done():
+		waitErr = context.Cause(ctx)
 	}
 
+	retRes, err := c.waitLocked(oc, requestID, waitErr)
+	if err != nil {
+		return nil, err
+	}
+
+	if oc.persistToDB != nil && oc.res.safeToPersistCache {
+		oc.persistToDBOnce.Do(func() {
+			persistErr := oc.persistToDB(ctx)
+			if persistErr != nil {
+				slog.Error("failed to persist cache expiration", "err", persistErr)
+			}
+		})
+	}
+
+	if !retRes.shared.hasValue {
+		return retRes, nil
+	}
+	if retRes.shared.objType == nil {
+		return retRes, nil
+	}
+	retObjRes, constructErr := retRes.shared.objType.New(retRes)
+	if constructErr != nil {
+		return nil, fmt.Errorf("reconstruct object result from cache wait: %w", constructErr)
+	}
+	return retObjRes, nil
+}
+
+func (c *cache) waitLocked(
+	oc *ongoingCall,
+	requestID *call.ID,
+	waitErr error,
+) (Result[Typed], error) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	oc.waiters--
-	if oc.waiters == 0 {
-		// no one else is waiting, can cancel the callCtx
-		oc.cancel(err)
-	}
-
-	if err == nil {
-		if oc.res == nil {
-			oc.res = &sharedResult{
-				cache: c,
-			}
-			if oc.val != nil {
-				if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.cache != nil {
-					// we got a result already in the cache, use it
-					oc.res = existingRes
-				} else {
-					// we got a result that's not yet in the cache, make a new sharedResult for it
-					oc.res.self = oc.val.Unwrap()
-					oc.res.hasValue = true
-					oc.res.postCall = oc.val.PostCall
-					oc.res.safeToPersistCache = oc.val.IsSafeToPersistCache()
-					oc.res.outputDigest = oc.val.ID().Digest()
-					oc.res.outputExtraDigests = oc.val.ID().ExtraDigests()
-					selfDigest, inputDigests, deriveErr := oc.val.ID().SelfDigestAndInputs()
-					if deriveErr != nil {
-						c.mu.Unlock()
-						return nil, fmt.Errorf("derive result term digests: %w", deriveErr)
-					}
-					oc.res.resultTermSelf = selfDigest
-					oc.res.resultTermInputs = inputDigests
-					oc.res.hasResultTerm = true
-					if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
-						oc.res.onRelease = onReleaser.OnRelease
-					}
-					if obj, ok := oc.val.(AnyObjectResult); ok {
-						oc.res.objType = obj.ObjectType()
-					}
-				}
-			}
-		}
-		oc.res.refCount++
-
-		delete(c.ongoingCalls, oc.callConcurrencyKeys)
-		c.indexResultInEgraphLocked(requestID, oc.res)
-
-		retID := requestID
-		if retID != nil {
-			for _, extra := range oc.res.outputExtraDigests {
-				if extra.Digest == "" {
-					continue
-				}
-				retID = retID.With(call.WithExtraDigest(extra))
-			}
-		}
-		c.mu.Unlock()
-
-		if isFirstCaller && oc.persistToDB != nil && oc.res.safeToPersistCache {
-			err := oc.persistToDB(ctx)
-			if err != nil {
-				slog.Error("failed to persist cache expiration", "err", err)
-			}
-		}
-
-		retRes := Result[Typed]{
-			shared:   oc.res,
-			id:       retID,
-			hitCache: hitCache,
-		}
-		if !retRes.shared.hasValue {
-			return retRes, nil
-		}
-		if retRes.shared.objType == nil {
-			return retRes, nil
-		}
-		retObjRes, err := retRes.shared.objType.New(retRes)
-		if err != nil {
-			return nil, fmt.Errorf("reconstruct object result from cache wait: %w", err)
-		}
-		return retObjRes, nil
-	}
-
 	lastWaiter := oc.waiters == 0
 	if lastWaiter {
+		oc.cancel(waitErr)
+	}
+	if waitErr == nil || lastWaiter {
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 	}
+	if waitErr != nil {
+		return Result[Typed]{}, waitErr
+	}
 
-	c.mu.Unlock()
-	if lastWaiter {
-		<-oc.waitCh
-		if oc.val != nil {
-			if releaseErr := oc.val.Release(context.WithoutCancel(ctx)); releaseErr != nil {
-				slog.Warn("failed to release completed cache call with no waiters", "err", releaseErr)
+	if oc.res != nil {
+		oc.res.refCount++
+
+		retID := requestID
+		for _, extra := range oc.res.outputExtraDigests {
+			if extra.Digest == "" {
+				continue
+			}
+			retID = retID.With(call.WithExtraDigest(extra))
+		}
+		return Result[Typed]{
+			shared:   oc.res,
+			id:       retID,
+			hitCache: false,
+		}, nil
+	}
+
+	var requestSelf digest.Digest
+	var requestInputs []digest.Digest
+	var deriveErr error
+	requestSelf, requestInputs, deriveErr = requestID.SelfDigestAndInputs()
+	if deriveErr != nil {
+		return Result[Typed]{}, fmt.Errorf("derive request term digests: %w", deriveErr)
+	}
+
+	resWasCacheBacked := false
+
+	// Materialize shared result for this completed call.
+	oc.res = &sharedResult{
+		cache: c,
+	}
+	if oc.val != nil {
+		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.cache != nil {
+			oc.res = existingRes
+			resWasCacheBacked = true
+		} else {
+			oc.res.self = oc.val.Unwrap()
+			oc.res.hasValue = true
+			oc.res.postCall = oc.val.PostCall
+			oc.res.safeToPersistCache = oc.val.IsSafeToPersistCache()
+			oc.res.outputDigest = oc.val.ID().Digest()
+			oc.res.outputExtraDigests = oc.val.ID().ExtraDigests()
+
+			selfDigest, inputDigests, deriveErr := oc.val.ID().SelfDigestAndInputs()
+			if deriveErr != nil {
+				return Result[Typed]{}, fmt.Errorf("derive result term digests: %w", deriveErr)
+			}
+			oc.res.resultTermSelf = selfDigest
+			oc.res.resultTermInputs = inputDigests
+			oc.res.hasResultTerm = true
+
+			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
+				oc.res.onRelease = onReleaser.OnRelease
+			}
+			if obj, ok := oc.val.(AnyObjectResult); ok {
+				oc.res.objType = obj.ObjectType()
 			}
 		}
 	}
-	return nil, err
+
+	oc.res.refCount++
+
+	c.indexWaitResultInEgraphLocked(requestID, requestSelf, requestInputs, oc.res, resWasCacheBacked)
+
+	retID := requestID
+	for _, extra := range oc.res.outputExtraDigests {
+		if extra.Digest == "" {
+			continue
+		}
+		retID = retID.With(call.WithExtraDigest(extra))
+	}
+
+	return Result[Typed]{
+		shared:   oc.res,
+		id:       retID,
+		hitCache: false,
+	}, nil
 }

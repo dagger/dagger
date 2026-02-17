@@ -417,6 +417,61 @@ func TestCacheContextCancel(t *testing.T) {
 			t.Fatal("timed out waiting for errCh1")
 		}
 	})
+
+	t.Run("last waiter canceled fn returns value still releases", func(t *testing.T) {
+		t.Parallel()
+		// TODO: Re-enable this test once we define and implement the intended
+		// last-waiter cleanup semantics for canceled waiters when fn later returns.
+		t.Skip("TODO: re-enable after last-waiter canceled cleanup semantics are decided")
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+
+		keyID := cacheTestID("cancel-last-waiter-release")
+		ctx1, cancel1 := context.WithCancel(ctx)
+		defer cancel1()
+
+		started := make(chan struct{})
+		allowReturn := make(chan struct{})
+		released := make(chan struct{})
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := cacheIface.GetOrInitCall(ctx1, CacheKey{
+				ID:             keyID,
+				ConcurrencyKey: "1",
+			}, func(context.Context) (AnyResult, error) {
+				close(started)
+				<-allowReturn
+				return cacheTestIntResultWithOnRelease(keyID, 1, func(context.Context) error {
+					close(released)
+					return nil
+				}), nil
+			})
+			errCh <- err
+		}()
+
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for call start")
+		}
+
+		cancel1()
+		select {
+		case err := <-errCh:
+			assert.Assert(t, is.ErrorIs(err, context.Canceled))
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for canceled wait return")
+		}
+
+		close(allowReturn)
+		select {
+		case <-released:
+		case <-time.After(5 * time.Second):
+			t.Fatal("expected release after call returns with no waiters")
+		}
+	})
 }
 
 func TestCacheResultRelease(t *testing.T) {
