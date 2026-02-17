@@ -103,6 +103,10 @@ type AnyResult interface {
 
 	HitCache() bool
 	Release(context.Context) error
+
+	// cacheSharedResult returns the internal cache-backed shared payload when present.
+	// It is intentionally package-private so only dagql-owned result types satisfy AnyResult.
+	cacheSharedResult() *sharedResult
 }
 
 // AnyObjectResult is an AnyResult that wraps a selectable value (i.e. a graph object)

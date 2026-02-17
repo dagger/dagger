@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
@@ -460,130 +459,126 @@ func (c *cache) mergeOutputsForTermDigestLocked(termDigest string, outputEqID eq
 	return root
 }
 
-func (c *cache) indexResultForTermLocked(
-	selfDigest digest.Digest,
-	inputDigests []digest.Digest,
-	outputEqID eqClassID,
-	outputExtraDigests []call.ExtraDigest,
+func (c *cache) indexWaitResultInEgraphLocked(
+	requestID *call.ID,
+	requestSelf digest.Digest,
+	requestInputs []digest.Digest,
 	res *sharedResult,
+	resWasCacheBacked bool,
 ) {
-	if outputEqID == 0 || res == nil {
-		return
-	}
-
-	inputEqIDs := c.ensureTermInputEqIDsLocked(inputDigests)
-	termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
-
-	if term := c.resultTermByDigestLocked(res, termDigest); term != nil {
-		term.outputExtraDigests = mergeExtraDigestFacts(term.outputExtraDigests, outputExtraDigests)
-		c.mergeOutputsForTermDigestLocked(termDigest, outputEqID)
-		return
-	}
-
-	outputEqID = c.mergeOutputsForTermDigestLocked(termDigest, outputEqID)
-
-	c.initEgraphLocked()
-	termID := c.nextEgraphTermID
-	c.nextEgraphTermID++
-
-	term := newEgraphTerm(termID, selfDigest, inputEqIDs, outputEqID, outputExtraDigests, res)
-	c.egraphTerms[termID] = term
-
-	digestSet := c.egraphTermsByDigest[term.termDigest]
-	if digestSet == nil {
-		digestSet = make(map[egraphTermID]struct{})
-		c.egraphTermsByDigest[term.termDigest] = digestSet
-	}
-	digestSet[termID] = struct{}{}
-
-	for _, in := range term.inputEqIDs {
-		if in == 0 {
-			continue
-		}
-		set := c.egraphClassTerms[in]
-		if set == nil {
-			set = make(map[egraphTermID]struct{})
-			c.egraphClassTerms[in] = set
-		}
-		set[termID] = struct{}{}
-	}
-
-	resultSet := c.egraphResultTerms[res]
-	if resultSet == nil {
-		resultSet = make(map[egraphTermID]struct{})
-		c.egraphResultTerms[res] = resultSet
-	}
-	resultSet[termID] = struct{}{}
-}
-
-func (c *cache) indexResultForIDLocked(
-	id *call.ID,
-	outputEqID eqClassID,
-	outputExtraDigests []call.ExtraDigest,
-	res *sharedResult,
-) {
-	if id == nil || outputEqID == 0 || res == nil {
-		return
-	}
-
-	selfDigest, inputDigests, err := id.SelfDigestAndInputs()
-	if err != nil {
-		slog.Warn("failed to derive e-graph term digests", "err", err)
-		return
-	}
-	c.indexResultForTermLocked(selfDigest, inputDigests, outputEqID, outputExtraDigests, res)
-}
-
-func (c *cache) outputEqClassForResultLocked(requestID *call.ID, res *sharedResult) eqClassID {
 	digestSet := make(map[string]struct{}, 6)
-	add := func(dig string) {
+	addDigest := func(dig string) {
 		if dig == "" {
 			return
 		}
 		digestSet[dig] = struct{}{}
 	}
 
-	if requestID != nil {
-		add(requestID.Digest().String())
-		for _, extra := range requestID.ExtraDigests() {
-			add(extra.Digest.String())
-		}
+	addDigest(requestID.Digest().String())
+	for _, extra := range requestID.ExtraDigests() {
+		addDigest(extra.Digest.String())
 	}
-	if res != nil {
-		add(res.outputDigest.String())
-		for _, extra := range res.outputExtraDigests {
-			add(extra.Digest.String())
-		}
+	addDigest(res.outputDigest.String())
+	for _, extra := range res.outputExtraDigests {
+		addDigest(extra.Digest.String())
 	}
-
 	if len(digestSet) == 0 {
-		return 0
-	}
-
-	ids := make([]eqClassID, 0, len(digestSet))
-	for dig := range digestSet {
-		ids = append(ids, c.ensureEqClassForDigestLocked(dig))
-	}
-	return c.mergeEqClassesLocked(ids...)
-}
-
-func (c *cache) indexResultInEgraphLocked(requestID *call.ID, res *sharedResult) {
-	if requestID == nil || res == nil {
 		return
 	}
-	outputEqID := c.outputEqClassForResultLocked(requestID, res)
+
+	rootSet := make(map[eqClassID]struct{}, len(digestSet))
+	for dig := range digestSet {
+		if id := c.ensureEqClassForDigestLocked(dig); id != 0 {
+			rootSet[id] = struct{}{}
+		}
+	}
+	if len(rootSet) == 0 {
+		return
+	}
+
+	var outputEqID eqClassID
+	if len(rootSet) == 1 {
+		for root := range rootSet {
+			outputEqID = root
+		}
+	} else {
+		mergeIDs := make([]eqClassID, 0, len(rootSet))
+		for root := range rootSet {
+			mergeIDs = append(mergeIDs, root)
+		}
+		outputEqID = c.mergeEqClassesLocked(mergeIDs...)
+	}
 	if outputEqID == 0 {
 		return
 	}
-	c.indexResultForIDLocked(requestID, outputEqID, res.outputExtraDigests, res)
-	if res.hasResultTerm {
-		c.indexResultForTermLocked(
-			res.resultTermSelf,
-			res.resultTermInputs,
-			outputEqID,
-			res.outputExtraDigests,
-			res,
-		)
+
+	termsToIndex := []struct {
+		selfDigest   digest.Digest
+		inputDigests []digest.Digest
+	}{
+		{
+			selfDigest:   requestSelf,
+			inputDigests: requestInputs,
+		},
+	}
+	shouldIndexResultTerm := res.hasResultTerm && !resWasCacheBacked
+	if shouldIndexResultTerm && requestSelf == res.resultTermSelf && slices.Equal(requestInputs, res.resultTermInputs) {
+		shouldIndexResultTerm = false
+	}
+	if shouldIndexResultTerm {
+		termsToIndex = append(termsToIndex, struct {
+			selfDigest   digest.Digest
+			inputDigests []digest.Digest
+		}{
+			selfDigest:   res.resultTermSelf,
+			inputDigests: res.resultTermInputs,
+		})
+	}
+
+	for _, term := range termsToIndex {
+		inputEqIDs := c.ensureTermInputEqIDsLocked(term.inputDigests)
+		termDigest := calcEgraphTermDigest(term.selfDigest, inputEqIDs)
+
+		if existingTerm := c.resultTermByDigestLocked(res, termDigest); existingTerm != nil {
+			existingTerm.outputExtraDigests = mergeExtraDigestFacts(existingTerm.outputExtraDigests, res.outputExtraDigests)
+			c.mergeOutputsForTermDigestLocked(termDigest, outputEqID)
+			continue
+		}
+
+		mergedOutputEqID := c.mergeOutputsForTermDigestLocked(termDigest, outputEqID)
+
+		c.initEgraphLocked()
+		termID := c.nextEgraphTermID
+		c.nextEgraphTermID++
+
+		newTerm := newEgraphTerm(termID, term.selfDigest, inputEqIDs, mergedOutputEqID, res.outputExtraDigests, res)
+		c.egraphTerms[termID] = newTerm
+
+		digestTerms := c.egraphTermsByDigest[newTerm.termDigest]
+		if digestTerms == nil {
+			digestTerms = make(map[egraphTermID]struct{})
+			c.egraphTermsByDigest[newTerm.termDigest] = digestTerms
+		}
+		digestTerms[termID] = struct{}{}
+
+		for _, inEqID := range newTerm.inputEqIDs {
+			if inEqID == 0 {
+				continue
+			}
+			classTerms := c.egraphClassTerms[inEqID]
+			if classTerms == nil {
+				classTerms = make(map[egraphTermID]struct{})
+				c.egraphClassTerms[inEqID] = classTerms
+			}
+			classTerms[termID] = struct{}{}
+		}
+
+		resultTerms := c.egraphResultTerms[res]
+		if resultTerms == nil {
+			resultTerms = make(map[egraphTermID]struct{})
+			c.egraphResultTerms[res] = resultTerms
+		}
+		resultTerms[termID] = struct{}{}
 	}
 }
 
