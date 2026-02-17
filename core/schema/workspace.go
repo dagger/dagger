@@ -23,6 +23,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("currentWorkspace", s.currentWorkspace, dagql.CachePerCall).
 			Doc("Detect and return the current workspace.").
+			Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 			Args(
 				dagql.Arg("skipMigrationCheck").Doc("If true, skip legacy dagger.json migration checks."),
 			),
