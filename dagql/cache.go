@@ -379,19 +379,6 @@ func (r Result[T]) IsSafeToPersistCache() bool {
 	return r.shared != nil && r.shared.safeToPersistCache
 }
 
-// WithExtraDigest returns an updated instance with an extra known digest.
-func (r Result[T]) WithExtraDigest(extra call.ExtraDigest) Result[T] {
-	if extra.Digest == "" {
-		return r
-	}
-	id := r.ID()
-	if id == nil {
-		return r
-	}
-	r.id = id.With(call.WithExtraDigest(extra))
-	return r
-}
-
 func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
 	id := r.ID()
 	if id == nil {
@@ -484,13 +471,6 @@ func (r ObjectResult[T]) SetField(field reflect.Value) error {
 // ObjectType returns the ObjectType of the instance.
 func (r ObjectResult[T]) ObjectType() ObjectType {
 	return r.class
-}
-
-func (r ObjectResult[T]) WithExtraDigest(extra call.ExtraDigest) ObjectResult[T] {
-	return ObjectResult[T]{
-		Result: r.Result.WithExtraDigest(extra),
-		class:  r.class,
-	}
 }
 
 func (r ObjectResult[T]) WithContentDigest(contentDigest digest.Digest) ObjectResult[T] {
@@ -826,7 +806,7 @@ func (c *cache) wait(ctx context.Context, res *sharedResult, requestID *call.ID,
 		err = res.err
 	default:
 		// call wasn't done in fast path check, wait for either the call to
-		// be done or the caller's ctx to be canceled
+		// be done or the caller's ctx to be cancelee
 		select {
 		case <-res.waitCh:
 			err = res.err
