@@ -134,7 +134,7 @@ func (c *SessionCache) GetOrInitCall(
 	}
 
 	nilResult := false
-	if valueRes, ok := res.(cacheValueResult); ok && !valueRes.cacheHasValue() {
+	if shared := res.cacheSharedResult(); shared != nil && !shared.hasValue {
 		nilResult = true
 	}
 
