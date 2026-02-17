@@ -29,7 +29,7 @@ def autodoc_skip(app, what: str, name: str, obj, skip, options) -> bool:
 
     # The only doc that uses the "module" directive is for the Client page.
     # The others use "autoclass" so skip them here to avoid duplicates.
-    if what == "module" and name.split(".")[-1] not in all_gen:
+    if what == "module" and name.rsplit(".", maxsplit=1)[-1] not in all_gen:
         return True
 
     return skip
