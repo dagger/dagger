@@ -219,7 +219,11 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 	fn = fn.Clone()
 	// Workspace arguments are always optional — they're automatically injected
 	// by the engine when not explicitly set by the caller.
-	if typeDef.Kind == TypeDefKindObject && typeDef.AsObject.Value.Name == "Workspace" {
+	if typeDef.Kind == TypeDefKindObject &&
+		typeDef.AsObject.Value.Name == "Workspace" &&
+		// Functions can't currently accept types from other modules, but be
+		// explicit anyway.
+		typeDef.AsObject.Value.SourceModuleName == "" {
 		typeDef = typeDef.WithOptional(true)
 	}
 	arg := &FunctionArg{
