@@ -32,7 +32,7 @@ func New(
 }
 
 // Run the Dagger evals across the major model providers.
-func (es *Evals) Check(
+func (m *Evals) Check(
 	ctx context.Context,
 	// Run particular evals, or all evals if unspecified.
 	// +optional
@@ -68,7 +68,7 @@ func (es *Evals) Check(
 	}
 
 	return dag.Evaluator().
-		WithDocsFile(es.Docs).
+		WithDocsFile(m.Docs).
 		WithEvals(evaluatorEvals).
 		EvalsAcrossModels(dagger.EvaluatorEvalsAcrossModelsOpts{
 			Evals:  evals,
