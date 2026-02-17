@@ -601,7 +601,16 @@ func (s *workspaceSchema) moduleInit(
 	sourcePath := filepath.Join("modules", args.Name)
 	cfg.Modules[args.Name] = workspace.ModuleEntry{Source: sourcePath}
 
-	if err := writeWorkspaceConfig(ctx, bk, parent, cfg); err != nil {
+	// Read existing raw TOML for comment preservation
+	var existingTOML []byte
+	if parent.HasConfig {
+		cfgPath, err := configHostPath(parent)
+		if err == nil {
+			existingTOML, _ = bk.ReadCallerHostFile(ctx, cfgPath)
+		}
+	}
+
+	if err := writeWorkspaceConfigWithHints(ctx, bk, parent, cfg, existingTOML, nil); err != nil {
 		return "", err
 	}
 
@@ -816,14 +825,6 @@ func readWorkspaceConfig(ctx context.Context, bk interface {
 		cfg.Modules = make(map[string]workspace.ModuleEntry)
 	}
 	return cfg, nil
-}
-
-// writeWorkspaceConfig serializes and writes config.toml to the host.
-// Uses a temp file + LocalFileExport to bypass the Directory/File abstraction
-// which requires a buildkit session group not available in resolver context.
-func writeWorkspaceConfig(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, cfg *workspace.Config) error {
-	configBytes := workspace.SerializeConfig(cfg)
-	return exportConfigToHost(ctx, bk, parent, configBytes)
 }
 
 // writeWorkspaceConfigWithHints serializes config with comment-preserving TOML
