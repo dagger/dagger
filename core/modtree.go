@@ -370,7 +370,10 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// FIXME: as an optimization, one-shot when possible?
 	srv := node.DagqlServer
 	// 1. Are we the root? Select the module's main object from Query root.
-	if node.Parent == nil {
+	// A node is also treated as root if its parent is a synthetic naming-only
+	// node (e.g. injected by workspace checks reparenting, which sets
+	// Parent to an empty ModTreeNode with nil Module).
+	if node.Parent == nil || node.Parent.Module == nil {
 		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(node.Module.Name())})
 	}
 	// 2. Is parent an object?
@@ -642,5 +645,8 @@ func (node *ModTreeNode) Child(ctx context.Context, name string) (*ModTreeNode, 
 }
 
 func (node *ModTreeNode) ObjectType() *ObjectTypeDef {
+	if node.Type == nil {
+		return nil
+	}
 	return node.Type.AsObject.Value
 }
