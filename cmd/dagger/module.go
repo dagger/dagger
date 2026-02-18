@@ -369,7 +369,12 @@ var moduleInstallCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{EagerRuntime: eagerRuntime}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			defer func() {
+				if err != nil {
+					err = fmt.Errorf("failed to install module: %w", err)
+				}
+			}()
 			dag := engineClient.Dagger()
 
 			modRef, err := getModuleSourceRefWithDefault()
