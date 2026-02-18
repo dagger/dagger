@@ -41,8 +41,7 @@ export class Bin implements EngineConn {
   private cliVersion?: string
 
   private readonly cacheDir = path.join(
-    `${process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache}`,
-    "dagger",
+    `${process.env.XDG_CACHE_HOME?.trim() || envPaths("dagger", { suffix: "" }).cache}`,
   )
 
   private readonly DAGGER_CLI_BIN_PREFIX = "dagger"
