@@ -155,12 +155,15 @@ def _add_parameter(
 
     # Convert default value to JSON if present
     default_value = None
-    if param_meta.default_value is not None:
+    if param_meta.has_default:
         import contextlib
         import json
 
-        with contextlib.suppress(TypeError, ValueError):
-            default_value = dagger.JSON(json.dumps(param_meta.default_value))
+        if param_meta.default_value is not None:
+            with contextlib.suppress(TypeError, ValueError):
+                default_value = dagger.JSON(json.dumps(param_meta.default_value))
+        else:
+            default_value = dagger.JSON("null")
 
     return func_def.with_arg(
         param_meta.api_name,
