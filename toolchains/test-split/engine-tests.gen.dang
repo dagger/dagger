@@ -1,11 +1,24 @@
+"""
+Note: For now, this file is not actually generated. Feel free to make edits.
+"""
 type TestSplit {
+  pub source: Directory! @defaultPath(path: "/")
+
   let testSpecific(
     run: [String!]!,
-    ebpfProgs: [String!],
     pkg: String! = "./core/integration",
-    race: Boolean,
   ): Void {
-    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(
+        ["go", "test", pkg, "-run", run.join("|"), "-v", "-count", "1", "-timeout", "30m"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
   }
 
   let testSkip(
@@ -14,7 +27,18 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
   ): Void {
-    engineDev.test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withEnvVariable("CGO_ENABLED", "1")
+      .withExec(
+        ["go", "test", pkg, "-v", "-skip", skip.join("|"), "-count", "1", "-race", "-timeout", "30m"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
   }
 
   """
