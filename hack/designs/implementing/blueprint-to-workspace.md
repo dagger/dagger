@@ -1,6 +1,6 @@
 # Port Blueprints to Workspace API
 
-## Status: Incubating
+## Status: Implementing
 
 ## Prior Art
 
@@ -194,7 +194,7 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
 
 ### Task list
 
-- [ ] **#1: Rename `alias` -> `blueprint` in workspace config** -- Rename `ModuleEntry.Alias`
+- [x] **#1: Rename `alias` -> `blueprint` in workspace config** -- Rename `ModuleEntry.Alias`
   to `Blueprint`, update TOML tag, serialization, parsing, validation. Rename
   `pendingModule.Alias` to `Blueprint`. Keep `Module.AutoAlias` unchanged (mechanism name).
   Files: `core/workspace/config.go` (`ModuleEntry`, `SerializeConfig`,

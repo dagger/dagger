@@ -1542,8 +1542,8 @@ type pendingModule struct {
 	// Name override (empty = derive from module).
 	Name string
 
-	// If true, alias the module's functions to the Query root.
-	Alias bool
+	// If true, this is a blueprint module: alias its functions to the Query root.
+	Blueprint bool
 
 	// If true, disable find-up when resolving the module source.
 	// Used for workspace config modules where the path is explicit.
@@ -1625,7 +1625,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			pending = append(pending, pendingModule{
 				Ref:                ref,
 				Name:               name,
-				Alias:              entry.Alias,
+				Blueprint:          entry.Blueprint,
 				DisableFindUp:      true,
 				ConfigDefaults:     entry.Config,
 				DefaultsFromDotEnv: ws.Config.DefaultsFromDotEnv,
@@ -1653,8 +1653,8 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			wsDir := filepath.Join(ws.Root, ws.Path)
 			rel, _ := filepath.Rel(wsDir, moduleDir)
 			pending = append(pending, pendingModule{
-				Ref:   resolveLocalRef(ws, rel),
-				Alias: true,
+				Ref:       resolveLocalRef(ws, rel),
+				Blueprint: true,
 			})
 		}
 	}
@@ -1789,7 +1789,7 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 		if err := srv.loadModule(ctx, client, client.dag, pendingModule{
 			Ref:   extra.Ref,
 			Name:  extra.Name,
-			Alias: extra.Alias,
+			Blueprint: extra.Blueprint,
 		}); err != nil {
 			client.modulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
 			client.modulesLoaded = true
@@ -1829,7 +1829,7 @@ func (srv *Server) loadModule(
 	if mod.Name != "" {
 		resolved.Self().NameField = mod.Name
 	}
-	if mod.Alias {
+	if mod.Blueprint {
 		resolved.Self().AutoAlias = true
 	}
 	if len(mod.ConfigDefaults) > 0 {

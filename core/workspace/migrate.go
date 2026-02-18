@@ -105,8 +105,8 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 		result.ModuleNewPath = filepath.Join(WorkspaceDirName, modulePath)
 
 		wsCfg.Modules[cfg.Name] = ModuleEntry{
-			Source: modulePath,
-			Alias:  true,
+			Source:    modulePath,
+			Blueprint: true,
 		}
 
 		// Build new dagger.json for the module at its new location
@@ -301,7 +301,7 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 		b.WriteString("\n")
 		fmt.Fprintf(&b, "[modules.%s]\n", cfg.Name)
 		fmt.Fprintf(&b, "source = \"modules/%s\"\n", cfg.Name)
-		b.WriteString("alias = true\n")
+		b.WriteString("blueprint = true\n")
 	}
 
 	// Toolchain entries

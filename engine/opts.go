@@ -41,7 +41,7 @@ const (
 type ExtraModule struct {
 	Ref   string `json:"ref"`
 	Name  string `json:"name,omitempty"`
-	Alias bool   `json:"alias,omitempty"`
+	Blueprint bool `json:"blueprint,omitempty"`
 }
 
 type ClientMetadata struct {
@@ -113,7 +113,7 @@ type ClientMetadata struct {
 	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
 
 	// ExtraModules specifies additional modules to load at connect time.
-	// When Alias is true, the module's functions are aliased to the Query root.
+	// When Blueprint is true, the module's functions are aliased to the Query root.
 	ExtraModules []ExtraModule `json:"extra_modules,omitempty"`
 
 	// SkipWorkspaceModules skips loading workspace modules when true.

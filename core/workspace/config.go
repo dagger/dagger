@@ -22,7 +22,7 @@ type Config struct {
 type ModuleEntry struct {
 	Source string         `toml:"source"`
 	Config map[string]any `toml:"config,omitempty"`
-	Alias  bool           `toml:"alias,omitempty"`
+	Blueprint bool        `toml:"blueprint,omitempty"`
 }
 
 // ParseConfig parses a config.toml file from raw bytes.
@@ -65,8 +65,8 @@ func SerializeConfig(cfg *Config) []byte {
 			entry := cfg.Modules[name]
 			fmt.Fprintf(&b, "[modules.%s]\n", name)
 			fmt.Fprintf(&b, "source = %q\n", entry.Source)
-			if entry.Alias {
-				b.WriteString("alias = true\n")
+			if entry.Blueprint {
+				b.WriteString("blueprint = true\n")
 			}
 			if len(entry.Config) > 0 {
 				// Sort config keys for deterministic output
@@ -135,9 +135,9 @@ func SerializeConfigWithHints(cfg *Config, existingTOML []byte, hints map[string
 		if err := doc.Set(fmt.Sprintf("modules.%s.source", name), entry.Source); err != nil {
 			return nil, fmt.Errorf("setting modules.%s.source: %w", name, err)
 		}
-		if entry.Alias {
-			if err := doc.Set(fmt.Sprintf("modules.%s.alias", name), true); err != nil {
-				return nil, fmt.Errorf("setting modules.%s.alias: %w", name, err)
+		if entry.Blueprint {
+			if err := doc.Set(fmt.Sprintf("modules.%s.blueprint", name), true); err != nil {
+				return nil, fmt.Errorf("setting modules.%s.blueprint: %w", name, err)
 			}
 		}
 		if len(entry.Config) > 0 {
@@ -444,7 +444,7 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 // Valid paths:
 //   - ignore (the ignore list)
 //   - modules.<name>.source
-//   - modules.<name>.alias
+//   - modules.<name>.blueprint
 //   - modules.<name>.config.<key>
 //
 // validateConfigKey ensures the given dotted key path corresponds to a valid
@@ -539,8 +539,8 @@ func validTOMLFieldNames(t reflect.Type) []string {
 func parseValueString(key string, rawValue string) any {
 	parts := strings.Split(key, ".")
 
-	// modules.<name>.alias is always a bool
-	if len(parts) == 3 && parts[0] == "modules" && parts[2] == "alias" {
+	// modules.<name>.blueprint is always a bool
+	if len(parts) == 3 && parts[0] == "modules" && parts[2] == "blueprint" {
 		return rawValue == "true"
 	}
 
