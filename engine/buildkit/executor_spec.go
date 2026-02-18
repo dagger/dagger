@@ -156,12 +156,8 @@ func (w *graphqlErrorCapture) ReadFrom(r io.Reader) (int64, error) {
 
 func (w *graphqlErrorCapture) tryCapture() {
 	if w.captured || w.buf.Len() == 0 || w.metaMountPath == "" {
-		slog.Info("[DEBUG tryCapture] skipping", "captured", w.captured, "bufLen", w.buf.Len(), "metaMountPath", w.metaMountPath)
 		return
 	}
-	w.captured = true
-
-	slog.Info("[DEBUG tryCapture] Attempting to parse response", "bufLen", w.buf.Len())
 
 	// Parse GraphQL response to extract error
 	var resp struct {
@@ -171,14 +167,19 @@ func (w *graphqlErrorCapture) tryCapture() {
 		} `json:"errors,omitempty"`
 	}
 
-	if err := json.Unmarshal(w.buf.Bytes(), &resp); err == nil && len(resp.Errors) > 0 {
-		slog.Info("[DEBUG tryCapture] Found errors, writing to nested_error", "errorCount", len(resp.Errors))
+	if err := json.Unmarshal(w.buf.Bytes(), &resp); err != nil {
+		// JSON parsing failed - likely partial data from a mid-stream Flush().
+		// Don't set captured so the defer can retry with the complete buffer.
+		return
+	}
+
+	// Successfully parsed - mark as captured so we don't re-parse.
+	w.captured = true
+
+	if len(resp.Errors) > 0 {
 		errData, _ := json.Marshal(resp.Errors[0])
 		nestedErrorPath := filepath.Join(w.metaMountPath, MetaMountNestedErrorPath)
-		writeErr := os.WriteFile(nestedErrorPath, errData, 0o644)
-		slog.Info("[DEBUG tryCapture] Wrote nested_error", "path", nestedErrorPath, "err", writeErr)
-	} else {
-		slog.Info("[DEBUG tryCapture] Failed to parse or no errors", "parseErr", err, "errorCount", len(resp.Errors))
+		os.WriteFile(nestedErrorPath, errData, 0o644)
 	}
 }
 
@@ -1127,9 +1128,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			// Only wrap the response writer if we have a meta mount path
 			if state.metaMountDirPath != "" {
-				slog.Info("[DEBUG] Creating graphqlErrorCapture wrapper", "metaMountPath", state.metaMountDirPath)
 				wrapper := &graphqlErrorCapture{
 					ResponseWriter: resp,
 					metaMountPath:  state.metaMountDirPath,
@@ -1137,7 +1136,6 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				defer wrapper.tryCapture()
 				w.sessionHandler.ServeHTTPToNestedClient(wrapper, req, w.execMD)
 			} else {
-				slog.Info("[DEBUG] No meta mount path, not wrapping response writer")
 				w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD)
 			}
 		}), http2Srv),
