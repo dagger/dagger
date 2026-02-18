@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -159,7 +158,7 @@ func (mod *Module) GetContextSource() *ModuleSource {
 	return mod.ContextSource.Value.Self()
 }
 
-func (mod *Module) ContentDigestCacheKey() cache.CacheKey[dagql.CacheKeyType] {
+func (mod *Module) ContentDigestCacheKey() string {
 	contextSource := mod.ContextSource.Value.Self()
 	contentDigest := ""
 	contentCacheScope := ""
@@ -168,13 +167,11 @@ func (mod *Module) ContentDigestCacheKey() cache.CacheKey[dagql.CacheKeyType] {
 		contentCacheScope = contextSource.ContentCacheScope()
 	}
 
-	return cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: string(hashutil.HashStrings(
-			contentDigest,
-			contentCacheScope,
-			"asModule",
-		)),
-	}
+	return hashutil.HashStrings(
+		contentDigest,
+		contentCacheScope,
+		"asModule",
+	).String()
 }
 
 // GetModuleFromContentDigest loads a module based on the same content+provenance key used
@@ -188,24 +185,23 @@ func GetModuleFromContentDigest(
 	modName string,
 	dgst string,
 ) (inst dagql.ObjectResult[*Module], err error) {
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: dgst,
-	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, err
 	}
-	cacheKey.CallKey = hashutil.HashStrings(cacheKey.CallKey, md.SessionID).String()
-
-	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
+	cacheKey := hashutil.HashStrings(dgst, md.SessionID).String()
+	cacheRes, err := dag.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
 		return nil, fmt.Errorf("module not found: %s", modName)
 	})
 	if err != nil {
 		return inst, err
 	}
-	inst, ok := modRes.Result().(dagql.ObjectResult[*Module])
+	if cacheRes == nil {
+		return inst, fmt.Errorf("module cache returned nil result for key %q", cacheKey)
+	}
+	inst, ok := cacheRes.Value().(dagql.ObjectResult[*Module])
 	if !ok {
-		return inst, fmt.Errorf("cached module has unexpected type: %T", modRes.Result())
+		return inst, fmt.Errorf("cached module has unexpected type: %T", cacheRes.Value())
 	}
 
 	return inst, nil
@@ -222,11 +218,8 @@ func CacheModuleByContentDigest(
 	if err != nil {
 		return err
 	}
-	perSessionContentCacheKey := mod.Self().ContentDigestCacheKey()
-	perSessionContentCacheKey.CallKey = dagql.CacheKeyType(hashutil.HashStrings(perSessionContentCacheKey.CallKey, md.SessionID))
-	perSessionContentHashedInst := mod.WithObjectDigest(digest.Digest(perSessionContentCacheKey.CallKey))
-
-	_, err = dag.Cache.GetOrInitializeValue(ctx, perSessionContentCacheKey, perSessionContentHashedInst)
+	perSessionContentCacheKey := hashutil.HashStrings(mod.Self().ContentDigestCacheKey(), md.SessionID).String()
+	_, err = dag.Cache.GetOrInitArbitrary(ctx, perSessionContentCacheKey, dagql.ArbitraryValueFunc(mod))
 	if err != nil {
 		return err
 	}
@@ -303,7 +296,7 @@ func (mod *Module) IDModule() *call.Module {
 	}
 
 	contentCacheKey := mod.ContentDigestCacheKey()
-	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey.CallKey)), mod.Name(), ref, pin)
+	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey)), mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -434,11 +427,14 @@ func (mod *Module) CacheConfigForCall(
 	resp := &dagql.GetCacheConfigResponse{
 		CacheKey: req.CacheKey,
 	}
-	resp.CacheKey.CallKey = hashutil.HashStrings(
+	if resp.CacheKey.ID == nil {
+		resp.CacheKey.ID = curIDNoMod
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
 		curIDNoMod.Digest().String(),
 		mod.Source.Value.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
-	).String()
+	))
 	return resp, nil
 }
 

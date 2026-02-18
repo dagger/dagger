@@ -26,7 +26,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/iancoleman/strcase"
@@ -2524,10 +2523,10 @@ func (s *moduleSourceSchema) runCodegen(
 	// to codegen so we preserve provenance for git sources while still collapsing
 	// irrelevant caller details.
 	scopedSourceDigest := srcInst.Self().ContentScopedDigest()
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: scopedSourceDigest,
-	}
-	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, srcInst)
+	cacheKeyID := srcInst.ID().WithDigest(digest.Digest(scopedSourceDigest))
+	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
+		ID: cacheKeyID,
+	}, dagql.ValueFunc(srcInst))
 	if err != nil {
 		return res, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2863,10 +2862,9 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
 	}
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: string(tmpModInst.ID().Digest()),
-	}
-	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, tmpModInst)
+	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
+		ID: tmpModInst.ID(),
+	}, dagql.ValueFunc(tmpModInst))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2919,11 +2917,8 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
 			}
-			postCall := result.GetPostCall()
-			if postCall != nil {
-				if err := postCall(ctx); err != nil {
-					return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
-				}
+			if err := result.PostCall(ctx); err != nil {
+				return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
 			}
 
 			resultInst, ok := result.(dagql.Result[*core.Module])
@@ -3056,10 +3051,10 @@ func (s *moduleSourceSchema) initializeSDKModule(
 	// Cache the source instance by scoped content digest so git provenance is
 	// preserved for same-content sources from different remotes.
 	scopedSourceDigest := src.Self().ContentScopedDigest()
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: scopedSourceDigest,
-	}
-	_, err := dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
+	cacheKeyID := src.ID().WithDigest(digest.Digest(scopedSourceDigest))
+	_, err := dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
+		ID: cacheKeyID,
+	}, dagql.ValueFunc(src))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -3498,13 +3493,13 @@ func (s *moduleSourceSchema) integrateToolchains(
 	mod *core.Module,
 	dag *dagql.Server,
 ) (*core.Module, error) {
+	// Initialize toolchain registry
+	mod.Toolchains = core.NewToolchainRegistry(mod)
+
 	toolchainMods := extractToolchainModules(mod)
 	if len(toolchainMods) == 0 {
 		return mod, nil
 	}
-
-	// Initialize toolchain registry
-	mod.Toolchains = core.NewToolchainRegistry(mod)
 
 	// Register all toolchains in the registry
 	for _, tcMod := range toolchainMods {

@@ -35,6 +35,36 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 	}
 	return nil
 }
+// ClientOpt holds a client option
+type ClientOpt = dagger.ClientOpt
+
+// Request contains all the values required to build queries executed by the graphql.Client
+type Request = dagger.Request
+
+// Response contains data returned by the GraphQL API
+type Response = dagger.Response
+
+// WithWorkdir sets the engine workdir
+var WithWorkdir = dagger.WithWorkdir
+
+// WithLogOutput sets the progress writer
+var WithLogOutput = dagger.WithLogOutput
+
+// WithConn sets the engine connection explicitly
+var WithConn = dagger.WithConn
+
+// WithVersionOverride requests a specific schema version from the engine
+var WithVersionOverride = dagger.WithVersionOverride
+
+// WithVerbosity sets the verbosity level for the progress output
+var WithVerbosity = dagger.WithVerbosity
+
+// WithRunnerHost sets the runner host URL
+var WithRunnerHost = dagger.WithRunnerHost
+
+// WithEnvironmentVariable sets an environment variable in the CLI subprocess
+var WithEnvironmentVariable = dagger.WithEnvironmentVariable
+
 
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	dag, err := dagger.Connect(ctx, opts...)

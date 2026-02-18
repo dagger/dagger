@@ -68,7 +68,7 @@ func New(
 	}
 }
 
-var supportedVersions = []string{"3.13", "3.12", "3.11", "3.10"}
+var supportedVersions = []string{"3.14", "3.13", "3.12", "3.11", "3.10"}
 
 // Lint the Python snippets in the documentation
 // +check
@@ -168,7 +168,8 @@ func (t PythonSdkDev) TestSuite(
 }
 
 // Regenerate the core Python client library
-func (t PythonSdkDev) Generate(_ context.Context) (*dagger.Changeset, error) {
+// +generate
+func (t PythonSdkDev) ClientLibrary(_ context.Context) (*dagger.Changeset, error) {
 	devContainer := t.DevContainer
 
 	// We don't control the input source, it's defined in wrapped native module

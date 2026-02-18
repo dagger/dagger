@@ -8,7 +8,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/cache"
 )
 
 type LLMTestQuery struct{}
@@ -34,7 +33,7 @@ func (mockSecret) Type() *ast.Type {
 func TestLlmConfig(t *testing.T) {
 	q := LLMTestQuery{}
 
-	baseCache, err := cache.NewCache[string, dagql.AnyResult](context.Background(), "")
+	baseCache, err := dagql.NewCache(context.Background(), "")
 	assert.NoError(t, err)
 	srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
 
@@ -126,7 +125,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := LLMTestQuery{}
 
-			baseCache, err := cache.NewCache[string, dagql.AnyResult](context.Background(), "")
+			baseCache, err := dagql.NewCache(context.Background(), "")
 			assert.NoError(t, err)
 			srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
 			dagql.Fields[LLMTestQuery]{
@@ -157,7 +156,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 func TestLlmConfigEnvFile(t *testing.T) {
 	q := LLMTestQuery{}
 
-	baseCache, err := cache.NewCache[string, dagql.AnyResult](context.Background(), "")
+	baseCache, err := dagql.NewCache(context.Background(), "")
 	assert.NoError(t, err)
 	srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
 	dagql.Fields[LLMTestQuery]{

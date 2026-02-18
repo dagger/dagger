@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +32,7 @@ func Introspect(cmd *cobra.Command, args []string) error {
 
 func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 	root := &core.Query{}
-	baseCache, err := cache.NewCache[string, dagql.AnyResult](ctx, "")
+	baseCache, err := dagql.NewCache(ctx, "")
 	if err != nil {
 		return nil, err
 	}

@@ -147,6 +147,10 @@ func (c *Check) Description() string {
 	return c.Node.Description
 }
 
+func (c *Check) OriginalModule() *Module {
+	return c.Node.OriginalModule
+}
+
 func (*Check) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Check",

@@ -2026,3 +2026,32 @@ func (ClientGeneratorTest) TestSeparateGoMod(ctx context.Context, t *testctx.T) 
 	require.Contains(t, parentGoMod, "replace example.com/myapp/dagger", "parent should have replace directive for client")
 	require.Contains(t, parentGoMod, "./dagger", "parent replace should point to client directory")
 }
+
+func (ClientGeneratorTest) TestClientParity(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modCtr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		With(nonNestedDevEngine(c)).
+		With(daggerNonNestedExec("init", "--name=test", "--sdk=go")).
+		With(daggerClientInstall("go"))
+
+	// Verify generated client has GraphQLClient, QueryBuilder, and Do methods
+	genCode, err := modCtr.File("dagger/dagger.gen.go").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, genCode, "func (c *Client) GraphQLClient() graphql.Client", "generated client should have GraphQLClient method")
+	require.Contains(t, genCode, "func (c *Client) QueryBuilder() *querybuilder.Selection", "generated client should have QueryBuilder method")
+	require.Contains(t, genCode, "func (c *Client) Close() error", "generated client should have Close method")
+
+	// Verify ClientOpt and With* functions are re-exported
+	require.Contains(t, genCode, "type ClientOpt = dagger.ClientOpt", "generated client should re-export ClientOpt type")
+	require.Contains(t, genCode, "type Request = dagger.Request", "generated client should re-export Request type")
+	require.Contains(t, genCode, "type Response = dagger.Response", "generated client should re-export Response type")
+	require.Contains(t, genCode, "var WithWorkdir = dagger.WithWorkdir", "generated client should re-export WithWorkdir")
+	require.Contains(t, genCode, "var WithLogOutput = dagger.WithLogOutput", "generated client should re-export WithLogOutput")
+	require.Contains(t, genCode, "var WithConn = dagger.WithConn", "generated client should re-export WithConn")
+	require.Contains(t, genCode, "func Connect(ctx context.Context, opts ...ClientOpt)", "Connect should accept local ClientOpt type")
+	require.Contains(t, genCode, "func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error", "Do should use local Request/Response types")
+}

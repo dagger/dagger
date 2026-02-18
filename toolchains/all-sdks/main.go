@@ -23,28 +23,6 @@ func (sdks *AllSdks) List() []string {
 	return names
 }
 
-// Generate all SDKs, and return the combined diff
-func (sdks *AllSdks) Generate(ctx context.Context) (*dagger.Changeset, error) {
-	jobs := parallel.New()
-	// 2. SDK toolchains in standalone modules have a lazy signature
-	type generator interface {
-		Generate() *dagger.Changeset
-	}
-	generators := all[generator]()
-	genSDKs := make([]*dagger.Changeset, len(generators))
-	for i, sdk := range generators {
-		jobs = jobs.WithJob(sdk.Name, func(ctx context.Context) error {
-			var err error
-			genSDKs[i], err = sdk.Value.Generate().Sync(ctx)
-			return err
-		})
-	}
-	if err := jobs.Run(ctx); err != nil {
-		return nil, err
-	}
-	return changesetMerge(genSDKs...), nil
-}
-
 // Atomically bump all SDKs to the specified version
 func (sdks *AllSdks) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
 	type bumper interface {

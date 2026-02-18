@@ -1,155 +1,113 @@
 # Filesync (Host <-> Engine File Sync)
 
-Filesync is the mechanism that transfers host files between the Dagger client and the engine. It underpins `host.directory`/`host.file` imports and local exports. The design combines:
-- A gRPC streaming protocol (implemented in `internal/fsutil` and `engine/filesync`).
-- A server-side snapshotter (`engine/filesync`) that syncs into a per-client mutable cache ref and produces immutable snapshots. The mutable cache ref acts as a lazily filled in mirror of the client's filesystem, updating as files requested to be loaded are added, modified, or deleted. Immutable snapshots are copied from this mutable mirror.
-- dagql cache behavior that controls how host filesystem access is memoized.
+Filesync transfers host files between client and engine. It powers `host.directory` / `host.file` imports and local exports.
 
-Important design aspects:
-- We fully control the client and server implementations, the code of which is in this repo. The client does not need to handle alternative server implementations. The server does not need to handle alternative client implementations.
-- Performance is important. Minimizing round-trips from client->server and otherwise minimizing the latency of a filesync operation is a key goal.
-
-This doc focuses on how the protocol works, how the engine consumes it, and how it connects to caching.
+This doc focuses on protocol flow, engine sync behavior, and cache interactions relevant to correctness/performance.
 
 ## Key Components
 
-### Client-side (engine/client/filesync.go)
-The client exposes two gRPC services during a session:
+### Client side (`engine/client/filesync.go`)
 
-- **FileSync (source)**: streams local files to the engine.
-  - Entry point: `FilesyncSource.DiffCopy`.
-  - Reads `engine.LocalImportOpts` from context.
-  - Handles special modes:
-    - `GetAbsPathOnly`: return a single `Stat` with the absolute path.
-    - `StatPathOnly`: return the `Stat` for the root path (with optional abs path).
-    - `ReadSingleFileOnly`: return file contents as a single `BytesMessage` (bounded by `MaxFileSize`).
-    - Default: full directory sync using `fsutil.Send`.
-  - Uses `fsutil.NewFS` + `fsutil.NewFilterFS` for include/exclude/follow-path filtering.
-  - When streaming, resets `Uid/Gid` to 0 on outgoing stats (see `FilterOpt.Map`).
-  - Optional `.gitignore` *marking* via `fsxutil.NewGitIgnoreMarkedFS` (stats are flagged with `GitIgnored`, but the walk is not filtered).
+Client exposes two gRPC services per session:
 
-- **FileSend (target)**: receives files from the engine to the host.
-  - Entry point: `FilesyncTarget.DiffCopy`.
-  - Reads `engine.LocalExportOpts` from context.
-  - Removes `RemovePaths` before sync when requested.
-  - If `IsFileStream` is false, uses `fsutil.Receive` to apply a full directory tree.
-  - If `IsFileStream` is true, receives `BytesMessage` chunks and writes a single file (or tarball).
-  - Honors `AllowParentDirPath`, `FileOriginalName`, and `FileMode` to resolve output path.
+1. `FileSync` (source)
+- streams host filesystem stats/data to engine
+- supports stat-only and single-file fast paths
+- can mark gitignored entries in stats
 
-There are also proxy wrappers (`FilesyncSourceProxy`, `FilesyncTargetProxy`) that simply forward the gRPC streams.
+2. `FileSend` (target)
+- receives filesystem/file streams from engine for exports
 
-### Protocol (internal/fsutil)
-The filesync wire protocol is implemented in `internal/fsutil/send.go` and `internal/fsutil/receive.go`.
+### Protocol (`internal/fsutil`)
 
-Packets (see `internal/fsutil/types/stat.proto`):
-- `PACKET_STAT`: file metadata; an empty stat marks end-of-list.
-- `PACKET_REQ`: receiver requests file contents by ID.
-- `PACKET_DATA`: file content chunks; empty data marks end-of-file.
-- `PACKET_FIN`: transfer complete.
-- `PACKET_ERR`: error payload.
+Wire protocol uses packetized stat/data/request frames:
+- sender walks filesystem and emits stats
+- receiver requests file contents by stat index when needed
+- paths are normalized for cross-platform transfer semantics
 
-Behavior:
-- Sender walks the filesystem in lexicographic order and emits `STAT` packets.
-- Receiver decides which files need data and requests them by index (`ID` in STAT stream).
-- Paths are sent over the wire as unix-style (`/`) and normalized back to platform-specific paths on receive.
-- Cross-platform transfers are best-effort: unrepresentable paths and non-portable metadata are rejected or dropped.
-- `STAT` includes a `git_ignored` flag (Go: `Stat.GitIgnored`) so the receiver can treat ignored paths as “present but ignored.”
+## Server Side (`engine/filesync`)
 
-`fsutil.NewFilterFS` applies include/exclude rules (plus `FollowPaths`) on top of an `FS` snapshot. The map callback allows stat mutation (e.g., zeroing uid/gid on send).
+### Snapshot entry (`FileSyncer.Snapshot`)
 
-## Server-side (engine/filesync)
+High-level flow:
+1. resolve client metadata and absolute input path via stat-only filesync
+2. get/create per-client mutable ref mirror (`getRef`)
+3. sync parent dirs when needed
+4. sync requested subtree into mirror and produce immutable snapshot
 
-### Snapshot entry point
-`FileSyncer.Snapshot` drives import of host directories into the engine:
-1. Reads `ClientMetadata` to identify the session and client.
-2. Performs a **stat-only** filesync call to the client (`LocalImportOpts{StatPathOnly, StatReturnAbsPath, StatResolvePath}`) to resolve absolute paths and symlinks.
-3. Gets (or creates) a **per-client mutable ref** via `getRef`:
-   - Keyed by `ClientStableID` (plus drive letter on Windows).
-   - Stored in cache ref with `CachePolicyRetain` and shared-key metadata.
-   - Mounted locally to provide a mutable root (`filesyncCacheRef.mntPath`).
-4. Calls `syncParentDirs` to ensure parent directories are synced.
-5. Calls `sync` on the requested path to produce an **immutable snapshot ref**.
+### `remoteFS` (`engine/filesync/remotefs.go`)
 
-### remoteFS (engine/filesync/remotefs.go)
-`remoteFS` implements `ReadFS` over the filesync protocol:
-- `Walk` starts a single `DiffCopy` stream to the client and consumes `STAT` packets.
-- Regular files get `io.Pipe` readers so `ReadFile` can stream content on demand.
-- Regular files marked `GitIgnored` do not get a pipe, so content is never requested.
-- File content is requested by sending `PACKET_REQ` with the file ID.
+`remoteFS` reads from client stream:
+- exposes `Walk` and `ReadFile`
+- lazily requests file data
+- skips content requests for gitignored regular files
 
-### localFS (engine/filesync/localfs.go)
-`localFS` represents the engine-side cached view of a client's filesystem and applies a diff against `remoteFS`.
+### `localFS` (`engine/filesync/localfs.go`)
 
-Core mechanics:
-- **Filtering**: uses `fsutil.NewFilterFS` for include/exclude views of the cached ref (gitignore is handled via remote `GitIgnored` stats).
-- **Diff**: `doubleWalkDiff` (from `engine/filesync/diff.go`) walks local and remote in parallel.
-  - Regular files are compared using size + mtime as a proxy for content.
-- **Apply changes**:
-  - Directories: `Mkdir`
-  - Symlinks: `Symlink`
-  - Hardlinks: deferred until after all file writes
-  - Regular files: `WriteFile` reads from `remoteFS.ReadFile` and writes to the local ref
-  - Deletes: `RemoveAll`
+`localFS` applies diff from remote stream into per-client mirror:
+- compares remote and local view
+- applies mkdir/symlink/hardlink/write/delete changes
+- computes content hash for resulting subtree
+- reuses existing immutable ref when content hash matches
 
-### GitIgnored propagation
-When `GitIgnore` is enabled for a snapshot:
-- The client still walks the tree but marks gitignored paths in `Stat.GitIgnored` instead of filtering them out.
-- Ignored directories are still *stat’d* and still walked to preserve negation semantics (e.g., `!dir/keep.txt`).
-- The server treats `GitIgnored` paths as “present but ignored”: it skips applying updates and suppresses deletes under those prefixes, keeping the shared mirror stable across clients.
+## Filesync Cache Model (Current)
 
-### Consistency + conflict detection
-`localFS` uses an in-memory cache (`engine/cache.Cache`) keyed by path to dedupe concurrent updates and detect mid-sync changes:
-- `changeCache` stores `ChangeWithStat` results for each path.
-- `verifyExpectedChange` compares applied changes with expected stats (mode/uid/gid/size/devs/linkname/modtime).
-- If the client filesystem changes during the sync, a conflict error is raised (`ErrConflict`).
-- This handles concurrent syncs across multiple clients since they all share the same mutable ref.
-- When a sync is finished, the cache ref for the change applied is released. When all refs are released, the underlying file/dir is available for new changes to be applied again.
+Filesync now uses a dedicated in-package typed cache:
+- `engine/filesync/change_cache.go`
 
-### Content hashing and reuse
-`localFS.Sync` builds a content hash for the snapshot:
-- Per-path file content hashes are stored in xattrs (`user.daggerContentHash`) to avoid re-hashing unchanged files.
-- A `CacheContext` tracks changes and computes the final content hash for the synced subtree.
-- If an identical content hash already exists, it reuses an existing immutable ref (`contenthash.SearchContentHash`).
-- Otherwise it copies only changed paths into a new mutable ref, commits, and sets content hash metadata.
+This cache is intentionally narrow:
+- key: local path (string)
+- value: `*ChangeWithStat`
+- behavior: in-memory singleflight + refcount + release
+- no TTL, no persistence, no content-key indexing, no generic adapters
 
-## API Glue: `host.directory` / `host.file`
+## Why the Change Cache Exists
 
-### `host.directory`
-- Implemented in `core/schema/host.go` as a `NodeFuncWithCacheKey` using `DagOpDirectoryWrapper(..., WithHashContentDir)`.
-- Caching behavior is **as requested** via `HostDirCacheConfig`:
-  - Default: `CachePerClient`.
-  - `noCache: true`: `CachePerCall` (forces re-evaluation).
-- Host path handling:
-  - Resolves absolute path via `buildkit.AbsPath`.
-  - Optional gitignore root discovery via `Host.FindUp` (searches for `.git`).
-  - Include/exclude patterns are re-rooted relative to the chosen git root.
-- Ultimately calls `Host.Directory` (core/host.go), which invokes `FileSyncer.Snapshot`.
-- `WithHashContentDir` converts the directory ID digest to a **content hash**, enabling dagql cache dedupe across identical content.
+`localFS.Sync` uses change-cache entries to:
+- dedupe equivalent concurrent mutations on same path
+- detect mid-sync host mutations (conflict detection)
+- avoid false conflicts after sync completes by releasing all held entries
 
-### `host.file`
-- Implemented as a selection pipeline that calls `host.directory` with an `include` of the filename, then selects `file`.
-- Inherits the same cache behavior as `host.directory` (`noCache` -> `CachePerCall`).
+This cache is shared across syncs for the same client mirror via `localFSSharedState`.
 
-## Export Path (engine -> client)
-File exports use the **FileSend** service on the client:
-- Directory export: engine streams `fsutil.Receive` packets; `Merge` controls overwrite vs merge semantics.
-- File or tar export: engine sends `BytesMessage` chunks; client writes to a target file.
-- `RemovePaths` in `LocalExportOpts` is applied before writing to support delete semantics.
+## Conflict Detection
 
-## Behavior and Gotchas
+Applied changes are validated against expected remote stats (`verifyExpectedChange`).
 
-- **Path normalization**: wire paths are always unix-style; conversion happens at send/receive boundaries.
-- **Windows drives**: `FileSyncer` splits drive letters and includes them in per-client cache keys.
-- **Devices and named pipes**: skipped during sync (server-side warning).
-- **Parent dir modtimes**: not reset to match client (documented in `localFS.Sync`).
-- **CacheBuster**: `SnapshotOpts.CacheBuster` is set when `noCache` is requested, but is currently unused in `engine/filesync`.
-- **Gitignored paths**: ignored entries are still represented in stats; directories may still be walked to preserve negation semantics, while the server skips updates/deletes for those paths to avoid cross-client conflicts.
+If a cached/applied change does not match expected change, sync fails with conflict instead of silently producing mixed-state snapshot.
+
+## GitIgnore Behavior
+
+With gitignore-enabled import:
+- client marks entries as ignored in stats
+- server treats ignored paths as present-but-ignored
+- updates/deletes under ignored prefixes are skipped to keep mirror stable and avoid cross-sync interference
+
+## Content Reuse
+
+After sync operations:
+- content hash is computed for subtree
+- if matching immutable ref already exists, reuse it
+- otherwise copy changed paths into new ref and commit
+
+This is separate from dagql call cache; it is snapshot-content reuse at filesync layer.
+
+## Export Path (Engine -> Client)
+
+Exports use client `FileSend` service:
+- tree exports via fsutil receive
+- single-file/tar streams via chunked bytes
+
+## Gotchas
+
+- Parent directory modtimes are not fully normalized to client today.
+- Device files and named pipes are skipped.
+- Filesync change cache is not durable state; it is lifecycle-scoped dedupe/consistency machinery.
 
 ## Code Map
 
-- Client gRPC handlers: `engine/client/filesync.go`
-- Filesync protocol: `internal/fsutil/send.go`, `internal/fsutil/receive.go`, `internal/fsutil/types/stat.proto`
-- Server sync logic: `engine/filesync/filesyncer.go`, `engine/filesync/localfs.go`, `engine/filesync/remotefs.go`, `engine/filesync/diff.go`
+- Client handlers: `engine/client/filesync.go`
+- Filesync protocol: `internal/fsutil/send.go`, `internal/fsutil/receive.go`
+- Server sync logic: `engine/filesync/filesyncer.go`, `engine/filesync/localfs.go`, `engine/filesync/remotefs.go`
+- Filesync change cache: `engine/filesync/change_cache.go`
 - API glue: `core/schema/host.go`, `core/host.go`
-- Content-hash ID conversion: `core/contenthash.go` (via `WithHashContentDir`)
-- Gitignore helpers: `util/fsxutil/gitignore_mark_fs.go`, `util/fsxutil/gitignore_matcher.go`

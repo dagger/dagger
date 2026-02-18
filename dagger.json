@@ -96,9 +96,7 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": [
-            "scanSource"
-          ],
+          "function": ["scanSource"],
           "argument": "source",
           "ignore": [
             "bin",
@@ -127,7 +125,8 @@
     "go.mod",
     "go.sum",
     "util/parallel",
-    "engine/distconsts"
+    "engine/distconsts",
+    "util/patchpreview"
   ],
   "dependencies": [
     {

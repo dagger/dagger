@@ -48,13 +48,18 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 	if args.Namespace != "" {
 		return resp, nil
 	}
+	if resp.CacheKey.ID == nil {
+		return nil, errors.New("cache key ID is nil")
+	}
 
 	m, err := parent.Self().CurrentModule(ctx)
 	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 		return nil, err
 	}
 	namespaceKey := namespaceFromModule(m)
-	resp.CacheKey.CallKey = hashutil.HashStrings(resp.CacheKey.CallKey, namespaceKey).String()
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(
+		hashutil.HashStrings(resp.CacheKey.ID.Digest().String(), namespaceKey),
+	)
 	return resp, nil
 }
 

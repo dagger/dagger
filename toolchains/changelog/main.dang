@@ -11,7 +11,7 @@ type Changelog {
   """
   Generate the changelog with 'changie merge'. Only run this manually, at release time.
   """
-  pub generate: Changeset {
+  pub generate: Changeset @generate {
     let changieVersion = "1.21.0"
     container
       .from("ghcr.io/miniscruff/changie:v" + changieVersion)

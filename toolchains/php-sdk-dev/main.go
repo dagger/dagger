@@ -136,7 +136,8 @@ func (t PhpSdkDev) Test(ctx context.Context) error {
 }
 
 // Regenerate the PHP SDK API + docs
-func (t *PhpSdkDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
+// +generate
+func (t *PhpSdkDev) API(ctx context.Context) (*dagger.Changeset, error) {
 	t, err := t.
 		WithGeneratedClient().
 		WithGeneratedDocs(ctx)

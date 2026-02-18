@@ -1747,6 +1747,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Check::originalModule",
+			"p": "Dagger/Check.html#method_originalModule",
+			"d": "<p>The original module in which the check has been defined</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Check::passed",
 			"p": "Dagger/Check.html#method_passed",
 			"d": "<p>Whether the check passed</p>"
@@ -4258,6 +4264,18 @@
 			"n": "Dagger\\Generator::name",
 			"p": "Dagger/Generator.html#method_name",
 			"d": "<p>Return the fully qualified name of the generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::originalModule",
+			"p": "Dagger/Generator.html#method_originalModule",
+			"d": "<p>The original module in which the generator has been defined</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::path",
+			"p": "Dagger/Generator.html#method_path",
+			"d": "<p>The path of the generator within its module</p>"
 		},
 		{
 			"t": "M",

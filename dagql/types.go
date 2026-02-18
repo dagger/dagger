@@ -13,7 +13,6 @@ import (
 	"golang.org/x/exp/constraints"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/cache"
 )
 
 // Typed is any value that knows its GraphQL type.
@@ -90,7 +89,7 @@ type AnyResult interface {
 	NthValue(int) (AnyResult, error)
 
 	// WithPostCall returns a new AnyResult with the given post-call function attached to it.
-	WithPostCall(fn cache.PostCallFunc) AnyResult
+	WithPostCall(fn PostCallFunc) AnyResult
 
 	// IsSafeToPersistCache returns whether it's safe to persist this result in the cache.
 	IsSafeToPersistCache() bool
@@ -98,8 +97,9 @@ type AnyResult interface {
 	// WithSafeToPersistCache returns a new AnyResult with the given safe-to-persist-cache flag.
 	WithSafeToPersistCache(safe bool) AnyResult
 
-	// Set the ID associated with the result while keeping the underlying wrapped result the same.
-	WithID(id *call.ID) AnyResult
+	HitCache() bool
+	HitContentDigestCache() bool
+	Release(context.Context) error
 }
 
 // AnyObjectResult is an AnyResult that wraps a selectable value (i.e. a graph object)
@@ -135,8 +135,8 @@ type InterfaceValue interface {
 // PostCallable is a type that has a callback attached that needs to always run before returned to a caller
 // whether or not the type is being returned from cache or not
 type PostCallable interface {
-	// Return the postcall func (or nil if not set)
-	GetPostCall() cache.PostCallFunc
+	// Call the postcall func (or no-op if none is set)
+	PostCall(context.Context) error
 }
 
 // A type that has a callback attached that needs to always run when the result is removed
@@ -1058,10 +1058,7 @@ func (arr Array[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
 		return nil, err
 	}
 
-	return Result[T]{
-		constructor: enumID.SelectNth(i),
-		self:        t,
-	}, nil
+	return newDetachedResult(enumID.SelectNth(i), t), nil
 }
 
 type ResultArray[T Typed] []Result[T]
