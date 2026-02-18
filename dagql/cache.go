@@ -612,6 +612,15 @@ func (r ObjectResult[T]) WithContentDigest(customDigest digest.Digest) ObjectRes
 	}
 }
 
+// WithContentDigestAny is WithContentDigest but returns an AnyResult, required
+// for polymorphic code paths like module function call plumbing.
+func (r ObjectResult[T]) WithContentDigestAny(customDigest digest.Digest) AnyResult {
+	return ObjectResult[T]{
+		Result: r.Result.WithContentDigest(customDigest),
+		class:  r.class,
+	}
+}
+
 func (r ObjectResult[T]) ObjectResultWithPostCall(fn PostCallFunc) ObjectResult[T] {
 	r.Result = r.Result.ResultWithPostCall(fn)
 	return r
