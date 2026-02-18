@@ -66,6 +66,10 @@ type Server interface {
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// The Client metadata of a specific client ID within the same session as the
+	// current client.
+	SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error)
+
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*ModDeps, error)
 

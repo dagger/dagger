@@ -312,17 +312,15 @@ func resolveWorkspacePath(path, root string) (string, error) {
 // through the correct client session, even when called from a module context.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	if ws.ClientID == "" {
-		return ctx, nil
+		return nil, fmt.Errorf("workspace has no client ID")
 	}
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	clientMetadata, err := query.SpecificClientMetadata(ctx, ws.ClientID)
 	if err != nil {
 		return ctx, fmt.Errorf("get client metadata: %w", err)
 	}
-	if clientMetadata.ClientID == ws.ClientID {
-		return ctx, nil // already in the right context
-	}
-	// Clone metadata and override the client ID to the workspace owner's
-	override := *clientMetadata
-	override.ClientID = ws.ClientID
-	return engine.ContextWithClientMetadata(ctx, &override), nil
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
 }
