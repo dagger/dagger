@@ -203,7 +203,7 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
   `resolveAndServeModule`), `core/workspace/migrate.go` (`Migrate`,
   `generateMigrationConfigTOML`).
 
-- [ ] **#2: Add legacy blueprint parsing** (blocked by #1) -- Add blueprint extraction to
+- [x] **#2: Add legacy blueprint parsing** (blocked by #1) -- Add blueprint extraction to
   `core/workspace/legacy.go` shared helpers. Parse `"blueprint"` field from legacy
   `dagger.json`, produce workspace module entry with `Blueprint: true` and
   `LegacyDefaultPath: true`. Follow the existing `ParseLegacyToolchains()` pattern. The

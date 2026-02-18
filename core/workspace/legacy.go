@@ -14,6 +14,30 @@ type LegacyToolchain struct {
 	ConfigDefaults map[string]any
 }
 
+// LegacyBlueprint represents a blueprint extracted from a legacy dagger.json.
+type LegacyBlueprint struct {
+	Name   string
+	Source string
+	Pin    string
+}
+
+// ParseLegacyBlueprint parses a legacy dagger.json and extracts its blueprint.
+// Returns nil if no blueprint is present.
+func ParseLegacyBlueprint(data []byte) (*LegacyBlueprint, error) {
+	cfg, err := parseLegacyConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Blueprint == nil {
+		return nil, nil
+	}
+	return &LegacyBlueprint{
+		Name:   cfg.Blueprint.Name,
+		Source: cfg.Blueprint.Source,
+		Pin:    cfg.Blueprint.Pin,
+	}, nil
+}
+
 // ParseLegacyToolchains parses a legacy dagger.json and extracts its toolchains
 // with their constructor arg defaults. Returns nil if no toolchains are present.
 func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
@@ -70,6 +94,7 @@ type legacyConfig struct {
 	EngineVersion string              `json:"engineVersion"`
 	SDK           *legacySDK          `json:"sdk,omitempty"`
 	Source        string              `json:"source,omitempty"`
+	Blueprint     *legacyDependency   `json:"blueprint,omitempty"`
 	Toolchains    []*legacyDependency `json:"toolchains,omitempty"`
 	Dependencies  []*legacyDependency `json:"dependencies,omitempty"`
 	Include       []string            `json:"include,omitempty"`
