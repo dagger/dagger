@@ -10,7 +10,7 @@ See dagger/dagger#11812 and `skills/workspace-api-port/` for context and transfo
 - [ ] `toolchains/engine-dev` — 2 usages in `main.go`, `bench.go` (Pattern B)
 - [ ] `toolchains/cli-dev` — 2 usages in `main.go`, `publish.go` (Pattern B + E)
 - [ ] `toolchains/docs-dev` — 3 usages in `main.go` (Pattern B + C)
-- [ ] `toolchains/helm-dev` — 1 usage (Pattern A: subdirectory)
+- [x] `toolchains/helm-dev` — 1 usage (Pattern A: subdirectory)
 - [ ] `toolchains/python-sdk-dev` — 2 usages (Pattern B + E)
 - [ ] `toolchains/php-sdk-dev` — 3 usages (Pattern B + E)
 - [ ] `toolchains/rust-sdk-dev` — 1 usage (Pattern B)

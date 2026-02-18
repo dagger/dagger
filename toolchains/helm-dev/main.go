@@ -14,6 +14,7 @@ import (
 )
 
 func New(
+	// +optional
 	ws *dagger.Workspace,
 	// +default="helm/dagger"
 	chartPath string,
