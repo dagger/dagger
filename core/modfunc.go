@@ -1126,6 +1126,14 @@ func (fn *ModuleFunction) loadContextualArg(
 		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
 	}
 
+	// Legacy compat: resolve +defaultPath from workspace root for migrated
+	// blueprints/toolchains instead of the module's own source directory.
+	if fn.mod.LegacyDefaultPath {
+		slog.Warn("module uses legacy-default-path; port to workspace API and remove this flag",
+			"module", fn.mod.Name())
+		return fn.loadLegacyDefaultPathArg(ctx, dag, arg)
+	}
+
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
 		contentCacheKey := fn.mod.ContentDigestCacheKey()
@@ -1287,6 +1295,64 @@ func (fn *ModuleFunction) loadContextualArg(
 	}
 
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+}
+
+// loadLegacyDefaultPathArg resolves a +defaultPath argument from the workspace
+// root instead of the module's own source directory. Used for legacy
+// blueprints/toolchains that relied on ContextSource injection.
+func (fn *ModuleFunction) loadLegacyDefaultPathArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	arg *FunctionArg,
+) (dagql.IDType, error) {
+	switch arg.TypeDef.AsObject.Value.Name {
+	case "Directory":
+		var dir dagql.ObjectResult[*Directory]
+		err := dag.Select(ctx, dag.Root(), &dir,
+			dagql.Selector{
+				Field: "currentWorkspace",
+				Args: []dagql.NamedInput{
+					{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+				},
+			},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(arg.DefaultPath)},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load legacy default directory %q: %w", arg.DefaultPath, err)
+		}
+		return dagql.NewID[*Directory](dir.ID()), nil
+
+	case "File":
+		var f dagql.ObjectResult[*File]
+		err := dag.Select(ctx, dag.Root(), &f,
+			dagql.Selector{
+				Field: "currentWorkspace",
+				Args: []dagql.NamedInput{
+					{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+				},
+			},
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(arg.DefaultPath)},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load legacy default file %q: %w", arg.DefaultPath, err)
+		}
+		return dagql.NewID[*File](f.ID()), nil
+
+	default:
+		return nil, fmt.Errorf("legacy-default-path does not support type %q; port to workspace API",
+			arg.TypeDef.AsObject.Value.Name)
+	}
 }
 
 // loadWorkspaceArg loads a workspace argument by resolving it through the

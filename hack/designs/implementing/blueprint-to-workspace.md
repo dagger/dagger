@@ -230,7 +230,7 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
   exception in `moduleSourceAsModule()`. Keep `ModuleConfig.Blueprint` in
   `core/modules/config.go` for JSON parse compat.
 
-- [ ] **#6: Add `legacy-default-path` compat** (blocked by #5) -- Add `LegacyDefaultPath bool`
+- [x] **#6: Add `legacy-default-path` compat** (blocked by #5) -- Add `LegacyDefaultPath bool`
   to `ModuleEntry` in `core/workspace/config.go` and `pendingModule` in
   `engine/server/session.go`. Flow it through to the loaded module (new field on `Module`).
   The `+defaultPath` resolution happens during function argument default injection — search

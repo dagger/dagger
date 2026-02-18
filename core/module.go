@@ -66,6 +66,11 @@ type Module struct {
 	// so they can be called directly without going through the module constructor.
 	AutoAlias bool
 
+	// LegacyDefaultPath, when true, causes +defaultPath to resolve relative to
+	// the workspace root instead of the module's own source directory.
+	// Used for legacy blueprints/toolchains migrated to workspace modules.
+	LegacyDefaultPath bool
+
 	// Config values from workspace config.toml [modules.<name>.config].
 	// Typed map: strings, bools, ints, floats as-is from TOML.
 	// When set, constructor args are resolved from this map first.

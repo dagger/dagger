@@ -1854,6 +1854,9 @@ func (srv *Server) loadModule(
 	if mod.Blueprint {
 		resolved.Self().AutoAlias = true
 	}
+	if mod.LegacyDefaultPath {
+		resolved.Self().LegacyDefaultPath = true
+	}
 	if len(mod.ConfigDefaults) > 0 {
 		resolved.Self().WorkspaceConfig = mod.ConfigDefaults
 		resolved.Self().DefaultsFromDotEnv = mod.DefaultsFromDotEnv
