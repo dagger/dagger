@@ -239,7 +239,7 @@ Warnings  Migrate cmd |
 
 ### Further simplification opportunities
 
-- [ ] **#8: Simplify `ModuleRelationType` abstraction** — The `ModuleRelationType`
+- [x] **#8: Simplify `ModuleRelationType` abstraction** — The `ModuleRelationType`
   enum, `moduleRelationTypeAccessor`, `GetRelatedModules()`, and `SetRelatedModules()`
   abstraction was designed to share code between dependency and toolchain operations.
   Now that toolchains are removed, only dependencies remain. This abstraction can be

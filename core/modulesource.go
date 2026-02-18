@@ -49,31 +49,6 @@ func (proto ModuleSourceKind) Type() *ast.Type {
 	}
 }
 
-// ModuleRelationType distinguishes between dependencies and toolchains in error messages and field access
-type ModuleRelationType int
-
-const (
-	ModuleRelationTypeDependency ModuleRelationType = iota
-)
-
-func (t ModuleRelationType) String() string {
-	switch t {
-	case ModuleRelationTypeDependency:
-		return "dependency"
-	default:
-		return "unknown"
-	}
-}
-
-func (t ModuleRelationType) Plural() string {
-	switch t {
-	case ModuleRelationTypeDependency:
-		return "dependencies"
-	default:
-		return "unknowns"
-	}
-}
-
 func (proto ModuleSourceKind) TypeDescription() string {
 	return "The kind of module source."
 }
@@ -267,16 +242,6 @@ func (src *ModuleSource) Pin() string {
 	default:
 		return ""
 	}
-}
-
-// GetRelatedModules returns the related modules (dependencies or toolchains) based on the type
-func (src *ModuleSource) GetRelatedModules(typ ModuleRelationType) []dagql.ObjectResult[*ModuleSource] {
-	return src.Dependencies
-}
-
-// SetRelatedModules sets the related modules (dependencies or toolchains) based on the type
-func (src *ModuleSource) SetRelatedModules(typ ModuleRelationType, modules []dagql.ObjectResult[*ModuleSource]) {
-	src.Dependencies = modules
 }
 
 func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, error) {
