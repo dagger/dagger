@@ -4224,9 +4224,6 @@ type ModuleSource {
   """A human readable ref string representation of this module source."""
   asString: String!
 
-  """The blueprint referenced by the module source."""
-  blueprint: ModuleSource!
-
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
   """
@@ -4352,11 +4349,6 @@ type ModuleSource {
   """The specified version of the git repo this source points to."""
   version: String!
 
-  """Set a blueprint for the module source."""
-  withBlueprint(
-    """The blueprint module to set."""
-    blueprint: ModuleSourceID!
-  ): ModuleSource!
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -4422,8 +4414,6 @@ type ModuleSource {
     toolchains: [ModuleSourceID!]!
   ): ModuleSource!
 
-  """Update the blueprint module to the latest version."""
-  withUpdateBlueprint: ModuleSource!
 
   """Update one or more module dependencies."""
   withUpdateDependencies(
@@ -4443,8 +4433,6 @@ type ModuleSource {
     clients: [String!]!
   ): ModuleSource!
 
-  """Remove the current blueprint from the module source."""
-  withoutBlueprint: ModuleSource!
 
   """Remove a client from the module source."""
   withoutClient(

@@ -25,11 +25,6 @@ type Module struct {
 	// The source of the module
 	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
-	// ContextSource is the module source used as the execution context.
-	// Usually identical to Source, but for blueprints it points to the
-	// downstream module applying the blueprint (not the blueprint itself).
-	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
-
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
 
@@ -149,23 +144,13 @@ func (mod *Module) GetSource() *ModuleSource {
 	return mod.Source.Value.Self()
 }
 
-// GetContextSource returns the module source used as execution context.
-// Usually identical to Source, but for blueprints it points to the
-// downstream module applying the blueprint (not the blueprint itself).
-func (mod *Module) GetContextSource() *ModuleSource {
-	if !mod.ContextSource.Valid {
-		return nil
-	}
-	return mod.ContextSource.Value.Self()
-}
-
 func (mod *Module) ContentDigestCacheKey() string {
-	contextSource := mod.ContextSource.Value.Self()
+	source := mod.GetSource()
 	contentDigest := ""
 	contentCacheScope := ""
-	if contextSource != nil {
-		contentDigest = contextSource.Digest
-		contentCacheScope = contextSource.ContentCacheScope()
+	if source != nil {
+		contentDigest = source.Digest
+		contentCacheScope = source.ContentCacheScope()
 	}
 
 	return hashutil.HashStrings(
@@ -232,16 +217,8 @@ func CacheModuleByContentDigest(
 func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	defaults := NewEnvFile(true)
 
-	// Use ContextSource for loading .env files (it has the actual context directory)
-	// but use Source for the module name prefix lookups
-	contextSrc := mod.GetContextSource()
-	if contextSrc != nil && contextSrc.UserDefaults != nil {
-		defaults = defaults.WithEnvFiles(contextSrc.UserDefaults)
-	}
-
 	src := mod.GetSource()
-	if src != nil && src != contextSrc && src.UserDefaults != nil {
-		// Also merge in toolchain source defaults if different from context
+	if src != nil && src.UserDefaults != nil {
 		defaults = defaults.WithEnvFiles(src.UserDefaults)
 	}
 

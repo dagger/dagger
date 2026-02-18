@@ -16,7 +16,6 @@ import (
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
-	"github.com/dagger/dagger/util/parallel"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
@@ -165,18 +164,6 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("dependencies").Doc(`The dependencies to remove.`),
 			),
-
-		dagql.Func("withBlueprint", s.moduleSourceWithBlueprint).
-			Doc(`Set a blueprint for the module source.`).
-			Args(
-				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
-			),
-
-		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
-			Doc(`Update the blueprint module to the latest version.`),
-
-		dagql.Func("withoutBlueprint", s.moduleSourceWithoutBlueprint).
-			Doc(`Remove the current blueprint from the module source.`),
 
 		dagql.Func("withExperimentalFeatures", s.moduleSourceWithExperimentalFeatures).
 			Doc(`Enable the experimental features for the module source.`).
@@ -519,11 +506,6 @@ func (s *moduleSourceSchema) localModuleSource(
 			return nil
 		})
 
-		// Load blueprint
-		eg.Go(func() error {
-			return s.loadBlueprintModule(ctx, bk, localSrc)
-		})
-
 		localSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(localSrc.ConfigDependencies))
 		for i, depCfg := range localSrc.ConfigDependencies {
 			eg.Go(func() error {
@@ -682,11 +664,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return nil
 	})
 
-	// Load blueprint
-	eg.Go(func() error {
-		return s.loadBlueprintModule(ctx, bk, gitSrc)
-	})
-
 	gitSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(gitSrc.ConfigDependencies))
 	for i, depCfg := range gitSrc.ConfigDependencies {
 		eg.Go(func() error {
@@ -724,31 +701,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	return inst.ResultWithPostCall(secretTransferPostCall), nil
-}
-
-func (s *moduleSourceSchema) loadBlueprintModule(
-	ctx context.Context,
-	bk *buildkit.Client,
-	src *core.ModuleSource) error {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get dag server: %w", err)
-	}
-
-	jobs := parallel.New().WithContextualTracer(true).WithReveal(false)
-	// Load blueprint
-	if src.ConfigBlueprint != nil {
-		jobs = jobs.WithJob("load blueprint: "+src.ConfigBlueprint.Source, func(ctx context.Context) error {
-			blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, src.ConfigBlueprint.Source, src.ConfigBlueprint.Pin, src.ConfigBlueprint.Name)
-			if err != nil {
-				return fmt.Errorf("failed to resolve blueprint to source: %w", err)
-			}
-
-			src.Blueprint = blueprint
-			return nil
-		})
-	}
-	return jobs.Run(ctx)
 }
 
 type directoryAsModuleArgs struct {
@@ -909,7 +861,7 @@ func (s *moduleSourceSchema) contextDirectory(
 		return inst, err
 	}
 
-	dir, err := mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
+	dir, err := mod.Self().Source.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
 	}
@@ -954,7 +906,7 @@ func (s *moduleSourceSchema) contextFile(
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().ContextSource.Value.Self().LoadContextFile(ctx, dag, args.Path)
+	f, err := mod.Self().Source.Value.Self().LoadContextFile(ctx, dag, args.Path)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
 	}
@@ -997,7 +949,7 @@ func (s *moduleSourceSchema) contextGitRepository(
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
+	f, err := mod.Self().Source.Value.Self().LoadContextGit(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
 	}
@@ -1037,7 +989,7 @@ func (s *moduleSourceSchema) contextGitRef(
 	if err != nil {
 		return inst, err
 	}
-	f, err := mod.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
+	f, err := mod.Self().Source.Value.Self().LoadContextGit(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual git ref: %w", err)
 	}
@@ -1080,26 +1032,12 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
-	// blueprint is incompatible with some dagger.json fields
-	if modCfg.Blueprint != nil {
-		if modCfg.SDK != nil {
-			return fmt.Errorf("blueprint and sdk can't both be set")
-		}
-		if len(modCfg.Dependencies) != 0 {
-			return fmt.Errorf("blueprint and dependencies can't both be set")
-		}
-		if modCfg.Source != "" {
-			return fmt.Errorf("blueprint and source can't both be set")
-		}
-	}
-
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
-	src.ConfigBlueprint = modCfg.Blueprint
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -1978,103 +1916,6 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	return parentSrc, nil
 }
 
-func (s *moduleSourceSchema) moduleSourceWithBlueprint(
-	ctx context.Context,
-	parentSrc *core.ModuleSource,
-	args struct {
-		Blueprint core.ModuleSourceID
-	},
-) (*core.ModuleSource, error) {
-	// Validate blueprint compatibility
-	if parentSrc.SDK != nil {
-		return nil, fmt.Errorf("cannot set blueprint on module that already has SDK")
-	}
-	if parentSrc.Dependencies.Len() > 0 {
-		return nil, fmt.Errorf("cannot set blueprint on module that has dependencies")
-	}
-	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
-		Dependencies: []core.ModuleSourceID{args.Blueprint},
-	}
-	tmpSrc := parentSrc.Clone()
-	tmpSrc.Dependencies = nil
-	tmpSrc, err := s.moduleSourceWithDependencies(ctx, parentSrc, tmpArgs)
-	if err != nil {
-		return nil, err
-	}
-	tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
-	if err != nil {
-		return nil, err
-	}
-	// The blueprint is the last dependency added
-	// (dependencies are added LIFO)
-	parentSrc = parentSrc.Clone()
-
-	// Set the blueprint field (for `dagger init --blueprint`)
-	parentSrc.ConfigBlueprint = tmpConfig.Dependencies[0]
-	parentSrc.Blueprint = tmpSrc.Dependencies[0]
-
-	return parentSrc, nil
-}
-
-func (s *moduleSourceSchema) moduleSourceWithoutBlueprint(
-	ctx context.Context,
-	parentSrc *core.ModuleSource,
-	args struct{},
-) (*core.ModuleSource, error) {
-	parentSrc = parentSrc.Clone()
-	parentSrc.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
-	parentSrc.ConfigBlueprint = nil
-	return parentSrc, nil
-}
-func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
-	ctx context.Context,
-	parentSrc dagql.ObjectResult[*core.ModuleSource],
-	args struct{},
-) (inst dagql.Result[*core.ModuleSource], _ error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-
-	// If no blueprint is set, return without error
-	if parentSrc.Self().Blueprint.Self() == nil {
-		return parentSrc.Result, nil
-	}
-
-	bpSrc := parentSrc.Self().Blueprint.Self()
-
-	// Only update git sources
-	if bpSrc.Kind != core.ModuleSourceKindGit {
-		return parentSrc.Result, nil
-	}
-
-	// Update the blueprint by loading it fresh
-	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
-	err = dag.Select(ctx, dag.Root(), &bpUpdated,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(bpSrc.AsString())},
-			},
-		},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
-	}
-
-	// Set the updated blueprint on the parent source
-	err = dag.Select(ctx, parentSrc, &inst,
-		dagql.Selector{
-			Field: "withBlueprint",
-			Args: []dagql.NamedInput{{
-				Name:  "blueprint",
-				Value: dagql.NewID[*core.ModuleSource](bpUpdated.ID()),
-			}},
-		},
-	)
-	return inst, err
-}
-
 func (s *moduleSourceSchema) moduleSourceWithExperimentalFeatures(
 	_ context.Context,
 	parentSrc *core.ModuleSource,
@@ -2186,11 +2027,6 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 			Config:       src.SDK.Config,
 			Experimental: src.SDK.Experimental,
 		}
-	}
-
-	// Copy blueprint configuration
-	if src.ConfigBlueprint != nil {
-		modCfg.Blueprint = src.ConfigBlueprint
 	}
 
 	// Check version compatibility.
@@ -2824,7 +2660,6 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 func (s *moduleSourceSchema) createBaseModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	originalSrc dagql.ObjectResult[*core.ModuleSource],
 ) (*core.Module, error) {
 	sdk := src.Self().SDK
 	if sdk == nil {
@@ -2833,8 +2668,7 @@ func (s *moduleSourceSchema) createBaseModule(
 
 	mod := &core.Module{
 		Source:                        dagql.NonNull(src),
-		ContextSource:                 dagql.NonNull(originalSrc),
-		NameField:                     originalSrc.Self().ModuleName,
+		NameField:                     src.Self().ModuleName,
 		OriginalName:                  src.Self().ModuleOriginalName,
 		SDKConfig:                     sdk,
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
@@ -2942,18 +2776,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
-	// Blueprint mode is ONLY when we have the Blueprint field set (from `dagger init --blueprint`)
-	originalSrc := src
-	isBlueprintMode := src.Self().Blueprint.Self() != nil
-
-	// In blueprint mode, use the blueprint as the main source
-	// This must happen before creating the module so the SDK loads from blueprint source
-	if isBlueprintMode {
-		src = src.Self().Blueprint
-	}
-
 	// Create base module with dependencies
-	mod, err := s.createBaseModule(ctx, src, originalSrc)
+	mod, err := s.createBaseModule(ctx, src)
 	if err != nil {
 		return inst, err
 	}

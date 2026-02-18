@@ -130,10 +130,6 @@ type ModuleSource struct {
 	// Dependencies are the loaded sources for the module's dependencies
 	Dependencies dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
-	// Blueprint (from `dagger init --blueprint`)
-	ConfigBlueprint *modules.ModuleConfigDependency
-	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source."`
-
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
@@ -447,11 +443,6 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 			continue
 		}
 		inputs = append(inputs, dep.Self().Digest)
-	}
-
-	// Include blueprint in digest so changes to blueprint invalidate cache
-	if src.Blueprint.Self() != nil {
-		inputs = append(inputs, "blueprint:"+src.Blueprint.Self().Digest)
 	}
 
 	for _, client := range src.ConfigClients {

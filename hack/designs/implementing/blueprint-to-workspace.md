@@ -221,7 +221,7 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
   workspace module with `blueprint = true` and `legacy-default-path = true`. Remove blueprint
   field from `dagger.json`. Also add `legacy-default-path = true` to migrated toolchains.
 
-- [ ] **#5: Remove blueprint-awareness from module loading** (blocked by #2) -- The big
+- [x] **#5: Remove blueprint-awareness from module loading** (blocked by #2) -- The big
   cleanup. See "What Gets Deleted" section above for the full list. Key functions to modify:
   `moduleSourceAsModule()` (remove `isBlueprintMode` and `originalSrc` swap),
   `createBaseModule()` (remove `originalSrc` parameter and ContextSource setup). Replace all
