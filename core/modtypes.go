@@ -56,10 +56,11 @@ func (content *CollectedContent) CollectID(idp call.ID, unknown bool) {
 		Optional: unknown, // mark this id as optional, since it's a best-guess attempt
 	}
 	content.IDs[idp.Digest()] = rid
-	dgst := rid.ContentDigest()
-	if dgst == "" {
-		dgst = rid.Digest()
-	}
+	// TODO: deeper integration with dagql/cache would be preferable but OutputEquivalentDigest works
+	// for current workspace requirements.
+	// Deeper integration would allow full equivalence set cache hits on any IDs, whereas this approach
+	// is specific to just "content hash" extra digests.
+	dgst := rid.OutputEquivalentDigest()
 	content.hasher.WithString(string(dgst))
 }
 

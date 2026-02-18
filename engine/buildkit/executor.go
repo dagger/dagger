@@ -64,10 +64,11 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	CallID              *call.ID
-	EncodedModuleID     string
-	EncodedFunctionCall json.RawMessage
-	CallerClientID      string
+	CallID                 *call.ID
+	EncodedModuleID        string
+	EncodedContentModuleID string
+	EncodedFunctionCall    json.RawMessage
+	CallerClientID         string
 
 	// Client resource IDs passed to this client from parent object fields.
 	// Needed to handle finding any secrets, sockets or other client resources

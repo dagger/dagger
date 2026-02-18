@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -73,6 +72,11 @@ func (sdk *goSDK) GenerateClient(
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
+	}
+
+	modSource, err = scopeSourceForSDKOperation(ctx, modSource, "generateClient", dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module source for go module sdk client generation: %w", err)
 	}
 
 	// For standalone clients, we want to include Engine and other types that are hidden from module SDKs
@@ -184,9 +188,15 @@ func (sdk *goSDK) Codegen(
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
 	defer telemetry.EndWithCause(span, &rerr)
+
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
+	}
+
+	source, err = scopeSourceForSDKOperation(ctx, source, "codegen", dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scope module source for go module sdk codegen: %w", err)
 	}
 
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
@@ -229,12 +239,22 @@ func (sdk *goSDK) ModuleTypes(
 	ctx context.Context,
 	deps *core.ModDeps,
 	src dagql.ObjectResult[*core.ModuleSource],
-	currentModuleID *call.ID,
+	partiallyInitializedMod *core.Module,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
 	}
+
+	src, err = scopeSourceForSDKOperation(ctx, src, "moduleTypes", dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module source for go module sdk module types: %w", err)
+	}
+	scopedMod, err := ScopeModuleForSDKOperation(ctx, partiallyInitializedMod, "moduleTypesCurrentMod", dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module for go module sdk module types: %w", err)
+	}
+	currentModuleID := scopedMod.ID()
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
@@ -392,6 +412,11 @@ func (sdk *goSDK) Runtime(
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
+	}
+
+	source, err = scopeSourceForSDKOperation(ctx, source, "runtime", dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module source for go module sdk runtime: %w", err)
 	}
 
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)

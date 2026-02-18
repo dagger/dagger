@@ -17,7 +17,8 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.FuncWithCacheKey("currentWorkspace", s.currentWorkspace, dagql.CachePerCall).
+		dagql.Func("currentWorkspace", s.currentWorkspace).
+			WithInput(dagql.CachePerCall).
 			Doc("Detect and return the current workspace.").
 			Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 			Args(
@@ -26,11 +27,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
-		dagql.NodeFuncWithCacheKey("directory",
-			DagOpDirectoryWrapper(
-				srv, s.directory,
-				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
-			), dagql.CachePerClient).
+		dagql.NodeFunc("directory", s.directory).
+			WithInput(dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
 				`Path is relative to workspace root. Use "." for the root directory.`).
 			Args(
@@ -39,13 +37,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
-		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
+		dagql.NodeFunc("file", s.file).
+			WithInput(dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
 				`Path is relative to workspace root.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
 			),
-		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
+		dagql.NodeFunc("findUp", s.findUp).
+			WithInput(dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the path relative to the workspace root if found, or null if not found.`,
 				`The search stops at the workspace root and will not traverse above it.`).
@@ -109,12 +109,6 @@ type workspaceDirectoryArgs struct {
 	core.CopyFilter
 
 	Gitignore bool `default:"false"`
-
-	DagOpInternalArgs
-}
-
-func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
 }
 
 func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -180,10 +174,6 @@ type workspaceFileArgs struct {
 	Path string
 }
 
-func (workspaceFileArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
-}
-
 func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFileArgs) (inst dagql.Result[*core.File], _ error) {
 	ws := parent.Self()
 
@@ -228,10 +218,6 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 type workspaceFindUpArgs struct {
 	Name string
 	From string `default:"."`
-}
-
-func (workspaceFindUpArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
 }
 
 func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFindUpArgs) (dagql.Nullable[dagql.String], error) {

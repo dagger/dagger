@@ -32,9 +32,13 @@ func SessionDomain(sid string) string {
 
 // SessionDomain is a session-wide domain suffix for a given session ID.
 func ModuleDomain(modID *call.ID, sid string) string {
+	modDgst := modID.ContentDigest()
+	if modDgst == "" {
+		modDgst = modID.Digest()
+	}
 	return fmt.Sprintf(
 		"%s.%s%s",
-		HostHash(modID.Digest()),
+		HostHash(modDgst),
 		HostHashStr(sid),
 		DomainSuffix,
 	)

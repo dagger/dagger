@@ -52,6 +52,21 @@ func dagOpContentOrStructuralDigest(id *call.ID) digest.Digest {
 	return dagOpStructuralDigest(id)
 }
 
+func dagOpLoadServer(ctx context.Context, query *Query, server *dagql.Server, id *call.ID) (*dagql.Server, error) {
+	if len(id.Modules()) == 0 {
+		return server, nil
+	}
+	deps, err := query.IDDeps(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("id deps: %w", err)
+	}
+	server, err = deps.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("id deps schema: %w", err)
+	}
+	return server, nil
+}
+
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
 // for it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
@@ -214,7 +229,14 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 	ctx = ContextWithQuery(ctx, query)
 
-	obj, err := opt.Server.LoadType(ctx, op.ID)
+	if op.ID == nil {
+		return nil, fmt.Errorf("dagop ID is nil")
+	}
+	loadServer, err := dagOpLoadServer(ctx, query, opt.Server, op.ID)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := loadServer.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +356,7 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 	}, "\x00")), nil
 }
 
-func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+func (op RawDagOp) CacheMap(_ context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
 		dagOpStructuralDigest(op.ID).String(),
@@ -358,7 +380,15 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	result, err := opt.Server.LoadType(ContextWithQuery(ctx, query), op.ID)
+	if op.ID == nil {
+		return nil, fmt.Errorf("dagop ID is nil")
+	}
+	ctx = ContextWithQuery(ctx, query)
+	loadServer, err := dagOpLoadServer(ctx, query, opt.Server, op.ID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := loadServer.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +461,7 @@ func NewContainerDagOp(
 	inputs []llb.State,
 	ctr *Container,
 	execMD *buildkit.ExecutionMetadata,
+	overrideBKCacheKey digest.Digest,
 ) (*Container, error) {
 	mounts, ctrInputs, dgsts, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
@@ -452,6 +483,9 @@ func NewContainerDagOp(
 			Digests:     dgsts,
 			OutputCount: outputCount,
 		},
+	}
+	if overrideBKCacheKey != "" {
+		dagop.CacheKey = overrideBKCacheKey
 	}
 
 	st, err := newContainerDagOp(ctx, dagop, inputs)
@@ -559,7 +593,7 @@ func (op ContainerDagOp) Digest() (digest.Digest, error) {
 	return op.CacheKey, nil
 }
 
-func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+func (op ContainerDagOp) CacheMap(_ context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	// Use our precomputed cache key and additional content-hashing for mounts that are associated with
 	// a known digest.
 	cm.Digest = op.CacheKey
@@ -606,8 +640,14 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 		}
 		loadID = loadID.WithArgument(call.NewArgument("execMD", call.NewLiteralString(string(execMDJSON)), true))
 	}
-
-	obj, err := opt.Server.LoadType(loadCtx, loadID)
+	if loadID == nil {
+		return nil, fmt.Errorf("dagop ID is nil")
+	}
+	loadServer, err := dagOpLoadServer(loadCtx, query, opt.Server, loadID)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := loadServer.LoadType(loadCtx, loadID)
 	if err != nil {
 		return nil, err
 	}

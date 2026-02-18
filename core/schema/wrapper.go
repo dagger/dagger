@@ -401,7 +401,7 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		ctr, effectID, err := DagOpContainer(ctx, srv, self.Self(), args, fn)
+		ctr, effectID, err := DagOpContainer(ctx, srv, self.Self(), args, "", fn)
 		if err != nil {
 			return inst, err
 		}
@@ -425,6 +425,7 @@ func DagOpContainer[A any](
 	srv *dagql.Server,
 	ctr *core.Container,
 	args A,
+	overrideBKCacheKey digest.Digest,
 	fn dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]],
 ) (*core.Container, string, error) {
 	argDigest, err := core.DigestOf(args)
@@ -448,7 +449,7 @@ func DagOpContainer[A any](
 		execMD = withExecMD.DagOpExecutionMetadata()
 	}
 
-	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, deps, ctr, execMD)
+	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, deps, ctr, execMD, overrideBKCacheKey)
 	if err != nil {
 		return nil, "", err
 	}

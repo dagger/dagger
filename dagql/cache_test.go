@@ -1785,6 +1785,90 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	})
 }
 
+func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
+	t.Parallel()
+
+	t.Run("hit_on_exact_output_digest_match", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		shared := call.ExtraDigest{
+			Digest: digest.FromString("fallback-extra-shared"),
+			Label:  "shared",
+		}
+
+		sourceKey := call.New().Append(Int(0).Type(), "_contextDirectory")
+		sourceOut := sourceKey.With(call.WithExtraDigest(shared))
+		sourceRes, err := c.GetOrInitCall(ctx, CacheKey{ID: sourceKey}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(sourceOut, NewInt(71)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !sourceRes.HitCache())
+
+		requestKey := sourceKey.
+			WithArgument(call.NewArgument("variant", call.NewLiteralInt(1), false)).
+			With(call.WithExtraDigest(shared))
+		assert.Assert(t, sourceKey.Digest() != requestKey.Digest())
+
+		requestInitCalls := 0
+		requestRes, err := c.GetOrInitCall(ctx, CacheKey{ID: requestKey}, func(context.Context) (AnyResult, error) {
+			requestInitCalls++
+			return newDetachedResult(requestKey, NewInt(999)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, requestInitCalls)
+		assert.Assert(t, requestRes.HitCache())
+		assert.Equal(t, 71, cacheTestUnwrapInt(t, requestRes))
+		assert.Equal(t, requestKey.Digest().String(), requestRes.ID().Digest().String())
+		assert.Assert(t, cacheTestIDHasExtraDigest(requestRes.ID(), shared.Digest, shared.Label))
+
+		assert.NilError(t, sourceRes.Release(ctx))
+		assert.NilError(t, requestRes.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	t.Run("miss_without_exact_output_digest_match", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		sourceExtra := call.ExtraDigest{
+			Digest: digest.FromString("fallback-extra-source"),
+			Label:  "source",
+		}
+		requestExtra := call.ExtraDigest{
+			Digest: digest.FromString("fallback-extra-request"),
+			Label:  "request",
+		}
+
+		sourceKey := cacheTestID("fallback-miss-source")
+		sourceOut := sourceKey.With(call.WithExtraDigest(sourceExtra))
+		sourceRes, err := c.GetOrInitCall(ctx, CacheKey{ID: sourceKey}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(sourceOut, NewInt(81)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !sourceRes.HitCache())
+
+		requestKey := cacheTestID("fallback-miss-request").With(call.WithExtraDigest(requestExtra))
+		requestInitCalls := 0
+		requestRes, err := c.GetOrInitCall(ctx, CacheKey{ID: requestKey}, func(context.Context) (AnyResult, error) {
+			requestInitCalls++
+			return newDetachedResult(requestKey, NewInt(82)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, requestInitCalls)
+		assert.Assert(t, !requestRes.HitCache())
+		assert.Equal(t, 82, cacheTestUnwrapInt(t, requestRes))
+
+		assert.NilError(t, sourceRes.Release(ctx))
+		assert.NilError(t, requestRes.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+}
+
 func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 	t.Parallel()
 
