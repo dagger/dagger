@@ -509,7 +509,7 @@ class ModuleParser:
             all_args.extend(args.kwonlyargs)
 
         # Get defaults
-        defaults_offset = len(all_args) - len(args.defaults)
+        defaults_offset = len(args.args) - len(args.defaults)
         kw_defaults = {
             arg.arg: default
             for arg, default in zip(args.kwonlyargs, args.kw_defaults, strict=False)
@@ -579,7 +579,9 @@ class ModuleParser:
                     resolved_type=resolved_type,
                     is_nullable=resolved_type.is_optional,
                     has_default=has_default,
-                    default_value=self._serialize_default(default_value),
+                    default_value=(
+                        self._serialize_default(default_value) if has_default else None
+                    ),
                     doc=meta_doc,
                     ignore=meta_ignore,
                     default_path=meta_default_path,
