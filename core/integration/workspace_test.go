@@ -322,7 +322,7 @@ type EscapeDir {
 `))
 		_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "outside workspace root")
+		requireErrOut(t, err, "resolves outside root")
 	})
 
 	t.Run("file traversal with ..", func(ctx context.Context, t *testctx.T) {
@@ -342,7 +342,7 @@ type EscapeFile {
 `))
 		_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "outside workspace root")
+		requireErrOut(t, err, "resolves outside root")
 	})
 
 	t.Run("absolute path treated as relative", func(ctx context.Context, t *testctx.T) {

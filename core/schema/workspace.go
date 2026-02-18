@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"strings"
+	"path"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
 type workspaceSchema struct{}
@@ -105,7 +105,7 @@ func (s *workspaceSchema) currentWorkspace(
 		ClientID:  clientMetadata.ClientID,
 	}
 	if ws.Config != nil {
-		result.ConfigPath = filepath.Join(ws.Root, workspace.WorkspaceDirName, workspace.ConfigFileName)
+		result.ConfigPath = path.Join(ws.Root, workspace.WorkspaceDirName, workspace.ConfigFileName)
 	}
 
 	return result, nil
@@ -140,7 +140,7 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
-	absPath, err := resolveWorkspacePath(args.Path, ws.Root)
+	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
 	if err != nil {
 		return inst, err
 	}
@@ -195,11 +195,11 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	absPath, err := resolveWorkspacePath(args.Path, ws.Root)
+	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
 	if err != nil {
 		return inst, err
 	}
-	fileDir, fileName := filepath.Split(absPath)
+	fileDir, fileName := path.Split(absPath)
 
 	if err := srv.Select(ctx, srv.Root(), &inst,
 		dagql.Selector{Field: "host"},
@@ -251,22 +251,22 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	// Resolve start path relative to workspace root
-	absStart, err := resolveWorkspacePath(args.From, ws.Root)
+	absStart, err := pathutil.SandboxedRelativePath(args.From, ws.Root)
 	if err != nil {
 		return none, err
 	}
 
 	statFS := core.NewCallerStatFS(bk)
-	cleanRoot := filepath.Clean(ws.Root)
+	cleanRoot := path.Clean(ws.Root)
 
 	// Walk up from absStart, stopping at workspace root
 	curDir := absStart
 	for {
-		candidate := filepath.Join(curDir, args.Name)
+		candidate := path.Join(curDir, args.Name)
 		_, _, err := statFS.Stat(ctx, candidate)
 		if err == nil {
 			// Found it — return path relative to workspace root
-			relPath, err := filepath.Rel(cleanRoot, candidate)
+			relPath, err := pathutil.LexicalRelativePath(cleanRoot, candidate)
 			if err != nil {
 				return none, fmt.Errorf("compute relative path: %w", err)
 			}
@@ -274,11 +274,11 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 		}
 
 		// Stop at workspace root
-		if filepath.Clean(curDir) == cleanRoot {
+		if path.Clean(curDir) == cleanRoot {
 			break
 		}
 
-		nextDir := filepath.Dir(curDir)
+		nextDir := path.Dir(curDir)
 		if nextDir == curDir {
 			// hit filesystem root (shouldn't happen since we check workspace root first)
 			break
@@ -287,24 +287,6 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	return none, nil
-}
-
-// resolveWorkspacePath resolves a path relative to the workspace root.
-// Absolute paths are treated as relative to the root (leading "/" is stripped).
-// Returns an error if the resolved path escapes the workspace root via "..".
-func resolveWorkspacePath(path, root string) (string, error) {
-	// Treat absolute paths as relative to workspace root.
-	clean := filepath.Clean(path)
-	if filepath.IsAbs(clean) {
-		clean = clean[1:] // strip leading "/"
-	}
-	resolved := filepath.Join(root, clean)
-	// Ensure the resolved path stays inside root.
-	rootPrefix := filepath.Clean(root) + string(filepath.Separator)
-	if resolved != filepath.Clean(root) && !strings.HasPrefix(resolved, rootPrefix) {
-		return "", fmt.Errorf("path %q resolves outside workspace root %q", path, root)
-	}
-	return resolved, nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the
