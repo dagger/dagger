@@ -14129,6 +14129,8 @@ func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (
 type WorkspaceInstallOpts struct {
 	// Override name for the installed module entry.
 	Name string
+	// Mark the module as a blueprint (functions aliased to Query root).
+	Blueprint bool
 }
 
 // Install a module into the workspace, writing config.toml to the host.
@@ -14141,6 +14143,10 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 		// `name` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Name) {
 			q = q.Arg("name", opts[i].Name)
+		}
+		// `blueprint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Blueprint) {
+			q = q.Arg("blueprint", opts[i].Blueprint)
 		}
 	}
 	q = q.Arg("ref", ref)

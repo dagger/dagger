@@ -238,7 +238,7 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
   the default directory is loaded. When `LegacyDefaultPath` is set, resolve relative to the
   workspace root instead of the module's own source. Emit deprecation warning.
 
-- [ ] **#7: Update CLI** (blocked by #3, #5) -- In `cmd/dagger/module.go`, `dagger init
+- [x] **#7: Update CLI** (blocked by #3, #5) -- In `cmd/dagger/module.go`, `dagger init
   --blueprint` now adds a workspace module entry in `config.toml` with `blueprint = true`
   instead of calling `WithBlueprint()` on the module source. Follow the `dagger install`
   pattern in `cmd/dagger/workspace.go` for writing to config.toml.

@@ -54,6 +54,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("ref").Doc("Module reference string (git URL or local path)."),
 				dagql.Arg("name").Doc("Override name for the installed module entry."),
+				dagql.Arg("blueprint").Doc("Mark the module as a blueprint (functions aliased to Query root)."),
 			),
 		dagql.Func("moduleInit", s.moduleInit).
 			DoNotCache("Mutates workspace and host filesystem").
@@ -293,8 +294,9 @@ func ensureWorkspaceInitialized(ctx context.Context, bk *buildkit.Client, ws *co
 }
 
 type installArgs struct {
-	Ref  string
-	Name string `default:""`
+	Ref       string
+	Name      string `default:""`
+	Blueprint bool   `default:"false"`
 }
 
 func (s *workspaceSchema) install(
@@ -428,7 +430,7 @@ func (s *workspaceSchema) install(
 	}
 
 	// Add module to config
-	cfg.Modules[name] = workspace.ModuleEntry{Source: sourcePath}
+	cfg.Modules[name] = workspace.ModuleEntry{Source: sourcePath, Blueprint: args.Blueprint}
 
 	// Read existing raw TOML for comment preservation
 	var existingTOML []byte

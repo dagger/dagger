@@ -189,14 +189,11 @@ var moduleInitCmd = &cobra.Command{
 This creates a dagger.json file at the specified directory, making it the root of the new module.
 
 If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
-If --blueprint is specified, the given blueprint is installed in the module.
+If --blueprint is specified, a workspace module with blueprint=true is added to config.toml.
 `,
 	Example: `
-# Reference a remote module as blueprint
+# Add a blueprint to the workspace
 dagger init --blueprint=github.com/example/blueprint
-
-# Reference a local module as blueprint
-dagger init --blueprint=../my/blueprints/simple-webapp
 
 # Implement a standalone module in Go
 dagger init --sdk=go
@@ -296,20 +293,24 @@ dagger init --sdk=go
 			if len(moduleIncludes) > 0 {
 				modSrc = modSrc.WithIncludes(moduleIncludes)
 			}
-			// engine version must be set before setting blueprint
 			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
-			// Install blueprint if specified
+
+			// Blueprint mode: add as workspace module instead of module-level config
 			if initBlueprint != "" {
-				// Validate that we don't have both SDK and blueprint
 				if sdk != "" {
 					return fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
 				}
-				// Create a new module source for the blueprint installation
-				blueprintSrc := dag.ModuleSource(initBlueprint, dagger.ModuleSourceOpts{
-					DisableFindUp: true,
+				// Install the blueprint as a workspace module with blueprint=true
+				ws := dag.CurrentWorkspace()
+				msg, installErr := ws.Install(ctx, initBlueprint, dagger.WorkspaceInstallOpts{
+					Name:      moduleName,
+					Blueprint: true,
 				})
-				// Install the blueprint
-				modSrc = modSrc.WithBlueprint(blueprintSrc)
+				if installErr != nil {
+					return fmt.Errorf("failed to install blueprint: %w", installErr)
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), msg)
+				return nil
 			}
 
 			if selfCalls {
@@ -335,11 +336,7 @@ dagger init --sdk=go
 			}
 
 			// Print success message to user
-			infoMessage := []any{"Initialized module", moduleName, "in", srcRootAbsPath}
-			if initBlueprint != "" {
-				infoMessage = append(infoMessage, "with blueprint", initBlueprint)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), infoMessage...)
+			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootAbsPath)
 			return nil
 		})
 	},
@@ -500,7 +497,7 @@ var moduleUpdateCmd = &cobra.Command{
 
 To update only specific dependencies, specify their short names or a complete address.
 
-If no dependency is specified, all dependencies are updated, as well as the module's blueprint, if it exists.
+If no dependency is specified, all dependencies are updated.
 `,
 	Example: `"dagger update" or "dagger update hello" "dagger update github.com/shykes/daggerverse/hello@v0.3.0"`,
 	GroupID: moduleGroup.ID,
@@ -531,10 +528,6 @@ If no dependency is specified, all dependencies are updated, as well as the modu
 				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 
-			// If no dependency is specified, also update the blueprint
-			if len(extraArgs) == 0 {
-				modSrc = modSrc.WithUpdateBlueprint()
-			}
 			modSrc = modSrc.WithUpdateDependencies(extraArgs)
 			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)
