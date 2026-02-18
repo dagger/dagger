@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -81,7 +82,8 @@ func (s *workspaceSchema) currentWorkspace(
 	statFS := core.NewCallerStatFS(bk)
 	ws, err := workspace.Detect(ctx, statFS, bk.ReadCallerHostFile, cwd)
 	if err != nil {
-		if args.SkipMigrationCheck && strings.Contains(err.Error(), "migration") {
+		var migErr *workspace.ErrMigrationRequired
+		if args.SkipMigrationCheck && errors.As(err, &migErr) {
 			// Fall through — install/init can work in legacy projects
 			ws = &workspace.Workspace{Root: cwd}
 		} else {
