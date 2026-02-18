@@ -14409,7 +14409,7 @@ impl Workspace {
         let query = self.selection.select("clientId");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Path to config.toml (empty string if no config exists).
+    /// Absolute path to the workspace config.toml (empty string if no config exists).
     pub async fn config_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("configPath");
         query.execute(self.graphql_client.clone()).await

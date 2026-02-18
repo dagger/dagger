@@ -13986,7 +13986,7 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Path to config.toml (empty string if no config exists).
+// Absolute path to the workspace config.toml (empty string if no config exists).
 func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
 	if r.configPath != nil {
 		return *r.configPath, nil

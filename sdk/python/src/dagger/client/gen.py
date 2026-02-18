@@ -13880,7 +13880,8 @@ class Workspace(Type):
         return await _ctx.execute(str)
 
     async def config_path(self) -> str:
-        """Path to config.toml (empty string if no config exists).
+        """Absolute path to the workspace config.toml (empty string if no config
+        exists).
 
         Returns
         -------

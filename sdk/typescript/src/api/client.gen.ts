@@ -13463,7 +13463,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Path to config.toml (empty string if no config exists).
+   * Absolute path to the workspace config.toml (empty string if no config exists).
    */
   configPath = async (): Promise<string> => {
     if (this._configPath) {

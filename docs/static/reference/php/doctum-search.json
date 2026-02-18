@@ -5819,7 +5819,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::configPath",
 			"p": "Dagger/Workspace.html#method_configPath",
-			"d": "<p>Path to config.toml (empty string if no config exists).</p>"
+			"d": "<p>Absolute path to the workspace config.toml (empty string if no config exists).</p>"
 		},
 		{
 			"t": "M",
