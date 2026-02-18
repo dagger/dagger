@@ -335,7 +335,7 @@ func (c *cache) repairClassTermsLocked(root eqClassID) (merges []eqMergePair) {
 //
 // This method assumes c.mu is already held by the caller.
 func (c *cache) lookupCacheForID(
-	ctx context.Context,
+	_ context.Context,
 	id *call.ID,
 ) (AnyResult, bool, error) {
 	// (self digest, input eqSet IDs) are digested to create the "real" cache key we do a lookup on.
@@ -376,7 +376,6 @@ func (c *cache) lookupCacheForID(
 		break
 	}
 	if hitTerm == nil {
-		// no hit
 		return nil, false, nil
 	}
 

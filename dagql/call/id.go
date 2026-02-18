@@ -360,7 +360,8 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 
 	// Args
 	for _, arg := range id.args {
-		if arg.isSensitive {
+		arg = redactedArgForID(arg)
+		if arg == nil {
 			continue
 		}
 		var err error
@@ -375,7 +376,8 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 
 	// Implicit inputs
 	for _, input := range id.implicitInputs {
-		if input.isSensitive {
+		input = redactedArgForID(input)
+		if input == nil {
 			continue
 		}
 		var err error
@@ -444,17 +446,22 @@ func (id *ID) Path() string {
 func (id *ID) DisplaySelf() string {
 	buf := new(strings.Builder)
 	fmt.Fprintf(buf, "%s", id.pb.Field)
-	for ai, arg := range id.args {
-		if arg.isSensitive {
+	displayArgs := make([]*Argument, 0, len(id.args))
+	for _, arg := range id.args {
+		arg = redactedArgForID(arg)
+		if arg == nil {
 			continue
 		}
+		displayArgs = append(displayArgs, arg)
+	}
+	for ai, arg := range displayArgs {
 		if ai == 0 {
 			fmt.Fprintf(buf, "(")
 		} else {
 			fmt.Fprintf(buf, ", ")
 		}
 		fmt.Fprintf(buf, "%s: %s", arg.pb.Name, arg.value.Display())
-		if ai == len(id.args)-1 {
+		if ai == len(displayArgs)-1 {
 			fmt.Fprintf(buf, ")")
 		}
 	}
@@ -564,10 +571,9 @@ func WithArgs(args ...*Argument) IDOpt {
 		id.args = args
 		id.pb.Args = make([]*callpbv1.Argument, 0, len(args))
 		for _, arg := range args {
-			if arg.isSensitive {
-				continue
+			if redactedArg := redactedArgForID(arg); redactedArg != nil {
+				id.pb.Args = append(id.pb.Args, redactedArg.pb)
 			}
-			id.pb.Args = append(id.pb.Args, arg.pb)
 		}
 	}
 }
@@ -577,12 +583,40 @@ func WithImplicitInputs(inputs ...*Argument) IDOpt {
 		id.implicitInputs = inputs
 		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(inputs))
 		for _, input := range inputs {
-			if input.isSensitive {
-				continue
+			if redactedInput := redactedArgForID(input); redactedInput != nil {
+				id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, redactedInput.pb)
 			}
-			id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, input.pb)
 		}
 	}
+}
+
+func WithAppendedImplicitInputs(inputs ...*Argument) IDOpt {
+	return func(id *ID) {
+		id.implicitInputs = append(id.implicitInputs, inputs...)
+		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(id.implicitInputs))
+		for _, input := range id.implicitInputs {
+			if redactedInput := redactedArgForID(input); redactedInput != nil {
+				id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, redactedInput.pb)
+			}
+		}
+	}
+}
+
+func redactedArgForID(arg *Argument) *Argument {
+	if arg == nil {
+		return nil
+	}
+	if !arg.isSensitive {
+		return arg
+	}
+	if arg.Name() != "plaintext" {
+		return nil
+	}
+	return NewArgument(
+		arg.Name(),
+		NewLiteralString("***"),
+		false,
+	)
 }
 
 func WithReceiver(recv *ID) IDOpt {
@@ -884,7 +918,8 @@ func (id *ID) calcDigest() (string, error) {
 
 	// Args
 	for _, arg := range id.args {
-		if arg.isSensitive {
+		arg = redactedArgForID(arg)
+		if arg == nil {
 			continue
 		}
 		h, err = AppendArgumentBytes(arg, h)
@@ -898,7 +933,8 @@ func (id *ID) calcDigest() (string, error) {
 
 	// Implicit inputs
 	for _, input := range id.implicitInputs {
-		if input.isSensitive {
+		input = redactedArgForID(input)
+		if input == nil {
 			continue
 		}
 		h, err = AppendArgumentBytes(input, h)

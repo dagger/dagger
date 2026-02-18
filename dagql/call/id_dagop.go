@@ -74,7 +74,8 @@ func (id *ID) DagOpSelfDigestAndInputs() (digest.Digest, []digest.Digest, error)
 
 	// Args
 	for _, arg := range id.args {
-		if arg.isSensitive {
+		arg = redactedArgForID(arg)
+		if arg == nil {
 			continue
 		}
 		var err error
@@ -89,7 +90,8 @@ func (id *ID) DagOpSelfDigestAndInputs() (digest.Digest, []digest.Digest, error)
 
 	// Implicit inputs
 	for _, input := range id.implicitInputs {
-		if input.isSensitive {
+		input = redactedArgForID(input)
+		if input == nil {
 			continue
 		}
 		var err error

@@ -755,18 +755,26 @@ func (c *cache) wait(
 		waitErr = context.Cause(ctx)
 	}
 
-	retRes, err := c.waitLocked(oc, requestID, waitErr)
+	sessionID := ""
+	if md, mdErr := engine.ClientMetadataFromContext(ctx); mdErr == nil {
+		sessionID = md.SessionID
+	}
+
+	retRes, err := c.waitLocked(oc, requestID, waitErr, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	if oc.persistToDB != nil && oc.res.safeToPersistCache {
-		oc.persistToDBOnce.Do(func() {
-			persistErr := oc.persistToDB(ctx)
-			if persistErr != nil {
-				slog.Error("failed to persist cache expiration", "err", persistErr)
-			}
-		})
+	if oc.persistToDB != nil {
+		if oc.res.safeToPersistCache {
+			oc.persistToDBOnce.Do(func() {
+				persistErr := oc.persistToDB(ctx)
+				if persistErr != nil {
+					slog.Error("failed to persist cache expiration", "err", persistErr)
+					return
+				}
+			})
+		}
 	}
 
 	if !retRes.shared.hasValue {
@@ -786,6 +794,8 @@ func (c *cache) waitLocked(
 	oc *ongoingCall,
 	requestID *call.ID,
 	waitErr error,
+	// TODO:
+	sessionID string,
 ) (Result[Typed], error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -812,19 +822,20 @@ func (c *cache) waitLocked(
 			}
 			retID = retID.With(call.WithExtraDigest(extra))
 		}
+		// TODO: HACK: experiment to fix function calls that have side-effectful setSecret calls
+		if oc.persistToDB != nil && !oc.res.safeToPersistCache {
+			retID = retID.With(call.WithAppendedImplicitInputs(call.NewArgument(
+				"sessionID",
+				call.NewLiteralString(sessionID),
+				false,
+			)))
+		}
+
 		return Result[Typed]{
 			shared:   oc.res,
 			id:       retID,
 			hitCache: false,
 		}, nil
-	}
-
-	var requestSelf digest.Digest
-	var requestInputs []digest.Digest
-	var deriveErr error
-	requestSelf, requestInputs, deriveErr = requestID.SelfDigestAndInputs()
-	if deriveErr != nil {
-		return Result[Typed]{}, fmt.Errorf("derive request term digests: %w", deriveErr)
 	}
 
 	resWasCacheBacked := false
@@ -863,6 +874,23 @@ func (c *cache) waitLocked(
 	}
 
 	oc.res.refCount++
+
+	// TODO: HACK: experiment to fix function calls that have side-effectful setSecret calls
+	if oc.persistToDB != nil && !oc.res.safeToPersistCache {
+		requestID = requestID.With(call.WithAppendedImplicitInputs(call.NewArgument(
+			"sessionID",
+			call.NewLiteralString(sessionID),
+			false,
+		)))
+	}
+
+	var requestSelf digest.Digest
+	var requestInputs []digest.Digest
+	var deriveErr error
+	requestSelf, requestInputs, deriveErr = requestID.SelfDigestAndInputs()
+	if deriveErr != nil {
+		return Result[Typed]{}, fmt.Errorf("derive request term digests: %w", deriveErr)
+	}
 
 	c.indexWaitResultInEgraphLocked(requestID, requestSelf, requestInputs, oc.res, resWasCacheBacked)
 
