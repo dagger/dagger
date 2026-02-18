@@ -932,30 +932,19 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 		returnValue = returnValue.WithPostCall(resourceTransferPostCall)
 
-		// If this function accepts Workspace args, set a content digest on the
-		// result derived from all content it returned — both core object IDs
-		// (Directory, File, etc.) and primitive scalar values (String, Int, etc.).
-		// This ensures downstream calls that reference this result get a different
-		// cache key when the underlying content changes.
-		if fn.hasWorkspaceArgs() {
-			returnValue = returnValue.WithContentDigestAny(returnedContent.Digest())
-		}
+		// Set a content digest on the result derived from all content it returned.
+		//
+		// All returned object IDs contribute their individual content digests to
+		// the content digest, rather than the serialized ID format which is less
+		// stable. Non-ID serialized content is hashed directly, yielding what
+		// should be a stable content digest for all possible return values.
+		returnValue = returnValue.WithContentDigestAny(returnedContent.Digest())
 	}
 	if returnValue != nil {
 		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
 	}
 
 	return returnValue, nil
-}
-
-// hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
-func (fn *ModuleFunction) hasWorkspaceArgs() bool {
-	for _, arg := range fn.metadata.Args {
-		if arg.IsWorkspace() {
-			return true
-		}
-	}
-	return false
 }
 
 func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {
