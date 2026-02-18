@@ -5626,11 +5626,6 @@ type Workspace {
   clientId: String!
 
   """
-  Absolute path to the workspace config.toml (empty string if no config exists).
-  """
-  configPath: String!
-
-  """
   Returns a Directory from the workspace.
 
   Path is relative to workspace root. Use "." for the root directory.
@@ -5680,9 +5675,6 @@ type Workspace {
     """Path to start the search from, relative to the workspace root."""
     from: String = "."
   ): String
-
-  """Whether a config.toml file exists in the workspace."""
-  hasConfig: Boolean!
 
   """A unique identifier for this Workspace."""
   id: WorkspaceID!

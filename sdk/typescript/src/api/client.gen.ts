@@ -13405,9 +13405,7 @@ export class TypeDef extends BaseClient {
 export class Workspace extends BaseClient {
   private readonly _id?: WorkspaceID = undefined
   private readonly _clientId?: string = undefined
-  private readonly _configPath?: string = undefined
   private readonly _findUp?: string = undefined
-  private readonly _hasConfig?: boolean = undefined
   private readonly _root?: string = undefined
 
   /**
@@ -13417,18 +13415,14 @@ export class Workspace extends BaseClient {
     ctx?: Context,
     _id?: WorkspaceID,
     _clientId?: string,
-    _configPath?: string,
     _findUp?: string,
-    _hasConfig?: boolean,
     _root?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._clientId = _clientId
-    this._configPath = _configPath
     this._findUp = _findUp
-    this._hasConfig = _hasConfig
     this._root = _root
   }
 
@@ -13456,21 +13450,6 @@ export class Workspace extends BaseClient {
     }
 
     const ctx = this._ctx.select("clientId")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Absolute path to the workspace config.toml (empty string if no config exists).
-   */
-  configPath = async (): Promise<string> => {
-    if (this._configPath) {
-      return this._configPath
-    }
-
-    const ctx = this._ctx.select("configPath")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -13521,21 +13500,6 @@ export class Workspace extends BaseClient {
     const ctx = this._ctx.select("findUp", { name, ...opts })
 
     const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Whether a config.toml file exists in the workspace.
-   */
-  hasConfig = async (): Promise<boolean> => {
-    if (this._hasConfig) {
-      return this._hasConfig
-    }
-
-    const ctx = this._ctx.select("hasConfig")
-
-    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }

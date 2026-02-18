@@ -23,15 +23,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Absolute path to the workspace config.toml (empty string if no config exists).
-     */
-    public function configPath(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configPath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'configPath');
-    }
-
-    /**
      * Returns a Directory from the workspace.
      *
      * Path is relative to workspace root. Use "." for the root directory.
@@ -83,15 +74,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder->setArgument('from', $from);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
-    }
-
-    /**
-     * Whether a config.toml file exists in the workspace.
-     */
-    public function hasConfig(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hasConfig');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'hasConfig');
     }
 
     /**

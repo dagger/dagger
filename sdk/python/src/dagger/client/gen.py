@@ -13879,28 +13879,6 @@ class Workspace(Type):
         _ctx = self._select("clientId", _args)
         return await _ctx.execute(str)
 
-    async def config_path(self) -> str:
-        """Absolute path to the workspace config.toml (empty string if no config
-        exists).
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("configPath", _args)
-        return await _ctx.execute(str)
-
     def directory(
         self,
         path: str,
@@ -13993,25 +13971,6 @@ class Workspace(Type):
         ]
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
-
-    async def has_config(self) -> bool:
-        """Whether a config.toml file exists in the workspace.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("hasConfig", _args)
-        return await _ctx.execute(bool)
 
     async def id(self) -> WorkspaceID:
         """A unique identifier for this Workspace.

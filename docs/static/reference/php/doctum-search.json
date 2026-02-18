@@ -5817,12 +5817,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::configPath",
-			"p": "Dagger/Workspace.html#method_configPath",
-			"d": "<p>Absolute path to the workspace config.toml (empty string if no config exists).</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::directory",
 			"p": "Dagger/Workspace.html#method_directory",
 			"d": "<p>Returns a Directory from the workspace.</p>"
@@ -5838,12 +5832,6 @@
 			"n": "Dagger\\Workspace::findUp",
 			"p": "Dagger/Workspace.html#method_findUp",
 			"d": "<p>Search for a file or directory by walking up from the start path within the workspace.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::hasConfig",
-			"p": "Dagger/Workspace.html#method_hasConfig",
-			"d": "<p>Whether a config.toml file exists in the workspace.</p>"
 		},
 		{
 			"t": "M",

@@ -13959,12 +13959,10 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
-	clientId   *string
-	configPath *string
-	findUp     *string
-	hasConfig  *bool
-	id         *WorkspaceID
-	root       *string
+	clientId *string
+	findUp   *string
+	id       *WorkspaceID
+	root     *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -13979,19 +13977,6 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 		return *r.clientId, nil
 	}
 	q := r.query.Select("clientId")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Absolute path to the workspace config.toml (empty string if no config exists).
-func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
-	if r.configPath != nil {
-		return *r.configPath, nil
-	}
-	q := r.query.Select("configPath")
 
 	var response string
 
@@ -14074,19 +14059,6 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	q = q.Arg("name", name)
 
 	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Whether a config.toml file exists in the workspace.
-func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
-	if r.hasConfig != nil {
-		return *r.hasConfig, nil
-	}
-	q := r.query.Select("hasConfig")
-
-	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

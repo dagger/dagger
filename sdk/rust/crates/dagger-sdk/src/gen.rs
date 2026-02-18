@@ -14409,11 +14409,6 @@ impl Workspace {
         let query = self.selection.select("clientId");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Absolute path to the workspace config.toml (empty string if no config exists).
-    pub async fn config_path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("configPath");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Returns a Directory from the workspace.
     /// Path is relative to workspace root. Use "." for the root directory.
     ///
@@ -14505,11 +14500,6 @@ impl Workspace {
         if let Some(from) = opts.from {
             query = query.arg("from", from);
         }
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Whether a config.toml file exists in the workspace.
-    pub async fn has_config(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("hasConfig");
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Workspace.
