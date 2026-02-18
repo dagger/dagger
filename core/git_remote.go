@@ -39,20 +39,33 @@ import (
 )
 
 type RemoteGitRepository struct {
+	// nil means protocol is still ambiguous and resolved later.
 	URL *gitutil.GitURL
 
 	SSHKnownHosts string
-	SSHAuthSocket dagql.ObjectResult[*Socket]
+	SSHAuthSocket dagql.Optional[SocketID]
 
 	Services ServiceBindings
 	Platform Platform
 
 	AuthUsername string
-	AuthToken    dagql.ObjectResult[*Secret]
-	AuthHeader   dagql.ObjectResult[*Secret]
+	AuthToken    dagql.Optional[SecretID]
+	AuthHeader   dagql.Optional[SecretID]
 }
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
+
+// Clone returns a deep copy of the RemoteGitRepository.
+// Use this before mutating to preserve dagql's immutability invariant.
+func (repo *RemoteGitRepository) Clone() *RemoteGitRepository {
+	cp := *repo
+	if repo.URL != nil {
+		urlCopy := *repo.URL
+		cp.URL = &urlCopy
+	}
+	cp.Services = slices.Clone(repo.Services)
+	return &cp
+}
 
 type RemoteGitRef struct {
 	*gitutil.Ref
@@ -88,10 +101,7 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 		}
 
 		slog.Info("caching git remote metadata", "cache_key", cacheKey)
-		// Serialize to JSON so the cache can persist a plain string payload without
-		// requiring gitutil.Remote to satisfy dagql's typing interfaces. The decode
-		// step also hands each repo its own copy, so later tweaks (e.g. setting
-		// repo.Remote.Head) stay scoped to that caller
+		// Store as JSON so cache payload is a plain string and each caller gets a copy.
 		payload, err := json.Marshal(remote)
 		if err != nil {
 			return nil, err
@@ -145,17 +155,17 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 // instead of being too smart, we just scope the cache key to the auth configuration: less chance of cache poisoning
 func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	scope := make([]string, 0, 4)
-	if token := repo.AuthToken; token.Self() != nil && token.ID() != nil {
-		scope = append(scope, "token:"+SecretIDDigest(token.ID()).String())
+	if repo.AuthToken.Valid && repo.AuthToken.Value.ID() != nil {
+		scope = append(scope, "token:"+SecretIDDigest(repo.AuthToken.Value.ID()).String())
 	}
-	if header := repo.AuthHeader; header.Self() != nil && header.ID() != nil {
-		scope = append(scope, "header:"+SecretIDDigest(header.ID()).String())
+	if repo.AuthHeader.Valid && repo.AuthHeader.Value.ID() != nil {
+		scope = append(scope, "header:"+SecretIDDigest(repo.AuthHeader.Value.ID()).String())
 	}
 	if repo.AuthUsername != "" {
 		scope = append(scope, "username:"+repo.AuthUsername)
 	}
-	if sshSock := repo.SSHAuthSocket; sshSock.Self() != nil {
-		scope = append(scope, "ssh-auth-scope:"+sshSock.Self().IDDigest.String())
+	if repo.SSHAuthSocket.Valid && repo.SSHAuthSocket.Value.ID() != nil {
+		scope = append(scope, "ssh-auth-scope:"+SocketIDDigest(repo.SSHAuthSocket.Value.ID()).String())
 	}
 	return scope
 }
@@ -212,10 +222,18 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		}
 	}()
 
-	if repo.SSHAuthSocket.Self() != nil {
+	if repo.SSHAuthSocket.Valid && repo.SSHAuthSocket.Value.ID() != nil {
 		socketStore, err := query.Sockets(ctx)
 		if err == nil {
-			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.Self().IDDigest)
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get dagql server: %w", err)
+			}
+			sockObj, err := repo.SSHAuthSocket.Value.Load(ctx, srv)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to load SSH socket: %w", err)
+			}
+			sockpath, cleanup, err := socketStore.MountSocket(ctx, sockObj.Self().IDDigest)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 			}
@@ -254,22 +272,22 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		})
 	}
 
-	if repo.AuthToken.Self() != nil {
+	if repo.AuthToken.Valid && repo.AuthToken.Value.ID() != nil {
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		password, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(repo.AuthToken.ID()))
+		password, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(repo.AuthToken.Value.ID()))
 		if err != nil {
 			return nil, nil, err
 		}
 		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
-	} else if repo.AuthHeader.Self() != nil {
+	} else if repo.AuthHeader.Valid && repo.AuthHeader.Value.ID() != nil {
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(repo.AuthHeader.ID()))
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(repo.AuthHeader.Value.ID()))
 		if err != nil {
 			return nil, nil, err
 		}
