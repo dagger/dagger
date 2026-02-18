@@ -26,9 +26,9 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 	}
 
 	for _, tc := range []testCase{
-		{sdk: "go", path: "core/integration/testdata/modules/go/ifaces"},
-		{sdk: "typescript", path: "core/integration/testdata/modules/typescript/ifaces"},
-		{sdk: "python", path: "core/integration/testdata/modules/python/ifaces"},
+		{sdk: "go", path: "testdata/modules/go/ifaces"},
+		{sdk: "typescript", path: "testdata/modules/typescript/ifaces"},
+		{sdk: "python", path: "testdata/modules/python/ifaces"},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)

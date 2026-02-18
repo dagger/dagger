@@ -18,7 +18,7 @@ func TestBlueprint(t *testing.T) {
 }
 
 func blueprintTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
-	testdataPath, err := filepath.Abs("core/integration/testdata/test-blueprint")
+	testdataPath, err := filepath.Abs("testdata/test-blueprint")
 	require.NoError(t, err)
 
 	return c.Container().

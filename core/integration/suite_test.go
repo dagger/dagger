@@ -131,7 +131,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
 
 	// Set repo path
-	os.Setenv("_TEST_REPO_PATH", ".")
+	os.Setenv("_TEST_REPO_PATH", "../..")
 
 	// Unset session vars so tests create fresh sessions against inner engine
 	// (must happen after all dag.* calls above, which need the outer session)
@@ -170,12 +170,6 @@ func BenchMiddleware() []testctx.Middleware[*testing.B] {
 }
 
 func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagger.Client {
-	// Change to /app where dagger.json exists (created in TestMain)
-	// The SDK requires dagger.json to be present even when using it as a client library
-	origWd, _ := os.Getwd()
-	os.Chdir("/app")
-	t.Cleanup(func() { os.Chdir(origWd) })
-
 	opts = append([]dagger.ClientOpt{
 		// FIXME: test spans are easier to read in the TUI when this is silenced
 		dagger.WithLogOutput(io.Discard),

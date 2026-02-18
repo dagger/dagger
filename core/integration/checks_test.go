@@ -23,12 +23,12 @@ func checksTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
 func specificTestEnv(t *testctx.T, c *dagger.Client, subfolder string) (*dagger.Container, error) {
 	// java SDK is not embedded in the engine, so we mount the java sdk to be able
 	// to test non released features
-	javaSdkSrc, err := filepath.Abs("sdk/java")
+	javaSdkSrc, err := filepath.Abs("../../sdk/java")
 	if err != nil {
 		return nil, err
 	}
 
-	testdataPath, err := filepath.Abs(filepath.Join("core/integration/testdata", subfolder))
+	testdataPath, err := filepath.Abs(filepath.Join("testdata", subfolder))
 	if err != nil {
 		return nil, err
 	}

@@ -1685,7 +1685,7 @@ export class Test {
 func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	moduleSrcPath, err := filepath.Abs("core/integration/testdata/modules/go/namespacing")
+	moduleSrcPath, err := filepath.Abs("testdata/modules/go/namespacing")
 	require.NoError(t, err)
 
 	ctr := c.Container().From(alpineImage).
@@ -8247,7 +8247,7 @@ func modInit(t *testctx.T, c *dagger.Client, sdk, contents string, extra ...stri
 		With(func(ctr *dagger.Container) *dagger.Container {
 			if sdk == "java" {
 				// use the local SDK so that we can test non-released changes
-				sdkSrc, err := filepath.Abs("sdk/java")
+				sdkSrc, err := filepath.Abs("../../sdk/java")
 				require.NoError(t, err)
 				ctr = ctr.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
 				sdk = "./sdk/java"
