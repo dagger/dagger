@@ -875,10 +875,12 @@ func optionalModCmdWrapper(
 			}
 			switch {
 			case configExists:
+				serveCtx, span := Tracer().Start(ctx, "load module: "+modRef)
 				mod := modSrc.AsModule()
-				err := mod.Serve(ctx, dagger.ModuleServeOpts{IncludeDependencies: true})
-				if err != nil {
-					return fmt.Errorf("failed to serve module: %w", err)
+				serveErr := mod.Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
+				telemetry.EndWithCause(span, &serveErr)
+				if serveErr != nil {
+					return fmt.Errorf("failed to serve module: %w", serveErr)
 				}
 				return fn(ctx, engineClient, mod, cmd, cmdArgs)
 			case explicitModRefSet:

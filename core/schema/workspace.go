@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -13,7 +14,9 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
 type workspaceSchema struct{}
@@ -23,7 +26,8 @@ var _ SchemaResolvers = &workspaceSchema{}
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("currentWorkspace", s.currentWorkspace, dagql.CachePerCall).
-			Doc("Detect and return the current workspace."),
+			Doc("Detect and return the current workspace.").
+			Experimental("Highly experimental API extracted from a more ambitious workspace implementation."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
@@ -31,7 +35,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			DagOpDirectoryWrapper(
 				srv, s.directory,
 				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
-			), dagql.CacheAsRequested).
+			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
 				`Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.`).
 			Args(
@@ -39,11 +43,19 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 			),
-		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
+		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
 				`Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.`),
+			),
+		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
+			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
+				`Returns the path relative to the workspace root if found, or null if not found.`,
+				`The search stops at the workspace root and will not traverse above it.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
+				dagql.Arg("from").Doc(`Path to start the search from, relative to the workspace root.`),
 			),
 		dagql.Func("init", s.workspaceInit).
 			DoNotCache("Mutates workspace on host").
@@ -235,6 +247,72 @@ func configHostPath(ws *core.Workspace) (string, error) {
 		return "", err
 	}
 	return filepath.Join(hp, ws.ConfigPath), nil
+}
+
+type workspaceFindUpArgs struct {
+	Name string
+	From string `default:"."`
+}
+
+func (workspaceFindUpArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFindUpArgs) (dagql.Nullable[dagql.String], error) {
+	none := dagql.Null[dagql.String]()
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return none, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return none, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return none, fmt.Errorf("buildkit: %w", err)
+	}
+
+	// Resolve start path relative to workspace root
+	absStart, err := pathutil.SandboxedRelativePath(args.From, ws.Root)
+	if err != nil {
+		return none, err
+	}
+
+	statFS := core.NewCallerStatFS(bk)
+	cleanRoot := path.Clean(ws.Root)
+
+	// Walk up from absStart, stopping at workspace root
+	curDir := absStart
+	for {
+		candidate := path.Join(curDir, args.Name)
+		_, _, err := statFS.Stat(ctx, candidate)
+		if err == nil {
+			// Found it — return path relative to workspace root
+			relPath, err := pathutil.LexicalRelativePath(cleanRoot, candidate)
+			if err != nil {
+				return none, fmt.Errorf("compute relative path: %w", err)
+			}
+			return dagql.NonNull(dagql.NewString(relPath)), nil
+		}
+
+		// Stop at workspace root
+		if path.Clean(curDir) == cleanRoot {
+			break
+		}
+
+		nextDir := path.Dir(curDir)
+		if nextDir == curDir {
+			// hit filesystem root (shouldn't happen since we check workspace root first)
+			break
+		}
+		curDir = nextDir
+	}
+
+	return none, nil
 }
 
 func (s *workspaceSchema) workspaceInit(
@@ -1025,4 +1103,22 @@ func formatDefaultAsToml(defaultValue core.JSON) string {
 	default:
 		return ""
 	}
+}
+
+// withWorkspaceClientContext overrides the client metadata in context to the
+// workspace's owning client ID. This ensures host filesystem operations route
+// through the correct client session, even when called from a module context.
+func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	if ws.ClientID == "" {
+		return nil, fmt.Errorf("workspace has no client ID")
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	clientMetadata, err := query.SpecificClientMetadata(ctx, ws.ClientID)
+	if err != nil {
+		return ctx, fmt.Errorf("get client metadata: %w", err)
+	}
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
 }

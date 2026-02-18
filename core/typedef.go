@@ -238,6 +238,11 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 		Ignore:         ignore,
 		Deprecated:     deprecated,
 	}
+	if arg.IsWorkspace() {
+		// Workspace arguments are always optional — they're automatically injected
+		// by the engine when not explicitly set by the caller.
+		arg.TypeDef = arg.TypeDef.WithOptional(true)
+	}
 	if sourceMap != nil {
 		arg.SourceMap = dagql.NonNull(sourceMap)
 	}
@@ -390,7 +395,11 @@ func (arg *FunctionArg) isContextual() bool {
 // IsWorkspace returns true if the argument is of type Workspace.
 // Workspace arguments are always optional and automatically injected when not set.
 func (arg *FunctionArg) IsWorkspace() bool {
-	return arg.TypeDef.Kind == TypeDefKindObject && arg.TypeDef.AsObject.Value.Name == "Workspace"
+	return arg.TypeDef.Kind == TypeDefKindObject &&
+		arg.TypeDef.AsObject.Value.Name == "Workspace" &&
+		// Functions can't currently accept types from other modules, but be
+		// explicit anyway.
+		arg.TypeDef.AsObject.Value.SourceModuleName == ""
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {

@@ -68,7 +68,7 @@ func New(
 	}
 }
 
-var supportedVersions = []string{"3.13", "3.12", "3.11", "3.10"}
+var supportedVersions = []string{"3.14", "3.13", "3.12", "3.11", "3.10"}
 
 // Lint the Python snippets in the documentation
 // +check

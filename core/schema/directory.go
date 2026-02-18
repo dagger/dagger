@@ -1007,11 +1007,19 @@ func (s *directorySchema) changesetLayer(ctx context.Context, parent dagql.Objec
 		return inst, err
 	}
 
-	dir, err := parent.Self().Before.Self().Diff(ctx, parent.Self().After.Self())
+	changes := parent.Self()
+
+	var scopedDiff dagql.ObjectResult[*core.Directory]
+	err = srv.Select(ctx, changes.Before, &scopedDiff,
+		dagql.Selector{Field: "diff", Args: []dagql.NamedInput{
+			{Name: "other", Value: dagql.NewID[*core.Directory](changes.After.ID())},
+		}},
+	)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+
+	return scopedDiff, nil
 }
 
 type changesetAsPatchArgs struct {

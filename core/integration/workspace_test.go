@@ -17,7 +17,7 @@ func TestWorkspace(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceSuite{})
 }
 
-const dangSDK = "github.com/vito/dang/dagger-sdk@ca623b0182926bd94c82f0cad5149d3a1288a3b8"
+const dangSDK = "github.com/vito/dang/dagger-sdk@be6466632453a52120517e5551c266a239d3899b"
 
 // workspaceBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
@@ -41,6 +41,110 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
+}
+
+// initDangBlueprint creates a Dang blueprint module and an app module that
+// uses it. The blueprint source is written to blueprints/<name>/ and the app
+// module is initialized at the workspace root with --blueprint pointing to it.
+func initDangBlueprint(name, source string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			// Create the blueprint module
+			WithWorkdir("blueprints/"+name).
+			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
+			WithNewFile("main.dang", source).
+			WithWorkdir("../../").
+			// Init the workspace root module using the blueprint
+			With(daggerExec("init", "--blueprint=./blueprints/"+name))
+	}
+}
+
+// TestWorkspaceBlueprint verifies that a blueprint module accepting a Workspace
+// argument can access the host filesystem, just like a toolchain module.
+func (WorkspaceSuite) TestBlueprint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("hello.txt", "hello from workspace").
+		With(initDangBlueprint("greeter", `
+type Greeter {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub read: String! {
+    source.file("hello.txt").contents
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("read")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+}
+
+// TestWorkspaceFindUp verifies that Workspace.findUp searches up from the
+// start path and stops at the workspace root.
+func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("root.txt", "at root").
+		WithNewFile("a/target.txt", "in a").
+		WithNewFile("a/b/other.txt", "in a/b").
+		WithExec([]string{"mkdir", "-p", "a/b/c"}).
+		WithNewFile("a/b/c/leaf.txt", "leaf").
+		WithExec([]string{"mkdir", "-p", "a/somedir"}).
+		WithNewFile("a/somedir/hi.txt", "hi").
+		With(initDangModule("finder", `
+type Finder {
+  pub result: String!
+
+  new(ws: Workspace!, name: String!, from: String!) {
+    self.result = ws.findUp(name: name, from: from) ?? ""
+    self
+  }
+}
+`))
+
+	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a/b/other.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a/target.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("find file at workspace root", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "root.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("find directory in parent", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=a/b", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a/somedir", strings.TrimSpace(out))
+	})
+
+	t.Run("do not find file in child directory", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "--name=leaf.txt", "--from=a/b", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+
+	t.Run("do not find non-existent file", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
 }
 
 // TestWorkspaceArg verifies that a module function accepting a Workspace

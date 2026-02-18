@@ -2090,6 +2090,13 @@ export type ClientContainerOpts = {
   platform?: Platform
 }
 
+export type ClientCurrentWorkspaceOpts = {
+  /**
+   * If true, skip legacy dagger.json migration checks.
+   */
+  skipMigrationCheck?: boolean
+}
+
 export type ClientEnvOpts = {
   /**
    * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
@@ -2659,6 +2666,31 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceDirectoryOpts = {
+  /**
+   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   */
+  exclude?: string[]
+
+  /**
+   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
+  include?: string[]
+  gitignore?: boolean
+}
+
+export type WorkspaceFindUpOpts = {
+  /**
+   * Path to start the search from, relative to the workspace root.
+   */
+  from?: string
+}
+
+/**
+ * The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
+ */
+export type WorkspaceID = string & { __WorkspaceID: never }
+
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
 }
@@ -3049,6 +3081,14 @@ export class Binding extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Retrieve the binding value, as type Workspace
+   */
+  asWorkspace = (): Workspace => {
+    const ctx = this._ctx.select("asWorkspace")
+    return new Workspace(ctx)
   }
 
   /**
@@ -7078,6 +7118,35 @@ export class Env extends BaseClient {
    */
   withWorkspace = (workspace: Directory): Env => {
     const ctx = this._ctx.select("withWorkspace", { workspace })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Workspace in the environment
+   * @param name The name of the binding
+   * @param value The Workspace value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceInput = (
+    name: string,
+    value: Workspace,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Workspace output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -11426,6 +11495,16 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Detect and return the current workspace.
+   * @param opts.skipMigrationCheck If true, skip legacy dagger.json migration checks.
+   * @experimental
+   */
+  currentWorkspace = (opts?: ClientCurrentWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("currentWorkspace", { ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * The default platform of the engine.
    */
   defaultPlatform = async (): Promise<Platform> => {
@@ -12022,6 +12101,14 @@ export class Client extends BaseClient {
   loadTypeDefFromID = (id: TypeDefID): TypeDef => {
     const ctx = this._ctx.select("loadTypeDefFromID", { id })
     return new TypeDef(ctx)
+  }
+
+  /**
+   * Load a Workspace from its ID.
+   */
+  loadWorkspaceFromID = (id: WorkspaceID): Workspace => {
+    const ctx = this._ctx.select("loadWorkspaceFromID", { id })
+    return new Workspace(ctx)
   }
 
   /**
@@ -13309,6 +13396,127 @@ export class TypeDef extends BaseClient {
    */
   with = (arg: (param: TypeDef) => TypeDef) => {
     return arg(this)
+  }
+}
+
+/**
+ * A Dagger workspace detected from the current working directory.
+ */
+export class Workspace extends BaseClient {
+  private readonly _id?: WorkspaceID = undefined
+  private readonly _clientId?: string = undefined
+  private readonly _findUp?: string = undefined
+  private readonly _root?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: WorkspaceID,
+    _clientId?: string,
+    _findUp?: string,
+    _root?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._clientId = _clientId
+    this._findUp = _findUp
+    this._root = _root
+  }
+
+  /**
+   * A unique identifier for this Workspace.
+   */
+  id = async (): Promise<WorkspaceID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The client ID that owns this workspace's host filesystem.
+   */
+  clientId = async (): Promise<string> => {
+    if (this._clientId) {
+      return this._clientId
+    }
+
+    const ctx = this._ctx.select("clientId")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns a Directory from the workspace.
+   *
+   * Path is relative to workspace root. Use "." for the root directory.
+   * @param path Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
+  directory = (path: string, opts?: WorkspaceDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { path, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Returns a File from the workspace.
+   *
+   * Path is relative to workspace root.
+   * @param path Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+   */
+  file = (path: string): File => {
+    const ctx = this._ctx.select("file", { path })
+    return new File(ctx)
+  }
+
+  /**
+   * Search for a file or directory by walking up from the start path within the workspace.
+   *
+   * Returns the path relative to the workspace root if found, or null if not found.
+   *
+   * The search stops at the workspace root and will not traverse above it.
+   * @param name The name of the file or directory to search for.
+   * @param opts.from Path to start the search from, relative to the workspace root.
+   */
+  findUp = async (
+    name: string,
+    opts?: WorkspaceFindUpOpts,
+  ): Promise<string> => {
+    if (this._findUp) {
+      return this._findUp
+    }
+
+    const ctx = this._ctx.select("findUp", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Absolute path to the workspace root directory.
+   */
+  root = async (): Promise<string> => {
+    if (this._root) {
+      return this._root
+    }
+
+    const ctx = this._ctx.select("root")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
