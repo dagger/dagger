@@ -3668,10 +3668,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, err
 	}
 
+	modContentDigest := digest.Digest(mod.ContentDigestCacheKey())
+	mod.ResultID = dagql.CurrentID(ctx)
+	// Attach stable module content identity directly to the finalized module ID so
+	// cache/e-graph indexing learns recipe<->content equivalence for modules.
+	mod.ResultID = mod.ResultID.With(call.WithContentDigest(modContentDigest))
+
 	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
+	inst = inst.WithContentDigest(modContentDigest)
 
 	// Save a result for the final module based on its content hash, currently
 	// used in the _contextDirectory API and interface implementation loading.

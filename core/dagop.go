@@ -52,6 +52,21 @@ func dagOpContentOrStructuralDigest(id *call.ID) digest.Digest {
 	return dagOpStructuralDigest(id)
 }
 
+func dagOpLoadServer(ctx context.Context, query *Query, server *dagql.Server, id *call.ID) (*dagql.Server, error) {
+	if len(id.Modules()) == 0 {
+		return server, nil
+	}
+	deps, err := query.IDDeps(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("id deps: %w", err)
+	}
+	server, err = deps.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("id deps schema: %w", err)
+	}
+	return server, nil
+}
+
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
 // for it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
@@ -214,7 +229,14 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 	ctx = ContextWithQuery(ctx, query)
 
-	obj, err := opt.Server.LoadType(ctx, op.ID)
+	if op.ID == nil {
+		return nil, fmt.Errorf("dagop ID is nil")
+	}
+	loadServer, err := dagOpLoadServer(ctx, query, opt.Server, op.ID)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := loadServer.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +380,15 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	result, err := opt.Server.LoadType(ContextWithQuery(ctx, query), op.ID)
+	if op.ID == nil {
+		return nil, fmt.Errorf("dagop ID is nil")
+	}
+	ctx = ContextWithQuery(ctx, query)
+	loadServer, err := dagOpLoadServer(ctx, query, opt.Server, op.ID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := loadServer.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -606,8 +636,14 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 		}
 		loadID = loadID.WithArgument(call.NewArgument("execMD", call.NewLiteralString(string(execMDJSON)), true))
 	}
-
-	obj, err := opt.Server.LoadType(loadCtx, loadID)
+	if loadID == nil {
+		return nil, fmt.Errorf("dagop ID is nil")
+	}
+	loadServer, err := dagOpLoadServer(loadCtx, query, opt.Server, loadID)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := loadServer.LoadType(loadCtx, loadID)
 	if err != nil {
 		return nil, err
 	}

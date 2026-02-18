@@ -76,8 +76,7 @@ func (sdk *moduleTypes) ModuleTypes(
 	}
 
 	var modDefsID string
-	ignoreCtx := dagql.WithSkip(ctx) // ignore some spans as they are internal trick only
-	err = dag.Select(ignoreCtx, ctr, &modDefsID,
+	err = dag.Select(dagql.WithSkip(ctx), ctr, &modDefsID,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{

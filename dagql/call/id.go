@@ -57,7 +57,6 @@ type ID struct {
 
 const (
 	extraDigestLabelContent = "content"
-	moduleIdentityInputName = "__dagger.module"
 )
 
 type ExtraDigest struct {
@@ -204,10 +203,6 @@ func (id *ID) moduleIdentityID() *ID {
 	return id.module.ID()
 }
 
-func (id *ID) moduleRecipeDigest() digest.Digest {
-	return id.moduleInputDigest()
-}
-
 func (id *ID) moduleInputDigest() digest.Digest {
 	if id == nil || id.pb == nil || id.pb.Module == nil {
 		return ""
@@ -216,16 +211,6 @@ func (id *ID) moduleInputDigest() digest.Digest {
 		return modID.Digest()
 	}
 	return digest.Digest(id.pb.Module.CallDigest)
-}
-
-func appendSyntheticModuleRecipeBytes(h *hashutil.Hasher, moduleDigest digest.Digest) *hashutil.Hasher {
-	// Synthetic reserved input:
-	// argument name + literal-ID prefix + referenced digest bytes.
-	const literalIDPrefix = '0'
-	return h.WithString(moduleIdentityInputName).
-		WithByte(literalIDPrefix).
-		WithString(moduleDigest.String()).
-		WithDelim()
 }
 
 // EffectIDs returns the effect IDs directly attached to this call.
@@ -862,7 +847,9 @@ func (id *ID) decode(
 
 // calcDigest calculates the recipe digest for the ID.
 //
-// It includes only recipe data for this call (self + recipe identity of inputs).
+// It includes recipe data for this call shape and explicit/implicit recipe inputs.
+// Module identity is intentionally excluded; modules participate as an implicit
+// input in SelfDigestAndInputs instead.
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
 		return "", nil
@@ -922,12 +909,7 @@ func (id *ID) calcDigest() (string, error) {
 		h = h.WithDelim()
 	}
 
-	// Synthetic module identity input.
-	if moduleDigest := id.moduleRecipeDigest(); moduleDigest != "" {
-		h = appendSyntheticModuleRecipeBytes(h, moduleDigest)
-		h = h.WithDelim()
-	}
-	// End implicit input section (including synthetic module input).
+	// End implicit input section.
 	h = h.WithDelim()
 
 	// Nth

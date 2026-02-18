@@ -115,22 +115,27 @@ func TestModuleMetadataDoesNotAffectIdentity(t *testing.T) {
 	}
 }
 
-func TestModuleIdentityContributesAsSyntheticInput(t *testing.T) {
+func TestModuleIdentityIsImplicitInputOnly(t *testing.T) {
 	typ := &ast.Type{
 		NamedType: "String",
 		NonNull:   true,
 	}
-	moduleAID := New().Append(typ, "moduleA")
-	moduleBID := New().Append(typ, "moduleB")
+	sharedModuleContent := digest.FromString("module-content")
+	moduleAID := New().Append(typ, "moduleA").With(WithContentDigest(sharedModuleContent))
+	moduleBID := New().Append(typ, "moduleB").With(WithContentDigest(sharedModuleContent))
+
+	// Reality/model:
+	// 1. module is not part of the call recipe digest
+	// 2. module identity is an implicit input in SelfDigestAndInputs
 	idNoModule := New().Append(typ, "field")
 	idWithModuleA := idNoModule.With(WithModule(NewModule(moduleAID, "mod", "ref", "pin")))
 	idWithModuleB := idNoModule.With(WithModule(NewModule(moduleBID, "mod", "ref", "pin")))
 
-	if idNoModule.Digest() == idWithModuleA.Digest() {
-		t.Fatalf("expected module-scoped digest to differ from unscoped digest: %s", idWithModuleA.Digest())
+	if idNoModule.Digest() != idWithModuleA.Digest() {
+		t.Fatalf("module identity should not affect recipe digest: %s vs %s", idNoModule.Digest(), idWithModuleA.Digest())
 	}
-	if idWithModuleA.Digest() == idWithModuleB.Digest() {
-		t.Fatalf("different module IDs should produce different digests: %s", idWithModuleA.Digest())
+	if idWithModuleA.Digest() != idWithModuleB.Digest() {
+		t.Fatalf("module identity should not affect recipe digest: %s vs %s", idWithModuleA.Digest(), idWithModuleB.Digest())
 	}
 
 	selfNoModule, inputsNoModule, err := idNoModule.SelfDigestAndInputs()
@@ -154,17 +159,20 @@ func TestModuleIdentityContributesAsSyntheticInput(t *testing.T) {
 	}
 
 	if len(inputsModuleA) != len(inputsNoModule)+1 {
-		t.Fatalf("module synthetic input should append one input digest: %d vs %d", len(inputsNoModule), len(inputsModuleA))
+		t.Fatalf("module implicit input should append one input digest: %d vs %d", len(inputsNoModule), len(inputsModuleA))
 	}
 	if len(inputsModuleA) != len(inputsModuleB) {
 		t.Fatalf("module input count mismatch: %d vs %d", len(inputsModuleA), len(inputsModuleB))
 	}
 	last := len(inputsModuleA) - 1
 	if inputsModuleA[last] != moduleAID.Digest() {
-		t.Fatalf("unexpected moduleA synthetic input digest: got %s, want %s", inputsModuleA[last], moduleAID.Digest())
+		t.Fatalf("unexpected moduleA implicit input digest: got %s, want %s", inputsModuleA[last], moduleAID.Digest())
 	}
 	if inputsModuleB[last] != moduleBID.Digest() {
-		t.Fatalf("unexpected moduleB synthetic input digest: got %s, want %s", inputsModuleB[last], moduleBID.Digest())
+		t.Fatalf("unexpected moduleB implicit input digest: got %s, want %s", inputsModuleB[last], moduleBID.Digest())
+	}
+	if inputsModuleA[last] == inputsModuleB[last] {
+		t.Fatalf("module implicit input should reflect module recipe identity: %s vs %s", inputsModuleA[last], inputsModuleB[last])
 	}
 }
 
