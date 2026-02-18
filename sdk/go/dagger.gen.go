@@ -311,6 +311,9 @@ type TypeDefID string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
+// The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
+type WorkspaceID string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -791,6 +794,15 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Retrieve the binding value, as type Workspace
+func (r *Binding) AsWorkspace() *Workspace {
+	q := r.query.Select("asWorkspace")
+
+	return &Workspace{
+		query: q,
+	}
 }
 
 // Returns the digest of the binding value
@@ -6030,6 +6042,30 @@ func (r *Env) WithWorkspace(workspace *Directory) *Env {
 	assertNotNil("workspace", workspace)
 	q := r.query.Select("withWorkspace")
 	q = q.Arg("workspace", workspace)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Workspace in the environment
+func (r *Env) WithWorkspaceInput(name string, value *Workspace, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Workspace output to be assigned in the environment
+func (r *Env) WithWorkspaceOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -11381,6 +11417,29 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// CurrentWorkspaceOpts contains options for Client.CurrentWorkspace
+type CurrentWorkspaceOpts struct {
+	// If true, skip legacy dagger.json migration checks.
+	SkipMigrationCheck bool
+}
+
+// Detect and return the current workspace.
+//
+// Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
+func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
+	q := r.query.Select("currentWorkspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `skipMigrationCheck` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipMigrationCheck) {
+			q = q.Arg("skipMigrationCheck", opts[i].SkipMigrationCheck)
+		}
+	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // The default platform of the engine.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.query.Select("defaultPlatform")
@@ -12222,6 +12281,16 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q = q.Arg("id", id)
 
 	return &TypeDef{
+		query: q,
+	}
+}
+
+// Load a Workspace from its ID.
+func (r *Client) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
+	q := r.query.Select("loadWorkspaceFromID")
+	q = q.Arg("id", id)
+
+	return &Workspace{
 		query: q,
 	}
 }
@@ -13884,6 +13953,168 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	return &TypeDef{
 		query: q,
 	}
+}
+
+// A Dagger workspace detected from the current working directory.
+type Workspace struct {
+	query *querybuilder.Selection
+
+	clientId *string
+	findUp   *string
+	id       *WorkspaceID
+	root     *string
+}
+
+func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
+	return &Workspace{
+		query: q,
+	}
+}
+
+// The client ID that owns this workspace's host filesystem.
+func (r *Workspace) ClientID(ctx context.Context) (string, error) {
+	if r.clientId != nil {
+		return *r.clientId, nil
+	}
+	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceDirectoryOpts contains options for Workspace.Directory
+type WorkspaceDirectoryOpts struct {
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+	Exclude []string
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+	Include []string
+
+	Gitignore bool
+}
+
+// Returns a Directory from the workspace.
+//
+// Path is relative to workspace root. Use "." for the root directory.
+func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
+	q := r.query.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Returns a File from the workspace.
+//
+// Path is relative to workspace root.
+func (r *Workspace) File(path string) *File {
+	q := r.query.Select("file")
+	q = q.Arg("path", path)
+
+	return &File{
+		query: q,
+	}
+}
+
+// WorkspaceFindUpOpts contains options for Workspace.FindUp
+type WorkspaceFindUpOpts struct {
+	// Path to start the search from, relative to the workspace root.
+	//
+	// Default: "."
+	From string
+}
+
+// Search for a file or directory by walking up from the start path within the workspace.
+//
+// Returns the path relative to the workspace root if found, or null if not found.
+//
+// The search stops at the workspace root and will not traverse above it.
+func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
+	if r.findUp != nil {
+		return *r.findUp, nil
+	}
+	q := r.query.Select("findUp")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `from` optional argument
+		if !querybuilder.IsZeroValue(opts[i].From) {
+			q = q.Arg("from", opts[i].From)
+		}
+	}
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Workspace.
+func (r *Workspace) ID(ctx context.Context) (WorkspaceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Workspace) XXX_GraphQLType() string {
+	return "Workspace"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Workspace) XXX_GraphQLIDType() string {
+	return "WorkspaceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Workspace) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Workspace) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Absolute path to the workspace root directory.
+func (r *Workspace) Root(ctx context.Context) (string, error) {
+	if r.root != nil {
+		return *r.root, nil
+	}
+	q := r.query.Select("root")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Sharing mode of the cache volume.

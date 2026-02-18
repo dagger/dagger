@@ -509,6 +509,12 @@ func (r Result[T]) WithContentDigest(customDigest digest.Digest) Result[T] {
 	return r
 }
 
+// WithContentDigestAny is WithContentDigest but returns an AnyResult, required
+// for polymorphic code paths like module function call plumbing.
+func (r Result[T]) WithContentDigestAny(customDigest digest.Digest) AnyResult {
+	return r.WithContentDigest(customDigest)
+}
+
 // String returns the instance in Class@sha256:... format.
 func (r Result[T]) String() string {
 	typ := r.Type()
@@ -600,6 +606,15 @@ func (r ObjectResult[T]) WithObjectDigest(customDigest digest.Digest) ObjectResu
 }
 
 func (r ObjectResult[T]) WithContentDigest(customDigest digest.Digest) ObjectResult[T] {
+	return ObjectResult[T]{
+		Result: r.Result.WithContentDigest(customDigest),
+		class:  r.class,
+	}
+}
+
+// WithContentDigestAny is WithContentDigest but returns an AnyResult, required
+// for polymorphic code paths like module function call plumbing.
+func (r ObjectResult[T]) WithContentDigestAny(customDigest digest.Digest) AnyResult {
 	return ObjectResult[T]{
 		Result: r.Result.WithContentDigest(customDigest),
 		class:  r.class,

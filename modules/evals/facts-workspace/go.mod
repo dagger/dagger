@@ -1,4 +1,4 @@
-module dagger/workspace
+module dagger/facts-workspace
 
 go 1.24.0
 

@@ -36,6 +36,7 @@
               <li><a href="#query-currentFunctionCall">currentFunctionCall</a></li>
               <li><a href="#query-currentModule">currentModule</a></li>
               <li><a href="#query-currentTypeDefs">currentTypeDefs</a></li>
+              <li><a href="#query-currentWorkspace">currentWorkspace</a></li>
               <li><a href="#query-defaultPlatform">defaultPlatform</a></li>
               <li><a href="#query-directory">directory</a></li>
               <li><a href="#query-engine">engine</a></li>
@@ -106,6 +107,7 @@
               <li><a href="#query-loadStatFromID">loadStatFromID</a></li>
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
+              <li><a href="#query-loadWorkspaceFromID">loadWorkspaceFromID</a></li>
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
               <li><a href="#query-secret">secret</a></li>
@@ -252,6 +254,8 @@
               <li><a href="#definition-TypeDefID">TypeDefID</a></li>
               <li><a href="#definition-TypeDefKind">TypeDefKind</a></li>
               <li><a href="#definition-Void">Void</a></li>
+              <li><a href="#definition-Workspace">Workspace</a></li>
+              <li><a href="#definition-WorkspaceID">WorkspaceID</a></li>
             </ul>
           </div>
         </nav>
@@ -599,6 +603,58 @@
                   <p>
                     <a href="#definition-TypeDef"><code>[TypeDef!]!</code></a>
                   </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-currentWorkspace" class="operation operation-query" data-traverse-target="query-currentWorkspace">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>currentWorkspace</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Detect and return the current workspace.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Workspace"><code>Workspace!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>skipMigrationCheck</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> If true, skip legacy dagger.json migration checks. Default = <code>false</code> </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -4379,6 +4435,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadWorkspaceFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadWorkspaceFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Workspace from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Workspace"><code>Workspace!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-WorkspaceID"><code>WorkspaceID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-module" class="operation operation-query" data-traverse-target="query-module">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -4986,6 +5095,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td> Returns the binding's string value </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asWorkspace" href="#Binding-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Workspace </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -9870,6 +9983,52 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>workspace</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
                                 <p>The directory to set as the host filesystem</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceInput" href="#Env-withWorkspaceInput"><code>withWorkspaceInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Workspace in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-WorkspaceID"><code>WorkspaceID!</code></a></span></h6>
+                                <p>The Workspace value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceOutput" href="#Env-withWorkspaceOutput"><code>withWorkspaceOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Workspace output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
                               </div>
                             </div>
                           </div>
@@ -15310,6 +15469,135 @@
                   <h5>Description</h5>
                   <p>The absence of a value.</p>
                   <p>A Null Void is used as a placeholder for resolvers that do not return anything.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Workspace" class="definition definition-object" data-traverse-target="definition-Workspace">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Workspace</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A Dagger workspace detected from the current working directory.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-clientId" href="#Workspace-clientId"><code>clientId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The client ID that owns this workspace's host filesystem. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td>
+                          <p>Returns a Directory from the workspace.</p>
+                          <p>Path is relative to workspace root. Use &quot;.&quot; for the root directory.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the directory to retrieve, relative to the workspace root (e.g., &quot;src&quot;, &quot;.&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Exclude artifacts that match the given pattern (e.g., [&quot;node_modules/&quot;, &quot;.git*&quot;]).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Include only artifacts that match the given pattern (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-file" href="#Workspace-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td>
+                          <p>Returns a File from the workspace.</p>
+                          <p>Path is relative to workspace root.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the file to retrieve, relative to the workspace root (e.g., &quot;go.mod&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-findUp" href="#Workspace-findUp"><code>findUp</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td>
+                          <p>Search for a file or directory by walking up from the start path within the workspace.</p>
+                          <p>Returns the path relative to the workspace root if found, or null if not found.</p>
+                          <p>The search stops at the workspace root and will not traverse above it.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the file or directory to search for.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>from</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Path to start the search from, relative to the workspace root.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-id" href="#Workspace-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceID"><code>WorkspaceID!</code></a></span> </td>
+                        <td> A unique identifier for this Workspace. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-root" href="#Workspace-root"><code>root</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Absolute path to the workspace root directory. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceID" class="definition definition-scalar" data-traverse-target="definition-WorkspaceID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>WorkspaceID</code> scalar type represents an identifier for an object of type Workspace.</p>
                 </div>
               </div>
             </div>

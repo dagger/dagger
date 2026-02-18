@@ -3,14 +3,14 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -94,29 +94,35 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	}
 }
 
-func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
-		return nil
+		return content.CollectJSONable(nil)
 	}
+
 	var objFields map[string]any
-	switch value := value.Unwrap().(type) {
-	case nil:
-		return nil
-	case *ModuleObject:
-		objFields = value.Fields
-	case *InterfaceAnnotatedValue:
-		objFields = value.Fields
-	default:
+	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
+		objFields = obj.Fields
+	} else if iface, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
+		objFields = iface.Fields
+	} else {
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
 
-	for k, v := range objFields {
+	// Iterate fields in sorted order to produce a deterministic hash.
+	for _, k := range slices.Sorted(maps.Keys(objFields)) {
+		v := objFields[k]
 		fieldTypeDef, ok := t.typeDef.FieldByOriginalName(k)
 		if !ok {
-			// if this is a private field, then we still should do best-effort collection
-			unknownCollectIDs(v, ids)
+			// this is a private field; do best-effort collection, because we don't
+			// have type hints for these, but the user may still store IDs in them
+			if err := content.CollectKeyed(k, func() error {
+				return content.CollectUnknown(v)
+			}); err != nil {
+				return err
+			}
 			continue
 		}
+
 		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for field %q: %w", k, err)
@@ -138,38 +144,14 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyRe
 		if err != nil {
 			return fmt.Errorf("failed to convert field %q: %w", k, err)
 		}
-		if err := modType.CollectCoreIDs(ctx, typed, ids); err != nil {
-			return fmt.Errorf("failed to collect IDs for field %q: %w", k, err)
+		if err := content.CollectKeyed(k, func() error {
+			return modType.CollectContent(ctx, typed, content)
+		}); err != nil {
+			return fmt.Errorf("failed to collect content for field %q: %w", k, err)
 		}
 	}
 
 	return nil
-}
-
-// unknownCollectIDs naively walks a json-decoded value from a module object
-// type, and tries to find *any* IDs that *might* be found
-func unknownCollectIDs(value any, ids map[digest.Digest]*resource.ID) {
-	switch value := value.(type) {
-	case nil:
-		return
-	case string:
-		var idp call.ID
-		if err := idp.Decode(value); err != nil {
-			return
-		}
-		ids[idp.Digest()] = &resource.ID{
-			ID:       idp,
-			Optional: true, // mark this id as optional, since it's a best-guess attempt
-		}
-	case []any:
-		for _, value := range value {
-			unknownCollectIDs(value, ids)
-		}
-	case map[string]any:
-		for _, value := range value {
-			unknownCollectIDs(value, ids)
-		}
-	}
 }
 
 func (t *ModuleObjectType) TypeDef() *TypeDef {

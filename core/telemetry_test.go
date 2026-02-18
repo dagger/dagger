@@ -74,6 +74,10 @@ func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientM
 	return &engine.ClientMetadata{}, nil
 }
 
+func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }

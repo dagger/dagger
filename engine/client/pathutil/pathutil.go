@@ -64,6 +64,45 @@ func GetDrive(path string) string {
 	return ""
 }
 
+// SandboxedRelativePath resolves userPath relative to root, ensuring the result
+// stays within root. Absolute paths (including Windows drive-letter paths) are
+// treated as relative to root. Returns an error if the resolved path would
+// escape root via "..".
+//
+// Both root and the returned path use forward slashes. Backslashes in userPath
+// are normalized to forward slashes so that Windows-style paths are handled
+// correctly even though the engine always runs on Linux.
+func SandboxedRelativePath(userPath, root string) (string, error) {
+	// Normalize backslashes (Windows clients) to forward slashes.
+	clean := strings.ReplaceAll(userPath, "\\", "/")
+	clean = normalizePath(clean)
+
+	// Strip drive letter or leading "/" so absolute paths are treated as
+	// relative to root.
+	if drive := GetDrive(clean); drive != "" {
+		clean = strings.TrimPrefix(clean, drive)
+		clean = strings.TrimPrefix(clean, "/")
+	} else if len(clean) > 0 && clean[0] == '/' {
+		clean = clean[1:]
+	}
+
+	// Re-clean after stripping to collapse any leading separators or dot segments.
+	if clean == "" {
+		clean = "."
+	}
+	clean = normalizePath(clean)
+
+	cleanRoot := normalizePath(root)
+	resolved := cleanRoot + "/" + clean
+	resolved = normalizePath(resolved)
+
+	// Ensure the resolved path stays inside root.
+	if resolved != cleanRoot && !strings.HasPrefix(resolved, cleanRoot+"/") {
+		return "", fmt.Errorf("path %q resolves outside root %q", userPath, root)
+	}
+	return resolved, nil
+}
+
 // ExpandHomeDir expands a given path to its absolute form, handling home directory
 func ExpandHomeDir(homeDir string, path string) (string, error) {
 	if homeDir == "" {

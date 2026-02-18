@@ -5,12 +5,10 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -121,43 +119,39 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	return loadedImpl, nil
 }
 
-func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
-		return nil
+		return content.CollectJSONable(nil)
 	}
 
-	switch innerVal := value.Unwrap().(type) {
-	case *InterfaceAnnotatedValue:
-		mod, ok := innerVal.UnderlyingType.SourceMod().(*Module)
+	if interfaceValue, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
+		mod, ok := interfaceValue.UnderlyingType.SourceMod().(*Module)
 		if !ok {
-			return fmt.Errorf("unexpected source mod type %T", innerVal.UnderlyingType.SourceMod())
+			return fmt.Errorf("unexpected source mod type %T", interfaceValue.UnderlyingType.SourceMod())
 		}
 
 		obj, err := dagql.NewResultForID(&ModuleObject{
 			Module:  mod,
-			TypeDef: innerVal.UnderlyingType.TypeDef().AsObject.Value,
-			Fields:  innerVal.Fields,
+			TypeDef: interfaceValue.UnderlyingType.TypeDef().AsObject.Value,
+			Fields:  interfaceValue.Fields,
 		}, value.ID())
 		if err != nil {
 			return fmt.Errorf("create module object from interface value: %w", err)
 		}
 
-		return innerVal.UnderlyingType.CollectCoreIDs(ctx, obj, ids)
+		return interfaceValue.UnderlyingType.CollectContent(ctx, obj, content)
+	}
 
-	case *ModuleObject:
+	if _, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
 		loadedImpl, err := iface.loadImpl(ctx, value.ID())
 		if err != nil {
 			return fmt.Errorf("load interface implementation: %w", err)
 		}
 
-		return loadedImpl.valType.CollectCoreIDs(ctx, loadedImpl.val, ids)
-
-	case nil:
-		return nil
-
-	default:
-		return fmt.Errorf("unexpected interface value type for collecting IDs %T", value)
+		return loadedImpl.valType.CollectContent(ctx, loadedImpl.val, content)
 	}
+
+	return fmt.Errorf("expected *InterfaceAnnotatedValue, *ModuleObject, or nil, got %T (%s)", value, value.Type())
 }
 
 func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
