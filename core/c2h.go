@@ -32,7 +32,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 
 			port, ok := d.sockStore.GetSocketPortForward(sock.IDDigest)
 			if !ok {
-				return fmt.Errorf("socket not found: %s", sock.IDDigest)
+				return fmt.Errorf("c2h tunnel listener: socket not found: %s", sock.IDDigest)
 			}
 			frontend := port.FrontendOrBackendPort()
 
@@ -73,8 +73,8 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 
 				urlEncoded, ok := d.sockStore.GetSocketURLEncoded(sock.IDDigest)
 				if !ok {
-					connSlog.Error("socket not found", "id", sock.IDDigest)
-					return fmt.Errorf("socket not found: %s", sock.IDDigest)
+					connSlog.Error("c2h tunnel connection socket URL not found", "id", sock.IDDigest)
+					return fmt.Errorf("c2h tunnel connection socket URL not found: %s", sock.IDDigest)
 				}
 				upstreamClient, err := d.sockStore.ConnectSocket(ctx, sock.IDDigest)
 				if err != nil {

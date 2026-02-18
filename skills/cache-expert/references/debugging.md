@@ -43,7 +43,7 @@ During long runs, periodically grep for panics. If the engine panics, tests may 
 rg -n "panic:|fatal error:|SIGSEGV|stack trace" /tmp/cache-debug.log
 ```
 
-If a test appears hung (engine still alive but no test progress), capture a goroutine dump from the *inner* dev engine process with `SIGQUIT`:
+If a test appears hung (engine still alive but no test progress), capture a goroutine dump from the *inner* dev engine process with `SIGQUIT` (THESE INSTRUCTIONS MUST BE FOLLOWED CLOSELY TO AVOID SENDING SIGQUIT TO THE WRONG PROCESS):
 
 ```bash
 engine_ctr="$(docker ps --format '{{.Names}}' | rg '^dagger-engine-v' | head -n1)"
@@ -70,6 +70,8 @@ Then inspect the same run log for the dump:
 ```bash
 rg -n "goroutine [0-9]+|fatal error:|SIGQUIT|chan receive|chan send|semacquire|sync\\.Mutex|deadlock" /tmp/cache-debug.log
 ```
+
+AFTER SENDING SIGQUIT the tests may hang. Once you confirm the log output has SIGQUIT stack traces, you are done and don't need to wait for the test hang to end.
 
 To compare behavior against an engine from another git ref:
 

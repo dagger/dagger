@@ -254,20 +254,16 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	if err != nil {
 		return nil, fmt.Errorf("default deps: %w", err)
 	}
-
-	bootstrap, err := defaultDeps.Schema(ctx)
+	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)
 	}
+
 	deps := defaultDeps
 	for _, modID := range id.Modules() {
-		modDigest := modID.ID().ContentDigest()
-		if modDigest == "" {
-			modDigest = modID.ID().Digest()
-		}
-		inst, err := GetModuleFromContentDigest(ctx, bootstrap, modID.Name(), string(modDigest))
+		inst, err := dagql.NewID[*Module](modID.ID()).Load(ctx, dag)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("loading module from ID: %w", err)
 		}
 		deps = deps.Append(inst.Self())
 	}

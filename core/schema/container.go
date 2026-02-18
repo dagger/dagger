@@ -883,7 +883,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			)), nil
 		}
 
-		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, s.from)
+		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, "", s.from)
 		if err != nil {
 			return inst, err
 		}
@@ -1050,6 +1050,9 @@ type containerExecArgs struct {
 	// execCacheMixin implicit input.
 	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" sensitive:"true" default:"null"`
 
+	// TODO: ??
+	OverrideCacheKey string `name:"overrideCacheKey" internal:"true" default:""`
+
 	ContainerDagOpInternalArgs
 }
 
@@ -1146,7 +1149,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 
 	if !args.IsDagOp {
 		ctr.Meta = nil
-		ctr, effectID, err := DagOpContainer(ctx, srv, ctr, args, s.withExec)
+		ctr, effectID, err := DagOpContainer(ctx, srv, ctr, args, digest.Digest(args.OverrideCacheKey), s.withExec)
 		if err != nil {
 			return inst, err
 		}

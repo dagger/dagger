@@ -133,21 +133,21 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		}
 
 		return upstream.Host, nil
-		case svc.Container != nil, // container=>container
-			len(svc.HostSockets) > 0: // container=>host
-			if id == nil {
-				return "", errors.New("service ID is nil")
-			}
-			// Hostname identity should follow output-equivalence identity
-			// (e.g. content digests) rather than strict recipe identity so
-			// equivalent services converge across sessions.
-			// TODO: Carry a stable service-identity digest on Service (set at
-			// construction time from canonical output/structural identity) and
-			// use it here instead of deriving host identity ad hoc from call.ID.
-			hostDigest := id.OutputEquivalentDigest()
-			if hostDigest == "" {
-				hostDigest = id.Digest()
-			}
+	case svc.Container != nil, // container=>container
+		len(svc.HostSockets) > 0: // container=>host
+		if id == nil {
+			return "", errors.New("service ID is nil")
+		}
+		// Hostname identity should follow output-equivalence identity
+		// (e.g. content digests) rather than strict recipe identity so
+		// equivalent services converge across sessions.
+		// TODO: Carry a stable service-identity digest on Service (set at
+		// construction time from canonical output/structural identity) and
+		// use it here instead of deriving host identity ad hoc from call.ID.
+		hostDigest := id.OutputEquivalentDigest()
+		if hostDigest == "" {
+			hostDigest = id.Digest()
+		}
 		return network.HostHash(hostDigest), nil
 	default:
 		return "", errors.New("unknown service type")
@@ -233,7 +233,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			}
 			portForward, ok := socketStore.GetSocketPortForward(svc.HostSockets[0].IDDigest)
 			if !ok {
-				return "", fmt.Errorf("socket not found: %s", svc.HostSockets[0].IDDigest)
+				return "", fmt.Errorf("service endpoint: socket not found: %s", svc.HostSockets[0].IDDigest)
 			}
 			port = portForward.FrontendOrBackendPort()
 		}
@@ -389,7 +389,11 @@ func (svc *Service) startContainer(
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
-		domain = network.ModuleDomain(mod.ResultID, clientMetadata.SessionID)
+		modID, err := mod.SourceContentScopedID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module source content scoped ID: %w", err)
+		}
+		domain = network.ModuleDomain(modID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
 			// it, to support services returned by modules and re-configured with
@@ -917,7 +921,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	for _, sock := range svc.HostSockets {
 		port, ok := sockStore.GetSocketPortForward(sock.IDDigest)
 		if !ok {
-			return nil, fmt.Errorf("socket not found: %s", sock.IDDigest)
+			return nil, fmt.Errorf("service reverse tunnel: socket not found: %s", sock.IDDigest)
 		}
 		desc := fmt.Sprintf("tunnel %s %d -> %d", port.Protocol, port.FrontendOrBackendPort(), port.Backend)
 		descs = append(descs, desc)

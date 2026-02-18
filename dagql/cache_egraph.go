@@ -113,6 +113,9 @@ func (c *cache) initEgraphLocked() {
 	if c.egraphTermsByDigest == nil {
 		c.egraphTermsByDigest = make(map[string]map[egraphTermID]struct{})
 	}
+	if c.egraphTermsByOutputDigest == nil {
+		c.egraphTermsByOutputDigest = make(map[string]map[egraphTermID]struct{})
+	}
 	if c.egraphResultTerms == nil {
 		c.egraphResultTerms = make(map[*sharedResult]map[egraphTermID]struct{})
 	}
@@ -329,13 +332,73 @@ func (c *cache) repairClassTermsLocked(root eqClassID) (merges []eqMergePair) {
 	return merges
 }
 
-// lookupCacheForID checks if the given call ID has an equivalent result in the cache. If so,
-// it returns that result. It may also update the e-graph with a new known digest if this is
-// the first time we've seen this call ID digest resolve to this cached result.
+func (c *cache) firstLiveTermInSetLocked(termSet map[egraphTermID]struct{}) *egraphTerm {
+	for termID := range termSet {
+		term := c.egraphTerms[termID]
+		if term == nil || term.result == nil {
+			continue
+		}
+		return term
+	}
+	return nil
+}
+
+func (c *cache) indexTermOutputDigestsLocked(term *egraphTerm) {
+	if term == nil || term.result == nil {
+		return
+	}
+	c.initEgraphLocked()
+
+	indexDigest := func(dig digest.Digest) {
+		if dig == "" {
+			return
+		}
+		set := c.egraphTermsByOutputDigest[dig.String()]
+		if set == nil {
+			set = make(map[egraphTermID]struct{})
+			c.egraphTermsByOutputDigest[dig.String()] = set
+		}
+		set[term.id] = struct{}{}
+	}
+
+	indexDigest(term.result.outputDigest)
+	for _, extra := range term.outputExtraDigests {
+		indexDigest(extra.Digest)
+	}
+}
+
+func (c *cache) removeTermOutputDigestsLocked(term *egraphTerm) {
+	if term == nil || term.result == nil {
+		return
+	}
+
+	removeDigest := func(dig digest.Digest) {
+		if dig == "" {
+			return
+		}
+		set := c.egraphTermsByOutputDigest[dig.String()]
+		if set == nil {
+			return
+		}
+		delete(set, term.id)
+		if len(set) == 0 {
+			delete(c.egraphTermsByOutputDigest, dig.String())
+		}
+	}
+
+	removeDigest(term.result.outputDigest)
+	for _, extra := range term.outputExtraDigests {
+		removeDigest(extra.Digest)
+	}
+}
+
+// lookupCacheForID checks if the given call ID has an equivalent result in the cache. It first
+// attempts the canonical term lookup using (self, input eq-classes). If that misses, it can
+// fall back to matching the request's extra digests against known output digests.
 //
 // This method assumes c.mu is already held by the caller.
 func (c *cache) lookupCacheForID(
-	ctx context.Context,
+	_ context.Context,
 	id *call.ID,
 ) (AnyResult, bool, error) {
 	// (self digest, input eqSet IDs) are digested to create the "real" cache key we do a lookup on.
@@ -347,36 +410,46 @@ func (c *cache) lookupCacheForID(
 	if err != nil {
 		return nil, false, fmt.Errorf("derive call term: %w", err)
 	}
-	inputEqIDs := make([]eqClassID, len(inputDigests))
+
+	var (
+		inputEqIDs            []eqClassID
+		primaryLookupPossible = true
+		hitTerm               *egraphTerm
+	)
+	inputEqIDs = make([]eqClassID, len(inputDigests))
 	for i, inDig := range inputDigests {
 		classID, ok := c.egraphDigestToClass[inDig.String()]
 		if !ok {
-			return nil, false, nil
+			primaryLookupPossible = false
+			break
 		}
 		root := c.findEqClassLocked(classID)
 		if root == 0 {
-			return nil, false, nil
+			primaryLookupPossible = false
+			break
 		}
 		inputEqIDs[i] = root
 	}
-	termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
+	if primaryLookupPossible {
+		termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
+		termSet := c.egraphTermsByDigest[termDigest]
+		hitTerm = c.firstLiveTermInSetLocked(termSet)
+	}
 
-	// Lookup whether we have a cache hit
-	termSet := c.egraphTermsByDigest[termDigest]
-	if len(termSet) == 0 {
-		return nil, false, nil
-	}
-	var hitTerm *egraphTerm
-	for termID := range termSet {
-		term := c.egraphTerms[termID]
-		if term == nil || term.result == nil {
-			continue
-		}
-		hitTerm = term
-		break
-	}
 	if hitTerm == nil {
-		// no hit
+		for _, extra := range id.ExtraDigests() {
+			if extra.Digest == "" {
+				continue
+			}
+			termSet := c.egraphTermsByOutputDigest[extra.Digest.String()]
+			hitTerm = c.firstLiveTermInSetLocked(termSet)
+			if hitTerm != nil {
+				break
+			}
+		}
+	}
+
+	if hitTerm == nil {
 		return nil, false, nil
 	}
 
@@ -385,10 +458,19 @@ func (c *cache) lookupCacheForID(
 	res := hitTerm.result
 	res.refCount++
 
-	// NOTE: we skip id.ExtraDigests() here because we assume that an incoming ID with multiple digests
-	// already has all those digests merged in the e-graph from previous operations.
 	requestEqID := c.ensureEqClassForDigestLocked(id.Digest().String())
-	c.mergeOutputsForTermDigestLocked(termDigest, requestEqID)
+	mergeIDs := make([]eqClassID, 0, 2+len(id.ExtraDigests()))
+	mergeIDs = append(mergeIDs, hitTerm.outputEqID, requestEqID)
+	for _, extra := range id.ExtraDigests() {
+		if extra.Digest == "" {
+			continue
+		}
+		mergeIDs = append(mergeIDs, c.ensureEqClassForDigestLocked(extra.Digest.String()))
+	}
+	mergedOutputEqID := c.mergeEqClassesLocked(mergeIDs...)
+	if mergedOutputEqID != 0 {
+		hitTerm.outputEqID = mergedOutputEqID
+	}
 
 	// Materialize caller-facing result preserving request recipe identity.
 	retID := id
@@ -541,6 +623,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 
 		if existingTerm := c.resultTermByDigestLocked(res, termDigest); existingTerm != nil {
 			existingTerm.outputExtraDigests = mergeExtraDigestFacts(existingTerm.outputExtraDigests, res.outputExtraDigests)
+			c.indexTermOutputDigestsLocked(existingTerm)
 			c.mergeOutputsForTermDigestLocked(termDigest, outputEqID)
 			continue
 		}
@@ -553,6 +636,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 
 		newTerm := newEgraphTerm(termID, term.selfDigest, inputEqIDs, mergedOutputEqID, res.outputExtraDigests, res)
 		c.egraphTerms[termID] = newTerm
+		c.indexTermOutputDigestsLocked(newTerm)
 
 		digestTerms := c.egraphTermsByDigest[newTerm.termDigest]
 		if digestTerms == nil {
@@ -603,6 +687,7 @@ func (c *cache) removeResultFromEgraphLocked(res *sharedResult) {
 				delete(c.egraphTermsByDigest, term.termDigest)
 			}
 		}
+		c.removeTermOutputDigestsLocked(term)
 		for _, in := range term.inputEqIDs {
 			if set := c.egraphClassTerms[in]; set != nil {
 				delete(set, termID)
@@ -628,6 +713,7 @@ func (c *cache) maybeResetEgraphLocked() {
 	c.egraphClassTerms = nil
 	c.egraphTerms = nil
 	c.egraphTermsByDigest = nil
+	c.egraphTermsByOutputDigest = nil
 	c.egraphResultTerms = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0

@@ -113,13 +113,21 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	}
 
 	var callerModID *call.ID
-	if execMD.EncodedModuleID != "" {
+	if execMD.EncodedContentModuleID != "" {
+		callerModID = new(call.ID)
+		if err := callerModID.Decode(execMD.EncodedContentModuleID); err != nil {
+			return nil, fmt.Errorf("failed to decode content-scoped module ID: %w", err)
+		}
+	} else if execMD.EncodedModuleID != "" {
 		callerModID = new(call.ID)
 		if err := callerModID.Decode(execMD.EncodedModuleID); err != nil {
 			return nil, fmt.Errorf("failed to decode module ID: %w", err)
 		}
 	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod != nil {
-		callerModID = callerMod.ResultID
+		callerModID, err = callerMod.SourceContentScopedID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get caller module content-scoped ID: %w", err)
+		}
 	}
 
 	if callerModID != nil {

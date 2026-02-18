@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 )
 
 /*
@@ -201,8 +200,8 @@ type ModuleTypes interface {
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
 
-		// Call ID to perform the call against the right module
-		*call.ID,
+		// Partially initialized module used for any CurrentModule calls the SDK makes
+		*Module,
 	) (dagql.ObjectResult[*Module], error)
 }
 

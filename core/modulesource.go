@@ -168,6 +168,12 @@ type ModuleSource struct {
 	ConfigToolchains []*modules.ModuleConfigDependency
 	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
 
+	// Internal-only projection metadata used by schema helpers to load this
+	// module source as a toolchain in the context of a parent module source.
+	ToolchainContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
+	ToolchainConfigIndex   int
+	ToolchainProjection    bool
+
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
@@ -180,8 +186,6 @@ type ModuleSource struct {
 	OriginalSubpath string
 
 	ContextDirectory dagql.ObjectResult[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
-
-	Digest string `field:"true" name:"digest" doc:"A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."`
 
 	Kind   ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
 	Local  *LocalModuleSource
@@ -458,9 +462,13 @@ func (src *ModuleSource) LoadUserDefaults(ctx context.Context) error {
 // with any others
 const moduleSourceHashMix = "moduleSource"
 
-// CalcDigest calculates a content-hash of the module source. It is used during codegen; two module
-// sources with the same digest will share cache for codegen-related calls.
-func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
+// ContentDigestForSDK calculates a content-hash of the module source. It is used during codegen; two module
+// sources with the same digest will share cache for codegen-related calls. It's also used to as part of function
+// call caching and contextual dir loading.
+// The value is thus scoped to the source code and dependencies but not client-specific values like specific git
+// git commits or local source paths the module was sourced from; things that matter to the implementation but not
+// anything else from the client.
+func (src *ModuleSource) ContentDigestForSDK(ctx context.Context) (digest.Digest, error) {
 	inputs := []string{
 		moduleSourceHashMix,
 		src.ModuleOriginalName,
@@ -499,17 +507,29 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 	}
 
 	inputs = append(inputs, src.IncludePaths...)
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get dag server: %w", err)
+	}
 
 	for _, dep := range src.Dependencies {
 		if dep.Self() == nil {
 			continue
 		}
-		inputs = append(inputs, dep.Self().Digest)
+		var depDigest string
+		if err := dag.Select(ctx, dep, &depDigest, dagql.Selector{Field: "digest"}); err != nil {
+			return "", fmt.Errorf("failed to get dependency digest: %w", err)
+		}
+		inputs = append(inputs, depDigest)
 	}
 
 	// Include blueprint in digest so changes to blueprint invalidate cache
 	if src.Blueprint.Self() != nil {
-		inputs = append(inputs, "blueprint:"+src.Blueprint.Self().Digest)
+		var blueprintDigest string
+		if err := dag.Select(ctx, src.Blueprint, &blueprintDigest, dagql.Selector{Field: "digest"}); err != nil {
+			return "", fmt.Errorf("failed to get blueprint digest: %w", err)
+		}
+		inputs = append(inputs, "blueprint:"+blueprintDigest)
 	}
 
 	// Include toolchains in digest so changes to toolchains invalidate cache
@@ -517,56 +537,18 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		if toolchain.Self() == nil {
 			continue
 		}
-		inputs = append(inputs, "toolchain:"+toolchain.Self().Digest)
+		var toolchainDigest string
+		if err := dag.Select(ctx, toolchain, &toolchainDigest, dagql.Selector{Field: "digest"}); err != nil {
+			return "", fmt.Errorf("failed to get toolchain digest: %w", err)
+		}
+		inputs = append(inputs, "toolchain:"+toolchainDigest)
 	}
 
 	for _, client := range src.ConfigClients {
 		inputs = append(inputs, client.Generator, client.Directory)
 	}
 
-	return hashutil.HashStrings(inputs...)
-}
-
-// ContentCacheScope returns a stable provenance scope for content-addressed module
-// cache keys. This prevents modules with identical content from different remotes
-// (e.g. public vs private mirrors) or different transport forms (https vs ssh)
-// from aliasing to the same cached module.
-func (src *ModuleSource) ContentCacheScope() string {
-	if src == nil {
-		return ""
-	}
-	if src.Kind != ModuleSourceKindGit || src.Git == nil {
-		return ""
-	}
-
-	repo := src.Git.HTMLRepoURL
-	if repo == "" {
-		// fallback for early/partial git sources before HTML URL is populated
-		repo = src.Git.CloneRef
-	}
-	cloneRef := src.Git.CloneRef
-
-	return hashutil.HashStrings(
-		"git-module-cache-scope",
-		repo,
-		cloneRef,
-		src.Git.Commit,
-		src.SourceRootSubpath,
-	).String()
-}
-
-// ContentScopedDigest returns a stable digest for caching source-derived artifacts.
-// For git sources we mix in provenance scope so distinct remotes with identical
-// content don't alias in runtime/codegen/module-definition caches.
-func (src *ModuleSource) ContentScopedDigest() string {
-	if src == nil {
-		return ""
-	}
-	scope := src.ContentCacheScope()
-	if scope == "" {
-		return src.Digest
-	}
-	return hashutil.HashStrings(src.Digest, scope).String()
+	return hashutil.HashStrings(inputs...), nil
 }
 
 // LoadContextDir loads addition files+directories from the module source's context, including those that

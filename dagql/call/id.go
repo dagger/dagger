@@ -57,7 +57,6 @@ type ID struct {
 
 const (
 	extraDigestLabelContent = "content"
-	moduleIdentityInputName = "__dagger.module"
 )
 
 type ExtraDigest struct {
@@ -183,18 +182,20 @@ func (id *ID) ExtraDigests() []ExtraDigest {
 	return out
 }
 
-// OutputEquivalentDigest returns the digest used when outputs can be treated as
-// interchangeable across different recipes:
-// 1. content digest (if set)
-// 2. dag-op digest fallback
-func (id *ID) OutputEquivalentDigest() digest.Digest {
-	if id == nil {
-		return ""
+func (id *ID) ExtraDigestByLabel(label string) *ExtraDigest {
+	if id == nil || len(id.pb.ExtraDigests) == 0 {
+		return nil
 	}
-	if content := id.ContentDigest(); content != "" {
-		return content
+	for _, extra := range id.pb.ExtraDigests {
+		if extra == nil || extra.Digest == "" || extra.Label != label {
+			continue
+		}
+		return &ExtraDigest{
+			Digest: digest.Digest(extra.Digest),
+			Label:  extra.Label,
+		}
 	}
-	return id.DagOpDigest()
+	return nil
 }
 
 func (id *ID) moduleIdentityID() *ID {
@@ -202,10 +203,6 @@ func (id *ID) moduleIdentityID() *ID {
 		return nil
 	}
 	return id.module.ID()
-}
-
-func (id *ID) moduleRecipeDigest() digest.Digest {
-	return id.moduleInputDigest()
 }
 
 func (id *ID) moduleInputDigest() digest.Digest {
@@ -216,16 +213,6 @@ func (id *ID) moduleInputDigest() digest.Digest {
 		return modID.Digest()
 	}
 	return digest.Digest(id.pb.Module.CallDigest)
-}
-
-func appendSyntheticModuleRecipeBytes(h *hashutil.Hasher, moduleDigest digest.Digest) *hashutil.Hasher {
-	// Synthetic reserved input:
-	// argument name + literal-ID prefix + referenced digest bytes.
-	const literalIDPrefix = '0'
-	return h.WithString(moduleIdentityInputName).
-		WithByte(literalIDPrefix).
-		WithString(moduleDigest.String()).
-		WithDelim()
 }
 
 // EffectIDs returns the effect IDs directly attached to this call.
@@ -375,7 +362,8 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 
 	// Args
 	for _, arg := range id.args {
-		if arg.isSensitive {
+		arg = redactedArgForID(arg)
+		if arg == nil {
 			continue
 		}
 		var err error
@@ -390,7 +378,8 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 
 	// Implicit inputs
 	for _, input := range id.implicitInputs {
-		if input.isSensitive {
+		input = redactedArgForID(input)
+		if input == nil {
 			continue
 		}
 		var err error
@@ -402,7 +391,8 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 		h = h.WithDelim()
 	}
 
-	// Synthetic module identity input (input lane only; no self-shape bytes).
+	// module is an input, not part of self; this way multiple digests on the module ID
+	// can contribute to cache checks
 	if moduleDigest := id.moduleInputDigest(); moduleDigest != "" {
 		inputs = append(inputs, moduleDigest)
 	}
@@ -420,6 +410,7 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	return digest.Digest(h.DigestAndClose()), inputs, nil
 }
 
+// FIXME:!!!!!! This drops args and other inputs which may reference modules too
 func (id *ID) Modules() []*Module {
 	allMods := []*Module{}
 	for id != nil {
@@ -459,17 +450,22 @@ func (id *ID) Path() string {
 func (id *ID) DisplaySelf() string {
 	buf := new(strings.Builder)
 	fmt.Fprintf(buf, "%s", id.pb.Field)
-	for ai, arg := range id.args {
-		if arg.isSensitive {
+	displayArgs := make([]*Argument, 0, len(id.args))
+	for _, arg := range id.args {
+		arg = redactedArgForID(arg)
+		if arg == nil {
 			continue
 		}
+		displayArgs = append(displayArgs, arg)
+	}
+	for ai, arg := range displayArgs {
 		if ai == 0 {
 			fmt.Fprintf(buf, "(")
 		} else {
 			fmt.Fprintf(buf, ", ")
 		}
 		fmt.Fprintf(buf, "%s: %s", arg.pb.Name, arg.value.Display())
-		if ai == len(id.args)-1 {
+		if ai == len(displayArgs)-1 {
 			fmt.Fprintf(buf, ")")
 		}
 	}
@@ -546,6 +542,16 @@ func WithContentDigest(dig digest.Digest) IDOpt {
 	}
 }
 
+func WithReplacedContentDigest(dig digest.Digest) IDOpt {
+	return func(id *ID) {
+		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extraDigestLabelContent)
+		if dig == "" {
+			return
+		}
+		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelContent)
+	}
+}
+
 func WithExtraDigest(extra ExtraDigest) IDOpt {
 	return func(id *ID) {
 		if extra.Digest == "" {
@@ -556,6 +562,49 @@ func WithExtraDigest(extra ExtraDigest) IDOpt {
 			extra.Digest.String(),
 			extra.Label,
 		)
+	}
+}
+
+func WithReplacedExtraDigest(extra ExtraDigest) IDOpt {
+	return func(id *ID) {
+		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extra.Label)
+		if extra.Digest == "" {
+			return
+		}
+		id.pb.ExtraDigests = appendExtraDigest(
+			id.pb.ExtraDigests,
+			extra.Digest.String(),
+			extra.Label,
+		)
+	}
+}
+
+// Update the ID to have existing recipe digest and existing extra digests
+// mixed with the given string. Also update the ID to have an extra digest
+// set to the given string.
+// This is useful for making IDs shared cache based purely on the given string.
+func WithScopeToDigest(label string, scope digest.Digest) IDOpt {
+	return func(id *ID) {
+		origExtraDigests := id.ExtraDigests()
+
+		// ensure recipe digest is scoped to this operation
+		WithAppendedImplicitInputs(NewArgument(
+			label,
+			NewLiteralString(scope.String()),
+			false,
+		))(id)
+
+		// ensure any extra digests are also scoped to this operation
+		for _, extraDigest := range origExtraDigests {
+			extraDigest.Digest = hashutil.HashStrings(extraDigest.Digest.String(), scope.String())
+			WithReplacedExtraDigest(extraDigest)(id)
+		}
+
+		// finally, add an extra digest for the scope itself
+		WithExtraDigest(ExtraDigest{
+			Label:  label,
+			Digest: scope,
+		})(id)
 	}
 }
 
@@ -579,10 +628,9 @@ func WithArgs(args ...*Argument) IDOpt {
 		id.args = args
 		id.pb.Args = make([]*callpbv1.Argument, 0, len(args))
 		for _, arg := range args {
-			if arg.isSensitive {
-				continue
+			if redactedArg := redactedArgForID(arg); redactedArg != nil {
+				id.pb.Args = append(id.pb.Args, redactedArg.pb)
 			}
-			id.pb.Args = append(id.pb.Args, arg.pb)
 		}
 	}
 }
@@ -592,12 +640,40 @@ func WithImplicitInputs(inputs ...*Argument) IDOpt {
 		id.implicitInputs = inputs
 		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(inputs))
 		for _, input := range inputs {
-			if input.isSensitive {
-				continue
+			if redactedInput := redactedArgForID(input); redactedInput != nil {
+				id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, redactedInput.pb)
 			}
-			id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, input.pb)
 		}
 	}
+}
+
+func WithAppendedImplicitInputs(inputs ...*Argument) IDOpt {
+	return func(id *ID) {
+		id.implicitInputs = append(id.implicitInputs, inputs...)
+		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(id.implicitInputs))
+		for _, input := range id.implicitInputs {
+			if redactedInput := redactedArgForID(input); redactedInput != nil {
+				id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, redactedInput.pb)
+			}
+		}
+	}
+}
+
+func redactedArgForID(arg *Argument) *Argument {
+	if arg == nil {
+		return nil
+	}
+	if !arg.isSensitive {
+		return arg
+	}
+	if arg.Name() != "plaintext" {
+		return nil
+	}
+	return NewArgument(
+		arg.Name(),
+		NewLiteralString("***"),
+		false,
+	)
 }
 
 func WithReceiver(recv *ID) IDOpt {
@@ -862,7 +938,8 @@ func (id *ID) decode(
 
 // calcDigest calculates the recipe digest for the ID.
 //
-// It includes only recipe data for this call (self + recipe identity of inputs).
+// It includes recipe data for this call shape, explicit/implicit recipe inputs,
+// and module recipe identity.
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
 		return "", nil
@@ -897,7 +974,8 @@ func (id *ID) calcDigest() (string, error) {
 
 	// Args
 	for _, arg := range id.args {
-		if arg.isSensitive {
+		arg = redactedArgForID(arg)
+		if arg == nil {
 			continue
 		}
 		h, err = AppendArgumentBytes(arg, h)
@@ -911,7 +989,8 @@ func (id *ID) calcDigest() (string, error) {
 
 	// Implicit inputs
 	for _, input := range id.implicitInputs {
-		if input.isSensitive {
+		input = redactedArgForID(input)
+		if input == nil {
 			continue
 		}
 		h, err = AppendArgumentBytes(input, h)
@@ -922,12 +1001,13 @@ func (id *ID) calcDigest() (string, error) {
 		h = h.WithDelim()
 	}
 
-	// Synthetic module identity input.
-	if moduleDigest := id.moduleRecipeDigest(); moduleDigest != "" {
-		h = appendSyntheticModuleRecipeBytes(h, moduleDigest)
-		h = h.WithDelim()
+	// End implicit input section.
+	h = h.WithDelim()
+
+	// Module recipe digest
+	if moduleDigest := id.moduleInputDigest(); moduleDigest != "" {
+		h = h.WithString(moduleDigest.String())
 	}
-	// End implicit input section (including synthetic module input).
 	h = h.WithDelim()
 
 	// Nth

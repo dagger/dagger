@@ -8,7 +8,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
-	"github.com/dagger/dagger/util/hashutil"
 )
 
 func TestImplicitInputsAffectDigest(t *testing.T) {
@@ -115,22 +114,27 @@ func TestModuleMetadataDoesNotAffectIdentity(t *testing.T) {
 	}
 }
 
-func TestModuleIdentityContributesAsSyntheticInput(t *testing.T) {
+func TestModuleIdentityIsImplicitInputOnly(t *testing.T) {
 	typ := &ast.Type{
 		NamedType: "String",
 		NonNull:   true,
 	}
-	moduleAID := New().Append(typ, "moduleA")
-	moduleBID := New().Append(typ, "moduleB")
+	sharedModuleContent := digest.FromString("module-content")
+	moduleAID := New().Append(typ, "moduleA").With(WithContentDigest(sharedModuleContent))
+	moduleBID := New().Append(typ, "moduleB").With(WithContentDigest(sharedModuleContent))
+
+	// Reality/model:
+	// 1. module recipe identity contributes to call recipe digest
+	// 2. module identity is also represented as an implicit input in SelfDigestAndInputs
 	idNoModule := New().Append(typ, "field")
 	idWithModuleA := idNoModule.With(WithModule(NewModule(moduleAID, "mod", "ref", "pin")))
 	idWithModuleB := idNoModule.With(WithModule(NewModule(moduleBID, "mod", "ref", "pin")))
 
 	if idNoModule.Digest() == idWithModuleA.Digest() {
-		t.Fatalf("expected module-scoped digest to differ from unscoped digest: %s", idWithModuleA.Digest())
+		t.Fatalf("module identity should affect recipe digest: %s vs %s", idNoModule.Digest(), idWithModuleA.Digest())
 	}
 	if idWithModuleA.Digest() == idWithModuleB.Digest() {
-		t.Fatalf("different module IDs should produce different digests: %s", idWithModuleA.Digest())
+		t.Fatalf("distinct module identities should affect recipe digest: %s vs %s", idWithModuleA.Digest(), idWithModuleB.Digest())
 	}
 
 	selfNoModule, inputsNoModule, err := idNoModule.SelfDigestAndInputs()
@@ -154,68 +158,20 @@ func TestModuleIdentityContributesAsSyntheticInput(t *testing.T) {
 	}
 
 	if len(inputsModuleA) != len(inputsNoModule)+1 {
-		t.Fatalf("module synthetic input should append one input digest: %d vs %d", len(inputsNoModule), len(inputsModuleA))
+		t.Fatalf("module implicit input should append one input digest: %d vs %d", len(inputsNoModule), len(inputsModuleA))
 	}
 	if len(inputsModuleA) != len(inputsModuleB) {
 		t.Fatalf("module input count mismatch: %d vs %d", len(inputsModuleA), len(inputsModuleB))
 	}
 	last := len(inputsModuleA) - 1
 	if inputsModuleA[last] != moduleAID.Digest() {
-		t.Fatalf("unexpected moduleA synthetic input digest: got %s, want %s", inputsModuleA[last], moduleAID.Digest())
+		t.Fatalf("unexpected moduleA implicit input digest: got %s, want %s", inputsModuleA[last], moduleAID.Digest())
 	}
 	if inputsModuleB[last] != moduleBID.Digest() {
-		t.Fatalf("unexpected moduleB synthetic input digest: got %s, want %s", inputsModuleB[last], moduleBID.Digest())
+		t.Fatalf("unexpected moduleB implicit input digest: got %s, want %s", inputsModuleB[last], moduleBID.Digest())
 	}
-}
-
-func TestDagOpDigestKeepsSelfShapeWhenContentMatches(t *testing.T) {
-	commonContent := digest.FromString("shared-content")
-	idA := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "fieldA").With(WithContentDigest(commonContent))
-	idB := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "fieldB").With(WithContentDigest(commonContent))
-
-	if idA.OutputEquivalentDigest() != idB.OutputEquivalentDigest() {
-		t.Fatalf("expected matching output-equivalent digest: %s vs %s", idA.OutputEquivalentDigest(), idB.OutputEquivalentDigest())
-	}
-	if idA.DagOpDigest() == idB.DagOpDigest() {
-		t.Fatalf("expected dag-op digest to differ for different call self shape: %s", idA.DagOpDigest())
-	}
-}
-
-func TestDagOpDigestMatchesSelfPlusDagOpInputsHash(t *testing.T) {
-	receiver := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "receiver").With(WithContentDigest(digest.FromString("receiver-content")))
-	argID := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "arg").With(WithContentDigest(digest.FromString("arg-content")))
-	id := receiver.Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "child",
-		WithArgs(NewArgument("idArg", NewLiteralID(argID), false)),
-		WithImplicitInputs(NewArgument("scope", NewLiteralString("scope-a"), false)),
-	)
-
-	selfDigest, inputDigests, err := id.DagOpSelfDigestAndInputs()
-	if err != nil {
-		t.Fatalf("self+dag-op-input digests: %v", err)
-	}
-	h := hashutil.NewHasher().WithString(selfDigest.String())
-	for _, in := range inputDigests {
-		h = h.WithString(in.String())
-	}
-	expected := digest.Digest(h.DigestAndClose())
-
-	if got := id.DagOpDigest(); got != expected {
-		t.Fatalf("unexpected dag-op digest: got %s, want %s", got, expected)
+	if inputsModuleA[last] == inputsModuleB[last] {
+		t.Fatalf("module implicit input should reflect module recipe identity: %s vs %s", inputsModuleA[last], inputsModuleB[last])
 	}
 }
 

@@ -336,7 +336,6 @@ func isIntrospection(ctx context.Context, id *call.ID) bool {
 			"__schemaVersion",
 			"currentTypeDefs",
 			"currentFunctionCall",
-			"currentModule",
 			"typeDef",
 			"sourceMap":
 			return true

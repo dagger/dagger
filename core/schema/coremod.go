@@ -433,28 +433,11 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		return nil, err
 	}
 
-	query, err := core.CurrentQuery(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get current query: %w", err)
+		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get current dagql server: %w", err)
 	}
-	c, err := query.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get query cache: %w", err)
-	}
-
-	// Prefer the currently-evaluating dagql server from context. This preserves
-	// module-local schema (e.g. SDK-as-module constructors) when decoding IDs
-	// returned from SDK calls.
-	if curDag := dagql.CurrentDagqlServer(ctx); curDag != nil {
-		val, err := curDag.WithCache(c).Load(ctx, &idp)
-		if err == nil {
-			return val, nil
-		}
-		// Fall back to coreMod's dag for legacy call paths that may decode
-		// against a different server context.
-	}
-
-	val, err := obj.coreMod.Dag.WithCache(c).Load(ctx, &idp)
+	val, err := dag.Load(ctx, &idp)
 	if err != nil {
 		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
 	}
