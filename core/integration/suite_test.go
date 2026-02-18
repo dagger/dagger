@@ -131,7 +131,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
 
 	// Set repo path
-	os.Setenv("_TEST_REPO_PATH", "../..")
+	os.Setenv("_DAGGER_TESTS_REPO_PATH", "../..")
 
 	// Unset session vars so tests create fresh sessions against inner engine
 	// (must happen after all dag.* calls above, which need the outer session)

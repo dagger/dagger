@@ -1235,8 +1235,8 @@ func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath := os.Getenv("_TEST_REPO_PATH")
-	require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -1267,8 +1267,8 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath := os.Getenv("_TEST_REPO_PATH")
-	require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -1302,8 +1302,8 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath := os.Getenv("_TEST_REPO_PATH")
-	require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},

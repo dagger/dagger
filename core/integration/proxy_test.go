@@ -211,8 +211,8 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 				WithServiceBinding(squidAlias, squidSvc)
 		})
 
-		thisRepoPath := os.Getenv("_TEST_REPO_PATH")
-		require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
+		thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+		require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 		thisRepo := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 			Exclude: []string{"bin"},
 		})
@@ -238,7 +238,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
-			WithEnvVariable("_TEST_REPO_PATH", "/src").
+			WithEnvVariable("_DAGGER_TESTS_REPO_PATH", "/src").
 			WithEnvVariable(executeTestEnvName, "ya").
 			WithExec([]string{
 				"./test",
@@ -529,8 +529,8 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 				WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
 		})
 
-		thisRepoPath := os.Getenv("_TEST_REPO_PATH")
-		require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
+		thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+		require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 		thisRepo := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 			Exclude: []string{"bin"},
 		})
@@ -549,7 +549,7 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
-			WithEnvVariable("_TEST_REPO_PATH", "/src").
+			WithEnvVariable("_DAGGER_TESTS_REPO_PATH", "/src").
 			WithEnvVariable(executeTestEnvName, "ya").
 			WithExec([]string{
 				"./test",

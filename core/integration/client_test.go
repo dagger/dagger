@@ -188,8 +188,8 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 	c := connect(ctx, t)
 
 	devEngine := devEngineContainerAsService(devEngineContainer(c))
-	thisRepoPath := os.Getenv("_TEST_REPO_PATH")
-	require.NotEmpty(t, thisRepoPath, "_TEST_REPO_PATH not set")
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{
