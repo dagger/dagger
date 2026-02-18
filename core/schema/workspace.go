@@ -31,7 +31,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			DagOpDirectoryWrapper(
 				srv, s.directory,
 				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
-			), dagql.CacheAsRequested).
+			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
 				`Path is relative to workspace root. Use "." for the root directory.`).
 			Args(
@@ -39,13 +39,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 			),
-		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
+		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
 				`Path is relative to workspace root.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
 			),
-		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CacheAsRequested).
+		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the path relative to the workspace root if found, or null if not found.`,
 				`The search stops at the workspace root and will not traverse above it.`).
