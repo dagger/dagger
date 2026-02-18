@@ -63,51 +63,47 @@ func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 		WithNewFile("a/somedir/hi.txt", "hi").
 		With(initDangModule("finder", `
 type Finder {
-  pub ws: Workspace!
+  pub result: String!
 
-  new(ws: Workspace!) {
-    self.ws = ws
+  new(ws: Workspace!, name: String!, from: String!) {
+    self.result = ws.findUp(name: name, from: from) ?? ""
     self
-  }
-
-  pub find(name: String!, from: String!): String! {
-    ws.findUp(name: name, from: from) ?? ""
   }
 }
 `))
 
 	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "find", "--name=other.txt", "--from=a/b")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "a/b/other.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "find", "--name=target.txt", "--from=a/b")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "a/target.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file at workspace root", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "find", "--name=root.txt", "--from=a/b")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "root.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find directory in parent", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "find", "--name=somedir", "--from=a/b")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "a/somedir", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find file in child directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "find", "--name=leaf.txt", "--from=a/b")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=leaf.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find non-existent file", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "find", "--name=nonexistent.txt", "--from=a/b")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
