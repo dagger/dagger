@@ -20,9 +20,10 @@ type Config struct {
 
 // ModuleEntry represents a single module entry in the workspace config.
 type ModuleEntry struct {
-	Source string         `toml:"source"`
-	Config map[string]any `toml:"config,omitempty"`
-	Blueprint bool        `toml:"blueprint,omitempty"`
+	Source           string         `toml:"source"`
+	Config           map[string]any `toml:"config,omitempty"`
+	Blueprint        bool           `toml:"blueprint,omitempty"`
+	LegacyDefaultPath bool          `toml:"legacy-default-path,omitempty"`
 }
 
 // ParseConfig parses a config.toml file from raw bytes.
@@ -67,6 +68,9 @@ func SerializeConfig(cfg *Config) []byte {
 			fmt.Fprintf(&b, "source = %q\n", entry.Source)
 			if entry.Blueprint {
 				b.WriteString("blueprint = true\n")
+			}
+			if entry.LegacyDefaultPath {
+				b.WriteString("legacy-default-path = true\n")
 			}
 			if len(entry.Config) > 0 {
 				// Sort config keys for deterministic output
@@ -138,6 +142,11 @@ func SerializeConfigWithHints(cfg *Config, existingTOML []byte, hints map[string
 		if entry.Blueprint {
 			if err := doc.Set(fmt.Sprintf("modules.%s.blueprint", name), true); err != nil {
 				return nil, fmt.Errorf("setting modules.%s.blueprint: %w", name, err)
+			}
+		}
+		if entry.LegacyDefaultPath {
+			if err := doc.Set(fmt.Sprintf("modules.%s.legacy-default-path", name), true); err != nil {
+				return nil, fmt.Errorf("setting modules.%s.legacy-default-path: %w", name, err)
 			}
 		}
 		if len(entry.Config) > 0 {
@@ -445,6 +454,7 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 //   - ignore (the ignore list)
 //   - modules.<name>.source
 //   - modules.<name>.blueprint
+//   - modules.<name>.legacy-default-path
 //   - modules.<name>.config.<key>
 //
 // validateConfigKey ensures the given dotted key path corresponds to a valid
@@ -539,8 +549,8 @@ func validTOMLFieldNames(t reflect.Type) []string {
 func parseValueString(key string, rawValue string) any {
 	parts := strings.Split(key, ".")
 
-	// modules.<name>.blueprint is always a bool
-	if len(parts) == 3 && parts[0] == "modules" && parts[2] == "blueprint" {
+	// modules.<name>.blueprint and modules.<name>.legacy-default-path are always bools
+	if len(parts) == 3 && parts[0] == "modules" && (parts[2] == "blueprint" || parts[2] == "legacy-default-path") {
 		return rawValue == "true"
 	}
 

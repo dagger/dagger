@@ -1545,6 +1545,10 @@ type pendingModule struct {
 	// If true, this is a blueprint module: alias its functions to the Query root.
 	Blueprint bool
 
+	// If true, resolve +defaultPath from workspace root instead of module source.
+	// Used for legacy blueprints/toolchains migrated to workspace modules.
+	LegacyDefaultPath bool
+
 	// If true, disable find-up when resolving the module source.
 	// Used for workspace config modules where the path is explicit.
 	DisableFindUp bool
@@ -1628,6 +1632,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				Ref:                ref,
 				Name:               name,
 				Blueprint:          entry.Blueprint,
+				LegacyDefaultPath:  entry.LegacyDefaultPath,
 				DisableFindUp:      true,
 				ConfigDefaults:     entry.Config,
 				DefaultsFromDotEnv: ws.Config.DefaultsFromDotEnv,
@@ -1642,9 +1647,10 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			ref = resolveLocalRef(ws, tc.Source)
 		}
 		pending = append(pending, pendingModule{
-			Ref:            ref,
-			Name:           tc.Name,
-			ConfigDefaults: tc.ConfigDefaults,
+			Ref:               ref,
+			Name:              tc.Name,
+			LegacyDefaultPath: true,
+			ConfigDefaults:    tc.ConfigDefaults,
 		})
 	}
 
@@ -1655,9 +1661,10 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			ref = resolveLocalRef(ws, legacyBlueprint.Source)
 		}
 		pending = append(pending, pendingModule{
-			Ref:       ref,
-			Name:      legacyBlueprint.Name,
-			Blueprint: true,
+			Ref:               ref,
+			Name:              legacyBlueprint.Name,
+			Blueprint:         true,
+			LegacyDefaultPath: true,
 		})
 	}
 

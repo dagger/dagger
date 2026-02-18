@@ -216,7 +216,7 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
   extraction block in the same function. CWD module still loads normally (no-op due to
   blueprint + no SDK).
 
-- [ ] **#4: Update migration for blueprints** (blocked by #3) -- In `Migrate()` in
+- [x] **#4: Update migration for blueprints** (blocked by #3) -- In `Migrate()` in
   `core/workspace/migrate.go`, extract legacy `dagger.json` blueprint to `config.toml`
   workspace module with `blueprint = true` and `legacy-default-path = true`. Remove blueprint
   field from `dagger.json`. Also add `legacy-default-path = true` to migrated toolchains.

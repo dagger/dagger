@@ -33,6 +33,7 @@ type MigrationResult struct {
 	DepRewriteCount int      // number of dependency paths rewritten
 	IncRewriteCount int      // number of include paths rewritten
 	ToolchainCount  int      // number of toolchains converted
+	BlueprintMigrated bool   // whether a blueprint was migrated
 	RemovedFiles    []string // files removed during migration
 	Warnings        []string // non-fatal warnings
 }
@@ -52,6 +53,9 @@ func (r *MigrationResult) Summary() string {
 	}
 	if r.ToolchainCount > 0 {
 		fmt.Fprintf(&b, "  %d toolchain(s) converted to workspace modules\n", r.ToolchainCount)
+	}
+	if r.BlueprintMigrated {
+		b.WriteString("  Blueprint converted to workspace module\n")
 	}
 	for _, f := range r.RemovedFiles {
 		fmt.Fprintf(&b, "  Removed: %s\n", f)
@@ -165,14 +169,33 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 			source = filepath.Join("..", tc.Source)
 		}
 		entry := ModuleEntry{
-			Source: source,
-			Config: extractConfigDefaults(tc.Customizations),
+			Source:            source,
+			Config:            extractConfigDefaults(tc.Customizations),
+			LegacyDefaultPath: true,
 		}
 		wsCfg.Modules[tc.Name] = entry
 		result.ToolchainCount++
 	}
 
-	// 3c. Introspect constructor args for config hints (in parallel)
+	// 3c. Handle blueprint -> workspace module
+	if cfg.Blueprint != nil {
+		source := cfg.Blueprint.Source
+		if core.FastModuleSourceKindCheck(cfg.Blueprint.Source, cfg.Blueprint.Pin) == core.ModuleSourceKindLocal {
+			source = filepath.Join("..", cfg.Blueprint.Source)
+		}
+		name := cfg.Blueprint.Name
+		if name == "" {
+			name = "blueprint"
+		}
+		wsCfg.Modules[name] = ModuleEntry{
+			Source:            source,
+			Blueprint:         true,
+			LegacyDefaultPath: true,
+		}
+		result.BlueprintMigrated = true
+	}
+
+	// 3d. Introspect constructor args for config hints (in parallel)
 	var allHints map[string][]ConstructorArgHint
 	if introspect != nil {
 		allHints = make(map[string][]ConstructorArgHint)
@@ -304,6 +327,23 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 		b.WriteString("blueprint = true\n")
 	}
 
+	// Blueprint entry (if present)
+	if cfg.Blueprint != nil {
+		b.WriteString("\n")
+		name := cfg.Blueprint.Name
+		if name == "" {
+			name = "blueprint"
+		}
+		fmt.Fprintf(&b, "[modules.%s]\n", name)
+		source := cfg.Blueprint.Source
+		if core.FastModuleSourceKindCheck(cfg.Blueprint.Source, cfg.Blueprint.Pin) == core.ModuleSourceKindLocal {
+			source = filepath.Join("..", cfg.Blueprint.Source)
+		}
+		fmt.Fprintf(&b, "source = %q\n", source)
+		b.WriteString("blueprint = true\n")
+		b.WriteString("legacy-default-path = true\n")
+	}
+
 	// Toolchain entries
 	for _, tc := range cfg.Toolchains {
 		b.WriteString("\n")
@@ -318,6 +358,7 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 			source = filepath.Join("..", tc.Source)
 		}
 		fmt.Fprintf(&b, "source = %q\n", source)
+		b.WriteString("legacy-default-path = true\n")
 
 		// Collect config values from customizations
 		var configEntries []string
