@@ -129,7 +129,7 @@ func (GeneratorsSuite) TestGeneratorsAsBlueprint(ctx context.Context, t *testctx
 			modGen, err := generatorsTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.WithWorkdir("app").
-				With(daggerExec("module", "init", "--blueprint", "../"+tc.path))
+				With(daggerExec("install", "--blueprint", "../"+tc.path))
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.

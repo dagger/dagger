@@ -350,7 +350,7 @@ func (WorkspaceSuite) TestConfigReadFullConfig(ctx context.Context, t *testctx.T
 
 	configTOML := `[modules.my-module]
 source = "modules/my-module"
-alias = true
+blueprint = true
 
 [modules.jest]
 source = "github.com/dagger/jest"
@@ -360,7 +360,7 @@ source = "github.com/dagger/jest"
 	out, err := ctr.With(daggerExec("workspace", "config")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `source = "modules/my-module"`)
-	require.Contains(t, out, "alias = true")
+	require.Contains(t, out, "blueprint = true")
 	require.Contains(t, out, `source = "github.com/dagger/jest"`)
 }
 
@@ -369,7 +369,7 @@ func (WorkspaceSuite) TestConfigReadScalar(ctx context.Context, t *testctx.T) {
 
 	configTOML := `[modules.my-module]
 source = "modules/my-module"
-alias = true
+blueprint = true
 `
 	ctr := workspaceWithConfig(t, c, configTOML)
 
@@ -379,7 +379,7 @@ alias = true
 	require.Equal(t, "modules/my-module", strings.TrimSpace(out))
 
 	// Read bool value
-	out, err = ctr.With(daggerExec("workspace", "config", "modules.my-module.alias")).Stdout(ctx)
+	out, err = ctr.With(daggerExec("workspace", "config", "modules.my-module.blueprint")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "true", strings.TrimSpace(out))
 }
@@ -389,7 +389,7 @@ func (WorkspaceSuite) TestConfigReadTable(ctx context.Context, t *testctx.T) {
 
 	configTOML := `[modules.my-module]
 source = "modules/my-module"
-alias = true
+blueprint = true
 
 [modules.jest]
 source = "github.com/dagger/jest"
@@ -400,13 +400,13 @@ source = "github.com/dagger/jest"
 	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `source = "modules/my-module"`)
-	require.Contains(t, out, "alias = true")
+	require.Contains(t, out, "blueprint = true")
 
 	// Read the modules table (should flatten with dotted keys)
 	out, err = ctr.With(daggerExec("workspace", "config", "modules")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `my-module.source = "modules/my-module"`)
-	require.Contains(t, out, "my-module.alias = true")
+	require.Contains(t, out, "my-module.blueprint = true")
 	require.Contains(t, out, `jest.source = "github.com/dagger/jest"`)
 }
 
@@ -445,15 +445,15 @@ func (WorkspaceSuite) TestConfigWriteBool(ctx context.Context, t *testctx.T) {
 
 	configTOML := `[modules.my-module]
 source = "modules/my-module"
-alias = true
+blueprint = true
 `
 	ctr := workspaceWithConfig(t, c, configTOML)
 
 	// Write a bool value
-	ctr = ctr.With(daggerExec("workspace", "config", "modules.my-module.alias", "false"))
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.my-module.blueprint", "false"))
 
 	// Verify by reading back
-	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module.alias")).Stdout(ctx)
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module.blueprint")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "false", strings.TrimSpace(out))
 }

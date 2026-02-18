@@ -109,7 +109,8 @@ var moduleInstallCmd = &cobra.Command{
 			ws := dag.CurrentWorkspace()
 
 			msg, err := ws.Install(ctx, extraArgs[0], dagger.WorkspaceInstallOpts{
-				Name: installName,
+				Name:      installName,
+				Blueprint: installBlueprint,
 			})
 			if err != nil {
 				return err
@@ -279,6 +280,7 @@ func init() {
 	migrateCmd.Flags().BoolVarP(&migrateList, "list", "l", false, "List migrateable modules instead of performing migration")
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+	moduleInstallCmd.Flags().BoolVar(&installBlueprint, "blueprint", false, "Install the module as a blueprint (functions aliased to Query root)")
 	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(moduleInstallCmd, moduleInstallCmd.Flags(), false)
 }

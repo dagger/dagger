@@ -43,9 +43,8 @@ var (
 	moduleSourcePath string
 	moduleIncludes   []string
 
-	installName string
-
-	initBlueprint string
+	installName      string
+	installBlueprint bool
 
 	developSDK        string
 	developSourcePath string
@@ -145,14 +144,6 @@ func init() {
 	// module management commands
 	moduleAddFlags(configCmd, configCmd.PersistentFlags(), false)
 
-	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
-	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
-	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
-	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
-	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
-	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
-	moduleInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
-
 	// dagger module init
 	moduleCmd.AddCommand(moduleModInitCmd)
 	moduleModInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK to use (go, python, typescript)")
@@ -179,167 +170,6 @@ func init() {
 	moduleDevelopCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 	moduleDevelopCmd.Flags().BoolVar(&noSelfCalls, "without-self-calls", false, "Disable self-calls capability for the module")
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
-}
-
-var moduleInitCmd = &cobra.Command{
-	Use:   "init [options] [path]",
-	Short: "Initialize a new module",
-	Long: `Initialize a new module at the given path.
-
-This creates a dagger.json file at the specified directory, making it the root of the new module.
-
-If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
-If --blueprint is specified, a workspace module with blueprint=true is added to config.toml.
-`,
-	Example: `
-# Add a blueprint to the workspace
-dagger init --blueprint=github.com/example/blueprint
-
-# Implement a standalone module in Go
-dagger init --sdk=go
-`,
-	GroupID: moduleGroup.ID,
-	Args:    cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		ctx := cmd.Context()
-
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
-
-			// default the module source root to the current working directory if it doesn't exist yet
-			cwd, err := pathutil.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get current working directory: %w", err)
-			}
-			srcRootArg := cwd
-			if len(extraArgs) > 0 {
-				srcRootArg = extraArgs[0]
-			}
-			if filepath.IsAbs(srcRootArg) {
-				srcRootArg, err = filepath.Rel(cwd, srcRootArg)
-				if err != nil {
-					return fmt.Errorf("failed to get relative path: %w", err)
-				}
-			}
-
-			modSrc := dag.ModuleSource(srcRootArg, dagger.ModuleSourceOpts{
-				// Tell the engine to use the provided arg as the source root, don't
-				// try to find-up a dagger.json in a parent directory and use that as
-				// the source root.
-				// This enables cases like initializing a new module in a subdirectory of
-				// another existing module.
-				DisableFindUp: true,
-				// It's okay if the source root/source dir don't exist yet since we'll
-				// create them when exporting the generated context directory.
-				AllowNotExists: true,
-				// We can only init local modules
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if alreadyExists {
-				return fmt.Errorf("module already exists")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
-			}
-			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get source root subpath: %w", err)
-			}
-			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
-
-			// default module name to directory of source root
-			if moduleName == "" {
-				moduleName = filepath.Base(srcRootAbsPath)
-			}
-
-			// only bother setting source path if there's an sdk at this time
-			if sdk != "" {
-				// if user didn't specify moduleSourcePath explicitly,
-				// check if current dir is non-empty and infer the source
-				// path accordingly.
-				if moduleSourcePath == "" {
-					moduleSourcePath, err = inferSourcePathDir(srcRootAbsPath)
-					if err != nil {
-						return err
-					}
-				} else {
-					// ensure source path is relative to the source root
-					sourceAbsPath, err := pathutil.Abs(moduleSourcePath)
-					if err != nil {
-						return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
-					}
-
-					moduleSourcePath, err = filepath.Rel(srcRootAbsPath, sourceAbsPath)
-					if err != nil {
-						return fmt.Errorf("failed to get relative source path: %w", err)
-					}
-				}
-			}
-
-			modSrc = modSrc.WithName(moduleName)
-			if sdk != "" {
-				modSrc = modSrc.WithSDK(sdk)
-			}
-			if moduleSourcePath != "" {
-				modSrc = modSrc.WithSourceSubpath(moduleSourcePath)
-			}
-			if len(moduleIncludes) > 0 {
-				modSrc = modSrc.WithIncludes(moduleIncludes)
-			}
-			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
-
-			// Blueprint mode: add as workspace module instead of module-level config
-			if initBlueprint != "" {
-				if sdk != "" {
-					return fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
-				}
-				// Install the blueprint as a workspace module with blueprint=true
-				ws := dag.CurrentWorkspace()
-				msg, installErr := ws.Install(ctx, initBlueprint, dagger.WorkspaceInstallOpts{
-					Name:      moduleName,
-					Blueprint: true,
-				})
-				if installErr != nil {
-					return fmt.Errorf("failed to install blueprint: %w", installErr)
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), msg)
-				return nil
-			}
-
-			if selfCalls {
-				if sdk == "" {
-					return fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
-				}
-				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
-			}
-
-			// Export generated files, including dagger.json
-			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
-			}
-
-			if sdk != "" {
-				// If we're generating code by setting a SDK, we should also generate a license
-				// if it doesn't already exists.
-				searchExisting := !cmd.Flags().Lookup("license").Changed
-				if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
-					return err
-				}
-			}
-
-			// Print success message to user
-			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootAbsPath)
-			return nil
-		})
-	},
 }
 
 // moduleModInitCmd is the "dagger module init" subcommand.

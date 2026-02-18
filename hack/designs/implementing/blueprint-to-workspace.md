@@ -243,7 +243,7 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
   instead of calling `WithBlueprint()` on the module source. Follow the `dagger install`
   pattern in `cmd/dagger/workspace.go` for writing to config.toml.
 
-- [ ] **#8: Tests** (blocked by #4, #5, #6, #7) -- Add compat mode tests (legacy `dagger.json`
+- [x] **#8: Tests** (blocked by #4, #5, #6, #7) -- Add compat mode tests (legacy `dagger.json`
   with blueprint loads correctly). Test `legacy-default-path` resolves from workspace root.
   Update tests that relied on module-level blueprint APIs. Remove tests for deleted blueprint
   code (look in `core/integration/blueprint_test.go`). Update config tests in
