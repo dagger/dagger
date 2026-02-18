@@ -246,6 +246,7 @@ Warnings  Migrate cmd |
   collapsed: replace `GetRelatedModules()`/`SetRelatedModules()` with direct
   `Dependencies` field access, remove the accessor pattern and enum.
 
-- [ ] **#9: Review `ContextSource` on Module** — The `ContextSource` field on `Module`
+- [x] **#9: Review `ContextSource` on Module** — The `ContextSource` field on `Module`
   was used for both toolchain context and blueprint context. With toolchain use removed,
-  review whether this field can be simplified or removed.
+  review whether this field can be simplified or removed. **Result**: Field is still
+  needed for blueprint support. Updated comments to remove toolchain references.

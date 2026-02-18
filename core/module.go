@@ -25,7 +25,9 @@ type Module struct {
 	// The source of the module
 	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
-	// The source to load contextual dirs/files from, which may be different than Source for blueprints
+	// ContextSource is the module source used as the execution context.
+	// Usually identical to Source, but for blueprints it points to the
+	// downstream module applying the blueprint (not the blueprint itself).
 	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
 
 	// The name of the module
@@ -147,10 +149,9 @@ func (mod *Module) GetSource() *ModuleSource {
 	return mod.Source.Value.Self()
 }
 
-// The "context source" is the module used as the execution context for the module.
-// Usually it's simply the module source itself. But when using blueprints or
-// toolchains, it will point to the downstream module applying the toolchain,
-// not the toolchain itself.
+// GetContextSource returns the module source used as execution context.
+// Usually identical to Source, but for blueprints it points to the
+// downstream module applying the blueprint (not the blueprint itself).
 func (mod *Module) GetContextSource() *ModuleSource {
 	if !mod.ContextSource.Valid {
 		return nil
