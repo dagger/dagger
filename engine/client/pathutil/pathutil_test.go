@@ -129,13 +129,13 @@ func TestSandboxedRelativePath(t *testing.T) {
 			expected: "/home/user/project/a/c",
 		},
 		{
-			name:    "dotdot escapes root",
+			name:     "dotdot escapes root",
 			userPath: "../..",
 			root:     "/home/user/project",
 			wantErr:  true,
 		},
 		{
-			name:    "sneaky dotdot escape",
+			name:     "sneaky dotdot escape",
 			userPath: "a/../../..",
 			root:     "/home/user/project",
 			wantErr:  true,
@@ -159,7 +159,7 @@ func TestSandboxedRelativePath(t *testing.T) {
 			expected: "C:/Users/foo/project/src",
 		},
 		{
-			name:    "Windows root dotdot escape",
+			name:     "Windows root dotdot escape",
 			userPath: "../..",
 			root:     "C:/Users/foo/project",
 			wantErr:  true,
