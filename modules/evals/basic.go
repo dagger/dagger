@@ -11,7 +11,7 @@ import (
 )
 
 // Test basic prompting.
-func (m *Evals) Basic() *Basic {
+func (*Evals) Basic() *Basic {
 	return &Basic{}
 }
 

@@ -25,9 +25,9 @@ func (e *WorkspacePattern) Name() string {
 func (e *WorkspacePattern) Prompt(base *dagger.LLM) *dagger.LLM {
 	return base.
 		WithEnv(dag.Env().
-			WithWorkspaceInput("dir", dag.Workspace(time.Now().String()),
+			WithFactsWorkspaceInput("dir", dag.FactsWorkspace(time.Now().String()),
 				"Your workspace for performing research.").
-			WithWorkspaceOutput("out",
+			WithFactsWorkspaceOutput("out",
 				"The workspace containing your facts."),
 		).
 		WithPrompt(`You are a researcher with convenient access to new facts. Research and record three facts. Don't rely on your own knowledge - only rely on the workspace. You can't find a new fact until you've recorded the last one.`)
@@ -35,7 +35,7 @@ func (e *WorkspacePattern) Prompt(base *dagger.LLM) *dagger.LLM {
 
 func (e *WorkspacePattern) Check(ctx context.Context, prompt *dagger.LLM) error {
 	return runt.Run(ctx, func(t testing.TB) {
-		facts, err := prompt.Env().Output("out").AsWorkspace().Facts(ctx)
+		facts, err := prompt.Env().Output("out").AsFactsWorkspace().Facts(ctx)
 		require.NoError(t, err)
 		model, err := prompt.Model(ctx)
 		require.NoError(t, err)

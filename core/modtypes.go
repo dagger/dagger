@@ -2,13 +2,136 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
+
+// CollectedContent accumulates core object IDs and a rolling content hash
+// while walking a module function's return value. IDs are used for resource
+// transfer (secrets, sockets, etc.) and the content hash is used to compute
+// content-addressed cache keys for Workspace-aware functions.
+type CollectedContent struct {
+	// IDs maps recipe digest → resource ID for every core object (Directory,
+	// File, Container, …) found in the value tree.
+	IDs map[digest.Digest]*resource.ID
+
+	// hasher accumulates a rolling hash of all content found in the value
+	// tree — both core object content digests and primitive scalar values.
+	// Each implementor feeds its contribution directly, avoiding the need
+	// to store intermediate values.
+	hasher *hashutil.Hasher
+
+	digest digest.Digest
+}
+
+func NewCollectedContent() *CollectedContent {
+	return &CollectedContent{
+		IDs:    map[digest.Digest]*resource.ID{},
+		hasher: hashutil.NewHasher(),
+	}
+}
+
+// Digest computes and finalizes the content digest.
+func (content *CollectedContent) Digest() digest.Digest {
+	if content.digest != "" {
+		return content.digest
+	}
+	content.digest = digest.Digest(content.hasher.DigestAndClose())
+	return content.digest
+}
+
+// CollectID collects an ID, indicating whether it came from an unknown field.
+func (content *CollectedContent) CollectID(idp call.ID, unknown bool) {
+	rid := &resource.ID{
+		ID:       idp,
+		Optional: unknown, // mark this id as optional, since it's a best-guess attempt
+	}
+	content.IDs[idp.Digest()] = rid
+	dgst := rid.ContentDigest()
+	if dgst == "" {
+		dgst = rid.Digest()
+	}
+	content.hasher.WithString(string(dgst))
+}
+
+// CollectUnknown naively walks a typically JSON-decoded value, e.g. from a
+// module object's private field. It attempts to decode any strings it
+// encounters into IDs, and hashes everything into the rolling content hash.
+//
+// It is also used to content encode anything that is known to be JSONable.
+func (content *CollectedContent) CollectUnknown(value any) error {
+	switch value := value.(type) {
+	case []any:
+		for i, value := range value {
+			if err := content.CollectIndexed(i, func() error {
+				return content.CollectUnknown(value)
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	case map[string]any:
+		for _, k := range slices.Sorted(maps.Keys(value)) {
+			if err := content.CollectKeyed(k, func() error {
+				return content.CollectUnknown(value[k])
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	case string:
+		var idp call.ID
+		if err := idp.Decode(value); err == nil {
+			content.CollectID(idp, true)
+			return nil
+		} else {
+			return content.CollectJSONable(value)
+		}
+	default:
+		return content.CollectJSONable(value)
+	}
+}
+
+// CollectJSONable content hashes a JSON-marshalble value.
+func (content *CollectedContent) CollectJSONable(value any) error {
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	content.hasher.WithBytes(bytes...)
+	return nil
+}
+
+// CollectIndexedUnknown hashes an unknown value, preceded by its array index
+// and followed by a delimiter.
+func (content *CollectedContent) CollectIndexed(i int, value func() error) error {
+	content.hasher.WithInt64(int64(i))
+	if err := value(); err != nil {
+		return err
+	}
+	content.hasher.WithDelim()
+	return nil
+}
+
+// CollectKeyedUnknown hashes an unknown value, preceded by its map key and
+// followed by a delimiter.
+func (content *CollectedContent) CollectKeyed(key string, value func() error) error {
+	content.hasher.WithString(key)
+	if err := value(); err != nil {
+		return err
+	}
+	content.hasher.WithDelim()
+	return nil
+}
 
 // ModType wraps the core TypeDef type with schema specific concerns like ID conversion
 // and tracking of the module in which the type was originally defined.
@@ -22,9 +145,11 @@ type ModType interface {
 	// by the SDK, which may include converting objects to their IDs
 	ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error)
 
-	// CollectCoreIDs collects all the call IDs from core objects in the given value, whether
-	// it's idable itself or is a list/object containing idable values (recursively)
-	CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error
+	// CollectContent walks the given value and collects core object IDs and
+	// primitive scalar values into the provided CollectedContent. This is
+	// used for resource transfer (IDs) and for computing content-addressed
+	// cache keys (IDs + Values).
+	CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error
 
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
@@ -58,8 +183,11 @@ func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed
 	return value, nil
 }
 
-func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.AnyResult, map[digest.Digest]*resource.ID) error {
-	return nil
+func (t *PrimitiveType) CollectContent(_ context.Context, value dagql.AnyResult, content *CollectedContent) error {
+	if value == nil {
+		return content.CollectJSONable(nil)
+	}
+	return content.CollectJSONable(value.Unwrap())
 }
 
 func (t *PrimitiveType) SourceMod() Mod {
@@ -129,13 +257,14 @@ func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (an
 	return resultList, nil
 }
 
-func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (t *ListType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
-		return nil
+		return content.CollectJSONable(nil)
 	}
+
 	list, ok := value.Unwrap().(dagql.Enumerable)
 	if !ok {
-		return fmt.Errorf("%T.CollectCoreIDs: expected Enumerable, got %T: %#v", t, value, value)
+		return fmt.Errorf("%T.CollectContent: expected Enumerable, got %T: %#v", t, value, value)
 	}
 
 	for i := 1; i <= list.Len(); i++ {
@@ -149,7 +278,9 @@ func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, id
 
 		ctx := dagql.ContextWithID(ctx, item.ID())
 
-		if err := t.Underlying.CollectCoreIDs(ctx, item, ids); err != nil {
+		if err := content.CollectIndexed(i, func() error {
+			return t.Underlying.CollectContent(ctx, item, content)
+		}); err != nil {
 			return err
 		}
 	}
@@ -210,7 +341,7 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 	return result, nil
 }
 
-func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (t *NullableType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
 		return nil
 	}
@@ -218,7 +349,7 @@ func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult
 	if !present {
 		return nil
 	}
-	return t.Inner.CollectCoreIDs(ctx, val, ids)
+	return t.Inner.CollectContent(ctx, val, content)
 }
 
 func (t *NullableType) SourceMod() Mod {

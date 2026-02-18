@@ -104,6 +104,14 @@ func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
 	return client.CurrentTypeDefs(ctx)
 }
 
+// Detect and return the current workspace.
+//
+// Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
+func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
+	client := initClient()
+	return client.CurrentWorkspace(opts...)
+}
+
 // The default platform of the engine.
 func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
 	client := initClient()
@@ -526,6 +534,12 @@ func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	client := initClient()
 	return client.LoadTypeDefFromID(id)
+}
+
+// Load a Workspace from its ID.
+func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
+	client := initClient()
+	return client.LoadWorkspaceFromID(id)
 }
 
 // Create a new module.
