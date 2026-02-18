@@ -1581,17 +1581,19 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return err
 	}
 
-	// --- Compat mode: extract toolchains from legacy dagger.json ---
-	// When no workspace config exists but a nearby dagger.json has toolchains,
-	// extract them as workspace-level modules (loaded alongside the implicit
-	// CWD module in the gathering phase below).
+	// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
+	// When no workspace config exists but a nearby dagger.json has toolchains
+	// or a blueprint, extract them as workspace-level modules (loaded alongside
+	// the implicit CWD module in the gathering phase below).
 	var legacyToolchains []workspace.LegacyToolchain
+	var legacyBlueprint *workspace.LegacyBlueprint
 	if !ws.Initialized {
 		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 		if hasModuleConfig {
 			cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 			if data, readErr := readFile(ctx, cfgPath); readErr == nil {
 				legacyToolchains, _ = workspace.ParseLegacyToolchains(data)
+				legacyBlueprint, _ = workspace.ParseLegacyBlueprint(data)
 			}
 			slog.Warn("Inferring workspace configuration from legacy module config. Run 'dagger migrate' soon.",
 				"config", cfgPath)
@@ -1633,7 +1635,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// (2) Legacy toolchains (from compat mode, extracted above)
+	// (2a) Legacy toolchains (from compat mode, extracted above)
 	for _, tc := range legacyToolchains {
 		ref := tc.Source
 		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
@@ -1643,6 +1645,19 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			Ref:            ref,
 			Name:           tc.Name,
 			ConfigDefaults: tc.ConfigDefaults,
+		})
+	}
+
+	// (2b) Legacy blueprint (from compat mode, extracted above)
+	if legacyBlueprint != nil {
+		ref := legacyBlueprint.Source
+		if core.FastModuleSourceKindCheck(legacyBlueprint.Source, legacyBlueprint.Pin) == core.ModuleSourceKindLocal {
+			ref = resolveLocalRef(ws, legacyBlueprint.Source)
+		}
+		pending = append(pending, pendingModule{
+			Ref:       ref,
+			Name:      legacyBlueprint.Name,
+			Blueprint: true,
 		})
 	}
 

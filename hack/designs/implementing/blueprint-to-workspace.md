@@ -209,7 +209,7 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
   `LegacyDefaultPath: true`. Follow the existing `ParseLegacyToolchains()` pattern. The
   legacy config struct `legacyConfig` in `legacy.go` needs a `Blueprint` field added.
 
-- [ ] **#3: Add compat-mode blueprint extraction** (blocked by #2) -- In
+- [x] **#3: Add compat-mode blueprint extraction** (blocked by #2) -- In
   `detectAndLoadWorkspaceWithRootfs()` in `engine/server/session.go`, when `!ws.Initialized`
   and nearby `dagger.json` has a blueprint, extract it as a workspace-level `pendingModule`
   with `Blueprint: true` and `LegacyDefaultPath: true`. Follow the existing toolchain
