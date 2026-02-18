@@ -107,7 +107,14 @@ func (mod *Module) Generators(ctx context.Context, include []string) (*Generator
 }
 
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
-	return mod.ObjectByName(mod.Name())
+	// Use OriginalName for type lookup: the SDK registers the main object
+	// under the intrinsic module name (from dagger.json), which may differ
+	// from NameField when a workspace config renames the module.
+	name := mod.OriginalName
+	if name == "" {
+		name = mod.NameField
+	}
+	return mod.ObjectByName(name)
 }
 
 func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
