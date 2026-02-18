@@ -48,6 +48,49 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 	}
 }
 
+// initDangBlueprint creates a Dang blueprint module and an app module that
+// uses it. The blueprint source is written to blueprints/<name>/ and the app
+// module is initialized at the workspace root with --blueprint pointing to it.
+func initDangBlueprint(name, source string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			// Create the blueprint module
+			WithWorkdir("blueprints/"+name).
+			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
+			WithNewFile("main.dang", source).
+			WithWorkdir("../../").
+			// Init the workspace root module using the blueprint
+			With(daggerExec("init", "--blueprint=./blueprints/"+name))
+	}
+}
+
+// TestWorkspaceBlueprint verifies that a blueprint module accepting a Workspace
+// argument can access the host filesystem, just like a toolchain module.
+func (WorkspaceSuite) TestBlueprint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("hello.txt", "hello from workspace").
+		With(initDangBlueprint("greeter", `
+type Greeter {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub read: String! {
+    source.file("hello.txt").contents
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("read")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+}
+
 // TestWorkspaceFindUp verifies that Workspace.findUp searches up from the
 // start path and stops at the workspace root.
 func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
