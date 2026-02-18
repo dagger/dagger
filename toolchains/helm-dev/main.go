@@ -14,13 +14,12 @@ import (
 )
 
 func New(
-	// The dagger helm chart directory
-	// +optional
-	// +defaultPath="/helm/dagger"
-	chart *dagger.Directory,
+	ws *dagger.Workspace,
+	// +default="helm/dagger"
+	chartPath string,
 ) *HelmDev {
 	return &HelmDev{
-		Chart: chart,
+		Chart: ws.Directory(chartPath),
 	}
 }
 
@@ -31,7 +30,7 @@ type HelmDev struct {
 // Lint the helm chart
 // +check
 func (h *HelmDev) Lint(ctx context.Context) error {
-	_, err := h.chart().
+	_, err := h.sandbox().
 		WithExec([]string{"helm", "lint"}).
 		WithExec([]string{"helm", "lint", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
 		WithExec([]string{"helm", "template", ".", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
@@ -48,7 +47,7 @@ func (h *HelmDev) Test(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	kubectl, err := h.chart().
+	kubectl, err := h.sandbox().
 		WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
 		WithServiceBinding("helm-test", k3ssvc).
 		WithFile("/.kube/config", k3s.Config()).
@@ -127,7 +126,8 @@ func (h *HelmDev) Test(ctx context.Context) error {
 	return nil
 }
 
-func (h *HelmDev) chart() *dagger.Container {
+// Build a sandbox with helm installed, and the chart directory mounted
+func (h *HelmDev) sandbox() *dagger.Container {
 	return dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{
@@ -208,8 +208,7 @@ func (h *HelmDev) SetVersion(
 	// Version to set the chart to, e.g. --version=v0.12.0
 	version string,
 ) (*dagger.File, error) {
-	c := h.chart()
-	chartYaml, err := c.File("Chart.yaml").Contents(ctx)
+	chartYaml, err := h.Chart.File("Chart.yaml").Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -232,11 +231,9 @@ func (h *HelmDev) SetVersion(
 		return nil, err
 	}
 
-	updatedChartYaml := c.
+	return h.Chart.
 		WithNewFile("Chart.yaml", string(updatedChart)).
-		File("Chart.yaml")
-
-	return updatedChartYaml, nil
+		File("Chart.yaml"), nil
 }
 
 // +check
@@ -264,7 +261,7 @@ func (h *HelmDev) Publish(
 	dryRun bool,
 ) error {
 	version := strings.TrimPrefix(target, "helm/chart/")
-	_, err := h.chart().
+	_, err := h.sandbox().
 		With(func(c *dagger.Container) *dagger.Container {
 			if githubToken != nil {
 				return c.WithSecretVariable("GITHUB_TOKEN", githubToken)
