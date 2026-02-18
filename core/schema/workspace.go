@@ -2,12 +2,10 @@ package schema
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -80,15 +78,12 @@ func (s *workspaceSchema) currentWorkspace(
 	}
 
 	statFS := core.NewCallerStatFS(bk)
-	ws, err := workspace.Detect(ctx, statFS, bk.ReadCallerHostFile, cwd)
+	repoRoot, found, err := core.Host{}.FindUp(ctx, statFS, cwd, ".git")
 	if err != nil {
-		var migErr *workspace.ErrMigrationRequired
-		if args.SkipMigrationCheck && errors.As(err, &migErr) {
-			// Fall through — install/init can work in legacy projects
-			ws = &workspace.Workspace{Root: cwd}
-		} else {
-			return nil, fmt.Errorf("workspace detection: %w", err)
-		}
+		return nil, fmt.Errorf("workspace detection: %w", err)
+	}
+	if !found {
+		repoRoot = cwd
 	}
 
 	// Capture the current client ID so that when this workspace is passed to
@@ -100,12 +95,8 @@ func (s *workspaceSchema) currentWorkspace(
 	}
 
 	result := &core.Workspace{
-		Root:      ws.Root,
-		HasConfig: ws.Config != nil,
-		ClientID:  clientMetadata.ClientID,
-	}
-	if ws.Config != nil {
-		result.ConfigPath = path.Join(ws.Root, workspace.WorkspaceDirName, workspace.ConfigFileName)
+		Root:     repoRoot,
+		ClientID: clientMetadata.ClientID,
 	}
 
 	return result, nil

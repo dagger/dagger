@@ -4,9 +4,7 @@ import "github.com/vektah/gqlparser/v2/ast"
 
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
-	Root       string `field:"true" doc:"Absolute path to the workspace root directory."`
-	ConfigPath string `field:"true" doc:"Absolute path to the workspace config.toml (empty string if no config exists)."`
-	HasConfig  bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
+	Root string `field:"true" doc:"Absolute path to the workspace root directory."`
 
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session
