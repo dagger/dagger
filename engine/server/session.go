@@ -1520,7 +1520,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 }
 
 // detectAndLoadWorkspace is the unified core of workspace detection and module loading
-// for local workspaces (where Rootfs is built from host.directory).
+// for local workspaces.
 func (srv *Server) detectAndLoadWorkspace(
 	ctx context.Context,
 	client *daggerClient,
@@ -1607,7 +1607,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// Build + cache core.Workspace with Rootfs.
+	// Build + cache core.Workspace.
 	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs)
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
@@ -1690,41 +1690,15 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 }
 
 // buildCoreWorkspace converts the internal workspace detection result into
-// the public core.Workspace with its concrete Rootfs Directory.
-// For local workspaces, it creates Rootfs from host.directory(). For remote,
-// it uses the prebuiltRootfs (the cloned git tree).
+// the public core.Workspace. For local workspaces, it stores the host path
+// (directories are resolved lazily). For remote, it stores the prebuiltRootfs.
 func (srv *Server) buildCoreWorkspace(
 	ctx context.Context,
-	client *daggerClient,
+	_ *daggerClient,
 	detected *workspace.Workspace,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 ) (*core.Workspace, error) {
-	dag := client.dag
-
-	var rootfs dagql.ObjectResult[*core.Directory]
-	var hostPath string
-
-	if isLocal {
-		// Local: Rootfs = host.directory(detected.Root)
-		hostPath = detected.Root
-		err := dag.Select(ctx, dag.Root(), &rootfs,
-			dagql.Selector{Field: "host"},
-			dagql.Selector{
-				Field: "directory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(detected.Root)},
-				},
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("creating rootfs directory: %w", err)
-		}
-	} else {
-		// Remote: Rootfs = the cloned git tree passed in.
-		rootfs = prebuiltRootfs
-	}
-
 	// Capture the current client ID for routing host filesystem operations.
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -1737,8 +1711,15 @@ func (srv *Server) buildCoreWorkspace(
 		HasConfig:   detected.Config != nil,
 		ClientID:    clientMetadata.ClientID,
 	}
-	coreWS.SetRootfs(rootfs)
-	coreWS.SetHostPath(hostPath)
+
+	if isLocal {
+		// Local: store host path only. Directories are resolved lazily
+		// via per-call host.directory() in resolveRootfs.
+		coreWS.SetHostPath(detected.Root)
+	} else {
+		// Remote: store the cloned git tree.
+		coreWS.SetRootfs(prebuiltRootfs)
+	}
 
 	if detected.Config != nil {
 		coreWS.ConfigPath = filepath.Join(detected.Path, workspace.WorkspaceDirName, workspace.ConfigFileName)
