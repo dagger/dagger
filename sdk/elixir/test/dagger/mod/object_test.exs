@@ -306,6 +306,23 @@ defmodule Dagger.Mod.ObjectTest do
              ]
     end
 
+    test "check attribute" do
+      assert CheckAttribute.__object__(:functions) == [
+               checked_function: %FunctionDef{
+                 self: false,
+                 args: [],
+                 return: Dagger.Void,
+                 check: true
+               },
+               unchecked_function: %FunctionDef{
+                 self: false,
+                 args: [],
+                 return: Dagger.Void,
+                 check: nil
+               }
+             ]
+    end
+
     test "cache policy" do
       assert CacheAttribute.__object__(:functions) == [
                never_cached: %FunctionDef{
