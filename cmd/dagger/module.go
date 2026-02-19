@@ -301,9 +301,6 @@ func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName strin
 
 		modSrc = modSrc.WithName(modName)
 		modSrc = modSrc.WithSDK(sdk)
-		if moduleSourcePath != "" {
-			modSrc = modSrc.WithSourceSubpath(moduleSourcePath)
-		}
 		if len(moduleIncludes) > 0 {
 			modSrc = modSrc.WithIncludes(moduleIncludes)
 		}
