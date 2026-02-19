@@ -1350,6 +1350,13 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	// This mirrors the logic in initFromModConfig for the sdkSource != "" && modCfg.Source == "" case.
 	if src.SourceSubpath == "" {
 		src.SourceSubpath = src.SourceRootSubpath
+
+		// Reload the context directory now that SourceSubpath is set, so that
+		// the source files are included (e.g. an existing main.go). The initial
+		// load may have used empty SourceSubpath which matches no files.
+		if err := s.loadModuleSourceContext(ctx, src); err != nil {
+			return nil, fmt.Errorf("failed to reload context after setting source subpath: %w", err)
+		}
 	}
 
 	// reload the sdk implementation too
