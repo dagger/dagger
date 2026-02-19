@@ -1,0 +1,6 @@
+kind: Added
+body: '[Dagger Check](https://docs.dagger.io/core-concepts/checks/) support'
+time: 2026-02-19T14:41:51.422679+07:00
+custom:
+    Author: wingyplus
+    PR: "11881"
