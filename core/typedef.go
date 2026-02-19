@@ -126,7 +126,9 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 			return spec, fmt.Errorf("failed to get typedef for arg %q", arg.Name)
 		}
 
-		input := modType.TypeDef().ToInput()
+		argTypeDef := modType.TypeDef()
+
+		input := argTypeDef.ToInput()
 		var defaultVal dagql.Input
 		if arg.DefaultValue != nil {
 			var val any
@@ -225,6 +227,11 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 		DefaultAddress: defaultAddress,
 		Ignore:         ignore,
 		Deprecated:     deprecated,
+	}
+	if arg.IsWorkspace() {
+		// Workspace arguments are always optional — they're automatically injected
+		// by the engine when not explicitly set by the caller.
+		arg.TypeDef = arg.TypeDef.WithOptional(true)
 	}
 	if sourceMap != nil {
 		arg.SourceMap = dagql.NonNull(sourceMap)
@@ -373,6 +380,16 @@ func (*FunctionArg) TypeDescription() string {
 
 func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != "" || arg.DefaultAddress != ""
+}
+
+// IsWorkspace returns true if the argument is of type Workspace.
+// Workspace arguments are always optional and automatically injected when not set.
+func (arg *FunctionArg) IsWorkspace() bool {
+	return arg.TypeDef.Kind == TypeDefKindObject &&
+		arg.TypeDef.AsObject.Value.Name == "Workspace" &&
+		// Functions can't currently accept types from other modules, but be
+		// explicit anyway.
+		arg.TypeDef.AsObject.Value.SourceModuleName == ""
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {

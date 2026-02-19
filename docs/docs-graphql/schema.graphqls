@@ -148,6 +148,9 @@ type Binding {
   """Returns the binding's string value"""
   asString: String
 
+  """Retrieve the binding value, as type Workspace"""
+  asWorkspace: Workspace!
+
   """Returns the digest of the binding value"""
   digest: String!
 
@@ -2878,6 +2881,27 @@ type Env {
     workspace: DirectoryID!
   ): Env!
 
+  """Create or update a binding of type Workspace in the environment"""
+  withWorkspaceInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Workspace value to assign to the binding"""
+    value: WorkspaceID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Workspace output to be assigned in the environment"""
+  withWorkspaceOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Returns a new environment without any outputs"""
   withoutOutputs: Env!
 
@@ -4648,6 +4672,12 @@ type Query {
   """
   currentTypeDefs: [TypeDef!]!
 
+  """Detect and return the current workspace."""
+  currentWorkspace(
+    """If true, skip legacy dagger.json migration checks."""
+    skipMigrationCheck: Boolean = false
+  ): Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
+
   """The default platform of the engine."""
   defaultPlatform: Platform!
 
@@ -4945,6 +4975,9 @@ type Query {
 
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
+
+  """Load a Workspace from its ID."""
+  loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
   """Create a new module."""
   module: Module!
@@ -5586,5 +5619,73 @@ The absence of a value.
 A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
+
+"""A Dagger workspace detected from the current working directory."""
+type Workspace {
+  """The client ID that owns this workspace's host filesystem."""
+  clientId: String!
+
+  """
+  Returns a Directory from the workspace.
+
+  Path is relative to workspace root. Use "." for the root directory.
+  """
+  directory(
+    """
+    Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    """
+    path: String!
+
+    """
+    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    """
+    exclude: [String!] = []
+
+    """
+    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    """
+    include: [String!] = []
+
+    gitignore: Boolean = false
+  ): Directory!
+
+  """
+  Returns a File from the workspace.
+
+  Path is relative to workspace root.
+  """
+  file(
+    """
+    Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+    """
+    path: String!
+  ): File!
+
+  """
+  Search for a file or directory by walking up from the start path within the workspace.
+
+  Returns the path relative to the workspace root if found, or null if not found.
+
+  The search stops at the workspace root and will not traverse above it.
+  """
+  findUp(
+    """The name of the file or directory to search for."""
+    name: String!
+
+    """Path to start the search from, relative to the workspace root."""
+    from: String = "."
+  ): String
+
+  """A unique identifier for this Workspace."""
+  id: WorkspaceID!
+
+  """Absolute path to the workspace root directory."""
+  root: String!
+}
+
+"""
+The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
+"""
+scalar WorkspaceID
 
 

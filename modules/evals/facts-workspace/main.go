@@ -2,19 +2,19 @@ package main
 
 import "errors"
 
-type Workspace struct {
+type FactsWorkspace struct {
 	Facts []string
 }
 
 func New(
 	// A dummy arg just to prevent deduping telemetry across attempts.
 	buster string,
-) *Workspace {
-	return &Workspace{}
+) *FactsWorkspace {
+	return &FactsWorkspace{}
 }
 
 // Record an interesting fact.
-func (m *Workspace) Record(fact string) *Workspace {
+func (m *FactsWorkspace) Record(fact string) *FactsWorkspace {
 	m.Facts = append(m.Facts, fact)
 	return m
 }
@@ -27,7 +27,7 @@ var facts = []string{
 }
 
 // Find the next available fact.
-func (m *Workspace) NextFact() (string, error) {
+func (m *FactsWorkspace) NextFact() (string, error) {
 	number := len(m.Facts)
 	if number >= len(facts) {
 		return "", errors.New("out of facts")

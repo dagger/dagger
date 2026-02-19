@@ -1431,11 +1431,21 @@ func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.Client
 	if err != nil {
 		return nil, err
 	}
-	mainClient, err := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
+	return srv.SpecificClientMetadata(ctx, client.daggerSession.mainClientCallerID)
+}
+
+// The Client metadata of a specific client ID within the same session as the
+// current client.
+func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) (*engine.ClientMetadata, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clientMD, err := srv.clientFromIDs(client.daggerSession.sessionID, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve session main client: %w", err)
 	}
-	return mainClient.clientMetadata, nil
+	return clientMD.clientMetadata, nil
 }
 
 // The nearest ancestor client that is not a module (either a caller from the host like the CLI

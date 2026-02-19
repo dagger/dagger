@@ -1347,6 +1347,26 @@
 			}
 		},
 		{
+			"t": "C",
+			"n": "Dagger\\Workspace",
+			"p": "Dagger/Workspace.html",
+			"d": "<p>A Dagger workspace detected from the current working directory.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceId",
+			"p": "Dagger/WorkspaceId.html",
+			"d": "<p>The <code>WorkspaceID</code> scalar type represents an identifier for an object of type Workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
 			"t": "I",
 			"n": "Dagger\\Client\\IdAble",
 			"p": "Dagger/Client/IdAble.html",
@@ -1603,6 +1623,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asWorkspace",
+			"p": "Dagger/Binding.html#method_asWorkspace",
+			"d": "<p>Retrieve the binding value, as type Workspace</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::digest",
 			"p": "Dagger/Binding.html#method_digest",
 			"d": "<p>Returns the digest of the binding value</p>"
@@ -1846,6 +1872,12 @@
 			"n": "Dagger\\Client::currentTypeDefs",
 			"p": "Dagger/Client.html#method_currentTypeDefs",
 			"d": "<p>The TypeDef representations of the objects currently being served in the session.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentWorkspace",
+			"p": "Dagger/Client.html#method_currentWorkspace",
+			"d": "<p>Detect and return the current workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -2266,6 +2298,12 @@
 			"n": "Dagger\\Client::loadTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadTypeDefFromID",
 			"d": "<p>Load a TypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
+			"d": "<p>Load a Workspace from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -3742,6 +3780,18 @@
 			"n": "Dagger\\Env::withWorkspace",
 			"p": "Dagger/Env.html#method_withWorkspace",
 			"d": "<p>Returns a new environment with the provided workspace</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceInput",
+			"p": "Dagger/Env.html#method_withWorkspaceInput",
+			"d": "<p>Create or update a binding of type Workspace in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceOutput",
+			"d": "<p>Declare a desired Workspace output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -5758,6 +5808,42 @@
 			"n": "Dagger\\TypeDef::withScalar",
 			"p": "Dagger/TypeDef.html#method_withScalar",
 			"d": "<p>Returns a TypeDef of kind Scalar with the provided name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::clientId",
+			"p": "Dagger/Workspace.html#method_clientId",
+			"d": "<p>The client ID that owns this workspace's host filesystem.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::directory",
+			"p": "Dagger/Workspace.html#method_directory",
+			"d": "<p>Returns a Directory from the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::file",
+			"p": "Dagger/Workspace.html#method_file",
+			"d": "<p>Returns a File from the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::findUp",
+			"p": "Dagger/Workspace.html#method_findUp",
+			"d": "<p>Search for a file or directory by walking up from the start path within the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::id",
+			"p": "Dagger/Workspace.html#method_id",
+			"d": "<p>A unique identifier for this Workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::root",
+			"p": "Dagger/Workspace.html#method_root",
+			"d": "<p>Absolute path to the workspace root directory.</p>"
 		},
 		{
 			"t": "M",

@@ -10,8 +10,8 @@
       "source": "../evaluator"
     },
     {
-      "name": "workspace",
-      "source": "workspace"
+      "name": "facts-workspace",
+      "source": "facts-workspace"
     }
   ]
 }
