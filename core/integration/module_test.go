@@ -1713,9 +1713,9 @@ func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
 
 	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		With(daggerExec("module", "init", "--name=depA", "--sdk=go", "depA")).
-		With(daggerExec("module", "init", "--name=depB", "--sdk=go", "depB")).
-		With(daggerExec("module", "init", "--name=depC", "--sdk=go", "depC")).
+		With(daggerExec("module", "init", "--sdk=go", "depA", "./depA")).
+		With(daggerExec("module", "init", "--sdk=go", "depB", "./depB")).
+		With(daggerExec("module", "init", "--sdk=go", "depC", "./depC")).
 		With(daggerExec("install", "-m=depC", "./depB")).
 		With(daggerExec("install", "-m=depB", "./depA")).
 		With(daggerExec("install", "-m=depA", "./depC")).
