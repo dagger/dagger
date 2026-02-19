@@ -145,7 +145,10 @@ func (s *workspaceSchema) resolveRootfs(
 		if err != nil {
 			return inst, err
 		}
-		absPath := filepath.Join(ws.HostPath(), resolvedPath)
+		absPath, err := pathutil.SandboxedRelativePath(resolvedPath, ws.HostPath())
+		if err != nil {
+			return inst, err
+		}
 
 		args := []dagql.NamedInput{
 			{Name: "path", Value: dagql.NewString(absPath)},
@@ -225,7 +228,6 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
 	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter)
 }
-
 
 type workspaceFileArgs struct {
 	Path string
