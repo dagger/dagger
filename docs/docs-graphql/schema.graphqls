@@ -3290,6 +3290,11 @@ type Function {
   """The location of this function declaration."""
   sourceMap: SourceMap
 
+  """
+  If this function is provided by a module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String!
+
   """Returns the function with the provided argument"""
   withArg(
     """The name of the argument"""
@@ -4364,15 +4369,11 @@ type ModuleSource {
   """
   sync: ModuleSourceID!
 
-  """The toolchains referenced by the module source."""
-  toolchains: [ModuleSource!]!
-
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
 
   """The specified version of the git repo this source points to."""
   version: String!
-
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -4432,23 +4433,10 @@ type ModuleSource {
     path: String!
   ): ModuleSource!
 
-  """Add toolchains to the module source."""
-  withToolchains(
-    """The toolchain modules to add."""
-    toolchains: [ModuleSourceID!]!
-  ): ModuleSource!
-
-
   """Update one or more module dependencies."""
   withUpdateDependencies(
     """The dependencies to update."""
     dependencies: [String!]!
-  ): ModuleSource!
-
-  """Update one or more toolchains."""
-  withUpdateToolchains(
-    """The toolchains to update."""
-    toolchains: [String!]!
   ): ModuleSource!
 
   """Update one or more clients."""
@@ -4456,7 +4444,6 @@ type ModuleSource {
     """The clients to update"""
     clients: [String!]!
   ): ModuleSource!
-
 
   """Remove a client from the module source."""
   withoutClient(
@@ -4476,12 +4463,6 @@ type ModuleSource {
   withoutExperimentalFeatures(
     """The experimental features to disable."""
     features: [ModuleSourceExperimentalFeature!]!
-  ): ModuleSource!
-
-  """Remove the provided toolchains from the module source."""
-  withoutToolchains(
-    """The toolchains to remove."""
-    toolchains: [String!]!
   ): ModuleSource!
 }
 
@@ -4658,13 +4639,15 @@ type Query {
   """
   The TypeDef representations of the objects currently being served in the session.
   """
-  currentTypeDefs: [TypeDef!]!
+  currentTypeDefs(
+    """
+    Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
+    """
+    includeCore: Boolean
+  ): [TypeDef!]!
 
   """Detect and return the current workspace."""
-  currentWorkspace(
-    """If true, skip legacy dagger.json migration checks."""
-    skipMigrationCheck: Boolean = false
-  ): Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
+  currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
 
   """The default platform of the engine."""
   defaultPlatform: Platform!
@@ -5610,17 +5593,54 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {
+  """Return all checks from modules loaded in the workspace."""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup!
+
   """The client ID that owns this workspace's host filesystem."""
   clientId: String!
+
+  """Path to config.toml relative to root (empty if not initialized)."""
+  configPath: String!
+
+  """
+  Read a configuration value from config.toml.
+
+  If key is empty, returns the full config. If key points to a scalar, returns
+  the value. If key points to a table, returns flattened dotted-key output.
+  """
+  configRead(
+    """Dotted key path (e.g. modules.mymod.source). Empty for full config."""
+    key: String = ""
+  ): String!
+
+  """
+  Write a configuration value to config.toml.
+
+  Validates the key against the config schema and auto-detects value types.
+  """
+  configWrite(
+    """Dotted key path (e.g. modules.mymod.source)."""
+    key: String!
+
+    """
+    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+    """
+    value: String!
+  ): String!
 
   """
   Returns a Directory from the workspace.
 
-  Path is relative to workspace root. Use "." for the root directory.
+  Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
   """
   directory(
     """
-    Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    Location of the directory to retrieve. Relative paths (e.g., "src") resolve
+    from workspace root; absolute paths (e.g., "/src") resolve from sandbox
+    root.
     """
     path: String!
 
@@ -5640,11 +5660,13 @@ type Workspace {
   """
   Returns a File from the workspace.
 
-  Path is relative to workspace root.
+  Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
   """
   file(
     """
-    Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+    Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
+    from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox
+    root.
     """
     path: String!
   ): File!
@@ -5664,11 +5686,55 @@ type Workspace {
     from: String = "."
   ): String
 
+  """Return all generators from modules loaded in the workspace."""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup!
+
+  """Whether a config.toml file exists in the workspace."""
+  hasConfig: Boolean!
+
   """A unique identifier for this Workspace."""
   id: WorkspaceID!
 
-  """Absolute path to the workspace root directory."""
-  root: String!
+  """Initialize a new workspace, creating .dagger/config.toml."""
+  init: String!
+
+  """Whether .dagger/config.toml exists."""
+  initialized: Boolean!
+
+  """Install a module into the workspace, writing config.toml to the host."""
+  install(
+    """Module reference string (git URL or local path)."""
+    ref: String!
+
+    """Override name for the installed module entry."""
+    name: String = ""
+
+    """Mark the module as a blueprint (functions aliased to Query root)."""
+    blueprint: Boolean = false
+  ): String!
+
+  """
+  Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.
+  """
+  moduleInit(
+    """Name of the new module."""
+    name: String!
+
+    """SDK to use (go, python, typescript)."""
+    sdk: String!
+
+    """Source subpath within the module root."""
+    source: String = ""
+
+    """Additional include patterns for the module."""
+    include: [String!] = []
+  ): String!
+
+  """Workspace path relative to root."""
+  path: String!
 }
 
 """

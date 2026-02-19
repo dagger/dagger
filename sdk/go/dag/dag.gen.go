@@ -107,9 +107,9 @@ func CurrentTypeDefs(ctx context.Context, opts ...dagger.CurrentTypeDefsOpts) ([
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
+func CurrentWorkspace() *dagger.Workspace {
 	client := initClient()
-	return client.CurrentWorkspace(opts...)
+	return client.CurrentWorkspace()
 }
 
 // The default platform of the engine.
@@ -584,10 +584,4 @@ func TypeDef() *dagger.TypeDef {
 func Version(ctx context.Context) (string, error) {
 	client := initClient()
 	return client.Version(ctx)
-}
-
-// Detect and return the current workspace.
-func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
-	client := initClient()
-	return client.CurrentWorkspace(opts...)
 }

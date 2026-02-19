@@ -79,6 +79,15 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * If this function is provided by a module, the name of the module. Unset otherwise.
+     */
+    public function sourceModuleName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceModuleName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceModuleName');
+    }
+
+    /**
      * Returns the function with the provided argument
      */
     public function withArg(

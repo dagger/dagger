@@ -32,15 +32,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The blueprint referenced by the module source.
-     */
-    public function blueprint(): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blueprint');
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The ref to clone the root of the git repo from. Only valid for git sources.
      */
     public function cloneRef(): string
@@ -271,15 +262,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The toolchains referenced by the module source.
-     */
-    public function toolchains(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('toolchains');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'toolchains');
-    }
-
-    /**
      * User-defined defaults read from local .env files
      */
     public function userDefaults(): EnvFile
@@ -295,16 +277,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('version');
         return (string)$this->queryLeaf($leafQueryBuilder, 'version');
-    }
-
-    /**
-     * Set a blueprint for the module source.
-     */
-    public function withBlueprint(ModuleSourceId|ModuleSource $blueprint): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlueprint');
-        $innerQueryBuilder->setArgument('blueprint', $blueprint);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -389,25 +361,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Add toolchains to the module source.
-     */
-    public function withToolchains(array $toolchains): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolchains');
-        $innerQueryBuilder->setArgument('toolchains', $toolchains);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the blueprint module to the latest version.
-     */
-    public function withUpdateBlueprint(): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateBlueprint');
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Update one or more module dependencies.
      */
     public function withUpdateDependencies(array $dependencies): ModuleSource
@@ -418,31 +371,12 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Update one or more toolchains.
-     */
-    public function withUpdateToolchains(array $toolchains): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateToolchains');
-        $innerQueryBuilder->setArgument('toolchains', $toolchains);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Update one or more clients.
      */
     public function withUpdatedClients(array $clients): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedClients');
         $innerQueryBuilder->setArgument('clients', $clients);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove the current blueprint from the module source.
-     */
-    public function withoutBlueprint(): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutBlueprint');
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -473,16 +407,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutExperimentalFeatures');
         $innerQueryBuilder->setArgument('features', $features);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove the provided toolchains from the module source.
-     */
-    public function withoutToolchains(array $toolchains): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutToolchains');
-        $innerQueryBuilder->setArgument('toolchains', $toolchains);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

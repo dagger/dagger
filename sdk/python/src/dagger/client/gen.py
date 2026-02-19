@@ -7635,6 +7635,28 @@ class Function(Type):
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
 
+    async def source_module_name(self) -> str:
+        """If this function is provided by a module, the name of the module.
+        Unset otherwise.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str)
+
     def with_arg(
         self,
         name: str,
@@ -10482,12 +10504,6 @@ class ModuleSource(Type):
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str)
 
-    def blueprint(self) -> Self:
-        """The blueprint referenced by the module source."""
-        _args: list[Arg] = []
-        _ctx = self._select("blueprint", _args)
-        return ModuleSource(_ctx)
-
     async def clone_ref(self) -> str:
         """The ref to clone the root of the git repo from. Only valid for git
         sources.
@@ -10935,12 +10951,6 @@ class ModuleSource(Type):
     def __await__(self):
         return self.sync().__await__()
 
-    async def toolchains(self) -> list["ModuleSource"]:
-        """The toolchains referenced by the module source."""
-        _args: list[Arg] = []
-        _ctx = self._select("toolchains", _args)
-        return await _ctx.execute_object_list(ModuleSource)
-
     def user_defaults(self) -> EnvFile:
         """User-defined defaults read from local .env files"""
         _args: list[Arg] = []
@@ -10967,20 +10977,6 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
-
-    def with_blueprint(self, blueprint: Self) -> Self:
-        """Set a blueprint for the module source.
-
-        Parameters
-        ----------
-        blueprint:
-            The blueprint module to set.
-        """
-        _args = [
-            Arg("blueprint", blueprint),
-        ]
-        _ctx = self._select("withBlueprint", _args)
-        return ModuleSource(_ctx)
 
     def with_client(self, generator: str, output_dir: str) -> Self:
         """Update the module source with a new client to generate.
@@ -11103,26 +11099,6 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
-    def with_toolchains(self, toolchains: list["ModuleSource"]) -> Self:
-        """Add toolchains to the module source.
-
-        Parameters
-        ----------
-        toolchains:
-            The toolchain modules to add.
-        """
-        _args = [
-            Arg("toolchains", toolchains),
-        ]
-        _ctx = self._select("withToolchains", _args)
-        return ModuleSource(_ctx)
-
-    def with_update_blueprint(self) -> Self:
-        """Update the blueprint module to the latest version."""
-        _args: list[Arg] = []
-        _ctx = self._select("withUpdateBlueprint", _args)
-        return ModuleSource(_ctx)
-
     def with_update_dependencies(self, dependencies: list[str]) -> Self:
         """Update one or more module dependencies.
 
@@ -11137,20 +11113,6 @@ class ModuleSource(Type):
         _ctx = self._select("withUpdateDependencies", _args)
         return ModuleSource(_ctx)
 
-    def with_update_toolchains(self, toolchains: list[str]) -> Self:
-        """Update one or more toolchains.
-
-        Parameters
-        ----------
-        toolchains:
-            The toolchains to update.
-        """
-        _args = [
-            Arg("toolchains", toolchains),
-        ]
-        _ctx = self._select("withUpdateToolchains", _args)
-        return ModuleSource(_ctx)
-
     def with_updated_clients(self, clients: list[str]) -> Self:
         """Update one or more clients.
 
@@ -11163,12 +11125,6 @@ class ModuleSource(Type):
             Arg("clients", clients),
         ]
         _ctx = self._select("withUpdatedClients", _args)
-        return ModuleSource(_ctx)
-
-    def without_blueprint(self) -> Self:
-        """Remove the current blueprint from the module source."""
-        _args: list[Arg] = []
-        _ctx = self._select("withoutBlueprint", _args)
         return ModuleSource(_ctx)
 
     def without_client(self, path: str) -> Self:
@@ -11215,20 +11171,6 @@ class ModuleSource(Type):
             Arg("features", features),
         ]
         _ctx = self._select("withoutExperimentalFeatures", _args)
-        return ModuleSource(_ctx)
-
-    def without_toolchains(self, toolchains: list[str]) -> Self:
-        """Remove the provided toolchains from the module source.
-
-        Parameters
-        ----------
-        toolchains:
-            The toolchains to remove.
-        """
-        _args = [
-            Arg("toolchains", toolchains),
-        ]
-        _ctx = self._select("withoutToolchains", _args)
         return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
@@ -11580,33 +11522,34 @@ class Client(Root):
         _ctx = self._select("currentModule", _args)
         return CurrentModule(_ctx)
 
-    async def current_type_defs(self) -> list["TypeDef"]:
+    async def current_type_defs(
+        self,
+        *,
+        include_core: bool | None = None,
+    ) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
+
+        Parameters
+        ----------
+        include_core:
+            Whether to include core types (Container, Directory, etc.) in the
+            result. Defaults to true.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("includeCore", include_core, None),
+        ]
         _ctx = self._select("currentTypeDefs", _args)
         return await _ctx.execute_object_list(TypeDef)
 
-    def current_workspace(
-        self,
-        *,
-        skip_migration_check: bool | None = False,
-    ) -> "Workspace":
+    def current_workspace(self) -> "Workspace":
         """Detect and return the current workspace.
 
         .. caution::
             Experimental: Highly experimental API extracted from a more
             ambitious workspace implementation.
-
-        Parameters
-        ----------
-        skip_migration_check:
-            If true, skip legacy dagger.json migration checks.
         """
-        _args = [
-            Arg("skipMigrationCheck", skip_migration_check, False),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("currentWorkspace", _args)
         return Workspace(_ctx)
 
@@ -13858,6 +13801,24 @@ class TypeDef(Type):
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
+    def checks(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> CheckGroup:
+        """Return all checks from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include checks matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("checks", _args)
+        return CheckGroup(_ctx)
+
     async def client_id(self) -> str:
         """The client ID that owns this workspace's host filesystem.
 
@@ -13879,6 +13840,95 @@ class Workspace(Type):
         _ctx = self._select("clientId", _args)
         return await _ctx.execute(str)
 
+    async def config_path(self) -> str:
+        """Path to config.toml relative to root (empty if not initialized).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("configPath", _args)
+        return await _ctx.execute(str)
+
+    async def config_read(self, *, key: str | None = "") -> str:
+        """Read a configuration value from config.toml.
+
+        If key is empty, returns the full config. If key points to a scalar,
+        returns the value. If key points to a table, returns flattened dotted-
+        key output.
+
+        Parameters
+        ----------
+        key:
+            Dotted key path (e.g. modules.mymod.source). Empty for full
+            config.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("key", key, ""),
+        ]
+        _ctx = self._select("configRead", _args)
+        return await _ctx.execute(str)
+
+    async def config_write(self, key: str, value: str) -> str:
+        """Write a configuration value to config.toml.
+
+        Validates the key against the config schema and auto-detects value
+        types.
+
+        Parameters
+        ----------
+        key:
+            Dotted key path (e.g. modules.mymod.source).
+        value:
+            Value to set. Bools, integers, and comma-separated arrays are
+            auto-detected.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("key", key),
+            Arg("value", value),
+        ]
+        _ctx = self._select("configWrite", _args)
+        return await _ctx.execute(str)
+
     def directory(
         self,
         path: str,
@@ -13889,13 +13939,15 @@ class Workspace(Type):
     ) -> Directory:
         """Returns a Directory from the workspace.
 
-        Path is relative to workspace root. Use "." for the root directory.
+        Relative paths resolve from the workspace root. Absolute paths resolve
+        from the rootfs root.
 
         Parameters
         ----------
         path:
-            Location of the directory to retrieve, relative to the workspace
-            root (e.g., "src", ".").
+            Location of the directory to retrieve. Relative paths (e.g.,
+            "src") resolve from workspace root; absolute paths (e.g., "/src")
+            resolve from sandbox root.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
             ["node_modules/", ".git*"]).
@@ -13916,13 +13968,15 @@ class Workspace(Type):
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
 
-        Path is relative to workspace root.
+        Relative paths resolve from the workspace root. Absolute paths resolve
+        from the rootfs root.
 
         Parameters
         ----------
         path:
-            Location of the file to retrieve, relative to the workspace root
-            (e.g., "go.mod").
+            Location of the file to retrieve. Relative paths (e.g., "go.mod")
+            resolve from workspace root; absolute paths (e.g., "/go.mod")
+            resolve from sandbox root.
         """
         _args = [
             Arg("path", path),
@@ -13972,6 +14026,43 @@ class Workspace(Type):
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
 
+    def generators(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> GeneratorGroup:
+        """Return all generators from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include generators matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("generators", _args)
+        return GeneratorGroup(_ctx)
+
+    async def has_config(self) -> bool:
+        """Whether a config.toml file exists in the workspace.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hasConfig", _args)
+        return await _ctx.execute(bool)
+
     async def id(self) -> WorkspaceID:
         """A unique identifier for this Workspace.
 
@@ -13996,8 +14087,8 @@ class Workspace(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(WorkspaceID)
 
-    async def root(self) -> str:
-        """Absolute path to the workspace root directory.
+    async def init(self) -> str:
+        """Initialize a new workspace, creating .dagger/config.toml.
 
         Returns
         -------
@@ -14014,7 +14105,132 @@ class Workspace(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("root", _args)
+        _ctx = self._select("init", _args)
+        return await _ctx.execute(str)
+
+    async def initialized(self) -> bool:
+        """Whether .dagger/config.toml exists.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("initialized", _args)
+        return await _ctx.execute(bool)
+
+    async def install(
+        self,
+        ref: str,
+        *,
+        name: str | None = "",
+        blueprint: bool | None = False,
+    ) -> str:
+        """Install a module into the workspace, writing config.toml to the host.
+
+        Parameters
+        ----------
+        ref:
+            Module reference string (git URL or local path).
+        name:
+            Override name for the installed module entry.
+        blueprint:
+            Mark the module as a blueprint (functions aliased to Query root).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("ref", ref),
+            Arg("name", name, ""),
+            Arg("blueprint", blueprint, False),
+        ]
+        _ctx = self._select("install", _args)
+        return await _ctx.execute(str)
+
+    async def module_init(
+        self,
+        name: str,
+        sdk: str,
+        *,
+        source: str | None = "",
+        include: list[str] | None = None,
+    ) -> str:
+        """Create a new module in the workspace, scaffold its files, and auto-
+        install it in config.toml.
+
+        Parameters
+        ----------
+        name:
+            Name of the new module.
+        sdk:
+            SDK to use (go, python, typescript).
+        source:
+            Source subpath within the module root.
+        include:
+            Additional include patterns for the module.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("sdk", sdk),
+            Arg("source", source, ""),
+            Arg("include", [] if include is None else include, []),
+        ]
+        _ctx = self._select("moduleInit", _args)
+        return await _ctx.execute(str)
+
+    async def path(self) -> str:
+        """Workspace path relative to root.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
         return await _ctx.execute(str)
 
 

@@ -31,6 +31,7 @@ dagger [options] [subcommand | file...]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -40,16 +41,18 @@ dagger [options] [subcommand | file...]
 * [dagger core](#dagger-core)	 - Call a core function
 * [dagger develop](#dagger-develop)	 - Prepare a local module for development
 * [dagger functions](#dagger-functions)	 - List available functions
-* [dagger init](#dagger-init)	 - Initialize a new module
-* [dagger install](#dagger-install)	 - Install a dependency
+* [dagger init](#dagger-init)	 - Initialize a new workspace
+* [dagger install](#dagger-install)	 - Add a module to the workspace
 * [dagger login](#dagger-login)	 - Log in to Dagger Cloud
 * [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
+* [dagger migrate](#dagger-migrate)	 - Migrate a legacy dagger.json project to the workspace format
+* [dagger module](#dagger-module)	 - Manage workspace modules
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
 * [dagger run](#dagger-run)	 - Run a command in a Dagger session
-* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a dependency
 * [dagger update](#dagger-update)	 - Update a module's dependencies
 * [dagger version](#dagger-version)	 - Print dagger version
+* [dagger workspace](#dagger-workspace)	 - Manage the current workspace
 
 ## dagger call
 
@@ -83,6 +86,7 @@ dagger call [options]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -130,6 +134,7 @@ dagger config -m github.com/dagger/hello-dagger
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -164,6 +169,7 @@ dagger core [options]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -226,6 +232,7 @@ dagger develop [options]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -269,55 +276,23 @@ dagger functions [options] [function]...
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 
-## dagger init
+## dagger workspace init
 
-Initialize a new module
+Initialize a new workspace
 
 ### Synopsis
 
-Initialize a new module at the given path.
-
-This creates a dagger.json file at the specified directory, making it the root of the new module.
-
-If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
-If --blueprint is specified, the given blueprint is installed in the module.
-
+Initialize a new workspace in the current directory, creating .dagger/config.toml.
 
 ```
-dagger init [options] [path]
-```
-
-### Examples
-
-```
-
-# Reference a remote module as blueprint
-dagger init --blueprint=github.com/example/blueprint
-
-# Reference a local module as blueprint
-dagger init --blueprint=../my/blueprints/simple-webapp
-
-# Implement a standalone module in Go
-dagger init --sdk=go
-
-```
-
-### Options
-
-```
-      --blueprint string   Reference another module as blueprint
-      --include strings    Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).
-      --license string     License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
-      --name string        Name of the new module (defaults to parent directory name)
-      --sdk string         Optionally install a Dagger SDK
-      --source string      Source directory used by the installed SDK. Defaults to module root
-      --with-self-calls    Enable self-calls capability for the module (experimental)
+dagger workspace init
 ```
 
 ### Options inherited from parent commands
@@ -333,19 +308,20 @@ dagger init --sdk=go
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger workspace](#dagger-workspace)	 - Manage the current workspace
 
 ## dagger install
 
-Install a dependency
+Add a module to the workspace
 
 ### Synopsis
 
-Install another module as a dependency to the current module.
+Add a module to the workspace, making its functions available via 'dagger call'.
 
 ```
 dagger install [options] <module>
@@ -355,12 +331,14 @@ dagger install [options] <module>
 
 ```
 dagger install github.com/shykes/daggerverse/hello@v0.3.0
+  dagger install github.com/dagger/dagger/modules/wolfi --name=alpine
 ```
 
 ### Options
 
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --blueprint           Install the module as a blueprint (functions aliased to Query root)
       --compat string       Engine API version to target (default "latest")
       --eager-runtime       load module runtime eagerly
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
@@ -380,6 +358,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -407,6 +386,7 @@ dagger login [options] [org]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -434,11 +414,138 @@ dagger logout
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger migrate
+
+Migrate a legacy dagger.json project to the workspace format
+
+### Synopsis
+
+Converts a legacy dagger.json to the .dagger/config.toml workspace format.
+
+```
+dagger migrate
+```
+
+### Options
+
+```
+  -l, --list   List migrateable modules instead of performing migration
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger module
+
+Manage workspace modules
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger module init](#dagger-module-init)	 - Create a new module
+
+## dagger module init
+
+Create a new module
+
+### Synopsis
+
+Create a new module, either in the workspace or at a standalone path.
+
+The module name can be given as the first positional argument or via --name.
+If neither is given, it defaults to the current working directory name.
+
+The standalone path can be given as the second positional argument or via
+--source. With just a name (or no name and no path), the module is created at
+.dagger/modules/<name>/ and automatically added to .dagger/config.toml.
+
+With a path, the module is created at that path as a standalone module with
+its own dagger.json — it is NOT added to the workspace config.
+
+```
+dagger module init [options] --sdk=<sdk> [name] [path] [flags]
+```
+
+### Examples
+
+```
+  dagger module init --sdk=go
+  dagger module init --sdk=go ci
+  dagger module init --sdk=go --name=ci
+  dagger module init --sdk=python deploy
+  dagger module init --sdk=go mymod ./sub/mymod
+  dagger module init --sdk=go --name=mymod --source=./sub/mymod
+```
+
+### Options
+
+```
+      --include strings   Paths to include when loading the module
+      --license string    License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
+      --name string       Module name (defaults to working directory name)
+      --sdk string        SDK to use (go, python, typescript)
+      --source string     Source directory used by the installed SDK. Defaults to module root
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage workspace modules
 
 ## dagger query
 
@@ -500,6 +607,7 @@ EOF
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -560,222 +668,12 @@ dagger run python main.py
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
-
-## dagger toolchain
-
-Manage toolchains
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-  -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
-* [dagger toolchain install](#dagger-toolchain-install)	 - Install a toolchain to the current module
-* [dagger toolchain list](#dagger-toolchain-list)	 - List all toolchains
-* [dagger toolchain uninstall](#dagger-toolchain-uninstall)	 - Uninstall a toolchain
-* [dagger toolchain update](#dagger-toolchain-update)	 - Update toolchains
-
-## dagger toolchain install
-
-Install a toolchain to the current module
-
-### Synopsis
-
-Install another module as a toolchain to the current module.
-
-```
-dagger toolchain install [options] <module> [flags]
-```
-
-### Examples
-
-```
-dagger toolchain install github.com/dagger/dagger/toolchains/go
-```
-
-### Options
-
-```
-      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
-  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
-  -n, --name string         Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-  -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-```
-
-### SEE ALSO
-
-* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
-
-## dagger toolchain list
-
-List all toolchains
-
-### Synopsis
-
-List all toolchains of the current module.
-
-```
-dagger toolchain list [options] [flags]
-```
-
-### Examples
-
-```
-dagger toolchain list
-```
-
-### Options
-
-```
-      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --eager-runtime       load module runtime eagerly
-  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-  -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-```
-
-### SEE ALSO
-
-* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
-
-## dagger toolchain uninstall
-
-Uninstall a toolchain
-
-### Synopsis
-
-Uninstall a toolchain from the current module.
-
-```
-dagger toolchain uninstall [options] <toolchain> [flags]
-```
-
-### Examples
-
-```
-dagger toolchain uninstall mytoolchain
-```
-
-### Options
-
-```
-      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
-  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-  -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-```
-
-### SEE ALSO
-
-* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
-
-## dagger toolchain update
-
-Update toolchains
-
-### Synopsis
-
-Update all or specific toolchains of the current module.
-
-```
-dagger toolchain update [options] [<toolchain>...] [flags]
-```
-
-### Examples
-
-```
-dagger toolchain update
-```
-
-### Options
-
-```
-      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
-  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-  -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-```
-
-### SEE ALSO
-
-* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
 
 ## dagger uninstall
 
@@ -817,6 +715,7 @@ dagger uninstall hello
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -833,7 +732,7 @@ Update the dependencies of a local module.
 
 To update only specific dependencies, specify their short names or a complete address.
 
-If no dependency is specified, all dependencies are updated, as well as the module's blueprint, if it exists.
+If no dependency is specified, all dependencies are updated.
 
 
 ```
@@ -868,6 +767,7 @@ dagger update [options] [<DEPENDENCY>...]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -901,9 +801,144 @@ dagger version
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger workspace
+
+Manage the current workspace
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger workspace config](#dagger-workspace-config)	 - Get or set workspace configuration
+* [dagger workspace info](#dagger-workspace-info)	 - Show workspace information
+* [dagger workspace init](#dagger-workspace-init)	 - Initialize a new workspace
+
+## dagger workspace config
+
+Get or set workspace configuration
+
+### Synopsis
+
+Get or set workspace configuration values in .dagger/config.toml.
+
+With no arguments, prints the full configuration.
+With one argument, prints the value at the given key.
+With two arguments, sets the value at the given key.
+
+Works like "git config" for workspace settings.
+
+```
+dagger workspace config [key] [value] [flags]
+```
+
+### Examples
+
+```
+  dagger workspace config
+  dagger workspace config modules.mymod.source
+  dagger workspace config modules.mymod.alias false
+  dagger workspace config modules.mymod.config.tags main,develop
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Manage the current workspace
+
+## dagger workspace info
+
+Show workspace information
+
+```
+dagger workspace info [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Manage the current workspace
+
+## dagger workspace init
+
+Initialize a new workspace
+
+### Synopsis
+
+Initialize a new workspace in the current directory, creating .dagger/config.toml.
+
+```
+dagger workspace init
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Manage the current workspace
 
