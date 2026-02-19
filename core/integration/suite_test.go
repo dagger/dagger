@@ -91,7 +91,11 @@ func TestMain(m *testing.M) {
 			EngineRunVol:       engineRunVol,
 		}).Start(ctx)
 	if err != nil {
-		panic(err)
+		var execErr *dagger.ExecError
+		if errors.As(err, &execErr) {
+			panic(fmt.Sprintf("engine failed to start: %v\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr))
+		}
+		panic(fmt.Sprintf("engine failed to start: %v", err))
 	}
 
 	// Export CLI binary
