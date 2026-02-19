@@ -100,6 +100,28 @@ func inferSourcePathDir(srcRootPath string) (string, error) {
 	return ".", nil
 }
 
+// dirIsEmpty reports whether the working directory contains no visible
+// project files — i.e. nothing besides dotfiles, and no existing
+// workspace (.dagger/) or module config (dagger.json). When true,
+// `dagger module init` defaults to a standalone module (source=.)
+// rather than creating a workspace module under .dagger/modules/.
+func dirIsEmpty() bool {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		// Existing workspace or module config means this isn't a fresh start.
+		if e.Name() == ".dagger" || e.Name() == "dagger.json" {
+			return false
+		}
+		if !strings.HasPrefix(e.Name(), ".") {
+			return false
+		}
+	}
+	return true
+}
+
 func getCompatVersion() string {
 	if compatVersion == "skip" {
 		return ""
@@ -243,6 +265,13 @@ its own dagger.json — it is NOT added to the workspace config.`,
 
 		if moduleSourcePath != "" {
 			return initStandaloneModule(ctx, cmd, moduleName, moduleSourcePath)
+		}
+
+		// If the working directory is empty, default to standalone module
+		// with source=. rather than creating a workspace module. This is the
+		// common "start a new module from scratch" case.
+		if dirIsEmpty() {
+			return initStandaloneModule(ctx, cmd, moduleName, ".")
 		}
 
 		return initWorkspaceModule(ctx, cmd, moduleName)

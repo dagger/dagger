@@ -37,7 +37,10 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 // module, then overwrites main.dang with the provided source.
 func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
+		// Ensure .dagger/ exists so that module init creates a workspace
+		// module rather than defaulting to standalone in an empty dir.
 		return ctr.
+			WithExec([]string{"mkdir", "-p", ".dagger"}).
 			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
