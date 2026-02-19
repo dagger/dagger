@@ -369,6 +369,13 @@ func (obj *ModuleObject) installAutoAliases(ctx context.Context, dag *dagql.Serv
 	dag.Root().ObjectType().Extend(ctorSpec, ctorFn)
 
 	for _, fun := range obj.TypeDef.Functions {
+		// Skip aliasing if a field with this name already exists on the
+		// Query root (e.g. another module's constructor, or a core field).
+		// The function remains accessible via the module constructor.
+		if _, exists := dag.Root().ObjectType().FieldSpec(fun.Name, ""); exists {
+			continue
+		}
+
 		spec, err := fun.FieldSpec(ctx, mod)
 		if err != nil {
 			return fmt.Errorf("failed to get field spec for alias %q: %w", fun.Name, err)
