@@ -255,23 +255,27 @@ its own dagger.json — it is NOT added to the workspace config.`,
 			moduleName = filepath.Base(wd)
 		}
 
-		// Resolve standalone path: positional arg > --source flag
+		// A second positional argument specifies a standalone module path.
 		if len(extraArgs) >= 2 {
+			standalonePath := extraArgs[1]
 			if moduleSourcePath != "" {
-				return fmt.Errorf("cannot specify module path as both a positional argument and --source flag")
+				return fmt.Errorf("cannot specify both a positional path and --source flag")
 			}
-			moduleSourcePath = extraArgs[1]
+			return initStandaloneModule(ctx, cmd, moduleName, standalonePath, "")
 		}
 
+		// --source sets the source subpath within a standalone module at
+		// the current directory (e.g. dagger module init --source=dagger
+		// creates dagger.json here with source subpath "dagger").
 		if moduleSourcePath != "" {
-			return initStandaloneModule(ctx, cmd, moduleName, moduleSourcePath)
+			return initStandaloneModule(ctx, cmd, moduleName, ".", moduleSourcePath)
 		}
 
 		// If the working directory is empty, default to standalone module
 		// with source=. rather than creating a workspace module. This is the
 		// common "start a new module from scratch" case.
 		if dirIsEmpty() {
-			return initStandaloneModule(ctx, cmd, moduleName, ".")
+			return initStandaloneModule(ctx, cmd, moduleName, ".", "")
 		}
 
 		return initWorkspaceModule(ctx, cmd, moduleName)
@@ -302,8 +306,11 @@ func initWorkspaceModule(ctx context.Context, cmd *cobra.Command, modName string
 }
 
 // initStandaloneModule creates a module at the given path with its own
-// dagger.json, without adding it to any workspace config.
-func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName string, modPath string) error {
+// dagger.json, without adding it to any workspace config. If sourceSubpath
+// is non-empty, the module source is placed in that subdirectory relative
+// to modPath (e.g. modPath="." sourceSubpath="dagger" creates dagger.json
+// at "." with source in "./dagger/").
+func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName string, modPath string, sourceSubpath string) error {
 	return withEngine(ctx, client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -328,18 +335,21 @@ func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName strin
 			return fmt.Errorf("failed to get local context directory path: %w", err)
 		}
 
+		modSrc = modSrc.WithName(modName)
+		modSrc = modSrc.WithSDK(sdk)
+		if sourceSubpath != "" {
+			modSrc = modSrc.WithSourceSubpath(sourceSubpath)
+		}
+		if len(moduleIncludes) > 0 {
+			modSrc = modSrc.WithIncludes(moduleIncludes)
+		}
+		modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
+
 		srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get source root subpath: %w", err)
 		}
 		srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
-
-		modSrc = modSrc.WithName(modName)
-		modSrc = modSrc.WithSDK(sdk)
-		if len(moduleIncludes) > 0 {
-			modSrc = modSrc.WithIncludes(moduleIncludes)
-		}
-		modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
 
 		_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
 		if err != nil {
