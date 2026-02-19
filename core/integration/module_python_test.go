@@ -1899,7 +1899,7 @@ version = "0.0.0"
 }
 
 func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc {
-	execArgs := append([]string{"init", "--sdk=python"}, args...)
+	execArgs := append([]string{"module", "init", "--sdk=python"}, args...)
 	if len(args) == 0 {
 		execArgs = append(execArgs, "--name=test")
 	}
