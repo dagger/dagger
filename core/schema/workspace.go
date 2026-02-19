@@ -263,18 +263,18 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	return inst, nil
 }
 
-// resolveWorkspacePath resolves a path within the workspace's Rootfs:
-//   - Relative paths resolve from the workspace root (Rootfs/workspacePath/).
-//   - Absolute paths resolve from the Rootfs root (sandbox root).
+// resolveWorkspacePath resolves a path within the workspace root:
+//   - Relative paths resolve from the workspace root (root/workspacePath/).
+//   - Absolute paths resolve from the root (sandbox root).
 //
-// Returns a path relative to Rootfs root.
+// Returns a path relative to the root.
 func resolveWorkspacePath(path, workspacePath string) string {
 	clean := filepath.Clean(path)
 	if filepath.IsAbs(clean) {
-		// Absolute path: relative to Rootfs root (strip leading /)
+		// Absolute path: relative to root (strip leading /)
 		return clean[1:]
 	}
-	// Relative path: relative to workspace within Rootfs
+	// Relative path: relative to workspace within root
 	return filepath.Join(workspacePath, clean)
 }
 

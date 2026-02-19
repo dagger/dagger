@@ -66,6 +66,6 @@ No change needed. Caching in `modfunc.go` hashes *returned content*, not Rootfs.
 - [x] Rewrite `directory()` and `file()` resolvers to use the helper
 - [x] Demote `Rootfs` to unexported `rootfs` in `core/workspace.go`, add accessor for remote path
 - [x] Stop creating eager `host.directory(gitRoot)` for local in `engine/server/session.go:buildCoreWorkspace()`
-- [ ] Update any remaining `Rootfs` references across codebase
+- [x] Update any remaining `Rootfs` references across codebase
 - [ ] Type-check: `go build ./cmd/dagger/...` and `GOOS=linux GOARCH=amd64 go build ./engine/server/...`
 - [ ] Manual e2e: verify lazy sync (local) and remote workspaces still work
