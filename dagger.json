@@ -96,7 +96,9 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": ["scanSource"],
+          "function": [
+            "scanSource"
+          ],
           "argument": "source",
           "ignore": [
             "bin",

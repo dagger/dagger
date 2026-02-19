@@ -1666,6 +1666,15 @@ func (r *Check) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The original module in which the check has been defined
+func (r *Check) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
 // Whether the check passed
 func (r *Check) Passed(ctx context.Context) (bool, error) {
 	if r.passed != nil {
@@ -4271,11 +4280,11 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 }
 
 // A dev environment for the DaggerDev Engine
-type DaggerDev struct { // dagger-dev (../../.dagger/main.go:14:6)
+type DaggerDev struct { // dagger-dev (../../.dagger/main.go:15:6)
 	query *querybuilder.Selection
 
-	checkGenerated *Void
-	id             *DaggerDevID
+	generated *Void
+	id        *DaggerDevID
 }
 
 func (r *DaggerDev) WithGraphQLQuery(q *querybuilder.Selection) *DaggerDev {
@@ -4301,16 +4310,6 @@ func (r *DaggerDev) Changelog(opts ...DaggerDevChangelogOpts) *Changelog {
 	return &Changelog{
 		query: q,
 	}
-}
-
-// Verify that generated code is up to date
-func (r *DaggerDev) CheckGenerated(ctx context.Context) error { // dagger-dev (../../.dagger/main.go:18:1)
-	if r.checkGenerated != nil {
-		return nil
-	}
-	q := r.query.Select("checkGenerated")
-
-	return q.Execute(ctx)
 }
 
 func (r *DaggerDev) Ci() *Ci {
@@ -4350,18 +4349,6 @@ func (r *DaggerDev) Cli(opts ...DaggerDevCliOpts) *Cli { // cli (../../toolchain
 	}
 
 	return &Cli{
-		query: q,
-	}
-}
-
-// Return a directory from the module's context directory. Used by integration
-// tests running in nested containers to access files excluded from toolchain
-// sources but present in the root module's context.
-func (r *DaggerDev) ContextDir(path string) *Directory { // dagger-dev (../../.dagger/main.go:26:1)
-	q := r.query.Select("contextDir")
-	q = q.Arg("path", path)
-
-	return &Directory{
 		query: q,
 	}
 }
@@ -4461,24 +4448,14 @@ func (r *DaggerDev) EngineDev(opts ...DaggerDevEngineDevOpts) *EngineDev { // en
 	}
 }
 
-// DaggerDevGenerateOpts contains options for DaggerDev.Generate
-type DaggerDevGenerateOpts struct {
-	Check bool // dagger-dev (../../.dagger/main.go:131:2)
-}
-
-// Run all code generation - SDKs, docs, grpc stubs, changelog
-func (r *DaggerDev) Generate(opts ...DaggerDevGenerateOpts) *Changeset { // dagger-dev (../../.dagger/main.go:129:1)
-	q := r.query.Select("generate")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `check` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Check) {
-			q = q.Arg("check", opts[i].Check)
-		}
+// Verify that generated code is up to date
+func (r *DaggerDev) Generated(ctx context.Context) error { // dagger-dev (../../.dagger/main.go:19:1)
+	if r.generated != nil {
+		return nil
 	}
+	q := r.query.Select("generated")
 
-	return &Changeset{
-		query: q,
-	}
+	return q.Execute(ctx)
 }
 
 // DaggerDevGoOpts contains options for DaggerDev.Go
@@ -4849,22 +4826,19 @@ func (r *DaggerDev) Security() *Security {
 	}
 }
 
-// Return a Go env container with testdata directories that are excluded from
-// the Go toolchain's source by dagger.json customization ignore patterns.
-// These dirs are excluded to prevent the Go toolchain from processing test
-// Go modules, but integration tests need them present in the container.
-// Also sets up the inner test engine, CLI binary, engine tar, and registry
-// service bindings so integration tests have everything pre-configured.
-func (r *DaggerDev) TestGoEnv() *Container { // dagger-dev (../../.dagger/main.go:36:1)
-	q := r.query.Select("testGoEnv")
-
-	return &Container{
-		query: q,
-	}
+// DaggerDevTestSplitOpts contains options for DaggerDev.TestSplit
+type DaggerDevTestSplitOpts struct {
+	Source *Directory
 }
 
-func (r *DaggerDev) TestSplit() *TestSplit {
+func (r *DaggerDev) TestSplit(opts ...DaggerDevTestSplitOpts) *TestSplit {
 	q := r.query.Select("testSplit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+	}
 
 	return &TestSplit{
 		query: q,
@@ -5768,7 +5742,7 @@ func (r *Docs) WithGraphQLQuery(q *querybuilder.Selection) *Docs {
 }
 
 // Bump the Go SDK's Engine dependency
-func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../toolchains/docs-dev/main.go:146:1)
+func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../toolchains/docs-dev/main.go:147:1)
 	q := r.query.Select("bump")
 	q = q.Arg("engineVersion", engineVersion)
 
@@ -5778,7 +5752,7 @@ func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../toolchains
 }
 
 // Deploys a current build of the docs.
-func (r *Docs) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs (../../toolchains/docs-dev/main.go:161:1)
+func (r *Docs) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs (../../toolchains/docs-dev/main.go:162:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -5791,29 +5765,6 @@ func (r *Docs) Deploy(ctx context.Context, message string, netlifyToken *Secret)
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// DocsGenerateOpts contains options for Docs.Generate
-type DocsGenerateOpts struct {
-	//
-	// Dagger version to generate API docs for
-	//
-	Version string // docs (../../toolchains/docs-dev/main.go:101:2)
-}
-
-// Regenerate the API schema and CLI reference docs
-func (r *Docs) Generate(opts ...DocsGenerateOpts) *Changeset { // docs (../../toolchains/docs-dev/main.go:98:1)
-	q := r.query.Select("generate")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-	}
-
-	return &Changeset{
-		query: q,
-	}
 }
 
 // A unique identifier for this Docs.
@@ -5879,11 +5830,11 @@ func (r *Docs) LintMarkdown(ctx context.Context, opts ...DocsLintMarkdownOpts) e
 
 // DocsPublishOpts contains options for Docs.Publish
 type DocsPublishOpts struct {
-	Deployment string // docs (../../toolchains/docs-dev/main.go:194:2)
+	Deployment string // docs (../../toolchains/docs-dev/main.go:195:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *Docs) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsPublishOpts) error { // docs (../../toolchains/docs-dev/main.go:190:1)
+func (r *Docs) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsPublishOpts) error { // docs (../../toolchains/docs-dev/main.go:191:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -5898,6 +5849,29 @@ func (r *Docs) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsPu
 	q = q.Arg("netlifyToken", netlifyToken)
 
 	return q.Execute(ctx)
+}
+
+// DocsReferencesOpts contains options for Docs.References
+type DocsReferencesOpts struct {
+	//
+	// Dagger version to generate API docs for
+	//
+	Version string // docs (../../toolchains/docs-dev/main.go:102:2)
+}
+
+// Regenerate the API schema and CLI reference docs
+func (r *Docs) References(opts ...DocsReferencesOpts) *Changeset { // docs (../../toolchains/docs-dev/main.go:99:1)
+	q := r.query.Select("references")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // Build the docs server
@@ -6647,8 +6621,6 @@ type EngineDev struct { // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 	networkCidr   *string
 	publish       *Void
 	releaseDryRun *Void
-	test          *Void
-	tests         *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
 
@@ -6675,7 +6647,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../toolchai
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../toolchains/engine-dev/main.go:356:1)
+func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../toolchains/engine-dev/main.go:358:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)
 
@@ -6686,17 +6658,17 @@ func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../t
 
 // EngineDevContainerOpts contains options for EngineDev.Container
 type EngineDevContainerOpts struct {
-	Platform Platform // engine-dev (../../toolchains/engine-dev/main.go:141:2)
+	Platform Platform // engine-dev (../../toolchains/engine-dev/main.go:143:2)
 
-	GpuSupport bool // engine-dev (../../toolchains/engine-dev/main.go:143:2)
+	GpuSupport bool // engine-dev (../../toolchains/engine-dev/main.go:145:2)
 
-	Version string // engine-dev (../../toolchains/engine-dev/main.go:145:2)
+	Version string // engine-dev (../../toolchains/engine-dev/main.go:147:2)
 
-	Tag string // engine-dev (../../toolchains/engine-dev/main.go:147:2)
+	Tag string // engine-dev (../../toolchains/engine-dev/main.go:149:2)
 }
 
 // Build the engine container
-func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../toolchains/engine-dev/main.go:137:1)
+func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../toolchains/engine-dev/main.go:139:1)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -6724,7 +6696,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *EngineDev) Generate() *Changeset { // engine-dev (../../toolchains/engine-dev/main.go:370:1)
+func (r *EngineDev) Generate() *Changeset { // engine-dev (../../toolchains/engine-dev/main.go:373:1)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -6734,11 +6706,11 @@ func (r *EngineDev) Generate() *Changeset { // engine-dev (../../toolchains/engi
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../toolchains/engine-dev/main.go:330:2)
+	Version string // engine-dev (../../toolchains/engine-dev/main.go:332:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../toolchains/engine-dev/main.go:327:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../toolchains/engine-dev/main.go:329:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -6805,11 +6777,11 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../toolchains/engine-dev/main.go:275:2)
+	Service *Service // engine-dev (../../toolchains/engine-dev/main.go:277:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../toolchains/engine-dev/main.go:269:1)
+func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../toolchains/engine-dev/main.go:271:1)
 	assertNotNil("client", client)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -6827,7 +6799,7 @@ func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallCli
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../toolchains/engine-dev/main.go:314:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../toolchains/engine-dev/main.go:316:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -6836,7 +6808,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../toolchains/
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../toolchains/engine-dev/main.go:348:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../toolchains/engine-dev/main.go:350:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -6946,17 +6918,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../toolchains/engine-dev/main.go:463:2)
+	Image string // engine-dev (../../toolchains/engine-dev/main.go:466:2)
 
-	DryRun bool // engine-dev (../../toolchains/engine-dev/main.go:468:2)
+	DryRun bool // engine-dev (../../toolchains/engine-dev/main.go:471:2)
 
-	RegistryUsername string // engine-dev (../../toolchains/engine-dev/main.go:471:2)
+	RegistryUsername string // engine-dev (../../toolchains/engine-dev/main.go:474:2)
 
-	RegistryPassword *Secret // engine-dev (../../toolchains/engine-dev/main.go:473:2)
+	RegistryPassword *Secret // engine-dev (../../toolchains/engine-dev/main.go:476:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../toolchains/engine-dev/main.go:458:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../toolchains/engine-dev/main.go:461:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -6984,7 +6956,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../toolchains/engine-dev/main.go:444:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../toolchains/engine-dev/main.go:447:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -6995,15 +6967,15 @@ func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (..
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../toolchains/engine-dev/main.go:213:2)
+	GpuSupport bool // engine-dev (../../toolchains/engine-dev/main.go:215:2)
 
-	SharedCache bool // engine-dev (../../toolchains/engine-dev/main.go:215:2)
+	SharedCache bool // engine-dev (../../toolchains/engine-dev/main.go:217:2)
 
-	Metrics bool // engine-dev (../../toolchains/engine-dev/main.go:217:2)
+	Metrics bool // engine-dev (../../toolchains/engine-dev/main.go:219:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../toolchains/engine-dev/main.go:209:1)
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../toolchains/engine-dev/main.go:211:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
@@ -7034,129 +7006,31 @@ func (r *EngineDev) Source() *Directory { // engine-dev (../../toolchains/engine
 	}
 }
 
-// EngineDevTestOpts contains options for EngineDev.Test
-type EngineDevTestOpts struct {
-	//
-	// Only run these tests
-	//
-	Run string // engine-dev (../../toolchains/engine-dev/test.go:26:2)
-	//
-	// Skip these tests
-	//
-	Skip string // engine-dev (../../toolchains/engine-dev/test.go:29:2)
-
-	// Default: "./..."
-	Pkg string // engine-dev (../../toolchains/engine-dev/test.go:32:2)
-	//
-	// Abort test run on first failure
-	//
-	Failfast bool // engine-dev (../../toolchains/engine-dev/test.go:35:2)
-	//
-	// How many tests to run in parallel - defaults to the number of CPUs
-	//
-	Parallel int // engine-dev (../../toolchains/engine-dev/test.go:38:2)
-	//
-	// How long before timing out the test run
-	//
-	Timeout string // engine-dev (../../toolchains/engine-dev/test.go:41:2)
-
-	Race bool // engine-dev (../../toolchains/engine-dev/test.go:43:2)
-
-	// Default: 1
-	Count int // engine-dev (../../toolchains/engine-dev/test.go:46:2)
-
-	EnvFile *Secret // engine-dev (../../toolchains/engine-dev/test.go:48:2)
-	//
-	// Enable verbose output
-	//
-	TestVerbose bool // engine-dev (../../toolchains/engine-dev/test.go:51:2)
-	//
-	// Update golden files
-	//
-	Update bool // engine-dev (../../toolchains/engine-dev/test.go:54:2)
-	//
-	// Enable the given ebpf progs in the engine during tests
-	//
-	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:57:2)
-}
-
-// Run core engine tests
-func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../toolchains/engine-dev/test.go:22:1)
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `pkg` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkg) {
-			q = q.Arg("pkg", opts[i].Pkg)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `parallel` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Parallel) {
-			q = q.Arg("parallel", opts[i].Parallel)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `envFile` optional argument
-		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
-			q = q.Arg("envFile", opts[i].EnvFile)
-		}
-		// `testVerbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
-			q = q.Arg("testVerbose", opts[i].TestVerbose)
-		}
-		// `update` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Update) {
-			q = q.Arg("update", opts[i].Update)
-		}
-		// `ebpfProgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
-			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
 // EngineDevTestEngineOpts contains options for EngineDev.TestEngine
 type EngineDevTestEngineOpts struct {
-	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:247:2)
+	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:16:2)
 
-	RegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:248:2)
+	RegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:17:2)
 
-	PrivateRegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:249:2)
+	PrivateRegistrySvc *Service // engine-dev (../../toolchains/engine-dev/test.go:18:2)
 	//
 	// Cache volume for /run, shared between engine and test container
 	// so the test container can access /run/dagger-engine.sock
 	//
-	EngineRunVol *CacheVolume // engine-dev (../../toolchains/engine-dev/test.go:252:2)
+	EngineRunVol *CacheVolume // engine-dev (../../toolchains/engine-dev/test.go:21:2)
+	//
+	// Version to bake into the engine binary via ldflags
+	//
+	Version string // engine-dev (../../toolchains/engine-dev/test.go:23:2)
+	//
+	// Tag to bake into the engine binary via ldflags
+	//
+	Tag string // engine-dev (../../toolchains/engine-dev/test.go:25:2)
 }
 
 // Build and start a dev instance of the dagger engine, suitable
 // as a dependency for [engine integration tests](core/integration).
-func (r *EngineDev) TestEngine(opts ...EngineDevTestEngineOpts) *Service { // engine-dev (../../toolchains/engine-dev/test.go:245:1)
+func (r *EngineDev) TestEngine(opts ...EngineDevTestEngineOpts) *Service { // engine-dev (../../toolchains/engine-dev/test.go:14:1)
 	q := r.query.Select("testEngine")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `ebpfProgs` optional argument
@@ -7175,112 +7049,19 @@ func (r *EngineDev) TestEngine(opts ...EngineDevTestEngineOpts) *Service { // en
 		if !querybuilder.IsZeroValue(opts[i].EngineRunVol) {
 			q = q.Arg("engineRunVol", opts[i].EngineRunVol)
 		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+		// `tag` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Tag) {
+			q = q.Arg("tag", opts[i].Tag)
+		}
 	}
 
 	return &Service{
 		query: q,
 	}
-}
-
-// EngineDevTestTelemetryOpts contains options for EngineDev.TestTelemetry
-type EngineDevTestTelemetryOpts struct {
-	//
-	// Only run these tests
-	//
-	Run string // engine-dev (../../toolchains/engine-dev/test.go:87:2)
-	//
-	// Skip these tests
-	//
-	Skip string // engine-dev (../../toolchains/engine-dev/test.go:90:2)
-
-	Update bool // engine-dev (../../toolchains/engine-dev/test.go:92:2)
-
-	Failfast bool // engine-dev (../../toolchains/engine-dev/test.go:94:2)
-
-	Parallel int // engine-dev (../../toolchains/engine-dev/test.go:96:2)
-
-	Timeout string // engine-dev (../../toolchains/engine-dev/test.go:98:2)
-
-	Race bool // engine-dev (../../toolchains/engine-dev/test.go:100:2)
-
-	// Default: 1
-	Count int // engine-dev (../../toolchains/engine-dev/test.go:102:2)
-
-	EnvFile *Secret // engine-dev (../../toolchains/engine-dev/test.go:104:2)
-
-	TestVerbose bool // engine-dev (../../toolchains/engine-dev/test.go:106:2)
-	//
-	// Enable the given ebpf progs in the engine during tests
-	//
-	EbpfProgs []string // engine-dev (../../toolchains/engine-dev/test.go:109:2)
-}
-
-// Run telemetry tests
-func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Directory { // engine-dev (../../toolchains/engine-dev/test.go:83:1)
-	q := r.query.Select("testTelemetry")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `update` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Update) {
-			q = q.Arg("update", opts[i].Update)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `parallel` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Parallel) {
-			q = q.Arg("parallel", opts[i].Parallel)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `envFile` optional argument
-		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
-			q = q.Arg("envFile", opts[i].EnvFile)
-		}
-		// `testVerbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
-			q = q.Arg("testVerbose", opts[i].TestVerbose)
-		}
-		// `ebpfProgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
-			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
-		}
-	}
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// List all core engine tests
-func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../toolchains/engine-dev/test.go:16:1)
-	if r.tests != nil {
-		return *r.tests, nil
-	}
-	q := r.query.Select("tests")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 func (r *EngineDev) WithBuildkitConfig(key string, value string) *EngineDev { // engine-dev (../../toolchains/engine-dev/main.go:84:1)
@@ -11147,6 +10928,25 @@ func (r *Generator) Name(ctx context.Context) (string, error) {
 	q := r.query.Select("name")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original module in which the generator has been defined
+func (r *Generator) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the generator within its module
+func (r *Generator) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -15588,6 +15388,15 @@ func (r *PhpSDK) WithGraphQLQuery(q *querybuilder.Selection) *PhpSDK {
 	}
 }
 
+// Regenerate the PHP SDK API
+func (r *PhpSDK) API() *Changeset { // php-sdk (../../toolchains/php-sdk-dev/main.go:140:1)
+	q := r.query.Select("api")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 func (r *PhpSDK) BaseContainer() *Container { // php-sdk (../../toolchains/php-sdk-dev/main.go:53:1)
 	q := r.query.Select("baseContainer")
 
@@ -15597,7 +15406,7 @@ func (r *PhpSDK) BaseContainer() *Container { // php-sdk (../../toolchains/php-s
 }
 
 // Bump the PHP SDK's Engine dependency
-func (r *PhpSDK) Bump(version string) *Changeset { // php-sdk (../../toolchains/php-sdk-dev/main.go:264:1)
+func (r *PhpSDK) Bump(version string) *Changeset { // php-sdk (../../toolchains/php-sdk-dev/main.go:265:1)
 	q := r.query.Select("bump")
 	q = q.Arg("version", version)
 
@@ -15606,7 +15415,7 @@ func (r *PhpSDK) Bump(version string) *Changeset { // php-sdk (../../toolchains/
 	}
 }
 
-func (r *PhpSDK) Changes() *Changeset { // php-sdk (../../toolchains/php-sdk-dev/main.go:150:1)
+func (r *PhpSDK) Changes() *Changeset { // php-sdk (../../toolchains/php-sdk-dev/main.go:151:1)
 	q := r.query.Select("changes")
 
 	return &Changeset{
@@ -15643,15 +15452,6 @@ func (r *PhpSDK) DoctumConfig() *File { // php-sdk (../../toolchains/php-sdk-dev
 	q := r.query.Select("doctumConfig")
 
 	return &File{
-		query: q,
-	}
-}
-
-// Regenerate the PHP SDK API
-func (r *PhpSDK) Generate() *Changeset { // php-sdk (../../toolchains/php-sdk-dev/main.go:139:1)
-	q := r.query.Select("generate")
-
-	return &Changeset{
 		query: q,
 	}
 }
@@ -15721,16 +15521,16 @@ type PhpSDKReleaseOpts struct {
 	//
 	// The source git repository to release
 	//
-	SourceRepo *GitRepository // php-sdk (../../toolchains/php-sdk-dev/main.go:239:2)
+	SourceRepo *GitRepository // php-sdk (../../toolchains/php-sdk-dev/main.go:240:2)
 
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	Dest string // php-sdk (../../toolchains/php-sdk-dev/main.go:246:2)
+	Dest string // php-sdk (../../toolchains/php-sdk-dev/main.go:247:2)
 
-	GithubToken *Secret // php-sdk (../../toolchains/php-sdk-dev/main.go:248:2)
+	GithubToken *Secret // php-sdk (../../toolchains/php-sdk-dev/main.go:249:2)
 }
 
 // Publish the PHP SDK
-func (r *PhpSDK) Release(ctx context.Context, sourceTag string, opts ...PhpSDKReleaseOpts) error { // php-sdk (../../toolchains/php-sdk-dev/main.go:234:1)
+func (r *PhpSDK) Release(ctx context.Context, sourceTag string, opts ...PhpSDKReleaseOpts) error { // php-sdk (../../toolchains/php-sdk-dev/main.go:235:1)
 	if r.release != nil {
 		return nil
 	}
@@ -15759,23 +15559,23 @@ type PhpSDKReleaseDryRunOpts struct {
 	//
 	// Source git repository to fake-release
 	//
-	SourceRepo *GitRepository // php-sdk (../../toolchains/php-sdk-dev/main.go:207:2)
+	SourceRepo *GitRepository // php-sdk (../../toolchains/php-sdk-dev/main.go:208:2)
 	//
 	// Source git tag to fake-release
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // php-sdk (../../toolchains/php-sdk-dev/main.go:210:2)
+	SourceTag string // php-sdk (../../toolchains/php-sdk-dev/main.go:211:2)
 	//
 	// Target git remote to fake-release *to*
 	//
 	//
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	DestRemote string // php-sdk (../../toolchains/php-sdk-dev/main.go:213:2)
+	DestRemote string // php-sdk (../../toolchains/php-sdk-dev/main.go:214:2)
 }
 
 // Test the publishing process
-func (r *PhpSDK) ReleaseDryRun(ctx context.Context, opts ...PhpSDKReleaseDryRunOpts) error { // php-sdk (../../toolchains/php-sdk-dev/main.go:203:1)
+func (r *PhpSDK) ReleaseDryRun(ctx context.Context, opts ...PhpSDKReleaseDryRunOpts) error { // php-sdk (../../toolchains/php-sdk-dev/main.go:204:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -15818,7 +15618,7 @@ func (r *PhpSDK) Test(ctx context.Context) error { // php-sdk (../../toolchains/
 }
 
 // Get v1.2.3 from sdk/php/v1.2.3
-func (r *PhpSDK) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-sdk (../../toolchains/php-sdk-dev/main.go:228:1)
+func (r *PhpSDK) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-sdk (../../toolchains/php-sdk-dev/main.go:229:1)
 	if r.versionFromTag != nil {
 		return *r.versionFromTag, nil
 	}
@@ -15831,7 +15631,7 @@ func (r *PhpSDK) VersionFromTag(ctx context.Context, tag string) (string, error)
 	return response, q.Execute(ctx)
 }
 
-func (r *PhpSDK) WithGeneratedClient() *PhpSDK { // php-sdk (../../toolchains/php-sdk-dev/main.go:154:1)
+func (r *PhpSDK) WithGeneratedClient() *PhpSDK { // php-sdk (../../toolchains/php-sdk-dev/main.go:155:1)
 	q := r.query.Select("withGeneratedClient")
 
 	return &PhpSDK{
@@ -15842,7 +15642,7 @@ func (r *PhpSDK) WithGeneratedClient() *PhpSDK { // php-sdk (../../toolchains/ph
 // Generate reference docs from the generated client
 // NOTE: it's the caller's responsibility to ensure the generated client is up-to-date
 // (see WithGeneratedClient)
-func (r *PhpSDK) WithGeneratedDocs() *PhpSDK { // php-sdk (../../toolchains/php-sdk-dev/main.go:174:1)
+func (r *PhpSDK) WithGeneratedDocs() *PhpSDK { // php-sdk (../../toolchains/php-sdk-dev/main.go:175:1)
 	q := r.query.Select("withGeneratedDocs")
 
 	return &PhpSDK{
@@ -15994,11 +15794,11 @@ type PythonSDKBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:279:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:280:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:276:1)
+func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:277:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -16013,9 +15813,18 @@ func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk
 }
 
 // Bump the Python SDK's Engine dependency
-func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:264:1)
+func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:265:1)
 	q := r.query.Select("bump")
 	q = q.Arg("version", version)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Regenerate the core Python client library
+func (r *PythonSDK) ClientLibrary() *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:172:1)
+	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
 		query: q,
@@ -16032,7 +15841,7 @@ func (r *PythonSDK) DevContainer() *Container { // python-sdk (../../toolchains/
 }
 
 // Preview the reference documentation
-func (r *PythonSDK) Docs() *PythonSDKDocs { // python-sdk (../../toolchains/python-sdk-dev/main.go:317:1)
+func (r *PythonSDK) Docs() *PythonSDKDocs { // python-sdk (../../toolchains/python-sdk-dev/main.go:318:1)
 	q := r.query.Select("docs")
 
 	return &PythonSDKDocs{
@@ -16057,15 +15866,6 @@ func (r *PythonSDK) Format(opts ...PythonSDKFormatOpts) *Changeset { // python-s
 			q = q.Arg("paths", opts[i].Paths)
 		}
 	}
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Regenerate the core Python client library
-func (r *PythonSDK) Generate() *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:171:1)
-	q := r.query.Select("generate")
 
 	return &Changeset{
 		query: q,
@@ -16164,15 +15964,15 @@ type PythonSDKPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:293:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:294:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-sdk (../../toolchains/python-sdk-dev/main.go:296:2)
+	URL string // python-sdk (../../toolchains/python-sdk-dev/main.go:297:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:288:1)
+func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:289:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16194,15 +15994,15 @@ func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Contai
 
 // PythonSDKReleaseOpts contains options for PythonSDK.Release
 type PythonSDKReleaseOpts struct {
-	DryRun bool // python-sdk (../../toolchains/python-sdk-dev/main.go:235:2)
+	DryRun bool // python-sdk (../../toolchains/python-sdk-dev/main.go:236:2)
 
-	PypiRepo string // python-sdk (../../toolchains/python-sdk-dev/main.go:238:2)
+	PypiRepo string // python-sdk (../../toolchains/python-sdk-dev/main.go:239:2)
 
-	PypiToken *Secret // python-sdk (../../toolchains/python-sdk-dev/main.go:241:2)
+	PypiToken *Secret // python-sdk (../../toolchains/python-sdk-dev/main.go:242:2)
 }
 
 // Release the Python SDK
-func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...PythonSDKReleaseOpts) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:228:1)
+func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...PythonSDKReleaseOpts) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:229:1)
 	if r.release != nil {
 		return nil
 	}
@@ -16227,7 +16027,7 @@ func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...Pytho
 }
 
 // Test the publishing process
-func (r *PythonSDK) ReleaseDryRun(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:217:1)
+func (r *PythonSDK) ReleaseDryRun(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:218:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -16275,11 +16075,11 @@ type PythonSDKTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:311:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:312:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonSDK) TestPublish(token *Secret, opts ...PythonSDKTestPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:306:1)
+func (r *PythonSDK) TestPublish(token *Secret, opts ...PythonSDKTestPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:307:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16738,7 +16538,7 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-func (r *Client) DaggerDev() *DaggerDev { // dagger-dev (../../.dagger/main.go:14:6)
+func (r *Client) DaggerDev() *DaggerDev { // dagger-dev (../../.dagger/main.go:15:6)
 	q := r.query.Select("daggerDev")
 
 	return &DaggerDev{
@@ -18381,8 +18181,19 @@ func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
-func (r *Client) TestSplit() *TestSplit {
+// TestSplitOpts contains options for Client.TestSplit
+type TestSplitOpts struct {
+	Source *Directory
+}
+
+func (r *Client) TestSplit(opts ...TestSplitOpts) *TestSplit {
 	q := r.query.Select("testSplit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+	}
 
 	return &TestSplit{
 		query: q,
@@ -18446,7 +18257,7 @@ type VersionOpts struct {
 	//
 	// A git repository containing the source code of the artifact to be versioned.
 	//
-	Git *Directory // version (../../version/main.go:21:2)
+	GitParent *Directory // version (../../version/main.go:24:2)
 	//
 	// A directory containing all the inputs of the artifact to be versioned.
 	// An input is any file that changes the artifact if it changes.
@@ -18454,19 +18265,19 @@ type VersionOpts struct {
 	// - To avoid false positives, only include actual inputs
 	// - To avoid false negatives, include *all* inputs
 	//
-	Inputs *Directory // version (../../version/main.go:31:2)
+	Inputs *Directory // version (../../version/main.go:34:2)
 	//
 	// File containing the next release version (e.g. .changes/.next)
 	//
-	NextVersionFile *File // version (../../version/main.go:36:2)
+	NextVersionFile *File // version (../../version/main.go:39:2)
 }
 
 func (r *Client) Version(opts ...VersionOpts) *Version { // version (../../version/main.go:17:1)
 	q := r.query.Select("version")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `git` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Git) {
-			q = q.Arg("git", opts[i].Git)
+		// `gitParent` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GitParent) {
+			q = q.Arg("gitParent", opts[i].GitParent)
 		}
 		// `inputs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Inputs) {
@@ -19176,6 +18987,15 @@ func (r *RustSDK) WithGraphQLQuery(q *querybuilder.Selection) *RustSDK {
 	}
 }
 
+// Regenerate the Rust SDK API client.
+func (r *RustSDK) Apiclient() *Changeset { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:148:1)
+	q := r.query.Select("apiclient")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 func (r *RustSDK) BaseContainer() *Container { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:35:2)
 	q := r.query.Select("baseContainer")
 
@@ -19185,7 +19005,7 @@ func (r *RustSDK) BaseContainer() *Container { // rust-sdk (../../toolchains/rus
 }
 
 // Bump the Rust SDK's engine dependency version.
-func (r *RustSDK) Bump(version string) *Changeset { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:274:1)
+func (r *RustSDK) Bump(version string) *Changeset { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:275:1)
 	q := r.query.Select("bump")
 	q = q.Arg("version", version)
 
@@ -19214,7 +19034,7 @@ func (r *RustSDK) CargoFmt(ctx context.Context) error { // rust-sdk (../../toolc
 	return q.Execute(ctx)
 }
 
-func (r *RustSDK) Changes() *Changeset { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:151:1)
+func (r *RustSDK) Changes() *Changeset { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:152:1)
 	q := r.query.Select("changes")
 
 	return &Changeset{
@@ -19243,15 +19063,6 @@ func (r *RustSDK) DevContainer(opts ...RustSDKDevContainerOpts) *Container { // 
 	}
 
 	return &Container{
-		query: q,
-	}
-}
-
-// Regenerate the Rust SDK API client.
-func (r *RustSDK) Generate() *Changeset { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:147:1)
-	q := r.query.Select("generate")
-
-	return &Changeset{
 		query: q,
 	}
 }
@@ -19297,7 +19108,7 @@ func (r *RustSDK) MarshalJSON() ([]byte, error) {
 }
 
 // Release the Rust SDK
-func (r *RustSDK) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret) error { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:243:1)
+func (r *RustSDK) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret) error { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:244:1)
 	assertNotNil("cargoRegistryToken", cargoRegistryToken)
 	if r.release != nil {
 		return nil
@@ -19316,11 +19127,11 @@ type RustSDKReleaseDryRunOpts struct {
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // rust-sdk (../../toolchains/rust-sdk-dev/main.go:180:2)
+	SourceTag string // rust-sdk (../../toolchains/rust-sdk-dev/main.go:181:2)
 }
 
 // Test the publishing process
-func (r *RustSDK) ReleaseDryRun(ctx context.Context, opts ...RustSDKReleaseDryRunOpts) error { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:175:1)
+func (r *RustSDK) ReleaseDryRun(ctx context.Context, opts ...RustSDKReleaseDryRunOpts) error { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:176:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -19354,7 +19165,7 @@ func (r *RustSDK) Test(ctx context.Context) error { // rust-sdk (../../toolchain
 	return q.Execute(ctx)
 }
 
-func (r *RustSDK) WithGeneratedClient() *RustSDK { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:155:1)
+func (r *RustSDK) WithGeneratedClient() *RustSDK { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:156:1)
 	q := r.query.Select("withGeneratedClient")
 
 	return &RustSDK{
@@ -19551,18 +19362,9 @@ func (r *Sdks) WithGraphQLQuery(q *querybuilder.Selection) *Sdks {
 }
 
 // Atomically bump all SDKs to the specified version
-func (r *Sdks) Bump(version string) *Changeset { // sdks (../../toolchains/all-sdks/main.go:49:1)
+func (r *Sdks) Bump(version string) *Changeset { // sdks (../../toolchains/all-sdks/main.go:27:1)
 	q := r.query.Select("bump")
 	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Generate all SDKs, and return the combined diff
-func (r *Sdks) Generate() *Changeset { // sdks (../../toolchains/all-sdks/main.go:27:1)
-	q := r.query.Select("generate")
 
 	return &Changeset{
 		query: q,
@@ -20668,21 +20470,24 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 	}, nil
 }
 
+// Note: For now, this file is not actually generated. Feel free to make edits.
 type TestSplit struct {
 	query *querybuilder.Selection
 
-	id                  *TestSplitID
-	testBase            *Void
-	testCallAndShell    *Void
-	testCliEngine       *Void
-	testClientGenerator *Void
-	testContainer       *Void
-	testInterface       *Void
-	testLlm             *Void
-	testModuleRuntimes  *Void
-	testModules         *Void
-	testProvision       *Void
-	testTelemetry       *Void
+	id                     *TestSplitID
+	testBase               *Void
+	testCallAndShell       *Void
+	testCliEngine          *Void
+	testClientGenerator    *Void
+	testContainer          *Void
+	testContainerProvision *Void
+	testInterface          *Void
+	testLlm                *Void
+	testModuleRuntimes     *Void
+	testModules            *Void
+	testProvision          *Void
+	testTelemetry          *Void
+	testWorkspaces         *Void
 }
 
 func (r *TestSplit) WithGraphQLQuery(q *querybuilder.Selection) *TestSplit {
@@ -20731,6 +20536,14 @@ func (r *TestSplit) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+func (r *TestSplit) Source() *Directory {
+	q := r.query.Select("source")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Test Base
 func (r *TestSplit) TestBase(ctx context.Context) error {
 	if r.testBase != nil {
@@ -20771,12 +20584,22 @@ func (r *TestSplit) TestClientGenerator(ctx context.Context) error {
 	return q.Execute(ctx)
 }
 
-// Test Container
+// Test Container (excluding DinD/nested engine tests)
 func (r *TestSplit) TestContainer(ctx context.Context) error {
 	if r.testContainer != nil {
 		return nil
 	}
 	q := r.query.Select("testContainer")
+
+	return q.Execute(ctx)
+}
+
+// Test Container DinD/nested engine tests (isolated to prevent cascading failures)
+func (r *TestSplit) TestContainerProvision(ctx context.Context) error {
+	if r.testContainerProvision != nil {
+		return nil
+	}
+	q := r.query.Select("testContainerProvision")
 
 	return q.Execute(ctx)
 }
@@ -20837,6 +20660,16 @@ func (r *TestSplit) TestTelemetry(ctx context.Context) error {
 		return nil
 	}
 	q := r.query.Select("testTelemetry")
+
+	return q.Execute(ctx)
+}
+
+// Test Workspaces
+func (r *TestSplit) TestWorkspaces(ctx context.Context) error {
+	if r.testWorkspaces != nil {
+		return nil
+	}
+	q := r.query.Select("testWorkspaces")
 
 	return q.Execute(ctx)
 }
@@ -21326,8 +21159,8 @@ func (r *TypescriptSDK) BunjsDevContainer() *Container {
 }
 
 // Generate the Typescript client library
-func (r *TypescriptSDK) Generate() *Changeset {
-	q := r.query.Select("generate")
+func (r *TypescriptSDK) ClientLibrary() *Changeset {
+	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
 		query: q,
@@ -21584,7 +21417,7 @@ func (r *TypescriptSDK) Workspace() *Directory {
 	}
 }
 
-type Version struct { // version (../../version/main.go:46:6)
+type Version struct { // version (../../version/main.go:54:6)
 	query *querybuilder.Selection
 
 	currentTag         *string
@@ -21601,7 +21434,7 @@ func (r *Version) WithGraphQLQuery(q *querybuilder.Selection) *Version {
 	}
 }
 
-func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (../../version/main.go:149:1)
+func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (../../version/main.go:197:1)
 	if r.currentTag != nil {
 		return *r.currentTag, nil
 	}
@@ -21613,7 +21446,7 @@ func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (
 	return response, q.Execute(ctx)
 }
 
-func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../version/main.go:132:1)
+func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../version/main.go:176:1)
 	if r.dirty != nil {
 		return *r.dirty, nil
 	}
@@ -21625,7 +21458,7 @@ func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../v
 	return response, q.Execute(ctx)
 }
 
-func (r *Version) GitDir() *Directory { // version (../../version/main.go:49:2)
+func (r *Version) GitDir() *Directory { // version (../../version/main.go:57:2)
 	q := r.query.Select("gitDir")
 
 	return &Directory{
@@ -21674,7 +21507,7 @@ func (r *Version) MarshalJSON() ([]byte, error) {
 }
 
 // Return the tag to use when auto-downloading the engine image from the CLI
-func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (../../version/main.go:110:1)
+func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (../../version/main.go:150:1)
 	if r.imageTag != nil {
 		return *r.imageTag, nil
 	}
@@ -21687,7 +21520,7 @@ func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (..
 }
 
 // NextReleaseVersion returns the next release version from .changes/.next
-func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../version/main.go:211:1)
+func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../version/main.go:263:1)
 	if r.nextReleaseVersion != nil {
 		return *r.nextReleaseVersion, nil
 	}
@@ -21700,7 +21533,7 @@ func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // v
 }
 
 // Generate a version string from the current context
-func (r *Version) Version(ctx context.Context) (string, error) { // version (../../version/main.go:59:1)
+func (r *Version) Version(ctx context.Context) (string, error) { // version (../../version/main.go:67:1)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -22710,6 +22543,36 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 	return nil
 }
 
+// ClientOpt holds a client option
+type ClientOpt = dagger.ClientOpt
+
+// Request contains all the values required to build queries executed by the graphql.Client
+type Request = dagger.Request
+
+// Response contains data returned by the GraphQL API
+type Response = dagger.Response
+
+// WithWorkdir sets the engine workdir
+var WithWorkdir = dagger.WithWorkdir
+
+// WithLogOutput sets the progress writer
+var WithLogOutput = dagger.WithLogOutput
+
+// WithConn sets the engine connection explicitly
+var WithConn = dagger.WithConn
+
+// WithVersionOverride requests a specific schema version from the engine
+var WithVersionOverride = dagger.WithVersionOverride
+
+// WithVerbosity sets the verbosity level for the progress output
+var WithVerbosity = dagger.WithVerbosity
+
+// WithRunnerHost sets the runner host URL
+var WithRunnerHost = dagger.WithRunnerHost
+
+// WithEnvironmentVariable sets an environment variable in the CLI subprocess
+var WithEnvironmentVariable = dagger.WithEnvironmentVariable
+
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	dag, err := dagger.Connect(ctx, opts...)
 	if err != nil {
@@ -22776,10 +22639,7 @@ func serveModuleDependencies(ctx context.Context, client *Client) error {
 		return err
 	}
 	if !configExist {
-		// No dagger.json found - this is fine when using the client as a
-		// library (e.g. tests using WithWorkdir to a temp dir). Module
-		// dependency types won't be available but base types still work.
-		return nil
+		return fmt.Errorf("dagger.json not found but is required to load local dependencies or the module itself")
 	}
 
 	if configExist {

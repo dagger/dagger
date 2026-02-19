@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/testutil/dagger/dag"
@@ -77,6 +78,23 @@ func TestMain(m *testing.M) {
 	registryHost = mustParseEndpointHost(registryEndpoint)
 	privateRegistryHost = mustParseEndpointHost(privateRegistryEndpoint)
 
+	// Compute version/tag once for consistent values across engine, engine tar,
+	// and test binary. Must happen before TestEngine so version is baked in.
+	version, err := dag.Version().Version(ctx)
+	if err != nil {
+		panic(err)
+	}
+	tag, err := dag.Version().ImageTag(ctx)
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("_EXPERIMENTAL_DAGGER_VERSION", version)
+	os.Setenv("_EXPERIMENTAL_DAGGER_TAG", tag)
+	// Set engine.Version/Tag directly since init() already ran before TestMain
+	// and couldn't read the env vars we just set.
+	engine.Version = version
+	engine.Tag = tag
+
 	// Start inner engine with shared registries and buildkit HTTP config
 	// for the endpoint addresses (so the engine can push/pull via HTTP).
 	// The engineRunVol cache volume is shared with the test container (mounted
@@ -89,6 +107,8 @@ func TestMain(m *testing.M) {
 			RegistrySvc:        startedRegistry,
 			PrivateRegistrySvc: startedPrivateRegistry,
 			EngineRunVol:       engineRunVol,
+			Version:            version,
+			Tag:                tag,
 		}).Start(ctx)
 	if err != nil {
 		var execErr *dagger.ExecError
@@ -105,18 +125,6 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", "/.dagger-cli")
 	os.Setenv("_TEST_DAGGER_CLI_LINUX_BIN", "/.dagger-cli")
-
-	// Compute version/tag once for consistent values
-	version, err := dag.Version().Version(ctx)
-	if err != nil {
-		panic(err)
-	}
-	tag, err := dag.Version().ImageTag(ctx)
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("_EXPERIMENTAL_DAGGER_VERSION", version)
-	os.Setenv("_EXPERIMENTAL_DAGGER_TAG", tag)
 
 	// Export engine tar for tests that spin up additional dev engines
 	engineTar := dag.EngineDev().

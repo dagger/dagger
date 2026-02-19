@@ -19,6 +19,10 @@ func (dev *EngineDev) TestEngine(
 	// Cache volume for /run, shared between engine and test container
 	// so the test container can access /run/dagger-engine.sock
 	engineRunVol *dagger.CacheVolume, // +optional
+	// Version to bake into the engine binary via ldflags
+	version string, // +optional
+	// Tag to bake into the engine binary via ldflags
+	tag string, // +optional
 ) (*dagger.Service, error) {
 	// Build the dev engine container with configured eBPF programs and buildkit settings
 	devEngine, err := dev.
@@ -30,8 +34,8 @@ func (dev *EngineDev) TestEngine(
 			ctx,
 			"",    // platform
 			false, // gpuSupport
-			"",    // version
-			"",    // tag
+			version,
+			tag,
 		)
 	if err != nil {
 		return nil, err

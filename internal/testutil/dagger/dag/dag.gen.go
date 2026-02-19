@@ -814,9 +814,9 @@ func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	return client.SourceMap(filename, line, column)
 }
 
-func TestSplit() *dagger.TestSplit {
+func TestSplit(opts ...dagger.TestSplitOpts) *dagger.TestSplit {
 	client := initClient()
-	return client.TestSplit()
+	return client.TestSplit(opts...)
 }
 
 // Create a new TypeDef.
