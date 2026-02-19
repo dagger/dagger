@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -32,7 +33,6 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/util/scrub"
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
@@ -46,10 +46,28 @@ func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
 		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.T]{
-				StartOptions: testutil.SpanOpts[*testing.T],
+				StartOptions: spanOpts[*testing.T],
 			},
 		),
 		oteltest.WithLogging[*testing.T](),
+	}
+}
+
+func spanOpts[T testctx.Runner[T]](w *testctx.W[T]) []trace.SpanStartOption {
+	var t T
+	attrs := []attribute.KeyValue{
+		attribute.String("dagger.io/testctx.name", w.Name()),
+		attribute.String("dagger.io/testctx.type", fmt.Sprintf("%T", t)),
+		attribute.Bool(telemetry.UIBoundaryAttr, true),
+	}
+	if strings.Count(w.Name(), "/") == 0 {
+		attrs = append(attrs, attribute.Bool(telemetry.UIRevealAttr, true))
+	}
+	if _, ok := os.LookupEnv("TESTCTX_PREWARM"); ok {
+		attrs = append(attrs, attribute.Bool("dagger.io/testctx.prewarm", true))
+	}
+	return []trace.SpanStartOption{
+		trace.WithAttributes(attrs...),
 	}
 }
 

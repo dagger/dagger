@@ -78,13 +78,17 @@ func TestMain(m *testing.M) {
 	privateRegistryHost = mustParseEndpointHost(privateRegistryEndpoint)
 
 	// Start inner engine with shared registries and buildkit HTTP config
-	// for the endpoint addresses (so the engine can push/pull via HTTP)
+	// for the endpoint addresses (so the engine can push/pull via HTTP).
+	// The engineRunVol cache volume is shared with the test container (mounted
+	// in the dang toolchain) so tests can access /run/dagger-engine.sock.
+	engineRunVol := dag.CacheVolume("integ-test-engine-run")
 	engineSvc, err := dag.EngineDev().
 		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
 		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
 		TestEngine(dagger.EngineDevTestEngineOpts{
 			RegistrySvc:        startedRegistry,
 			PrivateRegistrySvc: startedPrivateRegistry,
+			EngineRunVol:       engineRunVol,
 		}).Start(ctx)
 	if err != nil {
 		panic(err)
