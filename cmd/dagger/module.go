@@ -173,6 +173,7 @@ func init() {
 	moduleModInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	moduleModInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleModInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module")
+	moduleModInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
@@ -342,6 +343,9 @@ func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName strin
 		}
 		if len(moduleIncludes) > 0 {
 			modSrc = modSrc.WithIncludes(moduleIncludes)
+		}
+		if selfCalls {
+			modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
 		}
 		modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
 
