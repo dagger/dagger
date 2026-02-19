@@ -229,7 +229,8 @@ class EntrypointCommand extends Command
             $functionName === '__construct'
             && ! $object->hasMethod($functionName)
         ) {
-            // All PHP classes implicity define __construct
+            // All PHP classes implicitly define __construct without arguments
+            // So if it is not overriden, return an empty array
             return [];
         }
 
