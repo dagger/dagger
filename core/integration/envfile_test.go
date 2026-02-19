@@ -513,7 +513,7 @@ func (m *Dep) Bar(
 `), 0644)
 	require.NoError(t, err)
 
-	installCmd := hostDaggerCommand(ctx, t, modDir, "module", "install", depDir)
+	installCmd := hostDaggerCommand(ctx, t, modDir, "install", depDir)
 	installOutput, err := installCmd.CombinedOutput()
 	require.NoError(t, err, string(installOutput))
 

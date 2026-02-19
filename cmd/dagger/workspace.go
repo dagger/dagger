@@ -90,16 +90,29 @@ var workspaceInitCmd = &cobra.Command{
 var moduleInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
 	Aliases: []string{"use"},
-	Short:   "Add a module to the workspace",
-	Long:    "Add a module to the workspace, making its functions available via 'dagger call'.",
+	Short:   "Install a module dependency",
+	Long: `Install a module, either into the workspace or as a module dependency.
+
+If a workspace exists (.dagger/config.toml), the module is added to the workspace config.
+If no workspace exists but a dagger.json is present (standalone module), the module is
+added as a dependency in dagger.json. Use 'dagger module install' to explicitly install
+a module dependency regardless of workspace context.`,
 	Example: `dagger install github.com/shykes/daggerverse/hello@v0.3.0
-  dagger install github.com/dagger/dagger/modules/wolfi --name=alpine`,
+  dagger install github.com/dagger/dagger/modules/wolfi --name=alpine
+  dagger install ./path/to/local/module`,
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		if remoteWorkdir != "" {
 			return fmt.Errorf("cannot install with a remote workdir")
 		}
+
+		// If no workspace is initialized but a standalone module exists,
+		// fall back to module dependency install.
+		if shouldInstallModuleDep() {
+			return moduleDepInstallCmd.RunE(cmd, extraArgs)
+		}
+
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
@@ -126,6 +139,39 @@ var moduleInstallCmd = &cobra.Command{
 			return nil
 		})
 	},
+}
+
+// shouldInstallModuleDep returns true when `dagger install` should add a
+// module dependency (to dagger.json) rather than a workspace entry.
+//
+// This is the case when:
+//   - The -m flag explicitly targets a module, or
+//   - The current directory has a standalone module (dagger.json) but no
+//     initialized workspace (.dagger/config.toml).
+func shouldInstallModuleDep() bool {
+	// Explicit -m flag always means module dependency install.
+	if moduleURL != "" {
+		return true
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+
+	// Check for an initialized workspace in cwd.
+	configPath := filepath.Join(cwd, workspace.WorkspaceDirName, workspace.ConfigFileName)
+	if _, err := os.Stat(configPath); err == nil {
+		return false // workspace exists, use workspace install
+	}
+
+	// No workspace — check for standalone module config.
+	modulePath := filepath.Join(cwd, workspace.ModuleConfigFileName)
+	if _, err := os.Stat(modulePath); err == nil {
+		return true // standalone module, use module dep install
+	}
+
+	return false // neither — default to workspace install (will auto-create)
 }
 
 var migrateList bool
