@@ -1,8 +1,8 @@
 pub description = "Toolchain to develop the Dagger Typescript SDK"
 
 type TypescriptSdkDev {
-  pub nodeVersionPrevLts: String! = "20.18.1"
-  pub nodeVersionLts = "22.11.0"
+  pub nodeVersionPrevLts: String! = "22.22.0"
+  pub nodeVersionLts = "24.13.1"
   pub bunVersion = "1.1.38"
 
   pub workspace: Directory!
