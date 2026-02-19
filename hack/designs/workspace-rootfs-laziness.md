@@ -62,8 +62,8 @@ No change needed. Caching in `modfunc.go` hashes *returned content*, not Rootfs.
 
 ## Tasks
 
-- [ ] Add `resolveRootfs` helper in `core/schema/workspace.go` — single local/remote branching point
-- [ ] Rewrite `directory()` and `file()` resolvers to use the helper
+- [x] Add `resolveRootfs` helper in `core/schema/workspace.go` — single local/remote branching point
+- [x] Rewrite `directory()` and `file()` resolvers to use the helper
 - [ ] Demote `Rootfs` to unexported `rootfs` in `core/workspace.go`, add accessor for remote path
 - [ ] Stop creating eager `host.directory(gitRoot)` for local in `engine/server/session.go:buildCoreWorkspace()`
 - [ ] Update any remaining `Rootfs` references across codebase

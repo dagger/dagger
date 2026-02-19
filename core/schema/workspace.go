@@ -127,17 +127,54 @@ func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
 	return dagql.CacheTypePerClient
 }
 
-func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	ws := parent.Self()
-
+// resolveRootfs returns a lazy directory reference for a resolved workspace path.
+// Local: per-call host.directory(absPath, include, exclude) via workspace client session.
+// Remote: navigates the pre-fetched rootfs.
+func (s *workspaceSchema) resolveRootfs(
+	ctx context.Context, ws *core.Workspace, resolvedPath string, filter core.CopyFilter,
+) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+	if ws.HostPath() != "" {
+		// Local: per-call host.directory(absPath, include, exclude).
+		// Only the requested subset is synced from the host.
+		ctx, err = s.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return inst, err
+		}
+		absPath := filepath.Join(ws.HostPath(), resolvedPath)
 
-	// Select subdirectory from Rootfs.
+		args := []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(absPath)},
+		}
+		if len(filter.Include) > 0 {
+			includes := make(dagql.ArrayInput[dagql.String], len(filter.Include))
+			for i, p := range filter.Include {
+				includes[i] = dagql.String(p)
+			}
+			args = append(args, dagql.NamedInput{Name: "include", Value: includes})
+		}
+		if len(filter.Exclude) > 0 {
+			excludes := make(dagql.ArrayInput[dagql.String], len(filter.Exclude))
+			for i, p := range filter.Exclude {
+				excludes[i] = dagql.String(p)
+			}
+			args = append(args, dagql.NamedInput{Name: "exclude", Value: excludes})
+		}
+		err = srv.Select(ctx, srv.Root(), &inst,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{Field: "directory", Args: args},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
+		}
+		return inst, nil
+	}
+
+	// Remote: navigate pre-fetched rootfs.
 	var ctxDir dagql.ObjectResult[*core.Directory] = ws.Rootfs
 	if resolvedPath != "." && resolvedPath != "" {
 		err = srv.Select(ctx, ctxDir, &ctxDir,
@@ -147,26 +184,26 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 			},
 		)
 		if err != nil {
-			return inst, fmt.Errorf("workspace directory %q: %w", args.Path, err)
+			return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
 		}
 	}
 
 	// Apply include/exclude filters via withDirectory (same pattern as modulesource.go).
-	if len(args.Include) > 0 || len(args.Exclude) > 0 {
+	if len(filter.Include) > 0 || len(filter.Exclude) > 0 {
 		withDirArgs := []dagql.NamedInput{
 			{Name: "path", Value: dagql.NewString("/")},
 			{Name: "directory", Value: dagql.NewID[*core.Directory](ctxDir.ID())},
 		}
-		if len(args.Include) > 0 {
-			includes := make(dagql.ArrayInput[dagql.String], len(args.Include))
-			for i, p := range args.Include {
+		if len(filter.Include) > 0 {
+			includes := make(dagql.ArrayInput[dagql.String], len(filter.Include))
+			for i, p := range filter.Include {
 				includes[i] = dagql.String(p)
 			}
 			withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "include", Value: includes})
 		}
-		if len(args.Exclude) > 0 {
-			excludes := make(dagql.ArrayInput[dagql.String], len(args.Exclude))
-			for i, p := range args.Exclude {
+		if len(filter.Exclude) > 0 {
+			excludes := make(dagql.ArrayInput[dagql.String], len(filter.Exclude))
+			for i, p := range filter.Exclude {
 				excludes[i] = dagql.String(p)
 			}
 			withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
@@ -176,12 +213,19 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 			dagql.Selector{Field: "withDirectory", Args: withDirArgs},
 		)
 		if err != nil {
-			return inst, fmt.Errorf("workspace directory %q (filtering): %w", args.Path, err)
+			return inst, fmt.Errorf("workspace directory %q (filtering): %w", resolvedPath, err)
 		}
 	}
 
 	return ctxDir, nil
 }
+
+func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	ws := parent.Self()
+	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter)
+}
+
 
 type workspaceFileArgs struct {
 	Path string
@@ -194,20 +238,23 @@ func (workspaceFileArgs) CacheType() dagql.CacheControlType {
 func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFileArgs) (inst dagql.Result[*core.File], _ error) {
 	ws := parent.Self()
 
+	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+	parentDir := filepath.Dir(resolvedPath)
+	basename := filepath.Base(resolvedPath)
+
+	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{})
+	if err != nil {
+		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
-
-	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
-
-	// Select file from Rootfs.
-	if err := srv.Select(ctx, ws.Rootfs, &inst,
+	if err := srv.Select(ctx, dir, &inst,
 		dagql.Selector{
 			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(resolvedPath)},
-			},
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(basename)}},
 		},
 	); err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
@@ -277,13 +324,14 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	// Resolve start path relative to workspace root
-	absStart, err := pathutil.SandboxedRelativePath(args.From, ws.Root)
+	wsRoot := filepath.Join(ws.HostPath(), ws.Path)
+	absStart, err := pathutil.SandboxedRelativePath(args.From, wsRoot)
 	if err != nil {
 		return none, err
 	}
 
 	statFS := core.NewCallerStatFS(bk)
-	cleanRoot := path.Clean(ws.Root)
+	cleanRoot := path.Clean(wsRoot)
 
 	// Walk up from absStart, stopping at workspace root
 	curDir := absStart
