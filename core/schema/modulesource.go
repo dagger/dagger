@@ -1354,7 +1354,12 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		// Reload the context directory now that SourceSubpath is set, so that
 		// the source files are included (e.g. an existing main.go). The initial
 		// load may have used empty SourceSubpath which matches no files.
-		if err := s.loadModuleSourceContext(ctx, src); err != nil {
+		err := s.loadModuleSourceContext(ctx, src)
+		switch {
+		case err == nil:
+		case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
+			// tolerate not found during init when context dir doesn't exist yet
+		default:
 			return nil, fmt.Errorf("failed to reload context after setting source subpath: %w", err)
 		}
 	}
