@@ -167,10 +167,11 @@ type cache struct {
 	egraphParents       []eqClassID
 	egraphRanks         []uint8
 
-	egraphClassTerms    map[eqClassID]map[egraphTermID]struct{}
-	egraphTerms         map[egraphTermID]*egraphTerm
-	egraphTermsByDigest map[string]map[egraphTermID]struct{}
-	egraphResultTerms   map[*sharedResult]map[egraphTermID]struct{}
+	egraphClassTerms          map[eqClassID]map[egraphTermID]struct{}
+	egraphTerms               map[egraphTermID]*egraphTerm
+	egraphTermsByDigest       map[string]map[egraphTermID]struct{}
+	egraphTermsByOutputDigest map[string]map[egraphTermID]struct{}
+	egraphResultTerms         map[*sharedResult]map[egraphTermID]struct{}
 
 	nextEgraphClassID eqClassID
 	nextEgraphTermID  egraphTermID
@@ -606,6 +607,9 @@ func (c *cache) GetOrInitCall(
 
 	// Call identity is recipe-based; extra digests are output-equivalence facts.
 	callKey := key.ID.Digest().String()
+	if ctx.Value(cacheContextKey{callKey, c}) != nil {
+		return nil, ErrCacheRecursiveCall
+	}
 	callConcKeys := callConcurrencyKeys{
 		callKey:        callKey,
 		concurrencyKey: key.ConcurrencyKey,
@@ -615,16 +619,17 @@ func (c *cache) GetOrInitCall(
 	// By default it's just the call key, but if we have a TTL then there
 	// can be different results stored on disk for a single call key, necessitating
 	// this separate storage key.
-	storageKey := callKey
+	stableKey := key.ID.DagOpDigest().String()
+	storageKey := stableKey
 
 	var persistToDB func(context.Context) error
 	if key.TTL != 0 && c.db != nil {
 		var cachedCall *cachedb.Call
-		candidateCall, err := c.db.SelectCall(ctx, callKey)
+		candidateCall, err := c.db.SelectCall(ctx, stableKey)
 		if err == nil {
 			cachedCall = candidateCall
 		} else if !errors.Is(err, sql.ErrNoRows) {
-			slog.Error("failed to select call from cache", "callKey", callKey, "err", err)
+			slog.Error("failed to select call from cache", "stableKey", stableKey, "err", err)
 		}
 
 		now := time.Now().Unix()
@@ -650,7 +655,7 @@ func (c *cache) GetOrInitCall(
 			// once a call completes successfully and has been determined to be safe to cache.
 			persistToDB = func(ctx context.Context) error {
 				return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
-					CallKey:        callKey,
+					CallKey:        stableKey,
 					StorageKey:     storageKey,
 					Expiration:     expiration,
 					PrevStorageKey: "",
@@ -672,7 +677,7 @@ func (c *cache) GetOrInitCall(
 			// to cache.
 			persistToDB = func(ctx context.Context) error {
 				return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
-					CallKey:        callKey,
+					CallKey:        stableKey,
 					StorageKey:     storageKey,
 					Expiration:     expiration,
 					PrevStorageKey: cachedCall.StorageKey,
@@ -686,10 +691,6 @@ func (c *cache) GetOrInitCall(
 	}
 
 	ctx = ctxWithStorageKey(ctx, storageKey)
-
-	if ctx.Value(cacheContextKey{storageKey, c}) != nil {
-		return nil, ErrCacheRecursiveCall
-	}
 
 	c.mu.Lock()
 	if c.ongoingCalls == nil {
@@ -715,7 +716,7 @@ func (c *cache) GetOrInitCall(
 	}
 
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
-	callCtx := context.WithValue(ctx, cacheContextKey{storageKey, c}, struct{}{})
+	callCtx := context.WithValue(ctx, cacheContextKey{callKey, c}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
 	oc := &ongoingCall{
 		callConcurrencyKeys: callConcKeys,
@@ -884,12 +885,9 @@ func (c *cache) waitLocked(
 		)))
 	}
 
-	var requestSelf digest.Digest
-	var requestInputs []digest.Digest
-	var deriveErr error
-	requestSelf, requestInputs, deriveErr = requestID.SelfDigestAndInputs()
-	if deriveErr != nil {
-		return Result[Typed]{}, fmt.Errorf("derive request term digests: %w", deriveErr)
+	requestSelf, requestInputs, err := requestID.SelfDigestAndInputs()
+	if err != nil {
+		return Result[Typed]{}, fmt.Errorf("derive request term digests: %w", err)
 	}
 
 	c.indexWaitResultInEgraphLocked(requestID, requestSelf, requestInputs, oc.res, resWasCacheBacked)

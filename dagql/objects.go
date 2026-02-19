@@ -836,7 +836,7 @@ func (spec *FieldSpec) IdentityOpt(ctx context.Context, inputArgs map[string]Inp
 		return nil, err
 	}
 
-	module := (*call.Module)(nil)
+	var module *call.Module
 	if spec != nil {
 		module = spec.Module
 	}

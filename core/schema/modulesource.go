@@ -2925,10 +2925,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			result, err := getModDefFn.Call(ctx, &core.CallOpts{
 				SkipSelfSchema: true,
 				Server:         dag,
-				// Don't use the digest for the current call (which is a bunch of module source stuff, including
-				// APIs that are cached per-client when local sources are involved) in the cache key of this
-				// function call. That would needlessly invalidate the cache more than is needed, similar to how
-				// we want to scope the codegen cache keys by the content digested source instance above.
+				// Cache the underlying withExec with the module scope mixed in
 				OverrideStorageKey: moduleInitScope.String(),
 			})
 			if err != nil {

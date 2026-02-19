@@ -125,17 +125,17 @@ func TestModuleIdentityIsImplicitInputOnly(t *testing.T) {
 	moduleBID := New().Append(typ, "moduleB").With(WithContentDigest(sharedModuleContent))
 
 	// Reality/model:
-	// 1. module is not part of the call recipe digest
-	// 2. module identity is an implicit input in SelfDigestAndInputs
+	// 1. module recipe identity contributes to call recipe digest
+	// 2. module identity is also represented as an implicit input in SelfDigestAndInputs
 	idNoModule := New().Append(typ, "field")
 	idWithModuleA := idNoModule.With(WithModule(NewModule(moduleAID, "mod", "ref", "pin")))
 	idWithModuleB := idNoModule.With(WithModule(NewModule(moduleBID, "mod", "ref", "pin")))
 
-	if idNoModule.Digest() != idWithModuleA.Digest() {
-		t.Fatalf("module identity should not affect recipe digest: %s vs %s", idNoModule.Digest(), idWithModuleA.Digest())
+	if idNoModule.Digest() == idWithModuleA.Digest() {
+		t.Fatalf("module identity should affect recipe digest: %s vs %s", idNoModule.Digest(), idWithModuleA.Digest())
 	}
-	if idWithModuleA.Digest() != idWithModuleB.Digest() {
-		t.Fatalf("module identity should not affect recipe digest: %s vs %s", idWithModuleA.Digest(), idWithModuleB.Digest())
+	if idWithModuleA.Digest() == idWithModuleB.Digest() {
+		t.Fatalf("distinct module identities should affect recipe digest: %s vs %s", idWithModuleA.Digest(), idWithModuleB.Digest())
 	}
 
 	selfNoModule, inputsNoModule, err := idNoModule.SelfDigestAndInputs()

@@ -535,24 +535,31 @@ func (src *ModuleSource) ContentCacheScope() string {
 	if src == nil {
 		return ""
 	}
-	if src.Kind != ModuleSourceKindGit || src.Git == nil {
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		return src.Digest
+	case ModuleSourceKindGit:
+		if src.Git == nil {
+			return ""
+		}
+
+		repo := src.Git.HTMLRepoURL
+		if repo == "" {
+			// fallback for early/partial git sources before HTML URL is populated
+			repo = src.Git.CloneRef
+		}
+		cloneRef := src.Git.CloneRef
+
+		return hashutil.HashStrings(
+			"git-module-cache-scope",
+			repo,
+			cloneRef,
+			src.Git.Commit,
+			src.SourceRootSubpath,
+		).String()
+	default:
 		return ""
 	}
-
-	repo := src.Git.HTMLRepoURL
-	if repo == "" {
-		// fallback for early/partial git sources before HTML URL is populated
-		repo = src.Git.CloneRef
-	}
-	cloneRef := src.Git.CloneRef
-
-	return hashutil.HashStrings(
-		"git-module-cache-scope",
-		repo,
-		cloneRef,
-		src.Git.Commit,
-		src.SourceRootSubpath,
-	).String()
 }
 
 // ContentScopedDigest returns a stable digest for caching source-derived artifacts.

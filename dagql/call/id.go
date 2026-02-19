@@ -407,6 +407,7 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	return digest.Digest(h.DigestAndClose()), inputs, nil
 }
 
+// FIXME:!!!!!! This drops args and other inputs which may reference modules too
 func (id *ID) Modules() []*Module {
 	allMods := []*Module{}
 	for id != nil {
@@ -881,9 +882,8 @@ func (id *ID) decode(
 
 // calcDigest calculates the recipe digest for the ID.
 //
-// It includes recipe data for this call shape and explicit/implicit recipe inputs.
-// Module identity is intentionally excluded; modules participate as an implicit
-// input in SelfDigestAndInputs instead.
+// It includes recipe data for this call shape, explicit/implicit recipe inputs,
+// and module recipe identity.
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
 		return "", nil
@@ -946,6 +946,12 @@ func (id *ID) calcDigest() (string, error) {
 	}
 
 	// End implicit input section.
+	h = h.WithDelim()
+
+	// Module recipe digest
+	if moduleDigest := id.moduleInputDigest(); moduleDigest != "" {
+		h = h.WithString(moduleDigest.String())
+	}
 	h = h.WithDelim()
 
 	// Nth

@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 type moduleSchema struct{}
@@ -43,7 +44,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("column").Doc("The column number within the line."),
 			),
 
-		dagql.Func("currentModule", s.currentModule).
+		dagql.FuncWithCacheKey("currentModule", s.currentModule, s.currentModuleCacheKey).
 			WithInput(dagql.CachePerClient).
 			Doc(`The module currently being served in the session, if any.`),
 
@@ -717,16 +718,59 @@ func (s *moduleSchema) functionWithCachePolicy(
 	return fn, nil
 }
 
-func (s *moduleSchema) currentModule(
+type currentModuleArgs struct {
+	Digest dagql.Optional[dagql.String] `internal:"true"`
+}
+
+func (s *moduleSchema) currentModuleCacheKey(
 	ctx context.Context,
-	self *core.Query,
-	_ struct{},
-) (*core.CurrentModule, error) {
-	mod, err := self.CurrentModule(ctx)
+	parent dagql.ObjectResult[*core.Query],
+	args currentModuleArgs,
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	resp := &dagql.GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
+	}
+	if resp.CacheKey.ID == nil {
+		return nil, errors.New("cache key ID is nil")
+	}
+	if args.Digest.Valid {
+		return resp, nil
+	}
+
+	mod, err := parent.Self().CurrentModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	return &core.CurrentModule{Module: mod}, nil
+	resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+		"digest",
+		dagql.NewString(mod.ContentDigestCacheKey()).ToLiteral(),
+		false,
+	))
+	return resp, nil
+}
+
+func (s *moduleSchema) currentModule(
+	ctx context.Context,
+	self *core.Query,
+	args currentModuleArgs,
+) (*core.CurrentModule, error) {
+	if !args.Digest.Valid {
+		return nil, errors.New("missing current module digest")
+	}
+	digest := string(args.Digest.Value)
+	if digest == "" {
+		return nil, errors.New("missing current module digest")
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	mod, err := core.GetModuleFromContentDigest(ctx, dag, "current module", digest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current module: %w", err)
+	}
+	return &core.CurrentModule{Module: mod.Self()}, nil
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {

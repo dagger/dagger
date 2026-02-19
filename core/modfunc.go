@@ -749,13 +749,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	var cacheMixins []string
-	if opts.OverrideStorageKey != "" {
-		cacheMixins = append(cacheMixins, opts.OverrideStorageKey)
-	} else {
-		cacheMixins = append(cacheMixins, dagql.CurrentStorageKey(ctx))
+	storageKey := opts.OverrideStorageKey
+	if storageKey == "" {
+		storageKey = dagql.CurrentStorageKey(ctx)
 	}
-	if callID != nil {
-		cacheMixins = append(cacheMixins, callID.Digest().String())
+	if storageKey != "" {
+		cacheMixins = append(cacheMixins, storageKey)
 	}
 	execMD.CacheMixin = hashutil.HashStrings(cacheMixins...)
 
