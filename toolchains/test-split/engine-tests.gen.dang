@@ -88,10 +88,40 @@ type TestSplit {
   }
 
   """
-  Test Container
+  Test Container (excluding DinD/nested engine tests)
   """
   pub testContainer: Void @check {
-    testSpecific(["TestContainer", "TestDockerfile"])
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(
+        ["go", "test", "./core/integration",
+         "-run", "TestContainer|TestDockerfile",
+         "-skip", "TestInsecureRootCapabilitesWithService|TestImageLoadCompatibility|TestSaveHostDocker|TestLoadHostDocker|TestSaveHostContainerd|TestLoadHostContainerd|TestLoadSaveNone|TestSaveInNested|TestWithRegistryAuthFileAndDirectoryAccess",
+         "-v", "-count", "1", "-timeout", "30m"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
+  }
+
+  """
+  Test Container DinD/nested engine tests (isolated to prevent cascading failures)
+  """
+  pub testContainerProvision: Void @check {
+    testSpecific([
+      "TestContainer/TestInsecureRootCapabilitesWithService",
+      "TestContainer/TestImageLoadCompatibility",
+      "TestContainer/TestSaveHostDocker",
+      "TestContainer/TestLoadHostDocker",
+      "TestContainer/TestSaveHostContainerd",
+      "TestContainer/TestLoadHostContainerd",
+      "TestContainer/TestLoadSaveNone",
+      "TestContainer/TestSaveInNested",
+      "TestContainer/TestWithRegistryAuthFileAndDirectoryAccess",
+    ])
   }
 
   """
