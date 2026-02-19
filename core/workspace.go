@@ -7,15 +7,15 @@ import (
 
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
-	// Rootfs is the workspace root filesystem — the outermost boundary
-	// for all path resolution. All workspace paths resolve within it.
-	// Local: host.directory(gitRoot). Remote: cloned git tree.
-	Rootfs dagql.ObjectResult[*Directory] `field:"true" doc:"Root filesystem of the workspace. All paths resolve within it."`
+	// rootfs is the pre-fetched root filesystem for remote workspaces.
+	// Internal only — not exposed in GraphQL. Local workspaces resolve
+	// directories lazily via per-call host.directory() instead.
+	rootfs dagql.ObjectResult[*Directory]
 
-	// Path is the workspace location within Rootfs.
-	Path        string `field:"true" doc:"Workspace path relative to Rootfs root."`
+	// Path is the workspace location within the rootfs/host root.
+	Path        string `field:"true" doc:"Workspace path relative to root."`
 	Initialized bool   `field:"true" doc:"Whether .dagger/config.toml exists."`
-	ConfigPath  string `field:"true" doc:"Path to config.toml relative to Rootfs root (empty if not initialized)."`
+	ConfigPath  string `field:"true" doc:"Path to config.toml relative to root (empty if not initialized)."`
 	HasConfig   bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
 
 	// ClientID is the ID of the client that created this workspace.
@@ -23,11 +23,22 @@ type Workspace struct {
 	// when the workspace is passed to a module function.
 	ClientID string `field:"true" doc:"The client ID that owns this workspace's host filesystem."`
 
-	// hostPath is the host filesystem path corresponding to Rootfs.
+	// hostPath is the host filesystem path for the root.
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by mutating operations (init, install, configWrite) that need
 	// to write to the host via buildkit client.
 	hostPath string
+}
+
+// Rootfs returns the pre-fetched root filesystem directory for remote workspaces.
+// Returns a zero value for local workspaces (they resolve lazily).
+func (ws *Workspace) Rootfs() dagql.ObjectResult[*Directory] {
+	return ws.rootfs
+}
+
+// SetRootfs sets the pre-fetched root filesystem (used by remote workspace setup).
+func (ws *Workspace) SetRootfs(r dagql.ObjectResult[*Directory]) {
+	ws.rootfs = r
 }
 
 // HostPath returns the internal host filesystem path for the workspace root.

@@ -1732,12 +1732,12 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	coreWS := &core.Workspace{
-		Rootfs:      rootfs,
 		Path:        detected.Path,
 		Initialized: detected.Initialized,
 		HasConfig:   detected.Config != nil,
 		ClientID:    clientMetadata.ClientID,
 	}
+	coreWS.SetRootfs(rootfs)
 	coreWS.SetHostPath(hostPath)
 
 	if detected.Config != nil {

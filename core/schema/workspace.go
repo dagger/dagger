@@ -175,7 +175,7 @@ func (s *workspaceSchema) resolveRootfs(
 	}
 
 	// Remote: navigate pre-fetched rootfs.
-	var ctxDir dagql.ObjectResult[*core.Directory] = ws.Rootfs
+	var ctxDir dagql.ObjectResult[*core.Directory] = ws.Rootfs()
 	if resolvedPath != "." && resolvedPath != "" {
 		err = srv.Select(ctx, ctxDir, &ctxDir,
 			dagql.Selector{
