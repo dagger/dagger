@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -1674,6 +1675,17 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		if hasModuleConfig {
 			wsDir := filepath.Join(ws.Root, ws.Path)
 			rel, _ := filepath.Rel(wsDir, moduleDir)
+
+			// If the CWD module lives outside the workspace's managed
+			// modules directory, it's a standalone module.  In that case
+			// the standalone module should take precedence — drop any
+			// workspace modules we gathered so the standalone module is
+			// the only one loaded.
+			isManaged := strings.HasPrefix(rel, workspace.WorkspaceDirName+string(filepath.Separator))
+			if !isManaged && ws.Initialized && len(pending) > 0 {
+				pending = nil
+			}
+
 			pending = append(pending, pendingModule{
 				Ref:       resolveLocalRef(ws, rel),
 				Blueprint: true,
