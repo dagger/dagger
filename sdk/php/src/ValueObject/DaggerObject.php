@@ -21,7 +21,7 @@ final readonly class DaggerObject
     public array $daggerFunctions;
 
     /**
-     * @param DaggerField[] $fields,
+     * @param DaggerField[] $fields
      * @param DaggerFunction[] $functions
      */
     public function __construct(

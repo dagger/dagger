@@ -11,26 +11,22 @@ use ReflectionProperty;
 use ReflectionNamedType;
 use RuntimeException;
 
-/** @internal Value Object used for methods to expose to Dagger. */
+/** @internal Value Object used for fields to expose to Dagger. */
 final readonly class DaggerField
 {
     public function __construct(
         public string $name,
         public ?string $description,
         public ListOfType|Type $type,
-    ) {
-    }
-
-    public function isConstructor(): bool
-    {
-        return $this->name === '';
-    }
+    ) {}
 
     /**
      * @throws RuntimeException
-     * - if missing DaggerFunction Attribute
-     * - if any parameter types are unsupported
-     * - if the return type is unsupported
+     * - if not decorated by the DaggerFunction Attribute
+     * - if missing a type hint
+     *
+     * @throws UnsupportedType
+     * - for type hints that are not supported currently.
      */
     public static function fromReflection(ReflectionProperty $field): self
     {
