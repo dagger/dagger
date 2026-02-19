@@ -120,6 +120,14 @@ func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
 	return client.CurrentTypeDefs(ctx)
 }
 
+// Detect and return the current workspace.
+//
+// Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
+func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
+	client := initClient()
+	return client.CurrentWorkspace(opts...)
+}
+
 func DaggerDev() *dagger.DaggerDev {
 	client := initClient()
 	return client.DaggerDev()
@@ -749,6 +757,12 @@ func LoadTypescriptSDKFromID(id dagger.TypescriptSDKID) *dagger.TypescriptSDK {
 func LoadVersionFromID(id dagger.VersionID) *dagger.Version {
 	client := initClient()
 	return client.LoadVersionFromID(id)
+}
+
+// Load a Workspace from its ID.
+func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
+	client := initClient()
+	return client.LoadWorkspaceFromID(id)
 }
 
 // Create a new module.
