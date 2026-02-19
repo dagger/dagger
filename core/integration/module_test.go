@@ -744,7 +744,7 @@ func (m *D) Fn(foo int) Obj {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=c", "--name=c", "--sdk=go", "c")).
+		With(daggerExec("module", "init", "--sdk=go", "c", "./c")).
 		WithWorkdir("/work/c").
 		With(daggerExec("install", "../dstr")).
 		WithNewFile("main.go", `package main
@@ -763,7 +763,7 @@ func (m *C) Fn(ctx context.Context, foo string) (string, error) {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=b", "--name=b", "--sdk=go", "b")).
+		With(daggerExec("module", "init", "--sdk=go", "b", "./b")).
 		With(daggerExec("install", "-m=b", "./dint")).
 		WithNewFile("/work/b/main.go", `package main
 
@@ -781,7 +781,7 @@ func (m *B) Fn(ctx context.Context, foo int) (int, error) {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=a", "--name=a", "--sdk=go", "a")).
+		With(daggerExec("module", "init", "--sdk=go", "a", "./a")).
 		WithWorkdir("/work/a").
 		With(daggerExec("install", "../b")).
 		With(daggerExec("install", "../c")).
@@ -1915,8 +1915,8 @@ func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
 		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "depA")).
-			With(daggerExec("module", "init", "--sdk=go", "depB")).
+			With(daggerExec("module", "init", "--sdk=go", "depA", "./depA")).
+			With(daggerExec("module", "init", "--sdk=go", "depB", "./depB")).
 			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
 			With(daggerExec("install", "./depA")).
 			With(daggerExec("install", "./depB")).
