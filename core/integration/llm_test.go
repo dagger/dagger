@@ -65,7 +65,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 	tcs := []LLMTestCase{
 		{
 			Name: "hello-world",
-			Ref:  "./core/integration/llmtest/go-programmer/",
+			Ref:  "./llmtest/go-programmer/",
 			Flags: []LLMTestCaseFlag{
 				{
 					Key:   "assignment",
@@ -89,7 +89,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 				flags = append(flags, flag.ToCall()...)
 			}
 
-			recording := fmt.Sprintf("core/integration/llmtest/%s.golden", tc.Name)
+			recording := fmt.Sprintf("llmtest/%s.golden", tc.Name)
 			if golden.FlagUpdate() {
 				out, err := ctr.
 					With(daggerForwardSecrets(c)).
@@ -140,7 +140,7 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 		return daggerShell(fmt.Sprintf(`llm %s | with-env $(.core | env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop | with-prompt "now tell me the value of TERM" | historyJSON`, llmFlags))
 	}
 
-	recording := "core/integration/llmtest/api-limit.golden"
+	recording := "llmtest/api-limit.golden"
 	if golden.FlagUpdate() {
 		out, err := daggerCliBase(t, c).
 			With(daggerForwardSecrets(c)).
@@ -169,7 +169,7 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	recording := "core/integration/llmtest/allow-llm.golden"
+	recording := "llmtest/allow-llm.golden"
 	if golden.FlagUpdate() {
 		out, err := daggerCliBase(t, c).
 			With(daggerForwardSecrets(c)).
