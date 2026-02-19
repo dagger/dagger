@@ -155,6 +155,12 @@ func init() {
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
 
+	// dagger module install
+	moduleCmd.AddCommand(moduleDepInstallCmd)
+	moduleDepInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+	moduleDepInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(moduleDepInstallCmd, moduleDepInstallCmd.Flags(), false)
+
 	moduleUnInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(moduleUnInstallCmd, moduleUnInstallCmd.Flags(), false)
 
@@ -367,6 +373,75 @@ If no dependency is specified, all dependencies are updated.
 				return fmt.Errorf("failed to update dependencies: %w", err)
 			}
 
+			return nil
+		})
+	},
+}
+
+var moduleDepInstallCmd = &cobra.Command{
+	Use:     "install [options] <module>",
+	Aliases: []string{"use"},
+	Short:   "Add a module dependency",
+	Long:    "Add another module as a dependency of the current module, updating its dagger.json.",
+	Example: `  dagger module install github.com/shykes/daggerverse/hello@v0.3.0
+  dagger module install ./path/to/local/module`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return localModuleErrorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return localModuleErrorf("failed to get local context directory path: %w", err)
+			}
+
+			depRefStr := extraArgs[0]
+			depSrc := dag.ModuleSource(depRefStr, dagger.ModuleSourceOpts{
+				DisableFindUp: true,
+			})
+
+			if installName != "" {
+				depSrc = depSrc.WithName(installName)
+			}
+
+			modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{depSrc})
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to install dependency: %w", err)
+			}
+
+			depName, err := depSrc.ModuleName(ctx)
+			if err != nil {
+				return err
+			}
+			if installName != "" {
+				depName = installName
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Installed module dependency %q\n", depName)
 			return nil
 		})
 	},

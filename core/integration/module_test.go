@@ -7872,7 +7872,7 @@ func (m *Depdep) TestFile(
 		initOutput, err := initCmd.CombinedOutput()
 		require.NoError(t, err, string(initOutput))
 
-		installCmd := hostDaggerCommand(ctx, t, modDir, "install",
+		installCmd := hostDaggerCommand(ctx, t, modDir, "module", "install",
 			"github.com/dagger/dagger-test-modules/contextual-git-bug@"+vcsTestCaseCommit)
 		installOutput, err := installCmd.CombinedOutput()
 		require.NoError(t, err, string(installOutput))

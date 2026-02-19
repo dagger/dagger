@@ -236,7 +236,7 @@ func (*Dep) Fn(rand string) string {
 		initCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "init", "--source=.", "--name=test", "--sdk=go")
 		initOutput, err := initCmd.CombinedOutput()
 		require.NoError(t, err, string(initOutput))
-		installCmd := hostDaggerCommand(ctx, t, tmpdir1, "install", depTmpdir1)
+		installCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "install", depTmpdir1)
 		installOutput, err := installCmd.CombinedOutput()
 		require.NoError(t, err, string(installOutput))
 
@@ -1756,11 +1756,11 @@ func (r *RollsRoyce) Drive(ctx context.Context) error {
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
-	installDriveMainCmd := hostDaggerCommand(ctx, t, modDir, "install", driveDir)
+	installDriveMainCmd := hostDaggerCommand(ctx, t, modDir, "module", "install", driveDir)
 	installDriveMainOutput, err := installDriveMainCmd.CombinedOutput()
 	require.NoError(t, err, string(installDriveMainOutput))
 
-	installRollsCmd := hostDaggerCommand(ctx, t, modDir, "install", rollsDir)
+	installRollsCmd := hostDaggerCommand(ctx, t, modDir, "module", "install", rollsDir)
 	installRollsOutput, err := installRollsCmd.CombinedOutput()
 	require.NoError(t, err, string(installRollsOutput))
 
