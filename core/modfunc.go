@@ -606,9 +606,8 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				}
 
 				workspaceArgVals[i] = &argInput{
-					argName:  arg.Name,
-					origName: arg.OriginalName,
-					val:      wsVal,
+					argName: arg.Name,
+					val:     wsVal,
 				}
 
 				return nil
@@ -649,13 +648,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				dagql.Opt(arg.val).ToLiteral(),
 				false,
 			))
-			id := arg.val.ID()
-			// prefer content digest if available
-			dgst := id.ContentDigest()
-			if dgst == "" {
-				dgst = id.Digest()
-			}
-			dgstInputs = append(dgstInputs, arg.origName, dgst.String())
 		}
 		for _, arg := range userDefaultVals {
 			if arg != nil {
@@ -762,7 +754,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("set call inputs: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "call-inputs-ready", "callID", callID.Digest(), "inputCount", len(callInputs))
 
 	bklog.G(ctx).Debug("function call")
 	defer func() {
@@ -826,15 +817,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
 
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "load-runtime-start", "callID", callID.Digest())
 	runtime, err := fn.loadFunctionRuntime(hideCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "load-runtime-done", "callID", callID.Digest())
 
 	var metaDir dagql.ObjectResult[*Directory]
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "meta-dir-select-start", "callID", callID.Digest())
 	err = srv.Select(hideCtx, srv.Root(), &metaDir,
 		dagql.Selector{
 			Field: "directory",
@@ -843,10 +831,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("create mod metadata directory: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "meta-dir-select-done", "callID", callID.Digest())
 
 	var ctr dagql.ObjectResult[*Container]
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "mount-meta-dir-start", "callID", callID.Digest())
 	err = srv.Select(hideCtx, runtime, &ctr,
 		dagql.Selector{
 			Field: "withMountedDirectory",
@@ -859,9 +845,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "mount-meta-dir-done", "callID", callID.Digest())
-
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "with-exec-select-start", "callID", callID.Digest(), "execClientID", execMD.ClientID, "execID", execMD.ExecID)
 	err = srv.Select(hideCtx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
@@ -876,15 +859,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "with-exec-select-done", "callID", callID.Digest(), "execClientID", execMD.ClientID)
-	if ctrID := ctr.ID(); ctrID != nil {
-		slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "with-exec-select-result",
-			"callID", callID.Digest(),
-			"execClientID", execMD.ClientID,
-			"ctrDigest", ctrID.Digest(),
-			"ctrPath", ctrID.Path(),
-		)
-	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -895,7 +869,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("get buildkit client: %w", err)
 	}
 
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "evaluate-start", "callID", callID.Digest())
 	_, err = ctr.Self().Evaluate(ctx)
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
@@ -917,29 +890,22 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("call function %q: %w", fn.metadata.OriginalName, err)
 		}
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "evaluate-done", "callID", callID.Digest())
 
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-dir-start", "callID", callID.Digest())
 	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("get function output directory: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-dir-done", "callID", callID.Digest())
 
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-file-start", "callID", callID.Digest())
 	modMetaFile, err := ctrOutputDir.File(ctx, modMetaOutputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mod meta file: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-file-done", "callID", callID.Digest())
 
 	// Read the output of the function
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-contents-start", "callID", callID.Digest())
 	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read function output file: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "output-contents-done", "callID", callID.Digest(), "bytes", len(outputBytes))
 
 	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
@@ -952,7 +918,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "convert-return-done", "callID", callID.Digest())
 
 	safeToPersistCache := true
 	if returnValue != nil {
@@ -1016,7 +981,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if returnValue != nil {
 		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
 	}
-	slog.Info("modfn call step", "module", mod.Name(), "function", fn.metadata.Name, "step", "return-ready", "callID", callID.Digest(), "hasValue", returnValue != nil, "safeToPersistCache", safeToPersistCache)
 
 	return returnValue, nil
 }
