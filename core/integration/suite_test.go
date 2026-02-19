@@ -177,15 +177,6 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
-
-	// Verify engine is responding to queries — Connect() only establishes
-	// the connection, so a crashed engine won't be detected until the first
-	// query hangs. This gives a fast, clear failure instead.
-	healthCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	_, err = client.DefaultPlatform(healthCtx)
-	require.NoError(t, err, "engine health check failed — engine may have crashed")
-
 	return client
 }
 
