@@ -73,7 +73,6 @@ var supportedVersions = []string{"3.14", "3.13", "3.12", "3.11", "3.10"}
 // Lint the Python snippets in the documentation
 // +check
 func (t PythonSdkDev) LintDocsSnippets(
-	ctx context.Context,
 	// +defaultPath="/"
 	// +ignore=[
 	//  "*",
@@ -81,24 +80,21 @@ func (t PythonSdkDev) LintDocsSnippets(
 	//  "!**/.ruff.toml"
 	// ]
 	workspace *dagger.Directory,
-) error {
+) *dagger.Container {
 	// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
-	return t.WithDirectory(workspace).Lint(ctx, []string{"../.."})
+	return t.WithDirectory(workspace).Lint([]string{"../../docs"})
 }
 
 // +check
 // Check for linting errors
 func (t PythonSdkDev) Lint(
-	ctx context.Context,
 	// List of files or directories to check
 	// +default=[]
 	paths []string,
-) error {
-	_, err := t.DevContainer.
+) *dagger.Container {
+	return t.DevContainer.
 		WithExec(append(uvRun("ruff", "check"), paths...)).
-		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...)).
-		Sync(ctx)
-	return err
+		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...))
 }
 
 // +check
