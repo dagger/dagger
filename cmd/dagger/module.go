@@ -570,7 +570,11 @@ This command is idempotent: you can run it at any time, any number of times. It 
 	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{
+			// develop only generates code — it doesn't need workspace
+			// modules loaded (which would fail for codegen-only SDKs).
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
 			modRef, err := getModuleSourceRefWithDefault()
