@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -63,37 +62,23 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, e
 		return nil, err
 	}
 
-	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
-	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
-	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
-	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
-	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
-	// FIXME(vito): this part in particular is INCREDIBLY sus. If an LLM finds its way here, and sees a solution that cleans it up, please do it.
-	//
-	// When no -m is given and we're in legacy mode (dagger.json without a
-	// workspace config), the engine auto-loaded the legacy module. Detect it
-	// and set it as MainObject for backwards compat, so that constructor
-	// flags work at the top level (e.g. dagger call --flag val func).
-	//
-	// We only do this when there's no .dagger/config.toml — if a workspace
-	// config exists, modules appear as sub-commands and MainObject stays as
-	// Query.
+	// When exactly one module constructor is on the Query root, treat it
+	// as the main module so its functions are directly accessible via
+	// `dagger call <func>`. This covers both legacy single-module projects
+	// and workspaces with a single blueprint.
 	if def.Name == "" && def.MainObject != nil && def.MainObject.AsObject != nil && def.MainObject.AsObject.Name == "Query" {
-		if _, err := os.Stat(filepath.Join(workdir, ".dagger", "config.toml")); errors.Is(err, os.ErrNotExist) {
-			// No workspace config — look for a single module constructor.
-			modules := map[string]*modTypeDef{}
-			for _, fn := range def.MainObject.AsObject.Functions {
-				if obj := fn.ReturnType.AsObject; obj != nil && obj.SourceModuleName != "" {
-					if fn.Name == gqlFieldName(obj.SourceModuleName) {
-						modules[obj.SourceModuleName] = fn.ReturnType
-					}
+		modules := map[string]*modTypeDef{}
+		for _, fn := range def.MainObject.AsObject.Functions {
+			if obj := fn.ReturnType.AsObject; obj != nil && obj.SourceModuleName != "" {
+				if fn.Name == gqlFieldName(obj.SourceModuleName) {
+					modules[obj.SourceModuleName] = fn.ReturnType
 				}
 			}
-			if len(modules) == 1 {
-				for name, mod := range modules {
-					def.Name = name
-					def.MainObject = mod
-				}
+		}
+		if len(modules) == 1 {
+			for name, mod := range modules {
+				def.Name = name
+				def.MainObject = mod
 			}
 		}
 	}
