@@ -77,6 +77,9 @@ func init() {
 	if v, ok := os.LookupEnv(DaggerVersionEnv); ok {
 		Version = cleanVersion(v)
 	}
+	if v, ok := os.LookupEnv(DaggerTagEnv); ok {
+		Tag = v
+	}
 	if v, ok := os.LookupEnv(DaggerMinimumVersionEnv); ok {
 		MinimumClientVersion = cleanVersion(v)
 		MinimumEngineVersion = cleanVersion(v)

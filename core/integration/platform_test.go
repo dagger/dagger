@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 type PlatformSuite struct{}
@@ -71,7 +71,7 @@ func (PlatformSuite) TestEmulatedExecAndPush(ctx context.Context, t *testctx.T) 
 }
 
 func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t, dagger.WithWorkdir("../.."))
+	c := connect(ctx, t)
 
 	// cross compile the dagger binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)

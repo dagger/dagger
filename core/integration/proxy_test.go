@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +17,7 @@ import (
 	"github.com/goproxy/goproxy"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 type proxyTest struct {
@@ -212,9 +211,11 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 				WithServiceBinding(squidAlias, squidSvc)
 		})
 
-		thisRepoPath, err := filepath.Abs("../..")
-		require.NoError(t, err)
-		thisRepo := c.Host().Directory(thisRepoPath)
+		thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+		require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
+		thisRepo := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+			Exclude: []string{"bin"},
+		})
 
 		nameParts := strings.Split(t.Name(), "/")
 		for i, namePart := range nameParts {
@@ -237,6 +238,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
+			WithEnvVariable("_DAGGER_TESTS_REPO_PATH", "/src").
 			WithEnvVariable(executeTestEnvName, "ya").
 			WithExec([]string{
 				"./test",
@@ -527,9 +529,11 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 				WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
 		})
 
-		thisRepoPath, err := filepath.Abs("../..")
-		require.NoError(t, err)
-		thisRepo := c.Host().Directory(thisRepoPath)
+		thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+		require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
+		thisRepo := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+			Exclude: []string{"bin"},
+		})
 
 		_, err = c.Container().From(golangImage).
 			With(goCache(c)).
@@ -545,6 +549,7 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
+			WithEnvVariable("_DAGGER_TESTS_REPO_PATH", "/src").
 			WithEnvVariable(executeTestEnvName, "ya").
 			WithExec([]string{
 				"./test",

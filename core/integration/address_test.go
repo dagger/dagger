@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -74,8 +74,11 @@ func (AddressSuite) TestService(ctx context.Context, t *testctx.T) {
 
 func (AddressSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 	tmp := t.TempDir()
+	// Create minimal dagger.json for WithWorkdir
+	err := os.WriteFile(tmp+"/dagger.json", []byte(`{"name": "test"}`), 0644)
+	require.NoError(t, err)
 	c := connect(ctx, t, dagger.WithWorkdir(tmp))
-	err := os.WriteFile(tmp+"/hello.txt", []byte("hello there"), 0644)
+	err = os.WriteFile(tmp+"/hello.txt", []byte("hello there"), 0644)
 	require.NoError(t, err)
 	// Absolute file path
 	requireFileContains(ctx, t,
@@ -91,8 +94,11 @@ func (AddressSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 
 func (AddressSuite) TestLocalDirectory(ctx context.Context, t *testctx.T) {
 	tmp := t.TempDir()
+	// Create minimal dagger.json for WithWorkdir
+	err := os.WriteFile(tmp+"/dagger.json", []byte(`{"name": "test"}`), 0644)
+	require.NoError(t, err)
 	c := connect(ctx, t, dagger.WithWorkdir(tmp))
-	err := os.WriteFile(tmp+"/hello.txt", []byte("hello there"), 0644)
+	err = os.WriteFile(tmp+"/hello.txt", []byte("hello there"), 0644)
 	require.NoError(t, err)
 	// Absolute directory path
 	requireFileContains(ctx, t,

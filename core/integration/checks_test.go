@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -27,6 +27,12 @@ func specificTestEnv(t *testctx.T, c *dagger.Client, subfolder string) (*dagger.
 	if err != nil {
 		return nil, err
 	}
+
+	testdataPath, err := filepath.Abs(filepath.Join("testdata", subfolder))
+	if err != nil {
+		return nil, err
+	}
+
 	return c.Container().
 			From(alpineImage).
 			// init git in a directory containing both the modules and the java SDK
@@ -36,7 +42,7 @@ func specificTestEnv(t *testctx.T, c *dagger.Client, subfolder string) (*dagger.
 			WithExec([]string{"git", "init"}).
 			WithWorkdir("/work/modules/").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory(".", c.Host().Directory("./testdata/"+subfolder)).
+			WithDirectory(".", c.Host().Directory(testdataPath)).
 			WithMountedDirectory("/work/sdk/java", c.Host().Directory(javaSdkSrc)).
 			WithDirectory("app", c.Directory()),
 		nil

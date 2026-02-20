@@ -31,10 +31,13 @@ type ModDeps struct {
 	Mods []Mod // TODO hide
 
 	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
-	lazilyLoadedSchema         *dagql.Server
-	lazilyLoadedSchemaJSONFile dagql.Result[*File]
-	loadSchemaErr              error
-	loadSchemaLock             sync.Mutex
+	lazilyLoadedSchema                  *dagql.Server
+	lazilyLoadedSchemaJSONFile          dagql.Result[*File]
+	lazilyLoadedSchemaScrubbed          bool // tracks whether the cached schema has module hidden types scrubbed
+	lazilyLoadedSchemaForClient         *dagql.Server
+	lazilyLoadedSchemaJSONFileForClient dagql.Result[*File]
+	loadSchemaErr                       error
+	loadSchemaLock                      sync.Mutex
 }
 
 func NewModDeps(root *Query, mods []Mod) *ModDeps {
@@ -72,7 +75,7 @@ func (d *ModDeps) LookupDep(name string) (Mod, bool) {
 
 // The combined schema exposed by each mod in this set of dependencies
 func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
-	schema, _, err := d.lazilyLoadSchema(ctx, []string{})
+	schema, _, err := d.lazilyLoadSchema(ctx, []string{}, true)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +85,11 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // It is meant for consumption from modules, which have some APIs hidden from their codegen.
 func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Result[*File], _ error) {
-	_, schemaJSONFile, err := d.lazilyLoadSchema(ctx, hiddenTypes)
+	return d.schemaIntrospectionJSONFileWithScrubbing(ctx, hiddenTypes, true)
+}
+
+func (d *ModDeps) schemaIntrospectionJSONFileWithScrubbing(ctx context.Context, hiddenTypes []string, scrubModuleHiddenTypes bool) (inst dagql.Result[*File], _ error) {
+	_, schemaJSONFile, err := d.lazilyLoadSchema(ctx, hiddenTypes, scrubModuleHiddenTypes)
 	if err != nil {
 		return inst, err
 	}
@@ -93,6 +100,12 @@ func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes [
 // Some APIs are automatically hidden as they should not be exposed to modules.
 func (d *ModDeps) SchemaIntrospectionJSONFileForModule(ctx context.Context) (inst dagql.Result[*File], _ error) {
 	return d.SchemaIntrospectionJSONFile(ctx, TypesToIgnoreForModuleIntrospection)
+}
+
+// The introspection json for combined schema for standalone client generation.
+// Unlike module SDKs, standalone clients have access to Engine and other types that are hidden from modules.
+func (d *ModDeps) SchemaIntrospectionJSONFileForClient(ctx context.Context) (inst dagql.Result[*File], _ error) {
+	return d.schemaIntrospectionJSONFileWithScrubbing(ctx, []string{}, false)
 }
 
 // All the TypeDefs exposed by this set of dependencies
@@ -108,22 +121,36 @@ func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, 
 	return typeDefs, nil
 }
 
-func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
+func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string, scrubModuleHiddenTypes bool) (
 	loadedSchema *dagql.Server,
 	loadedSchemaJSONFile dagql.Result[*File],
 	rerr error,
 ) {
 	d.loadSchemaLock.Lock()
 	defer d.loadSchemaLock.Unlock()
-	if d.lazilyLoadedSchema != nil {
-		return d.lazilyLoadedSchema, d.lazilyLoadedSchemaJSONFile, nil
+
+	// Use separate caches for module vs client schemas since they have different scrubbing
+	if scrubModuleHiddenTypes {
+		if d.lazilyLoadedSchema != nil {
+			return d.lazilyLoadedSchema, d.lazilyLoadedSchemaJSONFile, nil
+		}
+	} else {
+		if d.lazilyLoadedSchemaForClient != nil {
+			return d.lazilyLoadedSchemaForClient, d.lazilyLoadedSchemaJSONFileForClient, nil
+		}
 	}
+
 	if d.loadSchemaErr != nil {
 		return nil, loadedSchemaJSONFile, d.loadSchemaErr
 	}
 	defer func() {
-		d.lazilyLoadedSchema = loadedSchema
-		d.lazilyLoadedSchemaJSONFile = loadedSchemaJSONFile
+		if scrubModuleHiddenTypes {
+			d.lazilyLoadedSchema = loadedSchema
+			d.lazilyLoadedSchemaJSONFile = loadedSchemaJSONFile
+		} else {
+			d.lazilyLoadedSchemaForClient = loadedSchema
+			d.lazilyLoadedSchemaJSONFileForClient = loadedSchemaJSONFile
+		}
 		d.loadSchemaErr = rerr
 	}()
 
@@ -220,6 +247,10 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 				{
 					Name:  "hiddenTypes",
 					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
+				},
+				{
+					Name:  "scrubModuleHiddenTypes",
+					Value: dagql.NewBoolean(scrubModuleHiddenTypes),
 				},
 			},
 		},

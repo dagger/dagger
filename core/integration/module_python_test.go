@@ -8,11 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"dagger.io/dagger"
 )
 
 // Group all tests that are specific to Python only.
@@ -729,10 +730,10 @@ func (PythonSuite) TestAltRuntime(ctx context.Context, t *testctx.T) {
 	runtimeSrcPath, err := filepath.Abs("../../sdk/python/runtime")
 	require.NoError(t, err)
 
-	extSrcPath, err := filepath.Abs("./testdata/modules/python/extended")
+	extSrcPath, err := filepath.Abs("testdata/modules/python/extended")
 	require.NoError(t, err)
 
-	moduleSrcPath, err := filepath.Abs("./testdata/modules/python/git-dep")
+	moduleSrcPath, err := filepath.Abs("testdata/modules/python/git-dep")
 	require.NoError(t, err)
 
 	base := goGitBase(t, c).
@@ -1913,7 +1914,7 @@ func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc
 
 func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) dagger.WithContainerFunc {
 	t.Helper()
-	modSrc, err := filepath.Abs("./testdata/modules/python/pip-lock")
+	modSrc, err := filepath.Abs("testdata/modules/python/pip-lock")
 	require.NoError(t, err)
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithDirectory("", c.Host().Directory(modSrc, dagger.HostDirectoryOpts{

@@ -20,11 +20,10 @@ import (
 	"github.com/pelletier/go-toml"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +59,7 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 		ctr = with(ctr)
 	}
 
-	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
+	deviceName, cidr := GetUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
@@ -141,8 +140,8 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 // as the tests are running against but while avoiding use of a nested exec.
 // This is needed occasionally for tests like TestClientGenerator where we
 // can't use nested execs.
-// It works because our integ test setup code in the dagger-dev module mount
-// in the engine service's unix sock to the test container.
+// It works because the dang toolchain and suite_test.go share a cache volume
+// for the engine's /run directory, mounted at /run on the test container.
 func nonNestedDevEngine(c *dagger.Client) func(*dagger.Container) *dagger.Container {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.

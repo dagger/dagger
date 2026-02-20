@@ -30,15 +30,30 @@ import (
 
 	"dagger.io/dagger/telemetry"
 
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/dagger/dagger/util/scrub"
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
 )
 
 func TestMain(m *testing.M) {
+	ctx := context.Background()
+
+	// Start an inner engine for golden tests that exec `dagger`.
+	// The CLI subprocess needs a real engine with filesystem access,
+	// which the outer session vars don't provide for local module paths.
+	engineSvc, err := dag.EngineDev().
+		TestEngine(dagger.EngineDevTestEngineOpts{}).Start(ctx)
+	if err != nil {
+		panic(fmt.Sprintf("engine failed to start: %v", err))
+	}
+
+	testutil.FinalizeTestMain(ctx, engineSvc)
+
 	os.Exit(oteltest.Main(m))
 }
 

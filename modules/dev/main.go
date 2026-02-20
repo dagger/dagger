@@ -78,9 +78,13 @@ func (dev *Dev) Test(
 	// +optional
 	filter string,
 ) error {
-	return dag.EngineDev().Test(ctx, dagger.EngineDevTestOpts{
-		Run: filter,
-	})
+	cmd := []string{"go", "test"}
+	if filter != "" {
+		cmd = append(cmd, []string{"-run", filter}...)
+	}
+	cmd = append(cmd, []string{"-v", "-count", "1", "-timeout", "30m"}...)
+	_, err := dag.Go().Env().WithExec(cmd).Sync(ctx)
+	return err
 }
 
 // Run a git command and return its output.

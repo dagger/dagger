@@ -1,6 +1,7 @@
 package core
 
 import (
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"context"
 	"fmt"
 	"testing"
@@ -10,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"dagger.io/dagger"
 )
 
 type TypeSuite struct{}

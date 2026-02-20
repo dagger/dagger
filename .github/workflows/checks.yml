@@ -31,6 +31,7 @@ jobs:
           - "test-split/test-cli-engine"
           - "test-split/test-client-generator"
           - "test-split/test-container"
+          - "test-split/test-container-provision"
           - "test-split/test-interface"
           - "test-split/test-llm"
           - "test-split/test-module-runtimes"

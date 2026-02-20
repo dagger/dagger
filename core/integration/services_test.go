@@ -37,7 +37,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/testctx"
@@ -836,7 +836,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 		} `json:"loadContainerFromID"`
 	}
 
-	res, err := testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err := QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -866,7 +866,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	withoutTCP := withPorts.WithoutExposedPort(8000)
 	cid, err = withoutTCP.ID(ctx)
 	require.NoError(t, err)
-	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err = QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -893,7 +893,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
-	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
+	res, err = QueryWithClient[GetPortsResponse](c, t, getPorts, &QueryOptions{
 		Variables: map[string]any{
 			"id": cid,
 		},
@@ -1236,8 +1236,8 @@ func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -1268,8 +1268,8 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
@@ -1303,8 +1303,8 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
