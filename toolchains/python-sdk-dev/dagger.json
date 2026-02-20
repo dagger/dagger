@@ -13,12 +13,17 @@
   ],
   "dependencies": [
     {
+      "name": "dagger-engine",
+      "source": "../engine-dev"
+    },
+    {
       "name": "dockerd",
       "source": "dockerd"
     },
     {
-      "name": "dagger-engine",
-      "source": "../engine-dev"
+      "name": "pytest",
+      "source": "github.com/dagger/pytest@main",
+      "pin": "821da5888b0c2e66d33a7c9b59351f92b53492f9"
     },
     {
       "name": "wolfi",
