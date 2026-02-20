@@ -53,12 +53,10 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			// Create the blueprint module
-			WithWorkdir("blueprints/"+name).
-			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
-			WithNewFile("main.dang", source).
-			WithWorkdir("../../").
+			With(daggerExec("module", "init", "--sdk="+dangSDK, name, "blueprints/"+name)).
+			WithNewFile("blueprints/"+name+"/main.dang", source).
 			// Init the workspace root module using the blueprint
-			With(daggerExec("init", "--blueprint=./blueprints/"+name))
+			With(daggerExec("install", "--blueprint", "blueprints/"+name))
 	}
 }
 
