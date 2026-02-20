@@ -134,9 +134,12 @@ func Detect(
 		// Source is ".." because the module root (dagger.json) is one
 		// level above the synthetic .dagger/ directory.
 		config.Modules[legacyCfg.Name] = ModuleEntry{
-			Source:            "..",
-			Blueprint:         legacyCfg.Blueprint == nil,
-			LegacyDefaultPath: true,
+			Source:    "..",
+			Blueprint: legacyCfg.Blueprint == nil,
+			// No LegacyDefaultPath: the main module's context directory
+			// IS the workspace root, so normal contextual arg resolution
+			// works correctly. Only toolchains/blueprints loaded from a
+			// different source directory need workspace-root resolution.
 		}
 		return &Workspace{
 			Root:        sandbox,
