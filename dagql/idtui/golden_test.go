@@ -53,6 +53,45 @@ func Middleware() []testctx.Middleware[*testing.T] {
 	}
 }
 
+// newTWriter creates an io.Writer that writes to testing.T.Log
+func newTWriter(t testing.TB) io.Writer {
+	tw := &tWriter{t: t}
+	t.Cleanup(tw.flush)
+	return tw
+}
+
+type tWriter struct {
+	t   testing.TB
+	buf bytes.Buffer
+	mu  sync.Mutex
+}
+
+func (tw *tWriter) Write(p []byte) (n int, err error) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if n, err = tw.buf.Write(p); err != nil {
+		return n, err
+	}
+	for {
+		line, err := tw.buf.ReadBytes('\n')
+		if err == io.EOF {
+			tw.buf.Write(line)
+			break
+		}
+		if err != nil {
+			return n, err
+		}
+		tw.t.Log(strings.TrimSuffix(string(line), "\n"))
+	}
+	return n, nil
+}
+
+func (tw *tWriter) flush() {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	tw.t.Log(tw.buf.String())
+}
+
 func spanOpts[T testctx.Runner[T]](w *testctx.W[T]) []trace.SpanStartOption {
 	var t T
 	attrs := []attribute.KeyValue{
@@ -429,8 +468,8 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	errBuf := new(bytes.Buffer)
 	outBuf := new(bytes.Buffer)
-	cmd.Stderr = io.MultiWriter(errBuf, prefixw.New(testutil.NewTWriter(t), "stderr: "))
-	cmd.Stdout = io.MultiWriter(outBuf, prefixw.New(testutil.NewTWriter(t), "stdout: "))
+	cmd.Stderr = io.MultiWriter(errBuf, prefixw.New(newTWriter(t), "stderr: "))
+	cmd.Stdout = io.MultiWriter(outBuf, prefixw.New(newTWriter(t), "stdout: "))
 
 	err := cmd.Run()
 	if ex.Fail {
