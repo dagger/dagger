@@ -8,6 +8,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/iancoleman/strcase"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
@@ -767,6 +769,13 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 		return nil, err
 	}
 
+	// If the workspace has a default (focused) module, promote its functions
+	// to the Query type and remove the constructor. This makes the CLI see
+	// the module's functions as top-level commands.
+	if ws, wsErr := self.CurrentWorkspace(ctx); wsErr == nil && ws != nil && ws.DefaultModule != "" {
+		typeDefs = focusTypeDefs(typeDefs, ws.DefaultModule)
+	}
+
 	includeCore := !args.IncludeCore.Valid || args.IncludeCore.Value.Bool()
 	if !includeCore {
 		filtered := make([]*core.TypeDef, 0, len(typeDefs))
@@ -779,6 +788,47 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 	}
 
 	return typeDefs, nil
+}
+
+// focusTypeDefs rewrites type defs so that the focused module's functions
+// appear directly on the Query type, replacing the module's constructor.
+// This mirrors the Refocus'd server's schema where the module type IS Query.
+func focusTypeDefs(typeDefs []*core.TypeDef, moduleName string) []*core.TypeDef {
+	// Find the Query and module type defs.
+	var queryDef *core.ObjectTypeDef
+	var moduleDef *core.ObjectTypeDef
+	constructorFieldName := strcase.ToLowerCamel(moduleName)
+
+	for _, td := range typeDefs {
+		if !td.AsObject.Valid {
+			continue
+		}
+		obj := td.AsObject.Value
+		if obj.Name == "Query" {
+			queryDef = obj
+		}
+		if obj.SourceModuleName == moduleName {
+			moduleDef = obj
+		}
+	}
+
+	if queryDef == nil || moduleDef == nil {
+		return typeDefs
+	}
+
+	// Replace Query's functions: remove the constructor, add the module's functions.
+	newFunctions := make([]*core.Function, 0, len(queryDef.Functions)+len(moduleDef.Functions))
+	for _, fn := range queryDef.Functions {
+		if fn.Name != constructorFieldName {
+			newFunctions = append(newFunctions, fn)
+		}
+	}
+	for _, fn := range moduleDef.Functions {
+		newFunctions = append(newFunctions, fn)
+	}
+	queryDef.Functions = newFunctions
+
+	return typeDefs
 }
 
 // isCoreTypeDef returns true if the TypeDef originates from the core module
