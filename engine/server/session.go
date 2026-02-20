@@ -1687,8 +1687,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			}
 
 			pending = append(pending, pendingModule{
-				Ref:       resolveLocalRef(ws, rel),
-				Blueprint: true,
+				Ref: resolveLocalRef(ws, rel),
 			})
 		}
 	}
@@ -1844,9 +1843,7 @@ func (srv *Server) loadModule(
 	if mod.Name != "" {
 		resolved.Self().NameField = mod.Name
 	}
-	if mod.Blueprint {
-		resolved.Self().AutoAlias = true
-	}
+	_ = mod.Blueprint // reserved for future use
 	if mod.LegacyDefaultPath {
 		resolved.Self().LegacyDefaultPath = true
 	}

@@ -62,10 +62,6 @@ type Module struct {
 	// instead default to the old behavior of per-session caching.
 	DisableDefaultFunctionCaching bool
 
-	// AutoAlias causes the module's functions to be aliased to the Query root,
-	// so they can be called directly without going through the module constructor.
-	AutoAlias bool
-
 	// LegacyDefaultPath, when true, causes +defaultPath to resolve relative to
 	// the workspace root instead of the module's own source directory.
 	// Used for legacy blueprints/toolchains migrated to workspace modules.

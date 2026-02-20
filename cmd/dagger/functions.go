@@ -288,8 +288,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	if fc.DisableModuleLoad || moduleNoURL {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
-		// -m is now handled at engine connect time (ExtraModules with AutoAlias),
-		// so the CLI always uses initializeWorkspace — no branching needed.
+		// -m modules are loaded at engine connect time as extra modules.
 		mod, err = initializeWorkspace(ctx, fc.c.Dagger())
 	}
 	if err != nil {

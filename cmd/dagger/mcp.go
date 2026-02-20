@@ -66,12 +66,11 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")
 	}
-	// -m is now handled at engine connect time (ExtraModules with AutoAlias),
-	// so the CLI always uses initializeWorkspace — no branching needed.
+	// -m modules are loaded at engine connect time as extra modules.
 	modDef, _ := initializeWorkspace(ctx, engineClient.Dagger())
 	if modDef != nil && !modDef.HasModule() {
-		// When -m is used with auto-alias, modDef.Name is "" but the module
-		// constructor is at Query root. Find it.
+		// When -m is used, modDef.Name is "" but the module constructor
+		// is at Query root. Find it.
 		modDef = findAutoAliasedModule(modDef)
 	}
 

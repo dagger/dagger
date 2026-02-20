@@ -57,8 +57,7 @@ available functions.
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) (rerr error) {
-			// -m is now handled at engine connect time (ExtraModules with AutoAlias),
-			// so the CLI always uses initializeWorkspace — no branching needed.
+			// -m modules are loaded at engine connect time as extra modules.
 			mod, err := initializeWorkspace(ctx, engineClient.Dagger())
 			if err != nil {
 				return err

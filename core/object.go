@@ -240,11 +240,6 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
-		if mod.AutoAlias {
-			if err := obj.installAutoAliases(ctx, dag); err != nil {
-				return fmt.Errorf("failed to install auto-aliases: %w", err)
-			}
-		}
 	}
 	fields := obj.fields()
 
@@ -261,18 +256,6 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 }
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
-	spec, fn, err := obj.constructorFieldSpec(ctx, dag)
-	if err != nil {
-		return err
-	}
-	dag.Root().ObjectType().Extend(spec, fn)
-	return nil
-}
-
-// constructorFieldSpec returns the FieldSpec and FieldFunc for the module's
-// constructor. This is factored out so that installAutoAliases can install
-// the constructor under an internal name to avoid name collisions.
-func (obj *ModuleObject) constructorFieldSpec(ctx context.Context, dag *dagql.Server) (dagql.FieldSpec, dagql.FieldFunc, error) {
 	objDef := obj.TypeDef
 	mod := obj.Module
 
@@ -291,114 +274,62 @@ func (obj *ModuleObject) constructorFieldSpec(ctx context.Context, dag *dagql.Se
 			spec.Directives = append(spec.Directives, objDef.SourceMap.Value.TypeDirective())
 		}
 
-		fn := func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
-			return dagql.NewResultForCurrentID(ctx, &ModuleObject{
-				Module:  mod,
-				TypeDef: objDef,
-				Fields:  map[string]any{},
-			})
-		}
-		return spec, fn, nil
+		dag.Root().ObjectType().Extend(
+			spec,
+			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
+				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
+					Module:  mod,
+					TypeDef: objDef,
+					Fields:  map[string]any{},
+				})
+			},
+		)
+		return nil
 	}
 
 	// use explicit user-defined constructor if provided
 	fnTypeDef := objDef.Constructor.Value
 	if fnTypeDef.ReturnType.Kind != TypeDefKindObject {
-		return dagql.FieldSpec{}, nil, fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
+		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 	if fnTypeDef.ReturnType.AsObject.Value.OriginalName != objDef.OriginalName {
-		return dagql.FieldSpec{}, nil, fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
+		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	modFn, err := NewModFunction(ctx, mod, objDef, fnTypeDef)
+	fn, err := NewModFunction(ctx, mod, objDef, fnTypeDef)
 	if err != nil {
-		return dagql.FieldSpec{}, nil, fmt.Errorf("failed to create function: %w", err)
+		return fmt.Errorf("failed to create function: %w", err)
 	}
-	if err := modFn.mergeUserDefaultsTypeDefs(ctx); err != nil {
-		return dagql.FieldSpec{}, nil, fmt.Errorf("failed to merge user defaults: %w", err)
+	if err := fn.mergeUserDefaultsTypeDefs(ctx); err != nil {
+		return fmt.Errorf("failed to merge user defaults: %w", err)
 	}
-	spec, err := modFn.metadata.FieldSpec(ctx, mod)
+	spec, err := fn.metadata.FieldSpec(ctx, mod)
 	if err != nil {
-		return dagql.FieldSpec{}, nil, fmt.Errorf("failed to get field spec for constructor: %w", err)
+		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
 	spec.Name = gqlFieldName(mod.Name())
 	spec.Module = obj.Module.IDModule()
-	spec.GetCacheConfig = modFn.CacheConfigForCall
+	spec.GetCacheConfig = fn.CacheConfigForCall
 
-	fn := func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-		var callInput []CallInput
-		for k, v := range args {
-			callInput = append(callInput, CallInput{
-				Name:  k,
-				Value: v,
+	dag.Root().ObjectType().Extend(
+		spec,
+		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+			var callInput []CallInput
+			for k, v := range args {
+				callInput = append(callInput, CallInput{
+					Name:  k,
+					Value: v,
+				})
+			}
+			return fn.Call(ctx, &CallOpts{
+				Inputs:       callInput,
+				ParentTyped:  nil,
+				ParentFields: nil,
+				Server:       dag,
 			})
-		}
-		return modFn.Call(ctx, &CallOpts{
-			Inputs:       callInput,
-			ParentTyped:  nil,
-			ParentFields: nil,
-			Server:       dag,
-		})
-	}
+		},
+	)
 
-	return spec, fn, nil
-}
-
-// installAutoAliases installs alias fields on the Query root that delegate
-// to the module's constructor followed by the function call. This allows
-// module functions to be called directly from the Query root without
-// explicitly going through the constructor.
-//
-// To avoid collisions when a function has the same name as the constructor
-// (e.g. module "foo" with function "foo"), a copy of the constructor is
-// installed under a hidden name ("_blueprint_foo") and all aliases call
-// through that instead of the public constructor name.
-func (obj *ModuleObject) installAutoAliases(ctx context.Context, dag *dagql.Server) error {
-	mod := obj.Module
-	constructorName := gqlFieldName(mod.Name())
-	internalName := "_blueprint_" + constructorName
-
-	// Install a hidden copy of the constructor that aliases call through.
-	// This uses the same constructor logic but under a name that can never
-	// collide with a user-defined function.
-	ctorSpec, ctorFn, err := obj.constructorFieldSpec(ctx, dag)
-	if err != nil {
-		return fmt.Errorf("failed to build constructor spec for alias: %w", err)
-	}
-	ctorSpec.Name = internalName
-	dag.Root().ObjectType().Extend(ctorSpec, ctorFn)
-
-	for _, fun := range obj.TypeDef.Functions {
-		// Skip aliasing if a field with this name already exists on the
-		// Query root (e.g. another module's constructor, or a core field).
-		// The function remains accessible via the module constructor.
-		if _, exists := dag.Root().ObjectType().FieldSpec(fun.Name, ""); exists {
-			continue
-		}
-
-		spec, err := fun.FieldSpec(ctx, mod)
-		if err != nil {
-			return fmt.Errorf("failed to get field spec for alias %q: %w", fun.Name, err)
-		}
-		spec.Module = mod.IDModule()
-
-		funcName := fun.Name
-		dag.Root().ObjectType().Extend(
-			spec,
-			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-				namedInputs := make([]dagql.NamedInput, 0, len(args))
-				for k, v := range args {
-					namedInputs = append(namedInputs, dagql.NamedInput{Name: k, Value: v})
-				}
-				var result dagql.AnyResult
-				err := dag.Select(ctx, self.(dagql.AnyObjectResult), &result,
-					dagql.Selector{Field: internalName},
-					dagql.Selector{Field: funcName, Args: namedInputs},
-				)
-				return result, err
-			},
-		)
-	}
 	return nil
 }
 
