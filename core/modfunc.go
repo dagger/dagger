@@ -1193,107 +1193,103 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*File](f.ID()), nil
 
 	case "GitRepository", "GitRef":
-		// only local sources and git repos sourced from local dirs need special handling
-		// to prevent errant reloads, other module types are reproducible and can be called directly
-		isLocalMod := fn.mod.Source.Value.Self().Kind == ModuleSourceKindLocal
-		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
-		isLocalGit := cleanedPath == "." || cleanedPath == ".git"
-		if isLocalMod && isLocalGit {
-			contentCacheKey := fn.mod.ContentDigestCacheKey()
-			switch arg.TypeDef.AsObject.Value.Name {
-			case "GitRepository":
-				var f dagql.ObjectResult[*GitRepository]
-				err := dag.Select(ctx, dag.Root(), &f,
-					dagql.Selector{
-						Field: "_contextGitRepository",
-						Args: []dagql.NamedInput{
-							{
-								Name:  "module",
-								Value: dagql.String(fn.mod.Source.Value.Self().AsString()),
-							},
-							{
-								Name:  "digest",
-								Value: dagql.String(contentCacheKey),
-							},
-						},
-					},
-				)
-				if err != nil {
-					return nil, fmt.Errorf("load contextual git repository %q: %w", arg.DefaultPath, err)
-				}
-				return dagql.NewID[*GitRepository](f.ID()), nil
-
-			case "GitRef":
-				var f dagql.ObjectResult[*GitRef]
-				err := dag.Select(ctx, dag.Root(), &f,
-					dagql.Selector{
-						Field: "_contextGitRef",
-						Args: []dagql.NamedInput{
-							{
-								Name:  "module",
-								Value: dagql.String(fn.mod.Source.Value.Self().AsString()),
-							},
-							{
-								Name:  "digest",
-								Value: dagql.String(contentCacheKey),
-							},
-						},
-					},
-				)
-				if err != nil {
-					return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
-				}
-				return dagql.NewID[*GitRef](f.ID()), nil
-			}
-		}
-
-		var git dagql.ObjectResult[*GitRepository]
-		if isLocalGit {
-			// handle getting the git repo from the current module context
-			var err error
-			git, err = fn.mod.Source.Value.Self().LoadContextGit(ctx, dag)
-			if err != nil {
-				return nil, err
-			}
-		} else if gitURL, err := gitutil.ParseURL(arg.DefaultPath); err == nil {
-			// handle an arbitrary git URL
-			args := []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(gitURL.String())},
-			}
-			if gitURL.Fragment != nil {
-				args = append(args, dagql.NamedInput{Name: "ref", Value: dagql.String(gitURL.Fragment.Ref)})
-			}
-
-			err := dag.Select(ctx, dag.Root(), &git,
-				dagql.Selector{Field: "git", Args: args},
-			)
-			if err != nil {
-				return nil, fmt.Errorf("load contextual git repository: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("parse git URL %q: %w", arg.DefaultPath, err)
-		}
-
-		switch arg.TypeDef.AsObject.Value.Name {
-		case "GitRepository":
-			return dagql.NewID[*GitRepository](git.ID()), nil
-
-		case "GitRef":
-			var gitRef dagql.ObjectResult[*GitRef]
-			err := dag.Select(ctx, git, &gitRef,
-				dagql.Selector{
-					Field: "head",
-				},
-			)
-			if err != nil {
-				return nil, fmt.Errorf("load contextual git ref: %w", err)
-			}
-
-			return dagql.NewID[*GitRef](gitRef.ID()), nil
-		}
+		return fn.loadContextualGitArg(ctx, dag, arg)
 	}
 
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+}
+
+// loadContextualGitArg resolves a +defaultPath argument for GitRepository or
+// GitRef types. For local modules with a local git path (. or .git), it uses
+// a cache-keyed selector to prevent errant reloads. Otherwise it loads from
+// the module context or parses a remote git URL.
+func (fn *ModuleFunction) loadContextualGitArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	arg *FunctionArg,
+) (dagql.IDType, error) {
+	isLocalMod := fn.mod.Source.Value.Self().Kind == ModuleSourceKindLocal
+	cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
+	isLocalGit := cleanedPath == "." || cleanedPath == ".git"
+
+	// Local sources with local git need special handling to prevent
+	// errant reloads; other module types are reproducible.
+	if isLocalMod && isLocalGit {
+		contentCacheKey := fn.mod.ContentDigestCacheKey()
+		switch arg.TypeDef.AsObject.Value.Name {
+		case "GitRepository":
+			var f dagql.ObjectResult[*GitRepository]
+			err := dag.Select(ctx, dag.Root(), &f,
+				dagql.Selector{
+					Field: "_contextGitRepository",
+					Args: []dagql.NamedInput{
+						{Name: "module", Value: dagql.String(fn.mod.Source.Value.Self().AsString())},
+						{Name: "digest", Value: dagql.String(contentCacheKey)},
+					},
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("load contextual git repository %q: %w", arg.DefaultPath, err)
+			}
+			return dagql.NewID[*GitRepository](f.ID()), nil
+
+		case "GitRef":
+			var f dagql.ObjectResult[*GitRef]
+			err := dag.Select(ctx, dag.Root(), &f,
+				dagql.Selector{
+					Field: "_contextGitRef",
+					Args: []dagql.NamedInput{
+						{Name: "module", Value: dagql.String(fn.mod.Source.Value.Self().AsString())},
+						{Name: "digest", Value: dagql.String(contentCacheKey)},
+					},
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
+			}
+			return dagql.NewID[*GitRef](f.ID()), nil
+		}
+	}
+
+	var git dagql.ObjectResult[*GitRepository]
+	if isLocalGit {
+		var err error
+		git, err = fn.mod.Source.Value.Self().LoadContextGit(ctx, dag)
+		if err != nil {
+			return nil, err
+		}
+	} else if gitURL, err := gitutil.ParseURL(arg.DefaultPath); err == nil {
+		args := []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(gitURL.String())},
+		}
+		if gitURL.Fragment != nil {
+			args = append(args, dagql.NamedInput{Name: "ref", Value: dagql.String(gitURL.Fragment.Ref)})
+		}
+		err := dag.Select(ctx, dag.Root(), &git,
+			dagql.Selector{Field: "git", Args: args},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load contextual git repository: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("parse git URL %q: %w", arg.DefaultPath, err)
+	}
+
+	switch arg.TypeDef.AsObject.Value.Name {
+	case "GitRepository":
+		return dagql.NewID[*GitRepository](git.ID()), nil
+	case "GitRef":
+		var gitRef dagql.ObjectResult[*GitRef]
+		err := dag.Select(ctx, git, &gitRef,
+			dagql.Selector{Field: "head"},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load contextual git ref: %w", err)
+		}
+		return dagql.NewID[*GitRef](gitRef.ID()), nil
+	default:
+		return nil, fmt.Errorf("unknown git contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+	}
 }
 
 // loadLegacyDefaultPathArg resolves a +defaultPath argument from the workspace
@@ -1347,6 +1343,12 @@ func (fn *ModuleFunction) loadLegacyDefaultPathArg(
 			return nil, fmt.Errorf("load legacy default file %q: %w", arg.DefaultPath, err)
 		}
 		return dagql.NewID[*File](f.ID()), nil
+
+	case "GitRepository", "GitRef":
+		// For git, the legacy path can use the same logic as the regular
+		// contextual path — git doesn't resolve relative to the module
+		// source directory.
+		return fn.loadContextualGitArg(ctx, dag, arg)
 
 	default:
 		return nil, fmt.Errorf("legacy-default-path does not support type %q; port to workspace API",
