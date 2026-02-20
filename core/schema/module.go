@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/iancoleman/strcase"
@@ -807,7 +808,9 @@ func focusTypeDefs(typeDefs []*core.TypeDef, moduleName string) []*core.TypeDef 
 		if obj.Name == "Query" {
 			queryDef = obj
 		}
-		if obj.SourceModuleName == moduleName {
+		// Match the module's main object type: it has SourceModuleName set
+		// and its name matches the module name (e.g. module "hello" → type "Hello").
+		if obj.SourceModuleName == moduleName && strings.EqualFold(obj.Name, strcase.ToCamel(moduleName)) {
 			moduleDef = obj
 		}
 	}
@@ -816,14 +819,26 @@ func focusTypeDefs(typeDefs []*core.TypeDef, moduleName string) []*core.TypeDef 
 		return typeDefs
 	}
 
-	// Replace Query's functions: remove the constructor, add the module's functions.
+	// Build a set of promoted function names so we can resolve collisions.
+	promotedNames := make(map[string]bool, len(moduleDef.Functions))
+	for _, fn := range moduleDef.Functions {
+		promotedNames[fn.Name] = true
+	}
+
+	// Replace Query's functions: remove the constructor AND any functions
+	// whose name collides with a promoted function (the promoted version wins).
 	newFunctions := make([]*core.Function, 0, len(queryDef.Functions)+len(moduleDef.Functions))
 	for _, fn := range queryDef.Functions {
-		if fn.Name != constructorFieldName {
-			newFunctions = append(newFunctions, fn)
+		if fn.Name == constructorFieldName || promotedNames[fn.Name] {
+			continue
 		}
+		newFunctions = append(newFunctions, fn)
 	}
 	for _, fn := range moduleDef.Functions {
+		// Mark promoted functions with the source module name so the CLI
+		// can identify them as module functions (vs core API functions).
+		fn = fn.Clone()
+		fn.SourceModuleName = moduleName
 		newFunctions = append(newFunctions, fn)
 	}
 	queryDef.Functions = newFunctions

@@ -937,16 +937,14 @@ func (s *Server) Refocus(root AnyObjectResult) *Server {
 	}
 }
 
-// NewRootObject creates an AnyObjectResult suitable for use as a root in
-// Refocus. The object has a nil ID, placing it at the base of the ID chain.
-func (s *Server) NewRootObject(val Typed) (AnyObjectResult, error) {
-	objType, ok := s.ObjectType(val.Type().Name())
-	if !ok {
-		return nil, fmt.Errorf("unknown type %q", val.Type().Name())
+// contextServer returns the server that should be placed in context during
+// field resolution. For a Refocus'd server, this is the fallback (real)
+// server, so that module function execution sees the full Query root.
+func (s *Server) contextServer() *Server {
+	if s.fallback != nil {
+		return s.fallback
 	}
-	// Create a detached result with nil ID so this object sits at the root.
-	detached := newDetachedResult[Typed](nil, val)
-	return objType.New(detached)
+	return s
 }
 
 // Attach an install hook

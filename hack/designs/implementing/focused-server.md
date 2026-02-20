@@ -76,10 +76,9 @@ In `engine/server/session.go`, when a workspace has a `DefaultModule`:
 
 1. Get the real schema from `client.deps.Schema(ctx)`
 2. Call the constructor (default args) on the real server: `Select(root, "myModule")`
-3. Unwrap the resulting `*ModuleObject`
-4. Wrap it as a nil-ID root via `NewRootObject`
-5. `realSchema.Refocus(root)` → focused server
-6. Serve the focused server instead of the real one
+3. Use the constructor result directly as the focused root (preserving its ID)
+4. `realSchema.Refocus(root)` → focused server
+5. Serve the focused server instead of the real one
 
 If the constructor has required args without defaults, focusing is silently skipped
 and the old behavior is preserved.
@@ -89,12 +88,22 @@ and the old behavior is preserved.
 `currentTypeDefs` resolves via the fallback (it's a Query field, not a module field).
 A new `focusTypeDefs` function rewrites the response:
 
-- Finds the Query and module type definitions
+- Finds the Query type def and the module's MAIN object type def (matched by
+  `SourceModuleName` and name equality with `strcase.ToCamel(moduleName)`)
 - Removes the constructor from Query's functions
-- Adds the module's functions to Query's functions
+- Removes any Query functions whose names collide with promoted functions
+- Adds the module's functions to Query's functions, setting `SourceModuleName`
+  on each promoted function so the CLI can identify them
 
 This makes the CLI see the module's functions as Query-level commands without any
 special `DefaultModule` awareness.
+
+### Context Server
+
+When the focused server resolves fields, module function execution needs access to
+the full Query root (for core API fields like `directory`, `container`, etc.). The
+`contextServer()` method ensures that `CurrentDagqlServer(ctx)` returns the fallback
+(real) server, not the focused server.
 
 ### CLI Adaptation
 
@@ -113,10 +122,14 @@ The CLI's `loadTypeDefs` detects the focused schema:
 - `Server.Refocus` creates a focused server with shared types and fallback
 - `execQueryWithFallback` splits resolution between focused and fallback roots
 - Schema merges focused + fallback root fields for validation
-- Constructor called with defaults to build the focused root
-- `currentTypeDefs` rewritten to promote module functions
+- Constructor called with defaults to build the focused root; result used directly
+  (preserving its ID for valid cache chains)
+- `currentTypeDefs` rewritten to promote module functions (main object only,
+  matched by name; collisions resolved in favor of promoted functions)
+- `contextServer()` ensures module function execution sees the real Query root
 - CLI detects focused schema and uses Query as MainObject
 - Graceful fallback when constructor requires args
+- Tests passing: `TestModule/TestFloat`, `TestWorkspace/TestBlueprint`, `TestBlueprint`
 
 ### Known Limitations
 
@@ -125,11 +138,10 @@ The CLI's `loadTypeDefs` detects the focused schema:
    correctly in focused mode. When the constructor fails (required args), focusing is
    skipped entirely and the old `DefaultModule` path kicks in.
 
-2. **ID chain mismatch.** Focused server IDs start from the module type
-   (`MyModule.foo(x:1)`) while the real server's start from Query
-   (`Query.myModule.foo(x:1)`). These are different cache keys. Loading a focused ID
-   on the real server, or vice versa, will fail. In practice this hasn't been a problem
-   because the CLI only talks to one server per session, but it's a correctness gap.
+2. **ID chains share the constructor prefix.** The focused root preserves the
+   constructor's ID (e.g. `Query.myModule`), so field IDs form valid chains
+   (`Query.myModule.foo(x:1)`). These are the same IDs the real server would
+   produce, so caching works correctly.
 
 3. **Schema Query type naming.** The focused schema's Query operation type is named
    after the module (e.g. `MyModule`), not `Query`. Standard GraphQL introspection
@@ -161,18 +173,6 @@ The biggest gap. Options:
   satisfy constructor args when building the focused root.
 - **Lazy root.** Don't call the constructor at focus time. Instead, call it lazily on
   first field access, with args supplied from workspace config.
-
-### ID Unification
-
-The focused and real servers produce different IDs for the same logical operation.
-Options:
-
-- **Rewrite IDs.** The focused server could prepend `Query.myModule` to IDs before
-  caching, making them identical to the real server's IDs. This would unify cache
-  entries.
-- **Accept divergence.** The shared `Cache` means both servers benefit from cached
-  intermediate results (e.g. the constructor call itself). The top-level ID divergence
-  wastes a cache slot but doesn't cause correctness issues.
 
 ### Removing DefaultModule
 

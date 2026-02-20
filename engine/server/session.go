@@ -1882,19 +1882,10 @@ func (srv *Server) buildFocusedSchema(ctx context.Context, client *daggerClient,
 		return nil, nil //nolint:nilerr // intentional: fall back to unfocused
 	}
 
-	// Create a new root with nil ID from the resolved module object.
-	// The nil ID places it at the base of the focused server's ID chain.
-	modValue, ok := dagql.UnwrapAs[*core.ModuleObject](modResult)
-	if !ok {
-		return nil, fmt.Errorf("constructor %q did not return a ModuleObject", constructorField)
-	}
-
-	root, err := realSchema.NewRootObject(modValue)
-	if err != nil {
-		return nil, fmt.Errorf("creating focused root: %w", err)
-	}
-
-	return realSchema.Refocus(root), nil
+	// Use the constructor result directly as the focused root.
+	// Its ID (e.g. Query.greeter) is preserved, which means field IDs
+	// on the focused root form valid chains (e.g. Query.greeter.read).
+	return realSchema.Refocus(modResult), nil
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.
