@@ -32,6 +32,31 @@
     {
       "name": "go",
       "source": "toolchains/go",
+      "ignoreChecks": ["*"],
+      "customizations": [
+        {
+          "argument": "source",
+          "ignore": [
+            "bin",
+            "**/node_modules",
+            "**/.venv",
+            "**/__pycache__",
+            "**/sdk/runtime/**",
+            "docs/node_modules",
+            "sdk/typescript/node_modules",
+            "sdk/typescript/dist",
+            "sdk/rust/examples/backend/target",
+            "sdk/rust/target",
+            "sdk/php/vendor",
+            "docs/**",
+            "modules/evals/**"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "golint",
+      "source": "toolchains/go",
       "customizations": [
         {
           "argument": "source",
