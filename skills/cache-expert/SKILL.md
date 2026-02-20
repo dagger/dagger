@@ -13,42 +13,7 @@ Each operation takes immutable objects/scalar values as inputs and produces an i
 
 This enables caching: since inputs are immutable and operations are deterministic, cache keys can be derived from the operation and its inputs.
 
-**Key concepts:**
-- **ID**: A scalar value that encapsulates the operation that created an object. Enables non-scalar values to be used as inputs to other operations, forming a DAG.
-- **Digest**: A hash derived from an operation and its inputs, used for cache key computation.
-- **Call Cache Key**: Determines whether an operation's result can be retrieved from cache.
-
-## Core API Call Anatomy
-
-Every API call has three typed components:
-
-1. **Parent** - The object the operation is called on (e.g., `Container`)
-2. **Arguments** - The operation's input arguments
-3. **Return value** - The result (scalar or object with an ID)
-
-### Cache Key Computation
-
-By default, a call's cache key is a hash of:
-- Operation name (e.g., `Container.withExec`)
-- Parent's digest
-- Arguments' digests
-
-This matches the default ID digest. See [ids.md](references/ids.md) for details.
-
-### Cache Key Customization
-
-Cache keys can be scoped differently:
-- **Per-client** - Cached per connected client
-- **Per-session** - Cached for the duration of a session
-- **Per-call** - Never cached (unique each invocation)
-- **Custom** - Arbitrary cache key logic
-
-### Object IDs vs Cache Keys
-
-These are related but distinct:
-- **Call cache key** - Used to look up cached results
-- **Returned object ID** - May equal the cache key, or may be a separate operation
-- **Object digest** - Usually matches call cache key, but can be customized (e.g., content-addressed)
+DAGs of operations can be serialized as IDs, which have associated digests that serve as the operations' cache keys.
 
 ## Quick Reference
 
@@ -56,26 +21,23 @@ Jump to the right doc for your task:
 
 | Task | Read |
 |------|------|
-| Understand how IDs encode operations | [ids.md](references/ids.md) |
-| Understand the GraphQL server implementation | [dagql-api-server.md](references/dagql-api-server.md) |
-| Understand how results are cached | [cache-storage.md](references/cache-storage.md) |
-| Understand BuildKit integration (being phased out) | [buildkit-dagop.md](references/buildkit-dagop.md) |
-| Debug a cache miss | [debugging.md](references/debugging.md) |
-| Test cache behavior | [testing.md](references/testing.md) |
+| Understand how IDs encode operations and digests | [ids.md](references/ids.md) |
+| Understand cache-relevant dagql execution flow | [dagql-api-server.md](references/dagql-api-server.md) |
+| Understand base/session cache storage and lifecycle | [cache-storage.md](references/cache-storage.md) |
+| Debug cache misses and cache behavior regressions | [debugging.md](references/debugging.md) |
+| Understand filesync cache behavior | [filesync.md](references/filesync.md) |
 
 ## Core References
 
-Read in order to build deep expertise:
+To build cache expertise, read these in order:
 
-1. **[ids.md](references/ids.md)** - How IDs encode operations and derive digests
-2. **[dagql-api-server.md](references/dagql-api-server.md)** - The dagql GraphQL server implementation
-3. **[cache-storage.md](references/cache-storage.md)** - How dagql results are cached
-4. **[buildkit-dagop.md](references/buildkit-dagop.md)** - BuildKit integration and its phase-out status
+1. **[ids.md](references/ids.md)** - How IDs and digests define cache identity
+2. **[dagql-api-server.md](references/dagql-api-server.md)** - How `Select`/`preselect`/`call` drive cache usage
+3. **[cache-storage.md](references/cache-storage.md)** - How results are stored, indexed, released, and persisted
 
 ## Optional References
 
 Load on-demand for specific tasks:
 
-- **[debugging.md](references/debugging.md)** - Techniques for diagnosing cache misses and unexpected invalidations
-- **[testing.md](references/testing.md)** - How to test cache behavior in the engine
-
+- **[debugging.md](references/debugging.md)** - Practical debugging loop and instrumentation points
+- **[filesync.md](references/filesync.md)** - Host filesystem sync internals and filesync cache model

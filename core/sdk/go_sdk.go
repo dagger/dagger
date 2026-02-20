@@ -520,6 +520,13 @@ func (sdk *goSDK) baseWithCodegen(
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
 
+	/* FIXME: dev version handling is broken because it requires changing imports in code
+	if !engine.IsDevVersion(engine.Version) {
+		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engine.Version))
+	}
+	*/
+	codegenArgs = append(codegenArgs, "--lib-version", dagql.String("v0.19.11"))
+
 	selectors := []dagql.Selector{
 		{
 			Field: "withMountedFile",
@@ -847,13 +854,7 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 			Field: "host",
 		},
 		dagql.Selector{
-			Field: "unixSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
-				},
-			},
+			Field: "_sshAuthSocket",
 		},
 	); err != nil {
 		return nil, nil, fmt.Errorf("failed to select internal socket: %w", err)

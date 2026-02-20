@@ -74,6 +74,10 @@ func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientM
 	return &engine.ClientMetadata{}, nil
 }
 
+func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
@@ -101,7 +105,7 @@ func (ms *mockServer) EngineLocalCacheEntries(context.Context) (*EngineCacheEntr
 	return nil, nil
 }
 
-func (ms *mockServer) PruneEngineLocalCacheEntries(context.Context, bool) (*EngineCacheEntrySet, error) {
+func (ms *mockServer) PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error) {
 	return nil, nil
 }
 func (ms *mockServer) EngineLocalCachePolicy() *bkclient.PruneInfo { return nil }

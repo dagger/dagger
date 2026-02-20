@@ -10,16 +10,13 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -64,15 +61,8 @@ type Module struct {
 	// Toolchain modules are allowed to share types with the modules that depend on them.
 	IsToolchain bool
 
-	// ToolchainModules stores references to toolchain module instances by their field name
-	// This enables proxy field resolution to route calls to the toolchain's runtime
-	ToolchainModules map[string]*Module
-
-	// ToolchainArgumentConfigs stores argument configuration overrides for toolchains by their original name
-	ToolchainArgumentConfigs map[string][]*modules.ModuleConfigArgument
-
-	// ToolchainIgnoreChecks stores check patterns to ignore for each toolchain by their original name
-	ToolchainIgnoreChecks map[string][]string
+	// Toolchains manages all toolchain modules and their configuration.
+	Toolchains *ToolchainRegistry
 
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
@@ -99,82 +89,19 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+// isToolchainModule checks if a Mod is a toolchain Module.
+// This centralizes the validation logic that was scattered across the codebase.
+func isToolchainModule(m Mod) bool {
+	tcMod, ok := m.(*Module)
+	return ok && tcMod.IsToolchain
+}
+
 func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	mainObj, ok := mod.MainObject()
-	if !ok {
-		return nil, fmt.Errorf("scan for checks: %q: can't load main object", mod.Name())
-	}
-	objChecksCache := map[string][]*Check{}
-	group := &CheckGroup{Module: mod}
-	// 1. Walk main module for checks
-	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
-		match, err := check.Match(include)
-		if err != nil {
-			return nil, err
-		}
-		if match {
-			group.Checks = append(group.Checks, check)
-		}
-	}
-	// 2. Walk toolchain modules for checks
-	for _, dep := range mod.Deps.Mods {
-		if tcMod, ok := dep.(*Module); ok && tcMod.IsToolchain {
-			tcMainObj, ok := tcMod.MainObject()
-			if !ok {
-				continue // skip toolchains without a main object
-			}
-			// Get the ignore patterns for this toolchain
-			ignorePatterns := mod.ToolchainIgnoreChecks[tcMod.OriginalName]
+	return NewCheckGroup(ctx, mod, include)
+}
 
-			// Walk the toolchain module's checks
-			for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache) {
-				// Check if this check should be ignored (before prepending toolchain name)
-				// This allows ignoreChecks patterns to be scoped to the toolchain without needing the prefix
-				ignored := false
-				if len(ignorePatterns) > 0 {
-					// Check against ignore patterns using the check path WITHOUT the toolchain prefix
-					for _, ignorePattern := range ignorePatterns {
-						checkMatch, err := check.Match([]string{ignorePattern})
-						if err != nil {
-							return nil, err
-						}
-						if checkMatch {
-							ignored = true
-							break
-						}
-					}
-				}
-
-				if ignored {
-					continue // Skip this check
-				}
-
-				// Prepend the toolchain name to the check path
-				check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
-
-				check.Source = tcMod.GetSource()
-
-				match, err := check.Match(include)
-				if err != nil {
-					return nil, err
-				}
-				if match {
-					group.Checks = append(group.Checks, check)
-				}
-			}
-		}
-	}
-
-	// set individual check Module field now so it's a consistent value between this
-	// mod and any toolchain mods
-	for _, check := range group.Checks {
-		check.Module = mod
-		// if toolchains didn't set ModuleSource, then the check is defined in mod.
-		if check.Source == nil {
-			check.Source = mod.GetSource()
-		}
-	}
-	return group, nil
+func (mod *Module) Generators(ctx context.Context, include []string) (*GeneratorGroup, error) {
+	return NewGeneratorGroup(ctx, mod, include)
 }
 
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
@@ -191,57 +118,6 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 		}
 	}
 	return nil, false
-}
-
-func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check { //nolint:unparam
-	if cached, ok := objChecksCache[obj.Name]; ok {
-		return cached
-	}
-	var checks []*Check
-	objChecksCache[obj.Name] = checks
-	subObjects := map[string]*ObjectTypeDef{}
-	for _, fn := range obj.Functions {
-		func() {
-			if functionRequiresArgs(fn) {
-				return
-			}
-			// 1. Scan object for checks
-			if fn.IsCheck {
-				checks = append(checks, &Check{
-					Path:        []string{gqlFieldName(fn.Name)},
-					Description: fn.Description,
-				})
-				return
-			}
-			// 2. Recursively scan reachable children objects
-			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
-				// avoid cycles (X.withFoo: X)
-				fn.ReturnType.ToType().Name() != obj.Name {
-				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
-				if ok {
-					subObjects[fn.Name] = subObj
-				}
-			}
-		}()
-	}
-	// Also walk fields for sub-checks
-	for _, field := range obj.Fields {
-		if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
-			subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
-			if ok {
-				subObjects[field.Name] = subObj
-			}
-		}
-	}
-	for key, subObj := range subObjects {
-		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache)
-		for _, subCheck := range subChecks {
-			subCheck.Path = append([]string{gqlFieldName(key)}, subCheck.Path...)
-		}
-		checks = append(checks, subChecks...)
-	}
-	objChecksCache[obj.Name] = checks
-	return checks
 }
 
 func functionRequiresArgs(fn *Function) bool {
@@ -282,16 +158,23 @@ func (mod *Module) GetContextSource() *ModuleSource {
 	return mod.ContextSource.Value.Self()
 }
 
-func (mod *Module) ContentDigestCacheKey() cache.CacheKey[dagql.CacheKeyType] {
-	return cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: string(hashutil.HashStrings(
-			mod.ContextSource.Value.Self().Digest,
-			"asModule",
-		)),
+func (mod *Module) ContentDigestCacheKey() string {
+	contextSource := mod.ContextSource.Value.Self()
+	contentDigest := ""
+	contentCacheScope := ""
+	if contextSource != nil {
+		contentDigest = contextSource.Digest
+		contentCacheScope = contextSource.ContentCacheScope()
 	}
+
+	return hashutil.HashStrings(
+		contentDigest,
+		contentCacheScope,
+		"asModule",
+	).String()
 }
 
-// GetModuleFromContentDigest loads a module based on its content hashed key as saved
+// GetModuleFromContentDigest loads a module based on the same content+provenance key used
 // in ModuleSource.asModule. We sometimes can't directly load a Module because the current
 // caching logic will result in that Module being re-loaded by clients (due to it being
 // CachePerClient) and then possibly trying to load it from the wrong context (in the case
@@ -302,31 +185,30 @@ func GetModuleFromContentDigest(
 	modName string,
 	dgst string,
 ) (inst dagql.ObjectResult[*Module], err error) {
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: dgst,
-	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, err
 	}
-	cacheKey.CallKey = hashutil.HashStrings(cacheKey.CallKey, md.SessionID).String()
-
-	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
+	cacheKey := hashutil.HashStrings(dgst, md.SessionID).String()
+	cacheRes, err := dag.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
 		return nil, fmt.Errorf("module not found: %s", modName)
 	})
 	if err != nil {
 		return inst, err
 	}
-	inst, ok := modRes.Result().(dagql.ObjectResult[*Module])
+	if cacheRes == nil {
+		return inst, fmt.Errorf("module cache returned nil result for key %q", cacheKey)
+	}
+	inst, ok := cacheRes.Value().(dagql.ObjectResult[*Module])
 	if !ok {
-		return inst, fmt.Errorf("cached module has unexpected type: %T", modRes.Result())
+		return inst, fmt.Errorf("cached module has unexpected type: %T", cacheRes.Value())
 	}
 
 	return inst, nil
 }
 
-// CacheModuleByContentDigest caches the given module instance using its content digest + session ID, corresponding to
-// the getter above (GetModuleFromContentDigest).
+// CacheModuleByContentDigest caches the given module instance using its content+provenance
+// key + session ID, corresponding to the getter above (GetModuleFromContentDigest).
 func CacheModuleByContentDigest(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -336,10 +218,8 @@ func CacheModuleByContentDigest(
 	if err != nil {
 		return err
 	}
-	perSessionContentCacheKey := mod.Self().ContentDigestCacheKey()
-	perSessionContentCacheKey.CallKey = dagql.CacheKeyType(hashutil.HashStrings(perSessionContentCacheKey.CallKey, md.SessionID))
-	perSessionContentHashedInst := mod.WithObjectDigest(digest.Digest(perSessionContentCacheKey.CallKey))
-	_, err = dag.Cache.GetOrInitializeValue(ctx, perSessionContentCacheKey, perSessionContentHashedInst)
+	perSessionContentCacheKey := hashutil.HashStrings(mod.Self().ContentDigestCacheKey(), md.SessionID).String()
+	_, err = dag.Cache.GetOrInitArbitrary(ctx, perSessionContentCacheKey, dagql.ArbitraryValueFunc(mod))
 	if err != nil {
 		return err
 	}
@@ -416,7 +296,7 @@ func (mod *Module) IDModule() *call.Module {
 	}
 
 	contentCacheKey := mod.ContentDigestCacheKey()
-	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey.CallKey)), mod.Name(), ref, pin)
+	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey)), mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -547,11 +427,14 @@ func (mod *Module) CacheConfigForCall(
 	resp := &dagql.GetCacheConfigResponse{
 		CacheKey: req.CacheKey,
 	}
-	resp.CacheKey.CallKey = hashutil.HashStrings(
+	if resp.CacheKey.ID == nil {
+		resp.CacheKey.ID = curIDNoMod
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
 		curIDNoMod.Digest().String(),
 		mod.Source.Value.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
-	).String()
+	))
 	return resp, nil
 }
 
@@ -713,6 +596,13 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if gqlFieldName(field.Name) == "id" {
 			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
 		}
+		// Workspace cannot be stored as a field on a module object
+		if field.TypeDef.Kind == TypeDefKindObject && field.TypeDef.AsObject.Value.Name == "Workspace" {
+			return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
+				obj.OriginalName,
+				field.OriginalName,
+			)
+		}
 		fieldType, ok, err := mod.Deps.ModTypeFor(ctx, field.TypeDef)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
@@ -723,7 +613,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			// other modules (unless the source module is a toolchain)
 			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 				// Allow types from toolchain modules
-				if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
+				if !isToolchainModule(sourceMod) {
 					return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
 						obj.OriginalName,
 						field.OriginalName,
@@ -749,7 +639,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 				// Allow types from toolchain modules
-				if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
+				if !isToolchainModule(sourceMod) {
 					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
 						obj.OriginalName,
 						fn.OriginalName,
@@ -770,7 +660,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			if ok {
 				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 					// Allow types from toolchain modules
-					if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
+					if !isToolchainModule(sourceMod) {
 						return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
 							obj.OriginalName,
 							fn.OriginalName,
@@ -1006,7 +896,8 @@ func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[
 	}
 
 	src = mod.Source.Value
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+	scopedSourceDigest := src.Self().ContentScopedDigest()
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
 	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return runtime, fmt.Errorf("failed to load runtime: %w", err)
@@ -1044,34 +935,6 @@ type Mod interface {
 
 	// Source returns the ModuleSource for this module
 	GetSource() *ModuleSource
-}
-
-var _ HasPBDefinitions = (*Module)(nil)
-
-func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var defs []*pb.Definition
-	if mod.Source.Valid && mod.Source.Value.Self() != nil {
-		dirDefs, err := mod.Source.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	if mod.ContextSource.Valid && mod.ContextSource.Value.Self() != nil {
-		dirDefs, err := mod.ContextSource.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	if mod.Runtime.Valid && mod.Runtime.Value.Self() != nil {
-		dirDefs, err := mod.Runtime.Value.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	return defs, nil
 }
 
 func (mod Module) Clone() *Module {

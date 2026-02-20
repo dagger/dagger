@@ -99,6 +99,18 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Detect and return the current workspace.
+     */
+    public function currentWorkspace(?bool $skipMigrationCheck = false): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentWorkspace');
+        if (null !== $skipMigrationCheck) {
+        $innerQueryBuilder->setArgument('skipMigrationCheck', $skipMigrationCheck);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The default platform of the engine.
      */
     public function defaultPlatform(): Platform
@@ -578,6 +590,26 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Generator from its ID.
+     */
+    public function loadGeneratorFromID(GeneratorId|Generator $id): Generator
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratorFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a GeneratorGroup from its ID.
+     */
+    public function loadGeneratorGroupFromID(GeneratorGroupId|GeneratorGroup $id): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratorGroupFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a GitRef from its ID.
      */
     public function loadGitRefFromID(GitRefId|GitRef $id): GitRef
@@ -835,6 +867,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Workspace from its ID.
+     */
+    public function loadWorkspaceFromID(WorkspaceId|Workspace $id): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

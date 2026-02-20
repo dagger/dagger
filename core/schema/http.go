@@ -96,7 +96,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		if err != nil {
 			return inst, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		authHeaderRaw, err := secretStore.GetSecretPlaintext(ctx, secret.ID().Digest())
+		authHeaderRaw, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secret.ID()))
 		if err != nil {
 			return inst, err
 		}
@@ -157,7 +157,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		))
 	ctxDagOp := dagql.ContextWithID(ctx, newID)
 
-	file, err := DagOpFile(ctxDagOp, srv, parent.Self(), args, s.http, WithPathFn(s.httpPath))
+	file, effectID, err := DagOpFile(ctxDagOp, srv, parent.Self(), args, s.http, WithPathFn(s.httpPath))
 	if err != nil {
 		return inst, err
 	}
@@ -167,5 +167,12 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForID(file, srv, newID)
+	if effectID != "" {
+		newID = newID.AppendEffectIDs(effectID)
+	}
+	inst, err = dagql.NewObjectResultForID(file, srv, newID)
+	if err != nil {
+		return inst, err
+	}
+	return inst, nil
 }

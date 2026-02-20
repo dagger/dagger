@@ -23,6 +23,7 @@ class FunctionDefinition:
     cache: str | None = None
     deprecated: str | None = None
     check: bool = False
+    generator: bool = False
 
 
 class Enum(str, base.Enum):

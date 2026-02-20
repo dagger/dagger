@@ -1,113 +1,93 @@
 # IDs and Digests
 
-IDs are the foundation of Dagger's caching system. An ID is a content-addressed representation of an operation and all its inputs, forming a DAG.
+IDs are the cache identity backbone in dagql.
+
+An ID is an immutable representation of a call chain. Cache keying starts from that ID, so understanding ID digest behavior is the first step for any cache work.
+
+## Why This Matters for Cache
+
+The base cache treats call IDs as the source of truth:
+- Primary lookup key: `CacheKey.ID.Digest()` (recipe digest)
+- Secondary lookup key: `CacheKey.ID.ContentDigest()` (content digest), when present
+
+This is why subtle ID changes (args, view, module, custom digest, content digest) directly affect cache behavior.
 
 ## Structure
 
-An ID is a base64-encoded protobuf message. See `dagql/call/callpbv1/call.proto` for the full proto definitions.
+IDs are encoded DAGs of calls (base64 protobuf), defined in `dagql/call/callpbv1/call.proto` and implemented in `dagql/call/id.go`.
 
-**Key messages:**
+Key concepts:
+- A call node stores field, type, args, receiver, module, view, and digests.
+- Calls reference other calls by digest, forming a Merkle-like DAG.
+- IDs are immutable: operations like `Append`, `WithDigest`, `WithContentDigest`, `WithArgument` return new IDs.
 
-- **DAG**: Contains `rootDigest` (the root Call's digest) and `callsByDigest` (a map of all Calls, deduplicated by digest)
-- **Call**: Represents a single operation with `receiverDigest` (parent), `field` (operation name), `args`, `type` (return type), and `digest`
-- **Literal**: Argument values. Can be primitives OR `callDigest` - a reference to another Call. This is how the DAG forms.
+## Two Digest Types
 
-The `callsByDigest` map enables deduplication: if the same Call appears multiple times in a DAG, it's stored once and referenced by digest.
+### Recipe Digest (`ID.Digest()`)
 
-## Wrapper Types
+Represents the call recipe (operation + declared inputs). This is the default cache identity.
 
-The Go code wraps proto types for immutability and convenience:
+Used for:
+- cache call keying
+- ID DAG references
+- most cache hit/miss reasoning
 
-| Go Type | Proto Type | File |
-|---------|------------|------|
-| `call.ID` | `callpbv1.Call` | `dagql/call/id.go` |
-| `call.Argument` | `callpbv1.Argument` | `dagql/call/argument.go` |
-| `call.Literal` (interface) | `callpbv1.Literal` | `dagql/call/literal.go` |
-| `call.Module` | `callpbv1.Module` | `dagql/call/module.go` |
-| `call.Type` | `callpbv1.Type` | `dagql/call/type.go` |
+### Content Digest (`ID.ContentDigest()`)
 
-Access the underlying proto via `.Call()`, `.pb`, etc. but avoid mutating it directly.
+Optional digest representing actual result content.
 
-## Digest Computation
+Used for:
+- content-based cache fallback when recipes differ but output content matches
+- hashing behavior of callers that reference this ID
 
-A Call's digest is a hash of its components, making it a **Merkle DAG**:
+Important: content digest does not replace recipe digest globally; both coexist.
 
-- `receiverDigest` (parent's digest - recursive)
-- `type` (return type)
-- `field` (operation name)
-- `args` (each argument name + value, recursive for nested IDs)
-- `nth` (list selection index)
-- `module` (module info if applicable)
-- `view` (view context)
+## Digest Computation Rules That Affect Cache
 
-See `id.go:566` (`calcDigest`) for implementation.
+From `dagql/call/id.go` behavior:
+- Receiver contribution prefers receiver content digest when present, else receiver recipe digest.
+- Literal ID arguments similarly prefer content digest when present.
+- Arg ordering is deterministic and affects digest.
+- Sensitive args are omitted from encoded args and digest calculation.
 
-### Custom Digests
+These rules explain many "why did this key change?" cases.
 
-A Call's digest can be overridden via `WithDigest()`. When `isCustomDigest = true`, the digest was explicitly set rather than computed. Used for cache key customization (per-client, per-session, content-addressed, etc.).
+## How Cache Uses ID Data Today
 
-## Important APIs
+In `dagql/cache.go`:
+- `GetOrInitCall` derives `callKey` from `CacheKey.ID.Digest().String()`.
+- It also derives a content fallback key from `CacheKey.ID.ContentDigest().String()`.
+- After running `fn`, the cache indexes results under:
+  - storage key (primary)
+  - result call digest (`resultCallKey`) if different
+  - result content digest (`contentDigestKey`) when present
 
-### Construction
+On content-digest hit, cache reuses payload but keeps caller-facing ID equal to the requested ID (via per-call override), so external recipe identity remains stable.
 
-| Method | Purpose |
-|--------|---------|
-| `call.New()` | Returns nil (the implicit Query root) |
-| `id.Append(type, field, opts...)` | **Primary way to build IDs.** Creates a new ID with `id` as receiver, calling `field`. |
-| `id.With(opts...)` | Creates new ID with options applied (WithArgs, WithModule, etc.) |
-| `id.WithDigest(digest)` | Creates new ID with custom digest |
-| `id.WithArgument(arg)` | Creates new ID with argument added/replaced |
-| `id.SelectNth(n)` | Creates new ID selecting nth element from a list result |
+## Cache Key Rewrites
 
-### Accessors
+`GetCacheConfig` hooks can rewrite `CacheKey.ID` before execution.
 
-| Method | Returns |
-|--------|---------|
-| `id.Receiver()` | Parent ID (nil for Query root) |
-| `id.Field()` | Operation name |
-| `id.Args()` | Arguments slice |
-| `id.Arg(name)` | Single argument by name |
-| `id.Type()` | Return type |
-| `id.Digest()` | The digest |
-| `id.Inputs()` | All referenced digests (receiver + args) |
+`dagql/cachekey.go` helpers mutate the ID digest by hashing in additional scope data:
+- `CachePerClient`
+- `CachePerSession`
+- `CachePerCall`
+- `CachePerSchema`
+- `CachePerClientSchema`
 
-### Serialization
-
-| Method | Purpose |
-|--------|---------|
-| `id.Encode()` | Serialize to base64 string |
-| `id.Decode(str)` | Deserialize from base64 string |
-| `id.ToProto()` | Convert to `*callpbv1.DAG` |
-| `id.FromProto(dag)` | Load from `*callpbv1.DAG` |
-
-### Display
-
-| Method | Purpose |
-|--------|---------|
-| `id.Display()` | Full path with type (e.g., `container.from(address: "alpine"): Container!`) |
-| `id.DisplaySelf()` | Just this call, no receiver chain |
-| `id.Path()` | Dotted path (e.g., `container.from.withExec`) |
-| `id.Name()` | `Parent.field` format |
-
-## Example: Decoded ID
-
-For `container.from("alpine").withExec(["echo", "hi"])`:
-
-```
-DAG {
-  rootDigest: "xxh3:abc..."
-  callsByDigest: {
-    "xxh3:111...": Call{field: "container", receiverDigest: ""},
-    "xxh3:222...": Call{field: "from", receiverDigest: "xxh3:111...", args: [{name: "address", value: "alpine"}]},
-    "xxh3:abc...": Call{field: "withExec", receiverDigest: "xxh3:222...", args: [{name: "args", value: ["echo", "hi"]}]}
-  }
-}
-```
-
-Each Call references its parent via `receiverDigest`, forming the chain.
+After rewrite, `preselect` re-decodes execution args from the final returned ID (`dagql/objects.go`) so execution/cache/telemetry stay aligned.
 
 ## Gotchas
 
-- **`Display()` is expensive**: It walks the entire DAG without deduplication. For large DAGs this is very slow. Use `DisplaySelf()` if you only need the leaf operation.
+- Do not assume recipe and content digest are interchangeable; cache semantics differ.
+- If you rewrite IDs in cache config, ensure the returned ID fully represents intended execution args.
+- Sensitive args cannot be recovered from decoded IDs.
+- `Display()` is useful for debugging but can be expensive on large DAGs.
 
-- **Immutability**: `ID` instances are immutable. Methods like `Append`, `WithDigest`, `WithArgument` return new IDs rather than mutating.
+## Code Map
+
+- ID implementation: `dagql/call/id.go`
+- ID protobuf schema: `dagql/call/callpbv1/call.proto`
+- Cache key rewriting helpers: `dagql/cachekey.go`
+- Cache lookup/storage using IDs: `dagql/cache.go`
+- ID rewrite + arg re-decode: `dagql/objects.go`

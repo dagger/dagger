@@ -32,6 +32,18 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return all generators defined by the module
+     */
+    public function generators(?array $include = null): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this CurrentModule.
      */
     public function id(): CurrentModuleId

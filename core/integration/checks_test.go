@@ -17,6 +17,10 @@ func TestChecks(t *testing.T) {
 }
 
 func checksTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
+	return specificTestEnv(t, c, "checks")
+}
+
+func specificTestEnv(t *testctx.T, c *dagger.Client, subfolder string) (*dagger.Container, error) {
 	// java SDK is not embedded in the engine, so we mount the java sdk to be able
 	// to test non released features
 	javaSdkSrc, err := filepath.Abs("../../sdk/java")
@@ -32,7 +36,7 @@ func checksTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
 			WithExec([]string{"git", "init"}).
 			WithWorkdir("/work/modules/").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory(".", c.Host().Directory("./testdata/"+subfolder)).
 			WithMountedDirectory("/work/sdk/java", c.Host().Directory(javaSdkSrc)).
 			WithDirectory("app", c.Directory()),
 		nil
@@ -63,6 +67,8 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 			require.Contains(t, out, "failing-check")
 			require.Contains(t, out, "passing-container")
 			require.Contains(t, out, "failing-container")
+			require.Contains(t, out, "test:lint")
+			require.Contains(t, out, "test:unit")
 			// run a specific passing check
 			out, err = modGen.
 				With(daggerExec("--progress=report", "check", "passing*")).

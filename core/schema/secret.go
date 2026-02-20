@@ -93,7 +93,7 @@ func (s *secretSchema) secret(
 	}
 
 	if args.CacheKey.Valid {
-		i = i.WithObjectDigest(hashutil.HashStrings(string(args.CacheKey.Value)))
+		i = i.WithContentDigest(hashutil.HashStrings(string(args.CacheKey.Value)))
 	} else {
 		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)
 		if err != nil {
@@ -133,7 +133,7 @@ func (s *secretSchema) secret(
 			keySize,
 		)
 		b64Key := base64.RawStdEncoding.EncodeToString(key)
-		i = i.WithObjectDigest(digest.Digest("argon2:" + b64Key))
+		i = i.WithContentDigest(digest.Digest("argon2:" + b64Key))
 	}
 
 	if err := secretStore.AddSecret(i); err != nil {
@@ -174,7 +174,6 @@ func (s *secretSchema) setSecret(
 			// digest of the ID for uniqueness+identity
 			call.NewArgument("plaintext", call.NewLiteralString("***"), false),
 		),
-		call.WithCustomDigest(dgst),
 	)
 
 	secretStore, err := parent.Self().Secrets(ctx)
@@ -189,6 +188,7 @@ func (s *secretSchema) setSecret(
 	if err != nil {
 		return i, fmt.Errorf("failed to create secret instance: %w", err)
 	}
+	secret = secret.WithContentDigest(dgst)
 	if err := secretStore.AddSecret(secret); err != nil {
 		return i, fmt.Errorf("failed to add secret: %w", err)
 	}
@@ -205,9 +205,9 @@ func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	name, ok := secretStore.GetSecretName(secret.ID().Digest())
+	name, ok := secretStore.GetSecretName(core.SecretIDDigest(secret.ID()))
 	if !ok {
-		return "", fmt.Errorf("secret not found: %s", secret.ID().Digest())
+		return "", fmt.Errorf("secret not found: %s", core.SecretIDDigest(secret.ID()))
 	}
 
 	return name, nil
@@ -222,9 +222,9 @@ func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	name, ok := secretStore.GetSecretURI(secret.ID().Digest())
+	name, ok := secretStore.GetSecretURI(core.SecretIDDigest(secret.ID()))
 	if !ok {
-		return "", fmt.Errorf("secret not found: %s", secret.ID().Digest())
+		return "", fmt.Errorf("secret not found: %s", core.SecretIDDigest(secret.ID()))
 	}
 
 	return name, nil
@@ -239,7 +239,7 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	plaintext, err := secretStore.GetSecretPlaintext(ctx, secret.ID().Digest())
+	plaintext, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secret.ID()))
 	if err != nil {
 		return "", err
 	}

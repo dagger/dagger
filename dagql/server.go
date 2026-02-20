@@ -25,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/util/sortutil"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at
@@ -125,7 +126,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		NoIDs: true,
 	})
 	srv.root = ObjectResult[T]{
-		Result: Result[T]{self: root},
+		Result: newDetachedResult(nil, root),
 		class:  rootClass,
 	}
 	srv.InstallObject(rootClass)
@@ -289,6 +290,19 @@ var coreDirectives = []DirectiveSpec{
 		},
 	},
 	{
+		Name:        "defaultAddress",
+		Description: FormatDescription(`Indicates that the argument defaults to a container address.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "address",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
 		Name:        "ignorePatterns",
 		Description: FormatDescription(`Filter directory contents using .gitignore-style glob patterns.`),
 		Args: NewInputSpecs(
@@ -304,6 +318,14 @@ var coreDirectives = []DirectiveSpec{
 	{
 		Name:        "check",
 		Description: FormatDescription(`Indicates that this function is a check.`),
+		Args:        NewInputSpecs(), // none
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		Name:        "generate",
+		Description: FormatDescription(`Indicates that this function is a generate function.`),
 		Args:        NewInputSpecs(), // none
 		Locations: []DirectiveLocation{
 			DirectiveLocationFieldDefinition,
@@ -444,10 +466,13 @@ var _ graphql.ExecutableSchema = (*Server)(nil)
 
 // Schema returns the current schema of the server.
 func (s *Server) Schema() *ast.Schema {
+	return s.SchemaForView(s.View)
+}
+
+func (s *Server) SchemaForView(view call.View) *ast.Schema {
 	s.schemaLock.Lock()
 	defer s.schemaLock.Unlock()
 
-	view := s.View
 	if s.schemaOnces[view] == nil {
 		s.schemaOnces[view] = &sync.Once{}
 	}
@@ -458,28 +483,28 @@ func (s *Server) Schema() *ast.Schema {
 			Types:         make(map[string]*ast.Definition),
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
-		for _, t := range s.objects { // TODO stable order
+		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
 			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
 				schema.Query = def
 			}
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
-		}
-		for _, t := range s.scalars {
+		})
+		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
 			def := definition(ast.Scalar, t, view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
-		}
-		for _, t := range s.typeDefs {
+		})
+		sortutil.RangeSorted(s.typeDefs, func(_ string, t TypeDef) {
 			def := t.TypeDefinition(view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
-		}
+		})
 		schema.Directives = map[string]*ast.DirectiveDefinition{}
-		for n, d := range s.directives {
+		sortutil.RangeSorted(s.directives, func(n string, d DirectiveSpec) {
 			schema.Directives[n] = d.DirectiveDefinition(view)
-		}
+		})
 		h := xxh3.New()
 		json.NewEncoder(h).Encode(schema)
 		s.schemas[view] = schema
@@ -894,10 +919,7 @@ func NewResultForID[T Typed](
 		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
 	}
 
-	return Result[T]{
-		constructor: id,
-		self:        self,
-	}, nil
+	return newDetachedResult(id, self), nil
 }
 
 func NewObjectResultForCurrentID[T Typed](
@@ -1007,34 +1029,59 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		// we're sub-selecting into an enumerable value, so we need to resolve each
 		// element
 
-		// TODO arrays of arrays
-		results := []any{} // TODO subtle: favor [] over null result
-		for nth := 1; nth <= enum.Len(); nth++ {
-			val, err := val.NthValue(nth)
-			if err != nil {
-				return nil, err
-			}
-			if val == nil {
-				results = append(results, nil)
-				continue
-			}
-			val, ok := val.DerefValue()
-			if !ok || val == nil {
-				results = append(results, nil)
-				continue
-			}
-			if len(sel.Subselections) == 0 {
-				results = append(results, val.Unwrap())
-			} else {
-				node, err := s.toSelectable(val)
-				if err != nil {
-					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
-				}
-				res, err := s.Resolve(ctx, node, sel.Subselections...)
+		length := enum.Len()
+		results := make([]any, length) // TODO subtle: favor [] over null result
+
+		if len(sel.Subselections) == 0 {
+			// No subselections - resolve serially (fast path, no goroutine overhead)
+			for nth := 1; nth <= length; nth++ {
+				elemVal, err := val.NthValue(nth)
 				if err != nil {
 					return nil, err
 				}
-				results = append(results, res)
+				if elemVal == nil {
+					results[nth-1] = nil
+					continue
+				}
+				elemVal, ok := elemVal.DerefValue()
+				if !ok || elemVal == nil {
+					results[nth-1] = nil
+					continue
+				}
+				results[nth-1] = elemVal.Unwrap()
+			}
+		} else {
+			// Has subselections - resolve in parallel
+			p := pool.New().WithErrors()
+			for nth := 1; nth <= length; nth++ {
+				p.Go(func() error {
+					elemVal, err := val.NthValue(nth)
+					if err != nil {
+						return err
+					}
+					if elemVal == nil {
+						results[nth-1] = nil
+						return nil
+					}
+					elemVal, ok := elemVal.DerefValue()
+					if !ok || elemVal == nil {
+						results[nth-1] = nil
+						return nil
+					}
+					node, err := s.toSelectable(elemVal)
+					if err != nil {
+						return fmt.Errorf("instantiate %dth array element: %w", nth, err)
+					}
+					res, err := s.Resolve(ctx, node, sel.Subselections...)
+					if err != nil {
+						return err
+					}
+					results[nth-1] = res
+					return nil
+				})
+			}
+			if err := p.Wait(); err != nil {
+				return nil, err
 			}
 		}
 		return results, nil

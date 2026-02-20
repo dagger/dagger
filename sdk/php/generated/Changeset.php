@@ -112,4 +112,38 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
+
+    /**
+     * Add changes to an existing changeset
+     *
+     * By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+     */
+    public function withChangeset(
+        ChangesetId|Changeset $changes,
+        ?ChangesetMergeConflict $onConflict = null,
+    ): Changeset {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangeset');
+        $innerQueryBuilder->setArgument('changes', $changes);
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add changes from multiple changesets using git octopus merge strategy
+     *
+     * This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+     *
+     * Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+     */
+    public function withChangesets(array $changes, ?ChangesetsMergeConflict $onConflict = null): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesets');
+        $innerQueryBuilder->setArgument('changes', $changes);
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

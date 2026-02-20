@@ -12,6 +12,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,7 +31,6 @@ import (
 	"github.com/dagger/dagger/dagql/internal/pipes"
 	"github.com/dagger/dagger/dagql/internal/points"
 	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -67,7 +68,7 @@ func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
 }
 
 func newCache(t *testing.T) *dagql.SessionCache {
-	baseCache, err := cache.NewCache[string, dagql.AnyResult](t.Context(), "")
+	baseCache, err := dagql.NewCache(t.Context(), "")
 	assert.NilError(t, err)
 	return dagql.NewSessionCache(baseCache)
 }
@@ -1722,6 +1723,94 @@ func TestParallelism(t *testing.T) {
 	})
 }
 
+func TestArrayParallelism(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	points.Install[Query](srv)
+
+	// Barrier to detect parallel execution.
+	// The test creates 4 neighbors - if they're resolved in parallel,
+	// all 4 goroutines will reach the barrier and unblock together.
+	// If they're resolved serially, the first goroutine will block forever
+	// waiting for the others to arrive.
+	const numNeighbors = 4
+	var arrived atomic.Int32
+	allArrived := make(chan struct{})
+	var closeOnce sync.Once
+
+	// Add a field that blocks until all array elements have started resolving.
+	// This proves parallel execution without timing-based flakiness.
+	dagql.Fields[*points.Point]{
+		dagql.Func("barrierWait", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
+			// Signal that this goroutine has arrived at the barrier
+			count := arrived.Add(1)
+			if count == numNeighbors {
+				// Last one to arrive - unblock everyone
+				closeOnce.Do(func() { close(allArrived) })
+			}
+
+			// Wait for all goroutines to arrive (or timeout)
+			select {
+			case <-allArrived:
+				return self, nil
+			case <-time.After(5 * time.Second):
+				return nil, fmt.Errorf("timeout: only %d of %d goroutines arrived at barrier (serial execution detected)", arrived.Load(), numNeighbors)
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	var res struct {
+		Point struct {
+			X         int
+			Y         int
+			Neighbors []struct {
+				BarrierWait struct {
+					X int
+					Y int
+				}
+			}
+		}
+	}
+
+	// Query that fetches neighbors and calls barrierWait on each.
+	// If array elements are resolved in parallel, all 4 will reach the barrier
+	// and unblock. If serial, the first one will timeout waiting for the others.
+	req(t, gql, `query {
+		point(x: 6, y: 7) {
+			x
+			y
+			neighbors {
+				barrierWait {
+					x
+					y
+				}
+			}
+		}
+	}`, &res)
+
+	// Verify the query completed successfully (proves parallel execution)
+	assert.Equal(t, 6, res.Point.X)
+	assert.Equal(t, 7, res.Point.Y)
+	assert.Assert(t, cmp.Len(res.Point.Neighbors, numNeighbors))
+
+	// Verify all neighbors resolved correctly
+	assert.Equal(t, 5, res.Point.Neighbors[0].BarrierWait.X)
+	assert.Equal(t, 7, res.Point.Neighbors[0].BarrierWait.Y)
+	assert.Equal(t, 7, res.Point.Neighbors[1].BarrierWait.X)
+	assert.Equal(t, 7, res.Point.Neighbors[1].BarrierWait.Y)
+	assert.Equal(t, 6, res.Point.Neighbors[2].BarrierWait.X)
+	assert.Equal(t, 6, res.Point.Neighbors[2].BarrierWait.Y)
+	assert.Equal(t, 6, res.Point.Neighbors[3].BarrierWait.X)
+	assert.Equal(t, 8, res.Point.Neighbors[3].BarrierWait.Y)
+
+	// Verify all goroutines actually arrived (sanity check)
+	assert.Equal(t, int32(numNeighbors), arrived.Load())
+}
+
 type Builtins struct {
 	Boolean     bool    `field:"true" default:"true"`
 	Int         int     `field:"true" default:"42"`
@@ -2364,6 +2453,86 @@ func (*CoolInt) TypeDescription() string {
 	return "idk"
 }
 
+func TestNodeFuncResultZeroValueTypeInference(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	dagql.Fields[*CoolInt]{}.Install(srv)
+	dagql.Fields[Query]{
+		dagql.NodeFunc("typedResult", func(ctx context.Context, _ dagql.ObjectResult[Query], args struct {
+			Val int
+		}) (dagql.Result[*CoolInt], error) {
+			return dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	var res struct {
+		TypedResult struct {
+			Val int
+		}
+	}
+	req(t, gql, `query {
+		typedResult(val: 123) {
+			val
+		}
+	}`, &res)
+	assert.Equal(t, 123, res.TypedResult.Val)
+}
+
+func TestNullResultCachePathDoesNotPanic(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+	dagql.Fields[Query]{
+		dagql.Func("alwaysNull", func(context.Context, Query, struct{}) (dagql.Nullable[dagql.String], error) {
+			return dagql.Null[dagql.String](), nil
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	for range 2 {
+		var res struct {
+			AlwaysNull *string
+		}
+		req(t, gql, `query {
+			alwaysNull
+		}`, &res)
+		assert.Assert(t, res.AlwaysNull == nil)
+	}
+}
+
+func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	calls := []int{}
+	dagql.Fields[Query]{
+		dagql.NodeFuncWithCacheKey(
+			"rewrittenArg",
+			func(_ context.Context, _ dagql.ObjectResult[Query], args struct{ Val int }) (dagql.Int, error) {
+				calls = append(calls, args.Val)
+				return dagql.Int(args.Val), nil
+			},
+			func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{ Val int }, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
+				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+				resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+					"val",
+					dagql.Int(7).ToLiteral(),
+					false,
+				))
+				return resp, nil
+			},
+		),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+	var res struct {
+		RewrittenArg int
+	}
+	req(t, gql, `query { rewrittenArg(val: 1) }`, &res)
+	assert.Equal(t, 7, res.RewrittenArg)
+	assert.DeepEqual(t, calls, []int{7})
+}
+
 func TestCustomDigest(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
 
@@ -2393,7 +2562,7 @@ func TestCustomDigest(t *testing.T) {
 			},
 			func(ctx context.Context, _ dagql.ObjectResult[Query], _ argsType, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
 				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
-				resp.CacheKey.CallKey = cryptorand.Text()
+				resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(digest.FromString(cryptorand.Text()))
 				return resp, nil
 			}),
 

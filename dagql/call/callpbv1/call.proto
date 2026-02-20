@@ -75,6 +75,14 @@ message Call {
   // Whether the digest was set to a custom value, as opposed to the default
   // "recipe-based" digest
   bool isCustomDigest = 11;
+
+  // An optional digest of the "content" of this call, which is typically based
+  // on e.g. filesystem contents rather than the "recipe" of the call. This field
+  // does not affect the call's digest.
+  string contentDigest = 12;
+
+  // Effect IDs associated with this call. These do not affect the call's digest.
+  repeated string effectIds = 13;
 }
 
 // Module represents a self-contained logical module that can be dynamically

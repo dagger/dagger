@@ -94,12 +94,6 @@ func NewContainer(ctx context.Context, cm cache.Manager, exec executor.Executor,
 		return cm.New(ctx, ref, g)
 	}, platform.OS)
 	if err != nil {
-		for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
-			p.Actives[i].Ref.Release(context.TODO())
-		}
-		for _, o := range p.OutputRefs {
-			o.Ref.Release(context.TODO())
-		}
 		return nil, err
 	}
 	ctr.rootFS = p.Root
@@ -143,6 +137,12 @@ type MountMutableRef struct {
 type MakeMutable func(m *opspb.Mount, ref cache.ImmutableRef) (cache.MutableRef, error)
 
 func PrepareMounts(ctx context.Context, mm *mounts.MountManager, cm cache.Manager, g session.Group, cwd string, mnts []*opspb.Mount, refs []*worker.WorkerRef, makeMutable MakeMutable, platform string) (p PreparedMounts, err error) {
+	defer func() {
+		if err != nil {
+			releasePreparedMountRefs(context.WithoutCancel(ctx), p)
+		}
+	}()
+
 	// loop over all mounts, fill in mounts, root and outputs
 	for i, m := range mnts {
 		var (
@@ -281,6 +281,19 @@ func PrepareMounts(ctx context.Context, mm *mounts.MountManager, cm cache.Manage
 	})
 
 	return p, nil
+}
+
+func releasePreparedMountRefs(ctx context.Context, p PreparedMounts) {
+	for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
+		if p.Actives[i].Ref != nil {
+			_ = p.Actives[i].Ref.Release(ctx)
+		}
+	}
+	for _, o := range p.OutputRefs {
+		if o.Ref != nil {
+			_ = o.Ref.Release(ctx)
+		}
+	}
 }
 
 type gatewayContainer struct {

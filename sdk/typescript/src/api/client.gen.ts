@@ -111,11 +111,148 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+export type ChangesetWithChangesetOpts = {
+  /**
+   * What to do on a merge conflict
+   */
+  onConflict?: ChangesetMergeConflict
+}
+
+export type ChangesetWithChangesetsOpts = {
+  /**
+   * What to do on a merge conflict
+   */
+  onConflict?: ChangesetsMergeConflict
+}
+
 /**
  * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
  */
 export type ChangesetID = string & { __ChangesetID: never }
 
+/**
+ * Strategy to use when merging changesets with conflicting changes.
+ */
+export enum ChangesetMergeConflict {
+  /**
+   * Attempt the merge and fail if git merge fails due to conflicts
+   */
+  Fail = "FAIL",
+
+  /**
+   * Fail before attempting merge if file-level conflicts are detected
+   */
+  FailEarly = "FAIL_EARLY",
+
+  /**
+   * Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.
+   */
+  LeaveConflictMarkers = "LEAVE_CONFLICT_MARKERS",
+
+  /**
+   * The conflict is resolved by applying the version of the calling changeset
+   */
+  PreferOurs = "PREFER_OURS",
+
+  /**
+   * The conflict is resolved by applying the version of the other changeset
+   */
+  PreferTheirs = "PREFER_THEIRS",
+}
+
+/**
+ * Utility function to convert a ChangesetMergeConflict value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ChangesetMergeConflictValueToName(
+  value: ChangesetMergeConflict,
+): string {
+  switch (value) {
+    case ChangesetMergeConflict.Fail:
+      return "FAIL"
+    case ChangesetMergeConflict.FailEarly:
+      return "FAIL_EARLY"
+    case ChangesetMergeConflict.LeaveConflictMarkers:
+      return "LEAVE_CONFLICT_MARKERS"
+    case ChangesetMergeConflict.PreferOurs:
+      return "PREFER_OURS"
+    case ChangesetMergeConflict.PreferTheirs:
+      return "PREFER_THEIRS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ChangesetMergeConflict name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ChangesetMergeConflictNameToValue(
+  name: string,
+): ChangesetMergeConflict {
+  switch (name) {
+    case "FAIL":
+      return ChangesetMergeConflict.Fail
+    case "FAIL_EARLY":
+      return ChangesetMergeConflict.FailEarly
+    case "LEAVE_CONFLICT_MARKERS":
+      return ChangesetMergeConflict.LeaveConflictMarkers
+    case "PREFER_OURS":
+      return ChangesetMergeConflict.PreferOurs
+    case "PREFER_THEIRS":
+      return ChangesetMergeConflict.PreferTheirs
+    default:
+      return name as ChangesetMergeConflict
+  }
+}
+/**
+ * Strategy to use when merging multiple changesets with git octopus merge.
+ */
+export enum ChangesetsMergeConflict {
+  /**
+   * Attempt the octopus merge and fail if git merge fails due to conflicts
+   */
+  Fail = "FAIL",
+
+  /**
+   * Fail before attempting merge if file-level conflicts are detected between any changesets
+   */
+  FailEarly = "FAIL_EARLY",
+}
+
+/**
+ * Utility function to convert a ChangesetsMergeConflict value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ChangesetsMergeConflictValueToName(
+  value: ChangesetsMergeConflict,
+): string {
+  switch (value) {
+    case ChangesetsMergeConflict.Fail:
+      return "FAIL"
+    case ChangesetsMergeConflict.FailEarly:
+      return "FAIL_EARLY"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ChangesetsMergeConflict name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ChangesetsMergeConflictNameToValue(
+  name: string,
+): ChangesetsMergeConflict {
+  switch (name) {
+    case "FAIL":
+      return ChangesetsMergeConflict.Fail
+    case "FAIL_EARLY":
+      return ChangesetsMergeConflict.FailEarly
+    default:
+      return name as ChangesetsMergeConflict
+  }
+}
 /**
  * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
  */
@@ -741,6 +878,13 @@ export type ContainerWithoutUnixSocketOpts = {
  */
 export type ContainerID = string & { __ContainerID: never }
 
+export type CurrentModuleGeneratorsOpts = {
+  /**
+   * Only include generators matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type CurrentModuleWorkdirOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -815,6 +959,15 @@ export type DirectoryDockerBuildOpts = {
    * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   noInit?: boolean
+
+  /**
+   * A socket to use for SSH authentication during the build
+   *
+   * (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+   *
+   * Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
+   */
+  ssh?: Socket
 }
 
 export type DirectoryEntriesOpts = {
@@ -1023,6 +1176,26 @@ export type EngineCachePruneOpts = {
    * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
    */
   useDefaultPolicy?: boolean
+
+  /**
+   * Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+   */
+  maxUsedSpace?: string
+
+  /**
+   * Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+   */
+  reservedSpace?: string
+
+  /**
+   * Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+   */
+  minFreeSpace?: string
+
+  /**
+   * Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+   */
+  targetSpace?: string
 }
 
 /**
@@ -1362,6 +1535,7 @@ export type FunctionWithArgOpts = {
    * If deprecated, the reason or migration path.
    */
   deprecated?: string
+  defaultAddress?: string
 }
 
 export type FunctionWithCachePolicyOpts = {
@@ -1446,6 +1620,23 @@ export type FunctionID = string & { __FunctionID: never }
  * The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
  */
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
+
+export type GeneratorGroupChangesOpts = {
+  /**
+   * Strategy to apply on conflicts between generators
+   */
+  onConflict?: ChangesetsMergeConflict
+}
+
+/**
+ * The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
+ */
+export type GeneratorGroupID = string & { __GeneratorGroupID: never }
+
+/**
+ * The `GeneratorID` scalar type represents an identifier for an object of type Generator.
+ */
+export type GeneratorID = string & { __GeneratorID: never }
 
 export type GitRefTreeOpts = {
   /**
@@ -1696,6 +1887,13 @@ export type ModuleChecksOpts = {
   include?: string[]
 }
 
+export type ModuleGeneratorsOpts = {
+  /**
+   * Only include generators matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type ModuleServeOpts = {
   /**
    * Expose the dependencies of this module to the client
@@ -1892,6 +2090,13 @@ export type ClientContainerOpts = {
   platform?: Platform
 }
 
+export type ClientCurrentWorkspaceOpts = {
+  /**
+   * If true, skip legacy dagger.json migration checks.
+   */
+  skipMigrationCheck?: boolean
+}
+
 export type ClientEnvOpts = {
   /**
    * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
@@ -2031,12 +2236,12 @@ export type ClientSecretOpts = {
  */
 export enum ReturnType {
   /**
-   * Any execution (exit codes 0-127)
+   * Any execution (exit codes 0-127 and 192-255)
    */
   Any = "ANY",
 
   /**
-   * A failed execution (exit codes 1-127)
+   * A failed execution (exit codes 1-127 and 192-255)
    */
   Failure = "FAILURE",
 
@@ -2461,6 +2666,31 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceDirectoryOpts = {
+  /**
+   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   */
+  exclude?: string[]
+
+  /**
+   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
+  include?: string[]
+  gitignore?: boolean
+}
+
+export type WorkspaceFindUpOpts = {
+  /**
+   * Path to start the search from, relative to the workspace root.
+   */
+  from?: string
+}
+
+/**
+ * The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
+ */
+export type WorkspaceID = string & { __WorkspaceID: never }
+
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
 }
@@ -2727,6 +2957,22 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Generator
+   */
+  asGenerator = (): Generator => {
+    const ctx = this._ctx.select("asGenerator")
+    return new Generator(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type GeneratorGroup
+   */
+  asGeneratorGroup = (): GeneratorGroup => {
+    const ctx = this._ctx.select("asGeneratorGroup")
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type GitRef
    */
   asGitRef = (): GitRef => {
@@ -2835,6 +3081,14 @@ export class Binding extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Retrieve the binding value, as type Workspace
+   */
+  asWorkspace = (): Workspace => {
+    const ctx = this._ctx.select("asWorkspace")
+    return new Workspace(ctx)
   }
 
   /**
@@ -3077,6 +3331,69 @@ export class Changeset extends BaseClient {
 
     return new Client(ctx.copy()).loadChangesetFromID(response)
   }
+
+  /**
+   * Add changes to an existing changeset
+   *
+   * By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
+   * @param changes Changes to merge into the actual changeset
+   * @param opts.onConflict What to do on a merge conflict
+   */
+  withChangeset = (
+    changes: Changeset,
+    opts?: ChangesetWithChangesetOpts,
+  ): Changeset => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("withChangeset", {
+      changes,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Add changes from multiple changesets using git octopus merge strategy
+   *
+   * This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+   *
+   * Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+   * @param changes List of changesets to merge into the actual changeset
+   * @param opts.onConflict What to do on a merge conflict
+   */
+  withChangesets = (
+    changes: Changeset[],
+    opts?: ChangesetWithChangesetsOpts,
+  ): Changeset => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetsMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("withChangesets", {
+      changes,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Call the provided function with current Changeset.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Changeset) => Changeset) => {
+    return arg(this)
+  }
 }
 
 export class Check extends BaseClient {
@@ -3170,6 +3487,14 @@ export class Check extends BaseClient {
   }
 
   /**
+   * The original module in which the check has been defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
    * Whether the check passed
    */
   passed = async (): Promise<boolean> => {
@@ -3216,14 +3541,6 @@ export class Check extends BaseClient {
   run = (): Check => {
     const ctx = this._ctx.select("run")
     return new Check(ctx)
-  }
-
-  /**
-   * The module source where the check is defined (i.e., toolchains)
-   */
-  source = (): ModuleSource => {
-    const ctx = this._ctx.select("source")
-    return new ModuleSource(ctx)
   }
 
   /**
@@ -4709,6 +5026,16 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
+   * Return all generators defined by the module
+   * @param opts.include Only include generators matching the specified patterns
+   * @experimental
+   */
+  generators = (opts?: CurrentModuleGeneratorsOpts): GeneratorGroup => {
+    const ctx = this._ctx.select("generators", { ...opts })
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
    * The name of the module being executed in
    */
   name = async (): Promise<string> => {
@@ -4904,6 +5231,11 @@ export class Directory extends BaseClient {
    * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
    *
    * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * @param opts.ssh A socket to use for SSH authentication during the build
+   *
+   * (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+   *
+   * Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
    */
   dockerBuild = (opts?: DirectoryDockerBuildOpts): Container => {
     const ctx = this._ctx.select("dockerBuild", { ...opts })
@@ -5435,6 +5767,10 @@ export class EngineCache extends BaseClient {
   /**
    * Prune the cache of releaseable entries
    * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   * @param opts.maxUsedSpace Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+   * @param opts.reservedSpace Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+   * @param opts.minFreeSpace Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+   * @param opts.targetSpace Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
    */
   prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {
@@ -6323,6 +6659,67 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type GeneratorGroup in the environment
+   * @param name The name of the binding
+   * @param value The GeneratorGroup value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGeneratorGroupInput = (
+    name: string,
+    value: GeneratorGroup,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withGeneratorGroupInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired GeneratorGroup output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGeneratorGroupOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGeneratorGroupOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Generator in the environment
+   * @param name The name of the binding
+   * @param value The Generator value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGeneratorInput = (
+    name: string,
+    value: Generator,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withGeneratorInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Generator output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGeneratorOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGeneratorOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type GitRef in the environment
    * @param name The name of the binding
    * @param value The GitRef value to assign to the binding
@@ -6721,6 +7118,35 @@ export class Env extends BaseClient {
    */
   withWorkspace = (workspace: Directory): Env => {
     const ctx = this._ctx.select("withWorkspace", { workspace })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Workspace in the environment
+   * @param name The name of the binding
+   * @param value The Workspace value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceInput = (
+    name: string,
+    value: Workspace,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Workspace output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -7665,6 +8091,14 @@ export class Function_ extends BaseClient {
   }
 
   /**
+   * Returns the function with a flag indicating it's a generator.
+   */
+  withGenerator = (): Function_ => {
+    const ctx = this._ctx.select("withGenerator")
+    return new Function_(ctx)
+  }
+
+  /**
    * Returns the function with the given source map.
    * @param sourceMap The source map for the function definition.
    */
@@ -7690,6 +8124,7 @@ export class Function_ extends BaseClient {
  */
 export class FunctionArg extends BaseClient {
   private readonly _id?: FunctionArgID = undefined
+  private readonly _defaultAddress?: string = undefined
   private readonly _defaultPath?: string = undefined
   private readonly _defaultValue?: JSON = undefined
   private readonly _deprecated?: string = undefined
@@ -7702,6 +8137,7 @@ export class FunctionArg extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: FunctionArgID,
+    _defaultAddress?: string,
     _defaultPath?: string,
     _defaultValue?: JSON,
     _deprecated?: string,
@@ -7711,6 +8147,7 @@ export class FunctionArg extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._defaultAddress = _defaultAddress
     this._defaultPath = _defaultPath
     this._defaultValue = _defaultValue
     this._deprecated = _deprecated
@@ -7729,6 +8166,21 @@ export class FunctionArg extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<FunctionArgID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+   */
+  defaultAddress = async (): Promise<string> => {
+    if (this._defaultAddress) {
+      return this._defaultAddress
+    }
+
+    const ctx = this._ctx.select("defaultAddress")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -8127,6 +8579,250 @@ export class GeneratedCode extends BaseClient {
    * This is useful for reusability and readability by not breaking the calling chain.
    */
   with = (arg: (param: GeneratedCode) => GeneratedCode) => {
+    return arg(this)
+  }
+}
+
+export class Generator extends BaseClient {
+  private readonly _id?: GeneratorID = undefined
+  private readonly _completed?: boolean = undefined
+  private readonly _description?: string = undefined
+  private readonly _isEmpty?: boolean = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: GeneratorID,
+    _completed?: boolean,
+    _description?: string,
+    _isEmpty?: boolean,
+    _name?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._completed = _completed
+    this._description = _description
+    this._isEmpty = _isEmpty
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this Generator.
+   */
+  id = async (): Promise<GeneratorID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<GeneratorID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The generated changeset
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Whether the generator complete
+   */
+  completed = async (): Promise<boolean> => {
+    if (this._completed) {
+      return this._completed
+    }
+
+    const ctx = this._ctx.select("completed")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the description of the generator
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Wether changeset from the generator execution is empty or not
+   */
+  isEmpty = async (): Promise<boolean> => {
+    if (this._isEmpty) {
+      return this._isEmpty
+    }
+
+    const ctx = this._ctx.select("isEmpty")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the fully qualified name of the generator
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The original module in which the generator has been defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The path of the generator within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Execute the generator
+   */
+  run = (): Generator => {
+    const ctx = this._ctx.select("run")
+    return new Generator(ctx)
+  }
+
+  /**
+   * Call the provided function with current Generator.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Generator) => Generator) => {
+    return arg(this)
+  }
+}
+
+export class GeneratorGroup extends BaseClient {
+  private readonly _id?: GeneratorGroupID = undefined
+  private readonly _isEmpty?: boolean = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: GeneratorGroupID, _isEmpty?: boolean) {
+    super(ctx)
+
+    this._id = _id
+    this._isEmpty = _isEmpty
+  }
+
+  /**
+   * A unique identifier for this GeneratorGroup.
+   */
+  id = async (): Promise<GeneratorGroupID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<GeneratorGroupID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The combined changes from the generators execution
+   *
+   * If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
+   *
+   * Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+   * @param opts.onConflict Strategy to apply on conflicts between generators
+   */
+  changes = (opts?: GeneratorGroupChangesOpts): Changeset => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetsMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("changes", { ...opts, __metadata: metadata })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Whether the generated changeset is empty or not
+   */
+  isEmpty = async (): Promise<boolean> => {
+    if (this._isEmpty) {
+      return this._isEmpty
+    }
+
+    const ctx = this._ctx.select("isEmpty")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return a list of individual generators and their details
+   */
+  list = async (): Promise<Generator[]> => {
+    type list = {
+      id: GeneratorID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadGeneratorFromID(r.id))
+  }
+
+  /**
+   * Execute all selected generators
+   */
+  run = (): GeneratorGroup => {
+    const ctx = this._ctx.select("run")
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
+   * Call the provided function with current GeneratorGroup.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GeneratorGroup) => GeneratorGroup) => {
     return arg(this)
   }
 }
@@ -9507,6 +10203,26 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Return the generator defined by the module with the given name. Must match to exactly one generator.
+   * @param name The name of the generator to retrieve
+   * @experimental
+   */
+  generator = (name: string): Generator => {
+    const ctx = this._ctx.select("generator", { name })
+    return new Generator(ctx)
+  }
+
+  /**
+   * Return all generators defined by the module
+   * @param opts.include Only include generators matching the specified patterns
+   * @experimental
+   */
+  generators = (opts?: ModuleGeneratorsOpts): GeneratorGroup => {
+    const ctx = this._ctx.select("generators", { ...opts })
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
    * Interfaces served by this module.
    */
   interfaces = async (): Promise<TypeDef[]> => {
@@ -10779,6 +11495,16 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Detect and return the current workspace.
+   * @param opts.skipMigrationCheck If true, skip legacy dagger.json migration checks.
+   * @experimental
+   */
+  currentWorkspace = (opts?: ClientCurrentWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("currentWorkspace", { ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * The default platform of the engine.
    */
   defaultPlatform = async (): Promise<Platform> => {
@@ -11152,6 +11878,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Generator from its ID.
+   */
+  loadGeneratorFromID = (id: GeneratorID): Generator => {
+    const ctx = this._ctx.select("loadGeneratorFromID", { id })
+    return new Generator(ctx)
+  }
+
+  /**
+   * Load a GeneratorGroup from its ID.
+   */
+  loadGeneratorGroupFromID = (id: GeneratorGroupID): GeneratorGroup => {
+    const ctx = this._ctx.select("loadGeneratorGroupFromID", { id })
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
    * Load a GitRef from its ID.
    */
   loadGitRefFromID = (id: GitRefID): GitRef => {
@@ -11359,6 +12101,14 @@ export class Client extends BaseClient {
   loadTypeDefFromID = (id: TypeDefID): TypeDef => {
     const ctx = this._ctx.select("loadTypeDefFromID", { id })
     return new TypeDef(ctx)
+  }
+
+  /**
+   * Load a Workspace from its ID.
+   */
+  loadWorkspaceFromID = (id: WorkspaceID): Workspace => {
+    const ctx = this._ctx.select("loadWorkspaceFromID", { id })
+    return new Workspace(ctx)
   }
 
   /**
@@ -12646,6 +13396,127 @@ export class TypeDef extends BaseClient {
    */
   with = (arg: (param: TypeDef) => TypeDef) => {
     return arg(this)
+  }
+}
+
+/**
+ * A Dagger workspace detected from the current working directory.
+ */
+export class Workspace extends BaseClient {
+  private readonly _id?: WorkspaceID = undefined
+  private readonly _clientId?: string = undefined
+  private readonly _findUp?: string = undefined
+  private readonly _root?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: WorkspaceID,
+    _clientId?: string,
+    _findUp?: string,
+    _root?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._clientId = _clientId
+    this._findUp = _findUp
+    this._root = _root
+  }
+
+  /**
+   * A unique identifier for this Workspace.
+   */
+  id = async (): Promise<WorkspaceID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The client ID that owns this workspace's host filesystem.
+   */
+  clientId = async (): Promise<string> => {
+    if (this._clientId) {
+      return this._clientId
+    }
+
+    const ctx = this._ctx.select("clientId")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns a Directory from the workspace.
+   *
+   * Path is relative to workspace root. Use "." for the root directory.
+   * @param path Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
+  directory = (path: string, opts?: WorkspaceDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { path, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Returns a File from the workspace.
+   *
+   * Path is relative to workspace root.
+   * @param path Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+   */
+  file = (path: string): File => {
+    const ctx = this._ctx.select("file", { path })
+    return new File(ctx)
+  }
+
+  /**
+   * Search for a file or directory by walking up from the start path within the workspace.
+   *
+   * Returns the path relative to the workspace root if found, or null if not found.
+   *
+   * The search stops at the workspace root and will not traverse above it.
+   * @param name The name of the file or directory to search for.
+   * @param opts.from Path to start the search from, relative to the workspace root.
+   */
+  findUp = async (
+    name: string,
+    opts?: WorkspaceFindUpOpts,
+  ): Promise<string> => {
+    if (this._findUp) {
+      return this._findUp
+    }
+
+    const ctx = this._ctx.select("findUp", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Absolute path to the workspace root directory.
+   */
+  root = async (): Promise<string> => {
+    if (this._root) {
+      return this._root
+    }
+
+    const ctx = this._ctx.select("root")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

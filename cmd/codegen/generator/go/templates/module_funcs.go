@@ -46,6 +46,17 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		}
 	}
 
+	if v, ok := docPragmas["generate"]; ok {
+		if v == nil {
+			spec.isGenerator = true
+		} else {
+			spec.isGenerator, ok = v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("generate pragma %q, must be a valid boolean", v)
+			}
+		}
+	}
+
 	if v, ok := docPragmas["deprecated"]; ok {
 		if v == nil {
 			spec.deprecated = nil
@@ -126,6 +137,7 @@ type funcTypeSpec struct {
 	sourceMap   *sourceMap
 	cachePolicy string
 	isCheck     bool
+	isGenerator bool
 
 	argSpecs []paramSpec
 
@@ -191,6 +203,9 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 	if spec.isCheck {
 		fnTypeDef = fnTypeDef.WithCheck()
 	}
+	if spec.isGenerator {
+		fnTypeDef = fnTypeDef.WithGenerator()
+	}
 
 	for _, argSpec := range spec.argSpecs {
 		if argSpec.isContext {
@@ -237,6 +252,10 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 
 		if argSpec.defaultPath != "" {
 			argOpts.DefaultPath = argSpec.defaultPath
+		}
+
+		if argSpec.defaultAddress != "" {
+			argOpts.DefaultAddress = argSpec.defaultAddress
 		}
 
 		if argSpec.deprecated != nil {
@@ -390,6 +409,14 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		}
 		optional = true // If defaultPath is set, the argument becomes optional
 	}
+	defaultAddress := ""
+	if v, ok := pragmas["defaultAddress"]; ok {
+		defaultAddress, ok = v.(string)
+		if !ok {
+			return paramSpec{}, fmt.Errorf("defaultAddress pragma %q, must be a valid string", v)
+		}
+		optional = true // If defaultAddress is set, the argument becomes optional
+	}
 	var deprecated *string
 	if v, ok := pragmas["deprecated"]; ok {
 		reason := ""
@@ -440,6 +467,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		hasDefaultValue: hasDefaultValue,
 		description:     comment,
 		defaultPath:     defaultPath,
+		defaultAddress:  defaultAddress,
 		deprecated:      deprecated,
 		ignore:          ignore,
 	}, nil
@@ -475,6 +503,10 @@ type paramSpec struct {
 	// Only applies to arguments of type File or Directory.
 	// If the argument is not set, load it from the given path in the context directory
 	defaultPath string
+
+	// Only applies to arguments of type Container.
+	// If the argument is not set, load it from the given address (e.g. "alpine:latest")
+	defaultAddress string
 
 	// Only applies to arguments of type Directory.
 	// The ignore patterns are applied to the input directory, and

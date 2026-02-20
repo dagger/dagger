@@ -1,0 +1,7 @@
+{
+  "name": "hello-with-container",
+  "engineVersion": "v0.19.8",
+  "sdk": {
+    "source": "go"
+  }
+}

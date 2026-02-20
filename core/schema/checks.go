@@ -27,6 +27,13 @@ func (s checksSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Check]{
 		dagql.Func("name", s.name).
 			Doc("Return the fully qualified name of the check"),
+		dagql.Func("description", s.description).
+			Doc("The description of the check"),
+		dagql.Func("path", s.path).
+			Doc("The path of the check within its module"),
+		dagql.Func("originalModule", s.originalModule).
+			Doc("The original module in which the check has been defined"),
+
 		dagql.Func("resultEmoji", s.resultEmoji).
 			Doc("An emoji representing the result of the check"),
 		dagql.Func("run", s.runSingleCheck).
@@ -38,12 +45,24 @@ func (s checksSchema) name(_ context.Context, parent *core.Check, args struct{})
 	return parent.Name(), nil
 }
 
+func (s checksSchema) description(_ context.Context, parent *core.Check, args struct{}) (string, error) {
+	return parent.Description(), nil
+}
+
+func (s checksSchema) path(_ context.Context, parent *core.Check, args struct{}) ([]string, error) {
+	return parent.Path(), nil
+}
+
+func (s checksSchema) originalModule(_ context.Context, parent *core.Check, args struct{}) (*core.Module, error) {
+	return parent.OriginalModule(), nil
+}
+
 func (s checksSchema) resultEmoji(_ context.Context, parent *core.Check, args struct{}) (string, error) {
 	return parent.ResultEmoji(), nil
 }
 
 func (s checksSchema) list(ctx context.Context, parent *core.CheckGroup, args struct{}) ([]*core.Check, error) {
-	return parent.List(ctx)
+	return parent.List(), nil
 }
 
 func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args struct{}) (*core.CheckGroup, error) {

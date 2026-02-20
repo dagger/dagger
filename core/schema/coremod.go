@@ -11,9 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/opencontainers/go-digest"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
@@ -66,6 +64,8 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&envfileSchema{},
 		&addressSchema{},
 		&checksSchema{},
+		&generatorsSchema{},
+		&workspaceSchema{},
 	} {
 		schema.Install(dag)
 	}
@@ -202,10 +202,22 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 		schema.QueryType.Name = *queryName
 	}
 	for _, dagqlType := range dagqlSchema.Types() {
-		schema.Types = append(schema.Types, dagqlToCodegenType(dagqlType))
+		codeGenType, err := dagqlToCodegenType(dagqlType)
+		if err != nil {
+			return nil, err
+		}
+		schema.Types = append(schema.Types, codeGenType)
 	}
-	for _, dagqlDirective := range dagqlSchema.Directives() {
-		schema.Directives = append(schema.Directives, dagqlToCodegenDirectiveDef(dagqlDirective))
+	directives, err := dagqlSchema.Directives()
+	if err != nil {
+		return nil, err
+	}
+	for _, dagqlDirective := range directives {
+		dd, err := dagqlToCodegenDirectiveDef(dagqlDirective)
+		if err != nil {
+			return nil, err
+		}
+		schema.Directives = append(schema.Directives, dd)
 	}
 
 	typeDefs := make([]*core.TypeDef, 0, len(schema.Types))
@@ -378,8 +390,11 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	return s.DecodeInput(string(val.Value))
 }
 
-func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.AnyResult, map[digest.Digest]*resource.ID) error {
-	return nil
+func (obj *CoreModScalar) CollectContent(_ context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
+	if value == nil {
+		return content.CollectJSONable(nil)
+	}
+	return content.CollectJSONable(value.Unwrap())
 }
 
 func (obj *CoreModScalar) SourceMod() core.Mod {
@@ -449,18 +464,18 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	}
 }
 
-func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
 	if value == nil {
-		return nil
+		return content.CollectJSONable(nil)
 	}
 	switch x := value.(type) {
 	case dagql.Input:
-		return nil
+		return content.CollectJSONable(x)
 	case dagql.AnyResult:
-		ids[x.ID().Digest()] = &resource.ID{ID: *x.ID()}
+		content.CollectID(*x.ID(), false)
 		return nil
 	default:
-		return fmt.Errorf("%T.CollectCoreIDs: unknown type %T", obj, value)
+		return content.CollectJSONable(value.Unwrap())
 	}
 }
 
@@ -514,8 +529,11 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return s.DecodeInput(input)
 }
 
-func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
-	return nil
+func (enum *CoreModEnum) CollectContent(_ context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
+	if value == nil {
+		return content.CollectJSONable(nil)
+	}
+	return content.CollectJSONable(value.Unwrap())
 }
 
 func (enum *CoreModEnum) SourceMod() core.Mod {

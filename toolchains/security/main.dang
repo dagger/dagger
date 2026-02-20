@@ -1,29 +1,38 @@
 pub description = "A toolchain for supply chain security of the Dagger project"
 
 type Security {
-  let trivyBase = container.
-    from("aquasec/trivy:0.68.2@sha256:05d0126976bdedcd0782a0336f77832dbea1c81b9cc5e4b3a5ea5d2ec863aca7").
-    withMountedCache(
+  let trivyBase = container
+    .from("aquasec/trivy:0.68.2@sha256:05d0126976bdedcd0782a0336f77832dbea1c81b9cc5e4b3a5ea5d2ec863aca7")
+    .withMountedCache(
       path: "/root/.cache",
       cache: cacheVolume("trivy-cache"),
-      sharing: CacheSharingMode.LOCKED).
-    withWorkdir("/home/trivy")
+      sharing: CacheSharingMode.LOCKED,
+    )
+    .withWorkdir("/home/trivy")
+
+  """
+  The base trivy container
+  """
+  pub baseContainer: Container {
+    trivyBase
+  }
 
   """
   Scan the source repository for security vulnerabilities
   """
   pub scanSource(source: Directory! @defaultPath(path: "/")): Void @check {
-    trivyBase.
-      withMountedDirectory(".", source).
-      withExec([
+    trivyBase
+      .withMountedDirectory(".", source)
+      .withExec([
         "trivy", "fs",
         "--scanners=vuln",
         "--pkg-types=library",
         "--exit-code=1",
         "--severity=CRITICAL,HIGH",
         ".",
-      ]).
-      sync
+      ])
+      .sync
+
     null
   }
 
@@ -31,21 +40,19 @@ type Security {
   Build the engine container, and scan it for vulnerabilities
   """
   pub scanEngineContainer(target: Container): Void @check {
-    let t = target
-    if (t == null) {
-      t = engineDev().container()
-    }
+    let t = target ?? engineDev.container
     let tarballPath = "target.tar"
-    trivyBase.
-      withMountedFile(tarballPath, t.asTarball()).
-      withExec([
+    trivyBase
+      .withMountedFile(tarballPath, t.asTarball)
+      .withExec([
         "trivy", "image",
         "--pkg-types=os,library",
         "--exit-code=1",
         "--severity=CRITICAL,HIGH",
         "--input=" + tarballPath,
-      ]).
-      sync
+      ])
+      .sync
+
     null
   }
 }

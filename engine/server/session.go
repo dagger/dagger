@@ -404,9 +404,16 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
 
+	beforeDagqlEntries := srv.baseDagqlCache.Size()
 	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
 		slog.Error("error releasing dagql cache", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	}
+	afterDagqlEntries := srv.baseDagqlCache.Size()
+	if afterDagqlEntries != beforeDagqlEntries {
+		slog.Debug("released dagql cache refs for session", "beforeEntries", beforeDagqlEntries, "afterEntries", afterDagqlEntries)
+	} else {
+		slog.Debug("session dagql cache release did not change base cache size", "entries", afterDagqlEntries)
 	}
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
@@ -832,10 +839,17 @@ func (srv *Server) getOrInitClient(
 		sess.clients[clientID] = client
 
 		// initialize SQLite DB early so we can subscribe to it immediately
-		var err error
-		client.keepAliveTelemetryDB, err = srv.clientDBs.Open(ctx, client.clientID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open client DB: %w", err)
+		if db, err := srv.clientDBs.Open(ctx, client.clientID); err != nil {
+			slog.Warn("failed to open client DB; continuing without keepalive",
+				"sessionID", sessionID,
+				"clientID", client.clientID,
+				"error", err,
+			)
+		} else {
+			client.keepAliveTelemetryDB = db
+			failureCleanups.Add("close client telemetry DB", func() error {
+				return db.Close()
+			})
 		}
 
 		parent, parentExists := sess.clients[opts.CallerClientID]
@@ -1417,11 +1431,21 @@ func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.Client
 	if err != nil {
 		return nil, err
 	}
-	mainClient, err := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
+	return srv.SpecificClientMetadata(ctx, client.daggerSession.mainClientCallerID)
+}
+
+// The Client metadata of a specific client ID within the same session as the
+// current client.
+func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) (*engine.ClientMetadata, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clientMD, err := srv.clientFromIDs(client.daggerSession.sessionID, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve session main client: %w", err)
 	}
-	return mainClient.clientMetadata, nil
+	return clientMD.clientMetadata, nil
 }
 
 // The nearest ancestor client that is not a module (either a caller from the host like the CLI

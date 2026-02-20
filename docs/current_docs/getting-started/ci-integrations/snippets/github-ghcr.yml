@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Call Dagger Function to build and publish to ghcr.io
-        uses: dagger/dagger-for-github@v8.2.0
+        uses: dagger/dagger-for-github@v8.3.0
         with:
           version: "latest"
           verb: call

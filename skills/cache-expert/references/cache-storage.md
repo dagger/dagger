@@ -1,212 +1,178 @@
 # Cache Storage
 
-This document covers how dagql results are cached. The Dagger Engine is in the middle of a long-term transition from BuildKit-based caching to dagql-native caching.
+This document explains how cache storage works in the current dagql cache stack.
 
 ## Architecture Overview
 
-There are two cache systems:
+There are two layers to reason about:
 
-1. **dagql cache** - The "outer" primary cache. In-memory storage of `Result[T]` and `ObjectResult[T]` values. Has optional SQLite DB for TTL metadata.
+1. Base cache (`dagql/cache.go`)
+- In-memory result storage and lookup
+- Optional SQLite metadata for TTL expiration bookkeeping
 
-2. **BuildKit cache** - The "inner" legacy cache. Persists filesystems (snapshots) on disk. Only checked if dagql cache misses. Being phased out.
+2. Session cache (`dagql/session_cache.go`)
+- Per-session wrapper around base cache
+- Tracks result lifetimes for session close
+- Adds telemetry dedupe and error-retry behavior
 
-dagql knows nothing about BuildKit's internals. BuildKit knows nothing about dagql types.
+The base cache is specialized for dagql results.
 
-## dagql Cache Layers
+## Base Cache Data Model (`dagql/cache.go`)
 
-### Base Cache (`engine/cache/`)
+### Call Result Entries
 
-The `Cache[K, V]` interface (`cache.go:21`) is the core abstraction:
+`sharedResult` holds cached call entry state:
+- identity/index fields: `storageKey`, `resultCallKey`, `contentDigestKey`
+- payload: constructor ID + typed value + object type
+- lifecycle: waiters, refcount, release callback
+- persistence control: `safeToPersistCache`, `persistToDB`
 
-```go
-type Cache[K KeyType, V any] interface {
-    GetOrInitializeValue(ctx, key, val) (Result[K, V], error)
-    GetOrInitialize(ctx, key, fn) (Result[K, V], error)
-    GetOrInitializeWithCallbacks(ctx, key, fn) (Result[K, V], error)
-    Size() int
-    GCLoop(ctx)
-}
-```
+Per-call `Result[T]` wraps shared payload and carries per-call metadata:
+- hit flags
+- per-call ID override (`idOverride`) used for content-digest-hit identity preservation
+  (when a lookup hits by content digest instead of recipe digest, the payload is reused
+  but the caller still sees the ID it asked for)
 
-The implementation (`cache[K, V]`) has:
-- **`ongoingCalls`**: Map of in-progress calls, keyed by `(callKey, concurrencyKey)`. Used for call deduplication.
-- **`completedCalls`**: Map of completed results, keyed by storage key. This is the actual cache.
-- **`db`**: Optional SQLite database for TTL metadata.
+### Arbitrary In-Memory Entries
 
-### Session Cache (`dagql/session_cache.go`)
+`GetOrInitArbitrary` caches opaque `any` values by plain string key using `sharedArbitraryResult`.
 
-`SessionCache` wraps the base cache with session-scoped behavior:
+This path is:
+- in-memory only
+- refcounted/released like normal call results
+- intentionally separate from call-ID-based result caching
 
-```go
-type SessionCache struct {
-    cache   cache.Cache[CacheKeyType, CacheValueType]  // Base cache (shared)
-    results []cache.Result[...]                        // Results to release on close
-    // ...
-}
-```
+## Cache Keys and Indexes
 
-**Relationship to base cache:**
-- **Base cache**: One per engine, shared across all clients. Results stay in memory until refCount drops to 0.
-- **Session cache**: One per client session (created on connect, destroyed on disconnect). Wraps the shared base cache.
+`CacheKey` fields:
+- `ID` (required)
+- `ConcurrencyKey`
+- `TTL`
+- `DoNotCache`
 
-**Session cache responsibilities:**
-- Keeps references open for all results accessed during the session
-- Releases all references when session ends (`ReleaseAndClose`)
-- Handles telemetry bookkeeping (seen keys, avoiding duplicate spans)
+`GetOrInitCall` builds and uses:
+- `callKey = ID.Digest().String()`
+- `storageKey` (may differ from callKey for TTL/session handling)
+- `contentKey = ID.ContentDigest().String()` (optional)
 
-## What Gets Cached
+In-memory indexes:
+- `completedCalls[storageKey]`
+- `completedCalls[resultCallKey]` when result key differs
+- `completedCallsByContent[contentDigestKey]` when present
+- `ongoingCalls[(callKey, concurrencyKey)]` for in-flight dedupe
 
-**Values stored**: `AnyResult` (which includes `Result[T]` and `ObjectResult[T]`)
+## Lookup and Execution Flow
 
-**Key type**: `string` (the digest)
+High-level `GetOrInitCall` behavior:
 
-The cache stores the full dagql result objects in memory. Large data (filesystems, container images) is not stored in the dagql cache itself - that's handled by the underlying BuildKit layer (being phased out).
+1. Validate key
+2. `DoNotCache` path:
+- force random storage key for buildkit compatibility
+- execute resolver directly
+- return normalized detached result (no cache ownership)
 
-## CacheKey Structure
+3. Non-`DoNotCache` path:
+- compute storage key (possibly TTL/db influenced)
+- set storage key in context
+- recursive-call guard
+- check completed by storage key
+- check completed by content key fallback
+- dedupe on in-flight key if `ConcurrencyKey` is set
+- run resolver if needed
 
-```go
-type CacheKey[K KeyType] struct {
-    CallKey        K       // Primary lookup key (usually ID digest)
-    ConcurrencyKey K       // For deduping in-progress calls
-    TTL            int64   // Time-to-live in seconds (0 = no expiration)
-    DoNotCache     bool    // Skip caching entirely
-}
-```
+4. On success (`wait`):
+- move from ongoing -> completed indexes
+- increment refcount
+- persist TTL metadata only when safe
+- return result
 
-### Call Deduplication
+5. On failure:
+- remove stale in-flight entries once no waiters/refs remain
 
-When `ConcurrencyKey` is set, concurrent calls with the same `(CallKey, ConcurrencyKey)` are deduplicated - only one actually executes, others wait and receive the same result.
+## Content-Digest Fallback Semantics
 
-If `ConcurrencyKey` is empty, no deduplication occurs.
+If storage-key lookup misses but content digest hits:
+- cache reuses payload
+- returned result uses caller’s requested ID via per-call override
 
-### DoNotCache Behavior
+Why: caller should keep recipe identity they requested, while still reusing equivalent content.
 
-When `DoNotCache` is true:
-- The call executes without checking cache
-- A random storage key is generated (for BuildKit compatibility)
-- The result is not stored in cache
-- But the returned `Result` can still be passed around and cached under its own digest elsewhere
+## TTL Metadata (SQLite)
 
-## SQLite Database
+SQLite lives under `dagql/db/*` and stores TTL metadata only:
+- call key
+- storage key
+- expiration
 
-The optional SQLite DB (`engine/cache/db/`) stores **only TTL metadata**, not actual values:
-
-```sql
-CREATE TABLE calls (
-    call_key TEXT PRIMARY KEY,
-    storage_key TEXT NOT NULL,
-    expiration INTEGER NOT NULL
-);
-```
-
-**Purpose**: Track when cached results expire for TTL-based function caching.
-
-**Fields**:
-- `call_key`: The cache lookup key
-- `storage_key`: The actual storage key (may differ due to session ID mixing)
-- `expiration`: Unix timestamp when this entry expires
-
-**GC**: A background loop (`GCLoop`) periodically deletes expired entries (every 10 minutes, in batches of 1000).
-
-## Cache Lifecycle
-
-### Lookup Flow
-
-1. Check `DoNotCache` - if true, skip to execution
-2. Compute `storageKey` (usually = `callKey`, but may incorporate session ID for TTL entries)
-3. If TTL set, check SQLite for expiration
-4. Check `completedCalls` map - if hit, increment refCount and return
-5. Check `ongoingCalls` map - if hit, wait for completion
-6. Start new call, add to `ongoingCalls`
-7. On completion: remove from `ongoingCalls`, add to `completedCalls`
-
-### Reference Counting
-
-Each `result` has a `refCount`. When you get a result from cache, refCount increments. When you `Release()`, it decrements. When refCount reaches 0 and no waiters remain, the entry is removed from cache.
-
-### Callbacks
-
-`ValueWithCallbacks` allows attaching lifecycle hooks:
-
-```go
-type ValueWithCallbacks[V any] struct {
-    Value              V
-    PostCall           PostCallFunc    // Called on every return (cached or not)
-    OnRelease          OnReleaseFunc   // Called when removed from cache
-    SafeToPersistCache bool            // OK to persist TTL metadata
-}
-```
-
-## TTL-Based Caching (Function Calls)
-
-TTL-based caching currently only applies to module function calls. The feature is in early stages and will expand over time.
+Important details:
+- Result payloads are in-memory, not stored in SQLite.
+- Metadata is persisted only after successful call and only if `safeToPersistCache` is true.
+- DB is configured for performance (WAL, `synchronous=OFF`), so persistence is best-effort cache metadata, not durability-critical state.
 
 ### How TTL Works
 
-1. When a call has `TTL > 0`, the cache checks SQLite for an existing entry
-2. If no entry exists, or it's expired: generate new `storageKey` (with session ID mixed in), execute call
-3. If `SafeToPersistCache` is true after execution: persist TTL metadata to SQLite
-4. Future calls within TTL use the same `storageKey` (even from different sessions)
+When `CacheKey.TTL > 0` and DB is enabled:
+1. Cache looks up `callKey` in SQLite.
+2. If there is no row (or row expired), cache picks a fresh storage key and prepares a deferred DB write.
+3. Call executes and stores in-memory result under that storage key.
+4. Only after success, and only when `safeToPersistCache` is true, cache writes `(callKey -> storageKey, expiration)` to SQLite.
+5. Later sessions within TTL resolve the same call key to that persisted storage key and reuse it.
 
-### SafeToPersistCache
+If `safeToPersistCache` is false, the result still works in-memory for the current session but no TTL metadata is persisted.
 
-Results that reference **unreproducible data** cannot be persisted. Currently, the only case is `SetSecret`:
+### Why Mix Session ID into Storage Key?
 
-- `SetSecret` mutably stores an in-memory secret value
-- For security, secrets can't be written to disk
-- Any result chain containing a `SetSecret`-created secret has `SafeToPersistCache = false`
+For TTL calls, storage key creation currently mixes in `SessionID` when creating a fresh key.
 
-### Storage Key and Session ID
+Reason:
+- Before call execution completes, cache does not yet know if the result is safe to persist (for example, secret-sensitive paths).
+- Session-scoped storage key prevents accidental cross-session reuse for non-persistable results.
+- If the result is persistable, that same storage key is then recorded in SQLite and reused across sessions until TTL expiry.
 
-The `storageKey` (what actually keys the cache) differs from `callKey` for TTL entries:
+This is a deliberate transitional tradeoff; code comments in `dagql/cache.go` call out future model cleanup.
 
-**Why mix session ID into storage key?**
+## Reference Counting and Release
 
-- For non-persistable results (`SafeToPersistCache = false`): The session-specific storage key ensures the cache entry only lasts for that session
-- For persistable results: The first session's storage key gets persisted in SQLite. Future sessions (until TTL expires) look up and reuse that same storage key, achieving cross-session caching
+Both call and arbitrary results are refcounted.
 
-This handles the tricky case where we don't know if something is safe to persist until *after* the call completes.
+Entry removal happens when:
+- `refCount == 0`
+- and `waiters == 0`
 
-## Recursive Call Detection
+On removal, optional `OnRelease` callbacks run.
 
-If a call with a given cache key tries to make another call with the same cache key, it would deadlock (waiting for itself). The cache detects this via context and returns `ErrCacheRecursiveCall`.
+This is why callers must release results when done (session cache automates this per session).
 
-Note: This detection doesn't work across network/IPC boundaries, so it's not perfect.
+## Session Cache Responsibilities (`dagql/session_cache.go`)
 
-## Code Locations
+`SessionCache` wraps base cache to provide:
+- session-close release of all tracked results (`ReleaseAndClose`)
+- telemetry dedupe (`seenKeys`)
+- retry behavior after errors (`noCacheNext`)
 
-| File | Contents |
-|------|----------|
-| `engine/cache/cache.go` | `Cache` interface, `cache` implementation, `CacheKey`, `result` |
-| `engine/cache/db/` | SQLite schema, queries, models for TTL metadata |
-| `dagql/session_cache.go` | `SessionCache` - session-scoped wrapper |
+Error-retry behavior:
+- after an error, next attempt for that call key is forced `DoNotCache`
+- on success, it attempts reinsertion under normal key
+- this is a compatibility behavior tied to current solver interactions
 
-## Storage Key and BuildKit Integration
+## BuildKit Coupling (Current Transitional Detail)
 
-During the transition period, the dagql storage key flows into BuildKit's cache key system. This is how they connect:
+`CurrentStorageKey(ctx)` exposes storage key via context so downstream code can mix cache identity into buildkit-facing execution metadata.
 
-### The Flow
+This is transitional integration, but still important when debugging function-caching behavior end to end.
 
-1. **dagql sets storage key in context**: `ctxWithStorageKey(ctx, storageKey)` in `engine/cache/cache.go`
+## Filesync Is Separate
 
-2. **Module function reads it**: In `core/modfunc.go:666`, `cache.CurrentStorageKey(ctx)` is read and hashed into `execMD.CacheMixin`
+Filesync does not use dagql base cache internals for its change-tracking cache.
 
-3. **CacheMixin passed to container exec**: The `ExecutionMetadata.CacheMixin` is passed to `withExec` operations
+Current filesync change cache is a dedicated typed implementation in:
+- `engine/filesync/change_cache.go`
 
-4. **Mixed into operation cache key**: In `core/schema/container.go:983`, the `CacheMixin` is mixed into the operation's digest, which becomes part of BuildKit's cache key
+See `filesync.md` for details.
 
-### dagql Miss, BuildKit Hit
+## Code Map
 
-When dagql cache misses but BuildKit has a cached result:
-
-1. dagql calls the operation (e.g., `container.withExec`)
-2. The operation goes to BuildKit, which finds a cached filesystem snapshot
-3. BuildKit returns the cached snapshot
-4. A dagql result (e.g., `*core.Container`) is constructed from the BuildKit result
-5. This new dagql result is stored in the dagql cache
-
-So BuildKit's persistent cache can "warm" the dagql in-memory cache.
-
-### Future Direction
-
-The BuildKit solver will be removed entirely, including BuildKit's operation cache key storage. Parts of BuildKit that manage filesystem snapshots may remain in modified forms, but the cache key machinery is being replaced by dagql-native caching.
+- Base cache: `dagql/cache.go`
+- TTL metadata schema/queries: `dagql/db/`
+- Session wrapper: `dagql/session_cache.go`
+- Preselect/cache key generation: `dagql/objects.go`

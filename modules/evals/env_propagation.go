@@ -10,7 +10,7 @@ import (
 )
 
 // Test that @defaultPath propagates through nested module calls.
-func (m *Evals) EnvPropagation() *EnvPropagation {
+func (*Evals) EnvPropagation() *EnvPropagation {
 	return &EnvPropagation{}
 }
 
@@ -20,7 +20,7 @@ func (e *EnvPropagation) Name() string {
 	return "EnvPropagation"
 }
 
-func (e *EnvPropagation) Prompt(ctx context.Context, base *dagger.LLM) (*dagger.LLM, error) {
+func (e *EnvPropagation) Prompt(base *dagger.LLM) (*dagger.LLM, error) {
 	return base.
 		WithEnv(dag.Env().
 			WithModule(

@@ -70,7 +70,11 @@ func NewDirectoryDagOp(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current query: %w", err)
 	}
-	return NewDirectorySt(ctx, st, dagop.Path, query.Platform(), nil)
+	dir, err := NewDirectorySt(ctx, st, dagop.Path, query.Platform(), nil)
+	if err != nil {
+		return nil, err
+	}
+	return dir, nil
 }
 
 // NewFileDagOp takes a target ID for a File, and returns a File for it,
@@ -192,6 +196,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
 	ctx = ContextWithQuery(ctx, query)
+
 	obj, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
@@ -209,11 +214,13 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		if err != nil {
 			return nil, err
 		}
-		ref, err := res.Ref.Result(ctx)
-		if err != nil {
-			return nil, err
+		if res != nil && res.Ref != nil {
+			ref, err := res.Ref.Result(ctx)
+			if err != nil {
+				return nil, err
+			}
+			solverRes = ref
 		}
-		solverRes = ref
 
 	case *File:
 		if inst.Result != nil {
@@ -247,6 +254,11 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	ref := workerRef.ImmutableRef
 	if ref != nil {
 		idDgst := obj.ID().Digest().String()
+		// prefer content hash
+		if obj.ID().ContentDigest() != "" {
+			idDgst = obj.ID().ContentDigest().String()
+		}
+
 		if err := ref.SetString(keyDaggerDigest, idDgst, daggerDigestIdx+idDgst); err != nil {
 			return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
 		}
@@ -629,16 +641,24 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				llb = dirMnt.Self().LLB
 				res = dirMnt.Self().Result
 				dgst = dirMnt.ID().Digest()
+				if dirMnt.ID().ContentDigest() != "" {
+					dgst = dirMnt.ID().ContentDigest()
+				}
 			},
 			func(fileMnt *dagql.ObjectResult[*File]) {
 				mount.Selector = fileMnt.Self().File
 				llb = fileMnt.Self().LLB
 				res = fileMnt.Self().Result
 				dgst = fileMnt.ID().Digest()
+				if fileMnt.ID().ContentDigest() != "" {
+					dgst = fileMnt.ID().ContentDigest()
+				}
 			},
 			func(cache *CacheMountSource) {
-				mount.Selector = cache.BasePath
-				llb = cache.Base
+				if cache.Base != nil && cache.Base.Self() != nil {
+					mount.Selector = cache.Base.Self().Dir
+					llb = cache.Base.Self().LLB
+				}
 				mount.Output = pb.SkipOutput
 				mount.MountType = pb.MountType_CACHE
 				mount.CacheOpt = &pb.CacheOpt{
@@ -762,7 +782,7 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 			Dest:      secret.MountPath,
 			MountType: pb.MountType_SECRET,
 			SecretOpt: &pb.SecretOpt{
-				ID:   secret.Secret.ID().Digest().String(),
+				ID:   SecretIDDigest(secret.Secret.ID()).String(),
 				Uid:  uint32(uid),
 				Gid:  uint32(gid),
 				Mode: uint32(secret.Mode),
@@ -888,7 +908,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 	getResult := func(
 		def *pb.Definition,
 		ref bkcache.ImmutableRef,
-		dgst digest.Digest,
+		id *call.ID,
 	) (solver.Result, error) {
 		switch {
 		case ref != nil:
@@ -910,9 +930,17 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 			return worker.NewWorkerRefResult(nil, wkr), nil
 		}
 
-		if ref != nil && dgst != "" {
-			if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {
-				return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
+		if ref != nil && id != nil {
+			dgst := id.Digest()
+			// prefer content digest if available
+			if id.ContentDigest() != "" {
+				dgst = id.ContentDigest()
+			}
+
+			if dgst != "" {
+				if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {
+					return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
+				}
 			}
 		}
 
@@ -931,7 +959,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 			ref, err = getResult(
 				container.FS.Self().LLB,
 				container.FS.Self().Result,
-				container.FS.ID().Digest(),
+				container.FS.ID(),
 			)
 		case 1:
 			var llb *pb.Definition
@@ -940,7 +968,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 				llb = container.Meta.LLB
 				res = container.Meta.Result
 			}
-			ref, err = getResult(llb, res, "")
+			ref, err = getResult(llb, res, nil)
 		default:
 			mnt := container.Mounts[mountIdx-2]
 			switch {
@@ -948,13 +976,13 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 				ref, err = getResult(
 					mnt.DirectorySource.Self().LLB,
 					mnt.DirectorySource.Self().Result,
-					mnt.DirectorySource.ID().Digest(),
+					mnt.DirectorySource.ID(),
 				)
 			case mnt.FileSource != nil:
 				ref, err = getResult(
 					mnt.FileSource.Self().LLB,
 					mnt.FileSource.Self().Result,
-					mnt.FileSource.ID().Digest(),
+					mnt.FileSource.ID(),
 				)
 			default:
 				err = fmt.Errorf("mount %d has no source", mountIdx)
@@ -970,7 +998,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 }
 
 func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inputs []llb.State) (llb.State, error) {
-	return buildkit.NewCustomLLB(ctx, dagOp, inputs,
+	return buildkit.NewCustomLLB(ctx, id, dagOp, inputs,
 		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
 		buildkit.WithTracePropagation(ctx),
 		buildkit.WithPassthrough(),

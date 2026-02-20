@@ -1,7 +1,0 @@
-{
-  "name": "workspace",
-  "engineVersion": "v0.19.10",
-  "sdk": {
-    "source": "go"
-  }
-}

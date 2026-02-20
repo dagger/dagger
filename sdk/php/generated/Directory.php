@@ -108,6 +108,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         ?string $target = '',
         ?array $secrets = null,
         ?bool $noInit = false,
+        SocketId|Socket|null $ssh = null,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
         if (null !== $dockerfile) {
@@ -127,6 +128,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $noInit) {
         $innerQueryBuilder->setArgument('noInit', $noInit);
+        }
+        if (null !== $ssh) {
+        $innerQueryBuilder->setArgument('ssh', $ssh);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

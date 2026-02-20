@@ -32,6 +32,15 @@ export type ArgumentOptions = {
   defaultPath?: string
 
   /**
+   * The default container address to use for the argument.
+   *
+   * This should only be used for Container types.
+   *
+   * If the argument is not set, the container will be loaded from this address.
+   */
+  defaultAddress?: string
+
+  /**
    * Patterns to ignore when loading the contextual argument value.
    *
    * This should only be used for Directory types.
@@ -129,6 +138,21 @@ export class Registry {
    * The definition of @check decorator that marks a function as a check.
    */
   check = (): ((
+    target: object,
+    propertyKey: string | symbol,
+    descriptor?: PropertyDescriptor,
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor?: PropertyDescriptor,
+    ) => {}
+  }
+
+  /**
+   * The definition of @generate decorator that marks a function as a generator.
+   */
+  generate = (): ((
     target: object,
     propertyKey: string | symbol,
     descriptor?: PropertyDescriptor,

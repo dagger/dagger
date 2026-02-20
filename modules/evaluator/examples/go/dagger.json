@@ -1,19 +1,17 @@
 {
   "name": "examples",
-  "engineVersion": "v0.19.10",
+  "engineVersion": "v0.19.11",
   "sdk": {
     "source": "go"
   },
   "dependencies": [
     {
       "name": "evals",
-      "source": "github.com/dagger/dagger/modules/evals@main",
-      "pin": "4a76c3f8c6d9715e34f8be5f795bb95362171ee5"
+      "source": "../../../evals"
     },
     {
       "name": "evaluator",
-      "source": "github.com/dagger/dagger/modules/evaluator@main",
-      "pin": "4a76c3f8c6d9715e34f8be5f795bb95362171ee5"
+      "source": "../.."
     }
   ],
   "disableDefaultFunctionCaching": true

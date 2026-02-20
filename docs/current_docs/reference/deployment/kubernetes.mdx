@@ -134,7 +134,7 @@ Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8
 
 ### Tested Configurations
 
-- Dagger's Helm chart is continuously tested [on K3s via a Dagger pipeline](https://github.com/dagger/dagger/blob/main/helm/.dagger/main.go#L41) in CI
+- Dagger's Helm chart is continuously tested [on K3s via a Dagger pipeline](https://github.com/dagger/dagger/blob/main/toolchains/helm-dev/main.go#L44) in CI
 - Dagger has run CI jobs at significant scale on AWS EKS using the [approach outlined here](https://dagger.io/blog/argo-cd-kubernetes)
 - Dagger has tested [SUSE RKE2](https://docs.rke2.io/install/quickstart) and Rancher Desktop Kubernetes using our Helm chart in DaemonSet configuration. The recommended configuration for RKE2 is SUSE Linux Enterprise (SLE) Micro 6.1 with 100GB storage per node (minimum).
 - Many other Kubernetes configurations should be compatible.

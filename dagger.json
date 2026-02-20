@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.19.10",
+  "engineVersion": "v0.19.11",
   "sdk": {
     "source": "go"
   },
@@ -50,9 +50,9 @@
             "sdk/php/vendor",
             "docs/**",
             "dagql/idtui/viztest/broken/**",
-            "modules/evals/**",
             "**/broken*/**",
-            "core/integration/testdata/checks/hello-with-checks/"
+            "core/integration/testdata/checks/hello-with-checks/",
+            "core/integration/testdata/generators/hello-with-generators/"
           ]
         }
       ]
@@ -98,9 +98,7 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": [
-            "scanSource"
-          ],
+          "function": ["scanSource"],
           "argument": "source",
           "ignore": [
             "bin",
@@ -115,45 +113,21 @@
       ]
     },
     {
-      "name": "typescript-sdk",
-      "source": "toolchains/typescript-sdk-dev"
-    },
-    {
       "name": "test-split",
       "source": "toolchains/test-split"
+    },
+    {
+      "name": "typescript-sdk",
+      "source": "toolchains/typescript-sdk-dev"
     }
   ],
   "include": [
     "sdk/typescript/runtime/**/*",
+    "engine/distconsts",
     "go.mod",
     "go.sum",
-    "util/parallel"
+    "util/patchpreview"
   ],
-  "dependencies": [
-    {
-      "name": "changelog",
-      "source": "toolchains/changelog"
-    },
-    {
-      "name": "docs",
-      "source": "toolchains/docs-dev"
-    },
-    {
-      "name": "helm",
-      "source": "toolchains/helm-dev"
-    },
-    {
-      "name": "sdks",
-      "source": "toolchains/all-sdks"
-    },
-    {
-      "name": "engine-dev",
-      "source": "toolchains/engine-dev"
-    },
-    {
-      "name": "cli",
-      "source": "toolchains/cli-dev"
-    }
-  ],
+  "dependencies": [],
   "source": ".dagger"
 }

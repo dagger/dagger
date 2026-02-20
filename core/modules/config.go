@@ -210,6 +210,10 @@ type ModuleConfigDependency struct {
 	// IgnoreChecks is a list of check patterns to exclude from this toolchain.
 	// Patterns can use glob syntax to match check names.
 	IgnoreChecks []string `json:"ignoreChecks,omitempty"`
+
+	// IgnoreGenerators is a list of generator patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match generator names.
+	IgnoreGenerators []string `json:"ignoreGenerators,omitempty"`
 }
 
 // ModuleConfigArgument represents an argument override for a toolchain function
@@ -225,6 +229,9 @@ type ModuleConfigArgument struct {
 
 	// The default path to use for File or Directory arguments.
 	DefaultPath string `json:"defaultPath,omitempty"`
+
+	// The default address to use for Container arguments.
+	DefaultAddress string `json:"defaultAddress,omitempty"`
 
 	// Ignore patterns for Directory arguments.
 	Ignore []string `json:"ignore,omitempty"`

@@ -18,8 +18,10 @@ Expected stderr:
 ✔ .cachedExecs: Void X.Xs
 ├╴✔ container: Container! X.Xs
 ├╴$ .from(address: "alpine"): Container! X.Xs CACHED
-├╴$ withExec echo 'cached-execs cached for good' X.Xs CACHED
-├╴$ withExec echo 'im also cached for good' X.Xs CACHED
+├╴✔ withExec echo 'cached-execs cached for good' X.Xs
+│ ┃ cached-execs cached for good
+├╴✔ withExec echo 'im also cached for good' X.Xs
+│ ┃ im also cached for good
 ├╴✔ withExec echo 'im a buster' '20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X' X.Xs
 │ ┃ im a buster 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 ├╴✔ withExec sleep 1 X.Xs

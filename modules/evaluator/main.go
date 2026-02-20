@@ -19,12 +19,12 @@ package main
 import (
 	"context"
 	"dagger/botsbuildingbots/internal/dagger"
-	"dagger/botsbuildingbots/internal/telemetry"
 	_ "embed"
 	"errors"
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -43,7 +43,7 @@ type Evaluator struct {
 	EvaluatorModel string
 
 	// +private
-	Evals []*dagger.WorkspaceEval
+	Evals []*dagger.EvalWorkspaceEval
 }
 
 const MinSuccessRate = 0.8
@@ -152,7 +152,7 @@ func (m *Evaluator) WithEval(
 	//
 	// fortunately the IDs are the same nonetheless, so we can just convert it
 	// with the available plumbing
-	m.Evals = append(m.Evals, dag.LoadWorkspaceEvalFromID(dagger.WorkspaceEvalID(id)))
+	m.Evals = append(m.Evals, dag.LoadEvalWorkspaceEvalFromID(dagger.EvalWorkspaceEvalID(id)))
 	return m, nil
 }
 
@@ -213,7 +213,7 @@ func (m *Evaluator) EvalsAcrossModels(
 				// track model span ID so we can link to it
 				SpanID: modelSpan.SpanContext().SpanID().String(),
 			}
-			defer telemetry.End(modelSpan, report.Check)
+			defer telemetry.End(modelSpan, report.Check) //nolint:staticcheck
 			for _, name := range evals {
 				result := EvalResult{
 					Name: name,
@@ -222,10 +222,10 @@ func (m *Evaluator) EvalsAcrossModels(
 					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name),
 						telemetry.Reveal(),
 						telemetry.Encapsulate())
-					defer telemetry.End(evalSpan, func() error { return rerr })
+					defer telemetry.EndWithCause(evalSpan, &rerr)
 					stdio := telemetry.SpanStdio(ctx, "")
 					defer stdio.Close()
-					attempts := work.Evaluate(name, dagger.WorkspaceEvaluateOpts{
+					attempts := work.Evaluate(name, dagger.EvalWorkspaceEvaluateOpts{
 						Model:    model,
 						Attempts: attempts,
 					})
@@ -411,14 +411,14 @@ func (evals *EvalsAcrossModels) AnalyzeAndGenerateSystemPrompt(ctx context.Conte
 func (m *Evaluator) Explore(ctx context.Context) ([]string, error) {
 	return m.llm().
 		WithEnv(m.env().
-			WithWorkspaceOutput("findings", "The workspace with all of your findings recorded.")).
+			WithEvalWorkspaceOutput("findings", "The workspace with all of your findings recorded.")).
 		WithPrompt(`You are a quality assurance engineer running a suite of LLM evals and finding any issues that various models have interpreting them.`).
 		WithPrompt(`Focus on exploration. Find evals that work on some models, but not others.`).
 		WithPrompt(`If an eval fails for all models, don't bother running it again, but if there is partial success, try running it again or with different models.`).
 		WithPrompt(`Keep performing evaluations against various models, and record any interesting findings.`).
 		Env().
 		Output("findings").
-		AsWorkspace().
+		AsEvalWorkspace().
 		Findings(ctx)
 }
 
@@ -442,7 +442,7 @@ func (m *Evaluator) GenerateSystemPrompt(ctx context.Context) (string, error) {
 		WithPrompt("Set a system prompt based on your understanding of the documentation. Keep it short and focused, but not so short to the point of being useless word salad. Focus on framing and foundation and let the model do the rest.").
 		Env().
 		Output("generated").
-		AsWorkspace().
+		AsEvalWorkspace().
 		SystemPrompt(ctx)
 }
 
@@ -484,7 +484,7 @@ func (m *Evaluator) llm() *dagger.LLM {
 // provides the agent with all necessary context and tools.
 func (m *Evaluator) env() *dagger.Env {
 	env := dag.Env().
-		WithWorkspaceInput("workspace", m.work(), "A space for you to work in.")
+		WithEvalWorkspaceInput("workspace", m.work(), "A space for you to work in.")
 	if m.Docs != nil {
 		env = env.WithFileInput("docs", m.Docs,
 			"The documentation the model is meant to adhere to.")
@@ -502,8 +502,8 @@ func (m *Evaluator) env() *dagger.Env {
 // applied, including all registered evaluations and system prompt settings.
 // The workspace is what actually executes the evaluations against different
 // models.
-func (m *Evaluator) work() *dagger.Workspace {
-	work := dag.Workspace().
+func (m *Evaluator) work() *dagger.EvalWorkspace {
+	work := dag.EvalWorkspace().
 		WithEvals(m.Evals)
 	if m.DisableDefaultSystemPrompt {
 		work = work.WithoutDefaultSystemPrompt()

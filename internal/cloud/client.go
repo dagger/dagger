@@ -96,6 +96,30 @@ func (c *Client) User(ctx context.Context) (*UserResponse, error) {
 	return &q.User, nil
 }
 
+type OrgResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (c *Client) OrgByName(ctx context.Context, name string) (*OrgResponse, error) {
+	if c.g == nil {
+		return nil, errors.New("no user logged in")
+	}
+	var q struct {
+		Org *OrgResponse `graphql:"org(name: $name)"`
+	}
+	err := c.g.Query(ctx, &q, map[string]interface{}{
+		"name": graphql.String(name),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if q.Org == nil {
+		return nil, fmt.Errorf("org %q not found", name)
+	}
+	return q.Org, nil
+}
+
 type SerializableCertificate struct {
 	CertificateChain [][]byte `json:"certificate_chain"` // DER-encoded certs
 	PrivateKey       []byte   `json:"private_key"`       // PKCS#8 encoded private key

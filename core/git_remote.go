@@ -24,7 +24,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/moby/sys/mount"
@@ -34,7 +33,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	enginecache "github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/hashutil"
@@ -63,10 +61,6 @@ type RemoteGitRef struct {
 
 var _ GitRefBackend = (*RemoteGitRef)(nil)
 
-func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return nil, nil
-}
-
 func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Remote, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git remote metadata", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -87,10 +81,7 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 		return repo.runLsRemote(ctx)
 	}
 
-	cacheRes, err := srv.Cache.GetOrInitialize(ctx, enginecache.CacheKey[string]{
-		CallKey:        cacheKey,
-		ConcurrencyKey: cacheKey,
-	}, func(ctx context.Context) (dagql.AnyResult, error) {
+	cacheRes, err := srv.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
 		remote, err := repo.runLsRemote(ctx)
 		if err != nil {
 			return nil, err
@@ -106,22 +97,28 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 			return nil, err
 		}
 
-		return dagql.NewResultForCurrentID(ctx, dagql.NewString(string(payload)))
+		return string(payload), nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	if cacheRes == nil {
+		return nil, fmt.Errorf("git remote cache returned nil result for key %q", cacheKey)
+	}
 
 	slog.Info("loaded git remote metadata", "cache_hit", cacheRes.HitCache(), "cache_key", cacheKey)
 
-	val := cacheRes.Result()
-	strRes, ok := dagql.UnwrapAs[dagql.Result[dagql.String]](val)
+	return remoteFromCacheResult(cacheRes.Value())
+}
+
+func remoteFromCacheResult(cacheRes any) (*gitutil.Remote, error) {
+	payload, ok := cacheRes.(string)
 	if !ok {
-		return nil, fmt.Errorf("unexpected cache value type %T", val)
+		return nil, fmt.Errorf("unexpected cache value type %T", cacheRes)
 	}
 
 	var remote gitutil.Remote
-	if err := json.Unmarshal([]byte(strRes.Self().String()), &remote); err != nil {
+	if err := json.Unmarshal([]byte(payload), &remote); err != nil {
 		return nil, fmt.Errorf("decode cached remote: %w", err)
 	}
 	return &remote, nil
@@ -149,16 +146,16 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	scope := make([]string, 0, 4)
 	if token := repo.AuthToken; token.Self() != nil && token.ID() != nil {
-		scope = append(scope, "token:"+token.ID().Digest().String())
+		scope = append(scope, "token:"+SecretIDDigest(token.ID()).String())
 	}
 	if header := repo.AuthHeader; header.Self() != nil && header.ID() != nil {
-		scope = append(scope, "header:"+header.ID().Digest().String())
+		scope = append(scope, "header:"+SecretIDDigest(header.ID()).String())
 	}
 	if repo.AuthUsername != "" {
 		scope = append(scope, "username:"+repo.AuthUsername)
 	}
 	if sshSock := repo.SSHAuthSocket; sshSock.Self() != nil {
-		scope = append(scope, "ssh-sock:"+sshSock.Self().IDDigest.String())
+		scope = append(scope, "ssh-auth-scope:"+sshSock.Self().IDDigest.String())
 	}
 	return scope
 }
@@ -262,7 +259,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
+		password, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(repo.AuthToken.ID()))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -272,7 +269,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(repo.AuthHeader.ID()))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -502,10 +499,6 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 	}
 
 	return fn(dir)
-}
-
-func (ref *RemoteGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return nil, nil
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {

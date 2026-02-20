@@ -30,6 +30,29 @@ class Name:
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
+class DefaultAddress:
+    """If the argument is omitted, load it from the given container address.
+
+    Only applies to arguments of type :py:class:`dagger.Container`.
+
+    Mutually exclusive with setting a default value for the parameter. When
+    used within Python, the parameter should be required.
+
+    Example usage::
+
+        @function
+        def build(
+            self, ctr: Annotated[dagger.Container, DefaultAddress("alpine:latest")]
+        ): ...
+    """
+
+    address: str
+
+    def __str__(self) -> str:
+        return self.address
+
+
+@dataclasses.dataclass(slots=True, frozen=True)
 class DefaultPath:
     """If the argument is omitted, load it from the given path in the context directory.
 
@@ -114,6 +137,7 @@ class Parameter:
     doc: str | None = None
     ignore: list[str] | None = None
     default_path: ContextPath | None = None
+    default_address: str | None = None
     default_value: dagger.JSON | None = None
     deprecated: str | None = None
 
@@ -149,6 +173,7 @@ class Parameter:
             [
                 self.has_default,
                 self.default_path is not None,
+                self.default_address is not None,
                 self.is_nullable,
             ]
         )

@@ -26,7 +26,6 @@ import (
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/filesync"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
@@ -181,7 +180,7 @@ type Server struct {
 	//
 	// dagql cache
 	//
-	baseDagqlCache cache.Cache[string, dagql.AnyResult]
+	baseDagqlCache dagql.Cache
 
 	//
 	// session+client state
@@ -607,7 +606,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup dagql caching
 	//
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+	srv.baseDagqlCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
 	if err != nil {
 		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
 		// db and trying again.
@@ -615,7 +614,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
 			slog.Error("failed to remove existing dagql cache db", "error", err)
 		}
-		srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+		srv.baseDagqlCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
 		}
@@ -666,6 +665,8 @@ func (srv *Server) initBoltDBs() (err error) {
 	srv.snapshotterMDStore, err = storage.NewMetaStore(srv.snapshotterDBPath,
 		func(opts *bolt.Options) error {
 			opts.NoSync = true
+			opts.NoFreelistSync = true
+			opts.NoGrowSync = true
 			return nil
 		},
 	)
@@ -679,7 +680,9 @@ func (srv *Server) initBoltDBs() (err error) {
 	}()
 
 	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, &bolt.Options{
-		NoSync: true,
+		NoSync:         true,
+		NoFreelistSync: true,
+		NoGrowSync:     true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to open metadata db: %w", err)
@@ -730,7 +733,7 @@ func (srv *Server) Clients() []string {
 }
 
 // GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
-// run with NoSync=true for performance reasons.
+// run with NoSync=true (plus NoFreelistSync/NoGrowSync) for performance reasons.
 func (srv *Server) GracefulStop(ctx context.Context) error {
 	var eg errgroup.Group
 	eg.Go(func() error {
@@ -805,7 +808,6 @@ func (srv *Server) Close() error {
 	// the server should be shutdown first
 	srv.daggerSessionsMu.Lock()
 	daggerSessions := srv.daggerSessions
-	srv.daggerSessions = nil
 	srv.daggerSessionsMu.Unlock()
 
 	for _, s := range daggerSessions {
@@ -870,6 +872,20 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 
 func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
+}
+
+func (srv *Server) DagqlCacheEntries() int {
+	if srv.baseDagqlCache == nil {
+		return 0
+	}
+	return srv.baseDagqlCache.Size()
+}
+
+func (srv *Server) DagqlCacheEntryStats() dagql.CacheEntryStats {
+	if srv.baseDagqlCache == nil {
+		return dagql.CacheEntryStats{}
+	}
+	return srv.baseDagqlCache.EntryStats()
 }
 
 // ConnectedClients returns the number of currently connected clients

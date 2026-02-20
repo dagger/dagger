@@ -748,6 +748,46 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Generator",
+			"p": "Dagger/Generator.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GeneratorGroup",
+			"p": "Dagger/GeneratorGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GeneratorGroupId",
+			"p": "Dagger/GeneratorGroupId.html",
+			"d": "<p>The <code>GeneratorGroupID</code> scalar type represents an identifier for an object of type GeneratorGroup.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GeneratorId",
+			"p": "Dagger/GeneratorId.html",
+			"d": "<p>The <code>GeneratorID</code> scalar type represents an identifier for an object of type Generator.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GitRef",
 			"p": "Dagger/GitRef.html",
 			"d": "<p>A git ref (tag, branch, or commit).</p>",
@@ -1307,6 +1347,26 @@
 			}
 		},
 		{
+			"t": "C",
+			"n": "Dagger\\Workspace",
+			"p": "Dagger/Workspace.html",
+			"d": "<p>A Dagger workspace detected from the current working directory.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceId",
+			"p": "Dagger/WorkspaceId.html",
+			"d": "<p>The <code>WorkspaceID</code> scalar type represents an identifier for an object of type Workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
 			"t": "I",
 			"n": "Dagger\\Client\\IdAble",
 			"p": "Dagger/Client/IdAble.html",
@@ -1473,6 +1533,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asGenerator",
+			"p": "Dagger/Binding.html#method_asGenerator",
+			"d": "<p>Retrieve the binding value, as type Generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asGeneratorGroup",
+			"p": "Dagger/Binding.html#method_asGeneratorGroup",
+			"d": "<p>Retrieve the binding value, as type GeneratorGroup</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asGitRef",
 			"p": "Dagger/Binding.html#method_asGitRef",
 			"d": "<p>Retrieve the binding value, as type GitRef</p>"
@@ -1548,6 +1620,12 @@
 			"n": "Dagger\\Binding::asString",
 			"p": "Dagger/Binding.html#method_asString",
 			"d": "<p>Returns the binding's string value</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asWorkspace",
+			"p": "Dagger/Binding.html#method_asWorkspace",
+			"d": "<p>Retrieve the binding value, as type Workspace</p>"
 		},
 		{
 			"t": "M",
@@ -1659,6 +1737,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::withChangeset",
+			"p": "Dagger/Changeset.html#method_withChangeset",
+			"d": "<p>Add changes to an existing changeset</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::withChangesets",
+			"p": "Dagger/Changeset.html#method_withChangesets",
+			"d": "<p>Add changes from multiple changesets using git octopus merge strategy</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Check::completed",
 			"p": "Dagger/Check.html#method_completed",
 			"d": "<p>Whether the check completed</p>"
@@ -1683,6 +1773,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Check::originalModule",
+			"p": "Dagger/Check.html#method_originalModule",
+			"d": "<p>The original module in which the check has been defined</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Check::passed",
 			"p": "Dagger/Check.html#method_passed",
 			"d": "<p>Whether the check passed</p>"
@@ -1704,12 +1800,6 @@
 			"n": "Dagger\\Check::run",
 			"p": "Dagger/Check.html#method_run",
 			"d": "<p>Execute the check</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Check::source",
-			"p": "Dagger/Check.html#method_source",
-			"d": "<p>The module source where the check is defined (i.e., toolchains)</p>"
 		},
 		{
 			"t": "M",
@@ -1782,6 +1872,12 @@
 			"n": "Dagger\\Client::currentTypeDefs",
 			"p": "Dagger/Client.html#method_currentTypeDefs",
 			"d": "<p>The TypeDef representations of the objects currently being served in the session.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentWorkspace",
+			"p": "Dagger/Client.html#method_currentWorkspace",
+			"d": "<p>Detect and return the current workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -2037,6 +2133,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadGeneratorFromID",
+			"p": "Dagger/Client.html#method_loadGeneratorFromID",
+			"d": "<p>Load a Generator from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadGeneratorGroupFromID",
+			"p": "Dagger/Client.html#method_loadGeneratorGroupFromID",
+			"d": "<p>Load a GeneratorGroup from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadGitRefFromID",
 			"p": "Dagger/Client.html#method_loadGitRefFromID",
 			"d": "<p>Load a GitRef from its ID.</p>"
@@ -2190,6 +2298,12 @@
 			"n": "Dagger\\Client::loadTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadTypeDefFromID",
 			"d": "<p>Load a TypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
+			"d": "<p>Load a Workspace from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2820,6 +2934,12 @@
 			"n": "Dagger\\CurrentModule::generatedContextDirectory",
 			"p": "Dagger/CurrentModule.html#method_generatedContextDirectory",
 			"d": "<p>The generated files and directories made on top of the module source's context directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModule::generators",
+			"p": "Dagger/CurrentModule.html#method_generators",
+			"d": "<p>Return all generators defined by the module</p>"
 		},
 		{
 			"t": "M",
@@ -3465,6 +3585,30 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withGeneratorGroupInput",
+			"p": "Dagger/Env.html#method_withGeneratorGroupInput",
+			"d": "<p>Create or update a binding of type GeneratorGroup in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withGeneratorGroupOutput",
+			"p": "Dagger/Env.html#method_withGeneratorGroupOutput",
+			"d": "<p>Declare a desired GeneratorGroup output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withGeneratorInput",
+			"p": "Dagger/Env.html#method_withGeneratorInput",
+			"d": "<p>Create or update a binding of type Generator in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withGeneratorOutput",
+			"p": "Dagger/Env.html#method_withGeneratorOutput",
+			"d": "<p>Declare a desired Generator output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withGitRefInput",
 			"p": "Dagger/Env.html#method_withGitRefInput",
 			"d": "<p>Create or update a binding of type GitRef in the environment</p>"
@@ -3636,6 +3780,18 @@
 			"n": "Dagger\\Env::withWorkspace",
 			"p": "Dagger/Env.html#method_withWorkspace",
 			"d": "<p>Returns a new environment with the provided workspace</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceInput",
+			"p": "Dagger/Env.html#method_withWorkspaceInput",
+			"d": "<p>Create or update a binding of type Workspace in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceOutput",
+			"d": "<p>Declare a desired Workspace output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -3885,6 +4041,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\FunctionArg::defaultAddress",
+			"p": "Dagger/FunctionArg.html#method_defaultAddress",
+			"d": "<p>Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\FunctionArg::defaultPath",
 			"p": "Dagger/FunctionArg.html#method_defaultPath",
 			"d": "<p>Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory</p>"
@@ -4071,6 +4233,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withGenerator",
+			"p": "Dagger/Function_.html#method_withGenerator",
+			"d": "<p>Returns the function with a flag indicating it's a generator.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withSourceMap",
 			"p": "Dagger/Function_.html#method_withSourceMap",
 			"d": "<p>Returns the function with the given source map.</p>"
@@ -4110,6 +4278,90 @@
 			"n": "Dagger\\GeneratedCode::withVCSIgnoredPaths",
 			"p": "Dagger/GeneratedCode.html#method_withVCSIgnoredPaths",
 			"d": "<p>Set the list of paths to ignore in version control.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::changes",
+			"p": "Dagger/Generator.html#method_changes",
+			"d": "<p>The generated changeset</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::completed",
+			"p": "Dagger/Generator.html#method_completed",
+			"d": "<p>Whether the generator complete</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::description",
+			"p": "Dagger/Generator.html#method_description",
+			"d": "<p>Return the description of the generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::id",
+			"p": "Dagger/Generator.html#method_id",
+			"d": "<p>A unique identifier for this Generator.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::isEmpty",
+			"p": "Dagger/Generator.html#method_isEmpty",
+			"d": "<p>Wether changeset from the generator execution is empty or not</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::name",
+			"p": "Dagger/Generator.html#method_name",
+			"d": "<p>Return the fully qualified name of the generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::originalModule",
+			"p": "Dagger/Generator.html#method_originalModule",
+			"d": "<p>The original module in which the generator has been defined</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::path",
+			"p": "Dagger/Generator.html#method_path",
+			"d": "<p>The path of the generator within its module</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Generator::run",
+			"p": "Dagger/Generator.html#method_run",
+			"d": "<p>Execute the generator</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::changes",
+			"p": "Dagger/GeneratorGroup.html#method_changes",
+			"d": "<p>The combined changes from the generators execution</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::id",
+			"p": "Dagger/GeneratorGroup.html#method_id",
+			"d": "<p>A unique identifier for this GeneratorGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::isEmpty",
+			"p": "Dagger/GeneratorGroup.html#method_isEmpty",
+			"d": "<p>Whether the generated changeset is empty or not</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::list",
+			"p": "Dagger/GeneratorGroup.html#method_list",
+			"d": "<p>Return a list of individual generators and their details</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::run",
+			"p": "Dagger/GeneratorGroup.html#method_run",
+			"d": "<p>Execute all selected generators</p>"
 		},
 		{
 			"t": "M",
@@ -4644,6 +4896,18 @@
 			"n": "Dagger\\Module::generatedContextDirectory",
 			"p": "Dagger/Module.html#method_generatedContextDirectory",
 			"d": "<p>The generated files and directories made on top of the module source's context directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Module::generator",
+			"p": "Dagger/Module.html#method_generator",
+			"d": "<p>Return the generator defined by the module with the given name. Must match to exactly one generator.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Module::generators",
+			"p": "Dagger/Module.html#method_generators",
+			"d": "<p>Return all generators defined by the module</p>"
 		},
 		{
 			"t": "M",
@@ -5544,6 +5808,42 @@
 			"n": "Dagger\\TypeDef::withScalar",
 			"p": "Dagger/TypeDef.html#method_withScalar",
 			"d": "<p>Returns a TypeDef of kind Scalar with the provided name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::clientId",
+			"p": "Dagger/Workspace.html#method_clientId",
+			"d": "<p>The client ID that owns this workspace's host filesystem.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::directory",
+			"p": "Dagger/Workspace.html#method_directory",
+			"d": "<p>Returns a Directory from the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::file",
+			"p": "Dagger/Workspace.html#method_file",
+			"d": "<p>Returns a File from the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::findUp",
+			"p": "Dagger/Workspace.html#method_findUp",
+			"d": "<p>Search for a file or directory by walking up from the start path within the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::id",
+			"p": "Dagger/Workspace.html#method_id",
+			"d": "<p>A unique identifier for this Workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::root",
+			"p": "Dagger/Workspace.html#method_root",
+			"d": "<p>Absolute path to the workspace root directory.</p>"
 		},
 		{
 			"t": "M",

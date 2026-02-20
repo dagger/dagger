@@ -1,10 +1,14 @@
+import dataclasses
+
 import dagger
 from dagger import dag, function, object_type
 
 
 @object_type
 class MyModule:
-    ctr: dagger.Container = dag.container().from_("alpine:3.14.0")
+    ctr: dagger.Container = dataclasses.field(
+        default_factory=lambda: dag.container().from_("alpine:3.14.0")
+    )
 
     @function
     async def version(self) -> str:

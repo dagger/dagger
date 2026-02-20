@@ -34,6 +34,9 @@ type Function struct {
 	// IsCheck indicates whether this function is a check
 	IsCheck bool
 
+	// IsGenerator indicates whether this function is a generator
+	IsGenerator bool
+
 	// OriginalName of the parent object
 	ParentOriginalName string
 
@@ -123,7 +126,9 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 			return spec, fmt.Errorf("failed to get typedef for arg %q", arg.Name)
 		}
 
-		input := modType.TypeDef().ToInput()
+		argTypeDef := modType.TypeDef()
+
+		input := argTypeDef.ToInput()
 		var defaultVal dagql.Input
 		if arg.DefaultValue != nil {
 			var val any
@@ -204,17 +209,29 @@ func (fn *Function) WithCheck() *Function {
 	return fn
 }
 
-func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string, sourceMap *SourceMap, deprecated *string) *Function {
+func (fn *Function) WithGenerator() *Function {
+	fn = fn.Clone()
+	fn.IsGenerator = true
+	return fn
+}
+
+func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore []string, sourceMap *SourceMap, deprecated *string) *Function {
 	fn = fn.Clone()
 	arg := &FunctionArg{
-		Name:         strcase.ToLowerCamel(name),
-		Description:  desc,
-		TypeDef:      typeDef,
-		DefaultValue: defaultValue,
-		OriginalName: name,
-		DefaultPath:  defaultPath,
-		Ignore:       ignore,
-		Deprecated:   deprecated,
+		Name:           strcase.ToLowerCamel(name),
+		Description:    desc,
+		TypeDef:        typeDef,
+		DefaultValue:   defaultValue,
+		OriginalName:   name,
+		DefaultPath:    defaultPath,
+		DefaultAddress: defaultAddress,
+		Ignore:         ignore,
+		Deprecated:     deprecated,
+	}
+	if arg.IsWorkspace() {
+		// Workspace arguments are always optional — they're automatically injected
+		// by the engine when not explicitly set by the caller.
+		arg.TypeDef = arg.TypeDef.WithOptional(true)
 	}
 	if sourceMap != nil {
 		arg.SourceMap = dagql.NonNull(sourceMap)
@@ -316,14 +333,15 @@ func (proto FunctionCachePolicy) ToLiteral() call.Literal {
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name         string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
-	Description  string                     `field:"true" doc:"A doc string for the argument, if any."`
-	SourceMap    dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
-	TypeDef      *TypeDef                   `field:"true" doc:"The type of the argument."`
-	DefaultValue JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
-	DefaultPath  string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
-	Ignore       []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
-	Deprecated   *string                    `field:"true" doc:"The reason this function is deprecated, if any."`
+	Name           string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
+	Description    string                     `field:"true" doc:"A doc string for the argument, if any."`
+	SourceMap      dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
+	TypeDef        *TypeDef                   `field:"true" doc:"The type of the argument."`
+	DefaultValue   JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	DefaultPath    string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
+	DefaultAddress string                     `field:"true" doc:"Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)"`
+	Ignore         []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
+	Deprecated     *string                    `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	// Below are not in public API
 
@@ -361,7 +379,17 @@ func (*FunctionArg) TypeDescription() string {
 }
 
 func (arg *FunctionArg) isContextual() bool {
-	return arg.DefaultPath != ""
+	return arg.DefaultPath != "" || arg.DefaultAddress != ""
+}
+
+// IsWorkspace returns true if the argument is of type Workspace.
+// Workspace arguments are always optional and automatically injected when not set.
+func (arg *FunctionArg) IsWorkspace() bool {
+	return arg.TypeDef.Kind == TypeDefKindObject &&
+		arg.TypeDef.AsObject.Value.Name == "Workspace" &&
+		// Functions can't currently accept types from other modules, but be
+		// explicit anyway.
+		arg.TypeDef.AsObject.Value.SourceModuleName == ""
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {
@@ -375,6 +403,20 @@ func (arg FunctionArg) Directives() []*ast.Directive {
 					Value: &ast.Value{
 						Kind: ast.StringValue,
 						Raw:  arg.DefaultPath,
+					},
+				},
+			},
+		})
+	}
+	if arg.DefaultAddress != "" {
+		directives = append(directives, &ast.Directive{
+			Name: "defaultAddress",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "address",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  arg.DefaultAddress,
 					},
 				},
 			},
@@ -898,7 +940,7 @@ func (obj *ObjectTypeDef) FieldByOriginalName(name string) (*FieldTypeDef, bool)
 
 func (obj *ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
 	for _, fn := range obj.Functions {
-		if fn.Name == name {
+		if fn.Name == gqlFieldName(name) {
 			return fn, true
 		}
 	}

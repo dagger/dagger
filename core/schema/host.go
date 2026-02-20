@@ -2,33 +2,21 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
-	"github.com/containerd/containerd/v2/plugins/content/local"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
-	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/distribution/reference"
-	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/ctrns"
 	"github.com/dagger/dagger/util/hashutil"
 )
@@ -43,104 +31,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
 
-		dagql.Func("_builtinContainer", func(ctx context.Context, parent *core.Query, args struct {
-			Digest string `doc:"Digest of the image manifest"`
-		}) (*core.Container, error) {
-			st := llb.OCILayout(
-				fmt.Sprintf("dagger/import@%s", args.Digest),
-				llb.OCIStore("", buildkit.BuiltinContentOCIStoreName),
-				llb.Platform(parent.Platform().Spec()),
-				buildkit.WithTracePropagation(ctx),
-			)
-
-			ctrDef, err := st.Marshal(ctx, llb.Platform(parent.Platform().Spec()))
-			if err != nil {
-				return nil, fmt.Errorf("marshal root: %w", err)
-			}
-
-			// synchronously solve+unlazy so we don't have to deal with lazy blobs in any subsequent calls
-			// that don't handle them (i.e. buildkit's cache volume code)
-			// TODO: can be deleted once https://github.com/dagger/dagger/pull/8871 is closed
-			bk, err := parent.Buildkit(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-			}
-			res, err := bk.Solve(ctx, bkgw.SolveRequest{
-				Definition: ctrDef.ToPB(),
-				Evaluate:   true,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to solve builtin container: %w", err)
-			}
-			resultProxy, err := res.SingleRef()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get single ref: %w", err)
-			}
-			cachedRes, err := resultProxy.Result(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get result: %w", err)
-			}
-			workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
-			if !ok {
-				return nil, fmt.Errorf("invalid ref: %T", cachedRes.Sys())
-			}
-			layerRefs := workerRef.ImmutableRef.LayerChain()
-			defer layerRefs.Release(context.WithoutCancel(ctx))
-			var eg errgroup.Group
-			for _, layerRef := range layerRefs {
-				eg.Go(func() error {
-					// FileList is the secret method that actually forces an unlazy of blobs in the cases
-					// we want here...
-					_, err := layerRef.FileList(ctx, nil)
-					return err
-				})
-			}
-			if err := eg.Wait(); err != nil {
-				// this is a best effort attempt to unlazy the refs, it fails yell about it
-				// but not worth being fatal
-				slog.ErrorContext(ctx, "failed to unlazy layers", "err", err)
-			}
-
-			container := core.NewContainer(parent.Platform())
-			rootfsDir := core.NewDirectory(ctrDef.ToPB(), "/", container.Platform, container.Services)
-			container.FS, err = core.UpdatedRootFS(ctx, rootfsDir)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update rootfs: %w", err)
-			}
-
-			goSDKContentStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
-			}
-
-			manifestBlob, err := content.ReadBlob(ctx, goSDKContentStore, specs.Descriptor{
-				Digest: digest.Digest(args.Digest),
-			})
-			if err != nil {
-				return nil, fmt.Errorf("image archive read manifest blob: %w", err)
-			}
-
-			var man specs.Manifest
-			err = json.Unmarshal(manifestBlob, &man)
-			if err != nil {
-				return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
-			}
-
-			configBlob, err := content.ReadBlob(ctx, goSDKContentStore, man.Config)
-			if err != nil {
-				return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
-			}
-
-			var imgSpec specs.Image
-			err = json.Unmarshal(configBlob, &imgSpec)
-			if err != nil {
-				return nil, fmt.Errorf("load image config: %w", err)
-			}
-
-			container.Config = imgSpec.Config
-
-			return container, nil
-		}).Doc("Retrieves a container builtin to the engine."),
+		dagql.NodeFunc("_builtinContainer", s.builtinContainer).Doc("Retrieves a container builtin to the engine."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
@@ -175,6 +66,12 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the Unix socket (e.g., "/var/run/docker.sock").`),
+			),
+
+		dagql.NodeFuncWithCacheKey("_sshAuthSocket", s.sshAuthSocket, dagql.CachePerCall).
+			Doc(`Accesses the SSH auth socket on the host and returns a socket scoped to SSH identities.`).
+			Args(
+				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
 			),
 
 		dagql.Func("__internalSocket", s.internalSocket).
@@ -218,6 +115,53 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		dagql.Func("__internalService", s.internalService).
 			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 	}.Install(srv)
+}
+
+type builtinContainerArgs struct {
+	Digest string `doc:"Digest of the image manifest"`
+
+	ContainerDagOpInternalArgs
+}
+
+func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectResult[*core.Query], args builtinContainerArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	if !args.InDagOp() {
+		dummyCtr := core.NewContainer(parent.Self().Platform())
+		ctr, effectID, err := DagOpContainer(ctx, srv, dummyCtr, args, nil)
+		if err != nil {
+			return inst, err
+		}
+
+		err = core.BuiltInContainerUpdateConfig(ctx, ctr, args.Digest)
+		if err != nil {
+			return inst, err
+		}
+		if ctr.FS.Self().Dir == "" {
+			// Note that this is set inside the dagop; however it doesn't correctly get propagated back, so we need to reset it here
+			// containerSchema.from has the same issue and work-around
+			ctr.FS.Self().Dir = "/"
+		}
+
+		resultID := dagql.CurrentID(ctx)
+		if effectID != "" && resultID != nil {
+			resultID = resultID.AppendEffectIDs(effectID)
+		}
+		inst, err = dagql.NewObjectResultForID(ctr, srv, resultID)
+		if err != nil {
+			return inst, err
+		}
+		return inst, nil
+	}
+
+	ctr, err := core.BuiltInContainer(ctx, parent.Self().Platform(), args.Digest)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
 type hostDirectoryArgs struct {
@@ -300,6 +244,12 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 			continue
 		}
 		include = filepath.Join(relPathFromRoot, include)
+		if include == "." {
+			// we were told to include the directory itself, but include
+			// filters seem to ignore ".", so we replace it with the intention
+			// of "*"
+			include = "*"
+		}
 		if negative {
 			include = "!" + include
 		}
@@ -313,6 +263,12 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 			continue
 		}
 		exclude = filepath.Join(relPathFromRoot, exclude)
+		if exclude == "." {
+			// we were told to exclude the directory itself, but exclude
+			// filters seem to ignore ".", so we replace it with the intention
+			// of "*"
+			exclude = "*"
+		}
 		if negative {
 			exclude = "!" + exclude
 		}
@@ -342,15 +298,6 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, err
 	}
 
-	socketStore, err := query.Sockets(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get socket store: %w", err)
-	}
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-
 	accessor, err := core.GetClientResourceAccessor(ctx, query, args.Path)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client resource name: %w", err)
@@ -362,12 +309,162 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
-	inst = inst.WithDigest(dgst)
-	if err := socketStore.AddUnixSocket(sock, clientMetadata.ClientID, args.Path); err != nil {
-		return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
+	inst = inst.WithContentDigest(dgst)
+
+	upsertSocket := func(ctx context.Context) error {
+		callerClientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		callerSocketStore, err := query.Sockets(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get socket store: %w", err)
+		}
+		nonModuleParentClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err == nil && nonModuleParentClientMetadata.ClientID != callerClientMetadata.ClientID {
+			// In nested module contexts, preserve any pre-imported socket mapping (e.g. an explicitly
+			// passed socket argument) instead of clobbering it with the nested client's session.
+			if callerSocketStore.HasSocket(sock.IDDigest) {
+				return nil
+			}
+		}
+		if err := callerSocketStore.AddUnixSocket(sock, callerClientMetadata.ClientID, args.Path); err != nil {
+			return fmt.Errorf("failed to add unix socket to store: %w", err)
+		}
+		return nil
+	}
+	if err := upsertSocket(ctx); err != nil {
+		return inst, err
 	}
 
-	return inst, nil
+	return inst.ResultWithPostCall(upsertSocket), nil
+}
+
+type hostSSHAuthSocketArgs struct {
+	Source dagql.Optional[core.SocketID] `name:"source"`
+}
+
+func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostSSHAuthSocketArgs) (inst dagql.Result[*core.Socket], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	socketStore, err := query.Sockets(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get socket store: %w", err)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+
+	var sourceSocket *core.Socket
+	if args.Source.Valid {
+		sourceInst, err := args.Source.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load source socket: %w", err)
+		}
+		sourceSocket = sourceInst.Self()
+		if sourceSocket == nil {
+			return inst, errors.New("source socket is nil")
+		}
+		if !socketStore.HasSocket(sourceSocket.IDDigest) {
+			return inst, fmt.Errorf("source socket %s not found in socket store", sourceSocket.IDDigest)
+		}
+	} else {
+		if clientMetadata.SSHAuthSocketPath == "" {
+			return inst, errors.New("SSH_AUTH_SOCK is not set")
+		}
+		accessor, err := core.GetClientResourceAccessor(ctx, query, clientMetadata.SSHAuthSocketPath)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client resource accessor: %w", err)
+		}
+		sourceSocket = &core.Socket{
+			IDDigest: hashutil.HashStrings(accessor),
+		}
+		if err := socketStore.AddUnixSocket(sourceSocket, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+			return inst, fmt.Errorf("failed to register source SSH auth socket: %w", err)
+		}
+	}
+
+	scopedDigest, err := core.ScopedSSHAuthSocketDigestFromStore(ctx, query, socketStore, sourceSocket.IDDigest)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope SSH auth socket from agent identities: %w", err)
+	}
+
+	scopedSocket := &core.Socket{IDDigest: scopedDigest}
+	inst, err = dagql.NewResultForCurrentID(ctx, scopedSocket)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	inst = inst.WithContentDigest(scopedDigest)
+
+	if err := upsertScopedSSHAuthSocket(ctx, query, args.Source.Valid, scopedSocket, sourceSocket); err != nil {
+		return inst, err
+	}
+
+	// This postcall may run for different callers that hit the same cached
+	// Host._sshAuthSocket result. Resolve caller-specific SSH auth socket metadata
+	// at postcall execution time to avoid leaking a previous caller's session/path
+	// into a different caller's socket store.
+	return inst.ResultWithPostCall(func(ctx context.Context) error {
+		return upsertScopedSSHAuthSocket(ctx, query, args.Source.Valid, scopedSocket, sourceSocket)
+	}), nil
+}
+
+// upsertScopedSSHAuthSocket persists the scoped socket mapping in the caller store.
+// If a source socket was provided, it aliases scoped -> source. Otherwise it registers
+// the scoped socket as a unix socket using the caller SSH auth socket session/path.
+func upsertScopedSSHAuthSocket(
+	ctx context.Context,
+	query *core.Query,
+	hasSource bool,
+	scopedSocket *core.Socket,
+	sourceSocket *core.Socket,
+) error {
+	callerSocketStore, err := query.Sockets(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get caller socket store: %w", err)
+	}
+
+	if hasSource {
+		if err := callerSocketStore.AddSocketAlias(scopedSocket, sourceSocket.IDDigest); err != nil {
+			return fmt.Errorf("failed to alias scoped SSH auth socket: %w", err)
+		}
+		return nil
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMetadata.SSHAuthSocketPath == "" {
+		// Cached post-call replay can happen in contexts that don't expose
+		// SSH_AUTH_SOCK (for example when loading IDs to transfer client
+		// resources). Treat this as a no-op so replay doesn't fail; direct
+		// Host._sshAuthSocket calls still fail earlier in the resolver.
+		return nil
+	}
+
+	nonModuleParentClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+	if err == nil && nonModuleParentClientMetadata.ClientID != clientMetadata.ClientID {
+		// In nested module contexts, keep an existing scoped socket mapping from the
+		// parent caller (for example an explicitly passed socket arg) instead of
+		// clobbering it with this nested client's own session/path.
+		if callerSocketStore.HasSocket(scopedSocket.IDDigest) {
+			return nil
+		}
+	}
+
+	if err := callerSocketStore.AddUnixSocket(scopedSocket, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+		return fmt.Errorf("failed to register scoped SSH auth socket: %w", err)
+	}
+	return nil
 }
 
 type hostFileArgs struct {
@@ -716,9 +813,15 @@ type hostInternalSocketArgs struct {
 	Accessor string
 }
 
-func (s *hostSchema) internalSocket(ctx context.Context, host *core.Host, args hostInternalSocketArgs) (*core.Socket, error) {
+func (s *hostSchema) internalSocket(ctx context.Context, host *core.Host, args hostInternalSocketArgs) (inst dagql.Result[*core.Socket], err error) {
 	if args.Accessor == "" {
-		return nil, errors.New("socket accessor must be provided")
+		return inst, errors.New("socket accessor must be provided")
 	}
-	return &core.Socket{IDDigest: dagql.CurrentID(ctx).Digest()}, nil
+	dgst := hashutil.HashStrings(args.Accessor)
+	sock := &core.Socket{IDDigest: dgst}
+	inst, err = dagql.NewResultForCurrentID(ctx, sock)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	return inst.WithContentDigest(dgst), nil
 }

@@ -1,16 +1,59 @@
 package fsxutil
 
 import (
-	"bytes"
 	"context"
+	gofs "io/fs"
 	"os"
 	"testing"
 
 	"github.com/dagger/dagger/internal/fsutil"
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type walkEntry struct {
+	kind    string
+	ignored bool
+}
+
+func collectWalk(t *testing.T, fs fsutil.FS) map[string]walkEntry {
+	t.Helper()
+
+	entries := map[string]walkEntry{}
+	err := fs.Walk(context.Background(), "", func(path string, entry gofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry == nil {
+			return nil
+		}
+		fi, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		kind := "file"
+		if fi.IsDir() {
+			kind = "dir"
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			kind = "symlink"
+		}
+
+		ignored := false
+		if stat, ok := fi.Sys().(*types.Stat); ok {
+			ignored = stat.GitIgnored
+		}
+
+		entries[path] = walkEntry{kind: kind, ignored: ignored}
+		return nil
+	})
+	require.NoError(t, err)
+
+	return entries
+}
 
 func TestGitIgnoreBasic(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
@@ -26,21 +69,22 @@ func TestGitIgnoreBasic(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// Should include .gitignore, foo.txt but exclude bar.log and temp/
-	assert.Equal(t, `file .gitignore
-file foo.txt
-`, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":      {kind: "file", ignored: false},
+		"foo.txt":         {kind: "file", ignored: false},
+		"bar.log":         {kind: "file", ignored: true},
+		"temp":            {kind: "dir", ignored: true},
+		"temp/nested.txt": {kind: "file", ignored: true},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreNestedGitIgnore(t *testing.T) {
-	// Test that nested .gitignore files properly override parent rules
+	// Test that nested .gitignore files properly override parent rules.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "*.log"`,
 		`ADD subdir dir`,
@@ -55,30 +99,29 @@ func TestGitIgnoreNestedGitIgnore(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// Root .log files should be ignored, but subdir/important.log should be included due to negation
-	expected := `file .gitignore
-dir subdir
-file subdir/.gitignore
-file subdir/important.log
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":           {kind: "file", ignored: false},
+		"subdir":               {kind: "dir", ignored: false},
+		"subdir/.gitignore":    {kind: "file", ignored: false},
+		"subdir/test.log":      {kind: "file", ignored: true},
+		"subdir/important.log": {kind: "file", ignored: false},
+		"root.log":             {kind: "file", ignored: true},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreDirectoryOnly(t *testing.T) {
-	// Test directory-only patterns (trailing slash)
+	// Test directory-only patterns (trailing slash).
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "build/\n*.tmp"`,
 		`ADD build dir`,
 		`ADD build/output.txt file`,
-		`ADD build.tmp file`, // This file should be ignored by *.tmp
-		`ADD buildfile file`, // This file should NOT be ignored (no trailing slash)
+		`ADD build.tmp file`,
+		`ADD buildfile file`,
 	}))
 	require.NoError(t, err)
 	defer os.RemoveAll(d)
@@ -86,25 +129,22 @@ func TestGitIgnoreDirectoryOnly(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// build/ directory ignored, build.tmp ignored by *.tmp, but buildfile included
-	expected := `file .gitignore
-file buildfile
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":       {kind: "file", ignored: false},
+		"build":            {kind: "dir", ignored: true},
+		"build/output.txt": {kind: "file", ignored: true},
+		"build.tmp":        {kind: "file", ignored: true},
+		"buildfile":        {kind: "file", ignored: false},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreNegationPrecedence(t *testing.T) {
-	// Test complex negation patterns where later rules override earlier ones
-	// Expected behavior: gitignore processes patterns in order, so later patterns
-	// take precedence. A negation pattern (!) can un-ignore files that were
-	// previously ignored.
+	// Test complex negation patterns where later rules override earlier ones.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "*.log\n!important.log\ntemp/\n!temp/keep.txt"`,
 		`ADD regular.log file`,
@@ -119,25 +159,23 @@ func TestGitIgnoreNegationPrecedence(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// *.log ignores all .log files, but !important.log brings it back
-	// temp/ ignores the directory, but !temp/keep.txt should bring back that specific file
-	expected := `file .gitignore
-file important.log
-dir temp
-file temp/keep.txt
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":      {kind: "file", ignored: false},
+		"regular.log":     {kind: "file", ignored: true},
+		"important.log":   {kind: "file", ignored: false},
+		"temp":            {kind: "dir", ignored: true},
+		"temp/delete.txt": {kind: "file", ignored: true},
+		"temp/keep.txt":   {kind: "file", ignored: false},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreDoublestar(t *testing.T) {
-	// Test ** patterns that match any number of directories
+	// Test ** patterns that match any number of directories.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "**/node_modules/\n**/*.pyc"`,
 		`ADD node_modules dir`,
@@ -157,28 +195,28 @@ func TestGitIgnoreDoublestar(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// All node_modules directories and .pyc files should be ignored
-	expected := `file .gitignore
-dir deep
-dir deep/nested
-dir project
-file script.py
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":               {kind: "file", ignored: false},
+		"node_modules":             {kind: "dir", ignored: true},
+		"node_modules/react":       {kind: "file", ignored: true},
+		"project":                  {kind: "dir", ignored: false},
+		"project/node_modules":     {kind: "dir", ignored: true},
+		"project/node_modules/vue": {kind: "file", ignored: true},
+		"script.py":                {kind: "file", ignored: false},
+		"script.pyc":               {kind: "file", ignored: true},
+		"deep":                     {kind: "dir", ignored: false},
+		"deep/nested":              {kind: "dir", ignored: false},
+		"deep/nested/file.pyc":     {kind: "file", ignored: true},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreRelativePatterns(t *testing.T) {
-	// Test patterns that are relative to the gitignore file location
-	// Expected behavior: patterns without leading slash are relative to the
-	// gitignore file's directory, patterns with leading slash are relative
-	// to the repository root.
+	// Test patterns that are relative to the gitignore file location.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "/root-only.txt"`,
 		`ADD absolute.txt file`,
@@ -198,33 +236,28 @@ func TestGitIgnoreRelativePatterns(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// /root-only.txt ignored by root .gitignore
-	// build ignored by root .gitignore
-	// subdir/build ignored by subdir/.gitignore
-	// subdir/other/build NOT ignored (subdir/.gitignore only applies to its level)
-	// absolute.txt NOT ignored (/ pattern in subdir doesn't affect root)
-	expected := `file .gitignore
-file absolute.txt
-file build
-dir subdir
-file subdir/.gitignore
-file subdir/other
-dir subdir/subdir2
-file subdir/subdir2/absolute.txt
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":                  {kind: "file", ignored: false},
+		"absolute.txt":                {kind: "file", ignored: false},
+		"root-only.txt":               {kind: "file", ignored: true},
+		"build":                       {kind: "file", ignored: false},
+		"subdir":                      {kind: "dir", ignored: false},
+		"subdir/.gitignore":           {kind: "file", ignored: false},
+		"subdir/build":                {kind: "file", ignored: true},
+		"subdir/other":                {kind: "file", ignored: false},
+		"subdir/absolute.txt":         {kind: "file", ignored: true},
+		"subdir/subdir2":              {kind: "dir", ignored: false},
+		"subdir/subdir2/absolute.txt": {kind: "file", ignored: false},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreTrailingSlash(t *testing.T) {
-	// Test that trailing slashes in patterns are handled correctly
-	// Expected behavior: Patterns with trailing slashes should only match directories.
+	// Test that trailing slashes in patterns are handled correctly.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "build*/"`,
 		`ADD build-foo dir`,
@@ -237,21 +270,21 @@ func TestGitIgnoreTrailingSlash(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	expected := `file .gitignore
-file build-bar
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":         {kind: "file", ignored: false},
+		"build-foo":          {kind: "dir", ignored: true},
+		"build-foo/file.txt": {kind: "file", ignored: true},
+		"build-bar":          {kind: "file", ignored: false},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreEmptyAndComments(t *testing.T) {
-	// Test that empty lines and comments are properly ignored
+	// Test that empty lines and comments are properly ignored.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "# This is a comment\n\n*.log\n# Another comment\n\ntemp.txt\n\n"`,
 		`ADD test.log file`,
@@ -264,21 +297,21 @@ func TestGitIgnoreEmptyAndComments(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	expected := `file .gitignore
-file keep.txt
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore": {kind: "file", ignored: false},
+		"test.log":   {kind: "file", ignored: true},
+		"temp.txt":   {kind: "file", ignored: true},
+		"keep.txt":   {kind: "file", ignored: false},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreNoGitIgnoreFile(t *testing.T) {
-	// Test behavior when no .gitignore file exists
+	// Test behavior when no .gitignore file exists.
 	d, err := tmpDir(changeStream([]string{
 		`ADD foo.txt file`,
 		`ADD bar.log file`,
@@ -291,24 +324,21 @@ func TestGitIgnoreNoGitIgnoreFile(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// Without .gitignore, all files should be included
-	expected := `file bar.log
-file foo.txt
-dir subdir
-file subdir/nested.txt
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		"foo.txt":           {kind: "file", ignored: false},
+		"bar.log":           {kind: "file", ignored: false},
+		"subdir":            {kind: "dir", ignored: false},
+		"subdir/nested.txt": {kind: "file", ignored: false},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreOpen(t *testing.T) {
-	// Test that Open() respects gitignore rules
+	// Test that Open() respects gitignore rules.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "*.log"`,
 		`ADD allowed.txt file "content"`,
@@ -320,38 +350,35 @@ func TestGitIgnoreOpen(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	// Should be able to open allowed file
+	// Should be able to open allowed file.
 	r, err := gfs.Open("allowed.txt")
 	require.NoError(t, err)
 	require.NoError(t, r.Close())
 
-	// Should NOT be able to open blocked file
+	// Should NOT be able to open blocked file.
 	_, err = gfs.Open("blocked.log")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, os.ErrNotExist))
 }
 
 func TestGitIgnoreComplexHierarchy(t *testing.T) {
-	// Test complex directory hierarchy with multiple .gitignore files
-	// Expected behavior: Each .gitignore file adds its patterns to the
-	// accumulated set from parent directories. Child patterns can override
-	// parent patterns using negation.
+	// Test complex directory hierarchy with multiple .gitignore files.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "*.tmp\nignore/"`,
 		`ADD level1 dir`,
 		`ADD level1/.gitignore file "*.log\n!important.log"`,
 		`ADD level1/level2 dir`,
 		`ADD level1/level2/.gitignore file "*.txt\n!keep.txt"`,
-		`ADD test.tmp file`,                // ignored by root
-		`ADD level1/test.log file`,         // ignored by level1
-		`ADD level1/important.log file`,    // NOT ignored (negated by level1)
-		`ADD level1/level2/file.txt file`,  // ignored by level2
-		`ADD level1/level2/keep.txt file`,  // NOT ignored (negated by level2)
-		`ADD level1/level2/test.tmp file`,  // ignored by root (inherited)
-		`ADD level1/level2/other.log file`, // ignored by level1 (inherited)
+		`ADD test.tmp file`,
+		`ADD level1/test.log file`,
+		`ADD level1/important.log file`,
+		`ADD level1/level2/file.txt file`,
+		`ADD level1/level2/keep.txt file`,
+		`ADD level1/level2/test.tmp file`,
+		`ADD level1/level2/other.log file`,
 	}))
 	require.NoError(t, err)
 	defer os.RemoveAll(d)
@@ -359,39 +386,39 @@ func TestGitIgnoreComplexHierarchy(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// Complex inheritance and negation should work correctly
-	expected := `file .gitignore
-dir level1
-file level1/.gitignore
-file level1/important.log
-dir level1/level2
-file level1/level2/.gitignore
-file level1/level2/keep.txt
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":               {kind: "file", ignored: false},
+		"level1":                   {kind: "dir", ignored: false},
+		"level1/.gitignore":        {kind: "file", ignored: false},
+		"level1/level2":            {kind: "dir", ignored: false},
+		"level1/level2/.gitignore": {kind: "file", ignored: false},
+		"test.tmp":                 {kind: "file", ignored: true},
+		"level1/test.log":          {kind: "file", ignored: true},
+		"level1/important.log":     {kind: "file", ignored: false},
+		"level1/level2/file.txt":   {kind: "file", ignored: true},
+		"level1/level2/keep.txt":   {kind: "file", ignored: false},
+		"level1/level2/test.tmp":   {kind: "file", ignored: true},
+		"level1/level2/other.log":  {kind: "file", ignored: true},
+	}
+	assert.Equal(t, expected, got)
 }
 
 func TestGitIgnoreEdgeCasePatterns(t *testing.T) {
-	// Test edge case patterns that might cause issues
-	// Expected behavior: Various special characters and patterns should
-	// work correctly, including escaping and bracket expressions.
+	// Test edge case patterns that might cause issues.
 	d, err := tmpDir(changeStream([]string{
 		`ADD .gitignore file "file[123].txt\n*.log\nspecial\\*file.txt\ndir with spaces/"`,
-		`ADD file1.txt file`,        // ignored by bracket pattern
-		`ADD file2.txt file`,        // ignored by bracket pattern
-		`ADD file4.txt file`,        // NOT ignored (not in bracket range)
-		`ADD test.log file`,         // ignored by *.log
-		`ADD special*file.txt file`, // ignored by escaped pattern
-		`ADD "dir with spaces" dir`, // ignored by dir pattern
+		`ADD file1.txt file`,
+		`ADD file2.txt file`,
+		`ADD file4.txt file`,
+		`ADD test.log file`,
+		`ADD special*file.txt file`,
+		`ADD "dir with spaces" dir`,
 		`ADD "dir with spaces/content.txt" file`,
-		`ADD normal.txt file`, // NOT ignored
+		`ADD normal.txt file`,
 	}))
 	require.NoError(t, err)
 	defer os.RemoveAll(d)
@@ -399,17 +426,20 @@ func TestGitIgnoreEdgeCasePatterns(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs, nil)
+	gfs, err := NewGitIgnoreMarkedFS(fs, nil)
 	require.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = gfs.Walk(context.Background(), "", bufWalkDir(b))
-	require.NoError(t, err)
-
-	// Only file4.txt and normal.txt should remain
-	expected := `file .gitignore
-file file4.txt
-file normal.txt
-`
-	assert.Equal(t, expected, b.String())
+	got := collectWalk(t, gfs)
+	expected := map[string]walkEntry{
+		".gitignore":                  {kind: "file", ignored: false},
+		"file1.txt":                   {kind: "file", ignored: true},
+		"file2.txt":                   {kind: "file", ignored: true},
+		"file4.txt":                   {kind: "file", ignored: false},
+		"test.log":                    {kind: "file", ignored: true},
+		"special*file.txt":            {kind: "file", ignored: true},
+		"dir with spaces":             {kind: "dir", ignored: true},
+		"dir with spaces/content.txt": {kind: "file", ignored: true},
+		"normal.txt":                  {kind: "file", ignored: false},
+	}
+	assert.Equal(t, expected, got)
 }

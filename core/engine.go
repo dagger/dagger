@@ -29,6 +29,14 @@ type EngineCache struct {
 	MinFreeSpace  int `field:"true" doc:"The target amount of free disk space the garbage collector will attempt to leave."`
 }
 
+type EngineCachePruneOptions struct {
+	UseDefaultPolicy bool
+	MaxUsedSpace     string
+	ReservedSpace    string
+	MinFreeSpace     string
+	TargetSpace      string
+}
+
 func (*EngineCache) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "EngineCache",

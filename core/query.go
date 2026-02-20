@@ -66,6 +66,10 @@ type Server interface {
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// The Client metadata of a specific client ID within the same session as the
+	// current client.
+	SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error)
+
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*ModDeps, error)
 
@@ -113,9 +117,10 @@ type Server interface {
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
 
-	// Prune the local cache of releaseable entries. If useDefaultPolicy is true, use the engine-wide default pruning policy,
-	// otherwise prune the whole cache of any releasable entries.
-	PruneEngineLocalCacheEntries(context.Context, bool) (*EngineCacheEntrySet, error)
+	// Prune the local cache of releaseable entries. If UseDefaultPolicy is true,
+	// use the engine-wide default pruning policy, otherwise prune the whole cache
+	// of any releasable entries.
+	PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo

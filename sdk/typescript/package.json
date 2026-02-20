@@ -35,7 +35,7 @@
     "node-color-log": "^13.0.3",
     "node-fetch": "^3.3.2",
     "reflect-metadata": "^0.2.2",
-    "tar": "^7.5.2",
+    "tar": "^7.5.9",
     "typescript": "^5.9.3"
   },
   "scripts": {

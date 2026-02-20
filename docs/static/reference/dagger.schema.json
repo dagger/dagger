@@ -34,6 +34,10 @@
           "type": "string",
           "description": "The default path to use for File or Directory arguments."
         },
+        "defaultAddress": {
+          "type": "string",
+          "description": "The default address to use for Container arguments."
+        },
         "ignore": {
           "items": {
             "type": "string"
@@ -94,6 +98,13 @@
           },
           "type": "array",
           "description": "IgnoreChecks is a list of check patterns to exclude from this toolchain. Patterns can use glob syntax to match check names."
+        },
+        "ignoreGenerators": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "IgnoreGenerators is a list of generator patterns to exclude from this toolchain. Patterns can use glob syntax to match generator names."
         }
       },
       "additionalProperties": false,

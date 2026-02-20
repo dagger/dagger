@@ -117,7 +117,9 @@ func (dev *EngineDev) Playground(
 ) (*dagger.Container, error) {
 	ctr := base
 	if ctr == nil {
-		ctr = dag.Alpine().Container().WithEnvVariable("HOME", "/root")
+		ctr = dag.Wolfi().Container(dagger.WolfiContainerOpts{
+			Packages: []string{"apk-tools", "git"},
+		}).WithEnvVariable("HOME", "/root")
 	}
 	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
 	svc, err := dev.Service(
@@ -192,7 +194,15 @@ func (dev *EngineDev) Container(
 	ctr = ctr.
 		WithFile(cliPath, cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr)
+
 	// ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
+
+	// Set to specify a version on the dev engine so it can use the corresponding
+	// published version.
+	// ctr = ctr.WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v0.19.10")
+
+	// Set if the dev engine has a version but it needs to act as a dev engine.
+	// ctr = ctr.WithEnvVariable("_EXPERIMENTAL_DAGGER_DEV_ENGINE", "1")
 
 	return ctr, nil
 }
@@ -290,7 +300,7 @@ func (dev *EngineDev) InstallClient(
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliPath, dag.DaggerCli().Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
-		WithExec([]string{"ln", "-s", cliPath, "/usr/local/bin/dagger"})
+		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
 		client = client.WithMountedSecret(
 			"${HOME}/.docker/config.json",
@@ -359,6 +369,7 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
+// +generate
 func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	// ebpf object files are actually expected to only be generated during a build, not
 	// committed, so we remove stubs and real ones before+after go generate
@@ -388,6 +399,7 @@ func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		WithExec([]string{"find", "engine/ebpf", "-name", "*_bpfel.o", "-delete"}).
+		WithExec([]string{"go", "test", "./dagql", "-update"}).
 		Directory(".")
 	changes := changes(base, withGoGenerate, []string{"github.com"})
 	return changes, nil

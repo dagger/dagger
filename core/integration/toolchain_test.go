@@ -248,7 +248,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
     }
   ]
 }
-				`)
+					`)
 		// verify we can call a function from our toolchain with overridden argument
 		out, err := modGen.
 			With(daggerExec("call", "hello", "configurable-message")).
@@ -317,6 +317,38 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "Greetings from Mars!")
+	})
+
+	t.Run("override container default with address", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello-with-container",
+      "customizations": [
+        {
+          "function": ["testWithDefaultContainer"],
+          "argument": "ctr",
+          "defaultAddress": "alpine:3.18"
+        }
+      ]
+    }
+  ]
+}
+				`)
+		// verify we can call a function with container default override
+		out, err := modGen.
+			With(daggerExec("call", "hello", "test-with-default-container")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		// Should get some alpine version - verifying Container default works at all
+		require.Contains(t, out, "3.18") // Alpine version contains a dot
 	})
 }
 
@@ -447,13 +479,13 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		// Install first commit
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install",
-			"github.com/dagger/jest@9ad6b0b9811b93bf2293a9f3eb0ffcae4d10919d",
+			"github.com/dagger/jest@b19aca4e39448291f65ad96f0eea3005ea1cf356",
 		))
 
 		// will fail at name deduplication (both named "jest")
 		_, err := modGen.With(daggerExec(
 			"toolchain", "install",
-			"github.com/dagger/jest@7e9d82b267c73bdb09dbc5e70a79e2cd020f7cc2",
+			"github.com/dagger/jest@1484257689c618ed314f5acefd1d712d80cda2dc",
 		)).CombinedOutput(ctx)
 
 		// this should error with "duplicate toolchain name"
@@ -470,13 +502,13 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		// Install first commit
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install", "--name", "jest-old",
-			"github.com/dagger/jest@9ad6b0b9811b93bf2293a9f3eb0ffcae4d10919d",
+			"github.com/dagger/jest@b19aca4e39448291f65ad96f0eea3005ea1cf356",
 		))
 
 		// will fail at name deduplication (both named "jest")
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install", "--name", "jest-new",
-			"github.com/dagger/jest@7e9d82b267c73bdb09dbc5e70a79e2cd020f7cc2",
+			"github.com/dagger/jest@1484257689c618ed314f5acefd1d712d80cda2dc",
 		))
 
 		// This should work if we use different names
@@ -559,5 +591,43 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		require.NoError(t, err)
 		require.Contains(t, out, "dev environment config", "Expected customized config content")
 		t.Logf("Successfully called dev toolchain with customized defaultPath: %s", out)
+	})
+}
+
+func (ToolchainSuite) TestToolchainLocalModuleHints(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("DAGGER_MODULE hint and --mod dot bypass", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		_, err := modGen.
+			WithEnvVariable("DAGGER_MODULE", "github.com/dagger/dagger@main").
+			With(daggerExec("toolchain", "list")).
+			Sync(ctx)
+		requireErrOut(t, err, `module source "github.com/dagger/dagger@main" kind must be "local", got "git"`)
+		requireErrOut(t, err, `hint: module source came from DAGGER_MODULE="github.com/dagger/dagger@main"`)
+		requireErrOut(t, err, "pass `--mod .`")
+
+		out, err := modGen.
+			WithEnvVariable("DAGGER_MODULE", "github.com/dagger/dagger@main").
+			With(daggerExec("toolchain", "list", "--mod", ".")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Name")
+	})
+
+	t.Run("--mod hint", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		_, err := modGen.
+			With(daggerExec("toolchain", "list", "--mod", "github.com/dagger/dagger@main")).
+			Sync(ctx)
+		requireErrOut(t, err, `module source "github.com/dagger/dagger@main" kind must be "local", got "git"`)
+		requireErrOut(t, err, `hint: module source came from --mod="github.com/dagger/dagger@main"`)
+		requireErrOut(t, err, "pass `--mod .`")
 	})
 }

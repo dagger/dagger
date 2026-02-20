@@ -184,15 +184,15 @@ func envFileContentHashWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 			return inst, err
 		}
 
-		dop, err := dagql.NewObjectResultForCurrentID[*core.EnvFile](ctx, srv, ef)
+		dop, err := dagql.NewObjectResultForID(ef.Self(), srv, ef.ID())
 		if err != nil {
 			return inst, err
 		}
 
-		dgst, err := ef.Digest(ctx)
+		dgst, err := ef.Self().Digest(ctx)
 		if err != nil {
 			return inst, err
 		}
-		return dop.WithObjectDigest(dgst), nil
+		return dop.WithContentDigest(dgst), nil
 	}
 }

@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -25,7 +24,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -245,28 +243,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 	copy(src.ConfigClients, oriConfigClients)
 
 	return &src
-}
-
-func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var pbDefs []*pb.Definition
-	if src.ContextDirectory.Self() != nil {
-		defs, err := src.ContextDirectory.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		pbDefs = append(pbDefs, defs...)
-	}
-	for _, dep := range src.Dependencies {
-		if dep.Self() == nil {
-			continue
-		}
-		defs, err := dep.Self().PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		pbDefs = append(pbDefs, defs...)
-	}
-	return pbDefs, nil
 }
 
 func (src *ModuleSource) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -490,7 +466,7 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		src.ModuleOriginalName,
 		src.SourceRootSubpath,
 		src.SourceSubpath,
-		src.ContextDirectory.ID().Digest().String(),
+		src.ContextDirectory.ID().ContentDigest().String(),
 	}
 
 	if src.SDK != nil && src.SDK.Debug {
@@ -549,6 +525,48 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 	}
 
 	return hashutil.HashStrings(inputs...)
+}
+
+// ContentCacheScope returns a stable provenance scope for content-addressed module
+// cache keys. This prevents modules with identical content from different remotes
+// (e.g. public vs private mirrors) or different transport forms (https vs ssh)
+// from aliasing to the same cached module.
+func (src *ModuleSource) ContentCacheScope() string {
+	if src == nil {
+		return ""
+	}
+	if src.Kind != ModuleSourceKindGit || src.Git == nil {
+		return ""
+	}
+
+	repo := src.Git.HTMLRepoURL
+	if repo == "" {
+		// fallback for early/partial git sources before HTML URL is populated
+		repo = src.Git.CloneRef
+	}
+	cloneRef := src.Git.CloneRef
+
+	return hashutil.HashStrings(
+		"git-module-cache-scope",
+		repo,
+		cloneRef,
+		src.Git.Commit,
+		src.SourceRootSubpath,
+	).String()
+}
+
+// ContentScopedDigest returns a stable digest for caching source-derived artifacts.
+// For git sources we mix in provenance scope so distinct remotes with identical
+// content don't alias in runtime/codegen/module-definition caches.
+func (src *ModuleSource) ContentScopedDigest() string {
+	if src == nil {
+		return ""
+	}
+	scope := src.ContentCacheScope()
+	if scope == "" {
+		return src.Digest
+	}
+	return hashutil.HashStrings(src.Digest, scope).String()
 }
 
 // LoadContextDir loads addition files+directories from the module source's context, including those that
@@ -938,7 +956,6 @@ func (src *ModuleSource) LoadContextGit(
 				},
 			},
 		)
-
 		if err != nil {
 			return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
 		}
@@ -1027,13 +1044,6 @@ func (src GitModuleSource) Link(filepath string, line int, column int) (string, 
 
 func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
-}
-
-func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	if src.UnfilteredContextDir.Self() == nil {
-		return nil, nil
-	}
-	return src.UnfilteredContextDir.Self().PBDefinitions(ctx)
 }
 
 type SchemeType int
@@ -1143,7 +1153,7 @@ func ResolveDepToSource(
 			}
 			err = dag.Select(ctx, dag.Root(), &inst, selectors...)
 			if err != nil {
-				if errors.Is(err, cache.ErrCacheRecursiveCall) {
+				if errors.Is(err, dagql.ErrCacheRecursiveCall) {
 					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
 				}
 				return inst, err

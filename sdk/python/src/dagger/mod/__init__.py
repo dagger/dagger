@@ -1,5 +1,6 @@
 from typing_extensions import Doc
 
+from dagger.mod._arguments import DefaultAddress
 from dagger.mod._arguments import DefaultPath
 from dagger.mod._arguments import Deprecated
 from dagger.mod._arguments import Ignore
@@ -14,6 +15,7 @@ check = _default_mod.check
 enum_type = _default_mod.enum_type
 function = _default_mod.function
 field = _default_mod.field
+generate = _default_mod.generate
 interface = _default_mod.interface
 object_type = _default_mod.object_type
 
@@ -24,6 +26,7 @@ def default_module() -> Module:
 
 
 __all__ = [
+    "DefaultAddress",
     "DefaultPath",
     "Deprecated",
     "Doc",  # Only re-exported because it's in `typing_extensions`.
@@ -34,6 +37,7 @@ __all__ = [
     "enum_type",
     "field",
     "function",
+    "generate",
     "interface",
     "object_type",
 ]

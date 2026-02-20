@@ -1,6 +1,7 @@
 query ModuleSourceDependencies($source: ModuleSourceID!) {
   source: loadModuleSourceFromID(id: $source) {
     moduleOriginalName
+    engineVersion
     dependencies {
       kind
       moduleOriginalName

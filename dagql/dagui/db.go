@@ -446,25 +446,31 @@ type Activity struct {
 
 func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
 	return func(yield func(Interval) bool) {
-		var lastIval *Interval
+		var latestEnd time.Time
+		yieldRunning := func() {
+			runningStart := activity.EarliestRunning
+			if latestEnd.After(runningStart) {
+				runningStart = latestEnd
+			}
+			if runningStart.Before(now) {
+				yield(Interval{Start: runningStart, End: now})
+			}
+		}
 		for _, ival := range activity.CompletedIntervals {
-			lastIval = &ival
 			if !activity.EarliestRunning.IsZero() &&
 				activity.EarliestRunning.Before(ival.Start) {
-				if !yield(Interval{Start: activity.EarliestRunning, End: now}) {
-					return
-				}
-				break
+				yieldRunning()
+				return
 			}
 			if !yield(ival) {
 				return
 			}
-		}
-		if !activity.EarliestRunning.IsZero() &&
-			(lastIval == nil || activity.EarliestRunning.After(lastIval.End)) {
-			if !yield(Interval{Start: activity.EarliestRunning, End: now}) {
-				return
+			if ival.End.After(latestEnd) {
+				latestEnd = ival.End
 			}
+		}
+		if !activity.EarliestRunning.IsZero() {
+			yieldRunning()
 		}
 	}
 }
@@ -847,11 +853,14 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 		var call callpbv1.Call
 		if err := call.Decode(callPayload); err != nil {
 			slog.Warn("failed to decode call", "err", err)
-		} else {
-			// Cache the decoded call for future use
-			db.Calls[dig] = &call
-			return &call
+			// Cache nil so we don't keep retrying and spamming warnings
+			// on every render cycle.
+			db.Calls[dig] = nil
+			return nil
 		}
+		// Cache the decoded call for future use
+		db.Calls[dig] = &call
+		return &call
 	}
 
 	// Finally, try to find the call through creator spans
