@@ -18,6 +18,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/stretchr/testify/require"
@@ -97,8 +98,6 @@ func TestMain(m *testing.M) {
 
 	// Start inner engine with shared registries and buildkit HTTP config
 	// for the endpoint addresses (so the engine can push/pull via HTTP).
-	// The engineRunVol cache volume is shared with the test container (mounted
-	// in the dang toolchain) so tests can access /run/dagger-engine.sock.
 	engineRunVol := dag.CacheVolume("integ-test-engine-run")
 	engineSvc, err := dag.EngineDev().
 		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
@@ -118,15 +117,8 @@ func TestMain(m *testing.M) {
 		panic(fmt.Sprintf("engine failed to start: %v", err))
 	}
 
-	// Export CLI binary
-	_, err = dag.Cli().Binary().Export(ctx, "/.dagger-cli")
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", "/.dagger-cli")
-	os.Setenv("_TEST_DAGGER_CLI_LINUX_BIN", "/.dagger-cli")
-
 	// Export engine tar for tests that spin up additional dev engines
+	// (must happen before FinalizeTestMain which unsets session vars)
 	engineTar := dag.EngineDev().
 		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
 		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
@@ -139,20 +131,11 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("_DAGGER_TESTS_ENGINE_TAR", "/tmp/engine.tar")
 
-	// Set inner engine as runner host
-	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
-
 	// Set repo path
 	os.Setenv("_DAGGER_TESTS_REPO_PATH", "../..")
 
-	// Unset session vars so tests create fresh sessions against inner engine
-	// (must happen after all dag.* calls above, which need the outer session)
-	os.Unsetenv("DAGGER_SESSION_PORT")
-	os.Unsetenv("DAGGER_SESSION_TOKEN")
+	// Export CLI, set runner host, and unset session vars
+	testutil.FinalizeTestMain(ctx, engineSvc)
 
 	res := oteltest.Main(m)
 
@@ -167,7 +150,7 @@ func Middleware() []testctx.Middleware[*testing.T] {
 		testctx.WithParallel(),
 		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.T]{
-				StartOptions: SpanOpts[*testing.T],
+				StartOptions: testutil.SpanOpts[*testing.T],
 			},
 		),
 		oteltest.WithLogging[*testing.T](),
@@ -178,7 +161,7 @@ func BenchMiddleware() []testctx.Middleware[*testing.B] {
 	return []testctx.Middleware[*testing.B]{
 		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.B]{
-				StartOptions: SpanOpts[*testing.B],
+				StartOptions: testutil.SpanOpts[*testing.B],
 			},
 		),
 		oteltest.WithLogging[*testing.B](),
@@ -195,7 +178,6 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 	t.Cleanup(func() { client.Close() })
 	return client
 }
-
 
 func newCache(t *testctx.T) core.CacheVolumeID {
 	res, err := Query[struct {

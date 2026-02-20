@@ -38,6 +38,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/testctx"
 	"mvdan.cc/sh/v3/syntax"
@@ -2172,7 +2173,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	// verify that even if the engine doesn't have any search domains to propagate to execs, we still
 	// set search domains in those execs
 
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(NewTWriter(t)))
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -2214,7 +2215,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 
 	c2, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost("tcp://127.0.0.1:32132"),
-		dagger.WithLogOutput(NewTWriter(t)))
+		dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -81,7 +82,7 @@ func testImagePull(ctx context.Context, t *testctx.T, c *dagger.Client, devEngin
 	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
-	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(NewTWriter(t)))
+	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 

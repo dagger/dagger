@@ -29,6 +29,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
@@ -2437,8 +2438,8 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 		addr := "127.0.0.1:12456"
 		listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--listen", addr)
 		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
-		listenCmd.Stdout = NewTWriter(t)
-		listenCmd.Stderr = NewTWriter(t)
+		listenCmd.Stdout = testutil.NewTWriter(t)
+		listenCmd.Stderr = testutil.NewTWriter(t)
 		require.NoError(t, listenCmd.Start())
 
 		backoff.Retry(func() error {
@@ -2454,7 +2455,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 
 		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "container-echo", "--string-arg=hi", "stdout")
 		callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
-		callCmd.Stderr = NewTWriter(t)
+		callCmd.Stderr = testutil.NewTWriter(t)
 		out, err := callCmd.Output()
 		require.NoError(t, err)
 		lines := strings.Split(string(out), "\n")
@@ -2478,7 +2479,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
-				callCmd.Stderr = NewTWriter(t)
+				callCmd.Stderr = testutil.NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.Output()
 				if err == nil {
@@ -2502,7 +2503,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
-				callCmd.Stderr = NewTWriter(t)
+				callCmd.Stderr = testutil.NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.Output()
 				if err == nil {

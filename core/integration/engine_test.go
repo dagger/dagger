@@ -20,10 +20,10 @@ import (
 	"github.com/pelletier/go-toml"
 	"golang.org/x/sync/errgroup"
 
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -141,11 +141,11 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 // This is needed occasionally for tests like TestClientGenerator where we
 // can't use nested execs.
 // It works because the dang toolchain and suite_test.go share a cache volume
-// for the engine's /run directory, mounted at /engine-run on the test container.
+// for the engine's /run directory, mounted at /run on the test container.
 func nonNestedDevEngine(c *dagger.Client) func(*dagger.Container) *dagger.Container {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			WithUnixSocket("/run/dagger-engine.sock", c.Host().UnixSocket("/engine-run/dagger-engine.sock")).
+			WithUnixSocket("/run/dagger-engine.sock", c.Host().UnixSocket("/run/dagger-engine.sock")).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///run/dagger-engine.sock")
 	}
 }

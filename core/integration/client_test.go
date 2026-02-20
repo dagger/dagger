@@ -11,6 +11,7 @@ import (
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/koron-go/prefixw"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -37,7 +38,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	newClient := func(ctx context.Context, name string) (*dagger.Client, *safeBuffer) {
 		out := new(safeBuffer)
 		c, err := dagger.Connect(ctx,
-			dagger.WithLogOutput(io.MultiWriter(prefixw.New(NewTWriter(t), name+": "), out)))
+			dagger.WithLogOutput(io.MultiWriter(prefixw.New(testutil.NewTWriter(t), name+": "), out)))
 		require.NoError(t, err)
 		t.Cleanup(func() { c.Close() })
 		return c, out
