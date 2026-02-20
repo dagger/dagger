@@ -794,6 +794,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if err != nil {
 			return nil, fmt.Errorf("encode module ID: %w", err)
 		}
+
+		contentScopedModID, err := mod.SourceContentScopedID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get content-scoped module ID: %w", err)
+		}
+		execMD.EncodedContentModuleID, err = contentScopedModID.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("encode content-scoped module ID: %w", err)
+		}
 	}
 
 	fnCall := &FunctionCall{

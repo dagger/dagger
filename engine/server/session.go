@@ -438,6 +438,10 @@ type ClientInitOpts struct {
 	// of that module.
 	EncodedModuleID string
 
+	// If the client is running from a function in a module, this is the encoded
+	// content-scoped module dagQL ID.
+	EncodedContentModuleID string
+
 	// If the client is running from a function in a module, this is the encoded function call
 	// metadata (of type core.FunctionCall)
 	EncodedFunctionCall json.RawMessage
@@ -972,11 +976,12 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
 			AllowedLLMModules: allowedLLMModules,
 		},
-		CallID:              execMD.CallID,
-		CallerClientID:      execMD.CallerClientID,
-		EncodedModuleID:     execMD.EncodedModuleID,
-		EncodedFunctionCall: execMD.EncodedFunctionCall,
-		ParentIDs:           execMD.ParentIDs,
+		CallID:                 execMD.CallID,
+		CallerClientID:         execMD.CallerClientID,
+		EncodedModuleID:        execMD.EncodedModuleID,
+		EncodedContentModuleID: execMD.EncodedContentModuleID,
+		EncodedFunctionCall:    execMD.EncodedFunctionCall,
+		ParentIDs:              execMD.ParentIDs,
 	}).ServeHTTP(w, r)
 }
 
