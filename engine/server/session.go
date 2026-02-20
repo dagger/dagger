@@ -1814,9 +1814,21 @@ func (srv *Server) loadModule(
 		resolved.Self().ApplyWorkspaceDefaultsToTypeDefs()
 	}
 
+	// Serve the module and its dependencies to the client. Dependencies must
+	// be served because module functions can return dependency types (e.g. via
+	// interfaces), and the caller's schema needs those types for sub-selection.
+	// This mirrors the old CLI path which called Serve(IncludeDependencies: true).
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
-	return srv.serveModule(client, resolved.Self())
+	if err := srv.serveModule(client, resolved.Self()); err != nil {
+		return err
+	}
+	for _, depMod := range resolved.Self().Deps.Mods {
+		if err := srv.serveModule(client, depMod); err != nil {
+			return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
+		}
+	}
+	return nil
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.
