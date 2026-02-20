@@ -1696,14 +1696,16 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		})
 	}
 
-	// (3) Implicit CWD module (dagger.json near CWD)
+	// (3) Implicit module (dagger.json near CWD)
+	var implicitModuleDir string
 	{
 		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 		if hasModuleConfig {
+			implicitModuleDir = moduleDir
 			wsDir := filepath.Join(ws.Root, ws.Path)
 			rel, _ := filepath.Rel(wsDir, moduleDir)
 
-			// If the CWD module lives outside the workspace's managed
+			// If the implicit module lives outside the workspace's managed
 			// modules directory, it's a standalone module.  In that case
 			// the standalone module should take precedence — drop any
 			// workspace modules we gathered so the standalone module is
@@ -1713,9 +1715,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				pending = nil
 			}
 
-			// If a blueprint module is pending, it replaces the CWD
-			// module: the blueprint assumes the CWD module's name and
-			// the CWD module is not loaded.
+			// If a blueprint module is pending, it replaces the implicit
+			// module: the blueprint assumes the implicit module's name
+			// and the implicit module is not loaded.
 			if blueprintIdx := findBlueprint(pending); blueprintIdx >= 0 {
 				cwdModName := cwdModuleName(ctx, readFile, moduleDir)
 				if cwdModName != "" {
@@ -1740,9 +1742,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if idx := findBlueprint(pending); idx >= 0 {
 		// Blueprint is always the default.
 		client.workspace.DefaultModule = pending[idx].Name
-	} else if len(pending) == 1 {
-		// Single module (standalone project).
-		client.workspace.DefaultModule = pending[0].Name
+	} else if len(pending) == 1 && implicitModuleDir != "" {
+		// Single implicit module (standalone project). The pending entry
+		// has no Name (it's derived from dagger.json at load time), so
+		// read it from the config file.
+		client.workspace.DefaultModule = cwdModuleName(ctx, readFile, implicitModuleDir)
 	}
 
 	return nil
