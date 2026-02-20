@@ -12,7 +12,6 @@ type TestSplit {
       .env
       .withDirectory("/app", source)
       .withWorkdir("/app")
-      .withMountedCache("/engine-run", cacheVolume("integ-test-engine-run"))
       .withExec(
         ["go", "test", pkg, "-run", run.join("|"), "-v", "-count", "1", "-timeout", "30m"],
         experimentalPrivilegedNesting: true,
@@ -32,7 +31,6 @@ type TestSplit {
       .env
       .withDirectory("/app", source)
       .withWorkdir("/app")
-      .withMountedCache("/engine-run", cacheVolume("integ-test-engine-run"))
       .withEnvVariable("CGO_ENABLED", "1")
       .withExec(
         ["go", "test", pkg, "-v", "-skip", skip.join("|"), "-count", "1", "-race", "-timeout", "30m"],
@@ -97,7 +95,6 @@ type TestSplit {
       .env
       .withDirectory("/app", source)
       .withWorkdir("/app")
-      .withMountedCache("/engine-run", cacheVolume("integ-test-engine-run"))
       .withExec(
         ["go", "test", "./core/integration",
          "-run", "TestContainer|TestDockerfile",
