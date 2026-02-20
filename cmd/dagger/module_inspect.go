@@ -58,29 +58,26 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, e
 		}
 	}
 
-	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
-		return nil, err
+	// Ask the engine which module is the default for this workspace.
+	// This is authoritative: blueprint modules, standalone modules, etc.
+	if def.Name == "" {
+		var wsRes struct {
+			CurrentWorkspace struct {
+				DefaultModule string
+			}
+		}
+		err := dag.Do(ctx, &dagger.Request{
+			Query: `{ currentWorkspace { defaultModule } }`,
+		}, &dagger.Response{
+			Data: &wsRes,
+		})
+		if err == nil && wsRes.CurrentWorkspace.DefaultModule != "" {
+			def.Name = wsRes.CurrentWorkspace.DefaultModule
+		}
 	}
 
-	// When exactly one module constructor is on the Query root, treat it
-	// as the main module so its functions are directly accessible via
-	// `dagger call <func>`. This covers both legacy single-module projects
-	// and workspaces with a single blueprint.
-	if def.Name == "" && def.MainObject != nil && def.MainObject.AsObject != nil && def.MainObject.AsObject.Name == "Query" {
-		modules := map[string]*modTypeDef{}
-		for _, fn := range def.MainObject.AsObject.Functions {
-			if obj := fn.ReturnType.AsObject; obj != nil && obj.SourceModuleName != "" {
-				if fn.Name == gqlFieldName(obj.SourceModuleName) {
-					modules[obj.SourceModuleName] = fn.ReturnType
-				}
-			}
-		}
-		if len(modules) == 1 {
-			for name, mod := range modules {
-				def.Name = name
-				def.MainObject = mod
-			}
-		}
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
+		return nil, err
 	}
 
 	return def, nil

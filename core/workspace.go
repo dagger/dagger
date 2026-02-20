@@ -23,6 +23,11 @@ type Workspace struct {
 	// when the workspace is passed to a module function.
 	ClientID string `field:"true" doc:"The client ID that owns this workspace's host filesystem."`
 
+	// DefaultModule is the name of the module that the CLI should focus on
+	// by default. For a workspace with a blueprint, this is the blueprint
+	// module. For a standalone module, this is the module itself.
+	DefaultModule string `field:"true" name:"defaultModule" doc:"The default module to focus on (blueprint or standalone module name). Empty when ambiguous."`
+
 	// hostPath is the host filesystem path for the root.
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by mutating operations (init, install, configWrite) that need
