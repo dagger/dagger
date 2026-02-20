@@ -2695,7 +2695,7 @@ export class Test {
 			t.Run("sad input", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("faves", "--langs", "GO,FOO,BAR")).Sync(ctx)
 				requireErrOut(t, err, "invalid argument")
-				requireErrOut(t, err, "should be one of GO,PYTHON,TYPESCRIPT,PHP,ELIXIR")
+				requireErrOut(t, err, "should be one of ELIXIR,GO,PHP,PYTHON,TYPESCRIPT")
 			})
 
 			t.Run("output", func(ctx context.Context, t *testctx.T) {
