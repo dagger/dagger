@@ -3,8 +3,10 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 )
 
@@ -47,8 +49,9 @@ func Detect(
 ) (*Workspace, error) {
 	// Single-pass find-up for workspace markers
 	soughtNames := map[string]struct{}{
-		WorkspaceDirName: {},
-		".git":           {},
+		WorkspaceDirName:     {},
+		".git":               {},
+		ModuleConfigFileName: {},
 	}
 	found, err := core.Host{}.FindUpAll(ctx, statFS, cwd, soughtNames)
 	if err != nil {
@@ -57,6 +60,7 @@ func Detect(
 
 	daggerDir, hasDaggerDir := found[WorkspaceDirName]
 	gitDir, hasGit := found[".git"]
+	daggerJSON, hasDaggerJSON := found[ModuleConfigFileName]
 
 	// Helper: find sandbox root (git root or fallback to workspace dir).
 	sandboxFor := func(workspaceDir string) string {
@@ -72,6 +76,55 @@ func Detect(
 			return "."
 		}
 		return rel
+	}
+
+	// if we found a dagger.json at a deeper nesting than .dagger/,
+	// pretend it's an uninitialized workspace
+	daggerJSONDir := filepath.Dir(daggerJSON)
+	if hasDaggerJSON &&
+		(!hasDaggerDir || len(daggerJSONDir) > len(filepath.Dir(daggerDir))) {
+		// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
+		// When no workspace config exists but a nearby dagger.json has toolchains
+		// or a blueprint, extract them as workspace-level modules (loaded alongside
+		// the implicit CWD module in the gathering phase below).
+		sandbox := sandboxFor(daggerJSONDir)
+		var legacyCfg *legacyConfig
+		if data, readErr := readFile(ctx, daggerJSON); readErr == nil {
+			legacyCfg, err = parseLegacyConfig(data)
+			if err != nil {
+				return nil, err
+			}
+		}
+		config := &Config{
+			Modules: map[string]ModuleEntry{},
+		}
+		for _, tc := range legacyCfg.Toolchains {
+			config.Modules[tc.Name] = ModuleEntry{
+				Source:            tc.Source,
+				LegacyDefaultPath: true,
+			}
+		}
+		if lb := legacyCfg.Blueprint; lb != nil {
+			config.Modules[lb.Name] = ModuleEntry{
+				Source:            lb.Source,
+				Blueprint:         true,
+				LegacyDefaultPath: true,
+			}
+		}
+		if len(config.Modules) > 0 || path.Clean(legacyCfg.Source) != "." {
+			fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), "Inferring workspace configuration from legacy module config (%s). Run 'dagger migrate' soon.\n", daggerJSON)
+		}
+		config.Modules[legacyCfg.Name] = ModuleEntry{
+			Source:            legacyCfg.Source,
+			Blueprint:         true,
+			LegacyDefaultPath: true,
+		}
+		return &Workspace{
+			Root:        sandbox,
+			Path:        relPath(sandbox, daggerJSONDir),
+			Config:      config,
+			Initialized: false,
+		}, nil
 	}
 
 	// Step 1: .dagger/ found → look for config.toml
@@ -124,4 +177,3 @@ type ErrMigrationRequired struct {
 func (e *ErrMigrationRequired) Error() string {
 	return `Migration required: run "dagger migrate" to update this project to the workspace format.`
 }
-
