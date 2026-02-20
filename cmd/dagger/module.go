@@ -360,6 +360,11 @@ func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName strin
 			return fmt.Errorf("failed to generate module: %w", err)
 		}
 
+		searchExisting := !cmd.Flags().Lookup("license").Changed
+		if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
+			return err
+		}
+
 		fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", modName, "in", srcRootAbsPath)
 		return nil
 	})
