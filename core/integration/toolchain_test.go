@@ -257,6 +257,50 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.Contains(t, out, "hola from blueprint")
 	})
 
+	t.Run("override function default argument with numerical-looking string", func(ctx context.Context, t *testctx.T) {
+		// Reproduces https://github.com/dagger/dagger/issues/11882
+		modGen := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/work").
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			// Create toolchain with default Go SDK template (provides ContainerEcho(stringArg string))
+			WithWorkdir("/work/toolchains/test-toolchain").
+			With(daggerExec("init", "--sdk=go", "--name=test-toolchain")).
+			// Create main module
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go")).
+			WithNewFile("dagger.json", `
+{
+  "name": "numerical-toolchain-argument",
+  "engineVersion": "v0.19.4",
+  "sdk": {
+    "source": "go"
+  },
+  "toolchains": [
+    {
+      "name": "test-toolchain",
+      "source": "toolchains/test-toolchain",
+      "customizations": [
+        {
+          "function": ["ContainerEcho"],
+          "argument": "stringArg",
+          "default": "8.0"
+        }
+      ]
+    }
+  ]
+}
+					`)
+		// verify the module loads and the numerical-looking string default works
+		out, err := modGen.
+			With(daggerExec("call", "test-toolchain", "container-echo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "8.0")
+	})
+
 	t.Run("override constructor defaultPath argument", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
