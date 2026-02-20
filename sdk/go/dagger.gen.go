@@ -13872,18 +13872,19 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
-	clientId    *string
-	configPath  *string
-	configRead  *string
-	configWrite *string
-	findUp      *string
-	hasConfig   *bool
-	id          *WorkspaceID
-	init        *string
-	initialized *bool
-	install     *string
-	moduleInit  *string
-	path        *string
+	clientId      *string
+	configPath    *string
+	configRead    *string
+	configWrite   *string
+	defaultModule *string
+	findUp        *string
+	hasConfig     *bool
+	id            *WorkspaceID
+	init          *string
+	initialized   *bool
+	install       *string
+	moduleInit    *string
+	path          *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -13976,6 +13977,19 @@ func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (
 	q := r.query.Select("configWrite")
 	q = q.Arg("key", key)
 	q = q.Arg("value", value)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+func (r *Workspace) DefaultModule(ctx context.Context) (string, error) {
+	if r.defaultModule != nil {
+		return *r.defaultModule, nil
+	}
+	q := r.query.Select("defaultModule")
 
 	var response string
 

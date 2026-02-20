@@ -61,18 +61,9 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, e
 	// Ask the engine which module is the default for this workspace.
 	// This is authoritative: blueprint modules, standalone modules, etc.
 	if def.Name == "" {
-		var wsRes struct {
-			CurrentWorkspace struct {
-				DefaultModule string
-			}
-		}
-		err := dag.Do(ctx, &dagger.Request{
-			Query: `{ currentWorkspace { defaultModule } }`,
-		}, &dagger.Response{
-			Data: &wsRes,
-		})
-		if err == nil && wsRes.CurrentWorkspace.DefaultModule != "" {
-			def.Name = wsRes.CurrentWorkspace.DefaultModule
+		name, err := dag.CurrentWorkspace().DefaultModule(ctx)
+		if err == nil && name != "" {
+			def.Name = name
 		}
 	}
 
