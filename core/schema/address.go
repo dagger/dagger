@@ -181,7 +181,11 @@ func (s *addressSchema) directory(
 			})
 		}
 	} else {
-		q = queryLocalDirectory(addr, args.CopyFilter)
+		if path, err := parsePathWithFilter(addr, &args.CopyFilter); err != nil {
+			return inst, err
+		} else {
+			q = queryLocalDirectory(path, args.CopyFilter)
+		}
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -229,6 +233,48 @@ func queryRemoteGitRoot(gitURL *gitutil.GitURL) []dagql.Selector {
 func getLocalPath(path string) string {
 	// file://PATH -> PATH
 	return strings.TrimPrefix(path, "file://")
+}
+
+// Parse directories with filters:
+// - /path/to/monorepo?include=apps/app1,libs/lib1,libs/lib2&exclude=libs/lib1/testdata
+func parsePathWithFilter(pathWithFilter string, copyFiler *core.CopyFilter) (string, error) {
+	path := pathWithFilter
+	if i := strings.Index(pathWithFilter, "?"); i > 0 {
+		// this will support something like
+		// "--path-arg=.?include=cmd,internal&exclude=docs&gitignore=true"
+
+		pathArgs := strings.Split(pathWithFilter[i+1:], "&")
+		path = pathWithFilter[:i]
+		for _, pathArg := range pathArgs {
+			if j := strings.Index(pathArg, "="); j > 0 {
+				argName := pathArg[:j]
+				argValue := pathArg[j+1:]
+				switch argName {
+				case "include":
+					copyFiler.Include = append(copyFiler.Include, strings.Split(argValue, ",")...)
+				case "exclude":
+					copyFiler.Exclude = append(copyFiler.Exclude, strings.Split(argValue, ",")...)
+				case "gitignore":
+					if bVal, err := strconv.ParseBool(argValue); err == nil {
+						copyFiler.Gitignore = bVal
+					} else {
+						return "", fmt.Errorf("invalid option %s=%s in %q: %w", argName, argValue, pathWithFilter, err)
+					}
+				default:
+					return "", fmt.Errorf("unknown option %q in %q", argName, pathWithFilter)
+				}
+			} else {
+				argName := pathArg
+				switch argName {
+				case "gitignore":
+					copyFiler.Gitignore = true
+				default:
+					return "", fmt.Errorf("unknown option %q in %q", argName, pathWithFilter)
+				}
+			}
+		}
+	}
+	return path, nil
 }
 
 func (s *addressSchema) container(
