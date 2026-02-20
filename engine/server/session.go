@@ -1655,11 +1655,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// Set the workspace's default module so the CLI knows which module
 	// to focus on without heuristics.
 	if idx := findBlueprint(pending); idx >= 0 {
-		// Blueprint is always the default.
 		client.workspace.DefaultModule = pending[idx].Name
-	} else if len(pending) == 1 {
-		// Single module — use it as the default.
-		client.workspace.DefaultModule = pending[0].Name
 	}
 
 	return nil
