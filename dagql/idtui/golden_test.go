@@ -22,7 +22,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -31,14 +30,30 @@ import (
 
 	"dagger.io/dagger/telemetry"
 
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/dagger/dagger/util/scrub"
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
 )
 
 func TestMain(m *testing.M) {
+	ctx := context.Background()
+
+	// Start an inner engine for golden tests that exec `dagger`.
+	// The CLI subprocess needs a real engine with filesystem access,
+	// which the outer session vars don't provide for local module paths.
+	engineSvc, err := dag.EngineDev().
+		TestEngine(dagger.EngineDevTestEngineOpts{}).Start(ctx)
+	if err != nil {
+		panic(fmt.Sprintf("engine failed to start: %v", err))
+	}
+
+	testutil.FinalizeTestMain(ctx, engineSvc)
+
 	os.Exit(oteltest.Main(m))
 }
 
@@ -46,67 +61,10 @@ func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
 		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.T]{
-				StartOptions: spanOpts[*testing.T],
+				StartOptions: testutil.SpanOpts[*testing.T],
 			},
 		),
 		oteltest.WithLogging[*testing.T](),
-	}
-}
-
-// newTWriter creates an io.Writer that writes to testing.T.Log
-func newTWriter(t testing.TB) io.Writer {
-	tw := &tWriter{t: t}
-	t.Cleanup(tw.flush)
-	return tw
-}
-
-type tWriter struct {
-	t   testing.TB
-	buf bytes.Buffer
-	mu  sync.Mutex
-}
-
-func (tw *tWriter) Write(p []byte) (n int, err error) {
-	tw.mu.Lock()
-	defer tw.mu.Unlock()
-	if n, err = tw.buf.Write(p); err != nil {
-		return n, err
-	}
-	for {
-		line, err := tw.buf.ReadBytes('\n')
-		if err == io.EOF {
-			tw.buf.Write(line)
-			break
-		}
-		if err != nil {
-			return n, err
-		}
-		tw.t.Log(strings.TrimSuffix(string(line), "\n"))
-	}
-	return n, nil
-}
-
-func (tw *tWriter) flush() {
-	tw.mu.Lock()
-	defer tw.mu.Unlock()
-	tw.t.Log(tw.buf.String())
-}
-
-func spanOpts[T testctx.Runner[T]](w *testctx.W[T]) []trace.SpanStartOption {
-	var t T
-	attrs := []attribute.KeyValue{
-		attribute.String("dagger.io/testctx.name", w.Name()),
-		attribute.String("dagger.io/testctx.type", fmt.Sprintf("%T", t)),
-		attribute.Bool(telemetry.UIBoundaryAttr, true),
-	}
-	if strings.Count(w.Name(), "/") == 0 {
-		attrs = append(attrs, attribute.Bool(telemetry.UIRevealAttr, true))
-	}
-	if _, ok := os.LookupEnv("TESTCTX_PREWARM"); ok {
-		attrs = append(attrs, attribute.Bool("dagger.io/testctx.prewarm", true))
-	}
-	return []trace.SpanStartOption{
-		trace.WithAttributes(attrs...),
 	}
 }
 
@@ -468,8 +426,8 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	errBuf := new(bytes.Buffer)
 	outBuf := new(bytes.Buffer)
-	cmd.Stderr = io.MultiWriter(errBuf, prefixw.New(newTWriter(t), "stderr: "))
-	cmd.Stdout = io.MultiWriter(outBuf, prefixw.New(newTWriter(t), "stdout: "))
+	cmd.Stderr = io.MultiWriter(errBuf, prefixw.New(testutil.NewTWriter(t), "stderr: "))
+	cmd.Stdout = io.MultiWriter(outBuf, prefixw.New(testutil.NewTWriter(t), "stdout: "))
 
 	err := cmd.Run()
 	if ex.Fail {
