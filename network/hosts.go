@@ -31,6 +31,10 @@ func SessionDomain(sid string) string {
 }
 
 // SessionDomain is a session-wide domain suffix for a given session ID.
+// TODO: REASSESS IN NEW WORLD OF MODULE CACHING
+// TODO: REASSESS IN NEW WORLD OF MODULE CACHING
+// TODO: REASSESS IN NEW WORLD OF MODULE CACHING
+// TODO: REASSESS IN NEW WORLD OF MODULE CACHING
 func ModuleDomain(modID *call.ID, sid string) string {
 	return fmt.Sprintf(
 		"%s.%s%s",

@@ -673,9 +673,7 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
-	// TODO: experimental optimization
-	// TODO: experimental optimization
-	// TODO: experimental optimization
+	// Before recursing, check if we already have a cached result for this ID.
 	if res, err := s.Cache.GetOrInitCall(ctx, CacheKey{
 		ID: id,
 	}, func(ctx context.Context) (AnyResult, error) {

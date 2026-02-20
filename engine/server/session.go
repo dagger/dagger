@@ -638,7 +638,7 @@ func (srv *Server) initializeDaggerClient(
 		}
 		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
 		if err != nil {
-			return fmt.Errorf("failed to load module: %w", err)
+			return fmt.Errorf("failed to load module during client init: %w", err)
 		}
 		client.mod = modInst.Self()
 

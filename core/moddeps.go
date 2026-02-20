@@ -189,15 +189,15 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 				continue
 			}
 			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
-			class.Extend(
-				dagql.FieldSpec{
-					Name:           asIfaceFieldName,
-					Description:    fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:           &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:         ifaceType.mod.IDModule(),
-					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
-				},
-				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				class.Extend(
+					dagql.FieldSpec{
+						Name:           asIfaceFieldName,
+						Description:    fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
+						Type:           &InterfaceAnnotatedValue{TypeDef: iface},
+						Module:         ifaceType.mod.IDModule(ctx),
+						GetCacheConfig: ifaceType.mod.CacheConfigForCall,
+					},
+					func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
 					if !ok {
 						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)

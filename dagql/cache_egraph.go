@@ -438,17 +438,14 @@ func (c *cache) lookupCacheForID(
 	}
 
 	if hitTerm == nil {
-		// TODO: seeing if this works, needed to avoid buildkit solver bug
-		if id.Field() == "_contextDirectory" {
-			for _, extra := range id.ExtraDigests() {
-				if extra.Digest == "" {
-					continue
-				}
-				termSet := c.egraphTermsByOutputDigest[extra.Digest.String()]
-				hitTerm = c.firstLiveTermInSetLocked(termSet)
-				if hitTerm != nil {
-					break
-				}
+		for _, extra := range id.ExtraDigests() {
+			if extra.Digest == "" {
+				continue
+			}
+			termSet := c.egraphTermsByOutputDigest[extra.Digest.String()]
+			hitTerm = c.firstLiveTermInSetLocked(termSet)
+			if hitTerm != nil {
+				break
 			}
 		}
 	}

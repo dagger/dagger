@@ -182,6 +182,22 @@ func (id *ID) ExtraDigests() []ExtraDigest {
 	return out
 }
 
+func (id *ID) ExtraDigestByLabel(label string) *ExtraDigest {
+	if id == nil || len(id.pb.ExtraDigests) == 0 {
+		return nil
+	}
+	for _, extra := range id.pb.ExtraDigests {
+		if extra == nil || extra.Digest == "" || extra.Label != label {
+			continue
+		}
+		return &ExtraDigest{
+			Digest: digest.Digest(extra.Digest),
+			Label:  extra.Label,
+		}
+	}
+	return nil
+}
+
 // OutputEquivalentDigest returns the digest used when outputs can be treated as
 // interchangeable across different recipes:
 // 1. content digest (if set)
@@ -389,7 +405,8 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 		h = h.WithDelim()
 	}
 
-	// Synthetic module identity input (input lane only; no self-shape bytes).
+	// module is an input, not part of self; this way multiple digests on the module ID
+	// can contribute to cache checks
 	if moduleDigest := id.moduleInputDigest(); moduleDigest != "" {
 		inputs = append(inputs, moduleDigest)
 	}
@@ -539,6 +556,16 @@ func WithContentDigest(dig digest.Digest) IDOpt {
 	}
 }
 
+func WithReplacedContentDigest(dig digest.Digest) IDOpt {
+	return func(id *ID) {
+		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extraDigestLabelContent)
+		if dig == "" {
+			return
+		}
+		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelContent)
+	}
+}
+
 func WithExtraDigest(extra ExtraDigest) IDOpt {
 	return func(id *ID) {
 		if extra.Digest == "" {
@@ -549,6 +576,49 @@ func WithExtraDigest(extra ExtraDigest) IDOpt {
 			extra.Digest.String(),
 			extra.Label,
 		)
+	}
+}
+
+func WithReplacedExtraDigest(extra ExtraDigest) IDOpt {
+	return func(id *ID) {
+		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extra.Label)
+		if extra.Digest == "" {
+			return
+		}
+		id.pb.ExtraDigests = appendExtraDigest(
+			id.pb.ExtraDigests,
+			extra.Digest.String(),
+			extra.Label,
+		)
+	}
+}
+
+// Update the ID to have existing recipe digest and existing extra digests
+// mixed with the given string. Also update the ID to have an extra digest
+// set to the given string.
+// This is useful for making IDs shared cache based purely on the given string.
+func WithScopeToDigest(label string, scope digest.Digest) IDOpt {
+	return func(id *ID) {
+		origExtraDigests := id.ExtraDigests()
+
+		// ensure recipe digest is scoped to this operation
+		WithAppendedImplicitInputs(NewArgument(
+			label,
+			NewLiteralString(scope.String()),
+			false,
+		))(id)
+
+		// ensure any extra digests are also scoped to this operation
+		for _, extraDigest := range origExtraDigests {
+			extraDigest.Digest = hashutil.HashStrings(extraDigest.Digest.String(), scope.String())
+			WithReplacedExtraDigest(extraDigest)(id)
+		}
+
+		// finally, add an extra digest for the scope itself
+		WithExtraDigest(ExtraDigest{
+			Label:  label,
+			Digest: scope,
+		})(id)
 	}
 }
 

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/dagger/dagger/core/modules"
@@ -33,6 +34,13 @@ func NewToolchainRegistry(parent *Module) *ToolchainRegistry {
 	return &ToolchainRegistry{
 		entries: make(map[string]*ToolchainEntry),
 		parent:  parent,
+	}
+}
+
+func (r *ToolchainRegistry) Clone(clonedParent *Module) *ToolchainRegistry {
+	return &ToolchainRegistry{
+		entries: maps.Clone(r.entries),
+		parent:  clonedParent,
 	}
 }
 
@@ -101,7 +109,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 		if err != nil {
 			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
 		}
-		spec.Module = parentMod.IDModule()
+		spec.Module = parentMod.IDModule(ctx)
 		spec.GetCacheConfig = parentMod.CacheConfigForCall
 
 		return dagql.Field[*ModuleObject]{
@@ -143,7 +151,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 	}
 	// But use the toolchain name from the parent module
 	spec.Name = fun.Name
-	spec.Module = parentMod.IDModule()
+	spec.Module = parentMod.IDModule(ctx)
 	spec.GetCacheConfig = modFun.CacheConfigForCall
 
 	return dagql.Field[*ModuleObject]{

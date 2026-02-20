@@ -51,6 +51,11 @@ func (sdk *clientGeneratorModule) GenerateClient(
 		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
+	modSource, err = scopeSourceForSDKOperation(ctx, modSource, "generateClient", dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module source for sdk module %s generate client: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
