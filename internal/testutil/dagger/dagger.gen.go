@@ -22737,19 +22737,6 @@ const (
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
 )
 
-// Type aliases for SDK types used by test code
-type ClientOpt = dagger.ClientOpt
-type Request = dagger.Request
-type Response = dagger.Response
-
-// Re-export SDK client option constructors
-var WithLogOutput = dagger.WithLogOutput
-var WithVersionOverride = dagger.WithVersionOverride
-var WithVerbosity = dagger.WithVerbosity
-var WithRunnerHost = dagger.WithRunnerHost
-var WithEnvironmentVariable = dagger.WithEnvironmentVariable
-var WithWorkdir = dagger.WithWorkdir
-
 // Client is the Dagger Engine Client
 type Client struct {
 	dag    *dagger.Client
