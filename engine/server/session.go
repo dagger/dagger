@@ -1543,7 +1543,8 @@ type pendingModule struct {
 	// Name override (empty = derive from module).
 	Name string
 
-	// If true, this is a blueprint module: alias its functions to the Query root.
+	// If true, this is a blueprint module: it replaces the CWD module's
+	// constructor, assuming its name and type namespace.
 	Blueprint bool
 
 	// If true, resolve +defaultPath from workspace root instead of module source.
@@ -1557,6 +1558,32 @@ type pendingModule struct {
 	// Workspace config defaults to apply to the module.
 	ConfigDefaults     map[string]any
 	DefaultsFromDotEnv bool
+}
+
+// findBlueprint returns the index of the first blueprint module in pending,
+// or -1 if none exists.
+func findBlueprint(pending []pendingModule) int {
+	for i, m := range pending {
+		if m.Blueprint {
+			return i
+		}
+	}
+	return -1
+}
+
+// cwdModuleName reads the module name from the dagger.json in moduleDir.
+func cwdModuleName(ctx context.Context, readFile func(context.Context, string) ([]byte, error), moduleDir string) string {
+	data, err := readFile(ctx, filepath.Join(moduleDir, workspace.ModuleConfigFileName))
+	if err != nil {
+		return ""
+	}
+	var cfg struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return ""
+	}
+	return cfg.Name
 }
 
 // detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
@@ -1686,9 +1713,19 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				pending = nil
 			}
 
-			pending = append(pending, pendingModule{
-				Ref: resolveLocalRef(ws, rel),
-			})
+			// If a blueprint module is pending, it replaces the CWD
+			// module: the blueprint assumes the CWD module's name and
+			// the CWD module is not loaded.
+			if blueprintIdx := findBlueprint(pending); blueprintIdx >= 0 {
+				cwdModName := cwdModuleName(ctx, readFile, moduleDir)
+				if cwdModName != "" {
+					pending[blueprintIdx].Name = cwdModName
+				}
+			} else {
+				pending = append(pending, pendingModule{
+					Ref: resolveLocalRef(ws, rel),
+				})
+			}
 		}
 	}
 
@@ -1843,7 +1880,7 @@ func (srv *Server) loadModule(
 	if mod.Name != "" {
 		resolved.Self().NameField = mod.Name
 	}
-	_ = mod.Blueprint // reserved for future use
+	// noop: Blueprint is handled during module gathering, not at load time.
 	if mod.LegacyDefaultPath {
 		resolved.Self().LegacyDefaultPath = true
 	}
