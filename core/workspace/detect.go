@@ -60,7 +60,7 @@ func Detect(
 
 	daggerDir, hasDaggerDir := found[WorkspaceDirName]
 	gitDir, hasGit := found[".git"]
-	daggerJSON, hasDaggerJSON := found[ModuleConfigFileName]
+	daggerJSONDir, hasDaggerJSON := found[ModuleConfigFileName]
 
 	// Helper: find sandbox root (git root or fallback to workspace dir).
 	sandboxFor := func(workspaceDir string) string {
@@ -80,7 +80,6 @@ func Detect(
 
 	// if we found a dagger.json at a deeper nesting than .dagger/,
 	// pretend it's an uninitialized workspace
-	daggerJSONDir := filepath.Dir(daggerJSON)
 	if hasDaggerJSON &&
 		(!hasDaggerDir || len(daggerJSONDir) > len(filepath.Dir(daggerDir))) {
 		// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
@@ -88,35 +87,55 @@ func Detect(
 		// or a blueprint, extract them as workspace-level modules (loaded alongside
 		// the implicit CWD module in the gathering phase below).
 		sandbox := sandboxFor(daggerJSONDir)
-		var legacyCfg *legacyConfig
-		if data, readErr := readFile(ctx, daggerJSON); readErr == nil {
-			legacyCfg, err = parseLegacyConfig(data)
-			if err != nil {
-				return nil, err
-			}
+		daggerJSONPath := filepath.Join(daggerJSONDir, ModuleConfigFileName)
+		data, readErr := readFile(ctx, daggerJSONPath)
+		if readErr != nil {
+			// Can't read the dagger.json we just found — treat as
+			// uninitialized workspace with no modules.
+			return &Workspace{
+				Root: sandbox,
+				Path: relPath(sandbox, daggerJSONDir),
+			}, nil
+		}
+		legacyCfg, err := parseLegacyConfig(data)
+		if err != nil {
+			return nil, err
 		}
 		config := &Config{
 			Modules: map[string]ModuleEntry{},
 		}
+		// Sources in legacy dagger.json are relative to the dagger.json
+		// directory. The session resolves config module sources relative
+		// to .dagger/, so prepend ../ to escape that prefix.
+		legacyLocalSource := func(src, pin string) string {
+			if core.FastModuleSourceKindCheck(src, pin) == core.ModuleSourceKindLocal {
+				return path.Join("..", src)
+			}
+			return src
+		}
 		for _, tc := range legacyCfg.Toolchains {
 			config.Modules[tc.Name] = ModuleEntry{
-				Source:            tc.Source,
+				Source:            legacyLocalSource(tc.Source, tc.Pin),
 				LegacyDefaultPath: true,
 			}
 		}
 		if lb := legacyCfg.Blueprint; lb != nil {
 			config.Modules[lb.Name] = ModuleEntry{
-				Source:            lb.Source,
+				Source:            legacyLocalSource(lb.Source, lb.Pin),
 				Blueprint:         true,
 				LegacyDefaultPath: true,
 			}
 		}
 		if len(config.Modules) > 0 || path.Clean(legacyCfg.Source) != "." {
-			fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), "Inferring workspace configuration from legacy module config (%s). Run 'dagger migrate' soon.\n", daggerJSON)
+			fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), "Inferring workspace configuration from legacy module config (%s). Run 'dagger migrate' soon.\n", daggerJSONPath)
 		}
+		// The module itself is the blueprint unless an explicit blueprint
+		// was configured — in that case it takes precedence.
+		// Source is ".." because the module root (dagger.json) is one
+		// level above the synthetic .dagger/ directory.
 		config.Modules[legacyCfg.Name] = ModuleEntry{
-			Source:            legacyCfg.Source,
-			Blueprint:         true,
+			Source:            "..",
+			Blueprint:         legacyCfg.Blueprint == nil,
 			LegacyDefaultPath: true,
 		}
 		return &Workspace{

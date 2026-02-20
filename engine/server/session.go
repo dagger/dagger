@@ -1613,7 +1613,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// TODO remove
-	if !ws.Initialized && len(ws.Config.Modules) == 0 {
+	if !ws.Initialized && (ws.Config == nil || len(ws.Config.Modules) == 0) {
 		wsDir := filepath.Join(ws.Root, ws.Path)
 		slog.Info("No workspace configured.", "path", wsDir)
 	}
@@ -1657,6 +1657,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if idx := findBlueprint(pending); idx >= 0 {
 		// Blueprint is always the default.
 		client.workspace.DefaultModule = pending[idx].Name
+	} else if len(pending) == 1 {
+		// Single module — use it as the default.
+		client.workspace.DefaultModule = pending[0].Name
 	}
 
 	return nil
