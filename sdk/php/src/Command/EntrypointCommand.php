@@ -16,6 +16,7 @@ use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\ListOfType;
 use Dagger\ValueObject\Type;
 use GraphQL\Exception\QueryError;
+use ReflectionClass;
 use ReflectionMethod;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -62,6 +63,14 @@ class EntrypointCommand extends Command
                 $daggerObject->description,
             );
 
+            foreach ($daggerObject->daggerFields as $daggerField) {
+                $objectTypeDef = $objectTypeDef->withField(
+                    $daggerField->name,
+                    $this->getTypeDef($daggerField->type),
+                    $daggerField->description,
+                );
+            }
+
             foreach ($daggerObject->daggerFunctions as $daggerFunction) {
                 $func = dag()->function(
                     $daggerFunction->name,
@@ -88,6 +97,17 @@ class EntrypointCommand extends Command
                 $objectTypeDef = $daggerFunction->isConstructor() ?
                     $objectTypeDef->withConstructor($func) :
                     $objectTypeDef->withFunction($func);
+            }
+
+            if (
+                $daggerObject->requiresConstruction()
+                && ! $daggerObject->hasConstructor()
+            ) {
+                $noopConstructor = dag()->function('', $this
+                    ->getTypeDef(new Type($daggerObject->name)));
+
+                $objectTypeDef = $objectTypeDef
+                    ->withConstructor($noopConstructor);
             }
 
             $daggerModule = $daggerModule->withObject($objectTypeDef);
@@ -203,8 +223,18 @@ class EntrypointCommand extends Command
             $functionName = '__construct';
         }
 
+        $object = new ReflectionClass($className);
+
+        if (
+            $functionName === '__construct'
+            && ! $object->hasMethod($functionName)
+        ) {
+            // All PHP classes implicity define __construct
+            return [];
+        }
+
         $daggerFunction = DaggerFunction::fromReflection(
-            new ReflectionMethod($className, $functionName)
+            $object->getMethod($functionName),
         );
 
         $result = [];
