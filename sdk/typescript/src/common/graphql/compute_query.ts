@@ -245,11 +245,34 @@ export async function compute<T>(
       )
     }
 
-    // Just throw the unknown error
+    // Build a detailed error message from the underlying error so that
+    // transport failures (kube-pod://, Docker, etc.) surface actionable
+    // context instead of the previous generic one-liner.
+    const parts: string[] = ["Encountered an error while requesting data via graphql"]
+
+    if (e instanceof Error) {
+      if (e.message) {
+        parts.push(`Error: ${e.message}`)
+      }
+      if (e.name && e.name !== "Error") {
+        parts.push(`Type: ${e.name}`)
+      }
+      // Walk the cause chain to surface deeply nested root causes
+      let current: unknown = e.cause
+      let depth = 0
+      while (current instanceof Error && depth < 5) {
+        parts.push(`Caused by: ${current.message}`)
+        current = current.cause
+        depth++
+      }
+    } else {
+      parts.push(`Error: ${String(e)}`)
+    }
+
     throw new UnknownDaggerError(
-      "Encountered an unknown error while requesting data via graphql",
+      parts.join("\n"),
       {
-        cause: e,
+        cause: e instanceof Error ? e : undefined,
       },
     )
   }
