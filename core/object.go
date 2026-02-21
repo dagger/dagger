@@ -283,7 +283,6 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			Name:             gqlFieldName(mod.Name()),
 			Type:             obj,
 			Module:           obj.Module.IDModule(ctx),
-			GetCacheConfig:   mod.CacheConfigForCall,
 			DeprecatedReason: objDef.Deprecated,
 		}
 
@@ -388,7 +387,6 @@ func objField(ctx context.Context, mod *Module, field *FieldTypeDef) dagql.Field
 		Description:      field.Description,
 		Type:             field.TypeDef.ToTyped(),
 		Module:           mod.IDModule(ctx),
-		GetCacheConfig:   mod.CacheConfigForCall,
 		DeprecatedReason: field.Deprecated,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
@@ -516,5 +514,7 @@ func (f *CallableField) CacheConfigForCall(
 	view call.View,
 	req dagql.GetCacheConfigRequest,
 ) (*dagql.GetCacheConfigResponse, error) {
-	return f.Module.CacheConfigForCall(ctx, parent, args, view, req)
+	return &dagql.GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
+	}, nil
 }

@@ -110,7 +110,6 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
 		}
 		spec.Module = parentMod.IDModule(ctx)
-		spec.GetCacheConfig = parentMod.CacheConfigForCall
 
 		return dagql.Field[*ModuleObject]{
 			Spec: &spec,

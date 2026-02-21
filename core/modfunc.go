@@ -513,16 +513,8 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	view call.View,
 	req dagql.GetCacheConfigRequest,
 ) (*dagql.GetCacheConfigResponse, error) {
-	cacheCfgResp, err := fn.mod.CacheConfigForCall(ctx, parent, args, view, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if cacheCfgResp.CacheKey.ID == nil {
-		cacheCfgResp.CacheKey.ID = req.CacheKey.ID
-	}
-	if cacheCfgResp.CacheKey.ID == nil {
-		return nil, fmt.Errorf("cache key ID is nil for %s.%s", fn.mod.Name(), fn.metadata.Name)
+	cacheCfgResp := &dagql.GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
 	}
 
 	var ctxArgs []*FunctionArg

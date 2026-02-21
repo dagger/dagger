@@ -377,22 +377,6 @@ func (mod *Module) View() (call.View, bool) {
 	return "", false
 }
 
-func (mod *Module) CacheConfigForCall(
-	ctx context.Context,
-	_ dagql.AnyResult,
-	_ map[string]dagql.Input,
-	_ call.View,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	resp := &dagql.GetCacheConfigResponse{
-		CacheKey: req.CacheKey,
-	}
-	if resp.CacheKey.ID == nil {
-		resp.CacheKey.ID = dagql.CurrentID(ctx)
-	}
-	return resp, nil
-}
-
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {
 	switch typeDef.Kind {
 	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
