@@ -8,7 +8,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 )
@@ -25,7 +24,7 @@ func (sdk *moduleTypes) ModuleTypes(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
-	currentModuleID *call.ID,
+	partiallyInitializedMod *core.Module,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object")
 	defer telemetry.EndWithCause(span, &rerr)
@@ -34,6 +33,16 @@ func (sdk *moduleTypes) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
+
+	source, err = scopeSourceForSDKOperation(ctx, source, "moduleTypes", dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module source for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	scopedMod, err := ScopeModuleForSDKOperation(ctx, partiallyInitializedMod, "moduleTypes", dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	currentModuleID := scopedMod.ID()
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
@@ -76,8 +85,7 @@ func (sdk *moduleTypes) ModuleTypes(
 	}
 
 	var modDefsID string
-	ignoreCtx := dagql.WithSkip(ctx) // ignore some spans as they are internal trick only
-	err = dag.Select(ignoreCtx, ctr, &modDefsID,
+	err = dag.Select(dagql.WithSkip(ctx), ctr, &modDefsID,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{

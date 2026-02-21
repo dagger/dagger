@@ -22,7 +22,8 @@ var _ SchemaResolvers = &secretSchema{}
 
 func (s *secretSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("secret", s.secret, dagql.CachePerCall).
+		dagql.NodeFunc("secret", s.secret).
+			WithInput(dagql.CachePerCall).
 			Doc(`Creates a new secret.`).
 			Args(
 				dagql.Arg("uri").Doc(`The URI of the secret store`),
@@ -33,7 +34,8 @@ func (s *secretSchema) Install(srv *dagql.Server) {
 				),
 			),
 
-		dagql.NodeFuncWithCacheKey("setSecret", s.setSecret, dagql.CachePerCall).
+		dagql.NodeFunc("setSecret", s.setSecret).
+			WithInput(dagql.CachePerCall).
 			Doc(`Sets a secret given a user defined name to its plaintext and returns the secret.`,
 				`The plaintext value is limited to a size of 128000 bytes.`).
 			Args(

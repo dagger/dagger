@@ -35,11 +35,12 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		dagql.NodeFuncWithCacheKey("directory",
+		dagql.NodeFunc("directory",
 			DagOpDirectoryWrapper(
 				srv, s.directory,
 				WithHashContentDir[*core.Host, hostDirectoryArgs](),
-			), dagql.CacheAsRequested).
+			)).
+			WithInput(dagql.CacheAsRequested("noCache")).
 			Doc(`Accesses a directory on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -49,35 +50,37 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
-		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
+		dagql.NodeFunc("file", s.file).
+			WithInput(dagql.CacheAsRequested("noCache")).
 			Doc(`Accesses a file on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 				dagql.Arg("noCache").Doc(`If true, the file will always be reloaded from the host.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CacheAsRequested).
+		dagql.NodeFunc("findUp", s.findUp).
+			WithInput(dagql.CacheAsRequested("noCache")).
 			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null`).
 			Args(
 				dagql.Arg("name").Doc(`name of the file or directory to search for`),
 			),
 
-		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
+		dagql.NodeFunc("unixSocket", s.socket).
+			WithInput(dagql.CachePerClient).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 			),
 
-		dagql.NodeFuncWithCacheKey("_sshAuthSocket", s.sshAuthSocket, dagql.CachePerCall).
+		dagql.NodeFunc("_sshAuthSocket", s.sshAuthSocket).
+			WithInput(dagql.CachePerCall).
 			Doc(`Accesses the SSH auth socket on the host and returns a socket scoped to SSH identities.`).
 			Args(
 				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
 			),
 
-		dagql.Func("__internalSocket", s.internalSocket).
-			Doc(`(Internal-only) Accesses a socket on the host (unix or ip) with the given internal client resource name.`),
-
-		dagql.FuncWithCacheKey("tunnel", s.tunnel, dagql.CachePerClient).
+		dagql.Func("tunnel", s.tunnel).
+			WithInput(dagql.CachePerClient).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
 			Args(
 				dagql.Arg("service").Doc(`Service to send traffic from the tunnel.`),
@@ -94,7 +97,9 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 					`If ports are given and native is true, the ports are additive.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("service", s.service, dagql.CachePerClient).
+		dagql.NodeFunc("service", s.service).
+			WithInput(dagql.CachePerSession).     // host services shouldn't cross sessions
+			WithInput(core.CachePerCallerModule). // services should be shared from different function calls in a module
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			Args(
 				dagql.Arg("ports").Doc(
@@ -105,15 +110,12 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("host").Doc(`Upstream host to forward traffic to.`),
 			),
 
-		dagql.NodeFuncWithCacheKey("containerImage", s.containerImage, dagql.CachePerClient).
+		dagql.NodeFunc("containerImage", s.containerImage).
+			WithInput(dagql.CachePerClient).
 			Doc(`Accesses a container image on the host.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the image to access.`),
 			),
-
-		// hidden from external clients via the __ prefix
-		dagql.Func("__internalService", s.internalService).
-			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 	}.Install(srv)
 }
 
@@ -476,13 +478,6 @@ type HostDirCacheConfig struct {
 	NoCache bool `default:"false"`
 }
 
-func (cc HostDirCacheConfig) CacheType() dagql.CacheControlType {
-	if cc.NoCache {
-		return dagql.CacheTypePerCall
-	}
-	return dagql.CacheTypePerClient
-}
-
 func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFileArgs) (i dagql.Result[*core.File], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -702,7 +697,7 @@ type hostServiceArgs struct {
 	Ports []dagql.InputObject[core.PortForward]
 }
 
-func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostServiceArgs) (inst dagql.Result[*core.Service], err error) {
+func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostServiceArgs) (inst dagql.ObjectResult[*core.Service], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -727,101 +722,23 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 	}
 
 	ports := collectInputsSlice(args.Ports)
-	sockIDs := make([]dagql.ID[*core.Socket], 0, len(ports))
+	socks := make([]*core.Socket, 0, len(ports))
 	for _, port := range ports {
 		accessor, err := core.GetHostIPSocketAccessor(ctx, query, args.Host, port)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get host ip socket accessor: %w", err)
 		}
 
-		var sockInst dagql.Result[*core.Socket]
-		err = srv.Select(ctx, srv.Root(), &sockInst,
-			dagql.Selector{
-				Field: "host",
-			},
-			dagql.Selector{
-				Field: "__internalSocket",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "accessor",
-						Value: dagql.NewString(accessor),
-					},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to select internal socket: %w", err)
-		}
-
-		if err := socketStore.AddIPSocket(sockInst.Self(), clientMetadata.ClientID, args.Host, port); err != nil {
+		sock := &core.Socket{IDDigest: hashutil.HashStrings(accessor)}
+		if err := socketStore.AddIPSocket(sock, clientMetadata.ClientID, args.Host, port); err != nil {
 			return inst, fmt.Errorf("failed to add ip socket to store: %w", err)
 		}
-
-		sockIDs = append(sockIDs, dagql.NewID[*core.Socket](sockInst.ID()))
+		socks = append(socks, sock)
 	}
 
-	err = srv.Select(ctx, srv.Root(), &inst,
-		dagql.Selector{
-			Field: "host",
-		},
-		dagql.Selector{
-			Field: "__internalService",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "socks",
-					Value: dagql.ArrayInput[dagql.ID[*core.Socket]](sockIDs),
-				},
-			},
-		},
-	)
-	return inst, err
-}
-
-type hostInternalServiceArgs struct {
-	Socks dagql.ArrayInput[dagql.ID[*core.Socket]]
-}
-
-func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, args hostInternalServiceArgs) (*core.Service, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	if len(args.Socks) == 0 {
-		return nil, errors.New("no host sockets specified")
-	}
-
-	socks := make([]*core.Socket, 0, len(args.Socks))
-	for _, sockID := range args.Socks {
-		sockInst, err := sockID.Load(ctx, srv)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load socket: %w", err)
-		}
-		socks = append(socks, sockInst.Self())
-	}
-
-	return &core.Service{
+	svc := &core.Service{
 		Creator:     trace.SpanContextFromContext(ctx),
 		HostSockets: socks,
-	}, nil
-}
-
-type hostInternalSocketArgs struct {
-	// Accessor is the scoped per-module name, which should guarantee uniqueness.
-	// It is used to ensure the dagql ID digest is unique per module; the digest is what's
-	// used as the actual key for the socket store.
-	Accessor string
-}
-
-func (s *hostSchema) internalSocket(ctx context.Context, host *core.Host, args hostInternalSocketArgs) (inst dagql.Result[*core.Socket], err error) {
-	if args.Accessor == "" {
-		return inst, errors.New("socket accessor must be provided")
 	}
-	dgst := hashutil.HashStrings(args.Accessor)
-	sock := &core.Socket{IDDigest: dgst}
-	inst, err = dagql.NewResultForCurrentID(ctx, sock)
-	if err != nil {
-		return inst, fmt.Errorf("failed to create instance: %w", err)
-	}
-	return inst.WithContentDigest(dgst), nil
+	return dagql.NewObjectResultForCurrentID(ctx, srv, svc)
 }

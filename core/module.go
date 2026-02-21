@@ -9,15 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/util/hashutil"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type Module struct {
@@ -158,73 +156,45 @@ func (mod *Module) GetContextSource() *ModuleSource {
 	return mod.ContextSource.Value.Self()
 }
 
-func (mod *Module) ContentDigestCacheKey() string {
-	contextSource := mod.ContextSource.Value.Self()
-	contentDigest := ""
-	contentCacheScope := ""
-	if contextSource != nil {
-		contentDigest = contextSource.Digest
-		contentCacheScope = contextSource.ContentCacheScope()
+// SourceContentScopedID is an ID of the module with cache scope to just parts
+// that matter to SDK operations and function calls. E.g. it is scoped to the
+// source code and dependencies but not client-specific values like specific git
+// git commits or local source paths the module was sourced from.
+// Use with caution as providing it to an operation that dependes on any client-specific
+// values may result in unexpected cache collisions.
+func (mod *Module) SourceContentScopedID(ctx context.Context) (*call.ID, error) {
+	contentDigestInputs := []string{"_sourceContentScoped"}
+	hasSource := false
+
+	if mod.ContextSource.Valid {
+		contextDigest, err := mod.ContextSource.Value.Self().ContentDigestForSDK(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get context source content digest: %w", err)
+		}
+		contentDigestInputs = append(contentDigestInputs, "context:"+contextDigest.String())
+		hasSource = true
 	}
 
-	return hashutil.HashStrings(
-		contentDigest,
-		contentCacheScope,
-		"asModule",
-	).String()
-}
-
-// GetModuleFromContentDigest loads a module based on the same content+provenance key used
-// in ModuleSource.asModule. We sometimes can't directly load a Module because the current
-// caching logic will result in that Module being re-loaded by clients (due to it being
-// CachePerClient) and then possibly trying to load it from the wrong context (in the case
-// of a cached result including a _contextDirectory call).
-func GetModuleFromContentDigest(
-	ctx context.Context,
-	dag *dagql.Server,
-	modName string,
-	dgst string,
-) (inst dagql.ObjectResult[*Module], err error) {
-	md, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return inst, err
-	}
-	cacheKey := hashutil.HashStrings(dgst, md.SessionID).String()
-	cacheRes, err := dag.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
-		return nil, fmt.Errorf("module not found: %s", modName)
-	})
-	if err != nil {
-		return inst, err
-	}
-	if cacheRes == nil {
-		return inst, fmt.Errorf("module cache returned nil result for key %q", cacheKey)
-	}
-	inst, ok := cacheRes.Value().(dagql.ObjectResult[*Module])
-	if !ok {
-		return inst, fmt.Errorf("cached module has unexpected type: %T", cacheRes.Value())
+	if mod.Source.Valid {
+		sourceDigest, err := mod.Source.Value.Self().ContentDigestForSDK(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get source content digest: %w", err)
+		}
+		contentDigestInputs = append(contentDigestInputs, "source:"+sourceDigest.String())
+		hasSource = true
 	}
 
-	return inst, nil
-}
-
-// CacheModuleByContentDigest caches the given module instance using its content+provenance
-// key + session ID, corresponding to the getter above (GetModuleFromContentDigest).
-func CacheModuleByContentDigest(
-	ctx context.Context,
-	dag *dagql.Server,
-	mod dagql.ObjectResult[*Module],
-) error {
-	md, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return err
-	}
-	perSessionContentCacheKey := hashutil.HashStrings(mod.Self().ContentDigestCacheKey(), md.SessionID).String()
-	_, err = dag.Cache.GetOrInitArbitrary(ctx, perSessionContentCacheKey, dagql.ArbitraryValueFunc(mod))
-	if err != nil {
-		return err
+	if !hasSource {
+		return nil, fmt.Errorf("no module source available for content-scoped ID")
 	}
 
-	return nil
+	return mod.ResultID.Append(
+		mod.ResultID.Type().ToAST(),
+		"_sourceContentScoped",
+		call.WithContentDigest(hashutil.HashStrings(
+			contentDigestInputs...,
+		)),
+	), nil
 }
 
 // Return all user defaults for this module
@@ -261,7 +231,15 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 	return modDefaults.Namespace(ctx, objName)
 }
 
-func (mod *Module) IDModule() *call.Module {
+// IDModule defines the call.Module field that will be set on call.IDs that represent calls on fields
+// from this module. The module field on call.IDs contribute to the recipe digest and also serve as
+// an input to calls when checking cache (so the digests included on the return call.Module.ID here
+// impact function call caching)
+func (mod *Module) IDModule(ctx context.Context) *call.Module {
+	// TODO: just make this return an error rather than panic
+	if mod.ResultID == nil {
+		panic("module ID is not set")
+	}
 	if !mod.Source.Valid {
 		panic("no module source")
 	}
@@ -283,20 +261,24 @@ func (mod *Module) IDModule() *call.Module {
 		pin = src.Git.Commit
 
 	case ModuleSourceKindDir:
-		// FIXME: this is better than nothing, but no other code handles refs that
-		// are an encoded ID right now
-		var err error
-		ref, err = src.ContextDirectory.ID().Encode()
-		if err != nil {
-			panic(fmt.Sprintf("failed to encode context directory ID: %v", err))
-		}
+		// no need to set ref/pin, the ID itself defines the module entirely
 
 	default:
 		panic(fmt.Sprintf("unexpected module source kind %q", src.Kind))
 	}
 
-	contentCacheKey := mod.ContentDigestCacheKey()
-	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey)), mod.Name(), ref, pin)
+	contentScopedID, err := mod.SourceContentScopedID(ctx)
+	if err != nil {
+		// TODO: just make IDModule return an error rather than panic
+		panic(fmt.Sprintf("failed to get content scoped ID for module: %v", err))
+	}
+
+	return call.NewModule(
+		// scope function call cache to the same scope as we use for SDK operations
+		// This scope includes all the parts of the module that matter to the "implementation"
+		contentScopedID,
+		mod.Name(), ref, pin,
+	)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -406,36 +388,6 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 
 func (mod *Module) View() (call.View, bool) {
 	return "", false
-}
-
-func (mod *Module) CacheConfigForCall(
-	ctx context.Context,
-	_ dagql.AnyResult,
-	_ map[string]dagql.Input,
-	_ call.View,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	// Function calls on a module should be cached based on the module's content hash, not
-	// the module ID digest (which has a per-client cache key in order to deal with
-	// local dir and git repo loading)
-	id := dagql.CurrentID(ctx)
-	curIDNoMod := id.With(
-		call.WithModule(nil),
-		call.WithCustomDigest(""),
-	)
-
-	resp := &dagql.GetCacheConfigResponse{
-		CacheKey: req.CacheKey,
-	}
-	if resp.CacheKey.ID == nil {
-		resp.CacheKey.ID = curIDNoMod
-	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
-		curIDNoMod.Digest().String(),
-		mod.Source.Value.Self().Digest,
-		mod.NameField, // the module source content digest only includes the original name
-	))
-	return resp, nil
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {
@@ -890,15 +842,11 @@ func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[
 		return runtime, fmt.Errorf("no runtime implemented")
 	}
 
-	var src dagql.ObjectResult[*ModuleSource]
 	if !mod.Source.Valid {
 		return runtime, fmt.Errorf("no source")
 	}
 
-	src = mod.Source.Value
-	scopedSourceDigest := src.Self().ContentScopedDigest()
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
-	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
 	if err != nil {
 		return runtime, fmt.Errorf("failed to load runtime: %w", err)
 	}
@@ -965,6 +913,10 @@ func (mod Module) Clone() *Module {
 
 	if cp.SDKConfig != nil {
 		cp.SDKConfig = cp.SDKConfig.Clone()
+	}
+
+	if cp.Toolchains != nil {
+		cp.Toolchains = cp.Toolchains.Clone(&cp)
 	}
 
 	return &cp

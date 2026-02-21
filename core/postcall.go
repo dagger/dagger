@@ -183,7 +183,6 @@ func ResourceTransferPostCall(
 				// secrets also staying in cache.
 				secretDigest := SecretDigest(secret.inst)
 				cacheKeyID := secret.inst.ID().
-					WithDigest(secretDigest).
 					With(call.WithContentDigest(secretDigest))
 				_, err = destDag.Cache.GetOrInitCall(ctx, dagql.CacheKey{ID: cacheKeyID}, func(context.Context) (dagql.AnyResult, error) {
 					return secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall), nil

@@ -673,6 +673,15 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	// Before recursing, check if we already have a cached result for this ID.
+	if res, err := s.Cache.GetOrInitCall(ctx, CacheKey{
+		ID: id,
+	}, func(ctx context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("cache miss")
+	}); err == nil {
+		return res, nil
+	}
+
 	var base AnyResult
 	var err error
 	if id.Receiver() != nil {

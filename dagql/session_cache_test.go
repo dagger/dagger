@@ -224,6 +224,42 @@ func TestSessionCacheDoNotCacheResultNotTrackedOnClose(t *testing.T) {
 	assert.Assert(t, is.Equal(int32(1), releaseCalls.Load()))
 }
 
+func TestSessionCacheDoNotCacheNilResult(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	key := cacheTestID("session-donotcache-nil")
+	initCalls := 0
+
+	res, err := sc.GetOrInitCall(ctx, CacheKey{
+		ID:         key,
+		DoNotCache: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return nil, nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res == nil)
+	assert.Equal(t, 1, initCalls)
+	assert.Equal(t, 0, base.Size())
+
+	res, err = sc.GetOrInitCall(ctx, CacheKey{
+		ID:         key,
+		DoNotCache: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return nil, nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res == nil)
+	assert.Equal(t, 2, initCalls)
+	assert.Equal(t, 0, base.Size())
+}
+
 func TestSessionCacheReleaseAndCloseWithNilResult(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
