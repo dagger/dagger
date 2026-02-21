@@ -198,20 +198,6 @@ func (id *ID) ExtraDigestByLabel(label string) *ExtraDigest {
 	return nil
 }
 
-// OutputEquivalentDigest returns the digest used when outputs can be treated as
-// interchangeable across different recipes:
-// 1. content digest (if set)
-// 2. dag-op digest fallback
-func (id *ID) OutputEquivalentDigest() digest.Digest {
-	if id == nil {
-		return ""
-	}
-	if content := id.ContentDigest(); content != "" {
-		return content
-	}
-	return id.DagOpDigest()
-}
-
 func (id *ID) moduleIdentityID() *ID {
 	if id == nil || id.module == nil {
 		return nil

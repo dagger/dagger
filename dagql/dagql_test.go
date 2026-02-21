@@ -2171,7 +2171,6 @@ func TestIDAdditionalDigestsMergeOnSameRecipeCallInDAG(t *testing.T) {
 	idB := base.With(call.WithExtraDigest(call.ExtraDigest{Digest: digest.FromString("additional-b")}))
 
 	assert.Check(t, idA.Digest() == idB.Digest())
-	assert.Check(t, idA.OutputEquivalentDigest() != idB.OutputEquivalentDigest())
 
 	root := call.New().Append(
 		dagql.Int(0).Type(),

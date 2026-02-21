@@ -8,6 +8,20 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+// OutputEquivalentDigest returns the digest used when outputs can be treated as
+// interchangeable across different recipes:
+// 1. content digest (if set)
+// 2. dag-op digest fallback
+func (id *ID) OutputEquivalentDigest() digest.Digest {
+	if id == nil {
+		return ""
+	}
+	if content := id.ContentDigest(); content != "" {
+		return content
+	}
+	return id.DagOpDigest()
+}
+
 // DagOpDigest returns the digest used by dag-op-backed identity/effect
 // propagation. It combines call self-shape bytes with equivalent input digests.
 func (id *ID) DagOpDigest() digest.Digest {
@@ -49,9 +63,6 @@ func (id *ID) DagOpSelfDigestAndInputs() (digest.Digest, []digest.Digest, error)
 	// Receiver contributes to inputs, not the self digest.
 	if id.receiver != nil {
 		inputs = append(inputs, id.receiver.OutputEquivalentDigest())
-	}
-	for _, dig := range normalizedExtraDigestStrings(id.pb.ExtraDigests) {
-		inputs = append(inputs, digest.Digest(dig))
 	}
 	h = h.WithDelim()
 

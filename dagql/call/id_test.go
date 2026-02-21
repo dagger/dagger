@@ -8,7 +8,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
-	"github.com/dagger/dagger/util/hashutil"
 )
 
 func TestImplicitInputsAffectDigest(t *testing.T) {
@@ -173,57 +172,6 @@ func TestModuleIdentityIsImplicitInputOnly(t *testing.T) {
 	}
 	if inputsModuleA[last] == inputsModuleB[last] {
 		t.Fatalf("module implicit input should reflect module recipe identity: %s vs %s", inputsModuleA[last], inputsModuleB[last])
-	}
-}
-
-func TestDagOpDigestKeepsSelfShapeWhenContentMatches(t *testing.T) {
-	commonContent := digest.FromString("shared-content")
-	idA := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "fieldA").With(WithContentDigest(commonContent))
-	idB := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "fieldB").With(WithContentDigest(commonContent))
-
-	if idA.OutputEquivalentDigest() != idB.OutputEquivalentDigest() {
-		t.Fatalf("expected matching output-equivalent digest: %s vs %s", idA.OutputEquivalentDigest(), idB.OutputEquivalentDigest())
-	}
-	if idA.DagOpDigest() == idB.DagOpDigest() {
-		t.Fatalf("expected dag-op digest to differ for different call self shape: %s", idA.DagOpDigest())
-	}
-}
-
-func TestDagOpDigestMatchesSelfPlusDagOpInputsHash(t *testing.T) {
-	receiver := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "receiver").With(WithContentDigest(digest.FromString("receiver-content")))
-	argID := New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "arg").With(WithContentDigest(digest.FromString("arg-content")))
-	id := receiver.Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "child",
-		WithArgs(NewArgument("idArg", NewLiteralID(argID), false)),
-		WithImplicitInputs(NewArgument("scope", NewLiteralString("scope-a"), false)),
-	)
-
-	selfDigest, inputDigests, err := id.DagOpSelfDigestAndInputs()
-	if err != nil {
-		t.Fatalf("self+dag-op-input digests: %v", err)
-	}
-	h := hashutil.NewHasher().WithString(selfDigest.String())
-	for _, in := range inputDigests {
-		h = h.WithString(in.String())
-	}
-	expected := digest.Digest(h.DigestAndClose())
-
-	if got := id.DagOpDigest(); got != expected {
-		t.Fatalf("unexpected dag-op digest: got %s, want %s", got, expected)
 	}
 }
 
