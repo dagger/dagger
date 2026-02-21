@@ -143,12 +143,52 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/CheckGroup.html"><abbr title="Dagger\CheckGroup">CheckGroup</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_checks">checks</a>(array|null $include = null)
+        
+                                            <p><p>Return all checks from modules loaded in the workspace.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     string
                 </div>
                 <div class="col-md-8">
                     <a href="#method_clientId">clientId</a>()
         
                                             <p><p>The client ID that owns this workspace's host filesystem.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_configPath">configPath</a>()
+        
+                                            <p><p>Path to config.toml relative to root (empty if not initialized).</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_configRead">configRead</a>(string|null $key = &#039;&#039;)
+        
+                                            <p><p>Read a configuration value from config.toml.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_configWrite">configWrite</a>(string $key, string $value)
+        
+                                            <p><p>Write a configuration value to config.toml.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -183,6 +223,26 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_generators">generators</a>(array|null $include = null)
+        
+                                            <p><p>Return all generators from modules loaded in the workspace.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    bool
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_hasConfig">hasConfig</a>()
+        
+                                            <p><p>Whether a config.toml file exists in the workspace.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -196,9 +256,49 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_root">root</a>()
+                    <a href="#method_init">init</a>()
         
-                                            <p><p>Absolute path to the workspace root directory.</p></p>                </div>
+                                            <p><p>Initialize a new workspace, creating .dagger/config.toml.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    bool
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_initialized">initialized</a>()
+        
+                                            <p><p>Whether .dagger/config.toml exists.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_install">install</a>(string $ref, string|null $name = &#039;&#039;, bool|null $blueprint = false)
+        
+                                            <p><p>Install a module into the workspace, writing config.toml to the host.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_moduleInit">moduleInit</a>(string $name, string $sdk, string|null $source = &#039;&#039;, array|null $include = null)
+        
+                                            <p><p>Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_path">path</a>()
+        
+                                            <p><p>Workspace path relative to root.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -297,8 +397,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_clientId">
+                    <h3 id="method_checks">
         <div class="location">at line 19</div>
+        <code>                    <a href="../Dagger/CheckGroup.html"><abbr title="Dagger\CheckGroup">CheckGroup</abbr></a>
+    <strong>checks</strong>(array|null $include = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return all checks from modules loaded in the workspace.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array|null</td>
+                <td>$include</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/CheckGroup.html"><abbr title="Dagger\CheckGroup">CheckGroup</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_clientId">
+        <div class="location">at line 31</div>
         <code>                    string
     <strong>clientId</strong>()
         </code>
@@ -329,8 +471,129 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_configPath">
+        <div class="location">at line 40</div>
+        <code>                    string
+    <strong>configPath</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Path to config.toml relative to root (empty if not initialized).</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_configRead">
+        <div class="location">at line 51</div>
+        <code>                    string
+    <strong>configRead</strong>(string|null $key = &#039;&#039;)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Read a configuration value from config.toml.</p></p>                <p><p>If key is empty, returns the full config. If key points to a scalar, returns the value. If key points to a table, returns flattened dotted-key output.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$key</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_configWrite">
+        <div class="location">at line 65</div>
+        <code>                    string
+    <strong>configWrite</strong>(string $key, string $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Write a configuration value to config.toml.</p></p>                <p><p>Validates the key against the config schema and auto-detects value types.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$key</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_directory">
-        <div class="location">at line 30</div>
+        <div class="location">at line 78</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>directory</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
         </code>
@@ -340,7 +603,7 @@
             
 
         <div class="method-description">
-                            <p><p>Returns a Directory from the workspace.</p></p>                <p><p>Path is relative to workspace root. Use &quot;.&quot; for the root directory.</p></p>        
+                            <p><p>Returns a Directory from the workspace.</p></p>                <p><p>Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -387,7 +650,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 55</div>
+        <div class="location">at line 103</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>file</strong>(string $path)
         </code>
@@ -397,7 +660,7 @@
             
 
         <div class="method-description">
-                            <p><p>Returns a File from the workspace.</p></p>                <p><p>Path is relative to workspace root.</p></p>        
+                            <p><p>Returns a File from the workspace.</p></p>                <p><p>Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -429,7 +692,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_findUp">
-        <div class="location">at line 69</div>
+        <div class="location">at line 117</div>
         <code>                    string
     <strong>findUp</strong>(string $name, string|null $from = &#039;.&#039;)
         </code>
@@ -476,8 +739,82 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_generators">
+        <div class="location">at line 130</div>
+        <code>                    <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
+    <strong>generators</strong>(array|null $include = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return all generators from modules loaded in the workspace.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array|null</td>
+                <td>$include</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_hasConfig">
+        <div class="location">at line 142</div>
+        <code>                    bool
+    <strong>hasConfig</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Whether a config.toml file exists in the workspace.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>bool</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 82</div>
+        <div class="location">at line 151</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -508,10 +845,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_root">
-        <div class="location">at line 91</div>
+                    <h3 id="method_init">
+        <div class="location">at line 160</div>
         <code>                    string
-    <strong>root</strong>()
+    <strong>init</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -519,7 +856,180 @@
             
 
         <div class="method-description">
-                            <p><p>Absolute path to the workspace root directory.</p></p>                        
+                            <p><p>Initialize a new workspace, creating .dagger/config.toml.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_initialized">
+        <div class="location">at line 169</div>
+        <code>                    bool
+    <strong>initialized</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Whether .dagger/config.toml exists.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>bool</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_install">
+        <div class="location">at line 178</div>
+        <code>                    string
+    <strong>install</strong>(string $ref, string|null $name = &#039;&#039;, bool|null $blueprint = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Install a module into the workspace, writing config.toml to the host.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$ref</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$blueprint</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_moduleInit">
+        <div class="location">at line 194</div>
+        <code>                    string
+    <strong>moduleInit</strong>(string $name, string $sdk, string|null $source = &#039;&#039;, array|null $include = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$sdk</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$source</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$include</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_path">
+        <div class="location">at line 211</div>
+        <code>                    string
+    <strong>path</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Workspace path relative to root.</p></p>                        
         </div>
         <div class="tags">
             

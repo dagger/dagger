@@ -2090,11 +2090,11 @@ export type ClientContainerOpts = {
   platform?: Platform
 }
 
-export type ClientCurrentWorkspaceOpts = {
+export type ClientCurrentTypeDefsOpts = {
   /**
-   * If true, skip legacy dagger.json migration checks.
+   * Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
    */
-  skipMigrationCheck?: boolean
+  includeCore?: boolean
 }
 
 export type ClientEnvOpts = {
@@ -2666,6 +2666,20 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceChecksOpts = {
+  /**
+   * Only include checks matching the specified patterns
+   */
+  include?: string[]
+}
+
+export type WorkspaceConfigReadOpts = {
+  /**
+   * Dotted key path (e.g. modules.mymod.source). Empty for full config.
+   */
+  key?: string
+}
+
 export type WorkspaceDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -2684,6 +2698,37 @@ export type WorkspaceFindUpOpts = {
    * Path to start the search from, relative to the workspace root.
    */
   from?: string
+}
+
+export type WorkspaceGeneratorsOpts = {
+  /**
+   * Only include generators matching the specified patterns
+   */
+  include?: string[]
+}
+
+export type WorkspaceInstallOpts = {
+  /**
+   * Override name for the installed module entry.
+   */
+  name?: string
+
+  /**
+   * Mark the module as a blueprint (functions aliased to Query root).
+   */
+  blueprint?: boolean
+}
+
+export type WorkspaceModuleInitOpts = {
+  /**
+   * Source subpath within the module root.
+   */
+  source?: string
+
+  /**
+   * Additional include patterns for the module.
+   */
+  include?: string[]
 }
 
 /**
@@ -7911,6 +7956,7 @@ export class Function_ extends BaseClient {
   private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -7921,6 +7967,7 @@ export class Function_ extends BaseClient {
     _deprecated?: string,
     _description?: string,
     _name?: string,
+    _sourceModuleName?: string,
   ) {
     super(ctx)
 
@@ -7928,6 +7975,7 @@ export class Function_ extends BaseClient {
     this._deprecated = _deprecated
     this._description = _description
     this._name = _name
+    this._sourceModuleName = _sourceModuleName
   }
 
   /**
@@ -8021,6 +8069,21 @@ export class Function_ extends BaseClient {
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
+  }
+
+  /**
+   * If this function is provided by a module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const ctx = this._ctx.select("sourceModuleName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -10567,14 +10630,6 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The blueprint referenced by the module source.
-   */
-  blueprint = (): ModuleSource => {
-    const ctx = this._ctx.select("blueprint")
-    return new ModuleSource(ctx)
-  }
-
-  /**
    * The ref to clone the root of the git repo from. Only valid for git sources.
    */
   cloneRef = async (): Promise<string> => {
@@ -10905,23 +10960,6 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The toolchains referenced by the module source.
-   */
-  toolchains = async (): Promise<ModuleSource[]> => {
-    type toolchains = {
-      id: ModuleSourceID
-    }
-
-    const ctx = this._ctx.select("toolchains").select("id")
-
-    const response: Awaited<toolchains[]> = await ctx.execute()
-
-    return response.map((r) =>
-      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
-    )
-  }
-
-  /**
    * User-defined defaults read from local .env files
    */
   userDefaults = (): EnvFile => {
@@ -10942,15 +10980,6 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Set a blueprint for the module source.
-   * @param blueprint The blueprint module to set.
-   */
-  withBlueprint = (blueprint: ModuleSource): ModuleSource => {
-    const ctx = this._ctx.select("withBlueprint", { blueprint })
-    return new ModuleSource(ctx)
   }
 
   /**
@@ -11029,23 +11058,6 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Add toolchains to the module source.
-   * @param toolchains The toolchain modules to add.
-   */
-  withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
-    const ctx = this._ctx.select("withToolchains", { toolchains })
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Update the blueprint module to the latest version.
-   */
-  withUpdateBlueprint = (): ModuleSource => {
-    const ctx = this._ctx.select("withUpdateBlueprint")
-    return new ModuleSource(ctx)
-  }
-
-  /**
    * Update one or more module dependencies.
    * @param dependencies The dependencies to update.
    */
@@ -11055,28 +11067,11 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Update one or more toolchains.
-   * @param toolchains The toolchains to update.
-   */
-  withUpdateToolchains = (toolchains: string[]): ModuleSource => {
-    const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
-    return new ModuleSource(ctx)
-  }
-
-  /**
    * Update one or more clients.
    * @param clients The clients to update
    */
   withUpdatedClients = (clients: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdatedClients", { clients })
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Remove the current blueprint from the module source.
-   */
-  withoutBlueprint = (): ModuleSource => {
-    const ctx = this._ctx.select("withoutBlueprint")
     return new ModuleSource(ctx)
   }
 
@@ -11106,15 +11101,6 @@ export class ModuleSource extends BaseClient {
     features: ModuleSourceExperimentalFeature[],
   ): ModuleSource => {
     const ctx = this._ctx.select("withoutExperimentalFeatures", { features })
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Remove the provided toolchains from the module source.
-   * @param toolchains The toolchains to remove.
-   */
-  withoutToolchains = (toolchains: string[]): ModuleSource => {
-    const ctx = this._ctx.select("withoutToolchains", { toolchains })
     return new ModuleSource(ctx)
   }
 
@@ -11481,13 +11467,16 @@ export class Client extends BaseClient {
 
   /**
    * The TypeDef representations of the objects currently being served in the session.
+   * @param opts.includeCore Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
    */
-  currentTypeDefs = async (): Promise<TypeDef[]> => {
+  currentTypeDefs = async (
+    opts?: ClientCurrentTypeDefsOpts,
+  ): Promise<TypeDef[]> => {
     type currentTypeDefs = {
       id: TypeDefID
     }
 
-    const ctx = this._ctx.select("currentTypeDefs").select("id")
+    const ctx = this._ctx.select("currentTypeDefs", { ...opts }).select("id")
 
     const response: Awaited<currentTypeDefs[]> = await ctx.execute()
 
@@ -11496,11 +11485,10 @@ export class Client extends BaseClient {
 
   /**
    * Detect and return the current workspace.
-   * @param opts.skipMigrationCheck If true, skip legacy dagger.json migration checks.
    * @experimental
    */
-  currentWorkspace = (opts?: ClientCurrentWorkspaceOpts): Workspace => {
-    const ctx = this._ctx.select("currentWorkspace", { ...opts })
+  currentWorkspace = (): Workspace => {
+    const ctx = this._ctx.select("currentWorkspace")
     return new Workspace(ctx)
   }
 
@@ -13405,8 +13393,16 @@ export class TypeDef extends BaseClient {
 export class Workspace extends BaseClient {
   private readonly _id?: WorkspaceID = undefined
   private readonly _clientId?: string = undefined
+  private readonly _configPath?: string = undefined
+  private readonly _configRead?: string = undefined
+  private readonly _configWrite?: string = undefined
   private readonly _findUp?: string = undefined
-  private readonly _root?: string = undefined
+  private readonly _hasConfig?: boolean = undefined
+  private readonly _init?: string = undefined
+  private readonly _initialized?: boolean = undefined
+  private readonly _install?: string = undefined
+  private readonly _moduleInit?: string = undefined
+  private readonly _path?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -13415,15 +13411,31 @@ export class Workspace extends BaseClient {
     ctx?: Context,
     _id?: WorkspaceID,
     _clientId?: string,
+    _configPath?: string,
+    _configRead?: string,
+    _configWrite?: string,
     _findUp?: string,
-    _root?: string,
+    _hasConfig?: boolean,
+    _init?: string,
+    _initialized?: boolean,
+    _install?: string,
+    _moduleInit?: string,
+    _path?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._clientId = _clientId
+    this._configPath = _configPath
+    this._configRead = _configRead
+    this._configWrite = _configWrite
     this._findUp = _findUp
-    this._root = _root
+    this._hasConfig = _hasConfig
+    this._init = _init
+    this._initialized = _initialized
+    this._install = _install
+    this._moduleInit = _moduleInit
+    this._path = _path
   }
 
   /**
@@ -13442,6 +13454,15 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return all checks from modules loaded in the workspace.
+   * @param opts.include Only include checks matching the specified patterns
+   */
+  checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
+    const ctx = this._ctx.select("checks", { ...opts })
+    return new CheckGroup(ctx)
+  }
+
+  /**
    * The client ID that owns this workspace's host filesystem.
    */
   clientId = async (): Promise<string> => {
@@ -13457,10 +13478,62 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Path to config.toml relative to root (empty if not initialized).
+   */
+  configPath = async (): Promise<string> => {
+    if (this._configPath) {
+      return this._configPath
+    }
+
+    const ctx = this._ctx.select("configPath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Read a configuration value from config.toml.
+   *
+   * If key is empty, returns the full config. If key points to a scalar, returns the value. If key points to a table, returns flattened dotted-key output.
+   * @param opts.key Dotted key path (e.g. modules.mymod.source). Empty for full config.
+   */
+  configRead = async (opts?: WorkspaceConfigReadOpts): Promise<string> => {
+    if (this._configRead) {
+      return this._configRead
+    }
+
+    const ctx = this._ctx.select("configRead", { ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Write a configuration value to config.toml.
+   *
+   * Validates the key against the config schema and auto-detects value types.
+   * @param key Dotted key path (e.g. modules.mymod.source).
+   * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+   */
+  configWrite = async (key: string, value: string): Promise<string> => {
+    if (this._configWrite) {
+      return this._configWrite
+    }
+
+    const ctx = this._ctx.select("configWrite", { key, value })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Returns a Directory from the workspace.
    *
-   * Path is relative to workspace root. Use "." for the root directory.
-   * @param path Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+   * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
@@ -13472,8 +13545,8 @@ export class Workspace extends BaseClient {
   /**
    * Returns a File from the workspace.
    *
-   * Path is relative to workspace root.
-   * @param path Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+   * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.
    */
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
@@ -13505,14 +13578,112 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Absolute path to the workspace root directory.
+   * Return all generators from modules loaded in the workspace.
+   * @param opts.include Only include generators matching the specified patterns
    */
-  root = async (): Promise<string> => {
-    if (this._root) {
-      return this._root
+  generators = (opts?: WorkspaceGeneratorsOpts): GeneratorGroup => {
+    const ctx = this._ctx.select("generators", { ...opts })
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
+   * Whether a config.toml file exists in the workspace.
+   */
+  hasConfig = async (): Promise<boolean> => {
+    if (this._hasConfig) {
+      return this._hasConfig
     }
 
-    const ctx = this._ctx.select("root")
+    const ctx = this._ctx.select("hasConfig")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Initialize a new workspace, creating .dagger/config.toml.
+   */
+  init = async (): Promise<string> => {
+    if (this._init) {
+      return this._init
+    }
+
+    const ctx = this._ctx.select("init")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether .dagger/config.toml exists.
+   */
+  initialized = async (): Promise<boolean> => {
+    if (this._initialized) {
+      return this._initialized
+    }
+
+    const ctx = this._ctx.select("initialized")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Install a module into the workspace, writing config.toml to the host.
+   * @param ref Module reference string (git URL or local path).
+   * @param opts.name Override name for the installed module entry.
+   * @param opts.blueprint Mark the module as a blueprint (functions aliased to Query root).
+   */
+  install = async (
+    ref: string,
+    opts?: WorkspaceInstallOpts,
+  ): Promise<string> => {
+    if (this._install) {
+      return this._install
+    }
+
+    const ctx = this._ctx.select("install", { ref, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.
+   * @param name Name of the new module.
+   * @param sdk SDK to use (go, python, typescript).
+   * @param opts.source Source subpath within the module root.
+   * @param opts.include Additional include patterns for the module.
+   */
+  moduleInit = async (
+    name: string,
+    sdk: string,
+    opts?: WorkspaceModuleInitOpts,
+  ): Promise<string> => {
+    if (this._moduleInit) {
+      return this._moduleInit
+    }
+
+    const ctx = this._ctx.select("moduleInit", { name, sdk, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Workspace path relative to root.
+   */
+  path = async (): Promise<string> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
 
     const response: Awaited<string> = await ctx.execute()
 

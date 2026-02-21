@@ -288,7 +288,8 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	if fc.DisableModuleLoad || moduleNoURL {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
-		mod, err = initializeDefaultModule(ctx, fc.c.Dagger())
+		// -m modules are loaded at engine connect time as extra modules.
+		mod, err = initializeWorkspace(ctx, fc.c.Dagger())
 	}
 	if err != nil {
 		return err
@@ -460,6 +461,14 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	fns, skipped := GetSupportedFunctions(fnProvider)
 
 	for _, fn := range fns {
+		// On the Query root type, hide core API functions — only show functions
+		// provided by modules (constructors and auto-aliases). This doesn't apply
+		// to `dagger core`.
+		if !fc.DisableModuleLoad && typeDef.AsObject != nil && typeDef.AsObject.Name == "Query" {
+			if fn.SourceModuleName == "" {
+				continue
+			}
+		}
 		subCmd := fc.makeSubCmd(ctx, fn)
 		cmd.AddCommand(subCmd)
 	}

@@ -99,17 +99,17 @@ func CurrentModule() *dagger.CurrentModule {
 }
 
 // The TypeDef representations of the objects currently being served in the session.
-func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
+func CurrentTypeDefs(ctx context.Context, opts ...dagger.CurrentTypeDefsOpts) ([]dagger.TypeDef, error) {
 	client := initClient()
-	return client.CurrentTypeDefs(ctx)
+	return client.CurrentTypeDefs(ctx, opts...)
 }
 
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
+func CurrentWorkspace() *dagger.Workspace {
 	client := initClient()
-	return client.CurrentWorkspace(opts...)
+	return client.CurrentWorkspace()
 }
 
 // The default platform of the engine.

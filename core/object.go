@@ -263,6 +263,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
 			Name:             gqlFieldName(mod.Name()),
+			Description:      formatGqlDescription(objDef.Description),
 			Type:             obj,
 			Module:           obj.Module.IDModule(),
 			GetCacheConfig:   mod.CacheConfigForCall,
@@ -342,18 +343,6 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
 	for _, fun := range obj.TypeDef.Functions {
-		// Check if this is a toolchain proxy function using the registry
-		if obj.Module.Toolchains != nil {
-			if entry, ok := obj.Module.Toolchains.Get(fun.OriginalName); ok {
-				proxyField, err := entry.CreateProxyField(ctx, obj.Module, fun, dag)
-				if err != nil {
-					return nil, err
-				}
-				fields = append(fields, proxyField)
-				continue
-			}
-		}
-
 		objFun, err := objFun(ctx, obj.Module, objDef, fun, dag)
 		if err != nil {
 			return nil, err

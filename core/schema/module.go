@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
+
+	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
@@ -47,7 +50,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
-			Doc(`The TypeDef representations of the objects currently being served in the session.`),
+			Doc(`The TypeDef representations of the objects currently being served in the session.`).
+			Args(
+				dagql.Arg("includeCore").Doc(`Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.`),
+			),
 
 		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
@@ -748,7 +754,9 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct {
+	IncludeCore dagql.Optional[dagql.Boolean]
+}) (dagql.Array[*core.TypeDef], error) {
 	deps, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -757,7 +765,110 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current schema: %w", err)
 	}
-	return deps.TypeDefs(ctx, dag)
+	typeDefs, err := deps.TypeDefs(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+
+	// If the workspace has a default (focused) module, promote its functions
+	// to the Query type and remove the constructor. This makes the CLI see
+	// the module's functions as top-level commands.
+	if ws, wsErr := self.CurrentWorkspace(ctx); wsErr == nil && ws != nil && ws.DefaultModule != "" {
+		typeDefs = focusTypeDefs(typeDefs, ws.DefaultModule)
+	}
+
+	includeCore := !args.IncludeCore.Valid || args.IncludeCore.Value.Bool()
+	if !includeCore {
+		filtered := make([]*core.TypeDef, 0, len(typeDefs))
+		for _, td := range typeDefs {
+			if !isCoreTypeDef(td) {
+				filtered = append(filtered, td)
+			}
+		}
+		typeDefs = filtered
+	}
+
+	return typeDefs, nil
+}
+
+// focusTypeDefs rewrites type defs so that the focused module's functions
+// appear directly on the Query type, replacing the module's constructor.
+// This mirrors the Refocus'd server's schema where the module type IS Query.
+func focusTypeDefs(typeDefs []*core.TypeDef, moduleName string) []*core.TypeDef {
+	// Find the Query and module type defs.
+	var queryDef *core.ObjectTypeDef
+	var moduleDef *core.ObjectTypeDef
+	constructorFieldName := strcase.ToLowerCamel(moduleName)
+
+	for _, td := range typeDefs {
+		if !td.AsObject.Valid {
+			continue
+		}
+		obj := td.AsObject.Value
+		if obj.Name == "Query" {
+			queryDef = obj
+		}
+		// Match the module's main object type: it has SourceModuleName set
+		// and its name matches the module name (e.g. module "hello" → type "Hello").
+		if obj.SourceModuleName == moduleName && strings.EqualFold(obj.Name, strcase.ToCamel(moduleName)) {
+			moduleDef = obj
+		}
+	}
+
+	if queryDef == nil || moduleDef == nil {
+		return typeDefs
+	}
+
+	// Build a set of promoted function names so we can resolve collisions.
+	promotedNames := make(map[string]bool, len(moduleDef.Functions))
+	for _, fn := range moduleDef.Functions {
+		promotedNames[fn.Name] = true
+	}
+
+	// Replace Query's functions: remove the constructor AND any functions
+	// whose name collides with a promoted function (the promoted version wins).
+	newFunctions := make([]*core.Function, 0, len(queryDef.Functions)+len(moduleDef.Functions))
+	for _, fn := range queryDef.Functions {
+		if fn.Name == constructorFieldName || promotedNames[fn.Name] {
+			continue
+		}
+		newFunctions = append(newFunctions, fn)
+	}
+	for _, fn := range moduleDef.Functions {
+		// Mark promoted functions with the source module name so the CLI
+		// can identify them as module functions (vs core API functions).
+		fn = fn.Clone()
+		fn.SourceModuleName = moduleName
+		newFunctions = append(newFunctions, fn)
+	}
+	queryDef.Functions = newFunctions
+
+	return typeDefs
+}
+
+// isCoreTypeDef returns true if the TypeDef originates from the core module
+// (i.e., has no SourceModuleName set).
+// The Query root type is never considered "core" — it's always included
+// because it holds module constructors as root fields.
+func isCoreTypeDef(td *core.TypeDef) bool {
+	if td.AsObject.Valid {
+		if td.AsObject.Value.Name == "Query" {
+			return false
+		}
+		return td.AsObject.Value.SourceModuleName == ""
+	}
+	if td.AsInterface.Valid {
+		return td.AsInterface.Value.SourceModuleName == ""
+	}
+	if td.AsEnum.Valid {
+		return td.AsEnum.Value.SourceModuleName == ""
+	}
+	if td.AsScalar.Valid {
+		return td.AsScalar.Value.SourceModuleName == ""
+	}
+	// Input types and list types don't have SourceModuleName;
+	// they are core types by convention.
+	return true
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {

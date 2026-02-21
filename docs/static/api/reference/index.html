@@ -604,6 +604,25 @@
                     <a href="#definition-TypeDef"><code>[TypeDef!]!</code></a>
                   </p>
                 </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>includeCore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> Whether to include core types (Container, Directory, etc.) in the result. Defaults to true. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
             <div class="doc-row">
@@ -636,25 +655,6 @@
                   <p>
                     <a href="#definition-Workspace"><code>Workspace!</code></a>
                   </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>skipMigrationCheck</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
-                        </td>
-                        <td> If true, skip legacy dagger.json migration checks. Default = <code>false</code> </td>
-                      </tr>
-                    </tbody>
-                  </table>
                 </div>
               </div>
             </div>
@@ -10926,6 +10926,10 @@
                         <td data-property-name=""><a class="property-name" id="Function-sourceMap" href="#Function-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this function declaration. </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Function-sourceModuleName" href="#Function-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> If this function is provided by a module, the name of the module. Unset otherwise. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Function-withArg" href="#Function-withArg"><code>withArg</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
                         <td> Returns the function with the provided argument </td>
@@ -13309,10 +13313,6 @@
                         <td> A human readable ref string representation of this module source. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-blueprint" href="#ModuleSource-blueprint"><code>blueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> The blueprint referenced by the module source. </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-cloneRef" href="#ModuleSource-cloneRef"><code>cloneRef</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The ref to clone the root of the git repo from. Only valid for git sources. </td>
                       </tr>
@@ -13430,33 +13430,12 @@
                         <td> Forces evaluation of the module source, including any loading into the engine and associated validation. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-toolchains" href="#ModuleSource-toolchains"><code>toolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>[ModuleSource!]!</code></a></span> </td>
-                        <td> The toolchains referenced by the module source. </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-userDefaults" href="#ModuleSource-userDefaults"><code>userDefaults</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
                         <td> User-defined defaults read from local .env files </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-version" href="#ModuleSource-version"><code>version</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The specified version of the git repo this source points to. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withBlueprint" href="#ModuleSource-withBlueprint"><code>withBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Set a blueprint for the module source. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>blueprint</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
-                                <p>The blueprint module to set.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withClient" href="#ModuleSource-withClient"><code>withClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -13599,27 +13578,6 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withToolchains" href="#ModuleSource-withToolchains"><code>withToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Add toolchains to the module source. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>toolchains</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>[ModuleSourceID!]!</code></a></span></h6>
-                                <p>The toolchain modules to add.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateBlueprint" href="#ModuleSource-withUpdateBlueprint"><code>withUpdateBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Update the blueprint module to the latest version. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateDependencies" href="#ModuleSource-withUpdateDependencies"><code>withUpdateDependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
                         <td> Update one or more module dependencies. </td>
                       </tr>
@@ -13631,23 +13589,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>dependencies</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
                                 <p>The dependencies to update.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateToolchains" href="#ModuleSource-withUpdateToolchains"><code>withUpdateToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Update one or more toolchains. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>toolchains</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
-                                <p>The toolchains to update.</p>
                               </div>
                             </div>
                           </div>
@@ -13669,10 +13610,6 @@
                             </div>
                           </div>
                         </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutBlueprint" href="#ModuleSource-withoutBlueprint"><code>withoutBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Remove the current blueprint from the module source. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withoutClient" href="#ModuleSource-withoutClient"><code>withoutClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -13720,23 +13657,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>features</code></span> - <span class="property-type"><a href="#definition-ModuleSourceExperimentalFeature"><code>[ModuleSourceExperimentalFeature!]!</code></a></span></h6>
                                 <p>The experimental features to disable.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutToolchains" href="#ModuleSource-withoutToolchains"><code>withoutToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Remove the provided toolchains from the module source. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>toolchains</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
-                                <p>The toolchains to remove.</p>
                               </div>
                             </div>
                           </div>
@@ -15494,15 +15414,80 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-checks" href="#Workspace-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
+                        <td> Return all checks from modules loaded in the workspace. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include checks matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-clientId" href="#Workspace-clientId"><code>clientId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The client ID that owns this workspace's host filesystem. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-configPath" href="#Workspace-configPath"><code>configPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Path to config.toml relative to root (empty if not initialized). </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-configRead" href="#Workspace-configRead"><code>configRead</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                          <p>Read a configuration value from config.toml.</p>
+                          <p>If key is empty, returns the full config. If key points to a scalar, returns the value. If key points to a table, returns flattened dotted-key output.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Dotted key path (e.g. modules.mymod.source). Empty for full config.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-configWrite" href="#Workspace-configWrite"><code>configWrite</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                          <p>Write a configuration value to config.toml.</p>
+                          <p>Validates the key against the config schema and auto-detects value types.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Dotted key path (e.g. modules.mymod.source).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Value to set. Bools, integers, and comma-separated arrays are auto-detected.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td>
                           <p>Returns a Directory from the workspace.</p>
-                          <p>Path is relative to workspace root. Use &quot;.&quot; for the root directory.</p>
+                          <p>Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15512,7 +15497,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the directory to retrieve, relative to the workspace root (e.g., &quot;src&quot;, &quot;.&quot;).</p>
+                                <p>Location of the directory to retrieve. Relative paths (e.g., &quot;src&quot;) resolve from workspace root; absolute paths (e.g., &quot;/src&quot;) resolve from sandbox root.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
@@ -15533,7 +15518,7 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-file" href="#Workspace-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
                         <td>
                           <p>Returns a File from the workspace.</p>
-                          <p>Path is relative to workspace root.</p>
+                          <p>Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15543,7 +15528,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to retrieve, relative to the workspace root (e.g., &quot;go.mod&quot;).</p>
+                                <p>Location of the file to retrieve. Relative paths (e.g., &quot;go.mod&quot;) resolve from workspace root; absolute paths (e.g., &quot;/go.mod&quot;) resolve from sandbox root.</p>
                               </div>
                             </div>
                           </div>
@@ -15574,13 +15559,96 @@
                           </div>
                         </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-generators" href="#Workspace-generators"><code>generators</code></a> - <span class="property-type"><a href="#definition-GeneratorGroup"><code>GeneratorGroup!</code></a></span> </td>
+                        <td> Return all generators from modules loaded in the workspace. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include generators matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-hasConfig" href="#Workspace-hasConfig"><code>hasConfig</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether a config.toml file exists in the workspace. </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-id" href="#Workspace-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceID"><code>WorkspaceID!</code></a></span> </td>
                         <td> A unique identifier for this Workspace. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-root" href="#Workspace-root"><code>root</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Absolute path to the workspace root directory. </td>
+                        <td data-property-name=""><a class="property-name" id="Workspace-init" href="#Workspace-init"><code>init</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Initialize a new workspace, creating .dagger/config.toml. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-initialized" href="#Workspace-initialized"><code>initialized</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether .dagger/config.toml exists. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-install" href="#Workspace-install"><code>install</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Install a module into the workspace, writing config.toml to the host. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>ref</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Module reference string (git URL or local path).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Override name for the installed module entry.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>blueprint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Mark the module as a blueprint (functions aliased to Query root).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-moduleInit" href="#Workspace-moduleInit"><code>moduleInit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Create a new module in the workspace, scaffold its files, and auto-install it in config.toml. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Name of the new module.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sdk</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>SDK to use (go, python, typescript).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Source subpath within the module root.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Additional include patterns for the module.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-path" href="#Workspace-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Workspace path relative to root. </td>
                       </tr>
                     </tbody>
                   </table>

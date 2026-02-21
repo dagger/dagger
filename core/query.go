@@ -66,6 +66,9 @@ type Server interface {
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// The cached workspace result from ensureWorkspaceLoaded.
+	CurrentWorkspace(context.Context) (*Workspace, error)
+
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.
 	SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error)
