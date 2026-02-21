@@ -168,6 +168,12 @@ type ModuleSource struct {
 	ConfigToolchains []*modules.ModuleConfigDependency
 	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
 
+	// Internal-only projection metadata used by schema helpers to load this
+	// module source as a toolchain in the context of a parent module source.
+	ToolchainContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
+	ToolchainConfigIndex   int
+	ToolchainProjection    bool
+
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`

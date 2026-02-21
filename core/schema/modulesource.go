@@ -219,6 +219,12 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
 			WithInput(dagql.CachePerClient).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
+		dagql.NodeFunc("_asToolchain", s.moduleSourceAsToolchain).
+			Doc(`Internal helper that projects this module source to load as a toolchain in the context of a parent module source.`).
+			Args(
+				dagql.Arg("contextSource").Doc(`The parent module source to use as context for contextual arguments.`),
+				dagql.Arg("toolchainIndex").Doc(`The index of this toolchain in the parent module source configuration.`),
+			),
 
 		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
 			Doc(`The introspection schema JSON file for this module source.`,
@@ -3253,6 +3259,31 @@ func (s *moduleSourceSchema) integrateToolchains(
 	return mod, nil
 }
 
+func (s *moduleSourceSchema) moduleSourceAsToolchain(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	args struct {
+		ContextSource  core.ModuleSourceID
+		ToolchainIndex int
+	},
+) (*core.ModuleSource, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	contextSource, err := args.ContextSource.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load toolchain context source: %w", err)
+	}
+
+	toolchainSrc := src.Self().Clone()
+	toolchainSrc.ToolchainProjection = true
+	toolchainSrc.ToolchainContextSource = dagql.NonNull(contextSource)
+	toolchainSrc.ToolchainConfigIndex = args.ToolchainIndex
+	return toolchainSrc, nil
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3292,6 +3323,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		src:         src,
 	}
 
+	isToolchainProjection := tcCtx.originalSrc.Self().ToolchainProjection
+	contextSourceForModule := tcCtx.originalSrc
+	toolchainConfigIndex := -1
+	if isToolchainProjection {
+		if !tcCtx.originalSrc.Self().ToolchainContextSource.Valid {
+			return inst, fmt.Errorf("toolchain projection missing context source")
+		}
+		contextSourceForModule = tcCtx.originalSrc.Self().ToolchainContextSource.Value
+		toolchainConfigIndex = tcCtx.originalSrc.Self().ToolchainConfigIndex
+	}
+
 	// In blueprint mode, use the blueprint as the main source
 	// This must happen before creating the module so the SDK loads from blueprint source
 	if isBlueprintMode {
@@ -3321,10 +3363,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// Create base module with dependencies
 	mod := &core.Module{
 		Source:                        dagql.NonNull(src),
-		ContextSource:                 dagql.NonNull(tcCtx.originalSrc),
+		ContextSource:                 dagql.NonNull(contextSourceForModule),
 		NameField:                     tcCtx.originalSrc.Self().ModuleName,
 		OriginalName:                  src.Self().ModuleOriginalName,
 		SDKConfig:                     src.Self().SDK,
+		IsToolchain:                   isToolchainProjection,
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
 		ResultID:                      dagql.CurrentID(ctx),
 	}
@@ -3364,6 +3407,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	mod, err = s.integrateToolchains(ctx, mod, dag)
 	if err != nil {
 		return inst, err
+	}
+
+	// Apply argument configurations for toolchain projections using the parent
+	// module source config at the provided toolchain index.
+	if isToolchainProjection &&
+		toolchainConfigIndex >= 0 &&
+		toolchainConfigIndex < len(contextSourceForModule.Self().ConfigToolchains) {
+		tcCfg := contextSourceForModule.Self().ConfigToolchains[toolchainConfigIndex]
+		if len(tcCfg.Customizations) > 0 {
+			applyArgumentConfigsToModule(mod, tcCfg.Customizations)
+		}
 	}
 
 	inst, err = dagql.NewObjectResultForID(mod, dag, mod.ResultID)
@@ -3417,9 +3471,23 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	// Load all toolchains as dependencies
 	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
 	if len(src.Self().Toolchains) > 0 {
+		contextSourceID := dagql.NewID[*core.ModuleSource](src.ID())
 		for i, tcSrc := range src.Self().Toolchains {
 			eg.Go(func() error {
 				err := dag.Select(ctx, tcSrc, &tcMods[i],
+					dagql.Selector{
+						Field: "_asToolchain",
+						Args: []dagql.NamedInput{
+							{
+								Name:  "contextSource",
+								Value: contextSourceID,
+							},
+							{
+								Name:  "toolchainIndex",
+								Value: dagql.Int(i),
+							},
+						},
+					},
 					dagql.Selector{Field: "asModule"},
 				)
 				return err
@@ -3439,22 +3507,8 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
 	}
-	for i, tcMod := range tcMods {
-		clone := tcMod.Self().Clone()
-		clone.IsToolchain = true
-		clone.ContextSource = dagql.NonNull(src)
-
-		// Apply argument configurations from the parent module's toolchain config
-		// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
-		if i < len(src.Self().ConfigToolchains) {
-			tcCfg := src.Self().ConfigToolchains[i]
-			if len(tcCfg.Customizations) > 0 {
-				// Apply configurations to the toolchain module's functions, including chained functions
-				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
-			}
-		}
-
-		deps = deps.Append(clone)
+	for _, tcMod := range tcMods {
+		deps = deps.Append(tcMod.Self())
 	}
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {

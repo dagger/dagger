@@ -163,23 +163,36 @@ func (mod *Module) GetContextSource() *ModuleSource {
 // Use with caution as providing it to an operation that dependes on any client-specific
 // values may result in unexpected cache collisions.
 func (mod *Module) SourceContentScopedID(ctx context.Context) (*call.ID, error) {
-	ctxSrcOpt := mod.ContextSource
-	if !ctxSrcOpt.Valid {
-		ctxSrcOpt = mod.Source
+	contentDigestInputs := []string{"_sourceContentScoped"}
+	hasSource := false
+
+	if mod.ContextSource.Valid {
+		contextDigest, err := mod.ContextSource.Value.Self().ContentDigestForSDK(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get context source content digest: %w", err)
+		}
+		contentDigestInputs = append(contentDigestInputs, "context:"+contextDigest.String())
+		hasSource = true
 	}
-	if !ctxSrcOpt.Valid {
+
+	if mod.Source.Valid {
+		sourceDigest, err := mod.Source.Value.Self().ContentDigestForSDK(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get source content digest: %w", err)
+		}
+		contentDigestInputs = append(contentDigestInputs, "source:"+sourceDigest.String())
+		hasSource = true
+	}
+
+	if !hasSource {
 		return nil, fmt.Errorf("no module source available for content-scoped ID")
 	}
-	contentScopedDgst, err := ctxSrcOpt.Value.Self().ContentDigestForSDK(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get content-scoped ID from module source: %w", err)
-	}
+
 	return mod.ResultID.Append(
 		mod.ResultID.Type().ToAST(),
 		"_sourceContentScoped",
 		call.WithContentDigest(hashutil.HashStrings(
-			contentScopedDgst.String(),
-			"_sourceContentScoped", // mix this in too so we don't overlap with pure moduleSource types
+			contentDigestInputs...,
 		)),
 	), nil
 }

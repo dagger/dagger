@@ -461,9 +461,10 @@ func (WorkspaceSuite) TestWorkspaceContentAddressed(ctx context.Context, t *test
 	daggerCallWithLogs := func(args ...string) dagger.WithContainerFunc {
 		return func(ctr *dagger.Container) *dagger.Container {
 			execArgs := append([]string{"dagger", "--progress=logs", "call"}, args...)
-			return ctr.WithExec(execArgs, dagger.ContainerWithExecOpts{
-				UseEntrypoint: true,
-			})
+			return ctr.
+				WithExec(execArgs, dagger.ContainerWithExecOpts{
+					UseEntrypoint: true,
+				})
 		}
 	}
 
