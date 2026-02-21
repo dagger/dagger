@@ -27,11 +27,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
-		dagql.NodeFunc("directory",
-			DagOpDirectoryWrapper(
-				srv, s.directory,
-				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
-			)).
+		dagql.NodeFunc("directory", s.directory).
 			WithInput(dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
 				`Path is relative to workspace root. Use "." for the root directory.`).
@@ -110,8 +106,6 @@ type workspaceDirectoryArgs struct {
 	Path string
 
 	core.CopyFilter
-
-	DagOpInternalArgs
 }
 
 func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
