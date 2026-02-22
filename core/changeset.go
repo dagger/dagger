@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
-	"syscall"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/v2/core/mount"
@@ -314,14 +313,14 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 					return err
 				}
 				defer os.RemoveAll(afterMount)
-				if err := syscall.Mount(beforeDir, beforeMount, "", syscall.MS_BIND, ""); err != nil {
+				if err := bindMountDir(beforeDir, beforeMount); err != nil {
 					return fmt.Errorf("mount before to ./a/: %w", err)
 				}
-				defer syscall.Unmount(beforeMount, syscall.MNT_DETACH)
-				if err := syscall.Mount(afterDir, afterMount, "", syscall.MS_BIND, ""); err != nil {
+				defer unmountDir(beforeMount)
+				if err := bindMountDir(afterDir, afterMount); err != nil {
 					return fmt.Errorf("mount after to ./b/: %w", err)
 				}
-				defer syscall.Unmount(afterMount, syscall.MNT_DETACH)
+				defer unmountDir(afterMount)
 
 				patchFile, err := os.Create(filepath.Join(root, ChangesetPatchFilename))
 				if err != nil {
