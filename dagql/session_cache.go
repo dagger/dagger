@@ -33,10 +33,21 @@ type CacheCallOpt interface {
 }
 
 type CacheCallOpts struct {
-	Telemetry TelemetryFunc
+	Telemetry       TelemetryFunc
+	TelemetryPolicy TelemetryPolicy
 }
 
 type TelemetryFunc func(context.Context) (context.Context, func(AnyResult, bool, *error))
+
+// TelemetryPolicy controls when telemetry is emitted for a cache call.
+type TelemetryPolicy int
+
+const (
+	// TelemetryPolicyDefault emits telemetry around first-seen calls.
+	TelemetryPolicyDefault TelemetryPolicy = iota
+	// TelemetryPolicyCacheHitOnly emits telemetry only when the call result is a cache hit.
+	TelemetryPolicyCacheHitOnly
+)
 
 func (o CacheCallOpts) SetCacheCallOpt(opts *CacheCallOpts) {
 	*opts = o
@@ -51,6 +62,12 @@ func (f CacheCallOptFunc) SetCacheCallOpt(opts *CacheCallOpts) {
 func WithTelemetry(telemetry TelemetryFunc) CacheCallOpt {
 	return CacheCallOptFunc(func(opts *CacheCallOpts) {
 		opts.Telemetry = telemetry
+	})
+}
+
+func WithTelemetryPolicy(policy TelemetryPolicy) CacheCallOpt {
+	return CacheCallOptFunc(func(opts *CacheCallOpts) {
+		opts.TelemetryPolicy = policy
 	})
 }
 
@@ -111,26 +128,47 @@ func (c *SessionCache) GetOrInitCall(
 		keys = &c.seenKeys
 	}
 	callKey := key.ID.Digest().String()
-	_, seen := keys.LoadOrStore(callKey, struct{}{})
-	if o.Telemetry != nil && (!seen || key.DoNotCache) {
-		// track keys globally in addition to any local key stores, otherwise we'll
-		// see dupes when e.g. IDs returned out of the "bubble" are loaded
-		c.seenKeys.Store(callKey, struct{}{})
+	switch o.TelemetryPolicy {
+	case TelemetryPolicyCacheHitOnly:
+		res, err = c.cache.GetOrInitCall(ctx, key, fn)
+		if err != nil {
+			return nil, err
+		}
 
-		telemetryCtx, done := o.Telemetry(ctx)
-		defer func() {
-			var cached bool
-			if res != nil {
-				cached = res.HitCache()
+		if o.Telemetry != nil && res != nil && res.HitCache() {
+			_, seen := keys.LoadOrStore(callKey, struct{}{})
+			if !seen || key.DoNotCache {
+				// track keys globally in addition to any local key stores, otherwise we'll
+				// see dupes when e.g. IDs returned out of the "bubble" are loaded
+				c.seenKeys.Store(callKey, struct{}{})
+
+				_, done := o.Telemetry(ctx)
+				done(res, true, &err)
 			}
-			done(res, cached, &err)
-		}()
-		ctx = telemetryCtx
-	}
+		}
 
-	res, err = c.cache.GetOrInitCall(ctx, key, fn)
-	if err != nil {
-		return nil, err
+	default:
+		_, seen := keys.LoadOrStore(callKey, struct{}{})
+		if o.Telemetry != nil && (!seen || key.DoNotCache) {
+			// track keys globally in addition to any local key stores, otherwise we'll
+			// see dupes when e.g. IDs returned out of the "bubble" are loaded
+			c.seenKeys.Store(callKey, struct{}{})
+
+			telemetryCtx, done := o.Telemetry(ctx)
+			defer func() {
+				var cached bool
+				if res != nil {
+					cached = res.HitCache()
+				}
+				done(res, cached, &err)
+			}()
+			ctx = telemetryCtx
+		}
+
+		res, err = c.cache.GetOrInitCall(ctx, key, fn)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	nilResult := false

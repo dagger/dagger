@@ -264,17 +264,22 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		},
 	} {
 		testName := ex.Name
+		goldFile := ex.Name
 		if testName == "" {
 			testName = ex.Function
+			goldFile = ex.Function
 			if ex.Module != "" {
-				testName = path.Join(path.Base(ex.Module), testName)
+				// don't use `/` in testName; it confuses testctx output in dagger telemetry
+				testName = strings.Join([]string{path.Base(ex.Module), ex.Function}, "-")
+				goldFile = path.Join(path.Base(ex.Module), ex.Function)
 			}
 		}
 		t.Run(testName, func(ctx context.Context, t *testctx.T) {
+			goldFile := `TestTelemetry/TestGolden/` + goldFile
 			out, db := ex.Run(ctx, t, s)
 			switch {
 			case ex.Flaky != "":
-				cmp := golden.String(out, t.Name())()
+				cmp := golden.String(out, goldFile)()
 				if !cmp.Success() {
 					t.Log(cmp.(interface{ FailureMessage() string }).FailureMessage())
 					t.Skip("Flaky: " + ex.Flaky)
@@ -282,7 +287,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			case ex.FuzzyTest != nil:
 				ex.FuzzyTest(t, out)
 			default:
-				golden.Assert(t, out, t.Name())
+				golden.Assert(t, out, goldFile)
 			}
 			if ex.DBTest != nil {
 				ex.DBTest(t, db)
