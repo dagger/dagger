@@ -810,6 +810,8 @@ type containerFromArgs struct {
 	ContainerDagOpInternalArgs
 }
 
+// if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
+// we scope to the session so that resolution of a tag->digest is cached within the session but not across.
 var fromSessionScopeInput = dagql.ImplicitInput{
 	Name: "fromSessionScope",
 	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
@@ -876,8 +878,9 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			if err != nil {
 				return inst, err
 			}
+			// detach identity from the :tag, make the result purely content-addressed based on the digest
 			return inst.WithContentDigest(hashutil.HashStrings(
-				"container.from",
+				"container.from.dagop",
 				refName.Digest().String(),
 				ctr.Platform.Format(),
 			)), nil
@@ -907,6 +910,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, err
 		}
+		// detach identity from the :tag, make the result purely content-addressed based on the digest
 		return inst.WithContentDigest(hashutil.HashStrings(
 			"container.from",
 			refName.Digest().String(),

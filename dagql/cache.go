@@ -213,6 +213,7 @@ type sharedResult struct {
 	// indexing at wait time. Kept as digest facts instead of retaining an ID.
 	outputDigest       digest.Digest
 	outputExtraDigests []call.ExtraDigest
+	outputEffectIDs    []string
 	resultTermSelf     digest.Digest
 	resultTermInputs   []digest.Digest
 	hasResultTerm      bool
@@ -822,6 +823,8 @@ func (c *cache) waitLocked(
 			}
 			retID = retID.With(call.WithExtraDigest(extra))
 		}
+		retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
+
 		// TODO: HACK: experiment to fix function calls that have side-effectful setSecret calls
 		if oc.persistToDB != nil && !oc.res.safeToPersistCache {
 			retID = retID.With(call.WithAppendedImplicitInputs(call.NewArgument(
@@ -854,6 +857,7 @@ func (c *cache) waitLocked(
 			oc.res.safeToPersistCache = oc.val.IsSafeToPersistCache()
 			oc.res.outputDigest = oc.val.ID().Digest()
 			oc.res.outputExtraDigests = oc.val.ID().ExtraDigests()
+			oc.res.outputEffectIDs = oc.val.ID().AllEffectIDs()
 
 			selfDigest, inputDigests, deriveErr := oc.val.ID().SelfDigestAndInputs()
 			if deriveErr != nil {
@@ -897,6 +901,7 @@ func (c *cache) waitLocked(
 		}
 		retID = retID.With(call.WithExtraDigest(extra))
 	}
+	retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
 
 	return Result[Typed]{
 		shared:   oc.res,

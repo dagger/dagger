@@ -94,7 +94,6 @@ type InstallHook interface {
 // soon.
 type AroundFunc func(
 	context.Context,
-	AnyObjectResult,
 	*call.ID,
 ) (context.Context, func(res AnyResult, cached bool, err *error))
 
@@ -673,12 +672,23 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	ctx = idToContext(ctx, id)
+	ctx = srvToContext(ctx, s)
+
 	// Before recursing, check if we already have a cached result for this ID.
+	var opts []CacheCallOpt
+	if s.telemetry != nil {
+		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+			return s.telemetry(ctx, id)
+		}))
+		// only emit telemetry in this case if there was a cache hit, otherwise don't send telemetry until we really execute it
+		opts = append(opts, WithTelemetryPolicy(TelemetryPolicyCacheHitOnly))
+	}
 	if res, err := s.Cache.GetOrInitCall(ctx, CacheKey{
 		ID: id,
 	}, func(ctx context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("cache miss")
-	}); err == nil {
+	}, opts...); err == nil {
 		return res, nil
 	}
 

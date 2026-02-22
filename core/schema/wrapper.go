@@ -326,7 +326,7 @@ func getSelfDigest(ctx context.Context, a any) (digest.Digest, []llb.State, erro
 		*core.Query,
 		*core.Workspace:
 		// fallback to using dagop ID
-		return dagql.CurrentID(ctx).Digest(), nil, nil
+		return dagql.CurrentID(ctx).OutputEquivalentDigest(), nil, nil
 	default:
 		return "", nil, fmt.Errorf("unable to create digest: unknown type %T", a)
 	}

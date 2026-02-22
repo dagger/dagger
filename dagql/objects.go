@@ -526,7 +526,7 @@ func (r ObjectResult[T]) call(
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
 		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
-			return s.telemetry(ctx, r, newID)
+			return s.telemetry(ctx, newID)
 		}))
 	}
 

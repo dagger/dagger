@@ -480,6 +480,7 @@ func (c *cache) lookupCacheForID(
 		}
 		retID = retID.With(call.WithExtraDigest(extra))
 	}
+	retID = retID.AppendEffectIDs(res.outputEffectIDs...)
 	if !res.hasValue {
 		return Result[Typed]{
 			shared:   res,
