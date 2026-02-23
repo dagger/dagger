@@ -331,6 +331,22 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationFieldDefinition,
 		},
 	},
+	{
+		Name:        "origin",
+		Description: FormatDescription(`Indicates the origin of the typedef`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "module",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationObject,
+			DirectiveLocationInterface,
+			DirectiveLocationEnum,
+			DirectiveLocationScalar,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
@@ -355,19 +371,25 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
 
+		spec := FieldSpec{
+			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+			Type:        class.Typed(),
+			Args: NewInputSpecs(
+				InputSpec{
+					Name: "id",
+					Type: idType,
+				},
+			),
+			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
+		}
+
+		if class.Origin() != "" {
+			spec.Directives = append(spec.Directives, Origin(class.Origin()))
+		}
+
 		s.Root().ObjectType().Extend(
-			FieldSpec{
-				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
-				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-				Type:        class.Typed(),
-				Args: NewInputSpecs(
-					InputSpec{
-						Name: "id",
-						Type: idType,
-					},
-				),
-				DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
-			},
+			spec,
 			func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
 				idable, ok := args["id"].(IDable)
 				if !ok {
