@@ -57,12 +57,6 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache *SessionCache
-
-	// fallback, when set, is used by Refocus'd servers to resolve root-level
-	// fields that don't exist on the focused type. For example, if the
-	// focused type is a module's main object but the query asks for
-	// currentTypeDefs, the fallback server's root (Query) handles it.
-	fallback *Server
 }
 
 type ServerSchema struct {
@@ -511,26 +505,6 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		sortutil.RangeSorted(s.directives, func(n string, d DirectiveSpec) {
 			schema.Directives[n] = d.DirectiveDefinition(view)
 		})
-
-		// For a Refocus'd server, merge the fallback's root type fields into
-		// the focused Query type. This lets the schema validate queries that
-		// mix focused fields (e.g. module functions) with infrastructure
-		// fields (e.g. currentTypeDefs, loadXFromID) from the fallback.
-		if s.fallback != nil && schema.Query != nil {
-			fallbackQueryType := s.fallback.Root().Type().Name()
-			if fallbackDef, ok := schema.Types[fallbackQueryType]; ok {
-				existingFields := make(map[string]bool, len(schema.Query.Fields))
-				for _, f := range schema.Query.Fields {
-					existingFields[f.Name] = true
-				}
-				for _, f := range fallbackDef.Fields {
-					if !existingFields[f.Name] {
-						schema.Query.Fields = append(schema.Query.Fields, f)
-					}
-				}
-			}
-		}
-
 		h := xxh3.New()
 		json.NewEncoder(h).Encode(schema)
 		s.schemas[view] = schema
@@ -625,16 +599,11 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
 				continue
 			}
-			var err error
-			if s.fallback != nil {
-				results, err = s.execQueryWithFallback(ctx, gqlOp, op)
-			} else {
-				sels, parseErr := s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
-				if parseErr != nil {
-					return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, parseErr)
-				}
-				results, err = s.Resolve(ctx, s.root, sels...)
+			sels, err := s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
+			if err != nil {
+				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, err)
 			}
+			results, err = s.Resolve(ctx, s.root, sels...)
 			if err != nil {
 				return nil, err
 			}
@@ -646,61 +615,6 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			return nil, fmt.Errorf("subscriptions not supported")
 		}
 	}
-	return results, nil
-}
-
-// execQueryWithFallback handles query resolution for a Refocus'd server.
-// Each top-level field is tried against the focused root first; if the field
-// doesn't exist there, it's resolved against the fallback server's root.
-func (s *Server) execQueryWithFallback(ctx context.Context, gqlOp *graphql.OperationContext, op *ast.OperationDefinition) (map[string]any, error) {
-	var focusedSels, fallbackSels []Selection
-
-	for _, astSel := range op.SelectionSet {
-		astField, ok := astSel.(*ast.Field)
-		if !ok {
-			continue
-		}
-
-		// Try parsing against the focused root type.
-		sels, err := s.parseASTSelections(ctx, gqlOp, s.root.Type(), ast.SelectionSet{astField})
-		if err == nil {
-			focusedSels = append(focusedSels, sels...)
-			continue
-		}
-
-		// Field not on the focused type — try the fallback's root.
-		sels, err = s.fallback.parseASTSelections(ctx, gqlOp, s.fallback.root.Type(), ast.SelectionSet{astField})
-		if err != nil {
-			return nil, fmt.Errorf("query:\n%s\n\nerror: field %q not found on %s or %s: %w",
-				gqlOp.RawQuery, astField.Name, s.root.Type().Name(), s.fallback.root.Type().Name(), err)
-		}
-		fallbackSels = append(fallbackSels, sels...)
-	}
-
-	results := make(map[string]any)
-
-	// Resolve focused selections against the focused root.
-	if len(focusedSels) > 0 {
-		focusedResults, err := s.Resolve(ctx, s.root, focusedSels...)
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range focusedResults {
-			results[k] = v
-		}
-	}
-
-	// Resolve fallback selections against the fallback server's root.
-	if len(fallbackSels) > 0 {
-		fallbackResults, err := s.fallback.Resolve(ctx, s.fallback.root, fallbackSels...)
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range fallbackResults {
-			results[k] = v
-		}
-	}
-
 	return results, nil
 }
 
@@ -903,48 +817,6 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 func (s *Server) isObjectType(typeName string) bool {
 	_, ok := s.ObjectType(typeName)
 	return ok
-}
-
-// Refocus creates a new Server whose root (Query) type is the given object
-// result. Types, scalars, cache, and telemetry are shared with the original
-// server. The returned server's schema exposes the focused type as the Query
-// operation type, with all reachable types still available.
-//
-// Fields not found on the focused type are resolved against the original
-// server's root (the fallback). This allows infrastructure fields like
-// currentTypeDefs to remain accessible.
-//
-// The root should be created with NewRootObject to ensure it has a nil ID.
-func (s *Server) Refocus(root AnyObjectResult) *Server {
-	return &Server{
-		root:       root,
-		telemetry:  s.telemetry,
-		objects:    s.objects,
-		scalars:    s.scalars,
-		typeDefs:   s.typeDefs,
-		directives: s.directives,
-		View:       s.View,
-		Cache:      s.Cache,
-		fallback:   s,
-		// Share the install lock since we share the objects/scalars maps.
-		installLock:  s.installLock,
-		installHooks: s.installHooks,
-		// Fresh schema cache — the schema differs because the root type changed.
-		schemas:       make(map[call.View]*ast.Schema),
-		schemaDigests: make(map[call.View]digest.Digest),
-		schemaOnces:   make(map[call.View]*sync.Once),
-		schemaLock:    &sync.Mutex{},
-	}
-}
-
-// contextServer returns the server that should be placed in context during
-// field resolution. For a Refocus'd server, this is the fallback (real)
-// server, so that module function execution sees the full Query root.
-func (s *Server) contextServer() *Server {
-	if s.fallback != nil {
-		return s.fallback
-	}
-	return s
 }
 
 // Attach an install hook

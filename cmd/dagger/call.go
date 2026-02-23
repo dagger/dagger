@@ -103,16 +103,12 @@ available functions.
 func functionListRun(o functionProvider, writer io.Writer, filterCore bool) error {
 	fns, skipped := GetSupportedFunctions(o)
 
-	// At the Query root, filter out core API functions — only show module
-	// functions. A function is considered a module function if either it has
-	// SourceModuleName set (promoted from the focused module), or its return
-	// type is a module-defined object (constructor pattern).
+	// At the Query root, filter out core API constructors — only show module
+	// constructors. When navigating into a module type, show all functions.
 	if filterCore {
 		filtered := make([]*modFunction, 0, len(fns))
 		for _, fn := range fns {
-			isModuleFunc := fn.SourceModuleName != "" ||
-				(fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "")
-			if isModuleFunc {
+			if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
 				filtered = append(filtered, fn)
 			}
 		}

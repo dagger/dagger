@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
-
-	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
@@ -770,13 +767,6 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 		return nil, err
 	}
 
-	// If the workspace has a default (focused) module, promote its functions
-	// to the Query type and remove the constructor. This makes the CLI see
-	// the module's functions as top-level commands.
-	if ws, wsErr := self.CurrentWorkspace(ctx); wsErr == nil && ws != nil && ws.DefaultModule != "" {
-		typeDefs = focusTypeDefs(typeDefs, ws.DefaultModule)
-	}
-
 	includeCore := !args.IncludeCore.Valid || args.IncludeCore.Value.Bool()
 	if !includeCore {
 		filtered := make([]*core.TypeDef, 0, len(typeDefs))
@@ -789,61 +779,6 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 	}
 
 	return typeDefs, nil
-}
-
-// focusTypeDefs rewrites type defs so that the focused module's functions
-// appear directly on the Query type, replacing the module's constructor.
-// This mirrors the Refocus'd server's schema where the module type IS Query.
-func focusTypeDefs(typeDefs []*core.TypeDef, moduleName string) []*core.TypeDef {
-	// Find the Query and module type defs.
-	var queryDef *core.ObjectTypeDef
-	var moduleDef *core.ObjectTypeDef
-	constructorFieldName := strcase.ToLowerCamel(moduleName)
-
-	for _, td := range typeDefs {
-		if !td.AsObject.Valid {
-			continue
-		}
-		obj := td.AsObject.Value
-		if obj.Name == "Query" {
-			queryDef = obj
-		}
-		// Match the module's main object type: it has SourceModuleName set
-		// and its name matches the module name (e.g. module "hello" → type "Hello").
-		if obj.SourceModuleName == moduleName && strings.EqualFold(obj.Name, strcase.ToCamel(moduleName)) {
-			moduleDef = obj
-		}
-	}
-
-	if queryDef == nil || moduleDef == nil {
-		return typeDefs
-	}
-
-	// Build a set of promoted function names so we can resolve collisions.
-	promotedNames := make(map[string]bool, len(moduleDef.Functions))
-	for _, fn := range moduleDef.Functions {
-		promotedNames[fn.Name] = true
-	}
-
-	// Replace Query's functions: remove the constructor AND any functions
-	// whose name collides with a promoted function (the promoted version wins).
-	newFunctions := make([]*core.Function, 0, len(queryDef.Functions)+len(moduleDef.Functions))
-	for _, fn := range queryDef.Functions {
-		if fn.Name == constructorFieldName || promotedNames[fn.Name] {
-			continue
-		}
-		newFunctions = append(newFunctions, fn)
-	}
-	for _, fn := range moduleDef.Functions {
-		// Mark promoted functions with the source module name so the CLI
-		// can identify them as module functions (vs core API functions).
-		fn = fn.Clone()
-		fn.SourceModuleName = moduleName
-		newFunctions = append(newFunctions, fn)
-	}
-	queryDef.Functions = newFunctions
-
-	return typeDefs
 }
 
 // isCoreTypeDef returns true if the TypeDef originates from the core module

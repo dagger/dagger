@@ -58,10 +58,8 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, e
 		}
 	}
 
-	// When the engine serves a focused schema, currentTypeDefs already
-	// has the module's functions promoted to Query (no constructor).
-	// The DefaultModule query is kept as a fallback for when focusing
-	// is not active (e.g. constructor has required args).
+	// Ask the engine which module is the default for this workspace.
+	// This is authoritative: blueprint modules, standalone modules, etc.
 	if def.Name == "" {
 		name, err := dag.CurrentWorkspace().DefaultModule(ctx)
 		if err == nil && name != "" {
@@ -365,21 +363,6 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includ
 	// For core API only, main object is the Query type.
 	if m.Name == "" {
 		m.MainObject = rootType
-	}
-
-	// When the engine serves a focused schema, the module's functions are
-	// promoted to Query and the constructor is removed. In this case,
-	// MainObject won't be found via the constructor pattern above, so we
-	// fall back to using Query as the MainObject (its functions ARE the
-	// module's functions).
-	if m.Name != "" && m.MainObject == nil {
-		// Check if Query has functions from this module (focused schema).
-		for _, fn := range rootType.AsObject.Functions {
-			if fn.SourceModuleName == m.Name {
-				m.MainObject = rootType
-				break
-			}
-		}
 	}
 
 	if m.Name != "" && m.MainObject == nil {

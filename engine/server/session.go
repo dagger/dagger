@@ -30,7 +30,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/progress/progressui"
-	"github.com/iancoleman/strcase"
 	"github.com/koron-go/prefixw"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
@@ -193,13 +192,6 @@ type daggerClient struct {
 	modulesMu           sync.Mutex
 	modulesLoaded       bool
 	modulesErr          error
-
-	// focusedServer is a dagql.Server whose Query type is the default
-	// module's main object type, created lazily when a workspace has a
-	// default module. It delegates to the real deps schema for resolution.
-	focusedServer     *dagql.Server
-	focusedServerOnce sync.Once
-	focusedServerErr  error
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -1270,15 +1262,6 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
-	// If the workspace has a default module, serve a focused schema whose
-	// Query type is the module's main object. This lets the CLI call
-	// `dagger call foo` instead of `dagger call my-module foo`.
-	if focused, err := srv.focusedSchema(ctx, client, schema); err != nil {
-		return gqlErr(fmt.Errorf("focusing schema: %w", err), http.StatusInternalServerError)
-	} else if focused != nil {
-		schema = focused
-	}
-
 	gqlSrv := dagql.NewDefaultHandler(schema)
 	// NB: break glass when needed:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
@@ -1846,46 +1829,6 @@ func (srv *Server) loadModule(
 		}
 	}
 	return nil
-}
-
-// focusedSchema returns a dagql.Server whose Query type is the default
-// module's main object, or nil if there's no default module.
-func (srv *Server) focusedSchema(ctx context.Context, client *daggerClient, realSchema *dagql.Server) (*dagql.Server, error) {
-	if client.workspace == nil || client.workspace.DefaultModule == "" {
-		return nil, nil
-	}
-
-	client.focusedServerOnce.Do(func() {
-		client.focusedServer, client.focusedServerErr = srv.buildFocusedSchema(ctx, client, realSchema)
-	})
-
-	return client.focusedServer, client.focusedServerErr
-}
-
-func (srv *Server) buildFocusedSchema(ctx context.Context, client *daggerClient, realSchema *dagql.Server) (*dagql.Server, error) {
-	modName := client.workspace.DefaultModule
-
-	// Resolve the constructor field name (camelCase of module name).
-	constructorField := strcase.ToLowerCamel(modName)
-
-	// Call the constructor (with default args) on the real server to get the
-	// module instance. This ensures any state set by the constructor is
-	// available when resolving fields on the focused root.
-	//
-	// If the constructor has required args without defaults, this will fail
-	// and we skip focusing — the CLI falls back to the normal behavior.
-	var modResult dagql.AnyObjectResult
-	if err := realSchema.Select(ctx, realSchema.Root(), &modResult,
-		dagql.Selector{Field: constructorField},
-	); err != nil {
-		slog.Debug("skipping focus: constructor requires args", "module", modName, "error", err)
-		return nil, nil //nolint:nilerr // intentional: fall back to unfocused
-	}
-
-	// Use the constructor result directly as the focused root.
-	// Its ID (e.g. Query.greeter) is preserved, which means field IDs
-	// on the focused root form valid chains (e.g. Query.greeter.read).
-	return realSchema.Refocus(modResult), nil
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.

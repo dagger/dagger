@@ -384,7 +384,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	cacheKey := newCacheKey(ctx, newID, field.Spec)
 	if field.Spec.GetCacheConfig != nil {
 		cacheCfgCtx := idToContext(ctx, newID)
-		cacheCfgCtx = srvToContext(cacheCfgCtx, s.contextServer())
+		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
 		cacheCfgResp, err := field.Spec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, GetCacheConfigRequest{
 			CacheKey: cacheKey,
 		})
@@ -502,10 +502,7 @@ func (r ObjectResult[T]) call(
 	cacheKey CacheKey,
 ) (AnyResult, error) {
 	ctx = idToContext(ctx, newID)
-	// For a Refocus'd server, put the fallback (real) server in context.
-	// This ensures module function execution sees the full Query root
-	// (with core API fields like "directory") rather than the focused root.
-	ctx = srvToContext(ctx, s.contextServer())
+	ctx = srvToContext(ctx, s)
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
 		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
