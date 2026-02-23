@@ -6783,6 +6783,11 @@ impl EngineCacheEntry {
         let query = self.selection.select("mostRecentUseTimeUnixNano");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+    pub async fn record_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("recordType");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct EngineCacheEntrySet {

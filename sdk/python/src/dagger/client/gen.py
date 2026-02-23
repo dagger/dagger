@@ -5025,6 +5025,28 @@ class EngineCacheEntry(Type):
         _ctx = self._select("mostRecentUseTimeUnixNano", _args)
         return await _ctx.execute(int)
 
+    async def record_type(self) -> str:
+        """The type of the cache record (e.g. regular, internal, frontend,
+        source.local, source.git.checkout, exec.cachemount).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("recordType", _args)
+        return await _ctx.execute(str)
+
 
 @typecheck
 class EngineCacheEntrySet(Type):
