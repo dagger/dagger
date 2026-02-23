@@ -5646,6 +5646,7 @@ type Workspace {
     """
     include: [String!] = []
 
+    """Apply .gitignore filter rules inside the directory."""
     gitignore: Boolean = false
   ): Directory!
 
