@@ -56,19 +56,19 @@
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/adm-zip": "^0.5.7",
     "@types/mocha": "^10.0.10",
-    "@types/node": "~25.2.3",
+    "@types/node": "~25.3.0",
     "@types/tar": "^7.0.87",
-    "@typescript-eslint/eslint-plugin": "^8.56.0",
-    "@typescript-eslint/parser": "^8.56.0",
-    "eslint": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "eslint": "^10.0.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "mocha": "^11.7.5",
     "prettier": "^3.8.1",
-    "rollup": "^4.57.1",
+    "rollup": "^4.59.0",
     "rollup-plugin-dts": "^6.3.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript-eslint": "^8.56.0"
+    "typescript-eslint": "^8.56.1"
   }
 }
