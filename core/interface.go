@@ -189,6 +189,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			TypeDef:   iface.typeDef,
 			IfaceType: iface,
 		},
+		Origin: iface.mod.OriginalName,
 	})
 
 	dag.InstallObject(class)
@@ -226,6 +227,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Type:             fnTypeDef.ReturnType.ToTyped(),
 			Module:           iface.mod.IDModule(),
 			DeprecatedReason: fnTypeDef.Deprecated,
+			Directives:       []*ast.Directive{dagql.Origin(iface.mod.OriginalName)},
 		}
 		if fnTypeDef.SourceMap.Valid {
 			fieldDef.Directives = append(fieldDef.Directives, fnTypeDef.SourceMap.Value.TypeDirective())
@@ -477,8 +479,9 @@ func (iface *InterfaceAnnotatedValue) TypeDescription() string {
 
 func (iface *InterfaceAnnotatedValue) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
-		Kind: ast.Object,
-		Name: iface.Type().Name(),
+		Kind:       ast.Object,
+		Name:       iface.Type().Name(),
+		Directives: []*ast.Directive{dagql.Origin(iface.UnderlyingType.SourceMod().Name())},
 	}
 	if iface.TypeDef.SourceMap.Valid {
 		def.Directives = append(def.Directives, iface.TypeDef.SourceMap.Value.TypeDirective())

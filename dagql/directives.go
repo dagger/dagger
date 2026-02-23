@@ -112,3 +112,18 @@ func internal() *ast.Directive {
 		Name: "internal",
 	}
 }
+
+func Origin(moduleName string) *ast.Directive {
+	return &ast.Directive{
+		Name: "origin",
+		Arguments: []*ast.Argument{
+			{
+				Name: "module",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  moduleName,
+				},
+			},
+		},
+	}
+}
