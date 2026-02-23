@@ -19,10 +19,10 @@ import (
 
 type Function struct {
 	// Name is the standardized name of the function (lowerCamelCase), as used for the resolver in the graphql schema
-	Name        string         `field:"true" doc:"The name of the function."`
-	Description string         `field:"true" doc:"A doc string for the function, if any."`
-	Args        []*FunctionArg `field:"true" doc:"Arguments accepted by the function, if any."`
-	ReturnType  *TypeDef       `field:"true" doc:"The type returned by the function."`
+	Name        string         `field:"true" doNotCache:"simple field selection" doc:"The name of the function."`
+	Description string         `field:"true" doNotCache:"simple field selection" doc:"A doc string for the function, if any."`
+	Args        []*FunctionArg `field:"true" doNotCache:"simple field selection" doc:"Arguments accepted by the function, if any."`
+	ReturnType  *TypeDef       `field:"true" doNotCache:"simple field selection" doc:"The type returned by the function."`
 	Deprecated  *string        `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
@@ -333,14 +333,14 @@ func (proto FunctionCachePolicy) ToLiteral() call.Literal {
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name           string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
-	Description    string                     `field:"true" doc:"A doc string for the argument, if any."`
+	Name           string                     `field:"true" doNotCache:"simple field selection" doc:"The name of the argument in lowerCamelCase format."`
+	Description    string                     `field:"true" doNotCache:"simple field selection" doc:"A doc string for the argument, if any."`
 	SourceMap      dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
-	TypeDef        *TypeDef                   `field:"true" doc:"The type of the argument."`
-	DefaultValue   JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
-	DefaultPath    string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
+	TypeDef        *TypeDef                   `field:"true" doNotCache:"simple field selection" doc:"The type of the argument."`
+	DefaultValue   JSON                       `field:"true" doNotCache:"simple field selection" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	DefaultPath    string                     `field:"true" doNotCache:"simple field selection" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
 	DefaultAddress string                     `field:"true" doc:"Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)"`
-	Ignore         []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
+	Ignore         []string                   `field:"true" doNotCache:"simple field selection" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
 	Deprecated     *string                    `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	// Below are not in public API
@@ -513,14 +513,14 @@ func (d DynamicID) MarshalJSON() ([]byte, error) {
 }
 
 type TypeDef struct {
-	Kind        TypeDefKind                       `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)."`
-	Optional    bool                              `field:"true" doc:"Whether this type can be set to null. Defaults to false."`
-	AsList      dagql.Nullable[*ListTypeDef]      `field:"true" doc:"If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."`
-	AsObject    dagql.Nullable[*ObjectTypeDef]    `field:"true" doc:"If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."`
-	AsInterface dagql.Nullable[*InterfaceTypeDef] `field:"true" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
-	AsInput     dagql.Nullable[*InputTypeDef]     `field:"true" doc:"If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."`
-	AsScalar    dagql.Nullable[*ScalarTypeDef]    `field:"true" doc:"If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."`
-	AsEnum      dagql.Nullable[*EnumTypeDef]      `field:"true" doc:"If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."`
+	Kind        TypeDefKind                       `field:"true" doNotCache:"simple field selection" doc:"The kind of type this is (e.g. primitive, list, object)."`
+	Optional    bool                              `field:"true" doNotCache:"simple field selection" doc:"Whether this type can be set to null. Defaults to false."`
+	AsList      dagql.Nullable[*ListTypeDef]      `field:"true" doNotCache:"simple field selection" doc:"If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."`
+	AsObject    dagql.Nullable[*ObjectTypeDef]    `field:"true" doNotCache:"simple field selection" doc:"If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."`
+	AsInterface dagql.Nullable[*InterfaceTypeDef] `field:"true" doNotCache:"simple field selection" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
+	AsInput     dagql.Nullable[*InputTypeDef]     `field:"true" doNotCache:"simple field selection" doc:"If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."`
+	AsScalar    dagql.Nullable[*ScalarTypeDef]    `field:"true" doNotCache:"simple field selection" doc:"If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."`
+	AsEnum      dagql.Nullable[*EnumTypeDef]      `field:"true" doNotCache:"simple field selection" doc:"If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."`
 }
 
 func (typeDef TypeDef) Clone() *TypeDef {
@@ -834,16 +834,16 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 
 type ObjectTypeDef struct {
 	// Name is the standardized name of the object (CamelCase), as used for the object in the graphql schema
-	Name        string                     `field:"true" doc:"The name of the object."`
-	Description string                     `field:"true" doc:"The doc string for the object, if any."`
+	Name        string                     `field:"true" doNotCache:"simple field selection" doc:"The name of the object."`
+	Description string                     `field:"true" doNotCache:"simple field selection" doc:"The doc string for the object, if any."`
 	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this object declaration."`
-	Fields      []*FieldTypeDef            `field:"true" doc:"Static fields defined on this object, if any."`
-	Functions   []*Function                `field:"true" doc:"Functions defined on this object, if any."`
-	Constructor dagql.Nullable[*Function]  `field:"true" doc:"The function used to construct new instances of this object, if any"`
+	Fields      []*FieldTypeDef            `field:"true" doNotCache:"simple field selection" doc:"Static fields defined on this object, if any."`
+	Functions   []*Function                `field:"true" doNotCache:"simple field selection" doc:"Functions defined on this object, if any."`
+	Constructor dagql.Nullable[*Function]  `field:"true" doNotCache:"simple field selection" doc:"The function used to construct new instances of this object, if any"`
 	Deprecated  *string                    `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
-	SourceModuleName string `field:"true" doc:"If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."`
+	SourceModuleName string `field:"true" doNotCache:"simple field selection" doc:"If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."`
 
 	// Below are not in public API
 
@@ -984,9 +984,9 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 }
 
 type FieldTypeDef struct {
-	Name        string   `field:"true" doc:"The name of the field in lowerCamelCase format."`
-	Description string   `field:"true" doc:"A doc string for the field, if any."`
-	TypeDef     *TypeDef `field:"true" doc:"The type of the field."`
+	Name        string   `field:"true" doNotCache:"simple field selection" doc:"The name of the field in lowerCamelCase format."`
+	Description string   `field:"true" doNotCache:"simple field selection" doc:"A doc string for the field, if any."`
+	TypeDef     *TypeDef `field:"true" doNotCache:"simple field selection" doc:"The type of the field."`
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this field declaration."`
 
@@ -1108,8 +1108,8 @@ func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
 }
 
 type ScalarTypeDef struct {
-	Name        string `field:"true" doc:"The name of the scalar."`
-	Description string `field:"true" doc:"A doc string for the scalar, if any."`
+	Name        string `field:"true" doNotCache:"simple field selection" doc:"The name of the scalar."`
+	Description string `field:"true" doNotCache:"simple field selection" doc:"A doc string for the scalar, if any."`
 
 	OriginalName string
 
@@ -1141,7 +1141,7 @@ func (typeDef ScalarTypeDef) Clone() *ScalarTypeDef {
 }
 
 type ListTypeDef struct {
-	ElementTypeDef *TypeDef `field:"true" doc:"The type of the elements in the list."`
+	ElementTypeDef *TypeDef `field:"true" doNotCache:"simple field selection" doc:"The type of the elements in the list."`
 }
 
 func (*ListTypeDef) Type() *ast.Type {
@@ -1164,7 +1164,7 @@ func (typeDef ListTypeDef) Clone() *ListTypeDef {
 }
 
 type InputTypeDef struct {
-	Name   string          `field:"true" doc:"The name of the input object."`
+	Name   string          `field:"true" doNotCache:"simple field selection" doc:"The name of the input object."`
 	Fields []*FieldTypeDef `field:"true" doc:"Static fields defined on this input object, if any."`
 }
 
@@ -1209,9 +1209,9 @@ func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
 
 type EnumTypeDef struct {
 	// Name is the standardized name of the enum (CamelCase), as used for the enum in the graphql schema
-	Name        string                     `field:"true" doc:"The name of the enum."`
-	Description string                     `field:"true" doc:"A doc string for the enum, if any."`
-	Members     []*EnumMemberTypeDef       `field:"true" doc:"The members of the enum."`
+	Name        string                     `field:"true" doNotCache:"simple field selection" doc:"The name of the enum."`
+	Description string                     `field:"true" doNotCache:"simple field selection" doc:"A doc string for the enum, if any."`
+	Members     []*EnumMemberTypeDef       `field:"true" doNotCache:"simple field selection" doc:"The members of the enum."`
 	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this enum declaration."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Enum field on Module
@@ -1262,9 +1262,9 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 }
 
 type EnumMemberTypeDef struct {
-	Name        string                     `field:"true" doc:"The name of the enum member."`
+	Name        string                     `field:"true" doNotCache:"simple field selection" doc:"The name of the enum member."`
 	Value       string                     `field:"true" doc:"The value of the enum member"`
-	Description string                     `field:"true" doc:"A doc string for the enum member, if any."`
+	Description string                     `field:"true" doNotCache:"simple field selection" doc:"A doc string for the enum member, if any."`
 	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this enum member declaration."`
 	Deprecated  *string                    `field:"true" doc:"The reason this enum member is deprecated, if any."`
 

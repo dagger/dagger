@@ -40,7 +40,7 @@ func (res *sharedArbitraryResult) release(ctx context.Context) error {
 		return nil
 	}
 
-	res.cache.mu.Lock()
+	res.cache.callsMu.Lock()
 	res.refCount--
 	var onRelease OnReleaseFunc
 	if res.refCount == 0 && res.waiters == 0 {
@@ -50,7 +50,7 @@ func (res *sharedArbitraryResult) release(ctx context.Context) error {
 		}
 		onRelease = res.onRelease
 	}
-	res.cache.mu.Unlock()
+	res.cache.callsMu.Unlock()
 
 	if onRelease != nil {
 		return onRelease(ctx)
@@ -101,7 +101,7 @@ func (c *cache) GetOrInitArbitrary(
 		return nil, ErrCacheRecursiveCall
 	}
 
-	c.mu.Lock()
+	c.callsMu.Lock()
 	if c.ongoingArbitraryCalls == nil {
 		c.ongoingArbitraryCalls = make(map[string]*sharedArbitraryResult)
 	}
@@ -111,7 +111,7 @@ func (c *cache) GetOrInitArbitrary(
 
 	if res := c.completedArbitraryCalls[callKey]; res != nil {
 		res.refCount++
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 		return arbitraryResult{
 			shared:   res,
 			hitCache: true,
@@ -120,7 +120,7 @@ func (c *cache) GetOrInitArbitrary(
 
 	if res := c.ongoingArbitraryCalls[callKey]; res != nil {
 		res.waiters++
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 		return c.waitArbitrary(ctx, res, false)
 	}
 
@@ -149,7 +149,7 @@ func (c *cache) GetOrInitArbitrary(
 		}
 	}()
 
-	c.mu.Unlock()
+	c.callsMu.Unlock()
 	return c.waitArbitrary(ctx, res, true)
 }
 
@@ -170,7 +170,7 @@ func (c *cache) waitArbitrary(ctx context.Context, res *sharedArbitraryResult, i
 		}
 	}
 
-	c.mu.Lock()
+	c.callsMu.Lock()
 	res.waiters--
 	if res.waiters == 0 {
 		res.cancel(err)
@@ -184,7 +184,7 @@ func (c *cache) waitArbitrary(ctx context.Context, res *sharedArbitraryResult, i
 			c.completedArbitraryCalls[res.callKey] = res
 		}
 		res.refCount++
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 
 		if isFirstCaller {
 			hitCache = false
@@ -204,6 +204,6 @@ func (c *cache) waitArbitrary(ctx context.Context, res *sharedArbitraryResult, i
 		}
 	}
 
-	c.mu.Unlock()
+	c.callsMu.Unlock()
 	return nil, err
 }

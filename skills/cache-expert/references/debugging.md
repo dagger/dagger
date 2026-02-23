@@ -85,6 +85,77 @@ DO NOT EVER USE broad `./...` WHEN RUNNING TESTS AS YOU WILL ACCIDENTALLY CAPTUR
 
 `./core/integration`, `./dagql/idtui` and `./dagql/idtui/multiprefixw` are integration-style test packages (not quick unit loops). Avoid running them during tight cache-debug cycles unless you explicitly need those integration paths.
 
+## Performance Debugging With Persistent Dev Engine
+
+For most testing/debugging flows, prefer ephemeral engines via:
+
+```bash
+dagger --progress=plain call engine-dev ...
+```
+
+However, for performance debugging (pprof snapshots, repeated profiling loops, endpoint inspection), use a persistent dev engine running in Docker.
+
+### Start Persistent Dev Engine
+
+```bash
+docker rm -fv dagger-engine.dev
+docker volume rm dagger-engine.dev
+./hack/dev
+```
+
+Notes:
+- The container is named `dagger-engine.dev`.
+- This engine persists across commands/runs, so it is better for iterative perf investigation.
+- A clean reset is often desirable for consistent baselines, but is not always required (depends on whether cache/warm state is part of what you're measuring).
+
+### Run Commands Against Persistent Engine
+
+Use `./hack/with-dev` to target the running `dagger-engine.dev`:
+
+```bash
+./hack/with-dev go test -v -count=1 -run='TestWorkspace/TestWorkspaceContentAddressed/storing_a_Directory' ./core/integration/
+```
+
+You can also run Dagger commands through the same wrapper:
+
+```bash
+./hack/with-dev ./bin/dagger ...
+```
+
+Important CLI gotcha:
+- If you do `./hack/with-dev bash -c 'dagger ...'`, you may accidentally pick up a non-dev `dagger` binary from `PATH`.
+- In shell-wrapped commands, explicitly use `./bin/dagger` to avoid ambiguity.
+
+### Docker-Level Debugging
+
+Because the engine is a normal Docker container, you can use standard Docker tools:
+- `docker logs dagger-engine.dev`
+- `docker exec -it dagger-engine.dev sh`
+- `docker kill -s <SIGNAL> dagger-engine.dev`
+
+### pprof and Debug Endpoints
+
+The dev engine exposes debug endpoints on `localhost:6060`.
+- Current routes are defined in `cmd/engine/debug.go` (see route setup near line 29).
+- Use whichever endpoint/tooling fits the question (point-in-time snapshots vs time-window captures).
+
+Example heap profile capture over 15 seconds:
+
+```bash
+curl 'http://localhost:6060/debug/pprof/heap?seconds=15' > /tmp/heap.pprof
+```
+
+Then inspect with:
+
+```bash
+go tool pprof /tmp/heap.pprof
+```
+
+General profiling guidance:
+- Choose profile type and capture window based on the symptom.
+- For long-running or phase-specific regressions, align profile capture timing with the relevant test phase.
+- Keep artifacts organized by run so diffs/comparisons are straightforward.
+
 ## Metrics-First Leak Triage
 
 When debugging leaked dagql cache refs, start with Prometheus metrics before adding deep logs.

@@ -1137,6 +1137,7 @@ func (fields Fields[T]) Install(server *Server) {
 			Type:               field.Value,
 			Description:        field.Field.Tag.Get("doc"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
+			DoNotCache:         field.Field.Tag.Get("doNotCache"),
 		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()
