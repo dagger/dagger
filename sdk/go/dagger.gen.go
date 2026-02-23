@@ -13990,7 +13990,7 @@ type WorkspaceDirectoryOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
-
+	// Apply .gitignore filter rules inside the directory.
 	Gitignore bool
 }
 
