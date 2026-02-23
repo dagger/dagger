@@ -23,27 +23,27 @@ type TestSuite struct {
 
 // Run the pytest command.
 func (t *TestSuite) Run(
+	ctx context.Context,
 	// Arguments to pass to pytest
 	args []string,
-) *dagger.Container {
-	cmd := []string{"uv", "run"}
-	if t.Version != "" {
-		cmd = append(cmd, "-p", t.Version)
-	}
-	return t.Container.
-		WithExec(
-			append(append(cmd, "pytest"), args...),
-			dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+) error {
+	return dag.Pytest(dagger.PytestOpts{
+		Container: t.Container,
+		Source:    t.Container.Directory("/src/sdk/python"),
+	}).Test(ctx, dagger.PytestTestOpts{
+		Version: t.Version,
+		Args:    args,
+	})
 }
 
 // Run python tests.
-func (t *TestSuite) Default() *dagger.Container {
-	return t.Run([]string{"-Wd", "-l", "-m", "not provision"})
+func (t *TestSuite) RunDefault(ctx context.Context) error {
+	return t.Run(ctx, []string{"-Wd", "-l", "-m", "not provision"})
 }
 
 // Run unit tests.
-func (t *TestSuite) Unit() *dagger.Container {
-	return t.Run([]string{"-m", "not slow and not provision"})
+func (t *TestSuite) Unit(ctx context.Context) error {
+	return t.Run(ctx, []string{"-m", "not slow and not provision"})
 }
 
 // Test provisioning.
