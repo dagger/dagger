@@ -16,14 +16,14 @@ func main() {
 	currentDir := dag.Host().Directory("/work/current")
 
 	changes := repoDir.Changes(currentDir)
-	isDifferent, err := changes.IsEmpty(ctx)
+	isSame, err := changes.IsEmpty(ctx)
 	if err != nil {
 		fmt.Printf("failed to check differences: %s\n", err.Error())
 		os.Exit(1)
 	}
 
 	// If it's different load package.json and compare the version
-	if isDifferent {
+	if !isSame {
 		repoPackageVersion, err := repoDir.
 			File("package.json").
 			AsJSON().
@@ -43,6 +43,9 @@ func main() {
 			fmt.Printf("failed to load package.json: %s\n", err.Error())
 			os.Exit(1)
 		}
+
+		// add leading `v` so semver.compare works as expected
+		currentPackageVersion = "v" + currentPackageVersion
 
 		if semver.Compare(repoPackageVersion, currentPackageVersion) > 0 {
 			fmt.Println("package.json version must be bumped")
