@@ -48,7 +48,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@opentelemetry/sdk-node": "^0.209.0"
+    "@opentelemetry/sdk-node": "^0.212.0"
   },
   "engines": {
     "node": ">=20"
