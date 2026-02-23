@@ -31,6 +31,7 @@ export async function withGQLClient<T>(
   } catch (e) {
     throw new Error(
       `failed to execute function with automatic provisioning: ${e}`,
+      { cause: e },
     )
   }
 }
