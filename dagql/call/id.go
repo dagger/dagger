@@ -198,19 +198,14 @@ func (id *ID) ExtraDigestByLabel(label string) *ExtraDigest {
 	return nil
 }
 
-func (id *ID) moduleIdentityID() *ID {
-	if id == nil || id.module == nil {
-		return nil
-	}
-	return id.module.ID()
-}
-
 func (id *ID) moduleInputDigest() digest.Digest {
 	if id == nil || id.pb == nil || id.pb.Module == nil {
 		return ""
 	}
-	if modID := id.moduleIdentityID(); modID != nil {
-		return modID.Digest()
+	if id.module != nil {
+		if modID := id.module.ID(); modID != nil {
+			return modID.Digest()
+		}
 	}
 	return digest.Digest(id.pb.Module.CallDigest)
 }

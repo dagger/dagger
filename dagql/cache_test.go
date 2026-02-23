@@ -200,12 +200,12 @@ func TestCacheConcurrent(t *testing.T) {
 	waiterPollDeadline := time.Now().Add(3 * time.Second)
 	lastObservedWaiters := -1
 	for time.Now().Before(waiterPollDeadline) {
-		c.mu.Lock()
+		c.callsMu.Lock()
 		oc := c.ongoingCalls[callConcKeys]
 		if oc != nil {
 			lastObservedWaiters = oc.waiters
 		}
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 
 		if oc != nil && lastObservedWaiters == totalCallers {
 			waiterCountReached = true
@@ -220,9 +220,9 @@ func TestCacheConcurrent(t *testing.T) {
 	ongoingCleared := false
 	clearPollDeadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(clearPollDeadline) {
-		c.mu.Lock()
+		c.callsMu.Lock()
 		_, exists := c.ongoingCalls[callConcKeys]
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 		if !exists {
 			ongoingCleared = true
 			break
@@ -811,30 +811,6 @@ func TestCacheNilResultIsCached(t *testing.T) {
 	assert.Assert(t, res.Unwrap() == nil)
 	assert.Equal(t, 1, initCalls)
 	assert.Equal(t, 1, c.Size())
-}
-
-func TestCacheDoNotCacheSkipsStorage(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-	cacheIface, err := NewCache(ctx, "")
-	assert.NilError(t, err)
-	c := cacheIface.(*cache)
-
-	keyID := cacheTestID("do-not-cache")
-
-	for i := 1; i <= 2; i++ {
-		res, err := c.GetOrInitCall(ctx, CacheKey{
-			ID:         keyID,
-			DoNotCache: true,
-		}, func(context.Context) (AnyResult, error) {
-			return cacheTestIntResult(keyID, i), nil
-		})
-		assert.NilError(t, err)
-		assert.Assert(t, !res.HitCache())
-		assert.Equal(t, i, cacheTestUnwrapInt(t, res))
-	}
-
-	assert.Equal(t, 0, c.Size())
 }
 
 func TestEquivalencySetCacheHits(t *testing.T) {

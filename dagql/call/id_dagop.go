@@ -23,46 +23,32 @@ func (id *ID) OutputEquivalentDigest() digest.Digest {
 }
 
 // DagOpDigest returns the digest used by dag-op-backed identity/effect
-// propagation. It combines call self-shape bytes with equivalent input digests.
+// propagation.
+//
+// It is hashed in one pass like recipe digesting, except all ID inputs
+// (receiver, literal IDs, module identity) use output-equivalent digests
+// (content digest when available, otherwise dag-op digest).
 func (id *ID) DagOpDigest() digest.Digest {
 	if id == nil {
 		return ""
 	}
-	selfDigest, inputDigests, err := id.DagOpSelfDigestAndInputs()
+	d, err := id.calcDagOpDigest()
 	if err != nil {
 		return id.Digest()
 	}
-	h := hashutil.NewHasher().WithString(selfDigest.String())
-	for _, in := range inputDigests {
-		h = h.WithString(in.String())
-	}
-	return digest.Digest(h.DigestAndClose())
+	return d
 }
 
-func (id *ID) moduleDagOpInputDigest() digest.Digest {
-	if id == nil || id.pb == nil || id.pb.Module == nil {
-		return ""
-	}
-	if modID := id.moduleIdentityID(); modID != nil {
-		return modID.OutputEquivalentDigest()
-	}
-	return digest.Digest(id.pb.Module.CallDigest)
-}
-
-// DagOpSelfDigestAndInputs is like SelfDigestAndInputs, but resolves ID inputs
-// through output-equivalence identity for dag-op digesting.
-func (id *ID) DagOpSelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
+func (id *ID) calcDagOpDigest() (digest.Digest, error) {
 	if id == nil {
-		return "", nil, nil
+		return "", nil
 	}
-
-	var inputs []digest.Digest
 
 	h := hashutil.NewHasher()
 
-	// Receiver contributes to inputs, not the self digest.
+	// Receiver contributes output-equivalent identity.
 	if id.receiver != nil {
-		inputs = append(inputs, id.receiver.OutputEquivalentDigest())
+		h = h.WithString(id.receiver.OutputEquivalentDigest().String())
 	}
 	h = h.WithDelim()
 
@@ -90,10 +76,10 @@ func (id *ID) DagOpSelfDigestAndInputs() (digest.Digest, []digest.Digest, error)
 			continue
 		}
 		var err error
-		h, inputs, err = appendArgumentDagOpSelfBytes(arg, h, inputs)
+		h, err = appendArgumentDagOpBytes(arg, h)
 		if err != nil {
 			h.Close()
-			return "", nil, err
+			return "", err
 		}
 		h = h.WithDelim()
 	}
@@ -106,17 +92,25 @@ func (id *ID) DagOpSelfDigestAndInputs() (digest.Digest, []digest.Digest, error)
 			continue
 		}
 		var err error
-		h, inputs, err = appendArgumentDagOpSelfBytes(input, h, inputs)
+		h, err = appendArgumentDagOpBytes(input, h)
 		if err != nil {
 			h.Close()
-			return "", nil, err
+			return "", err
 		}
 		h = h.WithDelim()
 	}
 
-	// Synthetic module identity input (input lane only; no self-shape bytes).
-	if moduleDigest := id.moduleDagOpInputDigest(); moduleDigest != "" {
-		inputs = append(inputs, moduleDigest)
+	// Synthetic module identity input.
+	if id.pb.Module != nil {
+		moduleDigest := digest.Digest(id.pb.Module.CallDigest)
+		if id.module != nil {
+			if modID := id.module.ID(); modID != nil {
+				moduleDigest = modID.OutputEquivalentDigest()
+			}
+		}
+		if moduleDigest != "" {
+			h = h.WithString(moduleDigest.String())
+		}
 	}
 	// End implicit input section.
 	h = h.WithDelim()
@@ -129,31 +123,28 @@ func (id *ID) DagOpSelfDigestAndInputs() (digest.Digest, []digest.Digest, error)
 	h = h.WithString(id.pb.View).
 		WithDelim()
 
-	return digest.Digest(h.DigestAndClose()), inputs, nil
+	return digest.Digest(h.DigestAndClose()), nil
 }
 
-func appendArgumentDagOpSelfBytes(arg *Argument, h *hashutil.Hasher, inputs []digest.Digest) (*hashutil.Hasher, []digest.Digest, error) {
+func appendArgumentDagOpBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	h = h.WithString(arg.pb.Name)
 
-	h, inputs, err := appendLiteralDagOpSelfBytes(arg.value, h, inputs)
+	h, err := appendLiteralDagOpBytes(arg.value, h)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
+		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
 	}
 
-	return h, inputs, nil
+	return h, nil
 }
 
-// appendLiteralDagOpSelfBytes appends literal bytes while collecting ID literal
-// output-equivalence digests as explicit inputs instead of including them in
-// the hash.
-func appendLiteralDagOpSelfBytes(lit Literal, h *hashutil.Hasher, inputs []digest.Digest) (*hashutil.Hasher, []digest.Digest, error) {
+func appendLiteralDagOpBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions
 	switch v := lit.(type) {
 	case *LiteralID:
 		const prefix = '0'
-		h = h.WithByte(prefix)
-		inputs = append(inputs, v.id.OutputEquivalentDigest())
+		h = h.WithByte(prefix).
+			WithString(v.id.OutputEquivalentDigest().String())
 	case *LiteralNull:
 		const prefix = '1'
 		h = h.WithByte(prefix)
@@ -190,24 +181,24 @@ func appendLiteralDagOpSelfBytes(lit Literal, h *hashutil.Hasher, inputs []diges
 		const prefix = '7'
 		h = h.WithByte(prefix)
 		for _, elem := range v.values {
-			h, inputs, err = appendLiteralDagOpSelfBytes(elem, h, inputs)
+			h, err = appendLiteralDagOpBytes(elem, h)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 		}
 	case *LiteralObject:
 		const prefix = '8'
 		h = h.WithByte(prefix)
 		for _, arg := range v.values {
-			h, inputs, err = appendArgumentDagOpSelfBytes(arg, h, inputs)
+			h, err = appendArgumentDagOpBytes(arg, h)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			h = h.WithDelim()
 		}
 	default:
-		return nil, nil, fmt.Errorf("unknown literal type %T", v)
+		return nil, fmt.Errorf("unknown literal type %T", v)
 	}
 	h = h.WithDelim()
-	return h, inputs, nil
+	return h, nil
 }

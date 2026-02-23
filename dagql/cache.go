@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -156,7 +157,10 @@ func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 }
 
 type cache struct {
-	mu sync.Mutex
+	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
+	callsMu sync.Mutex
+	// egraphMu protects all e-graph state and indexes.
+	egraphMu sync.RWMutex
 
 	// calls that are in progress, keyed by a combination of the call key and the concurrency key
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
@@ -218,15 +222,17 @@ type sharedResult struct {
 	resultTermInputs   []digest.Digest
 	hasResultTerm      bool
 
-	refCount int
+	refCount int64
 }
 
 // ongoingCall tracks one in-flight GetOrInitCall execution and points at the
 // shared result payload that will be returned to waiters.
 type ongoingCall struct {
-	callConcurrencyKeys callConcurrencyKeys
-	persistToDB         func(context.Context) error
-	persistToDBOnce     sync.Once
+	callConcurrencyKeys     callConcurrencyKeys
+	persistToDB             func(context.Context) error
+	persistToDBOnce         sync.Once
+	initCompletedResultOnce sync.Once
+	initCompletedResultErr  error
 
 	waitCh  chan struct{}
 	cancel  context.CancelCauseFunc
@@ -254,16 +260,15 @@ func (res *sharedResult) release(ctx context.Context) error {
 		return nil
 	}
 
-	res.cache.mu.Lock()
-	res.refCount--
 	var onRelease OnReleaseFunc
-	if res.refCount == 0 {
+	if atomic.AddInt64(&res.refCount, -1) == 0 {
 		// Always release in-memory dagql/egraph state when refs drain. The
 		// safe-to-persist flag only governs persistence metadata behavior.
+		res.cache.egraphMu.Lock()
 		res.cache.removeResultFromEgraphLocked(res)
+		res.cache.egraphMu.Unlock()
 		onRelease = res.onRelease
 	}
-	res.cache.mu.Unlock()
 
 	if onRelease != nil {
 		return onRelease(ctx)
@@ -527,8 +532,10 @@ func (c *cache) GCLoop(ctx context.Context) {
 }
 
 func (c *cache) Size() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.callsMu.Lock()
+	defer c.callsMu.Unlock()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
 
 	// TODO: Re-implement size accounting directly from egraph state instead of
 	// relying on mixed index-oriented counters.
@@ -540,8 +547,10 @@ func (c *cache) Size() int {
 }
 
 func (c *cache) EntryStats() CacheEntryStats {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.callsMu.Lock()
+	defer c.callsMu.Unlock()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
 
 	var stats CacheEntryStats
 	stats.OngoingCalls = len(c.ongoingCalls)
@@ -576,10 +585,6 @@ func (c *cache) GetOrInitCall(
 			return nil, nil
 		}
 
-		// Normalize the returned value for this outer call boundary. Even though this
-		// call itself is DoNotCache, we still clear nested call metadata (cache-hit flags,
-		// ID overrides, and cache entry ownership) so this outer call reports its own
-		// metadata rather than inheriting inner call state.
 		detached := &sharedResult{
 			self:               val.Unwrap(),
 			hasValue:           true,
@@ -636,11 +641,6 @@ func (c *cache) GetOrInitCall(
 		now := time.Now().Unix()
 		expiration := now + key.TTL
 
-		// TODO:(sipsma) we unfortunately have to incorporate the session ID into the storage key
-		// for now in order to get functions that make SetSecret calls to behave as "per-session"
-		// caches (while *also* retaining the correct behavior in all other cases). It would be
-		// nice to find some more elegant way of modeling this that disentangles this cache
-		// from engine client metadata.
 		switch {
 		case cachedCall == nil:
 			md, err := engine.ClientMetadataFromContext(ctx)
@@ -693,28 +693,35 @@ func (c *cache) GetOrInitCall(
 
 	ctx = ctxWithStorageKey(ctx, storageKey)
 
-	c.mu.Lock()
-	if c.ongoingCalls == nil {
-		c.ongoingCalls = make(map[callConcurrencyKeys]*ongoingCall)
-	}
+	c.egraphMu.Lock()
 	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID)
+	c.egraphMu.Unlock()
 	if err != nil {
-		c.mu.Unlock()
 		return nil, err
 	}
 	if hit {
-		c.mu.Unlock()
 		return hitRes, nil
+	}
+
+	c.callsMu.Lock()
+	if c.ongoingCalls == nil {
+		c.ongoingCalls = make(map[callConcurrencyKeys]*ongoingCall)
 	}
 
 	if key.ConcurrencyKey != "" {
 		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
 			// already an ongoing call
 			oc.waiters++
-			c.mu.Unlock()
+			c.callsMu.Unlock()
 			return c.wait(ctx, oc, key.ID)
 		}
 	}
+
+	// Intentional tradeoff: we do not perform a second e-graph lookup while
+	// holding callsMu. A concurrent completion can index and drop its
+	// singleflight entry between the first lookup and this point, which may lead
+	// to occasional redundant execution instead of a late cache hit. We accept
+	// that waste to avoid paying an extra lookup on this miss path.
 
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
 	callCtx := context.WithValue(ctx, cacheContextKey{callKey, c}, struct{}{})
@@ -738,7 +745,7 @@ func (c *cache) GetOrInitCall(
 		oc.val = val
 	}()
 
-	c.mu.Unlock()
+	c.callsMu.Unlock()
 	return c.wait(ctx, oc, key.ID)
 }
 
@@ -761,9 +768,52 @@ func (c *cache) wait(
 		waitErr = context.Cause(ctx)
 	}
 
-	retRes, err := c.waitLocked(oc, requestID, waitErr, sessionID)
-	if err != nil {
-		return nil, err
+	c.callsMu.Lock()
+	oc.waiters--
+	lastWaiter := oc.waiters == 0
+	if lastWaiter {
+		delete(c.ongoingCalls, oc.callConcurrencyKeys)
+		oc.cancel(waitErr)
+	}
+	c.callsMu.Unlock()
+	if waitErr != nil {
+		return nil, waitErr
+	}
+
+	oc.initCompletedResultOnce.Do(func() {
+		oc.initCompletedResultErr = c.initCompletedResult(oc, requestID, sessionID)
+	})
+	if oc.initCompletedResultErr != nil {
+		return nil, oc.initCompletedResultErr
+	}
+	if oc.res == nil {
+		return nil, fmt.Errorf("cache wait completed without initialized result")
+	}
+
+	atomic.AddInt64(&oc.res.refCount, 1)
+
+	retID := requestID
+	for _, extra := range oc.res.outputExtraDigests {
+		if extra.Digest == "" {
+			continue
+		}
+		retID = retID.With(call.WithExtraDigest(extra))
+	}
+	retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
+
+	// fix function calls that have side-effectful setSecret calls to be per session
+	if oc.persistToDB != nil && !oc.res.safeToPersistCache {
+		retID = retID.With(call.WithAppendedImplicitInputs(call.NewArgument(
+			"sessionID",
+			call.NewLiteralString(sessionID),
+			false,
+		)))
+	}
+
+	retRes := Result[Typed]{
+		shared:   oc.res,
+		id:       retID,
+		hitCache: false,
 	}
 
 	if oc.persistToDB != nil {
@@ -791,55 +841,7 @@ func (c *cache) wait(
 	return retObjRes, nil
 }
 
-func (c *cache) waitLocked(
-	oc *ongoingCall,
-	requestID *call.ID,
-	waitErr error,
-	// TODO:
-	sessionID string,
-) (Result[Typed], error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	oc.waiters--
-	lastWaiter := oc.waiters == 0
-	if lastWaiter {
-		oc.cancel(waitErr)
-	}
-	if waitErr == nil || lastWaiter {
-		delete(c.ongoingCalls, oc.callConcurrencyKeys)
-	}
-	if waitErr != nil {
-		return Result[Typed]{}, waitErr
-	}
-
-	if oc.res != nil {
-		oc.res.refCount++
-
-		retID := requestID
-		for _, extra := range oc.res.outputExtraDigests {
-			if extra.Digest == "" {
-				continue
-			}
-			retID = retID.With(call.WithExtraDigest(extra))
-		}
-		retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
-
-		// TODO: HACK: experiment to fix function calls that have side-effectful setSecret calls
-		if oc.persistToDB != nil && !oc.res.safeToPersistCache {
-			retID = retID.With(call.WithAppendedImplicitInputs(call.NewArgument(
-				"sessionID",
-				call.NewLiteralString(sessionID),
-				false,
-			)))
-		}
-		return Result[Typed]{
-			shared:   oc.res,
-			id:       retID,
-			hitCache: false,
-		}, nil
-	}
-
+func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, sessionID string) error {
 	resWasCacheBacked := false
 
 	// Materialize shared result for this completed call.
@@ -861,7 +863,7 @@ func (c *cache) waitLocked(
 
 			selfDigest, inputDigests, deriveErr := oc.val.ID().SelfDigestAndInputs()
 			if deriveErr != nil {
-				return Result[Typed]{}, fmt.Errorf("derive result term digests: %w", deriveErr)
+				return fmt.Errorf("derive result term digests: %w", deriveErr)
 			}
 			oc.res.resultTermSelf = selfDigest
 			oc.res.resultTermInputs = inputDigests
@@ -876,36 +878,23 @@ func (c *cache) waitLocked(
 		}
 	}
 
-	oc.res.refCount++
-
-	// TODO: HACK: experiment to fix function calls that have side-effectful setSecret calls
+	requestIDForIndex := requestID
+	// fix function calls that have side-effectful setSecret calls to be per session
 	if oc.persistToDB != nil && !oc.res.safeToPersistCache {
-		requestID = requestID.With(call.WithAppendedImplicitInputs(call.NewArgument(
+		requestIDForIndex = requestID.With(call.WithAppendedImplicitInputs(call.NewArgument(
 			"sessionID",
 			call.NewLiteralString(sessionID),
 			false,
 		)))
 	}
 
-	requestSelf, requestInputs, err := requestID.SelfDigestAndInputs()
+	requestSelf, requestInputs, err := requestIDForIndex.SelfDigestAndInputs()
 	if err != nil {
-		return Result[Typed]{}, fmt.Errorf("derive request term digests: %w", err)
+		return fmt.Errorf("derive request term digests: %w", err)
 	}
 
-	c.indexWaitResultInEgraphLocked(requestID, requestSelf, requestInputs, oc.res, resWasCacheBacked)
-
-	retID := requestID
-	for _, extra := range oc.res.outputExtraDigests {
-		if extra.Digest == "" {
-			continue
-		}
-		retID = retID.With(call.WithExtraDigest(extra))
-	}
-	retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
-
-	return Result[Typed]{
-		shared:   oc.res,
-		id:       retID,
-		hitCache: false,
-	}, nil
+	c.egraphMu.Lock()
+	c.indexWaitResultInEgraphLocked(requestIDForIndex, requestSelf, requestInputs, oc.res, resWasCacheBacked)
+	c.egraphMu.Unlock()
+	return nil
 }

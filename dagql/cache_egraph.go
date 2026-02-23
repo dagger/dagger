@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
@@ -396,7 +397,7 @@ func (c *cache) removeTermOutputDigestsLocked(term *egraphTerm) {
 // attempts the canonical term lookup using (self, input eq-classes). If that misses, it can
 // fall back to matching the request's extra digests against known output digests.
 //
-// This method assumes c.mu is already held by the caller.
+// This method assumes egraphMu is already held by the caller.
 func (c *cache) lookupCacheForID(
 	_ context.Context,
 	id *call.ID,
@@ -456,7 +457,7 @@ func (c *cache) lookupCacheForID(
 	// We have a cache hit, make sure that the requested ID digest is in the same eq class as the
 	// cached result's output digest, and if not, merge them since we know them now to be equivalent
 	res := hitTerm.result
-	res.refCount++
+	atomic.AddInt64(&res.refCount, 1)
 
 	requestEqID := c.ensureEqClassForDigestLocked(id.Digest().String())
 	mergeIDs := make([]eqClassID, 0, 2+len(id.ExtraDigests()))
