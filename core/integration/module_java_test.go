@@ -308,7 +308,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.Error(t, err)
-		requireErrOut(t, err, "value should be one of LOW,MEDIUM,HIGH")
+		requireErrOut(t, err, "value should be one of HIGH,LOW,MEDIUM")
 	})
 
 	t.Run("can return an enum value", func(ctx context.Context, t *testctx.T) {
