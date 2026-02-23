@@ -11,7 +11,7 @@ import { LiveSpanProcessor, NEARLY_IMMEDIATE } from "./span_processor"
 import { isOtelEnabled } from "./util"
 
 /**
- * OtelSDK is a wrapper around the NodeSDK that simplifies the instanciation
+ * OtelSDK is a wrapper around the NodeSDK that simplifies the instantiation
  * of the client when using dagger.
  *
  * This automatically add the right context manager and live span processor.
@@ -82,7 +82,7 @@ export class OtelSDK {
    *
    * @deprecated please use `start`
    */
-  public initiliaze() {
+  public initialize() {
     this.start()
   }
 
