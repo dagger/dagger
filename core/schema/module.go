@@ -146,8 +146,6 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
 			),
 
-		dagql.NodeFunc("_sourceContentScoped", s.moduleSourceContentScoped).
-			Doc(`The module object with a cache key scoped to just the parts of the module that impact SDKs and function calls, i.e. the source code and dependencies but not the specific git commit or local path the module was loaded from. Must be used with caution as providing it to any operation that depends on non-source aspects of the module specific to a given client could result in unexpected cache collisions.`),
 		dagql.NodeFunc("_contextDirectory", s.contextDirectory).
 			WithInput(dagql.CachePerCall).
 			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
@@ -1209,22 +1207,6 @@ func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Option
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
 	return sourceMapI.Self(), nil
-}
-
-func (s *moduleSchema) moduleSourceContentScoped(
-	ctx context.Context,
-	parentMod dagql.ObjectResult[*core.Module],
-	args struct{},
-) (inst dagql.ObjectResult[*core.Module], err error) {
-	contentScopedID, err := parentMod.Self().SourceContentScopedID(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get source content scoped ID for module: %w", err)
-	}
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-	return dagql.NewObjectResultForID(parentMod.Self(), dag, contentScopedID)
 }
 
 func (s *moduleSchema) contextDirectory(
