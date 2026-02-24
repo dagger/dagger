@@ -195,6 +195,10 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 	ifaceTypeDef := iface.typeDef
 	ifaceName := gqlObjectName(ifaceTypeDef.Name)
+	moduleID, err := iface.mod.IDModule(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to resolve module identity for interface %q: %w", ifaceName, err)
+	}
 
 	fields := make([]dagql.Field[*InterfaceAnnotatedValue], 0, len(iface.typeDef.Functions))
 	for _, fnTypeDef := range iface.typeDef.Functions {
@@ -224,7 +228,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Name:             fnName,
 			Description:      formatGqlDescription(fnTypeDef.Description),
 			Type:             fnTypeDef.ReturnType.ToTyped(),
-			Module:           iface.mod.IDModule(ctx),
+			Module:           moduleID,
 			DeprecatedReason: fnTypeDef.Deprecated,
 		}
 		if fnTypeDef.SourceMap.Valid {
@@ -376,7 +380,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					Type: idScalar,
 				},
 			),
-			Module:     iface.mod.IDModule(ctx),
+			Module:     moduleID,
 			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {

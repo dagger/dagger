@@ -259,7 +259,10 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
 	}
-	fields := obj.fields(ctx)
+	fields, err := obj.fields(ctx)
+	if err != nil {
+		return err
+	}
 
 	funs, err := obj.functions(ctx, dag)
 	if err != nil {
@@ -276,13 +279,17 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
 	objDef := obj.TypeDef
 	mod := obj.Module
+	moduleID, err := obj.Module.IDModule(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to resolve module identity for object %q constructor: %w", objDef.Name, err)
+	}
 
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
 			Name:             gqlFieldName(mod.Name()),
 			Type:             obj,
-			Module:           obj.Module.IDModule(ctx),
+			Module:           moduleID,
 			DeprecatedReason: objDef.Deprecated,
 		}
 
@@ -324,7 +331,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
 	spec.Name = gqlFieldName(mod.Name())
-	spec.Module = obj.Module.IDModule(ctx)
+	spec.Module = moduleID
 	spec.GetDynamicInput = fn.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, fn.cacheImplicitInputs()...)
 
@@ -350,11 +357,15 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	return nil
 }
 
-func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*ModuleObject]) {
+func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*ModuleObject], err error) {
 	for _, field := range obj.TypeDef.Fields {
-		fields = append(fields, objField(ctx, obj.Module, field))
+		objField, err := objField(ctx, obj.Module, field)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, objField)
 	}
-	return
+	return fields, nil
 }
 
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
@@ -381,12 +392,16 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	return
 }
 
-func objField(ctx context.Context, mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
+func objField(ctx context.Context, mod *Module, field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
+	moduleID, err := mod.IDModule(ctx)
+	if err != nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve module identity for field %q: %w", field.Name, err)
+	}
 	spec := &dagql.FieldSpec{
 		Name:             field.Name,
 		Description:      field.Description,
 		Type:             field.TypeDef.ToTyped(),
-		Module:           mod.IDModule(ctx),
+		Module:           moduleID,
 		DeprecatedReason: field.Deprecated,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
@@ -413,7 +428,7 @@ func objField(ctx context.Context, mod *Module, field *FieldTypeDef) dagql.Field
 			}
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
 		},
-	}
+	}, nil
 }
 
 // objFun creates a dagql.Field for a function defined on a module object type.
@@ -451,7 +466,11 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
-	spec.Module = mod.IDModule(ctx)
+	moduleID, err := mod.IDModule(ctx)
+	if err != nil {
+		return f, fmt.Errorf("failed to resolve module identity for function %q: %w", fun.Name, err)
+	}
+	spec.Module = moduleID
 	spec.GetDynamicInput = modFun.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
 

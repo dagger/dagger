@@ -218,13 +218,12 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 // from this module. The module field on call.IDs contribute to the recipe digest and also serve as
 // an input to calls when checking cache (so the digests included on the return call.Module.ID here
 // impact function call caching)
-func (mod *Module) IDModule(ctx context.Context) *call.Module {
-	// TODO: just make this return an error rather than panic
+func (mod *Module) IDModule(ctx context.Context) (*call.Module, error) {
 	if mod.ResultID == nil {
-		panic("module ID is not set")
+		return nil, fmt.Errorf("module ID is not set")
 	}
 	if !mod.Source.Valid {
-		panic("no module source")
+		return nil, fmt.Errorf("no module source")
 	}
 	src := mod.Source.Value.Self()
 
@@ -247,13 +246,12 @@ func (mod *Module) IDModule(ctx context.Context) *call.Module {
 		// no need to set ref/pin, the ID itself defines the module entirely
 
 	default:
-		panic(fmt.Sprintf("unexpected module source kind %q", src.Kind))
+		return nil, fmt.Errorf("unexpected module source kind %q", src.Kind)
 	}
 
 	contentScopedID, err := mod.SourceContentScopedID(ctx)
 	if err != nil {
-		// TODO: just make IDModule return an error rather than panic
-		panic(fmt.Sprintf("failed to get function content scoped ID for module: %v", err))
+		return nil, fmt.Errorf("failed to get function content scoped ID for module: %w", err)
 	}
 
 	return call.NewModule(
@@ -262,7 +260,7 @@ func (mod *Module) IDModule(ctx context.Context) *call.Module {
 		// and should not invalidate unrelated function calls via module identity.
 		contentScopedID,
 		mod.Name(), ref, pin,
-	)
+	), nil
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {

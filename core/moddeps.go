@@ -199,13 +199,17 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 			if !obj.IsSubtypeOf(iface) {
 				continue
 			}
+			ifaceModule, err := ifaceType.mod.IDModule(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve module identity for interface %q: %w", iface.Name, err)
+			}
 			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
 			class.Extend(
 				dagql.FieldSpec{
 					Name:        asIfaceFieldName,
 					Description: fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
 					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:      ifaceType.mod.IDModule(ctx),
+					Module:      ifaceModule,
 				},
 				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 					inst, ok := dagql.UnwrapAs[*ModuleObject](self)

@@ -99,6 +99,10 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 	if mainObjDef == nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no main object", tcMod.Name())
 	}
+	parentModuleID, err := parentMod.IDModule(ctx)
+	if err != nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve parent module identity for toolchain %q: %w", tcMod.Name(), err)
+	}
 
 	// Check if toolchain has a constructor
 	hasConstructor := mainObjDef.Constructor.Valid
@@ -109,7 +113,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 		if err != nil {
 			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
 		}
-		spec.Module = parentMod.IDModule(ctx)
+		spec.Module = parentModuleID
 
 		return dagql.Field[*ModuleObject]{
 			Spec: &spec,
@@ -150,7 +154,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 	}
 	// But use the toolchain name from the parent module
 	spec.Name = fun.Name
-	spec.Module = parentMod.IDModule(ctx)
+	spec.Module = parentModuleID
 	spec.GetDynamicInput = modFun.DynamicInputsForCall
 
 	return dagql.Field[*ModuleObject]{
