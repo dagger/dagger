@@ -1319,6 +1319,12 @@ class Check(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
+    def error(self) -> "Error":
+        """If the check failed, this is the error"""
+        _args: list[Arg] = []
+        _ctx = self._select("error", _args)
+        return Error(_ctx)
+
     async def id(self) -> CheckID:
         """A unique identifier for this Check.
 

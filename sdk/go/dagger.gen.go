@@ -1226,6 +1226,15 @@ func (r *Check) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// If the check failed, this is the error
+func (r *Check) Error() *Error {
+	q := r.query.Select("error")
+
+	return &Error{
+		query: q,
+	}
+}
+
 // A unique identifier for this Check.
 func (r *Check) ID(ctx context.Context) (CheckID, error) {
 	if r.id != nil {

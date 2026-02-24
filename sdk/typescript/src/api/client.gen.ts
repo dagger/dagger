@@ -3476,6 +3476,14 @@ export class Check extends BaseClient {
   }
 
   /**
+   * If the check failed, this is the error
+   */
+  error = (): Error => {
+    const ctx = this._ctx.select("error")
+    return new Error(ctx)
+  }
+
+  /**
    * Return the fully qualified name of the check
    */
   name = async (): Promise<string> => {

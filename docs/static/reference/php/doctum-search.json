@@ -1761,6 +1761,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Check::error",
+			"p": "Dagger/Check.html#method_error",
+			"d": "<p>If the check failed, this is the error</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Check::id",
 			"p": "Dagger/Check.html#method_id",
 			"d": "<p>A unique identifier for this Check.</p>"

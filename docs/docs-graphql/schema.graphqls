@@ -332,6 +332,9 @@ type Check {
   """The description of the check"""
   description: String!
 
+  """If the check failed, this is the error"""
+  error: Error
+
   """A unique identifier for this Check."""
   id: CheckID!
 
