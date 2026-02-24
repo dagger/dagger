@@ -84,7 +84,7 @@ func NewCustomLLB(ctx context.Context, dagOpID *call.ID, op CustomOp, inputs []l
 	st := llb.Scratch().File(a)
 	effectID := ""
 	if dagOpID != nil {
-		effectID = dagOpID.DagOpDigest().String()
+		effectID = dagOpID.OutputEquivalentDigest().String()
 	}
 	customOpOpt, err := opWrapped.AsConstraintsOpt(effectID)
 	if err != nil {

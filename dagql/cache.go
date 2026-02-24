@@ -625,7 +625,7 @@ func (c *cache) GetOrInitCall(
 	// By default it's just the call key, but if we have a TTL then there
 	// can be different results stored on disk for a single call key, necessitating
 	// this separate storage key.
-	stableKey := key.ID.DagOpDigest().String()
+	stableKey := key.ID.OutputEquivalentDigest().String()
 	storageKey := stableKey
 
 	var persistToDB func(context.Context) error

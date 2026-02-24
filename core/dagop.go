@@ -39,7 +39,7 @@ func dagOpStructuralDigest(id *call.ID) digest.Digest {
 	if id == nil {
 		return ""
 	}
-	return id.DagOpDigest()
+	return id.OutputEquivalentDigest()
 }
 
 func dagOpContentOrStructuralDigest(id *call.ID) digest.Digest {
