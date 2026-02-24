@@ -474,10 +474,16 @@ func WithReplacedExtraDigest(extra ExtraDigest) IDOpt {
 	}
 }
 
-// Update the ID to have existing recipe digest and existing extra digests
-// mixed with the given string. Also update the ID to have an extra digest
-// set to the given string.
-// This is useful for making IDs shared cache based purely on the given string.
+// Make the ID associated with the given digest and *not* associated with its previous digests.
+// This is subtly-but-importantly different than just attaching the digest. If you simply attach
+// a extra digest, then all IDs sharing that digest will be merged into the same equivalence set,
+// including by their recipe ID. Typically, that's what you want. But in some cases you want to
+// be able to merge IDs by a given digest *without* causing all associated IDs with the same recipe
+// to be merged as well.
+//
+// For example, this is used with module loading to enable some APIs to *selectively* address a
+// module by a source-only content digest without also causing all of the modules to be permanently
+// merged as equivalents.
 func WithScopeToDigest(label string, scope digest.Digest) IDOpt {
 	return func(id *ID) {
 		origExtraDigests := id.ExtraDigests()
