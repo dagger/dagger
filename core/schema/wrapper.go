@@ -55,7 +55,7 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 
 	resultID := dagql.CurrentID(ctx)
 	if resultID != nil {
-		resultID = resultID.AppendEffectIDs(curIDForRawDagOp.DagOpDigest().String())
+		resultID = resultID.AppendEffectIDs(curIDForRawDagOp.OutputEquivalentDigest().String())
 	}
 
 	val, err := core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
@@ -156,7 +156,7 @@ func DagOpFile[T dagql.Typed, A any](
 	if err != nil {
 		return nil, "", err
 	}
-	return f, curIDForFSDagOp.DagOpDigest().String(), nil
+	return f, curIDForFSDagOp.OutputEquivalentDigest().String(), nil
 }
 
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
@@ -388,7 +388,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 	if err != nil {
 		return nil, "", err
 	}
-	return dir, curIDForFSDagOp.DagOpDigest().String(), nil
+	return dir, curIDForFSDagOp.OutputEquivalentDigest().String(), nil
 }
 
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
@@ -448,7 +448,7 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, "", err
 	}
-	return ctrRes, curIDForContainerDagOp.DagOpDigest().String(), nil
+	return ctrRes, curIDForContainerDagOp.OutputEquivalentDigest().String(), nil
 }
 
 const (
