@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strconv"
 	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -36,7 +35,7 @@ func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) stri
 	h := hashutil.NewHasher().WithString(selfDigest.String())
 	for _, in := range inputEqIDs {
 		h = h.WithDelim().
-			WithString(strconv.FormatUint(uint64(in), 10))
+			WithUint64(uint64(in))
 	}
 	return h.DigestAndClose()
 }
