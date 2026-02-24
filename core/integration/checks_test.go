@@ -169,6 +169,8 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Contains(t, out, tc.path+":passing-check")
 			require.Contains(t, out, tc.path+":failing-check")
+			require.Contains(t, out, tc.path+":test:lint")
+			require.Contains(t, out, tc.path+":test:unit")
 			// run a specific passing check
 			out, err = modGen.
 				With(daggerExec("--progress=report", "check", tc.path+":passing-check")).

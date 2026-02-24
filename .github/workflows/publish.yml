@@ -167,7 +167,7 @@ jobs:
 
       - uses: yezz123/setup-uv@v4
         with:
-          uv-version: "0.8.14"
+          uv-version: "0.10.3"
       - name: "Test Python SDK"
         run: |
           cd sdk/python
@@ -335,7 +335,7 @@ jobs:
         shell: bash
       - uses: yezz123/setup-uv@v4
         with:
-          uv-version: "0.8.14"
+          uv-version: "0.10.3"
       - name: "Test Python SDK"
         run: |
           cd sdk/python

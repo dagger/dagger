@@ -4679,6 +4679,7 @@ type EngineCacheEntry struct {
 	diskSpaceBytes            *int
 	id                        *EngineCacheEntryID
 	mostRecentUseTimeUnixNano *int
+	recordType                *string
 }
 
 func (r *EngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntry {
@@ -4787,6 +4788,19 @@ func (r *EngineCacheEntry) MostRecentUseTimeUnixNano(ctx context.Context) (int, 
 	q := r.query.Select("mostRecentUseTimeUnixNano")
 
 	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+func (r *EngineCacheEntry) RecordType(ctx context.Context) (string, error) {
+	if r.recordType != nil {
+		return *r.recordType, nil
+	}
+	q := r.query.Select("recordType")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13990,7 +14004,7 @@ type WorkspaceDirectoryOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
-
+	// Apply .gitignore filter rules inside the directory.
 	Gitignore bool
 }
 

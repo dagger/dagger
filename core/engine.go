@@ -76,6 +76,7 @@ type EngineCacheEntry struct {
 	CreatedTimeUnixNano       int    `field:"true" doc:"The time the cache entry was created, in Unix nanoseconds."`
 	MostRecentUseTimeUnixNano int    `field:"true" doc:"The most recent time the cache entry was used, in Unix nanoseconds."`
 	ActivelyUsed              bool   `field:"true" doc:"Whether the cache entry is actively being used."`
+	RecordType                string `field:"true" doc:"The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount)."`
 }
 
 func (*EngineCacheEntry) Type() *ast.Type {

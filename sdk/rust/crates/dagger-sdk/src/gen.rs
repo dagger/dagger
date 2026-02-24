@@ -6783,6 +6783,11 @@ impl EngineCacheEntry {
         let query = self.selection.select("mostRecentUseTimeUnixNano");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+    pub async fn record_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("recordType");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct EngineCacheEntrySet {
@@ -14391,6 +14396,7 @@ pub struct WorkspaceDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
+    /// Apply .gitignore filter rules inside the directory.
     #[builder(setter(into, strip_option), default)]
     pub gitignore: Option<bool>,
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).

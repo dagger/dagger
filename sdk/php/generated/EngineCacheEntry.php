@@ -66,4 +66,13 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('mostRecentUseTimeUnixNano');
         return (int)$this->queryLeaf($leafQueryBuilder, 'mostRecentUseTimeUnixNano');
     }
+
+    /**
+     * The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+     */
+    public function recordType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('recordType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'recordType');
+    }
 }
