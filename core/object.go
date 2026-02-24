@@ -99,10 +99,6 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		return content.CollectJSONable(nil)
 	}
 
-	var runtimeObjType dagql.ObjectType
-	if objVal, ok := value.(dagql.AnyObjectResult); ok {
-		runtimeObjType = objVal.ObjectType()
-	}
 	var objFields map[string]any
 	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
 		objFields = obj.Fields
@@ -136,31 +132,13 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		}
 
 		curID := value.ID()
-		fieldID := curID.Append(
-			fieldTypeDef.TypeDef.ToType(),
-			fieldTypeDef.Name,
-			call.WithView(curID.View()),
-		)
-		if runtimeObjType != nil {
-			if runtimeFieldSpec, found := runtimeObjType.FieldSpec(fieldTypeDef.Name, curID.View()); found {
-				inputArgs, err := dagql.ExtractIDArgs(runtimeFieldSpec.Args, fieldID)
-				if err != nil {
-					return fmt.Errorf("failed to decode field %q identity args: %w", k, err)
-				}
-				identityOpt, err := runtimeFieldSpec.IdentityOpt(ctx, inputArgs)
-				if err != nil {
-					return fmt.Errorf("failed to resolve field %q identity: %w", k, err)
-				}
-				fieldID = fieldID.With(identityOpt)
-			} else {
-				// Best-effort fallback for field specs unavailable from runtime object type.
-				fieldID = fieldID.With(call.WithModule(curID.Module()))
-			}
-		} else {
-			// Best-effort fallback for non-object runtime values.
+			fieldID := curID.Append(
+				fieldTypeDef.TypeDef.ToType(),
+				fieldTypeDef.Name,
+				call.WithView(curID.View()),
+			)
 			fieldID = fieldID.With(call.WithModule(curID.Module()))
-		}
-		ctx := dagql.ContextWithID(ctx, fieldID)
+			ctx := dagql.ContextWithID(ctx, fieldID)
 
 		typed, err := modType.ConvertFromSDKResult(ctx, v)
 		if err != nil {
