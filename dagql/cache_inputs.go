@@ -9,9 +9,9 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-// CachePerClient scopes a call ID per client by mixing in the client ID as
+// PerClientInput scopes a call ID per client by mixing in the client ID as
 // an implicit call input.
-var CachePerClient = ImplicitInput{
+var PerClientInput = ImplicitInput{
 	Name: "cachePerClient",
 	Resolver: func(ctx context.Context, _ map[string]Input) (Input, error) {
 		clientMD, err := engine.ClientMetadataFromContext(ctx)
@@ -25,9 +25,9 @@ var CachePerClient = ImplicitInput{
 	},
 }
 
-// CachePerSession scopes a call ID per session by mixing in the session ID as
+// PerSessionInput scopes a call ID per session by mixing in the session ID as
 // an implicit call input.
-var CachePerSession = ImplicitInput{
+var PerSessionInput = ImplicitInput{
 	Name: "cachePerSession",
 	Resolver: func(ctx context.Context, _ map[string]Input) (Input, error) {
 		clientMD, err := engine.ClientMetadataFromContext(ctx)
@@ -41,17 +41,17 @@ var CachePerSession = ImplicitInput{
 	},
 }
 
-// CachePerCall scopes a call ID per invocation by mixing in a random value as
+// PerCallInput scopes a call ID per invocation by mixing in a random value as
 // an implicit call input.
-var CachePerCall = ImplicitInput{
+var PerCallInput = ImplicitInput{
 	Name: "cachePerCall",
 	Resolver: func(context.Context, map[string]Input) (Input, error) {
 		return NewString(identity.NewID()), nil
 	},
 }
 
-// CachePerSchema scopes a call ID to the server schema digest.
-func CachePerSchema(srv *Server) ImplicitInput {
+// PerSchemaInput scopes a call ID to the server schema digest.
+func PerSchemaInput(srv *Server) ImplicitInput {
 	return ImplicitInput{
 		Name: "cachePerSchema",
 		Resolver: func(context.Context, map[string]Input) (Input, error) {
@@ -60,9 +60,9 @@ func CachePerSchema(srv *Server) ImplicitInput {
 	}
 }
 
-// CacheAsRequested scopes a call ID according to a boolean argument:
-// false => CachePerClient, true => CachePerCall.
-func CacheAsRequested(argName string) ImplicitInput {
+// RequestedCacheInput scopes a call ID according to a boolean argument:
+// false => PerClientInput, true => PerCallInput.
+func RequestedCacheInput(argName string) ImplicitInput {
 	return ImplicitInput{
 		Name: "cacheAsRequested:" + argName,
 		Resolver: func(ctx context.Context, args map[string]Input) (Input, error) {
@@ -71,9 +71,9 @@ func CacheAsRequested(argName string) ImplicitInput {
 				return nil, err
 			}
 			if noCache {
-				return CachePerCall.Resolver(ctx, args)
+				return PerCallInput.Resolver(ctx, args)
 			}
-			return CachePerClient.Resolver(ctx, args)
+			return PerClientInput.Resolver(ctx, args)
 		},
 	}
 }

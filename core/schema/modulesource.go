@@ -64,7 +64,7 @@ var _ SchemaResolvers = &moduleSourceSchema{}
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("moduleSource", s.moduleSource).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Create a new module source instance from a source ref string`).
 			Args(
 				dagql.Arg("refString").Doc(`The string ref representation of the module source`),
@@ -113,7 +113,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`List of include paths from dagger.json, relative to the context directory.`),
 
 		dagql.Func("withSourceSubpath", s.moduleSourceWithSourceSubpath).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update the module source with a new source subpath.`).
 			Args(
 				dagql.Arg("path").Doc(`The path to set as the source subpath. Must be relative to the module source's source root directory.`),
@@ -126,7 +126,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.Func("withIncludes", s.moduleSourceWithIncludes).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update the module source with additional include patterns for files+directories from its context that are required for building it`).
 			Args(
 				dagql.Arg("patterns").Doc(`The new additional include patterns.`),
@@ -217,7 +217,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
 
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 		dagql.NodeFunc("_asToolchain", s.moduleSourceAsToolchain).
 			Doc(`Internal helper that projects this module source to load as a toolchain in the context of a parent module source.`).

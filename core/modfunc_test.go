@@ -65,7 +65,7 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 			_, hasLegacyScopeInput := byName["moduleFunctionScope"]
 			require.False(t, hasLegacyScopeInput, "legacy module scope implicit input should not be present")
 
-			sessionInput, hasSessionInput := byName[dagql.CachePerSession.Name]
+			sessionInput, hasSessionInput := byName[dagql.PerSessionInput.Name]
 			require.Equal(t, tc.expectSessionScope, hasSessionInput)
 			if tc.expectSessionScope {
 				require.Equal(

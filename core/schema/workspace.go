@@ -18,7 +18,7 @@ var _ SchemaResolvers = &workspaceSchema{}
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("currentWorkspace", s.currentWorkspace).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc("Detect and return the current workspace.").
 			Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 			Args(
@@ -28,7 +28,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Workspace]{
 		dagql.NodeFunc("directory", s.directory).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Returns a Directory from the workspace.`,
 				`Path is relative to workspace root. Use "." for the root directory.`).
 			Args(
@@ -38,14 +38,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
 		dagql.NodeFunc("file", s.file).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Returns a File from the workspace.`,
 				`Path is relative to workspace root.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
 			),
 		dagql.NodeFunc("findUp", s.findUp).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the path relative to the workspace root if found, or null if not found.`,
 				`The search stops at the workspace root and will not traverse above it.`).

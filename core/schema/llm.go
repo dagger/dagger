@@ -17,7 +17,7 @@ var _ SchemaResolvers = &llmSchema{}
 func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("llm", s.llm).
-			WithInput(dagql.CachePerSession).
+			WithInput(dagql.PerSessionInput).
 			Experimental("LLM support is not yet stabilized").
 			Doc(`Initialize a Large Language Model (LLM)`).
 			Args(

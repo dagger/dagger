@@ -198,7 +198,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("changes").Doc(`Changes to apply to the directory`),
 			),
 		dagql.NodeFunc("export", DagOpWrapper(srv, s.export)).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
@@ -207,7 +207,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("wipe").Doc(`If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
 			),
 		dagql.NodeFunc("export", DagOpWrapper(srv, s.exportLegacy)).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("dockerBuild", s.dockerBuild).
@@ -302,7 +302,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			WithStaticPath[*core.Changeset, changesetAsPatchArgs](core.ChangesetPatchFilename))).
 			Doc(`Return a Git-compatible patch of the changes`),
 		dagql.NodeFunc("export", DagOpWrapper(srv, s.changesetExport)).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			DoNotCache("Writes to the local host.").
 			Doc(`Applies the diff represented by this changeset to a path on the host.`).
 			Args(

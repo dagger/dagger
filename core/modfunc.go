@@ -142,7 +142,7 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 	var implicitInputs []dagql.ImplicitInput
 	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod)
 	if cachePolicy == FunctionCachePolicyPerSession {
-		implicitInputs = append(implicitInputs, dagql.CachePerSession)
+		implicitInputs = append(implicitInputs, dagql.PerSessionInput)
 	}
 
 	return implicitInputs
