@@ -64,12 +64,6 @@ func ScopeModuleForSDKOperation(
 		"sdk-module-op",
 	)))
 
-	// ensure any extra digests are also scoped to this operation
-	for _, extraDigest := range mod.ResultID.ExtraDigests() {
-		extraDigest.Digest = hashutil.HashStrings(extraDigest.Digest.String(), op)
-		scopedID = scopedID.With(call.WithReplacedExtraDigest(extraDigest))
-	}
-
 	scopedMod := mod.Clone()
 	scopedMod.ResultID = scopedID
 

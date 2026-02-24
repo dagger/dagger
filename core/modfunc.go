@@ -1099,7 +1099,11 @@ func (fn *ModuleFunction) loadContextualArg(
 		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
 	}
 
-	modInst, err := dagql.NewObjectResultForID(fn.mod, dag, fn.mod.ResultID)
+	sourceContentScopedID, err := fn.mod.SourceContentScopedID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get content-scoped module ID: %w", err)
+	}
+	modInst, err := dagql.NewObjectResultForID(fn.mod, dag, sourceContentScopedID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load module: %w", err)
 	}
@@ -1108,9 +1112,6 @@ func (fn *ModuleFunction) loadContextualArg(
 	case "Directory":
 		var dir dagql.ObjectResult[*Directory]
 		err := dag.Select(ctx, modInst, &dir,
-			dagql.Selector{
-				Field: "_sourceContentScoped",
-			},
 			dagql.Selector{
 				Field: "_contextDirectory",
 				Args: []dagql.NamedInput{
@@ -1133,9 +1134,6 @@ func (fn *ModuleFunction) loadContextualArg(
 	case "File":
 		var f dagql.ObjectResult[*File]
 		err := dag.Select(ctx, modInst, &f,
-			dagql.Selector{
-				Field: "_sourceContentScoped",
-			},
 			dagql.Selector{
 				Field: "_contextFile",
 				Args: []dagql.NamedInput{
@@ -1163,9 +1161,6 @@ func (fn *ModuleFunction) loadContextualArg(
 				var f dagql.ObjectResult[*GitRepository]
 				err := dag.Select(ctx, modInst, &f,
 					dagql.Selector{
-						Field: "_sourceContentScoped",
-					},
-					dagql.Selector{
 						Field: "_contextGitRepository",
 					},
 				)
@@ -1177,9 +1172,6 @@ func (fn *ModuleFunction) loadContextualArg(
 			case "GitRef":
 				var f dagql.ObjectResult[*GitRef]
 				err := dag.Select(ctx, modInst, &f,
-					dagql.Selector{
-						Field: "_sourceContentScoped",
-					},
 					dagql.Selector{
 						Field: "_contextGitRef",
 					},
