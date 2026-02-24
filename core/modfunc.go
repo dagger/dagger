@@ -491,14 +491,14 @@ func (fn *ModuleFunction) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	return objDefaults.Namespace(ctx, fn.metadata.OriginalName)
 }
 
-func (fn *ModuleFunction) CacheConfigForCall(
+func (fn *ModuleFunction) DynamicInputsForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	cacheCfgResp := &dagql.GetCacheConfigResponse{
+	req dagql.DynamicInputRequest,
+) (*dagql.DynamicInputResponse, error) {
+	cacheCfgResp := &dagql.DynamicInputResponse{
 		CacheKey: req.CacheKey,
 	}
 
