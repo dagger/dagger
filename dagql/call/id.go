@@ -53,6 +53,10 @@ type ID struct {
 	implicitInputs []*Argument
 	module         *Module
 	typ            *Type
+
+	// Memoized on-demand in ContentPreferredDigest.
+	contentPreferredDigest     digest.Digest
+	contentPreferredDigestOnce sync.Once
 }
 
 const (
@@ -307,30 +311,89 @@ func (id *ID) Inputs() ([]digest.Digest, error) {
 }
 
 func (id *ID) Modules() []*Module {
-	allMods := []*Module{}
-	for id != nil {
-		if id.module != nil {
-			allMods = append(allMods, id.module)
-		}
-		for _, arg := range id.args {
-			allMods = append(allMods, arg.value.Modules()...)
-		}
-		for _, input := range id.implicitInputs {
-			allMods = append(allMods, input.value.Modules()...)
-		}
-		id = id.receiver
+	if id == nil {
+		return nil
 	}
-	seen := map[digest.Digest]struct{}{}
-	deduped := []*Module{}
-	for _, mod := range allMods {
+
+	seenIDDigests := map[digest.Digest]struct{}{}
+	seenIDPtrs := map[*ID]struct{}{}
+	seenModuleDigests := map[digest.Digest]struct{}{}
+	mods := []*Module{}
+
+	addModule := func(mod *Module) {
+		if mod == nil || mod.id == nil {
+			return
+		}
 		dig := mod.id.Digest()
-		if _, ok := seen[dig]; ok {
-			continue
+		if _, ok := seenModuleDigests[dig]; ok {
+			return
 		}
-		seen[dig] = struct{}{}
-		deduped = append(deduped, mod)
+		seenModuleDigests[dig] = struct{}{}
+		mods = append(mods, mod)
 	}
-	return deduped
+
+	var walkLiteral func(Literal)
+	var walkID func(*ID)
+
+	walkLiteral = func(lit Literal) {
+		switch v := lit.(type) {
+		case nil:
+			return
+		case *LiteralID:
+			walkID(v.id)
+		case *LiteralList:
+			for _, elem := range v.values {
+				walkLiteral(elem)
+			}
+		case *LiteralObject:
+			for _, arg := range v.values {
+				if arg == nil {
+					continue
+				}
+				walkLiteral(arg.value)
+			}
+		default:
+			// No nested IDs/modules in primitive literals.
+		}
+	}
+
+	walkID = func(cur *ID) {
+		if cur == nil {
+			return
+		}
+
+		if dg := cur.Digest(); dg != "" {
+			if _, ok := seenIDDigests[dg]; ok {
+				return
+			}
+			seenIDDigests[dg] = struct{}{}
+		} else {
+			if _, ok := seenIDPtrs[cur]; ok {
+				return
+			}
+			seenIDPtrs[cur] = struct{}{}
+		}
+
+		addModule(cur.module)
+
+		for _, arg := range cur.args {
+			if arg == nil {
+				continue
+			}
+			walkLiteral(arg.value)
+		}
+		for _, input := range cur.implicitInputs {
+			if input == nil {
+				continue
+			}
+			walkLiteral(input.value)
+		}
+
+		walkID(cur.receiver)
+	}
+
+	walkID(id)
+	return mods
 }
 
 func (id *ID) Path() string {
@@ -724,6 +787,11 @@ func (id *ID) apply(opts ...IDOpt) *ID {
 		// marshal proto and hash the bytes
 		panic(err)
 	}
+
+	// Any mutation invalidates memoized derived digests.
+	id.contentPreferredDigest = ""
+	id.contentPreferredDigestOnce = sync.Once{}
+
 	return id
 }
 
@@ -794,6 +862,8 @@ func (id *ID) decode(
 		return fmt.Errorf("call digest mismatch %q != %q", dgst, pb.Digest)
 	}
 	id.pb = pb
+	id.contentPreferredDigest = ""
+	id.contentPreferredDigestOnce = sync.Once{}
 
 	if id.pb.ReceiverDigest != "" {
 		id.receiver = new(ID)

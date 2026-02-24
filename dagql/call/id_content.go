@@ -16,14 +16,18 @@ func (id *ID) ContentPreferredDigest() digest.Digest {
 	if id == nil {
 		return ""
 	}
-	if content := id.ContentDigest(); content != "" {
-		return content
-	}
-	d, err := id.calcContentPreferredDigest()
-	if err != nil {
-		return id.Digest()
-	}
-	return d
+	id.contentPreferredDigestOnce.Do(func() {
+		if content := id.ContentDigest(); content != "" {
+			id.contentPreferredDigest = content
+			return
+		}
+		d, err := id.calcContentPreferredDigest()
+		if err != nil {
+			d = id.Digest()
+		}
+		id.contentPreferredDigest = d
+	})
+	return id.contentPreferredDigest
 }
 
 func (id *ID) calcContentPreferredDigest() (digest.Digest, error) {
@@ -87,7 +91,7 @@ func (id *ID) calcContentPreferredDigest() (digest.Digest, error) {
 		h = h.WithDelim()
 	}
 
-	// Synthetic module identity input.
+	// module input
 	if id.pb.Module != nil {
 		moduleDigest := digest.Digest(id.pb.Module.CallDigest)
 		if id.module != nil {
