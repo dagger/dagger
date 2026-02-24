@@ -33,12 +33,6 @@ import (
 const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
 const MinFunctionCacheTTLSeconds = 1
 
-func shouldTraceModuleCacheFunction(name string) bool {
-	return strings.HasPrefix(name, "test") ||
-		name == "fn" ||
-		name == "rand"
-}
-
 type ModuleFunction struct {
 	mod    *Module
 	objDef *ObjectTypeDef // may be nil for special functions like the module definition function call
@@ -150,15 +144,6 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod)
 	if cachePolicy == FunctionCachePolicyPerSession {
 		implicitInputs = append(implicitInputs, dagql.CachePerSession)
-	}
-	if shouldTraceModuleCacheFunction(fn.metadata.Name) {
-		slog.Info("modfn cache implicit inputs",
-			"module", fn.mod.Name(),
-			"function", fn.metadata.Name,
-			"cachePolicy", string(cachePolicy),
-			"usesCachePerSession", cachePolicy == FunctionCachePolicyPerSession,
-			"implicitInputs", len(implicitInputs),
-		)
 	}
 
 	return implicitInputs
@@ -648,30 +633,6 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	if shouldTraceModuleCacheFunction(fn.metadata.Name) {
-		moduleIDDigest := digest.Digest("")
-		moduleName := ""
-		if modRef := cacheCfgResp.CacheKey.ID.Module(); modRef != nil {
-			moduleName = modRef.Name()
-			if modID := modRef.ID(); modID != nil {
-				moduleIDDigest = modID.Digest()
-			}
-		}
-		var receiverDigest digest.Digest
-		if recv := cacheCfgResp.CacheKey.ID.Receiver(); recv != nil {
-			receiverDigest = recv.Digest()
-		}
-		slog.Info("modfn cache key",
-			"module", fn.mod.Name(),
-			"function", fn.metadata.Name,
-			"path", cacheCfgResp.CacheKey.ID.Path(),
-			"recipeDigest", cacheCfgResp.CacheKey.ID.Digest(),
-			"receiverDigest", receiverDigest,
-			"moduleIDDigest", moduleIDDigest,
-			"moduleName", moduleName,
-			"implicitInputs", len(cacheCfgResp.CacheKey.ID.ImplicitInputs()),
-		)
-	}
 	return cacheCfgResp, nil
 }
 
