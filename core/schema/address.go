@@ -27,28 +27,28 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 		dagql.Func("value", s.value).
 			Doc(`The address value`),
 		dagql.NodeFunc("container", s.container).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`Load a container from the address.`),
 		dagql.NodeFunc("directory", s.directory).
-			WithInput(dagql.CacheAsRequested("noCache")).
+			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Load a directory from the address.`),
 		dagql.NodeFunc("file", s.file).
-			WithInput(dagql.CacheAsRequested("noCache")).
+			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Load a file from the address.`),
 		dagql.NodeFunc("gitRef", s.gitRef).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a git ref (branch, tag or commit) from the address.`),
 		dagql.NodeFunc("gitRepository", s.gitRepository).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a git repository from the address.`),
 		dagql.NodeFunc("secret", s.secret).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`Load a secret from the address.`),
 		dagql.NodeFunc("service", s.service).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a service from the address.`),
 		dagql.NodeFunc("socket", s.socket).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`Load a local socket from the address.`),
 	}.Install(srv)
 }

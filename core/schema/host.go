@@ -40,7 +40,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				srv, s.directory,
 				WithHashContentDir[*core.Host, hostDirectoryArgs](),
 			)).
-			WithInput(dagql.CacheAsRequested("noCache")).
+			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Accesses a directory on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -51,7 +51,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("file", s.file).
-			WithInput(dagql.CacheAsRequested("noCache")).
+			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Accesses a file on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
@@ -59,28 +59,28 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("findUp", s.findUp).
-			WithInput(dagql.CacheAsRequested("noCache")).
+			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null`).
 			Args(
 				dagql.Arg("name").Doc(`name of the file or directory to search for`),
 			),
 
 		dagql.NodeFunc("unixSocket", s.socket).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 			),
 
 		dagql.NodeFunc("_sshAuthSocket", s.sshAuthSocket).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`Accesses the SSH auth socket on the host and returns a socket scoped to SSH identities.`).
 			Args(
 				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
 			),
 
 		dagql.Func("tunnel", s.tunnel).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
 			Args(
 				dagql.Arg("service").Doc(`Service to send traffic from the tunnel.`),
@@ -98,7 +98,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("service", s.service).
-			WithInput(dagql.CachePerSession).     // host services shouldn't cross sessions
+			WithInput(dagql.PerSessionInput).     // host services shouldn't cross sessions
 			WithInput(core.CachePerCallerModule). // services should be shared from different function calls in a module
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			Args(
@@ -111,7 +111,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("containerImage", s.containerImage).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Accesses a container image on the host.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the image to access.`),

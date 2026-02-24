@@ -48,11 +48,11 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
 		dagql.Func("currentFunctionCall", s.currentFunctionCall).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
@@ -60,13 +60,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 	dagql.Fields[*core.FunctionCall]{
 		dagql.Func("returnValue", s.functionCallReturnValue).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Set the return value of the function call to the provided value.`).
 			Args(
 				dagql.Arg("value").Doc(`JSON serialization of the return value.`),
 			),
 		dagql.Func("returnError", s.functionCallReturnError).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Return an error from the function.`).
 			Args(
 				dagql.Arg("error").Doc(`The error to return.`),
@@ -149,16 +149,16 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("_sourceContentScoped", s.moduleSourceContentScoped).
 			Doc(`The module object with a cache key scoped to just the parts of the module that impact SDKs and function calls, i.e. the source code and dependencies but not the specific git commit or local path the module was loaded from. Must be used with caution as providing it to any operation that depends on non-source aspects of the module specific to a given client could result in unexpected cache collisions.`),
 		dagql.NodeFunc("_contextDirectory", s.contextDirectory).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
 		dagql.NodeFunc("_contextFile", s.contextFile).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`Obtain a contextual file argument for the given path and module.`),
 		dagql.NodeFunc("_contextGitRepository", s.contextGitRepository).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`Obtain a contextual git repository argument for the given module.`),
 		dagql.NodeFunc("_contextGitRef", s.contextGitRef).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			Doc(`Obtain a contextual git ref argument for the given module.`),
 	}.Install(dag)
 
@@ -176,7 +176,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
 		dagql.NodeFunc("workdir", s.currentModuleWorkdir).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -186,7 +186,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.NodeFunc("workdirFile", s.currentModuleWorkdirFile).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),

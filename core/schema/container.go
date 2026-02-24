@@ -563,7 +563,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("publish", DagOpWrapper(srv, s.publish)).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			DoNotCache("side effect on an external system (OCI registry)").
 			Doc(`Package the container state as an OCI image, and publish it to a registry`,
 				`Returns the fully qualified address of the published image, with digest`).
@@ -593,7 +593,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`The platform this container executes and publishes as.`),
 
 		dagql.NodeFunc("export", DagOpWrapper(srv, s.export)).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
@@ -622,7 +622,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 						`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 		dagql.NodeFunc("export", DagOpWrapper(srv, s.exportLegacy)).
-			WithInput(dagql.CachePerCall).
+			WithInput(dagql.PerCallInput).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 

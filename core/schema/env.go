@@ -17,7 +17,7 @@ var _ SchemaResolvers = &environmentSchema{}
 func (s environmentSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("env", s.environment).
-			WithInput(dagql.CachePerClient, dagql.CachePerSchema(srv)).
+			WithInput(dagql.PerClientInput, dagql.PerSchemaInput(srv)).
 			Doc(`Initializes a new environment`).
 			Experimental("Environments are not yet stabilized").
 			Args(
@@ -25,7 +25,7 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
 			),
 		dagql.Func("currentEnv", s.currentEnvironment).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(
 				`Returns the current environment`,
 				`When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.`,
@@ -49,7 +49,7 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("workspace").Doc("The directory to set as the host filesystem"),
 			),
 		dagql.NodeFunc("withCurrentModule", s.withCurrentModule).
-			WithInput(dagql.CachePerClient).
+			WithInput(dagql.PerClientInput).
 			Doc(
 				"Installs the current module into the environment, exposing its functions to the model",
 				"Contextual path arguments will be populated using the environment's workspace.",
