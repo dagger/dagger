@@ -215,6 +215,23 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the label to remove (e.g., "org.opencontainers.artifact.created").`),
 			),
 
+		dagql.Func("withHealthcheck", s.withHealthcheck).
+			Doc(`Retrieves this container with the specificed healtcheck command set.`).
+			Args(
+				dagql.Arg("args").Doc(`Healthcheck command to execute. Example: ["go", "run", "main.go"].`),
+				dagql.Arg("interval").Doc(`Interval between running healthcheck. Example: "30s"`),
+				dagql.Arg("timeout").Doc(`Healthcheck timeout. Example: "3s"`),
+				dagql.Arg("startPeriod").Doc(`StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"`),
+				dagql.Arg("startInterval").Doc(`StartInterval configures the duration between checks during the startup phase. Example: "5s"`),
+				dagql.Arg("retries").Doc(`The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"`),
+			),
+
+		dagql.Func("withoutHealthcheck", s.withoutHealthcheck).
+			Doc(`Retrieves this container without a configured healtcheck command.`),
+
+		dagql.Func("healthcheck", s.healthcheck).
+			Doc(`Retrieves this container's configured healthcheck.`),
+
 		dagql.Func("entrypoint", s.entrypoint).
 			Doc(`Return the container's OCI entrypoint.`),
 
@@ -1780,6 +1797,98 @@ func (s *containerSchema) withoutLabel(ctx context.Context, parent *core.Contain
 		delete(cfg.Labels, args.Name)
 		return cfg
 	})
+}
+
+type WithHealthcheckArgs struct {
+	Args          []string
+	Timeout       dagql.Optional[dagql.String]
+	Interval      dagql.Optional[dagql.String]
+	StartPeriod   dagql.Optional[dagql.String]
+	StartInterval dagql.Optional[dagql.String]
+	Retries       dagql.Optional[dagql.Int]
+}
+
+func (s *containerSchema) withHealthcheck(ctx context.Context, parent *core.Container, args WithHealthcheckArgs) (*core.Container, error) {
+	healthcheck := dockerspec.HealthcheckConfig{
+		Test: args.Args,
+	}
+	if args.Timeout.Valid {
+		timeout, err := time.ParseDuration(args.Timeout.Value.String())
+		if err != nil {
+			return nil, err
+		}
+		healthcheck.Timeout = timeout
+	}
+	if args.Interval.Valid {
+		interval, err := time.ParseDuration(args.Interval.Value.String())
+		if err != nil {
+			return nil, err
+		}
+		healthcheck.Interval = interval
+	}
+	if args.StartPeriod.Valid {
+		startPeriod, err := time.ParseDuration(args.StartPeriod.Value.String())
+		if err != nil {
+			return nil, err
+		}
+		healthcheck.StartPeriod = startPeriod
+	}
+	if args.StartInterval.Valid {
+		startInterval, err := time.ParseDuration(args.StartInterval.Value.String())
+		if err != nil {
+			return nil, err
+		}
+		healthcheck.StartInterval = startInterval
+	}
+	if args.Retries.Valid {
+		healthcheck.Retries = int(args.Retries.Value)
+	}
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+		cfg.Healthcheck = &healthcheck
+		return cfg
+	})
+}
+
+func (s *containerSchema) withoutHealthcheck(ctx context.Context, parent *core.Container, args struct{}) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+		cfg.Healthcheck = nil
+		return cfg
+	})
+}
+
+type HealthcheckConfig struct {
+	Args          []string `field:"true" doc:"Healthcheck command arguments."`
+	Timeout       string   `field:"true" doc:"Healthcheck timeout. Example:3s"`
+	Interval      string   `field:"true" doc:"Interval between running healthcheck. Example:30s"`
+	StartPeriod   string   `field:"true" doc:"StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s"`
+	StartInterval string   `field:"true" doc:"StartInterval configures the duration between checks during the startup phase. Example:5s"`
+	Retries       int      `field:"true" doc:"The maximum number of consecutive failures before the container is marked as unhealthy. Example:3"`
+}
+
+func (HealthcheckConfig) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "HealthcheckConfig",
+		NonNull:   true,
+	}
+}
+
+func (HealthcheckConfig) TypeDescription() string {
+	return "Image healthcheck configuration."
+}
+
+func (s *containerSchema) healthcheck(ctx context.Context, parent *core.Container, args struct{}) (dagql.Nullable[HealthcheckConfig], error) {
+	if parent.Config.Healthcheck == nil {
+		return dagql.Null[HealthcheckConfig](), nil
+	}
+	hcc := HealthcheckConfig{
+		Args:          parent.Config.Healthcheck.Test,
+		Timeout:       parent.Config.Healthcheck.Timeout.String(),
+		Interval:      parent.Config.Healthcheck.Interval.String(),
+		StartPeriod:   parent.Config.Healthcheck.StartPeriod.String(),
+		StartInterval: parent.Config.Healthcheck.StartInterval.String(),
+		Retries:       parent.Config.Healthcheck.Retries,
+	}
+	return dagql.NonNull(hcc), nil
 }
 
 type containerDirectoryArgs struct {

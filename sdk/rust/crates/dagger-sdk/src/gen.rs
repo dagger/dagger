@@ -1108,6 +1108,41 @@ impl GitRepositoryId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct HealthcheckConfigId(pub String);
+impl From<&str> for HealthcheckConfigId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for HealthcheckConfigId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<HealthcheckConfigId> for HealthcheckConfig {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<HealthcheckConfigId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<HealthcheckConfigId> for HealthcheckConfigId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<HealthcheckConfigId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<HealthcheckConfigId, DaggerError>(self) })
+    }
+}
+impl HealthcheckConfigId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct HostId(pub String);
 impl From<&str> for HostId {
     fn from(value: &str) -> Self {
@@ -3082,6 +3117,24 @@ pub struct ContainerWithFilesOpts<'a> {
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithHealthcheckOpts<'a> {
+    /// Interval between running healthcheck. Example: "30s"
+    #[builder(setter(into, strip_option), default)]
+    pub interval: Option<&'a str>,
+    /// The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+    #[builder(setter(into, strip_option), default)]
+    pub retries: Option<isize>,
+    /// StartInterval configures the duration between checks during the startup phase. Example: "5s"
+    #[builder(setter(into, strip_option), default)]
+    pub start_interval: Option<&'a str>,
+    /// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+    #[builder(setter(into, strip_option), default)]
+    pub start_period: Option<&'a str>,
+    /// Healthcheck timeout. Example: "3s"
+    #[builder(setter(into, strip_option), default)]
+    pub timeout: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedCacheOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
@@ -3587,6 +3640,15 @@ impl Container {
         let mut query = self.selection.select("from");
         query = query.arg("address", address.into());
         Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container's configured healthcheck.
+    pub fn healthcheck(&self) -> HealthcheckConfig {
+        let query = self.selection.select("healthcheck");
+        HealthcheckConfig {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -4377,6 +4439,61 @@ impl Container {
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the specificed healtcheck command set.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Healthcheck command to execute. Example: ["go", "run", "main.go"].
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_healthcheck(&self, args: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withHealthcheck");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the specificed healtcheck command set.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Healthcheck command to execute. Example: ["go", "run", "main.go"].
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_healthcheck_opts<'a>(
+        &self,
+        args: Vec<impl Into<String>>,
+        opts: ContainerWithHealthcheckOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withHealthcheck");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(interval) = opts.interval {
+            query = query.arg("interval", interval);
+        }
+        if let Some(timeout) = opts.timeout {
+            query = query.arg("timeout", timeout);
+        }
+        if let Some(start_period) = opts.start_period {
+            query = query.arg("startPeriod", start_period);
+        }
+        if let Some(start_interval) = opts.start_interval {
+            query = query.arg("startInterval", start_interval);
+        }
+        if let Some(retries) = opts.retries {
+            query = query.arg("retries", retries);
         }
         Container {
             proc: self.proc.clone(),
@@ -5217,6 +5334,15 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container without a configured healtcheck command.
+    pub fn without_healthcheck(&self) -> Container {
+        let query = self.selection.select("withoutHealthcheck");
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -9952,6 +10078,49 @@ impl GitRepository {
     }
 }
 #[derive(Clone)]
+pub struct HealthcheckConfig {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl HealthcheckConfig {
+    /// Healthcheck command arguments.
+    pub async fn args(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("args");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this HealthcheckConfig.
+    pub async fn id(&self) -> Result<HealthcheckConfigId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Interval between running healthcheck. Example:30s
+    pub async fn interval(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("interval");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+    pub async fn retries(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("retries");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// StartInterval configures the duration between checks during the startup phase. Example:5s
+    pub async fn start_interval(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("startInterval");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
+    pub async fn start_period(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("startPeriod");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Healthcheck timeout. Example:3s
+    pub async fn timeout(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("timeout");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct Host {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -12884,6 +13053,25 @@ impl Query {
             }),
         );
         GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a HealthcheckConfig from its ID.
+    pub fn load_healthcheck_config_from_id(
+        &self,
+        id: impl IntoID<HealthcheckConfigId>,
+    ) -> HealthcheckConfig {
+        let mut query = self.selection.select("loadHealthcheckConfigFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        HealthcheckConfig {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

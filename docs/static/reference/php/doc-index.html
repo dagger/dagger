@@ -196,7 +196,9 @@
 <abbr title="Dagger\File">File</abbr>::asJSON</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
                     <dd><p>Parse the file contents as JSON.</p></dd><dt><a href="Dagger/Function_.html#method_args">
 <abbr title="Dagger\Function_">Function_</abbr>::args</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
-                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/JsonValue.html#method_asArray">
+                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_args">
+<abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::args</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
+                    <dd><p>Healthcheck command arguments.</p></dd><dt><a href="Dagger/JsonValue.html#method_asArray">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::asArray</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
                     <dd><p>Decode an array from json</p></dd><dt><a href="Dagger/JsonValue.html#method_asBoolean">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::asBoolean</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
@@ -633,9 +635,13 @@
 <abbr title="Dagger\Client">Client</abbr>::host</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Queries the host environment.</p></dd><dt><a href="Dagger/Client.html#method_http">
 <abbr title="Dagger\Client">Client</abbr>::http</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Returns a file containing an http remote url content.</p></dd><dt><a href="Dagger/GitRepository.html#method_head">
+                    <dd><p>Returns a file containing an http remote url content.</p></dd><dt><a href="Dagger/Container.html#method_healthcheck">
+<abbr title="Dagger\Container">Container</abbr>::healthcheck</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Retrieves this container's configured healthcheck.</p></dd><dt><a href="Dagger/GitRepository.html#method_head">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::head</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>Returns details for HEAD.</p></dd><dt><a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Returns details for HEAD.</p></dd><dt><a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Image healthcheck configuration.</p></dd><dt><a href="Dagger/HealthcheckConfigId.html"><abbr title="Dagger\HealthcheckConfigId">HealthcheckConfigId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>HealthcheckConfigID</code> scalar type represents an identifier for an object of type HealthcheckConfig.</p></dd><dt><a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Information about the host environment.</p></dd><dt><a href="Dagger/HostId.html"><abbr title="Dagger\HostId">HostId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>HostID</code> scalar type represents an identifier for an object of type Host.</p></dd><dt><a href="Dagger/LLM.html#method_hasPrompt">
 <abbr title="Dagger\LLM">LLM</abbr>::hasPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -740,7 +746,11 @@
 <abbr title="Dagger\GitRef">GitRef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GitRef.</p></dd><dt><a href="Dagger/GitRepository.html#method_id">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this GitRepository.</p></dd><dt><a href="Dagger/Host.html#method_id">
+                    <dd><p>A unique identifier for this GitRepository.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_id">
+<abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this HealthcheckConfig.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_interval">
+<abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::interval</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
+                    <dd><p>Interval between running healthcheck. Example:30s</p></dd><dt><a href="Dagger/Host.html#method_id">
 <abbr title="Dagger\Host">Host</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Host.</p></dd><dt><a href="Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A graphql input type, which is essentially just a group of named args.</p></dd><dt><a href="Dagger/InputTypeDef.html#method_id">
@@ -885,7 +895,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadGitRefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a GitRef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadGitRepositoryFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadGitRepositoryFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a GitRepository from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadHostFromID">
+                    <dd><p>Load a GitRepository from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadHealthcheckConfigFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadHealthcheckConfigFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a HealthcheckConfig from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadHostFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadHostFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Host from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadInputTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadInputTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -1156,7 +1168,9 @@
 <abbr title="Dagger\GitRef">GitRef</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>The resolved ref name at this ref.</p></dd><dt><a href="Dagger/GitRepository.html#method_ref">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>Returns details of a ref.</p></dd><dt><a href="Dagger/Module.html#method_runtime">
+                    <dd><p>Returns details of a ref.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_retries">
+<abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::retries</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
+                    <dd><p>The maximum number of consecutive failures before the container is marked as unhealthy. Example:3</p></dd><dt><a href="Dagger/Module.html#method_runtime">
 <abbr title="Dagger\Module">Module</abbr>::runtime</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.</p></dd><dt><a href="Dagger/ModuleSource.html#method_repoRootPath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::repoRootPath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1215,7 +1229,11 @@
 <abbr title="Dagger\FunctionArg">FunctionArg</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/FunctionArg.html"><abbr title="Dagger\FunctionArg">FunctionArg</abbr></a></em></dt>
                     <dd><p>The location of this arg declaration.</p></dd><dt><a href="Dagger/Function_.html#method_sourceMap">
 <abbr title="Dagger\Function_">Function_</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
-                    <dd><p>The location of this function declaration.</p></dd><dt><a href="Dagger/Host.html#method_service">
+                    <dd><p>The location of this function declaration.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_startInterval">
+<abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::startInterval</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
+                    <dd><p>StartInterval configures the duration between checks during the startup phase. Example:5s</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_startPeriod">
+<abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::startPeriod</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
+                    <dd><p>StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s</p></dd><dt><a href="Dagger/Host.html#method_service">
 <abbr title="Dagger\Host">Host</abbr>::service</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
                     <dd><p>Creates a service that forwards traffic to a specified address via the host.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_sourceMap">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
@@ -1304,7 +1322,9 @@
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::tag</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>Returns details of a tag.</p></dd><dt><a href="Dagger/GitRepository.html#method_tags">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::tags</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>tags that match any of the given glob patterns.</p></dd><dt><a href="Dagger/Host.html#method_tunnel">
+                    <dd><p>tags that match any of the given glob patterns.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_timeout">
+<abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::timeout</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
+                    <dd><p>Healthcheck timeout. Example:3s</p></dd><dt><a href="Dagger/Host.html#method_tunnel">
 <abbr title="Dagger\Host">Host</abbr>::tunnel</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
                     <dd><p>Creates a tunnel that forwards traffic from the host to a service.</p></dd><dt><a href="Dagger/LLM.html#method_tokenUsage">
 <abbr title="Dagger\LLM">LLM</abbr>::tokenUsage</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -1399,7 +1419,9 @@
 <abbr title="Dagger\Container">Container</abbr>::withFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Return a container snapshot with a file added</p></dd><dt><a href="Dagger/Container.html#method_withFiles">
 <abbr title="Dagger\Container">Container</abbr>::withFiles</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container plus the contents of the given files copied to the given path.</p></dd><dt><a href="Dagger/Container.html#method_withLabel">
+                    <dd><p>Retrieves this container plus the contents of the given files copied to the given path.</p></dd><dt><a href="Dagger/Container.html#method_withHealthcheck">
+<abbr title="Dagger\Container">Container</abbr>::withHealthcheck</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Retrieves this container with the specificed healtcheck command set.</p></dd><dt><a href="Dagger/Container.html#method_withLabel">
 <abbr title="Dagger\Container">Container</abbr>::withLabel</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus the given label.</p></dd><dt><a href="Dagger/Container.html#method_withMountedCache">
 <abbr title="Dagger\Container">Container</abbr>::withMountedCache</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1445,7 +1467,9 @@
 <abbr title="Dagger\Container">Container</abbr>::withoutFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container with the file at the given path removed.</p></dd><dt><a href="Dagger/Container.html#method_withoutFiles">
 <abbr title="Dagger\Container">Container</abbr>::withoutFiles</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Return a new container spanshot with specified files removed</p></dd><dt><a href="Dagger/Container.html#method_withoutLabel">
+                    <dd><p>Return a new container spanshot with specified files removed</p></dd><dt><a href="Dagger/Container.html#method_withoutHealthcheck">
+<abbr title="Dagger\Container">Container</abbr>::withoutHealthcheck</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Retrieves this container without a configured healtcheck command.</p></dd><dt><a href="Dagger/Container.html#method_withoutLabel">
 <abbr title="Dagger\Container">Container</abbr>::withoutLabel</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container minus the given environment label.</p></dd><dt><a href="Dagger/Container.html#method_withoutMount">
 <abbr title="Dagger\Container">Container</abbr>::withoutMount</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
