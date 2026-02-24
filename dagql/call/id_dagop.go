@@ -196,6 +196,12 @@ func appendLiteralDagOpBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher,
 			}
 			h = h.WithDelim()
 		}
+	case *LiteralDigestedString:
+		const prefix = '9'
+		h = h.WithByte(prefix)
+		if v.digest != "" {
+			h = h.WithString(v.digest.String())
+		}
 	default:
 		return nil, fmt.Errorf("unknown literal type %T", v)
 	}

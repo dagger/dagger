@@ -118,6 +118,15 @@ message Argument {
   Literal value = 2;
 }
 
+// A string literal with a digest fact used for call identity and equivalence.
+//
+// The value is runtime payload; digest is the identity input lane for this
+// literal.
+message DigestedString {
+  string value = 1;
+  string digest = 2;
+}
+
 // A value passed to an argument or contained in a list.
 message Literal {
   oneof value {
@@ -130,6 +139,7 @@ message Literal {
     string string = 7;
     List list = 8;
     Object object = 9;
+    DigestedString digestedString = 10;
   }
 }
 

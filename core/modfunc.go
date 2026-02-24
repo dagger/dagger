@@ -697,15 +697,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 
-	var cacheMixins []string
 	storageKey := opts.OverrideStorageKey
 	if storageKey == "" {
 		storageKey = dagql.CurrentStorageKey(ctx)
 	}
-	if storageKey != "" {
-		cacheMixins = append(cacheMixins, storageKey)
-	}
-	execMD.CacheMixin = hashutil.HashStrings(cacheMixins...)
+	execMD.OverrideBuildkitCacheKey = digest.Digest(storageKey)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
@@ -818,8 +814,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
 				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
 				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
-				{Name: "execMD", Value: dagql.NewSerializedString(&execMD)},
-				{Name: "overrideCacheKey", Value: dagql.String(storageKey)},
+				{Name: "execMD", Value: dagql.NewDigestedSerializedString(&execMD, digest.Digest(storageKey))},
 			},
 		},
 	)

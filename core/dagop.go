@@ -457,11 +457,9 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 func NewContainerDagOp(
 	ctx context.Context,
 	id *call.ID,
-	argDigest digest.Digest,
 	inputs []llb.State,
 	ctr *Container,
 	execMD *buildkit.ExecutionMetadata,
-	overrideBKCacheKey digest.Digest,
 ) (*Container, error) {
 	mounts, ctrInputs, dgsts, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
@@ -477,15 +475,14 @@ func NewContainerDagOp(
 				engine.BaseVersion(engine.Version),
 			}, "\x00"),
 		),
-		ExecMD: execMD,
 		ContainerMountData: ContainerMountData{
 			Mounts:      mounts,
 			Digests:     dgsts,
 			OutputCount: outputCount,
 		},
 	}
-	if overrideBKCacheKey != "" {
-		dagop.CacheKey = overrideBKCacheKey
+	if execMD != nil && execMD.OverrideBuildkitCacheKey != "" {
+		dagop.CacheKey = execMD.OverrideBuildkitCacheKey
 	}
 
 	st, err := newContainerDagOp(ctx, dagop, inputs)
@@ -532,10 +529,6 @@ func newContainerDagOp(
 type ContainerDagOp struct {
 	ID       *call.ID
 	CacheKey digest.Digest
-	// Optional runtime metadata used when evaluating the in-dagop call.
-	// This is serialized in the custom op payload but intentionally excluded
-	// from CacheMap/Digest identity derivation.
-	ExecMD *buildkit.ExecutionMetadata `json:",omitempty"`
 
 	ContainerMountData
 }
@@ -633,13 +626,6 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	loadCtx = ctxWithMountData(loadCtx, mountData)
 
 	loadID := op.ID
-	if op.ExecMD != nil && loadID != nil && loadID.Field() == "withExec" && loadID.Arg("execMD") == nil {
-		execMDJSON, err := json.Marshal(op.ExecMD)
-		if err != nil {
-			return nil, fmt.Errorf("marshal exec metadata: %w", err)
-		}
-		loadID = loadID.WithArgument(call.NewArgument("execMD", call.NewLiteralString(string(execMDJSON)), true))
-	}
 	if loadID == nil {
 		return nil, fmt.Errorf("dagop ID is nil")
 	}

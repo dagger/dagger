@@ -76,8 +76,10 @@ type ExecutionMetadata struct {
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
 
-	// Arbitrary to mixin to the cache key for this operation.
-	CacheMixin digest.Digest
+	// If set, overrides the buildkit cache key used for this execution.
+	// Bridges us to the non-buildkit world by just telling buildkit to do
+	// exactly what we say for now.
+	OverrideBuildkitCacheKey digest.Digest
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string

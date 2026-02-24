@@ -133,7 +133,7 @@ func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectRe
 
 	if !args.InDagOp() {
 		dummyCtr := core.NewContainer(parent.Self().Platform())
-		ctr, effectID, err := DagOpContainer(ctx, srv, dummyCtr, args, "", nil)
+		ctr, effectID, err := DagOpContainer(ctx, srv, dummyCtr, args, nil)
 		if err != nil {
 			return inst, err
 		}

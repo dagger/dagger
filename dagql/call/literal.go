@@ -115,6 +115,72 @@ func (lit *LiteralID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	lit.id.gatherCalls(callsByDigest)
 }
 
+type LiteralDigestedString struct {
+	value  string
+	digest digest.Digest
+}
+
+func NewLiteralDigestedString(value string, digest digest.Digest) *LiteralDigestedString {
+	return &LiteralDigestedString{
+		value:  value,
+		digest: digest,
+	}
+}
+
+func (lit *LiteralDigestedString) Value() string {
+	return lit.value
+}
+
+func (lit *LiteralDigestedString) Digest() digest.Digest {
+	return lit.digest
+}
+
+func (lit *LiteralDigestedString) Inputs() ([]digest.Digest, error) {
+	if lit.digest == "" {
+		return nil, nil
+	}
+	return []digest.Digest{lit.digest}, nil
+}
+
+func (lit *LiteralDigestedString) Modules() []*Module {
+	return nil
+}
+
+func (lit *LiteralDigestedString) Display() string {
+	if lit.digest == "" {
+		return "<digested-string>"
+	}
+	return fmt.Sprintf("<digested-string:%s>", lit.digest)
+}
+
+func (lit *LiteralDigestedString) ToInput() any {
+	return lit.value
+}
+
+func (lit *LiteralDigestedString) ToAST() *ast.Value {
+	raw := "<digested-string>"
+	if lit.digest != "" {
+		raw = fmt.Sprintf("<digested-string:%s>", lit.digest)
+	}
+	return &ast.Value{
+		Raw:  strconv.Quote(raw),
+		Kind: ast.StringValue,
+	}
+}
+
+func (lit *LiteralDigestedString) pb() *callpbv1.Literal {
+	return &callpbv1.Literal{
+		Value: &callpbv1.Literal_DigestedString{
+			DigestedString: &callpbv1.DigestedString{
+				Value:  lit.value,
+				Digest: lit.digest.String(),
+			},
+		},
+	}
+}
+
+func (lit *LiteralDigestedString) gatherCalls(_ map[string]*callpbv1.Call) {}
+
 type LiteralList struct {
 	values []Literal
 }
@@ -408,6 +474,11 @@ func decodeLiteral(
 		return NewLiteralFloat(v.Float), nil
 	case *callpbv1.Literal_String_:
 		return NewLiteralString(v.String_), nil
+	case *callpbv1.Literal_DigestedString:
+		if v.DigestedString == nil {
+			return NewLiteralDigestedString("", ""), nil
+		}
+		return NewLiteralDigestedString(v.DigestedString.Value, digest.Digest(v.DigestedString.Digest)), nil
 	case *callpbv1.Literal_List:
 		list := make([]Literal, 0, len(v.List.Values))
 		for _, val := range v.List.Values {
