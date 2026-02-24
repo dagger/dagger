@@ -55,7 +55,7 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 
 	resultID := dagql.CurrentID(ctx)
 	if resultID != nil {
-		resultID = resultID.AppendEffectIDs(curIDForRawDagOp.OutputEquivalentDigest().String())
+		resultID = resultID.AppendEffectIDs(curIDForRawDagOp.ContentPreferredDigest().String())
 	}
 
 	val, err := core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
@@ -156,7 +156,7 @@ func DagOpFile[T dagql.Typed, A any](
 	if err != nil {
 		return nil, "", err
 	}
-	return f, curIDForFSDagOp.OutputEquivalentDigest().String(), nil
+	return f, curIDForFSDagOp.ContentPreferredDigest().String(), nil
 }
 
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
@@ -326,7 +326,7 @@ func getSelfDigest(ctx context.Context, a any) (digest.Digest, []llb.State, erro
 		*core.Query,
 		*core.Workspace:
 		// fallback to using dagop ID
-		return dagql.CurrentID(ctx).OutputEquivalentDigest(), nil, nil
+		return dagql.CurrentID(ctx).ContentPreferredDigest(), nil, nil
 	default:
 		return "", nil, fmt.Errorf("unable to create digest: unknown type %T", a)
 	}
@@ -388,7 +388,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 	if err != nil {
 		return nil, "", err
 	}
-	return dir, curIDForFSDagOp.OutputEquivalentDigest().String(), nil
+	return dir, curIDForFSDagOp.ContentPreferredDigest().String(), nil
 }
 
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
@@ -441,7 +441,7 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, "", err
 	}
-	return ctrRes, curIDForContainerDagOp.OutputEquivalentDigest().String(), nil
+	return ctrRes, curIDForContainerDagOp.ContentPreferredDigest().String(), nil
 }
 
 const (

@@ -8,47 +8,34 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-// OutputEquivalentDigest returns the digest used when outputs can be treated as
+// ContentPreferredDigest returns the digest used when outputs can be treated as
 // interchangeable across different recipes:
 // 1. content digest (if set)
-// 2. dag-op digest fallback
-func (id *ID) OutputEquivalentDigest() digest.Digest {
+// 2. content-preferred fallback digest
+func (id *ID) ContentPreferredDigest() digest.Digest {
 	if id == nil {
 		return ""
 	}
 	if content := id.ContentDigest(); content != "" {
 		return content
 	}
-	return id.DagOpDigest()
-}
-
-// DagOpDigest returns the digest used by dag-op-backed identity/effect
-// propagation.
-//
-// It is hashed in one pass like recipe digesting, except all ID inputs
-// (receiver, literal IDs, module identity) use output-equivalent digests
-// (content digest when available, otherwise dag-op digest).
-func (id *ID) DagOpDigest() digest.Digest {
-	if id == nil {
-		return ""
-	}
-	d, err := id.calcDagOpDigest()
+	d, err := id.calcContentPreferredDigest()
 	if err != nil {
 		return id.Digest()
 	}
 	return d
 }
 
-func (id *ID) calcDagOpDigest() (digest.Digest, error) {
+func (id *ID) calcContentPreferredDigest() (digest.Digest, error) {
 	if id == nil {
 		return "", nil
 	}
 
 	h := hashutil.NewHasher()
 
-	// Receiver contributes output-equivalent identity.
+	// Receiver contributes content-preferred identity.
 	if id.receiver != nil {
-		h = h.WithString(id.receiver.OutputEquivalentDigest().String())
+		h = h.WithString(id.receiver.ContentPreferredDigest().String())
 	}
 	h = h.WithDelim()
 
@@ -76,7 +63,7 @@ func (id *ID) calcDagOpDigest() (digest.Digest, error) {
 			continue
 		}
 		var err error
-		h, err = appendArgumentDagOpBytes(arg, h)
+		h, err = appendArgumentContentPreferredBytes(arg, h)
 		if err != nil {
 			h.Close()
 			return "", err
@@ -92,7 +79,7 @@ func (id *ID) calcDagOpDigest() (digest.Digest, error) {
 			continue
 		}
 		var err error
-		h, err = appendArgumentDagOpBytes(input, h)
+		h, err = appendArgumentContentPreferredBytes(input, h)
 		if err != nil {
 			h.Close()
 			return "", err
@@ -105,7 +92,7 @@ func (id *ID) calcDagOpDigest() (digest.Digest, error) {
 		moduleDigest := digest.Digest(id.pb.Module.CallDigest)
 		if id.module != nil {
 			if modID := id.module.ID(); modID != nil {
-				moduleDigest = modID.OutputEquivalentDigest()
+				moduleDigest = modID.ContentPreferredDigest()
 			}
 		}
 		if moduleDigest != "" {
@@ -126,10 +113,10 @@ func (id *ID) calcDagOpDigest() (digest.Digest, error) {
 	return digest.Digest(h.DigestAndClose()), nil
 }
 
-func appendArgumentDagOpBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
+func appendArgumentContentPreferredBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	h = h.WithString(arg.pb.Name)
 
-	h, err := appendLiteralDagOpBytes(arg.value, h)
+	h, err := appendLiteralContentPreferredBytes(arg.value, h)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
 	}
@@ -137,14 +124,14 @@ func appendArgumentDagOpBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hash
 	return h, nil
 }
 
-func appendLiteralDagOpBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
+func appendLiteralContentPreferredBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions
 	switch v := lit.(type) {
 	case *LiteralID:
 		const prefix = '0'
 		h = h.WithByte(prefix).
-			WithString(v.id.OutputEquivalentDigest().String())
+			WithString(v.id.ContentPreferredDigest().String())
 	case *LiteralNull:
 		const prefix = '1'
 		h = h.WithByte(prefix)
@@ -181,7 +168,7 @@ func appendLiteralDagOpBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher,
 		const prefix = '7'
 		h = h.WithByte(prefix)
 		for _, elem := range v.values {
-			h, err = appendLiteralDagOpBytes(elem, h)
+			h, err = appendLiteralContentPreferredBytes(elem, h)
 			if err != nil {
 				return nil, err
 			}
@@ -190,7 +177,7 @@ func appendLiteralDagOpBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher,
 		const prefix = '8'
 		h = h.WithByte(prefix)
 		for _, arg := range v.values {
-			h, err = appendArgumentDagOpBytes(arg, h)
+			h, err = appendArgumentContentPreferredBytes(arg, h)
 			if err != nil {
 				return nil, err
 			}
