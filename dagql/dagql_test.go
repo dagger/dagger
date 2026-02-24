@@ -996,7 +996,13 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				false,
 			),
 		)).
-		Append(pointT, "loginTag")
+		Append(pointT, "loginTag", call.WithArgs(
+			call.NewArgument(
+				"password",
+				call.NewLiteralString("***"),
+				false,
+			),
+		))
 
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
@@ -1015,7 +1021,13 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				false,
 			),
 		)).
-		Append(pointT, "loginChain")
+		Append(pointT, "loginChain", call.WithArgs(
+			call.NewArgument(
+				"password",
+				call.NewLiteralString("***"),
+				false,
+			),
+		))
 
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)

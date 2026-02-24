@@ -567,9 +567,6 @@ func redactedArgForID(arg *Argument) *Argument {
 	if !arg.isSensitive {
 		return arg
 	}
-	if arg.Name() != "plaintext" {
-		return nil
-	}
 	return NewArgument(
 		arg.Name(),
 		NewLiteralString("***"),
