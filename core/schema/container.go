@@ -1076,26 +1076,12 @@ var withExecCacheMixinInput = dagql.ImplicitInput{
 		if !ok {
 			return nil, fmt.Errorf("unexpected execMD input type %T", rawExecMD)
 		}
-		if execMD.Self == nil || execMD.Self.CacheMixin == "" {
-			return dagql.NewString(""), nil
-		}
-		if len(execMD.Self.EncodedFunctionCall) > 0 {
-			callDigest := digest.Digest("")
-			callPath := ""
-			if execMD.Self.CallID != nil {
-				callDigest = execMD.Self.CallID.Digest()
-				callPath = execMD.Self.CallID.Path()
+			if execMD.Self == nil || execMD.Self.CacheMixin == "" {
+				return dagql.NewString(""), nil
 			}
-			slog.Info("withExec cache mixin implicit input",
-				"callDigest", callDigest,
-				"callPath", callPath,
-				"execClientID", execMD.Self.ClientID,
-				"cacheMixin", execMD.Self.CacheMixin,
-			)
-		}
-		return dagql.NewString(execMD.Self.CacheMixin.String()), nil
-	},
-}
+			return dagql.NewString(execMD.Self.CacheMixin.String()), nil
+		},
+	}
 
 var _ core.Digestable = containerExecArgs{}
 
@@ -1112,20 +1098,6 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 
 	if args.ExecMD.Self != nil {
 		inputs = append(inputs, string(args.ExecMD.Self.CacheMixin))
-		if len(args.ExecMD.Self.EncodedFunctionCall) > 0 {
-			callDigest := digest.Digest("")
-			callPath := ""
-			if args.ExecMD.Self.CallID != nil {
-				callDigest = args.ExecMD.Self.CallID.Digest()
-				callPath = args.ExecMD.Self.CallID.Path()
-			}
-			slog.Info("withExec args digest includes exec cache mixin",
-				"callDigest", callDigest,
-				"callPath", callPath,
-				"execClientID", args.ExecMD.Self.ClientID,
-				"cacheMixin", args.ExecMD.Self.CacheMixin,
-			)
-		}
 	}
 
 	return hashutil.HashStrings(inputs...), nil
