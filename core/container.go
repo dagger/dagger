@@ -2710,39 +2710,7 @@ func UpdatedRootFS(
 	ctx context.Context,
 	dir *Directory,
 ) (*dagql.ObjectResult[*Directory], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curSrv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
-	}
-	fieldSpec, ok := objType.FieldSpec("rootfs", view)
-	if !ok {
-		return nil, fmt.Errorf("field spec for rootfs not found in object type Container")
-	}
-	astType := fieldSpec.Type.Type()
-	rootfsID := curID.Append(
-		astType, "rootfs",
-		call.WithView(view),
-	)
-	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, rootfsID)
-	if err != nil {
-		return nil, fmt.Errorf("decode rootfs input args: %w", err)
-	}
-	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
-	if err != nil {
-		return nil, fmt.Errorf("resolve rootfs identity: %w", err)
-	}
-	rootfsID = rootfsID.With(identityOpt)
-	updatedRootfs, err := dagql.NewObjectResultForID(dir, curSrv, rootfsID)
+	updatedRootfs, err := updatedContainerSelectionResult(ctx, dir, "rootfs", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2752,47 +2720,13 @@ func UpdatedRootFS(
 // updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
 // The returned ObjectResult uses the ID of the current operation.
 //
-//nolint:dupl
 func updatedDirMount(
 	ctx context.Context,
 	dir *Directory,
 	mntTarget string,
 ) (*dagql.ObjectResult[*Directory], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curSrv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
-	}
-	fieldSpec, ok := objType.FieldSpec("directory", view)
-	if !ok {
-		return nil, fmt.Errorf("field spec for directory not found in object type Container")
-	}
-	astType := fieldSpec.Type.Type()
 	dirIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	dirID := curID.Append(
-		astType, "directory",
-		call.WithView(view),
-		call.WithArgs(dirIDPathArg),
-	)
-	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, dirID)
-	if err != nil {
-		return nil, fmt.Errorf("decode directory input args: %w", err)
-	}
-	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
-	if err != nil {
-		return nil, fmt.Errorf("resolve directory identity: %w", err)
-	}
-	dirID = dirID.With(identityOpt)
-	updatedDirMnt, err := dagql.NewObjectResultForID(dir, curSrv, dirID)
+	updatedDirMnt, err := updatedContainerSelectionResult(ctx, dir, "directory", []*call.Argument{dirIDPathArg})
 	if err != nil {
 		return nil, err
 	}
@@ -2802,49 +2736,57 @@ func updatedDirMount(
 // updatedFileMount returns an updated mount for a given file after an exec/import/etc.
 // The returned ObjectResult uses the ID of the current operation.
 //
-//nolint:dupl
 func updatedFileMount(
 	ctx context.Context,
 	file *File,
 	mntTarget string,
 ) (*dagql.ObjectResult[*File], error) {
-	query, err := CurrentQuery(ctx)
+	fileIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
+	updatedFileMnt, err := updatedContainerSelectionResult(ctx, file, "file", []*call.Argument{fileIDPathArg})
 	if err != nil {
 		return nil, err
 	}
+	return &updatedFileMnt, nil
+}
+
+func updatedContainerSelectionResult[T dagql.Typed](
+	ctx context.Context,
+	val T,
+	fieldName string,
+	args []*call.Argument,
+) (dagql.ObjectResult[T], error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return dagql.ObjectResult[T]{}, err
+	}
 	curSrv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[T]{}, err
 	}
 	curID := dagql.CurrentID(ctx)
 	view := curID.View()
 	objType, ok := curSrv.ObjectType("Container")
 	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
+		return dagql.ObjectResult[T]{}, fmt.Errorf("object type Container not found in server")
 	}
-	fieldSpec, ok := objType.FieldSpec("file", view)
+	fieldSpec, ok := objType.FieldSpec(fieldName, view)
 	if !ok {
-		return nil, fmt.Errorf("field spec for file not found in object type Container")
+		return dagql.ObjectResult[T]{}, fmt.Errorf("field spec for %s not found in object type Container", fieldName)
 	}
-	astType := fieldSpec.Type.Type()
-	fileIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	fileID := curID.Append(
-		astType, "file",
+	newID := curID.Append(
+		fieldSpec.Type.Type(),
+		fieldName,
 		call.WithView(view),
-		call.WithArgs(fileIDPathArg),
+		call.WithArgs(args...),
 	)
-	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, fileID)
+	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, newID)
 	if err != nil {
-		return nil, fmt.Errorf("decode file input args: %w", err)
+		return dagql.ObjectResult[T]{}, fmt.Errorf("decode %s input args: %w", fieldName, err)
 	}
 	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
 	if err != nil {
-		return nil, fmt.Errorf("resolve file identity: %w", err)
+		return dagql.ObjectResult[T]{}, fmt.Errorf("resolve %s identity: %w", fieldName, err)
 	}
-	fileID = fileID.With(identityOpt)
-	updatedFileMnt, err := dagql.NewObjectResultForID(file, curSrv, fileID)
-	if err != nil {
-		return nil, err
-	}
-	return &updatedFileMnt, nil
+	newID = newID.With(identityOpt)
+	return dagql.NewObjectResultForID(val, curSrv, newID)
 }
