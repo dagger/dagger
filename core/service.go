@@ -141,9 +141,8 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		// Hostname identity should follow output-equivalence identity
 		// (e.g. content digests) rather than strict recipe identity so
 		// equivalent services converge across sessions.
-		// TODO: Carry a stable service-identity digest on Service (set at
-		// construction time from canonical output/structural identity) and
-		// use it here instead of deriving host identity ad hoc from call.ID.
+		// TODO: Deeper integration with dagql cache would enable equivalence set
+		// matching, but this digest suffices for now
 		hostDigest := id.OutputEquivalentDigest()
 		if hostDigest == "" {
 			hostDigest = id.Digest()
