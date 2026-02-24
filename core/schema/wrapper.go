@@ -471,35 +471,25 @@ type RawDagOpInternalArgs struct {
 	DagOpFilename string `internal:"true" default:"" name:"dagOpFilename"`
 }
 
-// dagOpIDWithInternalArgs returns a copy of id with dag-op internal args applied.
-func dagOpIDWithInternalArgs(id *call.ID, args ...*call.Argument) (*call.ID, error) {
-	if id == nil {
-		return nil, fmt.Errorf("current ID is nil")
-	}
-	newID := id
-	for _, arg := range args {
-		newID = newID.WithArgument(arg)
-	}
-	return newID, nil
-}
-
 func currentIDForRawDagOp(
 	ctx context.Context,
 	filename string,
 ) (*call.ID, error) {
-	args := []*call.Argument{
-		call.NewArgument(
-			IsDagOpArgName,
-			call.NewLiteralBool(true),
-			false,
-		),
-		call.NewArgument(
-			RawDagOpFilenameArgName,
-			call.NewLiteralString(filename),
-			false,
-		),
+	id := dagql.CurrentID(ctx)
+	if id == nil {
+		return nil, fmt.Errorf("current ID is nil")
 	}
-	return dagOpIDWithInternalArgs(dagql.CurrentID(ctx), args...)
+	id = id.WithArgument(call.NewArgument(
+		IsDagOpArgName,
+		call.NewLiteralBool(true),
+		false,
+	))
+	id = id.WithArgument(call.NewArgument(
+		RawDagOpFilenameArgName,
+		call.NewLiteralString(filename),
+		false,
+	))
+	return id, nil
 }
 
 const (
@@ -516,19 +506,21 @@ func currentIDForFSDagOp(
 	ctx context.Context,
 	path string,
 ) (*call.ID, error) {
-	args := []*call.Argument{
-		call.NewArgument(
-			IsDagOpArgName,
-			call.NewLiteralBool(true),
-			false,
-		),
-		call.NewArgument(
-			FSDagOpPathArgName,
-			call.NewLiteralString(path),
-			false,
-		),
+	id := dagql.CurrentID(ctx)
+	if id == nil {
+		return nil, fmt.Errorf("current ID is nil")
 	}
-	return dagOpIDWithInternalArgs(dagql.CurrentID(ctx), args...)
+	id = id.WithArgument(call.NewArgument(
+		IsDagOpArgName,
+		call.NewLiteralBool(true),
+		false,
+	))
+	id = id.WithArgument(call.NewArgument(
+		FSDagOpPathArgName,
+		call.NewLiteralString(path),
+		false,
+	))
+	return id, nil
 }
 
 type ContainerDagOpInternalArgs struct {
@@ -538,14 +530,16 @@ type ContainerDagOpInternalArgs struct {
 func currentIDForContainerDagOp(
 	ctx context.Context,
 ) (*call.ID, error) {
-	args := []*call.Argument{
-		call.NewArgument(
-			IsDagOpArgName,
-			call.NewLiteralBool(true),
-			false,
-		),
+	id := dagql.CurrentID(ctx)
+	if id == nil {
+		return nil, fmt.Errorf("current ID is nil")
 	}
-	return dagOpIDWithInternalArgs(dagql.CurrentID(ctx), args...)
+	id = id.WithArgument(call.NewArgument(
+		IsDagOpArgName,
+		call.NewLiteralBool(true),
+		false,
+	))
+	return id, nil
 }
 
 // DagOpChangesetWrapper caches a changeset field as a buildkit operation.
