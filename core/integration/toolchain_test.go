@@ -301,6 +301,81 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.Contains(t, out, "8.0")
 	})
 
+	t.Run("toolchain-level defaults apply to all matching functions", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "defaults": {
+        "message": "hola"
+      }
+    }
+  ]
+}
+					`)
+		// verify the default applies to configurableMessage
+		out, err := modGen.
+			With(daggerExec("call", "hello", "configurable-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola from blueprint")
+
+		// verify the same default applies to shoutMessage
+		out, err = modGen.
+			With(daggerExec("call", "hello", "shout-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola FROM BLUEPRINT!!!")
+	})
+
+	t.Run("per-function customization takes precedence over defaults", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "defaults": {
+        "message": "hola"
+      },
+      "customizations": [
+        {
+          "function": ["configurableMessage"],
+          "argument": "message",
+          "default": "bonjour"
+        }
+      ]
+    }
+  ]
+}
+					`)
+		// configurableMessage should use the per-function override
+		out, err := modGen.
+			With(daggerExec("call", "hello", "configurable-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bonjour from blueprint")
+
+		// shoutMessage should use the toolchain-level default
+		out, err = modGen.
+			With(daggerExec("call", "hello", "shout-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola FROM BLUEPRINT!!!")
+	})
+
 	t.Run("override constructor defaultPath argument", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").

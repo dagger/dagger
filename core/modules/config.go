@@ -204,6 +204,11 @@ type ModuleConfigDependency struct {
 	// The pinned version of the module dependency.
 	Pin string `json:"pin,omitempty"`
 
+	// Defaults provides default values for arguments across all functions in this toolchain.
+	// Any function (or constructor) that has a matching argument name will receive the default.
+	// Per-function customizations take precedence over these defaults.
+	Defaults map[string]string `json:"defaults,omitempty"`
+
 	// Customizations configuration for toolchains that override function argument pragmas.
 	Customizations []*ModuleConfigArgument `json:"customizations,omitempty"`
 
