@@ -84,6 +84,8 @@ message Call {
 
   // Implicit inputs are engine-computed call inputs that are not explicit
   // GraphQL field arguments, but still contribute to recipe identity.
+  // During cache checking, ID-able implicit inputs are treated as equivalence
+  // set inputs, same as ID-able explicit arguments.
   repeated Argument implicitInputs = 15;
 }
 
