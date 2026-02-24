@@ -551,52 +551,57 @@ func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
 	return nil
 }
 
-func originalModule(parent *ModTreeNode, name string) *Module {
-	if tc, ok := parent.Module.Toolchains.Get(name); ok {
-		return tc.Module
-	}
-	return parent.OriginalModule
-}
-
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
+		nodeType := objType.Name
 		for _, fn := range objType.Functions {
 			if functionRequiresArgs(fn) {
 				continue
 			}
-			children = append(children, &ModTreeNode{
-				Parent:      node,
-				Name:        fn.Name,
-				DagqlServer: node.DagqlServer,
-				Module:      node.Module,
-				// toolchains are exposed as a function, this is the only place we set a
-				// different original module.
-				// other functions can't return a type not defined in the module itself (or core)
-				// so the original module is always the parent one in other cases
-				OriginalModule: originalModule(node, fn.Name),
-				Type:           fn.ReturnType,
-				IsCheck:        fn.IsCheck,
-				IsGenerator:    fn.IsGenerator,
-				Description:    fn.Description,
-			})
+			returnType := fn.ReturnType.ToType().Name()
+			// toolchains are exposed as a function.
+			// if the function name returns a toolchain, set the right module so children will
+			// know they are coming from a toolchain
+			// other functions can't return a type not defined in the module itself (or core)
+			// so the original module is always the parent one in other cases
+			originalModule := node.OriginalModule
+			if tc, ok := node.Module.Toolchains.GetByFieldName(fn.Name); ok {
+				originalModule = tc.Module
+			}
+			objectAdded := false
 			// if the type returned by the function is an object, check the children of the return type
 			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
 				// avoid cycles (X.withFoo: X)
-				fn.ReturnType.ToType().Name() != node.Type.Type().Name() {
-				if subObj, ok := node.Module.ObjectByName(fn.ReturnType.ToType().Name()); ok {
+				returnType != nodeType {
+				// search for the object defined by the return type, in the "originalModule" that can be the toolchain one
+				if subObj, ok := originalModule.ObjectByName(fn.ReturnType.ToType().Name()); ok {
+					objectAdded = true
 					children = append(children, &ModTreeNode{
 						Parent:         node,
 						Name:           fn.Name, // use the name of the function and not the name of the type as we want the chain
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
-						OriginalModule: node.OriginalModule,
+						OriginalModule: originalModule,
 						Type:           &TypeDef{AsObject: dagql.NonNull(subObj)},
 						IsCheck:        false,
 						IsGenerator:    false,
 						Description:    subObj.Description,
 					})
 				}
+			}
+			if !objectAdded {
+				children = append(children, &ModTreeNode{
+					Parent:         node,
+					Name:           fn.Name,
+					DagqlServer:    node.DagqlServer,
+					Module:         node.Module,
+					OriginalModule: originalModule,
+					Type:           fn.ReturnType,
+					IsCheck:        fn.IsCheck,
+					IsGenerator:    fn.IsGenerator,
+					Description:    fn.Description,
+				})
 			}
 		}
 		for _, field := range objType.Fields {

@@ -37,6 +37,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
@@ -107,6 +108,8 @@ type workspaceDirectoryArgs struct {
 
 	core.CopyFilter
 
+	Gitignore bool `default:"false"`
+
 	DagOpInternalArgs
 }
 
@@ -152,6 +155,14 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 			excludes[i] = dagql.String(p)
 		}
 		dirArgs = append(dirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
+	}
+	if args.Gitignore {
+		dirArgs = append(dirArgs,
+			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
+			// The workspace root is already the repo root, so pass it
+			// directly to avoid a redundant .git search.
+			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.Root)},
+		)
 	}
 
 	err = srv.Select(ctx, srv.Root(), &inst,

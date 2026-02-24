@@ -35,6 +35,7 @@ func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCac
 			DiskSpaceBytes:      int(r.Size),
 			ActivelyUsed:        r.InUse,
 			CreatedTimeUnixNano: int(r.CreatedAt.UnixNano()),
+			RecordType:          string(r.RecordType),
 		}
 		if r.LastUsedAt != nil {
 			cacheEnt.MostRecentUseTimeUnixNano = int(r.LastUsedAt.UnixNano())
