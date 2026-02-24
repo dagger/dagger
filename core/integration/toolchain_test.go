@@ -301,7 +301,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.Contains(t, out, "8.0")
 	})
 
-	t.Run("toolchain-level defaults apply to all matching functions", func(ctx context.Context, t *testctx.T) {
+	t.Run("wildcard function pattern applies to all matching functions", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
 			With(daggerExec("init")).
@@ -313,21 +313,25 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
     {
       "name": "hello",
       "source": "../hello",
-      "defaults": {
-        "message": "hola"
-      }
+      "customizations": [
+        {
+          "function": ["*"],
+          "argument": "message",
+          "default": "hola"
+        }
+      ]
     }
   ]
 }
 					`)
-		// verify the default applies to configurableMessage
+		// verify the wildcard applies to configurableMessage
 		out, err := modGen.
 			With(daggerExec("call", "hello", "configurable-message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hola from blueprint")
 
-		// verify the same default applies to shoutMessage
+		// verify the same wildcard applies to shoutMessage
 		out, err = modGen.
 			With(daggerExec("call", "hello", "shout-message")).
 			Stdout(ctx)
@@ -335,7 +339,7 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.Contains(t, out, "hola FROM BLUEPRINT!!!")
 	})
 
-	t.Run("per-function customization takes precedence over defaults", func(ctx context.Context, t *testctx.T) {
+	t.Run("specific function pattern takes precedence over wildcard", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
 			With(daggerExec("init")).
@@ -347,10 +351,12 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
     {
       "name": "hello",
       "source": "../hello",
-      "defaults": {
-        "message": "hola"
-      },
       "customizations": [
+        {
+          "function": ["*"],
+          "argument": "message",
+          "default": "hola"
+        },
         {
           "function": ["configurableMessage"],
           "argument": "message",
@@ -361,14 +367,14 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
   ]
 }
 					`)
-		// configurableMessage should use the per-function override
+		// configurableMessage should use the specific override
 		out, err := modGen.
 			With(daggerExec("call", "hello", "configurable-message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "bonjour from blueprint")
 
-		// shoutMessage should use the toolchain-level default
+		// shoutMessage should use the wildcard default
 		out, err = modGen.
 			With(daggerExec("call", "hello", "shout-message")).
 			Stdout(ctx)

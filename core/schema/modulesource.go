@@ -3115,73 +3115,6 @@ func extractToolchainModules(mod *core.Module) []*core.Module {
 	return toolchainMods
 }
 
-// expandToolchainDefaults merges toolchain-level defaults with per-function
-// customizations. Defaults apply to every function (and constructor) that has
-// a matching argument. Per-function customizations take precedence.
-func expandToolchainDefaults(mod *core.Module, tcCfg *modules.ModuleConfigDependency) []*modules.ModuleConfigArgument {
-	// Start with explicit per-function customizations.
-	argConfigs := append([]*modules.ModuleConfigArgument{}, tcCfg.Customizations...)
-
-	if len(tcCfg.Defaults) == 0 {
-		return argConfigs
-	}
-
-	// Build a set of (function, argument) pairs already covered by explicit customizations
-	// so we don't override them with defaults.
-	type fnArg struct {
-		fn  string // empty string = constructor
-		arg string
-	}
-	covered := map[fnArg]bool{}
-	for _, cfg := range tcCfg.Customizations {
-		fn := ""
-		if len(cfg.Function) > 0 {
-			fn = strings.ToLower(cfg.Function[0])
-		}
-		covered[fnArg{fn, strings.ToLower(cfg.Argument)}] = true
-	}
-
-	// Walk all object definitions and generate a customization entry for each
-	// function argument that matches a default key.
-	for _, objDef := range mod.ObjectDefs {
-		if !objDef.AsObject.Valid {
-			continue
-		}
-		obj := objDef.AsObject.Value
-
-		// Check constructor
-		if obj.Constructor.Valid {
-			for _, arg := range obj.Constructor.Value.Args {
-				if val, ok := tcCfg.Defaults[arg.OriginalName]; ok {
-					if !covered[fnArg{"", strings.ToLower(arg.OriginalName)}] {
-						argConfigs = append(argConfigs, &modules.ModuleConfigArgument{
-							Argument: arg.OriginalName,
-							Default:  val,
-						})
-					}
-				}
-			}
-		}
-
-		// Check regular functions
-		for _, fn := range obj.Functions {
-			for _, arg := range fn.Args {
-				if val, ok := tcCfg.Defaults[arg.OriginalName]; ok {
-					if !covered[fnArg{strings.ToLower(fn.OriginalName), strings.ToLower(arg.OriginalName)}] {
-						argConfigs = append(argConfigs, &modules.ModuleConfigArgument{
-							Function: []string{fn.OriginalName},
-							Argument: arg.OriginalName,
-							Default:  val,
-						})
-					}
-				}
-			}
-		}
-	}
-
-	return argConfigs
-}
-
 // applyArgumentConfigToFunction applies argument configuration overrides to a function
 func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.ModuleConfigArgument, functionChain []string) *core.Function {
 	fn = fn.Clone()
@@ -3193,13 +3126,14 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 		if len(argCfg.Function) == 0 && len(functionChain) == 0 {
 			// This is for the constructor
 		} else if len(argCfg.Function) > 0 && len(functionChain) > 0 {
-			// Check if function chains match
+			// Check if function chains match (supports glob patterns)
 			if len(argCfg.Function) != len(functionChain) {
 				continue
 			}
 			match := true
-			for i, fnName := range argCfg.Function {
-				if !strings.EqualFold(fnName, functionChain[i]) {
+			for i, pattern := range argCfg.Function {
+				matched, err := filepath.Match(strings.ToLower(pattern), strings.ToLower(functionChain[i]))
+				if err != nil || !matched {
 					match = false
 					break
 				}
@@ -3799,14 +3733,9 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		if i < len(src.Self().ConfigToolchains) {
 			tcCfg := src.Self().ConfigToolchains[i]
 
-			// Expand toolchain-level defaults into per-function customizations.
-			// Defaults apply to any function (or constructor) that has a matching
-			// argument name. Per-function customizations take precedence.
-			argConfigs := expandToolchainDefaults(clone, tcCfg)
-
-			if len(argConfigs) > 0 {
+			if len(tcCfg.Customizations) > 0 {
 				// Apply configurations to the toolchain module's functions, including chained functions
-				applyArgumentConfigsToModule(clone, argConfigs)
+				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
 			}
 		}
 
