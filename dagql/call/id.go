@@ -583,7 +583,7 @@ func WithScopeToDigest(label string, scope digest.Digest) IDOpt {
 
 		// ensure recipe digest is scoped to this operation
 		WithAppendedImplicitInputs(NewArgument(
-			"scope:"+label,
+			label,
 			NewLiteralString(scope.String()),
 			false,
 		))(id)

@@ -170,14 +170,14 @@ func (mod *Module) SourceContentScopedID(ctx context.Context) (*call.ID, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source content digest: %w", err)
 	}
-
-	// We want to make this module accessible by its content digest when requested but
-	// without bridging all the client-specific recipe digests into the same eq set, thus
-	// we use WithScopeToDigest rather than just setting a content digest
-	return mod.ResultID.With(call.WithScopeToDigest(
-		"content", // TODO: load-bearing, use the const after capitalization
-		hashutil.HashStrings("sourceContentScoped", sourceDigest.String()),
-	)), nil
+	return mod.ResultID.Append(
+		mod.ResultID.Type().ToAST(),
+		"_sourceContentScoped",
+		call.WithContentDigest(hashutil.HashStrings(
+			"_sourceContentScoped",
+			"source:"+sourceDigest.String(),
+		)),
+	), nil
 }
 
 // Return all user defaults for this module

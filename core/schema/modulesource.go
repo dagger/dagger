@@ -3437,22 +3437,20 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// Ensure that the entry for this module scoped by the source content hash is
 	// in our cache too as it is used by _contextual APIs like _contextDirectory,
 	// IDModule (which impacts function caching) and IDDeps.
+	// FIXME: once the cache handles dependency relationships in pruning the post-call nonsense
+	// will no longer be needed since the content digested entry can be tied to the main entry.
 	contentScopedID, err := mod.SourceContentScopedID(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get content-scoped ID for module %q: %w", src.Self().ModuleName, err)
 	}
-	scopedInst, err := dagql.NewObjectResultForID(mod, dag, contentScopedID)
-	if err != nil {
-		return inst, fmt.Errorf("failed to create instance for content-scoped ID for module %q: %w", src.Self().ModuleName, err)
-	}
-	_, err = dag.Cache.GetOrInitCall(ctx,
-		dagql.CacheKey{ID: contentScopedID},
-		dagql.ValueFunc(scopedInst),
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to cache content-scoped instance for module %q: %w", src.Self().ModuleName, err)
-	}
-	return inst, nil
+	return inst.ObjectResultWithPostCall(func(ctx context.Context) error {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = dagql.NewID[*core.Module](contentScopedID).Load(ctx, dag)
+		return err
+	}), nil
 }
 
 // load the given module source's dependencies as modules
