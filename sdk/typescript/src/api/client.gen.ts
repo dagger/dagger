@@ -2690,6 +2690,10 @@ export type WorkspaceDirectoryOpts = {
    * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * Apply .gitignore filter rules inside the directory.
+   */
   gitignore?: boolean
 }
 
@@ -13536,6 +13540,7 @@ export class Workspace extends BaseClient {
    * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * @param opts.gitignore Apply .gitignore filter rules inside the directory.
    */
   directory = (path: string, opts?: WorkspaceDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })

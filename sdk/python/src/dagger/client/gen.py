@@ -13955,6 +13955,7 @@ class Workspace(Type):
             Include only artifacts that match the given pattern (e.g.,
             ["app/", "package.*"]).
         gitignore:
+            Apply .gitignore filter rules inside the directory.
         """
         _args = [
             Arg("path", path),
