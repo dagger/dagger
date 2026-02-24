@@ -401,7 +401,7 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		ctr, effectID, err := DagOpContainer(ctx, srv, self.Self(), args, fn)
+		ctr, effectID, err := DagOpContainer(ctx, srv, self.Self(), args, nil)
 		if err != nil {
 			return inst, err
 		}
@@ -425,7 +425,7 @@ func DagOpContainer[A any](
 	srv *dagql.Server,
 	ctr *core.Container,
 	args A,
-	fn dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]],
+	execMD *buildkit.ExecutionMetadata,
 ) (*core.Container, string, error) {
 	deps, err := core.InputsOf(ctx, args)
 	if err != nil {
@@ -435,13 +435,6 @@ func DagOpContainer[A any](
 	curIDForContainerDagOp, err := currentIDForContainerDagOp(ctx)
 	if err != nil {
 		return nil, "", err
-	}
-
-	var execMD *buildkit.ExecutionMetadata
-	if withExecMD, ok := any(args).(interface {
-		DagOpExecutionMetadata() *buildkit.ExecutionMetadata
-	}); ok {
-		execMD = withExecMD.DagOpExecutionMetadata()
 	}
 
 	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, deps, ctr, execMD)
