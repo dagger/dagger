@@ -35,23 +35,6 @@ func init() {
 	buildkit.RegisterCustomOp(ContainerDagOp{})
 }
 
-func dagOpStructuralDigest(id *call.ID) digest.Digest {
-	if id == nil {
-		return ""
-	}
-	return id.OutputEquivalentDigest()
-}
-
-func dagOpContentOrStructuralDigest(id *call.ID) digest.Digest {
-	if id == nil {
-		return ""
-	}
-	if content := id.ContentDigest(); content != "" {
-		return content
-	}
-	return dagOpStructuralDigest(id)
-}
-
 func dagOpLoadServer(ctx context.Context, query *Query, server *dagql.Server, id *call.ID) (*dagql.Server, error) {
 	if len(id.Modules()) == 0 {
 		return server, nil
@@ -82,7 +65,7 @@ func NewDirectoryDagOp(
 		// fall back to using op ID (which will return a different CacheMap value for each op
 		dagop.CacheKey = digest.FromString(
 			strings.Join([]string{
-				dagOpStructuralDigest(dagop.ID).String(),
+				dagop.ID.OutputEquivalentDigest().String(),
 				dagop.Path,
 			}, "\x00"))
 	} else {
@@ -169,7 +152,7 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 func (op FSDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		dagOpStructuralDigest(op.ID).String(),
+		op.ID.OutputEquivalentDigest().String(),
 		op.Path,
 	}, "\x00")), nil
 }
@@ -180,7 +163,7 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
 		inputs = []string{
 			engine.BaseVersion(engine.Version),
-			dagOpStructuralDigest(op.ID).String(),
+			op.ID.OutputEquivalentDigest().String(),
 			op.Path,
 		}
 	} else {
@@ -292,7 +275,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 	ref := workerRef.ImmutableRef
 	if ref != nil {
-		idDgst := dagOpContentOrStructuralDigest(obj.ID()).String()
+		idDgst := obj.ID().OutputEquivalentDigest().String()
 
 		if err := ref.SetString(keyDaggerDigest, idDgst, daggerDigestIdx+idDgst); err != nil {
 			return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
@@ -351,7 +334,7 @@ func (op RawDagOp) Backend() buildkit.CustomOpBackend {
 func (op RawDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		dagOpStructuralDigest(op.ID).String(),
+		op.ID.OutputEquivalentDigest().String(),
 		op.Filename,
 	}, "\x00")), nil
 }
@@ -359,7 +342,7 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 func (op RawDagOp) CacheMap(_ context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		dagOpStructuralDigest(op.ID).String(),
+		op.ID.OutputEquivalentDigest().String(),
 		op.Filename,
 	}, "\x00"))
 
@@ -471,7 +454,7 @@ func NewContainerDagOp(
 		ID: id,
 		CacheKey: digest.FromString(
 			strings.Join([]string{
-				dagOpStructuralDigest(id).String(),
+				id.OutputEquivalentDigest().String(),
 				engine.BaseVersion(engine.Version),
 			}, "\x00"),
 		),
@@ -694,13 +677,13 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				mount.Selector = dirMnt.Self().Dir
 				llb = dirMnt.Self().LLB
 				res = dirMnt.Self().Result
-				dgst = dagOpContentOrStructuralDigest(dirMnt.ID())
+				dgst = dirMnt.ID().OutputEquivalentDigest()
 			},
 			func(fileMnt *dagql.ObjectResult[*File]) {
 				mount.Selector = fileMnt.Self().File
 				llb = fileMnt.Self().LLB
 				res = fileMnt.Self().Result
-				dgst = dagOpContentOrStructuralDigest(fileMnt.ID())
+				dgst = fileMnt.ID().OutputEquivalentDigest()
 			},
 			func(cache *CacheMountSource) {
 				if cache.Base != nil && cache.Base.Self() != nil {
@@ -979,7 +962,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 		}
 
 		if ref != nil && id != nil {
-			dgst := dagOpContentOrStructuralDigest(id)
+			dgst := id.OutputEquivalentDigest()
 
 			if dgst != "" {
 				if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {
