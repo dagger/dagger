@@ -97,7 +97,7 @@ func (ss *Services) Get(ctx context.Context, id *call.ID, clientSpecific bool) (
 		return nil, err
 	}
 
-	dig := id.OutputEquivalentDigest()
+	dig := id.ContentPreferredDigest()
 
 	key := ServiceKey{
 		Digest:    dig,
@@ -154,7 +154,7 @@ func (ss *Services) StartWithIO(
 		return nil, err
 	}
 
-	dig := id.OutputEquivalentDigest()
+	dig := id.ContentPreferredDigest()
 	key := ServiceKey{
 		Digest:    dig,
 		SessionID: clientMetadata.SessionID,
@@ -263,7 +263,7 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool, clientSpec
 		return err
 	}
 
-	dig := id.OutputEquivalentDigest()
+	dig := id.ContentPreferredDigest()
 	key := ServiceKey{
 		Digest:    dig,
 		SessionID: clientMetadata.SessionID,

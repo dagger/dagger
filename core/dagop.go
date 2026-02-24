@@ -65,7 +65,7 @@ func NewDirectoryDagOp(
 		// fall back to using op ID (which will return a different CacheMap value for each op
 		dagop.CacheKey = digest.FromString(
 			strings.Join([]string{
-				dagop.ID.OutputEquivalentDigest().String(),
+				dagop.ID.ContentPreferredDigest().String(),
 				dagop.Path,
 			}, "\x00"))
 	} else {
@@ -152,7 +152,7 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 func (op FSDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		op.ID.OutputEquivalentDigest().String(),
+		op.ID.ContentPreferredDigest().String(),
 		op.Path,
 	}, "\x00")), nil
 }
@@ -163,7 +163,7 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
 		inputs = []string{
 			engine.BaseVersion(engine.Version),
-			op.ID.OutputEquivalentDigest().String(),
+			op.ID.ContentPreferredDigest().String(),
 			op.Path,
 		}
 	} else {
@@ -275,7 +275,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 	ref := workerRef.ImmutableRef
 	if ref != nil {
-		idDgst := obj.ID().OutputEquivalentDigest().String()
+		idDgst := obj.ID().ContentPreferredDigest().String()
 
 		if err := ref.SetString(keyDaggerDigest, idDgst, daggerDigestIdx+idDgst); err != nil {
 			return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
@@ -334,7 +334,7 @@ func (op RawDagOp) Backend() buildkit.CustomOpBackend {
 func (op RawDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		op.ID.OutputEquivalentDigest().String(),
+		op.ID.ContentPreferredDigest().String(),
 		op.Filename,
 	}, "\x00")), nil
 }
@@ -342,7 +342,7 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 func (op RawDagOp) CacheMap(_ context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
-		op.ID.OutputEquivalentDigest().String(),
+		op.ID.ContentPreferredDigest().String(),
 		op.Filename,
 	}, "\x00"))
 
@@ -454,7 +454,7 @@ func NewContainerDagOp(
 		ID: id,
 		CacheKey: digest.FromString(
 			strings.Join([]string{
-				id.OutputEquivalentDigest().String(),
+				id.ContentPreferredDigest().String(),
 				engine.BaseVersion(engine.Version),
 			}, "\x00"),
 		),
@@ -677,13 +677,13 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				mount.Selector = dirMnt.Self().Dir
 				llb = dirMnt.Self().LLB
 				res = dirMnt.Self().Result
-				dgst = dirMnt.ID().OutputEquivalentDigest()
+				dgst = dirMnt.ID().ContentPreferredDigest()
 			},
 			func(fileMnt *dagql.ObjectResult[*File]) {
 				mount.Selector = fileMnt.Self().File
 				llb = fileMnt.Self().LLB
 				res = fileMnt.Self().Result
-				dgst = fileMnt.ID().OutputEquivalentDigest()
+				dgst = fileMnt.ID().ContentPreferredDigest()
 			},
 			func(cache *CacheMountSource) {
 				if cache.Base != nil && cache.Base.Self() != nil {
@@ -962,7 +962,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 		}
 
 		if ref != nil && id != nil {
-			dgst := id.OutputEquivalentDigest()
+			dgst := id.ContentPreferredDigest()
 
 			if dgst != "" {
 				if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {

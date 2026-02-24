@@ -143,7 +143,7 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		// equivalent services converge across sessions.
 		// TODO: Deeper integration with dagql cache would enable equivalence set
 		// matching, but this digest suffices for now
-		hostDigest := id.OutputEquivalentDigest()
+		hostDigest := id.ContentPreferredDigest()
 		if hostDigest == "" {
 			hostDigest = id.Digest()
 		}
