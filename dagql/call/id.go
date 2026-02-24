@@ -198,18 +198,6 @@ func (id *ID) ExtraDigestByLabel(label string) *ExtraDigest {
 	return nil
 }
 
-func (id *ID) moduleInputDigest() digest.Digest {
-	if id == nil || id.pb == nil || id.pb.Module == nil {
-		return ""
-	}
-	if id.module != nil {
-		if modID := id.module.ID(); modID != nil {
-			return modID.Digest()
-		}
-	}
-	return digest.Digest(id.pb.Module.CallDigest)
-}
-
 // EffectIDs returns the effect IDs directly attached to this call.
 func (id *ID) EffectIDs() []string {
 	if id == nil {
@@ -316,93 +304,6 @@ func (id *ID) Inputs() ([]digest.Digest, error) {
 		}
 	}
 	return inputs, nil
-}
-
-// SelfDigestAndInputs returns a digest of the call's "self" (excluding any ID
-// input digest values) and a list of input ID digests (receiver + ID literals).
-//
-// ID literals contribute only their type marker to the self digest; their digest
-// values are returned via the inputs slice.
-func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
-	if id == nil {
-		return "", nil, nil
-	}
-
-	var inputs []digest.Digest
-
-	h := hashutil.NewHasher()
-
-	// Receiver contributes to inputs, not the self digest.
-	if id.receiver != nil {
-		inputs = append(inputs, id.receiver.Digest())
-	}
-	h = h.WithDelim()
-
-	// Type
-	var curType *callpbv1.Type
-	for curType = id.pb.Type; curType != nil; curType = curType.Elem {
-		h = h.WithString(curType.NamedType)
-		if curType.NonNull {
-			h = h.WithByte(2)
-		} else {
-			h = h.WithByte(1)
-		}
-		h = h.WithDelim()
-	}
-	h = h.WithDelim()
-
-	// Field
-	h = h.WithString(id.pb.Field).
-		WithDelim()
-
-	// Args
-	for _, arg := range id.args {
-		arg = redactedArgForID(arg)
-		if arg == nil {
-			continue
-		}
-		var err error
-		h, inputs, err = appendArgumentSelfBytes(arg, h, inputs)
-		if err != nil {
-			h.Close()
-			return "", nil, err
-		}
-		h = h.WithDelim()
-	}
-	h = h.WithDelim()
-
-	// Implicit inputs
-	for _, input := range id.implicitInputs {
-		input = redactedArgForID(input)
-		if input == nil {
-			continue
-		}
-		var err error
-		h, inputs, err = appendArgumentSelfBytes(input, h, inputs)
-		if err != nil {
-			h.Close()
-			return "", nil, err
-		}
-		h = h.WithDelim()
-	}
-
-	// module is an input, not part of self; this way multiple digests on the module ID
-	// can contribute to cache checks
-	if moduleDigest := id.moduleInputDigest(); moduleDigest != "" {
-		inputs = append(inputs, moduleDigest)
-	}
-	// End implicit input section.
-	h = h.WithDelim()
-
-	// Nth
-	h = h.WithInt64(id.pb.Nth).
-		WithDelim()
-
-	// View
-	h = h.WithString(id.pb.View).
-		WithDelim()
-
-	return digest.Digest(h.DigestAndClose()), inputs, nil
 }
 
 func (id *ID) Modules() []*Module {
@@ -930,6 +831,93 @@ func (id *ID) decode(
 	return nil
 }
 
+// SelfDigestAndInputs returns a digest of the call's "self" (excluding any ID
+// input digest values) and a list of input ID digests (receiver + ID literals).
+//
+// ID literals contribute only their type marker to the self digest; their digest
+// values are returned via the inputs slice.
+func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
+	if id == nil {
+		return "", nil, nil
+	}
+
+	var inputs []digest.Digest
+
+	h := hashutil.NewHasher()
+
+	// Receiver contributes to inputs, not the self digest.
+	if id.receiver != nil {
+		inputs = append(inputs, id.receiver.Digest())
+	}
+	h = h.WithDelim()
+
+	// Type
+	var curType *callpbv1.Type
+	for curType = id.pb.Type; curType != nil; curType = curType.Elem {
+		h = h.WithString(curType.NamedType)
+		if curType.NonNull {
+			h = h.WithByte(2)
+		} else {
+			h = h.WithByte(1)
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	// Field
+	h = h.WithString(id.pb.Field).
+		WithDelim()
+
+	// Args
+	for _, arg := range id.args {
+		arg = redactedArgForID(arg)
+		if arg == nil {
+			continue
+		}
+		var err error
+		h, inputs, err = appendArgumentSelfBytes(arg, h, inputs)
+		if err != nil {
+			h.Close()
+			return "", nil, err
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	// Implicit inputs
+	for _, input := range id.implicitInputs {
+		input = redactedArgForID(input)
+		if input == nil {
+			continue
+		}
+		var err error
+		h, inputs, err = appendArgumentSelfBytes(input, h, inputs)
+		if err != nil {
+			h.Close()
+			return "", nil, err
+		}
+		h = h.WithDelim()
+	}
+
+	// module is an input, not part of self; this way multiple digests on the module ID
+	// can contribute to cache checks
+	if id.module != nil {
+		inputs = append(inputs, id.module.ID().Digest())
+	}
+	// End implicit input section.
+	h = h.WithDelim()
+
+	// Nth
+	h = h.WithInt64(id.pb.Nth).
+		WithDelim()
+
+	// View
+	h = h.WithString(id.pb.View).
+		WithDelim()
+
+	return digest.Digest(h.DigestAndClose()), inputs, nil
+}
+
 // calcDigest calculates the recipe digest for the ID.
 //
 // It includes recipe data for this call shape, explicit/implicit recipe inputs,
@@ -999,8 +987,8 @@ func (id *ID) calcDigest() (string, error) {
 	h = h.WithDelim()
 
 	// Module recipe digest
-	if moduleDigest := id.moduleInputDigest(); moduleDigest != "" {
-		h = h.WithString(moduleDigest.String())
+	if id.module != nil {
+		h = h.WithString(id.module.ID().Digest().String())
 	}
 	h = h.WithDelim()
 
