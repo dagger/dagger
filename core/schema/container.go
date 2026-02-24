@@ -901,7 +901,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			)), nil
 		}
 
-		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, s.from)
+			ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, nil)
 		if err != nil {
 			return inst, err
 		}
@@ -1070,10 +1070,6 @@ type containerExecArgs struct {
 	ContainerDagOpInternalArgs
 }
 
-func (args containerExecArgs) DagOpExecutionMetadata() *buildkit.ExecutionMetadata {
-	return args.ExecMD.Self
-}
-
 func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (dagql.ObjectResult[*core.Container], error) {
 	_ = ctx
 	if args.Err == "" {
@@ -1096,7 +1092,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 
 	if !args.IsDagOp {
 		ctr.Meta = nil
-		ctr, effectID, err := DagOpContainer(ctx, srv, ctr, args, s.withExec)
+		ctr, effectID, err := DagOpContainer(ctx, srv, ctr, args, args.ExecMD.Self)
 		if err != nil {
 			return inst, err
 		}
