@@ -6,6 +6,10 @@
   },
   "toolchains": [
     {
+      "name": "markdownlint",
+      "source": "modules/markdownlint"
+    },
+    {
       "name": "changelog",
       "source": "toolchains/changelog"
     },
