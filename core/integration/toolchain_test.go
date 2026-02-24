@@ -180,7 +180,7 @@ func (t *Test) Hello() string {
 					With(daggerExec("--progress=report", "check", fmt.Sprintf("%s:passing-check", strings.TrimPrefix(tc.toolchainPath, "../")))).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Regexp(t, `passingCheck.*OK`, out)
+				require.Regexp(t, `passing-check.*OK`, out)
 			})
 		}
 	})
@@ -454,8 +454,8 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 			With(daggerExec("--progress=report", "check")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `passingCheck.*OK`, out)
-		require.Regexp(t, `passingContainer.*OK`, out)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.Regexp(t, `passing-container.*OK`, out)
 		require.NotContains(t, out, "failingCheck")
 		require.NotContains(t, out, "failingContainer")
 	})
@@ -505,8 +505,8 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 			With(daggerExec("--progress=report", "check")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `passingCheck.*OK`, out)
-		require.Regexp(t, `passingContainer.*OK`, out)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.Regexp(t, `passing-container.*OK`, out)
 	})
 }
 
