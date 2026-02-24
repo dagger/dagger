@@ -44,7 +44,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("column").Doc("The column number within the line."),
 			),
 
-		dagql.FuncWithCacheKey("currentModule", s.currentModule, s.currentModuleCacheKey).
+		dagql.FuncWithDynamicInputs("currentModule", s.currentModule, s.currentModuleCacheKey).
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
@@ -740,9 +740,9 @@ func (s *moduleSchema) currentModuleCacheKey(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args currentModuleArgs,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	resp := &dagql.GetCacheConfigResponse{
+	req dagql.DynamicInputRequest,
+) (*dagql.DynamicInputResponse, error) {
+	resp := &dagql.DynamicInputResponse{
 		CacheKey: req.CacheKey,
 	}
 	if resp.CacheKey.ID == nil {

@@ -2556,14 +2556,14 @@ func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
 
 	calls := []int{}
 	dagql.Fields[Query]{
-		dagql.NodeFuncWithCacheKey(
+		dagql.NodeFuncWithDynamicInputs(
 			"rewrittenArg",
 			func(_ context.Context, _ dagql.ObjectResult[Query], args struct{ Val int }) (dagql.Int, error) {
 				calls = append(calls, args.Val)
 				return dagql.Int(args.Val), nil
 			},
-			func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{ Val int }, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
-				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+			func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{ Val int }, req dagql.DynamicInputRequest) (*dagql.DynamicInputResponse, error) {
+				resp := &dagql.DynamicInputResponse{CacheKey: req.CacheKey}
 				resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
 					"val",
 					dagql.Int(7).ToLiteral(),
@@ -2830,14 +2830,14 @@ func TestImplicitInputRecomputedAfterCacheConfigIDRewrite(t *testing.T) {
 		},
 	}
 	dagql.Fields[Query]{
-		dagql.NodeFuncWithCacheKey("updatedArgCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], args struct {
+		dagql.NodeFuncWithDynamicInputs("updatedArgCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], args struct {
 			NoCache bool `default:"false"`
 		}) (int, error) {
 			return int(calls.Add(1)), nil
 		}, func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct {
 			NoCache bool `default:"false"`
-		}, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
-			resp := &dagql.GetCacheConfigResponse{
+		}, req dagql.DynamicInputRequest) (*dagql.DynamicInputResponse, error) {
+			resp := &dagql.DynamicInputResponse{
 				CacheKey: req.CacheKey,
 			}
 			resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(

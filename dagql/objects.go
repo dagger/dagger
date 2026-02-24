@@ -391,10 +391,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	)
 
 	cacheKey := newCacheKey(ctx, newID, field.Spec)
-	if field.Spec.GetCacheConfig != nil {
+	if field.Spec.GetDynamicInput != nil {
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		cacheCfgResp, err := field.Spec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, GetCacheConfigRequest{
+		cacheCfgResp, err := field.Spec.GetDynamicInput(cacheCfgCtx, r, inputArgs, view, DynamicInputRequest{
 			CacheKey: cacheKey,
 		})
 		if err != nil {
@@ -629,17 +629,17 @@ type (
 // To configure a description for the field in the schema, call .Doc on the
 // result.
 func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] {
-	return FuncWithCacheKey(name, fn, nil)
+	return FuncWithDynamicInputs(name, fn, nil)
 }
 
-// FuncWithCacheKey is like Func but lets a resolver customize cache behavior
+// FuncWithDynamicInputs is like Func but lets a resolver customize cache behavior
 // for each call (e.g. ID rewrites, TTL, do-not-cache, concurrency key).
-func FuncWithCacheKey[T Typed, A any, R any](
+func FuncWithDynamicInputs[T Typed, A any, R any](
 	name string,
 	fn FuncHandler[T, A, R],
-	cacheFn GetCacheConfigFunc[T, A],
+	cacheFn DynamicInputFunc[T, A],
 ) Field[T] {
-	return NodeFuncWithCacheKey(name, func(ctx context.Context, self ObjectResult[T], args A) (R, error) {
+	return NodeFuncWithDynamicInputs(name, func(ctx context.Context, self ObjectResult[T], args A) (R, error) {
 		return fn(ctx, self.Self(), args)
 	}, cacheFn)
 }
@@ -647,16 +647,16 @@ func FuncWithCacheKey[T Typed, A any, R any](
 // NodeFunc is the same as Func, except it passes the ObjectResult instead of the
 // receiver so that you can access its ID.
 func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) Field[T] {
-	return NodeFuncWithCacheKey(name, fn, nil)
+	return NodeFuncWithDynamicInputs(name, fn, nil)
 }
 
-// NodeFuncWithCacheKey is like NodeFunc but lets a resolver customize cache
+// NodeFuncWithDynamicInputs is like NodeFunc but lets a resolver customize cache
 // behavior for each call (e.g. ID rewrites, TTL, do-not-cache, concurrency
 // key).
-func NodeFuncWithCacheKey[T Typed, A any, R any](
+func NodeFuncWithDynamicInputs[T Typed, A any, R any](
 	name string,
 	fn NodeFuncHandler[T, A, R],
-	cacheFn GetCacheConfigFunc[T, A],
+	cacheFn DynamicInputFunc[T, A],
 ) Field[T] {
 	var zeroArgs A
 	inputs, argsErr := InputSpecsForType(zeroArgs, true)
@@ -712,7 +712,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 	}
 
 	if cacheFn != nil {
-		field.Spec.GetCacheConfig = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, req GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
+		field.Spec.GetDynamicInput = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, req DynamicInputRequest) (*DynamicInputResponse, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
@@ -766,9 +766,9 @@ type FieldSpec struct {
 	// If set, the result of this field will be cached for the given TTL (in seconds).
 	TTL int64
 
-	// If set, this GetCacheConfig will be called before ID evaluation to make
+	// If set, this GetDynamicInput will be called before ID evaluation to make
 	// any dynamic adjustments to the cache key or args
-	GetCacheConfig GenericGetCacheConfigFunc
+	GetDynamicInput GenericDynamicInputFunc
 
 	// ImplicitInputs are engine-computed inputs that are attached to the call
 	// identity but are not explicit GraphQL field args.
@@ -1161,26 +1161,26 @@ func (fields Fields[T]) Install(server *Server) {
 	class.Install(fields...)
 }
 
-type GenericGetCacheConfigFunc func(
+type GenericDynamicInputFunc func(
 	context.Context,
 	AnyResult,
 	map[string]Input,
 	call.View,
-	GetCacheConfigRequest,
-) (*GetCacheConfigResponse, error)
+	DynamicInputRequest,
+) (*DynamicInputResponse, error)
 
-type GetCacheConfigFunc[T Typed, A any] func(
+type DynamicInputFunc[T Typed, A any] func(
 	context.Context,
 	ObjectResult[T],
 	A,
-	GetCacheConfigRequest,
-) (*GetCacheConfigResponse, error)
+	DynamicInputRequest,
+) (*DynamicInputResponse, error)
 
-type GetCacheConfigRequest struct {
+type DynamicInputRequest struct {
 	CacheKey CacheKey
 }
 
-type GetCacheConfigResponse struct {
+type DynamicInputResponse struct {
 	CacheKey CacheKey
 }
 

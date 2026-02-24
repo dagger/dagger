@@ -265,13 +265,13 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			fieldDef.Args.Add(inputSpec)
 		}
 
-		fieldDef.GetCacheConfig = func(
+		fieldDef.GetDynamicInput = func(
 			ctx context.Context,
 			parentObj dagql.AnyResult,
 			args map[string]dagql.Input,
 			view call.View,
-			req dagql.GetCacheConfigRequest,
-		) (*dagql.GetCacheConfigResponse, error) {
+			req dagql.DynamicInputRequest,
+		) (*dagql.DynamicInputResponse, error) {
 			parent, ok := parentObj.(dagql.ObjectResult[*InterfaceAnnotatedValue])
 			if !ok {
 				return nil, fmt.Errorf("unexpected parent object type %T", parentObj)
@@ -289,7 +289,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
 			}
 
-			return callable.CacheConfigForCall(ctx, parentObj, args, view, req)
+			return callable.DynamicInputsForCall(ctx, parentObj, args, view, req)
 		}
 
 		fields = append(fields, dagql.Field[*InterfaceAnnotatedValue]{

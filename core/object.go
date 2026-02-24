@@ -187,7 +187,7 @@ type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.AnyResult, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
-	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error)
+	DynamicInputsForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.DynamicInputRequest) (*dagql.DynamicInputResponse, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -325,7 +325,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	}
 	spec.Name = gqlFieldName(mod.Name())
 	spec.Module = obj.Module.IDModule(ctx)
-	spec.GetCacheConfig = fn.CacheConfigForCall
+	spec.GetDynamicInput = fn.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, fn.cacheImplicitInputs()...)
 
 	dag.Root().ObjectType().Extend(
@@ -452,7 +452,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
 	spec.Module = mod.IDModule(ctx)
-	spec.GetCacheConfig = modFun.CacheConfigForCall
+	spec.GetDynamicInput = modFun.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
 
 	return dagql.Field[*ModuleObject]{
@@ -507,14 +507,14 @@ func (f *CallableField) ArgType(argName string) (ModType, error) {
 	return nil, fmt.Errorf("field cannot have argument %q", argName)
 }
 
-func (f *CallableField) CacheConfigForCall(
+func (f *CallableField) DynamicInputsForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	return &dagql.GetCacheConfigResponse{
+	req dagql.DynamicInputRequest,
+) (*dagql.DynamicInputResponse, error) {
+	return &dagql.DynamicInputResponse{
 		CacheKey: req.CacheKey,
 	}, nil
 }

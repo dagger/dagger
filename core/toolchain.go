@@ -151,7 +151,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 	// But use the toolchain name from the parent module
 	spec.Name = fun.Name
 	spec.Module = parentMod.IDModule(ctx)
-	spec.GetCacheConfig = modFun.CacheConfigForCall
+	spec.GetDynamicInput = modFun.DynamicInputsForCall
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
