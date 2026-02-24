@@ -592,6 +592,48 @@ func (CLISuite) TestDevelopDeterministicCodegen(ctx context.Context, t *testctx.
 	// Test that running codegen multiple times produces identical output.
 	// This is critical for version control - we want to be able to commit
 	// generated files and know they won't change unless the API changes.
+	t.Run("go split methods across files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("/work/main.go", `package main
+
+type GitRepo struct{}
+
+func (m *GitRepo) RemoteA() *RemoteA {
+	return &RemoteA{}
+}
+
+func (m *GitRepo) RemoteB() *RemoteB {
+	return &RemoteB{}
+}
+`,
+			).
+			WithNewFile("/work/remote_a.go", `package main
+
+type RemoteA struct{}
+`,
+			).
+			WithNewFile("/work/remote_b.go", `package main
+
+type RemoteB struct{}
+`,
+			)
+
+		modGen = modGen.With(daggerExec("develop"))
+		firstGen, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+
+		modGen = modGen.With(daggerExec("develop"))
+		secondGen, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, firstGen, secondGen, "Generated code should be deterministic across multiple runs")
+	})
+
 	t.Run("go with dependencies", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
