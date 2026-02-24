@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -102,7 +103,7 @@ func BuiltInContainerUpdateConfig(ctx context.Context, ctr *Container, blobDiges
 		return fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
 	}
 
-	var imgSpec specs.Image
+	var imgSpec dockerspec.DockerOCIImage
 	err = json.Unmarshal(configBlob, &imgSpec)
 	if err != nil {
 		return fmt.Errorf("load image config: %w", err)

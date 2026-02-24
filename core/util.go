@@ -25,9 +25,9 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
@@ -233,12 +233,30 @@ func mergeMap[T any](dst, src map[string]T) map[string]T {
 // Only the configurations that have corresponding `WithXXX` and `WithoutXXX`
 // methods in `Container` are added or updated (i.e., `Env`, `Labels` and
 // `ExposedPorts`). Everything else is replaced.
-func mergeImageConfig(dst, src specs.ImageConfig) specs.ImageConfig {
+func mergeImageConfig(dst, src dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 	res := src
 
 	res.Env = mergeEnv(dst.Env, src.Env)
 	res.Labels = mergeMap(dst.Labels, src.Labels)
 	res.ExposedPorts = mergeMap(dst.ExposedPorts, src.ExposedPorts)
+
+	var healthcheck dockerspec.HealthcheckConfig
+	if src.Healthcheck != nil {
+		healthcheck = *src.Healthcheck
+		src.Healthcheck = &healthcheck
+	} else if dst.Healthcheck != nil {
+		healthcheck = *dst.Healthcheck
+		src.Healthcheck = &healthcheck
+	}
+
+	res.OnBuild = append([]string{}, dst.OnBuild...)
+	res.OnBuild = append(res.OnBuild, src.OnBuild...)
+
+	if src.Shell != nil {
+		res.Shell = append([]string{}, src.Shell...)
+	} else if dst.Shell != nil {
+		res.Shell = append([]string{}, dst.Shell...)
+	}
 
 	return res
 }
