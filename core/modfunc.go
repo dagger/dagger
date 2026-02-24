@@ -897,14 +897,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		for _, id := range returnedContent.IDs {
 			returnedIDsList = append(returnedIDsList, id)
 		}
-		resourceTransferPostCall, hasNamedSecrets, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
+		resourceTransferPostCall, hasNamedSecretsOrSockets, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
 		if err != nil {
 			return nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
-		if hasNamedSecrets {
-			// Named secrets are only safe to persist across sessions when the return value is
-			// itself secret/socket data. If they're embedded in other objects (e.g. container
-			// state), persisting can incorrectly reuse secret-dependent results across sessions.
+		if hasNamedSecretsOrSockets {
+			// Named secrets/sockets are only safe to persist across sessions when the
+			// return value is itself Secret/Socket data. If they're embedded in other
+			// objects (e.g. container state), persisting can incorrectly reuse
+			// secret-dependent results across sessions.
 			for _, id := range returnedIDsList {
 				typ := id.Type()
 				if typ == nil {
