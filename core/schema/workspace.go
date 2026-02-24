@@ -135,6 +135,7 @@ func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
 // Remote: navigates the pre-fetched rootfs.
 func (s *workspaceSchema) resolveRootfs(
 	ctx context.Context, ws *core.Workspace, resolvedPath string, filter core.CopyFilter,
+	gitignore bool,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -170,6 +171,14 @@ func (s *workspaceSchema) resolveRootfs(
 			}
 			args = append(args, dagql.NamedInput{Name: "exclude", Value: excludes})
 		}
+		if gitignore {
+			args = append(args,
+				dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
+				// The workspace root is already the repo root, so pass it
+				// directly to avoid a redundant .git search.
+				dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
+			)
+		}
 		err = srv.Select(ctx, srv.Root(), &inst,
 			dagql.Selector{Field: "host"},
 			dagql.Selector{Field: "directory", Args: args},
@@ -178,14 +187,6 @@ func (s *workspaceSchema) resolveRootfs(
 			return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
 		}
 		return inst, nil
-	}
-	if args.Gitignore {
-		dirArgs = append(dirArgs,
-			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
-			// The workspace root is already the repo root, so pass it
-			// directly to avoid a redundant .git search.
-			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.Root)},
-		)
 	}
 
 	// Remote: navigate pre-fetched rootfs.
@@ -237,7 +238,7 @@ func (s *workspaceSchema) resolveRootfs(
 func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	ws := parent.Self()
 	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
-	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter)
+	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
 }
 
 type workspaceFileArgs struct {
@@ -255,7 +256,7 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 
-	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{})
+	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{}, false)
 	if err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
 	}
