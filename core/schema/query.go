@@ -15,7 +15,6 @@ import (
 )
 
 type querySchema struct {
-	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &querySchema{}
@@ -147,16 +146,21 @@ func (s *querySchema) schemaJSONFile(
 	const schemaJSONFilename = "schema.json"
 	const perm fs.FileMode = 0644
 
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
 	if args.InDagOp() {
 		f, err := core.NewFileWithContents(ctx, schemaJSONFilename, []byte(args.Schema), perm, nil, parent.Self().Platform())
 		if err != nil {
 			return inst, err
 		}
 
-		return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
+		return dagql.NewObjectResultForCurrentID(ctx, dag, f)
 	}
 
-	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, s.srv.View, s.srv)
+	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, dag.View, dag)
 	if err != nil {
 		return inst, err
 	}
@@ -170,7 +174,7 @@ func (s *querySchema) schemaJSONFile(
 		))
 	ctxDagOp := dagql.ContextWithID(ctx, newID)
 
-	f, effectID, err := DagOpFile(ctxDagOp, s.srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
+	f, effectID, err := DagOpFile(ctxDagOp, dag, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
 	if err != nil {
 		return inst, err
 	}
@@ -183,7 +187,7 @@ func (s *querySchema) schemaJSONFile(
 	if effectID != "" {
 		curID = curID.AppendEffectIDs(effectID)
 	}
-	return dagql.NewObjectResultForID(f, s.srv, curID)
+	return dagql.NewObjectResultForID(f, dag, curID)
 }
 
 func dagqlToCodegenType(dagqlType *introspection.Type) (*codegenintrospection.Type, error) {
