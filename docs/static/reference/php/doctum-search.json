@@ -3303,6 +3303,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EngineCacheEntry::recordType",
+			"p": "Dagger/EngineCacheEntry.html#method_recordType",
+			"d": "<p>The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EngineCacheEntrySet::diskSpaceBytes",
 			"p": "Dagger/EngineCacheEntrySet.html#method_diskSpaceBytes",
 			"d": "<p>The total disk space used by the cache entries in this set.</p>"
