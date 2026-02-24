@@ -643,12 +643,6 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagq
 	mod := fn.mod
 	srv := dagql.CurrentDagqlServer(ctx)
 
-	/* TODO: ???
-	runtimeModID, err := mod.SourceContentScopedID(ctx)
-	if err != nil {
-		return runtime, fmt.Errorf("failed to get function content scoped module id: %w", err)
-	}
-	*/
 	runtimeModID := mod.ResultID
 
 	modObj, err := dagql.NewObjectResultForID(mod, srv, runtimeModID)
