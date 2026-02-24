@@ -301,6 +301,83 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.Contains(t, out, "8.0")
 	})
 
+	t.Run("wildcard function pattern applies to all matching functions", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "customizations": [
+        {
+          "function": ["*"],
+          "argument": "message",
+          "default": "hola"
+        }
+      ]
+    }
+  ]
+}
+					`)
+		out, err := modGen.
+			With(daggerExec("call", "hello", "configurable-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola from blueprint")
+
+		out, err = modGen.
+			With(daggerExec("call", "hello", "shout-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola FROM BLUEPRINT!!!")
+	})
+
+	t.Run("specific function pattern takes precedence over wildcard", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "customizations": [
+        {
+          "function": ["*"],
+          "argument": "message",
+          "default": "hola"
+        },
+        {
+          "function": ["configurableMessage"],
+          "argument": "message",
+          "default": "bonjour"
+        }
+      ]
+    }
+  ]
+}
+					`)
+		out, err := modGen.
+			With(daggerExec("call", "hello", "configurable-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bonjour from blueprint")
+
+		out, err = modGen.
+			With(daggerExec("call", "hello", "shout-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola FROM BLUEPRINT!!!")
+	})
+
 	t.Run("function and argument names match across casing styles", func(ctx context.Context, t *testctx.T) {
 		for _, tc := range []struct {
 			name     string
