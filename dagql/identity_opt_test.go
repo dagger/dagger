@@ -13,6 +13,8 @@ import (
 )
 
 func TestFieldSpecIdentityOptResolvesDeterministicImplicitInputs(t *testing.T) {
+	// Implicit inputs should be canonicalized deterministically: deduped by name
+	// with last-write-wins semantics, then applied in stable name order.
 	spec := &dagql.FieldSpec{
 		ImplicitInputs: []dagql.ImplicitInput{
 			{
@@ -59,6 +61,7 @@ func TestFieldSpecIdentityOptResolvesDeterministicImplicitInputs(t *testing.T) {
 }
 
 func TestFieldSpecIdentityOptAppliesModule(t *testing.T) {
+	// IdentityOpt should attach the field spec module to the resulting call ID.
 	moduleID := call.New().Append(&ast.Type{
 		NamedType: "Module",
 		NonNull:   true,
@@ -82,6 +85,7 @@ func TestFieldSpecIdentityOptAppliesModule(t *testing.T) {
 }
 
 func TestFieldSpecIdentityOptPropagatesResolverErrors(t *testing.T) {
+	// Resolver failures should bubble up with implicit-input context.
 	spec := &dagql.FieldSpec{
 		ImplicitInputs: []dagql.ImplicitInput{
 			{
@@ -99,6 +103,7 @@ func TestFieldSpecIdentityOptPropagatesResolverErrors(t *testing.T) {
 }
 
 func TestFieldSpecIdentityOptRejectsNilResolvedInput(t *testing.T) {
+	// Resolvers must not return nil inputs; this should be treated as an error.
 	spec := &dagql.FieldSpec{
 		ImplicitInputs: []dagql.ImplicitInput{
 			{
