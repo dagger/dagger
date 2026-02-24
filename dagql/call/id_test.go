@@ -288,3 +288,111 @@ func TestExtraDigestsRoundTripThroughProto(t *testing.T) {
 		t.Fatalf("label mismatch: got %q", extras[0].Label)
 	}
 }
+
+func TestDigestedStringUsesAttachedDigestForIdentity(t *testing.T) {
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+	execMDDigest := digest.FromString("execmd-identity")
+
+	idA := New().Append(
+		typ,
+		"withExec",
+		WithArgs(NewArgument("execMD", NewLiteralDigestedString(`{"clientID":"a","execID":"1"}`, execMDDigest), false)),
+	)
+	idB := New().Append(
+		typ,
+		"withExec",
+		WithArgs(NewArgument("execMD", NewLiteralDigestedString(`{"clientID":"b","execID":"2"}`, execMDDigest), false)),
+	)
+
+	if idA.Digest() != idB.Digest() {
+		t.Fatalf("expected digested-string payload changes to not affect recipe digest: %s vs %s", idA.Digest(), idB.Digest())
+	}
+
+	selfA, inputsA, err := idA.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("idA self+inputs: %v", err)
+	}
+	selfB, inputsB, err := idB.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("idB self+inputs: %v", err)
+	}
+
+	if selfA != selfB {
+		t.Fatalf("expected same self digest when digested-string digest is the same: %s vs %s", selfA, selfB)
+	}
+	if len(inputsA) != len(inputsB) {
+		t.Fatalf("input count mismatch: %d vs %d", len(inputsA), len(inputsB))
+	}
+	if len(inputsA) != 1 {
+		t.Fatalf("expected one input digest from digested-string literal, got %d", len(inputsA))
+	}
+	if inputsA[0] != execMDDigest || inputsB[0] != execMDDigest {
+		t.Fatalf("unexpected digested-string input digest: %s / %s", inputsA[0], inputsB[0])
+	}
+}
+
+func TestDigestedStringDigestDistinguishesIdentity(t *testing.T) {
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+	digestA := digest.FromString("execmd-identity-a")
+	digestB := digest.FromString("execmd-identity-b")
+
+	idA := New().Append(
+		typ,
+		"withExec",
+		WithArgs(NewArgument("execMD", NewLiteralDigestedString(`{"same":"payload"}`, digestA), false)),
+	)
+	idB := New().Append(
+		typ,
+		"withExec",
+		WithArgs(NewArgument("execMD", NewLiteralDigestedString(`{"same":"payload"}`, digestB), false)),
+	)
+
+	if idA.Digest() == idB.Digest() {
+		t.Fatalf("expected different recipe digests for different digested-string digests: %s", idA.Digest())
+	}
+}
+
+func TestDigestedStringRoundTrip(t *testing.T) {
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+	execMDDigest := digest.FromString("execmd-roundtrip")
+	orig := New().Append(
+		typ,
+		"withExec",
+		WithArgs(NewArgument("execMD", NewLiteralDigestedString(`{"nested":true}`, execMDDigest), false)),
+	)
+
+	enc, err := orig.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	decoded := new(ID)
+	if err := decoded.Decode(enc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	arg := decoded.Arg("execMD")
+	if arg == nil {
+		t.Fatalf("decoded execMD arg missing")
+	}
+
+	lit, ok := arg.Value().(*LiteralDigestedString)
+	if !ok {
+		t.Fatalf("unexpected literal type after decode: %T", arg.Value())
+	}
+	if lit.Digest() != execMDDigest {
+		t.Fatalf("digested-string digest mismatch after round-trip: got %s, want %s", lit.Digest(), execMDDigest)
+	}
+	if lit.Value() != `{"nested":true}` {
+		t.Fatalf("digested-string value mismatch after round-trip: got %q", lit.Value())
+	}
+}

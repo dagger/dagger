@@ -648,6 +648,91 @@ func (s SerializedString[T]) SetField(v reflect.Value) error {
 	}
 }
 
+type DigestedSerializedString[T any] struct {
+	Self   T
+	Digest digest.Digest
+}
+
+func NewDigestedSerializedString[T any](val T, dig digest.Digest) DigestedSerializedString[T] {
+	return DigestedSerializedString[T]{
+		Self:   val,
+		Digest: dig,
+	}
+}
+
+var _ Typed = DigestedSerializedString[any]{}
+
+func (DigestedSerializedString[T]) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+}
+
+var _ InputDecoder = DigestedSerializedString[any]{}
+
+func (DigestedSerializedString[T]) DecodeInput(val any) (Input, error) {
+	switch x := val.(type) {
+	case string:
+		var v T
+		err := json.Unmarshal([]byte(x), &v)
+		if err != nil {
+			return nil, err
+		}
+		return NewDigestedSerializedString(v, ""), nil
+	default:
+		return nil, fmt.Errorf("cannot create DigestedSerializedString from %T", x)
+	}
+}
+
+var _ Input = DigestedSerializedString[any]{}
+
+func (s DigestedSerializedString[T]) Decoder() InputDecoder {
+	return s
+}
+
+func (s DigestedSerializedString[T]) ToLiteral() call.Literal {
+	return call.NewLiteralDigestedString(s.String(), s.Digest)
+}
+
+func (s DigestedSerializedString[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Self)
+}
+
+func (s *DigestedSerializedString[T]) UnmarshalJSON(p []byte) error {
+	var v T
+	if err := json.Unmarshal(p, &v); err != nil {
+		return err
+	}
+	*s = DigestedSerializedString[T]{
+		Self: v,
+	}
+	return nil
+}
+
+func (s DigestedSerializedString[T]) String() string {
+	res, err := s.MarshalJSON()
+	if err != nil {
+		panic(err)
+	}
+	return string(res)
+}
+
+var _ Setter = DigestedSerializedString[any]{}
+
+func (s DigestedSerializedString[T]) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case DigestedSerializedString[T]:
+		v.Set(reflect.ValueOf(s))
+		return nil
+	case SerializedString[T]:
+		v.Set(reflect.ValueOf(SerializedString[T]{Self: s.Self}))
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), s)
+	}
+}
+
 type ScalarValue interface {
 	ScalarType
 	Input

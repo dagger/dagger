@@ -405,7 +405,6 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	return digest.Digest(h.DigestAndClose()), inputs, nil
 }
 
-// FIXME:!!!!!! This drops args and other inputs which may reference modules too
 func (id *ID) Modules() []*Module {
 	allMods := []*Module{}
 	for id != nil {
@@ -1099,6 +1098,12 @@ func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, erro
 			}
 			h = h.WithDelim()
 		}
+	case *LiteralDigestedString:
+		const prefix = '9'
+		h = h.WithByte(prefix)
+		if v.digest != "" {
+			h = h.WithString(v.digest.String())
+		}
 	default:
 		return nil, fmt.Errorf("unknown literal type %T", v)
 	}
@@ -1166,6 +1171,12 @@ func appendLiteralSelfBytes(lit Literal, h *hashutil.Hasher, inputs []digest.Dig
 				return nil, nil, err
 			}
 			h = h.WithDelim()
+		}
+	case *LiteralDigestedString:
+		const prefix = '9'
+		h = h.WithByte(prefix)
+		if v.digest != "" {
+			inputs = append(inputs, v.digest)
 		}
 	default:
 		return nil, nil, fmt.Errorf("unknown literal type %T", v)

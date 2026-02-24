@@ -3,7 +3,6 @@ package schema
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,7 +23,6 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core"
@@ -456,7 +454,6 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withExec", s.withExec).
-			WithInput(withExecCacheMixinInput).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -886,7 +883,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			)), nil
 		}
 
-		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, "", s.from)
+		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, s.from)
 		if err != nil {
 			return inst, err
 		}
@@ -1049,58 +1046,14 @@ type containerExecArgs struct {
 	// calling it with args
 	SkipEntrypoint *bool `default:"false"`
 
-	// ExecMD carries runtime-only execution metadata; it is excluded from ID
-	// digests so cache identity only depends on explicit withExec args plus
-	// execCacheMixin implicit input.
-	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" sensitive:"true" default:"null"`
-
-	// TODO: ??
-	OverrideCacheKey string `name:"overrideCacheKey" internal:"true" default:""`
+	// ExecMD carries internal runtime execution metadata.
+	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
 
 	ContainerDagOpInternalArgs
 }
 
 func (args containerExecArgs) DagOpExecutionMetadata() *buildkit.ExecutionMetadata {
 	return args.ExecMD.Self
-}
-
-var withExecCacheMixinInput = dagql.ImplicitInput{
-	Name: "execCacheMixin",
-	Resolver: func(_ context.Context, args map[string]dagql.Input) (dagql.Input, error) {
-		rawExecMD, ok := args["execMD"]
-		if !ok || rawExecMD == nil {
-			return dagql.NewString(""), nil
-		}
-
-		execMD, ok := rawExecMD.(dagql.SerializedString[*buildkit.ExecutionMetadata])
-		if !ok {
-			return nil, fmt.Errorf("unexpected execMD input type %T", rawExecMD)
-		}
-			if execMD.Self == nil || execMD.Self.CacheMixin == "" {
-				return dagql.NewString(""), nil
-			}
-			return dagql.NewString(execMD.Self.CacheMixin.String()), nil
-		},
-	}
-
-var _ core.Digestable = containerExecArgs{}
-
-func (args containerExecArgs) Digest() (digest.Digest, error) {
-	var inputs []string
-
-	clone := args
-	clone.ExecMD.Self = nil
-	res, err := json.Marshal(clone)
-	if err != nil {
-		panic(err)
-	}
-	inputs = append(inputs, digest.FromBytes(res).String())
-
-	if args.ExecMD.Self != nil {
-		inputs = append(inputs, string(args.ExecMD.Self.CacheMixin))
-	}
-
-	return hashutil.HashStrings(inputs...), nil
 }
 
 func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (dagql.ObjectResult[*core.Container], error) {
@@ -1125,7 +1078,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 
 	if !args.IsDagOp {
 		ctr.Meta = nil
-		ctr, effectID, err := DagOpContainer(ctx, srv, ctr, args, digest.Digest(args.OverrideCacheKey), s.withExec)
+		ctr, effectID, err := DagOpContainer(ctx, srv, ctr, args, s.withExec)
 		if err != nil {
 			return inst, err
 		}

@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/opencontainers/go-digest"
 )
 
 type moduleTypes struct {
@@ -19,6 +20,8 @@ type moduleTypes struct {
 const (
 	moduleIDPath = "/module-typedefs.json"
 )
+
+var moduleTypesExecMDDigest = digest.FromString("module-types-with-exec-execmd")
 
 func (sdk *moduleTypes) ModuleTypes(
 	ctx context.Context,
@@ -92,7 +95,7 @@ func (sdk *moduleTypes) ModuleTypes(
 				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
 				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
 				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
-				{Name: "execMD", Value: dagql.NewSerializedString(&execMD)},
+				{Name: "execMD", Value: dagql.NewDigestedSerializedString(&execMD, moduleTypesExecMDDigest)},
 			},
 		},
 		dagql.Selector{

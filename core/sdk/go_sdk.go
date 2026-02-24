@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/mitchellh/mapstructure"
+	"github.com/opencontainers/go-digest"
 )
 
 const (
@@ -24,6 +25,8 @@ const (
 	goSDKDependenciesConfigPath = "/dependencies.json"
 	GoSDKModuleIDPath           = "typedefs.json"
 )
+
+var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
 
 /*
 goSDK is the one special sdk not implemented as module, instead the
@@ -357,7 +360,7 @@ func (sdk *goSDK) ModuleTypes(
 				},
 				{
 					Name:  "execMD",
-					Value: dagql.NewSerializedString(&execMD),
+					Value: dagql.NewDigestedSerializedString(&execMD, goSDKExecMDDigest),
 				},
 			},
 		},
