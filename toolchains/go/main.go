@@ -83,7 +83,7 @@ func New(
 	}
 	if base == nil {
 		packages := []string{
-			"go~" + version,
+			"go-" + version,
 			"ca-certificates",
 			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 			"build-base",
