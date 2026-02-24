@@ -73,6 +73,12 @@ func (h *Hasher) WithInt64(i int64) *Hasher {
 	return h
 }
 
+func (h *Hasher) WithUint64(i uint64) *Hasher {
+	*h.bufPtr = binary.BigEndian.AppendUint64(*h.bufPtr, i)
+	*h.bufPtr = append(*h.bufPtr, 0)
+	return h
+}
+
 func (h *Hasher) WithInt32(i int32) *Hasher {
 	*h.bufPtr = binary.BigEndian.AppendUint32(*h.bufPtr, uint32(i))
 	*h.bufPtr = append(*h.bufPtr, 0)
