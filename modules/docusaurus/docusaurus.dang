@@ -54,7 +54,7 @@ type Site {
         "npm"
       } else {
         # packageManager field is like "pnpm@8.15.0" — take the name before @
-        pmField.asString.split("@")[0]
+        pmField.asString.split("@")[0] ?? "npm"
       }
     }
   }
@@ -74,15 +74,13 @@ type Site {
   Extra source include paths from package.json "docusaurus.include".
   """
   let extraInclude: [String!]! {
-    if (pkgJson == null) {
+    let ds = if (pkgJson != null) {
+      pkgJson.field(["docusaurus", "include"])
+    } else { null }
+    if (ds == null) {
       []::[String!]!
     } else {
-      let ds = pkgJson.field(["docusaurus", "include"])
-      if (ds == null) {
-        []::[String!]!
-      } else {
-        ds.asArray.map { item => item.asString }
-      }
+      ds.asArray.{asString}.map { item => item.asString }
     }
   }
 
@@ -90,15 +88,13 @@ type Site {
   Extra source exclude paths from package.json "docusaurus.exclude".
   """
   let extraExclude: [String!]! {
-    if (pkgJson == null) {
+    let ds = if (pkgJson != null) {
+      pkgJson.field(["docusaurus", "exclude"])
+    } else { null }
+    if (ds == null) {
       []::[String!]!
     } else {
-      let ds = pkgJson.field(["docusaurus", "exclude"])
-      if (ds == null) {
-        []::[String!]!
-      } else {
-        ds.asArray.map { item => item.asString }
-      }
+      ds.asArray.{asString}.map { item => item.asString }
     }
   }
 
