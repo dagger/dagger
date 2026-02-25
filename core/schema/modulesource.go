@@ -3732,7 +3732,6 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		// Match by index since ConfigToolchains and Toolchains arrays have the same ordering
 		if i < len(src.Self().ConfigToolchains) {
 			tcCfg := src.Self().ConfigToolchains[i]
-
 			if len(tcCfg.Customizations) > 0 {
 				// Apply configurations to the toolchain module's functions, including chained functions
 				applyArgumentConfigsToModule(clone, tcCfg.Customizations)
