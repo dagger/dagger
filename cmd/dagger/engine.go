@@ -105,7 +105,6 @@ func withEngine(
 			params.ImageLoaderBackend = backend
 		}
 
-		params.DisableHostRW = disableHostRW
 		params.AllowedLLMModules = allowedLLMModules
 		params.RemoteWorkdir = remoteWorkdir
 

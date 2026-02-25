@@ -975,13 +975,6 @@ func optionalModCmdWrapper(
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			_, explicitModRefSet := getExplicitModuleSourceRef()
 
-			if disableHostRW {
-				// we could never possibly load a module, don't even try
-				if explicitModRefSet {
-					return fmt.Errorf("cannot load module with --disable-host-read-write enabled")
-				}
-				return fn(ctx, engineClient, nil, cmd, cmdArgs)
-			}
 			if moduleNoURL {
 				return fn(ctx, engineClient, nil, cmd, cmdArgs)
 			}
@@ -996,12 +989,6 @@ func optionalModCmdWrapper(
 			})
 			configExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				if strings.Contains(err.Error(), "rpc error: code = Unimplemented desc") {
-					// this is a very obscure corner case: when running `dagger listen --disable-host-read-write`
-					// and then running `dagger query` against that listener, we will not have disableHostRW set
-					// true but do need to ignore this error about filesync being disabled
-					return fn(ctx, engineClient, nil, cmd, cmdArgs)
-				}
 				return fmt.Errorf("failed to check if module exists: %w", err)
 			}
 			switch {

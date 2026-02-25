@@ -2430,91 +2430,36 @@ func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
-	t.Run("with mod", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
+	modDir := t.TempDir()
+	_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--name=test", "--sdk=go")
+	require.NoError(t, err)
 
-		addr := "127.0.0.1:12456"
-		listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--listen", addr)
-		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
-		listenCmd.Stdout = testutil.NewTWriter(t)
-		listenCmd.Stderr = testutil.NewTWriter(t)
-		require.NoError(t, listenCmd.Start())
+	addr := "127.0.0.1:12456"
+	listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--listen", addr)
+	listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
+	listenCmd.Stdout = testutil.NewTWriter(t)
+	listenCmd.Stderr = testutil.NewTWriter(t)
+	require.NoError(t, listenCmd.Start())
 
-		backoff.Retry(func() error {
-			c, err := net.Dial("tcp", addr)
-			t.Log("dial", addr, c, err)
-			if err != nil {
-				return err
-			}
-			return c.Close()
-		}, backoff.NewExponentialBackOff(
-			backoff.WithMaxElapsedTime(time.Minute),
-		))
+	backoff.Retry(func() error {
+		c, err := net.Dial("tcp", addr)
+		t.Log("dial", addr, c, err)
+		if err != nil {
+			return err
+		}
+		return c.Close()
+	}, backoff.NewExponentialBackOff(
+		backoff.WithMaxElapsedTime(time.Minute),
+	))
 
-		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "container-echo", "--string-arg=hi", "stdout")
-		callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
-		callCmd.Stderr = testutil.NewTWriter(t)
-		out, err := callCmd.Output()
-		require.NoError(t, err)
-		lines := strings.Split(string(out), "\n")
-		lastLine := lines[len(lines)-2]
-		require.Equal(t, "hi", lastLine)
-	})
-
-	t.Run("disable read write", func(ctx context.Context, t *testctx.T) {
-		t.Run("with mod", func(ctx context.Context, t *testctx.T) {
-			// mod load fails but should still be able to query base api
-
-			modDir := t.TempDir()
-			_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--name=test", "--sdk=go")
-			require.NoError(t, err)
-
-			listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12457")
-			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
-			require.NoError(t, listenCmd.Start())
-
-			var out []byte
-			for range limitTicker(time.Second, 60) {
-				callCmd := hostDaggerCommand(ctx, t, modDir, "query")
-				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
-				callCmd.Stderr = testutil.NewTWriter(t)
-				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
-				out, err = callCmd.Output()
-				if err == nil {
-					require.Contains(t, string(out), distconsts.AlpineVersion)
-					return
-				}
-				time.Sleep(1 * time.Second)
-			}
-			t.Fatalf("failed to call query: %s err: %v", string(out), err)
-		})
-
-		t.Run("without mod", func(ctx context.Context, t *testctx.T) {
-			tmpdir := t.TempDir()
-
-			listenCmd := hostDaggerCommand(ctx, t, tmpdir, "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12458")
-			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
-			require.NoError(t, listenCmd.Start())
-
-			var out []byte
-			var err error
-			for range limitTicker(time.Second, 60) {
-				callCmd := hostDaggerCommand(ctx, t, tmpdir, "query")
-				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
-				callCmd.Stderr = testutil.NewTWriter(t)
-				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
-				out, err = callCmd.Output()
-				if err == nil {
-					require.Contains(t, string(out), distconsts.AlpineVersion)
-					return
-				}
-				time.Sleep(1 * time.Second)
-			}
-			t.Fatalf("failed to call query: %s err: %v", string(out), err)
-		})
-	})
+	callCmd := hostDaggerCommand(ctx, t, modDir, "call", "container-echo", "--string-arg=hi", "stdout")
+	callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
+	callCmd.Stderr = testutil.NewTWriter(t)
+	out, err := callCmd.Output()
+	require.NoError(t, err)
+	lines := strings.Split(string(out), "\n")
+	lastLine := lines[len(lines)-2]
+	require.Equal(t, "hi", lastLine)
 }
 
 func (ModuleSuite) TestSecretNested(ctx context.Context, t *testctx.T) {
