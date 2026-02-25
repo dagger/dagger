@@ -26,9 +26,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
-	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/containerutil"
@@ -38,7 +36,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -374,18 +371,6 @@ func handleMount(
 	)
 }
 
-// SourceState returns the state of the source of the mount.
-func (mnt ContainerMount) SourceState() (llb.State, error) {
-	switch {
-	case mnt.DirectorySource != nil:
-		return mnt.DirectorySource.Self().StateWithSourcePath()
-	case mnt.FileSource != nil:
-		return mnt.FileSource.Self().State()
-	default:
-		return llb.Scratch(), nil
-	}
-}
-
 // GetLLB returns the associated LLB with a mount
 func (mnt *ContainerMount) GetLLB() *pb.Definition {
 	var llb *pb.Definition
@@ -629,6 +614,9 @@ func (container *Container) FromCanonicalRefUpdateConfig(
 	return container, nil
 }
 
+/*
+TODO: re-implement Dockerfile.
+
 const defaultDockerfileName = "Dockerfile"
 
 func (container *Container) Build(
@@ -810,6 +798,7 @@ func (container *Container) Build(
 
 	return container, nil
 }
+*/
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	if container.FS != nil {

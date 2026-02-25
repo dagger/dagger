@@ -16,7 +16,7 @@ type SchemaResolvers interface {
 
 func Syncer[T core.Evaluatable]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], _ struct{}) (res dagql.Result[dagql.ID[T]], _ error) {
-		_, err := self.Self().Evaluate(ctx)
+		err := self.Self().Evaluate(ctx)
 		if err != nil {
 			return res, err
 		}

@@ -69,27 +69,31 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
 				),
 			),
-		dagql.NodeFunc("build", s.build).
-			View(BeforeVersion("v0.19.0")).
-			Deprecated("Use `Directory.build` instead").
-			Doc(`Initializes this container from a Dockerfile build.`).
-			Args(
-				dagql.Arg("context").Doc("Directory context used by the Dockerfile."),
-				dagql.Arg("dockerfile").Doc("Path to the Dockerfile to use."),
-				dagql.Arg("target").Doc("Target build stage to build."),
-				dagql.Arg("buildArgs").Doc("Additional build arguments."),
-				dagql.Arg("secrets").Doc(`Secrets to pass to the build.`,
-					`They will be mounted at /run/secrets/[secret-name] in the build container`,
-					`They can be accessed in the Dockerfile using the "secret" mount type
-					and mount path /run/secrets/[secret-name], e.g. RUN
-					--mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
-					/run/secrets/my-secret)](http://example.com?token=$(cat
-						/run/secrets/my-secret))`),
-				dagql.Arg("noInit").Doc(`If set, skip the automatic init process injected into containers created by RUN statements.`,
-					`This should only be used if the user requires that their exec processes be the
-					pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+		/*
+			TODO: re-implement Dockerfile.
+
+			dagql.NodeFunc("build", s.build).
+				View(BeforeVersion("v0.19.0")).
+				Deprecated("Use `Directory.build` instead").
+				Doc(`Initializes this container from a Dockerfile build.`).
+				Args(
+					dagql.Arg("context").Doc("Directory context used by the Dockerfile."),
+					dagql.Arg("dockerfile").Doc("Path to the Dockerfile to use."),
+					dagql.Arg("target").Doc("Target build stage to build."),
+					dagql.Arg("buildArgs").Doc("Additional build arguments."),
+					dagql.Arg("secrets").Doc(`Secrets to pass to the build.`,
+						`They will be mounted at /run/secrets/[secret-name] in the build container`,
+						`They can be accessed in the Dockerfile using the "secret" mount type
+						and mount path /run/secrets/[secret-name], e.g. RUN
+						--mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
+						/run/secrets/my-secret)](http://example.com?token=$(cat
+							/run/secrets/my-secret))`),
+					dagql.Arg("noInit").Doc(`If set, skip the automatic init process injected into containers created by RUN statements.`,
+						`This should only be used if the user requires that their exec processes be the
+						pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+					),
 				),
-			),
+		*/
 
 		dagql.Func("rootfs", s.rootfs).
 			Doc(`Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.`),
@@ -956,6 +960,9 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	return inst, nil
 }
 
+/*
+TODO: re-implement Dockerfile.
+
 type containerBuildArgs struct {
 	Context    core.DirectoryID
 	Dockerfile string                             `default:"Dockerfile"`
@@ -1006,6 +1013,7 @@ func (s *containerSchema) build(ctx context.Context, parent dagql.ObjectResult[*
 		nil,
 	)
 }
+*/
 
 type containerWithRootFSArgs struct {
 	Directory core.DirectoryID
