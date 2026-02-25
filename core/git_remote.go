@@ -357,33 +357,56 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		return err
 	}
 
+	if len(refs) == 0 {
+		// Nothing requested: avoid an implicit broad fetch from origin.
+		return nil
+	}
+
+	// Fetch by object SHA in the hot path (`--no-tags`), and only retry by named refs for SHA-incompatible remotes.
+	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
+
 	gitDir, err := git.GitDir(ctx)
 	if err != nil {
 		return err
 	}
 
-	var refSpecs []string
+	shaRefSpecs := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		// fetch by sha, since we've already done tag resolution
-		// TODO: may need fallback if git remote doesn't support fetching by commit
-		refSpecs = append(refSpecs, ref.SHA)
+		// Default hot path: fetch exact objects by SHA; ref names are already resolved via ls-remote.
+		shaRefSpecs = append(shaRefSpecs, ref.SHA)
 	}
 
-	args := []string{
-		"fetch",
-		"--tags",
-		"--update-head-ok",
-		"--force",
-	}
-	if depth <= 0 {
-		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
-			args = append(args, "--unshallow")
+	runFetch := func(refSpecs []string) error {
+		args := []string{
+			"fetch",
+			"--no-tags",
+			"--update-head-ok",
+			"--force",
 		}
-	} else {
-		args = append(args, "--depth="+fmt.Sprint(depth))
+		if depth <= 0 {
+			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+				args = append(args, "--unshallow")
+			}
+		} else {
+			args = append(args, "--depth="+fmt.Sprint(depth))
+		}
+		args = append(args, "origin")
+		args = append(args, refSpecs...)
+
+		if _, err := git.Run(ctx, args...); err != nil {
+			if errors.Is(err, gitutil.ErrShallowNotSupported) {
+				// fallback to full fetch
+				args = slices.DeleteFunc(args, func(s string) bool {
+					return strings.HasPrefix(s, "--depth")
+				})
+				_, err = git.Run(ctx, args...)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	args = append(args, "origin")
-	args = append(args, refSpecs...)
 
 	svcs, err := query.Services(ctx)
 	if err != nil {
@@ -395,21 +418,41 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}
 	defer detach()
 
-	if _, err := git.Run(ctx, args...); err != nil {
-		if errors.Is(err, gitutil.ErrShallowNotSupported) {
-			// fallback to full fetch
-			args = slices.DeleteFunc(args, func(s string) bool {
-				return strings.HasPrefix(s, "--depth")
-			})
-			_, err = git.Run(ctx, args...)
-		}
-
-		if err != nil {
+	if err := runFetch(shaRefSpecs); err == nil {
+		return nil
+	} else {
+		if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
 			return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
 		}
+
+		namedSpecs := namedFetchRefSpecs(refs)
+		if len(namedSpecs) == 0 {
+			return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+		}
+
+		logger.Info("git fetch by sha failed; retrying with named refs", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+		if retryErr := runFetch(namedSpecs); retryErr != nil {
+			return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
+		}
+		logger.Info("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
 	}
 
 	return nil
+}
+
+// namedFetchRefSpecs builds the bounded fallback refspec set used when SHA fetch is unsupported.
+// Destinations are deterministic scratch refs (`refs/dagger.fetch/...`) so retries don't mutate local branch/tag refs.
+func namedFetchRefSpecs(refs []*RemoteGitRef) []string {
+	refSpecs := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref == nil || ref.Name == "" || gitutil.IsCommitSHA(ref.Name) {
+			continue
+		}
+		// Deterministic scratch destination keeps retries isolated from local branch/tag namespaces.
+		stableName := hashutil.HashStrings(ref.Name, ref.SHA).Encoded()
+		refSpecs = append(refSpecs, ref.Name+":refs/dagger.fetch/"+stableName)
+	}
+	return refSpecs
 }
 
 func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Group, fn func(string) error) (retErr error) {
