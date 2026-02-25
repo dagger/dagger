@@ -216,7 +216,7 @@ func (*Secreter) CheckEmptyPlaintext(ctx context.Context, s *dagger.Secret) erro
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--name=caller", "--sdk=go", "--source=.")).
-			With(daggerExec("install", "./secreter")).
+			With(daggerExec("module", "install", "./secreter")).
 			WithNewFile("main.go", `package main
 
 import (

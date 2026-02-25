@@ -2066,8 +2066,8 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.")).
-			With(daggerExec("install", "--name", "foo", "./mod-a")).
-			With(daggerExec("install", "--name", "bar", "./mod-b"))
+			With(daggerExec("module", "install", "--name", "foo", "./mod-a")).
+			With(daggerExec("module", "install", "--name", "bar", "./mod-b"))
 
 		out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -2111,8 +2111,8 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.")).
-			With(daggerExec("install", "--name", "foo", "/work/mod-a")).
-			With(daggerExec("install", "--name", "bar", "/work/mod-b"))
+			With(daggerExec("module", "install", "--name", "foo", "/work/mod-a")).
+			With(daggerExec("module", "install", "--name", "bar", "/work/mod-b"))
 
 		// Check dagger.json for absolute paths
 		jsonContent, err := ctr.File("/work/dagger.json").Contents(ctx)
@@ -2174,7 +2174,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.")).
-			With(daggerExec("install", "--name", "foo", "/outside/mod-a"))
+			With(daggerExec("module", "install", "--name", "foo", "/outside/mod-a"))
 
 		// call main module at /work path
 		_, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
@@ -2201,7 +2201,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			With(daggerExec("module", "init", "--source=.")).
-			With(daggerExec("install", "--name", "foo", "/work/test@test"))
+			With(daggerExec("module", "install", "--name", "foo", "/work/test@test"))
 
 		// call main module at /work path
 		out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
@@ -2220,8 +2220,8 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work").
 				With(privateSetup).
 				With(daggerExec("module", "init", "--source=.")).
-				With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, ""))).
-				With(daggerExec("install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
+				With(daggerExec("module", "install", "--name", "foo", testGitModuleRef(tc, ""))).
+				With(daggerExec("module", "install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
 
 			out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
 			require.NoError(t, err)
@@ -2257,7 +2257,7 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 			out, err := goGitBase(t, c).
 				With(privateSetup).
 				With(daggerExec("module", "init", "--source=.", "--name=foo", "--sdk=go")).
-				With(daggerExec("install", testGitModuleRef(tc, "top-level"))).
+				With(daggerExec("module", "install", testGitModuleRef(tc, "top-level"))).
 				WithNewFile("main.go", `package main
 import (
 	"context"
@@ -2296,7 +2296,7 @@ func (m *Foo) Fn(ctx context.Context) (string, error) {
 			out, err := goGitBase(t, c).
 				With(privateSetup).
 				With(daggerExec("module", "init", "--source=.", "--name=foo", "--sdk=go")).
-				With(daggerExec("install", testGitModuleRef(tc, "ts"))).
+				With(daggerExec("module", "install", testGitModuleRef(tc, "ts"))).
 				WithNewFile("main.go", `package main
 import (
 	"context"
@@ -2335,7 +2335,7 @@ func (m *Foo) Fn(ctx context.Context) (string, error) {
 			out, err := goGitBase(t, c).
 				With(privateSetup).
 				With(daggerExec("module", "init", "--source=.", "--name=foo", "--sdk=go")).
-				With(daggerExec("install", testGitModuleRef(tc, "py"))).
+				With(daggerExec("module", "install", testGitModuleRef(tc, "py"))).
 				WithNewFile("main.go", `package main
 import (
 	"context"

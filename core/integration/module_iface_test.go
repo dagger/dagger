@@ -216,7 +216,7 @@ class Test:
 					With(withModInitAt("mallard", tc.sdk, tc.depSource)).
 					With(daggerCallAt("mallard", "quack")).
 					With(withModInit(rtc.sdk, rtc.testSource)).
-					With(daggerExec("install", "./mallard")).
+					With(daggerExec("module", "install", "./mallard")).
 					With(daggerCall("get-duck", "quack")).
 					Stdout(ctx)
 

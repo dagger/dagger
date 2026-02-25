@@ -218,9 +218,9 @@ func (Other) Version() string {
 }
 `,
 		)).
-		With(daggerExec("install", "./modules/dep")).
-		With(daggerExec("install", "./modules/git")).
-		With(daggerExec("install", "./modules/go"))
+		With(daggerExec("module", "install", "./modules/dep")).
+		With(daggerExec("module", "install", "./modules/git")).
+		With(daggerExec("module", "install", "./modules/go"))
 
 	t.Run("general help", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.

@@ -334,7 +334,7 @@ func (m *Test) Fn(ctx context.Context) ([]string, error) {
 	return results, nil
 }
 `)).
-			With(daggerExec("install", "./dep")).
+			With(daggerExec("module", "install", "./dep")).
 			With(daggerCall("fn"))
 
 		out, err := ctr.Stdout(ctx)

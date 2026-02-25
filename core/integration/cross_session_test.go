@@ -236,7 +236,7 @@ func (*Dep) Fn(rand string) string {
 		initCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "init", "--source=.", "--name=test", "--sdk=go")
 		initOutput, err := initCmd.CombinedOutput()
 		require.NoError(t, err, string(initOutput))
-		installCmd := hostDaggerCommand(ctx, t, tmpdir1, "install", depTmpdir1)
+		installCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "install", depTmpdir1)
 		installOutput, err := installCmd.CombinedOutput()
 		require.NoError(t, err, string(installOutput))
 
@@ -363,7 +363,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 	}
 	`,
 				).
-				With(daggerExec("install", "/work/servicer")).
+				With(daggerExec("module", "install", "/work/servicer")).
 				With(daggerCall("fn", "--rand", rand)).
 				Stdout(ctx)
 		}
@@ -487,7 +487,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 			_, err = goGitBase(t, c1).
 				With(daggerExec("module", "init", "--name=test", "--sdk=go", "--source=.")).
 				WithEnvVariable("CACHEBUST", identity.NewID()).
-				With(daggerExec("install", testGitModuleRef(testCase, "top-level"))).
+				With(daggerExec("module", "install", testGitModuleRef(testCase, "top-level"))).
 				Sync(ctx)
 			requireErrOut(t, err, expectedErr)
 
@@ -499,7 +499,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 				With(daggerExec("module", "init", "--name=test", "--sdk=go", "--source=.")).
 				WithEnvVariable("CACHEBUST", identity.NewID()).
 				With(withRepo).
-				With(daggerExec("install", testGitModuleRef(testCase, "top-level"))).
+				With(daggerExec("module", "install", testGitModuleRef(testCase, "top-level"))).
 				Sync(ctx)
 			require.NoError(t, err)
 
@@ -508,7 +508,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 			_, err = goGitBase(t, c3).
 				With(daggerExec("module", "init", "--name=test", "--sdk=go", "--source=.")).
 				WithEnvVariable("CACHEBUST", identity.NewID()).
-				With(daggerExec("install", testGitModuleRef(testCase, "top-level"))).
+				With(daggerExec("module", "install", testGitModuleRef(testCase, "top-level"))).
 				Sync(ctx)
 			requireErrOut(t, err, expectedErr)
 
@@ -519,7 +519,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 				With(daggerExec("module", "init", "--name=test", "--sdk=go", "--source=.")).
 				WithEnvVariable("CACHEBUST", identity.NewID()).
 				With(withRepo).
-				With(daggerExec("install", testGitModuleRef(testCase, "top-level"))).
+				With(daggerExec("module", "install", testGitModuleRef(testCase, "top-level"))).
 				Sync(ctx)
 			require.NoError(t, err)
 		}
@@ -706,7 +706,7 @@ func (*Secreter) GiveBack(s *dagger.Secret) *dagger.Secret {
 				).
 				WithWorkdir("/work").
 				With(daggerExec("module", "init", "--name=caller", "--sdk=go", "--source=.")).
-				With(daggerExec("install", "./secreter")).
+				With(daggerExec("module", "install", "./secreter")).
 				WithNewFile("main.go", `package main
 
 import (
@@ -1756,11 +1756,11 @@ func (r *RollsRoyce) Drive(ctx context.Context) error {
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
-	installDriveMainCmd := hostDaggerCommand(ctx, t, modDir, "install", driveDir)
+	installDriveMainCmd := hostDaggerCommand(ctx, t, modDir, "module", "install", driveDir)
 	installDriveMainOutput, err := installDriveMainCmd.CombinedOutput()
 	require.NoError(t, err, string(installDriveMainOutput))
 
-	installRollsCmd := hostDaggerCommand(ctx, t, modDir, "install", rollsDir)
+	installRollsCmd := hostDaggerCommand(ctx, t, modDir, "module", "install", rollsDir)
 	installRollsOutput, err := installRollsCmd.CombinedOutput()
 	require.NoError(t, err, string(installRollsOutput))
 

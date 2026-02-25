@@ -1038,7 +1038,7 @@ export class Foo {}
 `)).
 		WithWorkdir("/work").
 		With(daggerExec("module", "init", "--name=test", "--sdk=typescript", "test")).
-		With(daggerExec("install", "-m=test", "./dep")).
+		With(daggerExec("module", "install", "-m=test", "./dep")).
 		WithWorkdir("/work/test")
 
 	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {

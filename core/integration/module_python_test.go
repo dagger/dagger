@@ -1629,7 +1629,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
         `)).
 		WithWorkdir("/work/test").
 		With(daggerInitPython()).
-		With(daggerExec("install", "../dep"))
+		With(daggerExec("module", "install", "../dep"))
 
 	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {
 		t.Run("direct", func(ctx context.Context, t *testctx.T) {
@@ -1802,7 +1802,7 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
         `, alpineImage))).
 		WithWorkdir("/work/test").
 		With(daggerInitPython()).
-		With(daggerExec("install", "../dep")).
+		With(daggerExec("module", "install", "../dep")).
 		With(pythonSource(`
 			import dagger
 			from dagger import dag

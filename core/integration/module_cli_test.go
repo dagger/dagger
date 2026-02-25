@@ -407,7 +407,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.")).
-			With(daggerExec("install", "./dep"))
+			With(daggerExec("module", "install", "./dep"))
 
 		// should be able to invoke dep without name+sdk set yet
 		out, err := base.With(daggerCallAt("dep", "fn")).Stdout(ctx)
@@ -474,7 +474,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.")).
-			With(daggerExec("install", "./dep")).
+			With(daggerExec("module", "install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExec("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go")).
 			WithNewFile("/work/some/subdir/main.go", `package main
@@ -536,7 +536,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir(absPath).
 			With(daggerExec("module", "init", "--source=.")).
-			With(daggerExec("install", "./dep")).
+			With(daggerExec("module", "install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExec("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go")).
 			WithNewFile(absPath+"/some/subdir/main.go", `package main
@@ -570,7 +570,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"rm", "dagger.gen.go"}).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.", "--sdk=go")).
-			With(daggerExec("install", "--name=cooldep", "./dep")).
+			With(daggerExec("module", "install", "--name=cooldep", "./dep")).
 			WithExec([]string{"rm", "dagger.gen.go"})
 		developed := base.With(daggerExec("develop", "--recursive"))
 
@@ -674,7 +674,7 @@ func (m *Test) UsesDep(ctx context.Context) (string, error) {
 }
 `,
 			).
-			With(daggerExec("install", "./dep"))
+			With(daggerExec("module", "install", "./dep"))
 
 		// Generate code the first time
 		modGen = modGen.With(daggerExec("develop"))
@@ -710,7 +710,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=test", "--name=test", "--sdk=go", "test")).
-			With(daggerExec("install", "-m=test", "./subdir/dep")).
+			With(daggerExec("module", "install", "-m=test", "./subdir/dep")).
 			WithNewFile("/work/test/main.go", `package main
 
 			import "context"
@@ -787,7 +787,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			ctr := base.
 				WithWorkdir("/").
 				With(daggerExec("module", "init", "--source=/work/test2", "--name=test2", "--sdk=go", "/work/test2")).
-				With(daggerExec("install", "-m=/work/test2", "/work/subdir/dep")).
+				With(daggerExec("module", "install", "-m=/work/test2", "/work/subdir/dep")).
 				WithNewFile("/work/test2/main.go", `package main
 
             import "context"
@@ -816,14 +816,14 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			With(daggerExec("module", "init", "--sdk=go", "--name=dep2", "--source=.")).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--sdk=go", "--name=foo", "--source=.")).
-			With(daggerExec("install", "./dep"))
+			With(daggerExec("module", "install", "./dep"))
 
 		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, daggerjson, `"dep"`)
 
 		_, err = ctr.
-			With(daggerExec("install", "./dep2", "--name=dep")).
+			With(daggerExec("module", "install", "./dep2", "--name=dep")).
 			Sync(ctx)
 
 		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
@@ -841,14 +841,14 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			With(daggerExec("module", "init", "--sdk=go", "--name=dep", "--source=.")).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--sdk=go", "--source=.")).
-			With(daggerExec("install", "./dep"))
+			With(daggerExec("module", "install", "./dep"))
 
 		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, daggerjson, `"dep"`)
 
 		_, err = ctr.
-			With(daggerExec("install", "./dep2")).
+			With(daggerExec("module", "install", "./dep2")).
 			Sync(ctx)
 
 		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
@@ -874,7 +874,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
-			With(daggerExec("install", "--eager-runtime", "./dep")).
+			With(daggerExec("module", "install", "--eager-runtime", "./dep")).
 			Sync(ctx)
 
 		requireErrOut(t, err, "failed to install module")
@@ -913,7 +913,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 
 			out, err := base.
 				WithWorkdir("/work/test").
-				With(daggerExec("install", "../subdir/dep")).
+				With(daggerExec("module", "install", "../subdir/dep")).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -923,7 +923,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from src subdir with findup", func(ctx context.Context, t *testctx.T) {
 			out, err := base.
 				WithWorkdir("/work/test/some/other/dir").
-				With(daggerExec("install", "../../../../subdir/dep")).
+				With(daggerExec("module", "install", "../../../../subdir/dep")).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -933,7 +933,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from root", func(ctx context.Context, t *testctx.T) {
 			out, err := base.
 				WithWorkdir("/").
-				With(daggerExec("install", "-m=./work/test", "./work/subdir/dep")).
+				With(daggerExec("module", "install", "-m=./work/test", "./work/subdir/dep")).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -944,7 +944,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from dep", func(ctx context.Context, t *testctx.T) {
 			out, err := base.
 				WithWorkdir("/work/subdir/dep").
-				With(daggerExec("install", "-m=../../test", ".")).
+				With(daggerExec("module", "install", "-m=../../test", ".")).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -955,7 +955,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from random place", func(ctx context.Context, t *testctx.T) {
 			out, err := base.
 				WithWorkdir("/var").
-				With(daggerExec("install", "-m=../work/test", "../work/subdir/dep")).
+				With(daggerExec("module", "install", "-m=../work/test", "../work/subdir/dep")).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -966,7 +966,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from src dir with absolute paths", func(ctx context.Context, t *testctx.T) {
 			out, err := base.
 				WithWorkdir("/work/test").
-				With(daggerExec("install", "/work/subdir/dep")).
+				With(daggerExec("module", "install", "/work/subdir/dep")).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -976,7 +976,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from root with absolute paths", func(ctx context.Context, t *testctx.T) {
 			out, err := base.
 				WithWorkdir("/").
-				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
+				With(daggerExec("module", "install", "-m=/work/test", "/work/subdir/dep")).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -987,7 +987,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from random place with absolute paths", func(ctx context.Context, t *testctx.T) {
 			out, err := base.
 				WithWorkdir("/var").
-				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
+				With(daggerExec("module", "install", "-m=/work/test", "/work/subdir/dep")).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -1009,7 +1009,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
 			_, err := base.
 				WithWorkdir("/work/test").
-				With(daggerExec("install", "../../play/dep")).
+				With(daggerExec("module", "install", "../../play/dep")).
 				Sync(ctx)
 			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
@@ -1017,7 +1017,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
 			_, err := base.
 				WithWorkdir("/work/test").
-				With(daggerExec("install", "/play/dep")).
+				With(daggerExec("module", "install", "/play/dep")).
 				Sync(ctx)
 			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
@@ -1025,7 +1025,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from dep dir", func(ctx context.Context, t *testctx.T) {
 			_, err := base.
 				WithWorkdir("/play/dep").
-				With(daggerExec("install", "-m=../../work/test", ".")).
+				With(daggerExec("module", "install", "-m=../../work/test", ".")).
 				Sync(ctx)
 			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
@@ -1033,7 +1033,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from dep dir with absolute path", func(ctx context.Context, t *testctx.T) {
 			_, err := base.
 				WithWorkdir("/play/dep").
-				With(daggerExec("install", "-m=/work/test", ".")).
+				With(daggerExec("module", "install", "-m=/work/test", ".")).
 				Sync(ctx)
 			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
@@ -1041,7 +1041,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from root", func(ctx context.Context, t *testctx.T) {
 			_, err := base.
 				WithWorkdir("/").
-				With(daggerExec("install", "-m=work/test", "play/dep")).
+				With(daggerExec("module", "install", "-m=work/test", "play/dep")).
 				Sync(ctx)
 			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
@@ -1049,7 +1049,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 		t.Run("from root with absolute path", func(ctx context.Context, t *testctx.T) {
 			_, err := base.
 				WithWorkdir("/").
-				With(daggerExec("install", "-m=/work/test", "play/dep")).
+				With(daggerExec("module", "install", "-m=/work/test", "play/dep")).
 				Sync(ctx)
 			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
@@ -1066,7 +1066,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("module", "init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef(tc, "top-level"))).
+					With(daggerExec("module", "install", testGitModuleRef(tc, "top-level"))).
 					WithNewFile("main.go", `package main
 
 import "context"
@@ -1093,7 +1093,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("module", "init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef(tc, "../../"))).
+					With(daggerExec("module", "install", testGitModuleRef(tc, "../../"))).
 					Sync(ctx)
 				requireErrOut(t, err, `git module source subpath points out of root: "../.."`)
 
@@ -1101,7 +1101,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("module", "init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef(tc, "this/just/does/not/exist"))).
+					With(daggerExec("module", "install", testGitModuleRef(tc, "this/just/does/not/exist"))).
 					Sync(ctx)
 				requireErrRegexp(t, err, `git module source .* does not contain a dagger config file`)
 			})
@@ -1115,7 +1115,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("module", "init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", tc.gitTestRepoRef)).
+					With(daggerExec("module", "install", tc.gitTestRepoRef)).
 					File("/work/dagger.json").
 					Contents(ctx)
 				require.NoError(t, err)
@@ -1160,8 +1160,8 @@ func (CLISuite) TestDaggerInstallOrder(ctx context.Context, t *testctx.T) {
 		With(daggerExec("module", "init", "--source=test", "--name=test", "--sdk=go"))
 
 	daggerJSON, err := base.
-		With(daggerExec("install", "./dep-abc")).
-		With(daggerExec("install", "./dep-xyz")).
+		With(daggerExec("module", "install", "./dep-abc")).
+		With(daggerExec("module", "install", "./dep-xyz")).
 		File("dagger.json").
 		Contents(ctx)
 	require.NoError(t, err)
@@ -1173,8 +1173,8 @@ func (CLISuite) TestDaggerInstallOrder(ctx context.Context, t *testctx.T) {
 
 	daggerJSON, err = base.
 		// switch the installation order
-		With(daggerExec("install", "./dep-xyz")).
-		With(daggerExec("install", "./dep-abc")).
+		With(daggerExec("module", "install", "./dep-xyz")).
+		With(daggerExec("module", "install", "./dep-abc")).
 		File("dagger.json").
 		Contents(ctx)
 	require.NoError(t, err)
@@ -1362,7 +1362,7 @@ func (CLISuite) TestDaggerUnInstall(ctx context.Context, t *testctx.T) {
 				With(daggerExec("module", "init", "--sdk=go", "--name=bar", "--source=.")).
 				WithWorkdir("/work").
 				With(daggerExec("module", "init", "--sdk=go", "--name=foo", "--source=.")).
-				With(daggerExec("install", "./bar")).
+				With(daggerExec("module", "install", "./bar")).
 				WithNewFile("main.go", `package main
 
 import (
@@ -1538,7 +1538,7 @@ func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 					With(daggerExec("module", "init", "--sdk=go", "--name=foo", "--source=."))
 
 				if tc.installCmdMod != "" {
-					ctr = ctr.With(daggerExec("install", tc.installCmdMod))
+					ctr = ctr.With(daggerExec("module", "install", tc.installCmdMod))
 				}
 
 				daggerjson, err := ctr.File("dagger.json").Contents(ctx)
@@ -1840,11 +1840,11 @@ func (m *Hello) Hello() string {
 		// Initialize 'nosdk' module and install 'hello'
 		WithWorkdir("/work/test/nosdk").
 		With(daggerExec("module", "init", "--name=nosdk")).
-		With(daggerExec("install", "./hello")).
+		With(daggerExec("module", "install", "./hello")).
 		// Initialize 'test' module and install 'nosdk'
 		WithWorkdir("/work/test").
 		With(daggerExec("module", "init", "--name=test")).
-		With(daggerExec("install", "./nosdk"))
+		With(daggerExec("module", "install", "./nosdk"))
 
 	// Verify that the top-level 'test' module has no SDK
 	daggerJSON, err := testCtr.File("dagger.json").Contents(ctx)

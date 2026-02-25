@@ -449,7 +449,7 @@ func (m *Dep) Dummy() error {
 `,
 		)).
 		WithWorkdir("/work").
-		With(daggerExec("install", "./dep", "--compat=skip")).
+		With(daggerExec("module", "install", "./dep", "--compat=skip")).
 		With(daggerQuery(`{test{test}}`)).
 		Stdout(ctx)
 
@@ -595,7 +595,7 @@ class Dep:
 `,
 		)).
 		WithWorkdir("/work").
-		With(daggerExec("install", "./dep", "--compat=skip")).
+		With(daggerExec("module", "install", "./dep", "--compat=skip")).
 		With(daggerCall("greet")).
 		Stdout(ctx)
 
@@ -1348,7 +1348,7 @@ export class Test {
 				// With(daggerExec("develop", "-m", ".", "--compat=v0.18.10")).
 				With(withModInitAt("./dep", "go", depSrc)).
 				With(daggerExec("develop", "-m", "./dep", "--compat=v0.18.10")).
-				With(daggerExec("install", "./dep"))
+				With(daggerExec("module", "install", "./dep"))
 
 			out, err := modGen.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
 			require.NoError(t, err)

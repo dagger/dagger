@@ -301,7 +301,7 @@ func (m *Caller) Count(ctx context.Context, service *dagger.Service, buster stri
 			).
 			WithWorkdir("/work/hoster").
 			With(daggerExec("module", "init", "--source=.", "--name=hoster", "--sdk=go")).
-			With(daggerExec("install", "../caller")).
+			With(daggerExec("module", "install", "../caller")).
 			WithNewFile("counter/main.go", counterMain).
 			WithNewFile("main.go", `package main
 
@@ -489,7 +489,7 @@ func (m *Caller) Run(ctx context.Context) error {
 			).
 			WithWorkdir("/work/hoster").
 			With(daggerExec("module", "init", "--source=.", "--name=hoster", "--sdk=go")).
-			With(daggerExec("install", "../caller")).
+			With(daggerExec("module", "install", "../caller")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -579,7 +579,7 @@ func (m *Relayer) Service() *dagger.Service {
 		).
 		WithWorkdir("/work/caller").
 		With(daggerExec("module", "init", "--source=.", "--name=caller", "--sdk=go")).
-		With(daggerExec("install", "../relayer")).
+		With(daggerExec("module", "install", "../relayer")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -673,7 +673,7 @@ func (m *Starter) Start(ctx context.Context, s *dagger.Service) {
 		).
 		WithWorkdir("/work/caller").
 		With(daggerExec("module", "init", "--source=.", "--name=caller", "--sdk=go")).
-		With(daggerExec("install", "../starter")).
+		With(daggerExec("module", "install", "../starter")).
 		WithNewFile("main.go", `package main
 
 import (

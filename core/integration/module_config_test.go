@@ -115,7 +115,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `source path ".." contains parent directory components`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `source path ".." contains parent directory components`)
 			})
 
@@ -137,7 +137,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
 			})
 
@@ -174,7 +174,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
 
 				base = base.
@@ -195,7 +195,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
 			})
 
@@ -220,7 +220,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
 
 				base = base.
@@ -241,7 +241,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
 			})
 
@@ -325,7 +325,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", "--name", "foo", "./dep")).
+			With(daggerExec("module", "install", "--name", "foo", "./dep")).
 			WithNewFile("/work/main.go", `package main
 
 			import (
@@ -398,7 +398,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", "--name", "foo", "./dep")).
+			With(daggerExec("module", "install", "--name", "foo", "./dep")).
 			WithNewFile("/work/main.go", `package main
 
 			import "context"
@@ -448,8 +448,8 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", "--name", "foo", "./dep1")).
-			With(daggerExec("install", "--name", "bar", "./dep2")).
+			With(daggerExec("module", "install", "--name", "foo", "./dep1")).
+			With(daggerExec("module", "install", "--name", "bar", "./dep2")).
 			WithNewFile("/work/main.go", `package main
 
 			import "context"
@@ -1070,7 +1070,7 @@ func (m *%[1]s) ContextDirectory() ([]string, error) {
 				Source:  ".dagger",
 			})).
 			WithWorkdir("..").
-			With(daggerExec("install", "./dep"))
+			With(daggerExec("module", "install", "./dep"))
 
 		t.Run("dependency filtered", func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.
@@ -1467,7 +1467,7 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("module", "init", "--source=.")).
-					With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
+					With(daggerExec("module", "install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
 
 				out, err := ctr.With(daggerCallAt("foo", "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
 				require.NoError(t, err)
@@ -1607,7 +1607,7 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", repo))
+			With(daggerExec("module", "install", repo))
 
 		modCfgContents, err := ctr.
 			File("dagger.json").
@@ -1637,7 +1637,7 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", repo+"@"+branch))
+			With(daggerExec("module", "install", repo+"@"+branch))
 
 		modCfgContents, err := ctr.
 			File("dagger.json").

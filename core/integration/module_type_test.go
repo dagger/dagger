@@ -1567,7 +1567,7 @@ export class Test {
 
 				modGen := modInit(t, c, tc.sdk, tc.source).
 					With(withModInitAt("./dep", "go", depSrc)).
-					With(daggerExec("install", "./dep"))
+					With(daggerExec("module", "install", "./dep"))
 
 				out, err := modGen.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
 				require.NoError(t, err)
@@ -1636,7 +1636,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 
 			modGen := modInit(t, c, "go", src).
 				With(withModInitAt("./dep", "go", depSrc)).
-				With(daggerExec("install", "./dep"))
+				With(daggerExec("module", "install", "./dep"))
 
 			out, err := modGen.With(daggerQuery(`{test{testBool}}`)).Stdout(ctx)
 			require.NoError(t, err)
@@ -1649,7 +1649,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 
 			modGen := modInit(t, c, "go", src).
 				With(withModInitAt("./dep", "go", depSrc)).
-				With(daggerExec("install", "./dep"))
+				With(daggerExec("module", "install", "./dep"))
 
 			out, err := modGen.With(daggerQuery(`{test{testNull}}`)).Stdout(ctx)
 			require.NoError(t, err)

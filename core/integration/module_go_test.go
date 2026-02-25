@@ -1432,7 +1432,7 @@ func (m *Dep) Publish(ctx context.Context) (string, error) {
 		).
 		WithWorkdir("/work").
 		With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
-		With(daggerExec("install", "./dep")).
+		With(daggerExec("module", "install", "./dep")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -1584,7 +1584,7 @@ func (m *Dep) Fn() Obj {
 		).
 		WithWorkdir("/work").
 		With(daggerExec("module", "init", "--source=test", "--name=test", "--sdk=go", "test")).
-		With(daggerExec("install", "-m=test", "./dep")).
+		With(daggerExec("module", "install", "-m=test", "./dep")).
 		WithWorkdir("/work/test")
 
 	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {
@@ -1870,7 +1870,7 @@ func (ssh *Ssh) SayHello() string {
 	ctr = ctr.
 		WithWorkdir("/toplevel").
 		With(daggerExec("module", "init", "--name=toplevel", "--sdk=go", "--source=.")).
-		With(daggerExec("install", "./ssh")).
+		With(daggerExec("module", "install", "./ssh")).
 		WithNewFile("main.go", `package main
 
 import "context"
