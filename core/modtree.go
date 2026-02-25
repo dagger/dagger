@@ -12,6 +12,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 
 	"github.com/dagger/dagger/util/parallel"
@@ -74,27 +75,9 @@ func (node *ModTreeNode) Run(
 	// clientMetadata is used to know if we want to try to scale out
 	// this callback is used to keep this function generic and allow to return different values
 	runLeaf func(context.Context, *ModTreeNode, *engine.ClientMetadata) error,
-	// called inside a defer. Used to set properties to traces, for instance the CheckPassed attribute for checks.
-	// if there's an error, it's already added to the telemetry, no need to do it here
-	onDefer func(trace.Span, error),
-	// telemetry attribute to set with the name of the node
-	telemetryNameAttr string,
 	include, exclude []string,
 ) (rerr error) {
 	clientMD, _ := engine.ClientMetadataFromContext(ctx)
-
-	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
-		telemetry.Reveal(),
-		trace.WithAttributes(
-			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-			attribute.String(telemetryNameAttr, node.PathString()),
-		),
-	)
-	defer func() {
-		onDefer(span, rerr)
-		telemetry.EndWithCause(span, &rerr)
-	}()
 
 	if isLeaf(node) {
 		return runLeaf(ctx, node, clientMD)
@@ -122,7 +105,7 @@ func (node *ModTreeNode) Run(
 			}
 		}
 		jobs = jobs.WithJob(child.Name, func(ctx context.Context) error {
-			return child.Run(ctx, isLeaf, runLeaf, onDefer, telemetryNameAttr, nil, nil)
+			return child.Run(ctx, isLeaf, runLeaf, nil, nil)
 		})
 	}
 	return jobs.Run(ctx) // don't suppress the error. That can be handled by the top-level caller if necessary
@@ -131,19 +114,27 @@ func (node *ModTreeNode) Run(
 func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
 	return node.Run(ctx,
 		func(n *ModTreeNode) bool { return n.IsCheck },
-		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) error {
+		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
 			// Try scale-out if enabled (will be false for scaled-out sessions)
 			if clientMD != nil && clientMD.EnableCloudScaleOut {
 				if ok, err := node.tryRunCheckScaleOut(ctx); ok {
 					return err
 				}
 			}
+			ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+					attribute.String(telemetry.CheckNameAttr, node.PathString()),
+				),
+			)
+			defer func() {
+				span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
+				telemetry.EndWithCause(span, &rerr)
+			}()
 			return n.runCheckLocally(ctx)
 		},
-		func(span trace.Span, err error) {
-			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, err == nil))
-		},
-		telemetry.CheckNameAttr,
 		include, exclude)
 }
 
@@ -199,17 +190,38 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 
 	query = query.Select("check").Arg("name", node.PathString())
 	query = query.Select("run")
-	query = query.SelectMultiple("completed", "passed")
+	query = query.Select("error")
+	query = query.Select("id")
 
-	var res struct{ Completed, Passed bool }
-	return true, query.Bind(&res).Execute(ctx)
+	var errID string
+	if err := query.Bind(&errID).Execute(ctx); err != nil {
+		return true, err
+	}
+
+	if errID != "" {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return true, err
+		}
+		var idp call.ID
+		if err := idp.Decode(errID); err != nil {
+			return true, err
+		}
+		errObj, err := dagql.NewID[*Error](&idp).Load(ctx, srv)
+		if err != nil {
+			return true, err
+		}
+		return true, errObj.Self()
+	}
+
+	return true, nil
 }
 
 func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {
 	var cs *Changeset
 	err := node.Run(ctx,
 		func(n *ModTreeNode) bool { return n.IsGenerator },
-		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) error {
+		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
 			// Try scale-out if enabled (will be false for scaled-out sessions)
 			if clientMD != nil && clientMD.EnableCloudScaleOut {
 				if ok, changes, err := node.tryRunGeneratorScaleOut(ctx); ok {
@@ -217,12 +229,19 @@ func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []st
 					return err
 				}
 			}
+			ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+					attribute.String(telemetry.GeneratorNameAttr, node.PathString()),
+				),
+			)
+			defer telemetry.EndWithCause(span, &rerr)
 			changes, err := n.runGeneratorLocally(ctx)
 			cs = changes
 			return err
 		},
-		func(_ trace.Span, _ error) {},
-		telemetry.GeneratorNameAttr,
 		include, exclude)
 	return cs, err
 }
@@ -526,7 +545,7 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 }
 
 func (node *ModTreeNode) PathString() string {
-	return strings.Join(node.Path(), ":")
+	return strings.Join(node.Path().CliCase(), ":")
 }
 
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)

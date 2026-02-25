@@ -2687,6 +2687,15 @@ impl Check {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// If the check failed, this is the error
+    pub fn error(&self) -> Error {
+        let query = self.selection.select("error");
+        Error {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this Check.
     pub async fn id(&self) -> Result<CheckId, DaggerError> {
         let query = self.selection.select("id");
