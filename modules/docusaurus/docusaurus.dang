@@ -17,13 +17,13 @@ type Docusaurus {
           .trimSuffix("docusaurus.config.js")
           .trimSuffix("/")
         let sourcePath = if (sourcePath == "") { "." } else { sourcePath }
-        let tomlDir = ws.directory(sourcePath, include: ["docusaurus.toml"])
-        let tomlFile = if (tomlDir.stat("docusaurus.toml") != null) {
-          tomlDir.file("docusaurus.toml")
+        let pkgDir = ws.directory(sourcePath, include: ["package.json"])
+        let pkgJson = if (pkgDir.stat("package.json") != null) {
+          pkgDir.file("package.json").asJSON
         } else {
           null
         }
-        Site(sourcePath: sourcePath, tomlFile: tomlFile)
+        Site(sourcePath: sourcePath, pkgJson: pkgJson)
       }
   }
 }
@@ -38,22 +38,25 @@ type Site {
   pub sourcePath: String!
 
   """
-  Optional docusaurus.toml configuration file.
+  Parsed package.json for the site.
   """
-  let tomlFile: File
+  let pkgJson: JSONValue
 
   """
-  Site configuration from docusaurus.toml.
-  """
-  let siteConfig: SiteConfig! {
-    SiteConfig(file: tomlFile)
-  }
-
-  """
-  The package manager command.
+  The package manager command (read from package.json "packageManager" field).
   """
   let pm: String! {
-    siteConfig.packageManager
+    if (pkgJson == null) {
+      "npm"
+    } else {
+      let pmField = pkgJson.field(["packageManager"])
+      if (pmField == null) {
+        "npm"
+      } else {
+        # packageManager field is like "pnpm@8.15.0" — take the name before @
+        pmField.asString.split("@")[0]
+      }
+    }
   }
 
   """
@@ -68,18 +71,50 @@ type Site {
   }
 
   """
+  Extra source include paths from package.json "docusaurus.include".
+  """
+  let extraInclude: [String!]! {
+    if (pkgJson == null) {
+      []::[String!]!
+    } else {
+      let ds = pkgJson.field(["docusaurus", "include"])
+      if (ds == null) {
+        []::[String!]!
+      } else {
+        ds.asArray.map { item => item.asString }
+      }
+    }
+  }
+
+  """
+  Extra source exclude paths from package.json "docusaurus.exclude".
+  """
+  let extraExclude: [String!]! {
+    if (pkgJson == null) {
+      []::[String!]!
+    } else {
+      let ds = pkgJson.field(["docusaurus", "exclude"])
+      if (ds == null) {
+        []::[String!]!
+      } else {
+        ds.asArray.map { item => item.asString }
+      }
+    }
+  }
+
+  """
   The Docusaurus site source files.
   """
   pub source(ws: Workspace!): Directory! {
     ws.directory(
       sourcePath,
-      include: siteConfig.include,
+      include: extraInclude,
       exclude: [
         "node_modules/",
         ".docusaurus/",
         "build/",
         ".git/",
-      ] + siteConfig.exclude,
+      ] + extraExclude,
     )
   }
 
@@ -138,61 +173,5 @@ type Site {
       .withDirectory("/usr/share/nginx/html", site)
       .withExposedPort(80)
       .asService
-  }
-}
-
-"""
-Site configuration from docusaurus.toml.
-"""
-type SiteConfig {
-  let file: File
-
-  """
-  Execute a yq query on the TOML file.
-  """
-  let yq(query: String!): String! {
-    if (file == null) {
-      ""
-    } else {
-      container
-        .from("mikefarah/yq")
-        .withMountedFile("input.toml", file)
-        .withExec(["yq", "-p", "toml", query, "input.toml"])
-        .stdout
-    }
-  }
-
-  let getStringList(key: String!): [String!]! {
-    yq("." + key + ".[]")
-      .split("\n")
-      .filter { line => line != "" }
-  }
-
-  let getString(key: String!, default: String!): String! {
-    let val = yq("." + key)
-      .split("\n")
-      .filter { l => l != "" and l != "null" }
-    if (val.length == 0) { default } else { val[0] }
-  }
-
-  """
-  Extra source include paths.
-  """
-  pub include: [String!]! {
-    getStringList("include")
-  }
-
-  """
-  Extra source exclude paths.
-  """
-  pub exclude: [String!]! {
-    getStringList("exclude")
-  }
-
-  """
-  Package manager to use (npm, yarn, or pnpm). Defaults to npm.
-  """
-  pub packageManager: String! {
-    getString("packageManager", "npm")
   }
 }
