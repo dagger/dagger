@@ -87,11 +87,9 @@ Paths in `source` are relative to `.dagger/` directory.
 
 ## Known gaps
 
-- `IncludeCoreModule` connect-time parameter (expose core API at Query root)
 - Lock file (`.dagger/lock`)
-- Workspace `ignore` patterns (field exists in config but not wired)
+- Workspace `ignore` patterns (config field exists; not wired into module/workspace loading yet)
 - `.env` deprecation / migration of user defaults
-- `findUp()` and `search()` methods on Workspace (in Part 2 design but not implemented)
 
 ## Testing
 
