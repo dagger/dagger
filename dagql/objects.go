@@ -64,8 +64,8 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		if o.Origin != "" {
 			opts.Origin = o.Origin
 		}
-
 	}
+
 	class := Class[T]{
 		inner:   opts.Typed,
 		fields:  map[string][]*Field[T]{},
