@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
 	imagesapi "github.com/containerd/containerd/api/services/images/v1"
@@ -39,6 +40,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
@@ -46,6 +48,7 @@ import (
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
+	engineslog "github.com/dagger/dagger/engine/slog"
 )
 
 const (
@@ -155,6 +158,48 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	}
 	defer cancel(errors.New("solve done"))
 	ctx = withOutgoingContext(ctx)
+	traceEnabled := engineslog.Default().Enabled(ctx, engineslog.LevelExtraDebug)
+	traceClientID, traceSessionID, traceClientHostname := "", "", ""
+	callerField, callerDigest, callerContentPreferredDigest := "", "", ""
+	if traceEnabled {
+		if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md != nil {
+			traceClientID = md.ClientID
+			traceSessionID = md.SessionID
+			traceClientHostname = md.ClientHostname
+		}
+		if curID := dagql.CurrentID(ctx); curID != nil {
+			callerField = curID.Field()
+			callerDigest = curID.Digest().String()
+			callerContentPreferredDigest = curID.ContentPreferredDigest().String()
+		}
+	}
+	traceSolve := traceEnabled && (callerField == "stat" ||
+		callerField == "file" ||
+		callerField == "withFile" ||
+		callerField == "withExec" ||
+		callerField == "withServiceBinding" ||
+		callerField == "asService")
+	defRootOpDigest := ""
+	if req.Definition != nil && len(req.Definition.Def) > 0 {
+		defRootOpDigest = digest.FromBytes(req.Definition.Def[len(req.Definition.Def)-1]).String()
+	}
+	if traceSolve {
+		engineslog.ExtraDebug("engine.buildkit.solve.trace",
+			"event", "solve_start",
+			"callerField", callerField,
+			"callerDigest", callerDigest,
+			"callerContentPreferredDigest", callerContentPreferredDigest,
+			"definitionRootOpDigest", defRootOpDigest,
+			"hasDefinition", req.Definition != nil,
+			"frontend", req.Frontend,
+			"frontendInputs", len(req.FrontendInputs),
+			"evaluate", req.Evaluate,
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
+	}
+	solveStarted := time.Now()
 
 	recordOp := func(def *bksolverpb.Definition) error {
 		dag, err := DefToDAG(def)
@@ -199,7 +244,34 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
+		if traceSolve {
+			engineslog.ExtraDebug("engine.buildkit.solve.trace",
+				"event", "solve_done",
+				"callerField", callerField,
+				"callerDigest", callerDigest,
+				"callerContentPreferredDigest", callerContentPreferredDigest,
+				"definitionRootOpDigest", defRootOpDigest,
+				"elapsedMs", time.Since(solveStarted).Milliseconds(),
+				"err", err,
+				"clientID", traceClientID,
+				"sessionID", traceSessionID,
+				"clientHostname", traceClientHostname,
+			)
+		}
 		return nil, WrapError(ctx, err, c)
+	}
+	if traceSolve {
+		engineslog.ExtraDebug("engine.buildkit.solve.trace",
+			"event", "solve_done",
+			"callerField", callerField,
+			"callerDigest", callerDigest,
+			"callerContentPreferredDigest", callerContentPreferredDigest,
+			"definitionRootOpDigest", defRootOpDigest,
+			"elapsedMs", time.Since(solveStarted).Milliseconds(),
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
 	}
 
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {

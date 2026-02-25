@@ -224,6 +224,31 @@ func (container *Container) WithExec(
 	opts ContainerExecOpts,
 	execMD *buildkit.ExecutionMetadata,
 ) (_ *Container, rerr error) {
+	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
+	traceCallField, traceCallDigest, traceCallContentPreferredDigest := "", "", ""
+	traceClientID, traceSessionID, traceClientHostname := "", "", ""
+	if traceEnabled {
+		if curID := dagql.CurrentID(ctx); curID != nil {
+			traceCallField = curID.Field()
+			traceCallDigest = curID.Digest().String()
+			traceCallContentPreferredDigest = curID.ContentPreferredDigest().String()
+		}
+		if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md != nil {
+			traceClientID = md.ClientID
+			traceSessionID = md.SessionID
+			traceClientHostname = md.ClientHostname
+		}
+		slog.ExtraDebug("core.container.with_exec.trace",
+			"event", "with_exec_core_start",
+			"field", traceCallField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceCallContentPreferredDigest,
+			"argsCount", len(opts.Args),
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
+	}
 	container = container.Clone()
 
 	query, err := CurrentQuery(ctx)
@@ -241,6 +266,24 @@ func (container *Container) WithExec(
 	execMD, err = container.execMeta(ctx, opts, execMD)
 	if err != nil {
 		return nil, err
+	}
+	if traceEnabled {
+		callIDDigest := ""
+		if execMD.CallID != nil {
+			callIDDigest = execMD.CallID.Digest().String()
+		}
+		slog.ExtraDebug("core.container.with_exec.trace",
+			"event", "with_exec_core_exec_meta_done",
+			"field", traceCallField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceCallContentPreferredDigest,
+			"execID", execMD.ExecID,
+			"execMDCallID", callIDDigest,
+			"callerClientID", execMD.CallerClientID,
+			"sessionID", execMD.SessionID,
+			"clientID", traceClientID,
+			"clientHostname", traceClientHostname,
+		)
 	}
 
 	mounts, ok := CurrentMountData(ctx)
@@ -286,6 +329,21 @@ func (container *Container) WithExec(
 	}, runtime.GOOS)
 	if err != nil {
 		return nil, err
+	}
+	if traceEnabled {
+		slog.ExtraDebug("core.container.with_exec.trace",
+			"event", "with_exec_core_prepare_mounts_done",
+			"field", traceCallField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceCallContentPreferredDigest,
+			"mounts", len(p.Mounts),
+			"outputRefs", len(p.OutputRefs),
+			"actives", len(p.Actives),
+			"execID", execMD.ExecID,
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
 	}
 	defer func() {
 		if rerr != nil {
@@ -491,6 +549,19 @@ func (container *Container) WithExec(
 	if err != nil {
 		return nil, err
 	}
+	if traceEnabled {
+		slog.ExtraDebug("core.container.with_exec.trace",
+			"event", "with_exec_core_start_bindings_done",
+			"field", traceCallField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceCallContentPreferredDigest,
+			"services", len(container.Services),
+			"execID", execMD.ExecID,
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
+	}
 	defer detach()
 
 	worker := opt.Worker.(*buildkit.Worker)
@@ -501,7 +572,33 @@ func (container *Container) WithExec(
 		// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
 		procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
 	}
+	if traceEnabled {
+		slog.ExtraDebug("core.container.with_exec.trace",
+			"event", "with_exec_core_exec_run_start",
+			"field", traceCallField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceCallContentPreferredDigest,
+			"execID", execMD.ExecID,
+			"args", strings.Join(metaSpec.Args, " "),
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
+	}
 	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, procInfo, nil)
+	if traceEnabled {
+		slog.ExtraDebug("core.container.with_exec.trace",
+			"event", "with_exec_core_exec_run_done",
+			"field", traceCallField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceCallContentPreferredDigest,
+			"execID", execMD.ExecID,
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+			"err", execErr,
+		)
+	}
 
 	for i, ref := range p.OutputRefs {
 		// commit all refs
@@ -596,7 +693,32 @@ func (container *Container) WithExec(
 		slog.Warn("process did not complete successfully",
 			"process", strings.Join(metaSpec.Args, " "),
 			"error", execErr)
+		if traceEnabled {
+			slog.ExtraDebug("core.container.with_exec.trace",
+				"event", "with_exec_core_done",
+				"field", traceCallField,
+				"callDigest", traceCallDigest,
+				"contentPreferredDigest", traceCallContentPreferredDigest,
+				"execID", execMD.ExecID,
+				"clientID", traceClientID,
+				"sessionID", traceSessionID,
+				"clientHostname", traceClientHostname,
+				"err", execErr,
+			)
+		}
 		return nil, execErr
+	}
+	if traceEnabled {
+		slog.ExtraDebug("core.container.with_exec.trace",
+			"event", "with_exec_core_done",
+			"field", traceCallField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceCallContentPreferredDigest,
+			"execID", execMD.ExecID,
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
 	}
 
 	return container, nil

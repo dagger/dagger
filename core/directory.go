@@ -26,6 +26,7 @@ import (
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
@@ -33,6 +34,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -173,6 +175,38 @@ func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	if dir.LLB == nil {
 		return nil, nil
 	}
+	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
+	traceField, traceCallDigest, traceContentPreferredDigest := "", "", ""
+	traceClientID, traceSessionID, traceClientHostname := "", "", ""
+	rootOpDigest := ""
+	if len(dir.LLB.Def) > 0 {
+		rootOpDigest = digest.FromBytes(dir.LLB.Def[len(dir.LLB.Def)-1]).String()
+	}
+	if traceEnabled {
+		if curID := dagql.CurrentID(ctx); curID != nil {
+			traceField = curID.Field()
+			traceCallDigest = curID.Digest().String()
+			traceContentPreferredDigest = curID.ContentPreferredDigest().String()
+		}
+		if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md != nil {
+			traceClientID = md.ClientID
+			traceSessionID = md.SessionID
+			traceClientHostname = md.ClientHostname
+		}
+		slog.ExtraDebug("core.directory.evaluate.trace",
+			"event", "directory_evaluate_start",
+			"field", traceField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceContentPreferredDigest,
+			"dirPath", dir.Dir,
+			"llbRootOpDigest", rootOpDigest,
+			"serviceBindingsCount", len(dir.Services),
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
+	}
+	started := time.Now()
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -183,10 +217,27 @@ func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	return bk.Solve(ctx, bkgw.SolveRequest{
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: dir.LLB,
 	})
+	if traceEnabled {
+		slog.ExtraDebug("core.directory.evaluate.trace",
+			"event", "directory_evaluate_done",
+			"field", traceField,
+			"callDigest", traceCallDigest,
+			"contentPreferredDigest", traceContentPreferredDigest,
+			"dirPath", dir.Dir,
+			"llbRootOpDigest", rootOpDigest,
+			"serviceBindingsCount", len(dir.Services),
+			"elapsedMs", time.Since(started).Milliseconds(),
+			"err", err,
+			"clientID", traceClientID,
+			"sessionID", traceSessionID,
+			"clientHostname", traceClientHostname,
+		)
+	}
+	return res, err
 }
 
 func (dir *Directory) Digest(ctx context.Context) (string, error) {

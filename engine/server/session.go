@@ -861,6 +861,22 @@ func (srv *Server) getOrInitClient(
 			client.parents = slices.Clone(parent.parents)
 			client.parents = append(client.parents, parent)
 		}
+		if opts.CallerClientID != "" {
+			callDigest := ""
+			callContentPreferredDigest := ""
+			if opts.CallID != nil {
+				callDigest = opts.CallID.Digest().String()
+				callContentPreferredDigest = opts.CallID.ContentPreferredDigest().String()
+			}
+			slog.Info("nested client mapping",
+				"sessionID", sessionID,
+				"callerClientID", opts.CallerClientID,
+				"nestedClientID", client.clientID,
+				"parentClientExists", parentExists,
+				"callDigest", callDigest,
+				"callContentPreferredDigest", callContentPreferredDigest,
+			)
+		}
 
 		failureCleanups.Add("delete client ID", func() error {
 			sess.clientMu.Lock()

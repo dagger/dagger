@@ -31,6 +31,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // File is a content-addressed file.
@@ -441,12 +442,51 @@ func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, err
 }
 
 func (file *File) Stat(ctx context.Context) (*Stat, error) {
+	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
+	traceField, traceDigest, traceContentPreferredDigest := "", "", ""
+	if traceEnabled {
+		if curID := dagql.CurrentID(ctx); curID != nil {
+			traceField = curID.Field()
+			traceDigest = curID.Digest().String()
+			traceContentPreferredDigest = curID.ContentPreferredDigest().String()
+		}
+		slog.ExtraDebug("core.file.stat.trace",
+			"event", "file_stat_start",
+			"path", file.File,
+			"field", traceField,
+			"callDigest", traceDigest,
+			"contentPreferredDigest", traceContentPreferredDigest,
+		)
+	}
 	immutableRef, err := getRefOrEvaluate(ctx, file)
 	if err != nil {
+		if traceEnabled {
+			slog.ExtraDebug("core.file.stat.trace",
+				"event", "file_stat_done",
+				"path", file.File,
+				"field", traceField,
+				"callDigest", traceDigest,
+				"contentPreferredDigest", traceContentPreferredDigest,
+				"phase", "get_ref_or_evaluate",
+				"err", err,
+			)
+		}
 		return nil, err
 	}
 	if immutableRef == nil {
-		return nil, &os.PathError{Op: "stat", Path: file.File, Err: syscall.ENOENT}
+		err = &os.PathError{Op: "stat", Path: file.File, Err: syscall.ENOENT}
+		if traceEnabled {
+			slog.ExtraDebug("core.file.stat.trace",
+				"event", "file_stat_done",
+				"path", file.File,
+				"field", traceField,
+				"callDigest", traceDigest,
+				"contentPreferredDigest", traceContentPreferredDigest,
+				"phase", "get_ref_or_evaluate",
+				"err", err,
+			)
+		}
+		return nil, err
 	}
 
 	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
@@ -462,6 +502,15 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 	// }
 
 	var fileInfo os.FileInfo
+	if traceEnabled {
+		slog.ExtraDebug("core.file.stat.trace",
+			"event", "file_stat_mount_start",
+			"path", file.File,
+			"field", traceField,
+			"callDigest", traceDigest,
+			"contentPreferredDigest", traceContentPreferredDigest,
+		)
+	}
 	err = MountRef(ctx, immutableRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, file.File)
 		if err != nil {
@@ -471,6 +520,17 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 		return TrimErrPathPrefix(err, root)
 	})
 	if err != nil {
+		if traceEnabled {
+			slog.ExtraDebug("core.file.stat.trace",
+				"event", "file_stat_done",
+				"path", file.File,
+				"field", traceField,
+				"callDigest", traceDigest,
+				"contentPreferredDigest", traceContentPreferredDigest,
+				"phase", "mount_ref",
+				"err", err,
+			)
+		}
 		return nil, err
 	}
 
@@ -481,6 +541,18 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 		Name:        fileInfo.Name(),
 		Permissions: int(fileInfo.Mode().Perm()),
 		FileType:    FileModeToFileType(m),
+	}
+	if traceEnabled {
+		slog.ExtraDebug("core.file.stat.trace",
+			"event", "file_stat_done",
+			"path", file.File,
+			"field", traceField,
+			"callDigest", traceDigest,
+			"contentPreferredDigest", traceContentPreferredDigest,
+			"phase", "mount_ref",
+			"size", stat.Size,
+			"fileType", stat.FileType,
+		)
 	}
 
 	return stat, nil
