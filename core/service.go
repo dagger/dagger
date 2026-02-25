@@ -413,12 +413,12 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, states, _, refs, _, err := getAllContainerMounts(ctx, ctr)
+	pbmounts, inputDefs, _, refs, _, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
 
-	inputs := make([]bkcache.ImmutableRef, len(states))
+	inputs := make([]bkcache.ImmutableRef, len(inputDefs))
 	eg, egctx := errgroup.WithContext(ctx)
 	for _, pbmount := range pbmounts {
 		if pbmount.Input == pb.Empty {
@@ -430,11 +430,7 @@ func (svc *Service) startContainer(
 			continue
 		}
 
-		st := states[pbmount.Input]
-		def, err := st.Marshal(egctx)
-		if err != nil {
-			return nil, err
-		}
+		def := inputDefs[pbmount.Input]
 		if def == nil {
 			continue
 		}
@@ -442,7 +438,7 @@ func (svc *Service) startContainer(
 		eg.Go(func() error {
 			res, err := bk.Solve(egctx, bkgw.SolveRequest{
 				Evaluate:   true,
-				Definition: def.ToPB(),
+				Definition: def,
 			})
 			if err != nil {
 				return err

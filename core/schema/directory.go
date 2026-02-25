@@ -14,7 +14,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -442,34 +441,6 @@ type WithDirectoryArgs struct {
 	DagOpInternalArgs
 }
 
-var _ core.Inputs = WithDirectoryArgs{}
-
-func (args WithDirectoryArgs) Inputs(ctx context.Context) ([]llb.State, error) {
-	deps := []llb.State{}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	if args.Source.ID() == nil {
-		return nil, nil
-	}
-
-	sourceRes, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		return nil, fmt.Errorf("load source: %w", err)
-	}
-	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
-	if err != nil {
-		return nil, fmt.Errorf("source op: %w", err)
-	}
-	if sourceOp.Output() != nil {
-		deps = append(deps, llb.NewState(sourceOp))
-	}
-
-	return deps, nil
-}
-
 func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -703,34 +674,6 @@ type WithFileArgs struct {
 	Owner       string `default:""`
 
 	FSDagOpInternalArgs
-}
-
-var _ core.Inputs = WithFileArgs{}
-
-func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
-	deps := []llb.State{}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	if args.Source.ID() == nil {
-		return nil, nil
-	}
-
-	sourceRes, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		return nil, fmt.Errorf("load source: %w", err)
-	}
-	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
-	if err != nil {
-		return nil, fmt.Errorf("source op: %w", err)
-	}
-	if sourceOp.Output() != nil {
-		deps = append(deps, llb.NewState(sourceOp))
-	}
-
-	return deps, nil
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {

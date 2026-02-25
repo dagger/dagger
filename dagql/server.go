@@ -683,12 +683,12 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 		// only emit telemetry in this case if there was a cache hit, otherwise don't send telemetry until we really execute it
 		opts = append(opts, WithTelemetryPolicy(TelemetryPolicyCacheHitOnly))
 	}
-		if res, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
-			ID: id,
-		}, func(context.Context) (AnyResult, error) {
-			return nil, fmt.Errorf("cache miss")
-		}, opts...); err == nil {
-			return res, nil
+	if res, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
+		ID: id,
+	}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("cache miss")
+	}, opts...); err == nil {
+		return res, nil
 	}
 
 	var base AnyResult
@@ -696,18 +696,18 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if id.Receiver() != nil {
 		nth := int(id.Nth())
 		if nth == 0 {
-				base, err = s.LoadType(ctx, id.Receiver())
-				if err != nil {
-					return nil, err
-				}
+			base, err = s.LoadType(ctx, id.Receiver())
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			// we are selecting the nth element of an enumerable, load the list
 			// we are selecting from and then select the nth element from it rather
 			// than trying to call the field on the object
-				baseValue, err := s.LoadType(ctx, id.Receiver())
-				if err != nil {
-					return nil, fmt.Errorf("load base enumerable: %w", err)
-				}
+			baseValue, err := s.LoadType(ctx, id.Receiver())
+			if err != nil {
+				return nil, fmt.Errorf("load base enumerable: %w", err)
+			}
 
 			res, err := baseValue.NthValue(nth)
 			if err != nil {
@@ -731,7 +731,6 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("toSelectable: %w", err)
 	}
-
 	return baseObj.Call(callCtx, s, id)
 }
 

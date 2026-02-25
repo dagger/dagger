@@ -80,18 +80,6 @@ func DigestOf(v any) (digest.Digest, error) {
 	return digest.FromBytes(vs), nil
 }
 
-type Inputs interface {
-	// Inputs returns a list of an object inputs (build graph dependencies)
-	Inputs(context.Context) ([]llb.State, error)
-}
-
-func InputsOf(ctx context.Context, v any) ([]llb.State, error) {
-	if v, ok := v.(Inputs); ok {
-		return v.Inputs(ctx)
-	}
-	return nil, nil
-}
-
 func absPath(workDir string, containerPath string) string {
 	if path.IsAbs(containerPath) {
 		return containerPath
