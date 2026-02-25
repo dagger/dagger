@@ -1615,10 +1615,26 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return err
 	}
 
-	// TODO remove
-	if !ws.Initialized && (ws.Config == nil || len(ws.Config.Modules) == 0) {
-		wsDir := filepath.Join(ws.Root, ws.Path)
-		slog.Info("No workspace configured.", "path", wsDir)
+	// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
+	// When no workspace config exists but a nearby dagger.json has toolchains
+	// or a blueprint, extract them as workspace-level modules (loaded alongside
+	// the implicit CWD module in the gathering phase below).
+	var legacyToolchains []workspace.LegacyToolchain
+	var legacyBlueprint *workspace.LegacyBlueprint
+	if !ws.Initialized {
+		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+		if hasModuleConfig {
+			cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
+			if data, readErr := readFile(ctx, cfgPath); readErr == nil {
+				legacyToolchains, _ = workspace.ParseLegacyToolchains(data)
+				legacyBlueprint, _ = workspace.ParseLegacyBlueprint(data)
+			}
+			slog.Warn("Inferring workspace configuration from legacy module config. Run 'dagger migrate' soon.",
+				"config", cfgPath)
+		} else {
+			wsDir := filepath.Join(ws.Root, ws.Path)
+			slog.Info("No workspace configured.", "path", wsDir)
+		}
 	}
 
 	// Build + cache core.Workspace.
@@ -1635,6 +1651,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// --- Gather all modules to load ---
 	var pending []pendingModule
 
+	// (1) Workspace config modules
 	if ws.Config != nil {
 		for name, entry := range ws.Config.Modules {
 			ref := entry.Source
@@ -1652,6 +1669,53 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			})
 		}
 	}
+
+	// (2a) Legacy toolchains (from compat mode, extracted above)
+	for _, tc := range legacyToolchains {
+		ref := tc.Source
+		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
+			ref = resolveLocalRef(ws, tc.Source)
+		}
+		pending = append(pending, pendingModule{
+			Ref:               ref,
+			Name:              tc.Name,
+			LegacyDefaultPath: true,
+			ConfigDefaults:    tc.ConfigDefaults,
+		})
+	}
+
+	// (2b) Legacy blueprint (from compat mode, extracted above)
+	if legacyBlueprint != nil {
+		ref := legacyBlueprint.Source
+		if core.FastModuleSourceKindCheck(legacyBlueprint.Source, legacyBlueprint.Pin) == core.ModuleSourceKindLocal {
+			ref = resolveLocalRef(ws, legacyBlueprint.Source)
+		}
+		pending = append(pending, pendingModule{
+			Ref:               ref,
+			Name:              legacyBlueprint.Name,
+			Blueprint:         true,
+			LegacyDefaultPath: true,
+		})
+	}
+
+	// (3) Implicit module (dagger.json near CWD)
+	{
+		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+		if hasModuleConfig {
+			wsDir := filepath.Join(ws.Root, ws.Path)
+			rel, _ := filepath.Rel(wsDir, moduleDir)
+			name := cwdModuleName(ctx, readFile, moduleDir)
+			pending = append(pending, pendingModule{
+				Ref:       resolveLocalRef(ws, rel),
+				Name:      name,
+				Blueprint: true,
+			})
+		}
+	}
+
+	// (4) Extra modules from -m flag are stored separately in
+	//     client.pendingExtraModules (already populated from clientMD).
+	//     They go through the same loadModule chokepoint in ensureModulesLoaded.
 
 	client.pendingModules = pending
 
