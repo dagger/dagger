@@ -1,0 +1,198 @@
+pub description = "Build Docusaurus documentation sites"
+
+"""
+A Dagger module for docusaurus, a documentation website builder. https://docusaurus.io
+"""
+type Docusaurus {
+  pub sites(ws: Workspace!): [Site!]! {
+    ws
+      .directory(".", include: [
+        "**/docusaurus.config.ts",
+        "**/docusaurus.config.js",
+      ])
+      .glob("**/docusaurus.config.*")
+      .map { configPath =>
+        let sourcePath = configPath
+          .trimSuffix("docusaurus.config.ts")
+          .trimSuffix("docusaurus.config.js")
+          .trimSuffix("/")
+        let sourcePath = if (sourcePath == "") { "." } else { sourcePath }
+        let tomlDir = ws.directory(sourcePath, include: ["docusaurus.toml"])
+        let tomlFile = if (tomlDir.stat("docusaurus.toml") != null) {
+          tomlDir.file("docusaurus.toml")
+        } else {
+          null
+        }
+        Site(sourcePath: sourcePath, tomlFile: tomlFile)
+      }
+  }
+}
+
+"""
+A Docusaurus site.
+"""
+type Site {
+  """
+  Path to the site directory, relative to workspace rootfs.
+  """
+  pub sourcePath: String!
+
+  """
+  Optional docusaurus.toml configuration file.
+  """
+  let tomlFile: File
+
+  """
+  Site configuration from docusaurus.toml.
+  """
+  let siteConfig: SiteConfig! {
+    SiteConfig(file: tomlFile)
+  }
+
+  """
+  The package manager command.
+  """
+  let pm: String! {
+    siteConfig.packageManager
+  }
+
+  """
+  The install command for the package manager.
+  """
+  let installCmd: [String!]! {
+    case (pm) {
+      "yarn" => ["yarn", "install", "--frozen-lockfile"]
+      "pnpm" => ["pnpm", "install", "--frozen-lockfile"]
+      else => ["npm", "ci"]
+    }
+  }
+
+  """
+  The Docusaurus site source files.
+  """
+  pub source(ws: Workspace!): Directory! {
+    ws.directory(
+      sourcePath,
+      include: siteConfig.include,
+      exclude: [
+        "node_modules/",
+        ".docusaurus/",
+        "build/",
+        ".git/",
+      ] + siteConfig.exclude,
+    )
+  }
+
+  """
+  Base container for docusaurus.
+  """
+  let base: Container! {
+    container
+      .from("node:lts-alpine")
+      .withoutEntrypoint
+      .withWorkdir("/app")
+      .withExec(["corepack", "enable"])
+      .withMountedCache(
+        "/root/.npm/_cacache",
+        cacheVolume("npm-cache"),
+      )
+      .withMountedCache(
+        "/usr/local/share/.cache/yarn",
+        cacheVolume("yarn-cache"),
+      )
+      .withMountedCache(
+        "/root/.local/share/pnpm/store",
+        cacheVolume("pnpm-cache"),
+      )
+  }
+
+  """
+  Container with source mounted and dependencies installed.
+  """
+  pub sandbox(ws: Workspace!): Container! {
+    base
+      .withMountedDirectory("/app", source(ws))
+      .withMountedCache(
+        "./node_modules/.cache",
+        cacheVolume("docusaurus-cache-" + sourcePath),
+        sharing: CacheSharingMode.PRIVATE,
+      )
+      .withExec(installCmd)
+  }
+
+  """
+  Build the static site.
+  """
+  pub build(ws: Workspace!): Directory! {
+    sandbox(ws)
+      .withExec(["./node_modules/.bin/docusaurus", "build"])
+      .directory("build")
+  }
+
+  """
+  Serve the static site with nginx.
+  """
+  pub serve(site: Directory!): Service! {
+    container
+      .from("nginx:alpine")
+      .withDirectory("/usr/share/nginx/html", site)
+      .withExposedPort(80)
+      .asService
+  }
+}
+
+"""
+Site configuration from docusaurus.toml.
+"""
+type SiteConfig {
+  let file: File
+
+  """
+  Execute a yq query on the TOML file.
+  """
+  let yq(query: String!): String! {
+    if (file == null) {
+      ""
+    } else {
+      container
+        .from("mikefarah/yq")
+        .withMountedFile("input.toml", file)
+        .withExec(["yq", "-p", "toml", query, "input.toml"])
+        .stdout
+    }
+  }
+
+  let getStringList(key: String!): [String!]! {
+    yq("." + key + ".[]")
+      .split("\n")
+      .filter { line => line != "" }
+  }
+
+  let getString(key: String!, default: String!): String! {
+    let val = yq("." + key)
+      .split("\n")
+      .filter { l => l != "" and l != "null" }
+    if (val.length == 0) { default } else { val[0] }
+  }
+
+  """
+  Extra source include paths.
+  """
+  pub include: [String!]! {
+    getStringList("include")
+  }
+
+  """
+  Extra source exclude paths.
+  """
+  pub exclude: [String!]! {
+    getStringList("exclude")
+  }
+
+  """
+  Package manager to use (npm, yarn, or pnpm). Defaults to npm.
+  """
+  pub packageManager: String! {
+    getString("packageManager", "npm")
+  }
+}
