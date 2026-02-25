@@ -128,25 +128,25 @@ func Detect(
 		}
 		if len(config.Modules) > 0 || path.Clean(legacyCfg.Source) != "." {
 			fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), "Inferring workspace configuration from legacy module config (%s). Run 'dagger migrate' soon.\n", daggerJSONPath)
+			// The module itself is the blueprint unless an explicit blueprint
+			// was configured — in that case it takes precedence.
+			// Source is ".." because the module root (dagger.json) is one
+			// level above the synthetic .dagger/ directory.
+			config.Modules[legacyCfg.Name] = ModuleEntry{
+				Source:    "..",
+				Blueprint: legacyCfg.Blueprint == nil,
+				// No LegacyDefaultPath: the main module's context directory
+				// IS the workspace root, so normal contextual arg resolution
+				// works correctly. Only toolchains/blueprints loaded from a
+				// different source directory need workspace-root resolution.
+			}
+			return &Workspace{
+				Root:        sandbox,
+				Path:        relPath(sandbox, daggerJSONDir),
+				Config:      config,
+				Initialized: false,
+			}, nil
 		}
-		// The module itself is the blueprint unless an explicit blueprint
-		// was configured — in that case it takes precedence.
-		// Source is ".." because the module root (dagger.json) is one
-		// level above the synthetic .dagger/ directory.
-		config.Modules[legacyCfg.Name] = ModuleEntry{
-			Source:    "..",
-			Blueprint: legacyCfg.Blueprint == nil,
-			// No LegacyDefaultPath: the main module's context directory
-			// IS the workspace root, so normal contextual arg resolution
-			// works correctly. Only toolchains/blueprints loaded from a
-			// different source directory need workspace-root resolution.
-		}
-		return &Workspace{
-			Root:        sandbox,
-			Path:        relPath(sandbox, daggerJSONDir),
-			Config:      config,
-			Initialized: false,
-		}, nil
 	}
 
 	// Step 1: .dagger/ found → look for config.toml
