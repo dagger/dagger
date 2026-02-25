@@ -283,7 +283,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
 
-func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
+func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
 	g, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
 	return repo.initRemote(ctx, g, func(remote string) error {
 		git, cleanup, err := repo.setup(ctx)
@@ -338,7 +338,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 			}
 		}
 
-		err = repo.fetch(ctx, git, depth, fetchRefs)
+		err = repo.fetch(ctx, git, depth, includeTags, fetchRefs)
 		if err != nil {
 			return err
 		}
@@ -351,7 +351,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 	})
 }
 
-func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []*RemoteGitRef) error {
+func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -408,6 +408,11 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		return nil
 	}
 
+	runFetchTags := func() error {
+		// Keep the hot path tag-free and only hydrate local tag refs when explicitly requested.
+		return runFetch([]string{"refs/tags/*:refs/tags/*"})
+	}
+
 	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
@@ -418,9 +423,8 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}
 	defer detach()
 
-	if err := runFetch(shaRefSpecs); err == nil {
-		return nil
-	} else {
+	err = runFetch(shaRefSpecs)
+	if err != nil {
 		if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
 			return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
 		}
@@ -435,6 +439,12 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 			return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
 		}
 		logger.Info("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+	}
+
+	if includeTags {
+		if tagErr := runFetchTags(); tagErr != nil {
+			return fmt.Errorf("failed to hydrate tags for remote %s: %w", repo.URL.Remote(), tagErr)
+		}
 	}
 
 	return nil
@@ -544,7 +554,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 	return fn(dir)
 }
 
-func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {
+func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
 	cacheKey := dagql.CurrentID(ctx).Digest().Encoded()
 
 	query, err := CurrentQuery(ctx)
@@ -581,7 +591,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if !ok {
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
-	err = ref.mount(ctx, depth, func(git *gitutil.GitCLI) error {
+	err = ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git dir: %w", err)
@@ -635,8 +645,8 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	return checkout, nil
 }
 
-func (ref *RemoteGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error {
-	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
+func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
 }
 
 func DNSConfig(ctx context.Context) (*oci.DNSConfig, error) {

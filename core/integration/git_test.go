@@ -635,7 +635,7 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 			From("alpine").
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
-			WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1}))
+			WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1, IncludeTags: true}))
 
 			// check tag existence
 		out, err := ctr.WithExec([]string{"git", "tag", "-l"}).Stdout(ctx)
