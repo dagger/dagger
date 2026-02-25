@@ -19,7 +19,6 @@ import (
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -60,7 +59,7 @@ func requiresBuildkitSessionGroup(ctx context.Context) bksession.Group {
 
 type Evaluatable interface {
 	dagql.Typed
-	Evaluate(context.Context) (*buildkit.Result, error)
+	Evaluate(context.Context) error
 }
 
 type Digestable interface {
@@ -331,39 +330,6 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, opt
 		err = errors.Join(err, unmount())
 		return err
 	}, nil
-}
-
-// mountLLB is a utility for easily mounting an llb definition
-func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) error {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: llb,
-	})
-	if err != nil {
-		return err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		tmp, err := os.MkdirTemp("", "mount")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(tmp)
-		return f(tmp)
-	}
-	return ref.Mount(ctx, f)
 }
 
 func Supports(ctx context.Context, minVersion string) bool {

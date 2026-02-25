@@ -232,8 +232,8 @@ func (*Changeset) TypeDescription() string {
 
 var _ Evaluatable = (*Changeset)(nil)
 
-func (ch *Changeset) Evaluate(context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (ch *Changeset) Evaluate(context.Context) error {
+	return nil
 }
 
 const ChangesetPatchFilename = "diff.patch"

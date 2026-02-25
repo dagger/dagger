@@ -14,16 +14,15 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -35,14 +34,16 @@ import (
 
 // File is a content-addressed file.
 type File struct {
-	LLB    *pb.Definition
-	Result bkcache.ImmutableRef // only valid when returned by dagop
-
 	File     string
 	Platform Platform
 
 	// Services necessary to provision the file.
 	Services ServiceBindings
+
+	lazyMu   *sync.Mutex
+	lazyInit func(context.Context) error
+	// Below is lazily initialized and shoud not be accessed directly
+	snapshot bkcache.ImmutableRef
 }
 
 func (*File) Type() *ast.Type {
@@ -56,28 +57,22 @@ func (*File) TypeDescription() string {
 	return "A file."
 }
 
-func (file *File) getResult() bkcache.ImmutableRef {
-	return file.Result
-}
-func (file *File) setResult(ref bkcache.ImmutableRef) {
-	file.Result = ref
-}
-
 var _ dagql.OnReleaser = (*File)(nil)
 
 func (file *File) OnRelease(ctx context.Context) error {
-	if file.Result != nil {
-		return file.Result.Release(ctx)
+	if file.snapshot != nil {
+		return file.snapshot.Release(ctx)
 	}
 	return nil
 }
 
-func NewFile(def *pb.Definition, file string, platform Platform, services ServiceBindings) *File {
+func NewFile(file string, platform Platform, services ServiceBindings) *File {
 	return &File{
-		LLB:      def,
 		File:     file,
 		Platform: platform,
 		Services: services,
+		lazyMu:   new(sync.Mutex),
+		lazyInit: func(context.Context) error { return nil },
 	}
 }
 
@@ -104,50 +99,143 @@ func NewFileWithContents(
 	return dir.File(ctx, name)
 }
 
-func NewFileSt(ctx context.Context, st llb.State, file string, platform Platform, services ServiceBindings) (*File, error) {
-	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
+func (file *File) CloneWithoutSnapshot() *File {
+	if file == nil {
+		return nil
+	}
+
+	cp := *file
+	cp.Services = slices.Clone(cp.Services)
+
+	cp.lazyMu = nil
+	cp.lazyInit = nil
+	cp.snapshot = nil
+
+	return &cp
+}
+
+func (file *File) Evaluate(ctx context.Context) error {
+	if file.lazyMu == nil {
+		file.lazyMu = new(sync.Mutex)
+	}
+
+	file.lazyMu.Lock()
+	defer file.lazyMu.Unlock()
+
+	if file.snapshot != nil {
+		return nil
+	}
+
+	if file.lazyInit != nil {
+		if err := file.lazyInit(ctx); err != nil {
+			return fmt.Errorf("failed to initialize File: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
+	if err := file.Evaluate(ctx); err != nil {
+		return nil, err
+	}
+	return file.snapshot, nil
+}
+
+type fileExecInMountOpt struct {
+	commitSnapshot          bool
+	cacheDesc               string
+	allowNilBuildkitSession bool
+}
+
+type fileExecInMountOptFn func(opt *fileExecInMountOpt)
+
+func withSavedFileSnapshot(format string, a ...any) fileExecInMountOptFn {
+	return func(opt *fileExecInMountOpt) {
+		opt.cacheDesc = fmt.Sprintf(format, a...)
+		opt.commitSnapshot = true
+	}
+}
+
+func allowNilFileBuildkitSession(opt *fileExecInMountOpt) {
+	opt.allowNilBuildkitSession = true
+}
+
+func (file *File) execInMount(ctx context.Context, f func(string) error, optFns ...fileExecInMountOptFn) (_ *File, rerr error) {
+	var opt fileExecInMountOpt
+	for _, optFn := range optFns {
+		optFn(&opt)
+	}
+
+	parentSnapshot, err := file.getSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFile(def.ToPB(), file, platform, services), nil
-}
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok && !opt.allowNilBuildkitSession {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
 
-// Clone returns a deep copy of the container suitable for modifying in a
-// WithXXX method.
-func (file *File) Clone() *File {
-	cp := *file
-	cp.Services = slices.Clone(cp.Services)
-	return &cp
-}
-
-func (file *File) WithoutInputs() *File {
-	file = file.Clone()
-
-	file.LLB = nil
-	file.Result = nil
-
-	return file
-}
-
-func (file *File) State() (llb.State, error) {
-	return defToState(file.LLB)
-}
-
-func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+
+	var mountRef bkcache.Ref
+	var newRef bkcache.MutableRef
+	if opt.commitSnapshot {
+		if opt.cacheDesc == "" {
+			return nil, fmt.Errorf("execInMount missing cache description")
+		}
+		newRef, err = query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			bkSessionGroup,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(opt.cacheDesc),
+		)
+		if err != nil {
+			return nil, err
+		}
+		mountRef = newRef
+	} else {
+		if parentSnapshot == nil {
+			return nil, errEmptyResultRef
+		}
+		mountRef = parentSnapshot
 	}
 
-	return bk.Solve(ctx, bkgw.SolveRequest{
-		Evaluate:   true,
-		Definition: file.LLB,
-	})
+	var mountRefOpts []mountRefOptFn
+	if !opt.commitSnapshot {
+		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
+	}
+	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := f(rootPath); err != nil {
+		if closeErr := closer(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+		return nil, err
+	}
+	if err := closer(); err != nil {
+		return nil, err
+	}
+
+	if !opt.commitSnapshot {
+		return file, nil
+	}
+
+	snapshot, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file.snapshot = snapshot
+
+	return file, nil
 }
 
 // Contents handles file content retrieval
@@ -163,7 +251,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 		Writer: &buf,
 	}
 
-	_, err := execInMount(ctx, file, func(root string) error {
+	_, err := file.execInMount(ctx, func(root string) error {
 		fullPath, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -206,7 +294,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 			}
 		}
 		return err
-	}, allowNilBuildkitSession)
+	}, allowNilFileBuildkitSession)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +320,7 @@ func (cw *limitedWriter) Write(p []byte) (int, error) {
 }
 
 func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]*SearchResult, error) {
-	ref, err := getRefOrEvaluate(ctx, file)
+	ref, err := file.getSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +360,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]
 	return results, nil
 }
 
-func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (*File, error) {
+func FileWithReplaced(ctx context.Context, parent dagql.ObjectResult[*File], searchStr, replacementStr string, firstFrom *int, all bool) (*File, error) {
 	opt, ok := buildkit.CurrentOpOpts(ctx)
 	if !ok {
 		return nil, fmt.Errorf("no buildkit opts in context")
@@ -286,10 +374,13 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 		return nil, err
 	}
 
-	parentRef, err := getRefOrEvaluate(ctx, file)
+	parentSnapshot, err := file.getSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	file = file.CloneWithoutSnapshot()
+	file.snapshot = parentSnapshot
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok {
@@ -371,7 +462,7 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 	}
 
 	// Create a new layer for the replaced content
-	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := query.BuildkitCache().New(ctx, parentSnapshot, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("patch"))
 	if err != nil {
 		return nil, err
@@ -402,21 +493,28 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 	if err != nil {
 		return nil, err
 	}
-	file = file.Clone()
-	file.LLB = nil
-	file.Result = snap
+	file.snapshot = snap
 	return file, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
 	// If metadata are included, directly compute the digest of the file
 	if !excludeMetadata {
-		result, err := file.Evaluate(ctx)
+		snapshot, err := file.getSnapshot(ctx)
 		if err != nil {
 			return "", fmt.Errorf("failed to evaluate file: %w", err)
 		}
+		if snapshot == nil {
+			return "", fmt.Errorf("failed to evaluate null file")
+		}
 
-		digest, err := result.Ref.Digest(ctx, file.File)
+		digest, err := bkcontenthash.Checksum(
+			ctx,
+			snapshot,
+			file.File,
+			bkcontenthash.ChecksumOpts{},
+			requiresBuildkitSessionGroup(ctx),
+		)
 		if err != nil {
 			return "", fmt.Errorf("failed to compute digest: %w", err)
 		}
@@ -441,7 +539,7 @@ func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, err
 }
 
 func (file *File) Stat(ctx context.Context) (*Stat, error) {
-	immutableRef, err := getRefOrEvaluate(ctx, file)
+	immutableRef, err := file.getSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -486,9 +584,16 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 	return stat, nil
 }
 
-func (file *File) WithName(ctx context.Context, filename string) (*File, error) {
-	file = file.Clone()
-	return execInMount(ctx, file, func(root string) error {
+func FileWithName(ctx context.Context, parent dagql.ObjectResult[*File], filename string) (*File, error) {
+	parentSnapshot, err := file.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	file = file.CloneWithoutSnapshot()
+	file.snapshot = parentSnapshot
+
+	return file.execInMount(ctx, func(root string) error {
 		src, err := RootPathWithoutFinalSymlink(root, file.File)
 		if err != nil {
 			return err
@@ -502,12 +607,19 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 			return TrimErrPathPrefix(err, root)
 		}
 		return nil
-	}, withSavedSnapshot("withName %s", filename))
+	}, withSavedFileSnapshot("withName %s", filename))
 }
 
-func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
-	file = file.Clone()
-	return execInMount(ctx, file, func(root string) error {
+func FileWithTimestamps(ctx context.Context, parent dagql.ObjectResult[*File], unix int) (*File, error) {
+	parentSnapshot, err := file.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	file = file.CloneWithoutSnapshot()
+	file.snapshot = parentSnapshot
+
+	return file.execInMount(ctx, func(root string) error {
 		fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
 		if err != nil {
 			return err
@@ -518,7 +630,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 			return err
 		}
 		return nil
-	}, withSavedSnapshot("withTimestamps %d", unix))
+	}, withSavedFileSnapshot("withTimestamps %d", unix))
 }
 
 type fileReadCloser struct {
@@ -537,14 +649,23 @@ func (frc fileReadCloser) Close() error {
 var _ io.ReadCloser = fileReadCloser{}
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
-	root, closer, err := mountObj(ctx, file, allowNilBuildkitSession)
+	snapshot, err := file.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		return nil, errEmptyResultRef
+	}
+
+	bkSessionGroup, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
+	root, _, closer, err := MountRefCloser(ctx, snapshot, bkSessionGroup, mountRefAsReadOnly)
 	if err != nil {
 		return nil, err
 	}
 
 	filePath, err := containerdfs.RootPath(root, file.File)
 	if err != nil {
-		_, closeErr := closer(true)
+		closeErr := closer()
 		if closeErr != nil {
 			err = errors.Join(err, closeErr)
 		}
@@ -553,7 +674,7 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 
 	r, err := os.Open(filePath)
 	if err != nil {
-		_, closeErr := closer(true)
+		closeErr := closer()
 		if closeErr != nil {
 			err = errors.Join(err, closeErr)
 		}
@@ -564,12 +685,10 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 		read: r.Read,
 		close: func() error {
 			var errs error
-			var abort bool
 			if err := r.Close(); err != nil {
 				errs = errors.Join(errs, err)
-				abort = true
 			}
-			if _, err := closer(abort); err != nil {
+			if err := closer(); err != nil {
 				errs = errors.Join(errs, err)
 			}
 			return errs
@@ -590,28 +709,33 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", filepath.Base(file.File), dest))
 	defer telemetry.EndWithCause(vtx, &rerr)
 
-	root, closer, err := mountObj(ctx, file)
+	snapshot, err := file.getSnapshot(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to mount directory: %w", err)
+		return fmt.Errorf("failed to evaluate file: %w", err)
 	}
-	defer closer(false)
-
-	path, err := containerdfs.RootPath(root, file.File)
-	if err != nil {
-		return err
+	if snapshot == nil {
+		return errEmptyResultRef
 	}
 
-	return bk.LocalFileExport(ctx, path, file.File, dest, allowParentDirPath)
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	return MountRef(ctx, snapshot, bkSessionGroup, func(root string, _ *mount.Mount) error {
+		path, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
+		return bk.LocalFileExport(ctx, path, file.File, dest, allowParentDirPath)
+	})
 }
 
 func (file *File) Mount(ctx context.Context, f func(string) error) error {
-	return mountLLB(ctx, file.LLB, func(root string) error {
+	_, err := file.execInMount(ctx, func(root string) error {
 		src, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
 		}
 		return f(src)
-	})
+	}, allowNilFileBuildkitSession)
+	return err
 }
 
 // AsJSON returns the file contents as JSON when possible, otherwise returns an error
@@ -640,14 +764,21 @@ func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) 
 	}).WithContents(string(contents))
 }
 
-func (file *File) Chown(ctx context.Context, owner string) (*File, error) {
+func FileChown(ctx context.Context, parent dagql.ObjectResult[*File], owner string) (*File, error) {
 	ownership, err := parseDirectoryOwner(owner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 	}
 
-	file = file.Clone()
-	return execInMount(ctx, file, func(root string) error {
+	parentSnapshot, err := file.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	file = file.CloneWithoutSnapshot()
+	file.snapshot = parentSnapshot
+
+	return file.execInMount(ctx, func(root string) error {
 		chownPath := file.File
 		chownPath, err := containerdfs.RootPath(root, chownPath)
 		if err != nil {
@@ -667,5 +798,5 @@ func (file *File) Chown(ctx context.Context, owner string) (*File, error) {
 			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
 		}
 		return nil
-	}, withSavedSnapshot("chown %s %s", file.File, owner))
+	}, withSavedFileSnapshot("chown %s %s", file.File, owner))
 }
