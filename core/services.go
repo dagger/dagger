@@ -153,7 +153,6 @@ func (ss *Services) StartWithIO(
 	if err != nil {
 		return nil, err
 	}
-	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
 
 	dig := id.ContentPreferredDigest()
 	key := ServiceKey{
@@ -162,29 +161,6 @@ func (ss *Services) StartWithIO(
 	}
 	if clientSpecific {
 		key.ClientID = clientMetadata.ClientID
-	}
-	if traceEnabled {
-		idDigest := ""
-		idContentPreferredDigest := ""
-		idPath := ""
-		if id != nil {
-			idDigest = id.Digest().String()
-			idContentPreferredDigest = id.ContentPreferredDigest().String()
-			idPath = id.DisplaySelf()
-		}
-		slog.ExtraDebug("core.services.start.trace",
-			"event", "service_start_enter",
-			"idDigest", idDigest,
-			"idContentPreferredDigest", idContentPreferredDigest,
-			"idPath", idPath,
-			"keyDigest", key.Digest.String(),
-			"keySessionID", key.SessionID,
-			"keyClientID", key.ClientID,
-			"clientSpecific", clientSpecific,
-			"clientID", clientMetadata.ClientID,
-			"sessionID", clientMetadata.SessionID,
-			"clientHostname", clientMetadata.ClientHostname,
-		)
 	}
 
 dance:
@@ -196,51 +172,15 @@ dance:
 		switch {
 		case isRunning && isStopping:
 			ss.l.Unlock()
-			if traceEnabled {
-				slog.ExtraDebug("core.services.start.trace",
-					"event", "service_start_running_but_stopping_wait",
-					"keyDigest", key.Digest.String(),
-					"keySessionID", key.SessionID,
-					"keyClientID", key.ClientID,
-					"clientID", clientMetadata.ClientID,
-					"sessionID", clientMetadata.SessionID,
-					"clientHostname", clientMetadata.ClientHostname,
-				)
-			}
 			running.Wait(ctx)
 		case isRunning:
 			// already running; increment binding count and return
 			ss.bindings[key]++
-			bindingsCount := ss.bindings[key]
 			ss.l.Unlock()
-			if traceEnabled {
-				slog.ExtraDebug("core.services.start.trace",
-					"event", "service_start_hit_running",
-					"keyDigest", key.Digest.String(),
-					"keySessionID", key.SessionID,
-					"keyClientID", key.ClientID,
-					"bindings", bindingsCount,
-					"clientID", clientMetadata.ClientID,
-					"sessionID", clientMetadata.SessionID,
-					"clientHostname", clientMetadata.ClientHostname,
-				)
-			}
 			return running, nil
 		case isStarting:
 			// already starting; wait for the attempt to finish and try again
 			ss.l.Unlock()
-			if traceEnabled {
-				slog.ExtraDebug("core.services.start.trace",
-					"event", "service_start_wait_existing_start",
-					"keyDigest", key.Digest.String(),
-					"keySessionID", key.SessionID,
-					"keyClientID", key.ClientID,
-					"clientID", clientMetadata.ClientID,
-					"sessionID", clientMetadata.SessionID,
-					"clientHostname", clientMetadata.ClientHostname,
-					"waitGroupAddr", fmt.Sprintf("%p", starting),
-				)
-			}
 			starting.Wait()
 		default:
 			// not starting or running; start it
@@ -249,18 +189,6 @@ dance:
 			defer starting.Done()
 			ss.starting[key] = starting
 			ss.l.Unlock()
-			if traceEnabled {
-				slog.ExtraDebug("core.services.start.trace",
-					"event", "service_start_become_starter",
-					"keyDigest", key.Digest.String(),
-					"keySessionID", key.SessionID,
-					"keyClientID", key.ClientID,
-					"clientID", clientMetadata.ClientID,
-					"sessionID", clientMetadata.SessionID,
-					"clientHostname", clientMetadata.ClientHostname,
-					"waitGroupAddr", fmt.Sprintf("%p", starting),
-				)
-			}
 			break dance // :skeleton:
 		}
 	}
@@ -273,18 +201,6 @@ dance:
 		ss.l.Lock()
 		delete(ss.starting, key)
 		ss.l.Unlock()
-		if traceEnabled {
-			slog.ExtraDebug("core.services.start.trace",
-				"event", "service_start_done",
-				"keyDigest", key.Digest.String(),
-				"keySessionID", key.SessionID,
-				"keyClientID", key.ClientID,
-				"err", err,
-				"clientID", clientMetadata.ClientID,
-				"sessionID", clientMetadata.SessionID,
-				"clientHostname", clientMetadata.ClientHostname,
-			)
-		}
 		return nil, err
 	}
 	running.Key = key
@@ -294,18 +210,6 @@ dance:
 	ss.running[key] = running
 	ss.bindings[key] = 1
 	ss.l.Unlock()
-	if traceEnabled {
-		slog.ExtraDebug("core.services.start.trace",
-			"event", "service_start_done",
-			"keyDigest", key.Digest.String(),
-			"keySessionID", key.SessionID,
-			"keyClientID", key.ClientID,
-			"runningHost", running.Host,
-			"clientID", clientMetadata.ClientID,
-			"sessionID", clientMetadata.SessionID,
-			"clientHostname", clientMetadata.ClientHostname,
-		)
-	}
 
 	_ = stop // leave it running
 
@@ -316,15 +220,6 @@ dance:
 // function that will detach from all of them after 10 seconds.
 func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
 	running := make([]*RunningService, len(bindings))
-	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
-	traceClientID, traceSessionID, traceClientHostname := "", "", ""
-	if traceEnabled {
-		if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md != nil {
-			traceClientID = md.ClientID
-			traceSessionID = md.SessionID
-			traceClientHostname = md.ClientHostname
-		}
-	}
 	detachOnce := sync.Once{}
 	detach := func() {
 		detachOnce.Do(func() {
@@ -342,62 +237,12 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
-		i, bnd := i, bnd
-		if traceEnabled {
-			depDigest := ""
-			depContentPreferredDigest := ""
-			depPath := ""
-			if depID := bnd.Service.ID(); depID != nil {
-				depDigest = depID.Digest().String()
-				depContentPreferredDigest = depID.ContentPreferredDigest().String()
-				depPath = depID.DisplaySelf()
-			}
-			slog.ExtraDebug("core.services.bindings.trace",
-				"event", "binding_start_attempt",
-				"index", i,
-				"hostname", bnd.Hostname,
-				"aliases", bnd.Aliases,
-				"depDigest", depDigest,
-				"depContentPreferredDigest", depContentPreferredDigest,
-				"depPath", depPath,
-				"clientID", traceClientID,
-				"sessionID", traceSessionID,
-				"clientHostname", traceClientHostname,
-			)
-		}
 		eg.Go(func() error {
 			runningSvc, err := ss.Start(ctx, bnd.Service.ID(), bnd.Service.Self(), false)
 			if err != nil {
-				if traceEnabled {
-					slog.ExtraDebug("core.services.bindings.trace",
-						"event", "binding_start_done",
-						"index", i,
-						"hostname", bnd.Hostname,
-						"aliases", bnd.Aliases,
-						"err", err,
-						"clientID", traceClientID,
-						"sessionID", traceSessionID,
-						"clientHostname", traceClientHostname,
-					)
-				}
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
 			running[i] = runningSvc
-			if traceEnabled {
-				slog.ExtraDebug("core.services.bindings.trace",
-					"event", "binding_start_done",
-					"index", i,
-					"hostname", bnd.Hostname,
-					"aliases", bnd.Aliases,
-					"runningHost", runningSvc.Host,
-					"runningKeyDigest", runningSvc.Key.Digest.String(),
-					"runningKeySessionID", runningSvc.Key.SessionID,
-					"runningKeyClientID", runningSvc.Key.ClientID,
-					"clientID", traceClientID,
-					"sessionID", traceSessionID,
-					"clientHostname", traceClientHostname,
-				)
-			}
 			return nil
 		})
 	}

@@ -316,7 +316,6 @@ func (id *ID) Modules() []*Module {
 	}
 
 	seenIDDigests := map[digest.Digest]struct{}{}
-	seenIDPtrs := map[*ID]struct{}{}
 	seenModuleDigests := map[digest.Digest]struct{}{}
 	mods := []*Module{}
 
@@ -367,11 +366,6 @@ func (id *ID) Modules() []*Module {
 				return
 			}
 			seenIDDigests[dg] = struct{}{}
-		} else {
-			if _, ok := seenIDPtrs[cur]; ok {
-				return
-			}
-			seenIDPtrs[cur] = struct{}{}
 		}
 
 		addModule(cur.module)
