@@ -1,0 +1,6 @@
+kind: Added
+body: 'drivers: add TLS driver for engine clients'
+time: 2026-02-26T11:04:08.481790308-03:00
+custom:
+    Author: matipan
+    PR: "11916"
