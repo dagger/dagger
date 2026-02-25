@@ -40,11 +40,6 @@ Examples:
 		params := client.Params{
 			EnableCloudScaleOut: enableScaleOut,
 		}
-		if !moduleNoURL {
-			if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
-				params.Module = modRef
-			}
-		}
 		return withEngine(
 			cmd.Context(),
 			params,

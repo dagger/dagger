@@ -69,6 +69,11 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
+	if !moduleNoURL {
+		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
+			params.Module = modRef
+		}
+	}
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
 

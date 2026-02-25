@@ -7,19 +7,11 @@ import (
 )
 
 func initModuleParams(a []string) client.Params {
-	params := client.Params{
+	return client.Params{
 		ExecCmd:      a,
 		Function:     functionName(a),
 		EagerRuntime: eagerRuntime,
 	}
-
-	if !moduleNoURL {
-		modRef, _ := getExplicitModuleSourceRef()
-		if modRef != "" {
-			params.Module = modRef
-		}
-	}
-	return params
 }
 
 func functionName(args []string) string {

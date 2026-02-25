@@ -42,18 +42,10 @@ var mcpCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		cmd.SetContext(idtui.WithPrintTraceLink(ctx, true))
-		params := client.Params{
+		return withEngine(ctx, client.Params{
 			Stdin:  stdin,
 			Stdout: stdout,
-		}
-		// Pass -m to engine so the module is loaded at connect time
-		if !moduleNoURL {
-			modRef, _ := getExplicitModuleSourceRef()
-			if modRef != "" {
-				params.Module = modRef
-			}
-		}
-		return withEngine(ctx, params, mcpStart)
+		}, mcpStart)
 	},
 	Hidden: true,
 	Annotations: map[string]string{
