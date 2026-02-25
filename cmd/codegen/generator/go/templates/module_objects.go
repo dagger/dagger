@@ -6,7 +6,6 @@ import (
 	"go/types"
 	"maps"
 	"reflect"
-	"sort"
 	"strings"
 
 	"dagger.io/dagger"
@@ -59,9 +58,6 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	if objectIsDaggerGenerated {
 		return nil, nil
 	}
-	sort.Slice(goFuncTypes, func(i, j int) bool {
-		return goFuncTypes[i].Pos() < goFuncTypes[j].Pos()
-	})
 
 	for _, goFuncType := range goFuncTypes {
 		funcTypeSpec, err := ps.parseGoFunc(named, goFuncType)

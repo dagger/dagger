@@ -955,9 +955,11 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	}
 
 	allowedLLMModules := execMD.AllowedLLMModules
+	eagerRuntime := false
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
+		eagerRuntime = md.EagerRuntime
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -971,6 +973,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			Labels:            map[string]string{},
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
 			AllowedLLMModules: allowedLLMModules,
+			EagerRuntime:      eagerRuntime,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
