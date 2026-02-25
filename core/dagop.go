@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -57,27 +58,8 @@ func NewDirectoryDagOp(
 	ctx context.Context,
 	srv *dagql.Server,
 	dagop *FSDagOp,
-	inputs []llb.State,
-	selfDigest digest.Digest,
-	argDigest digest.Digest,
 ) (*Directory, error) {
-	if selfDigest == "" || argDigest == "" {
-		// fall back to using op ID (which will return a different CacheMap value for each op
-		dagop.CacheKey = digest.FromString(
-			strings.Join([]string{
-				dagop.ID.ContentPreferredDigest().String(),
-				dagop.Path,
-			}, "\x00"))
-	} else {
-		dagop.CacheKey = digest.FromString(
-			strings.Join([]string{
-				selfDigest.String(),
-				argDigest.String(),
-			}, "\x00"),
-		)
-	}
-
-	st, err := newFSDagOp[*Directory](ctx, dagop, inputs)
+	st, err := newFSDagOp[*Directory](ctx, dagop)
 	if err != nil {
 		return nil, err
 	}
@@ -99,9 +81,8 @@ func NewFileDagOp(
 	ctx context.Context,
 	srv *dagql.Server,
 	dagop *FSDagOp,
-	inputs []llb.State,
 ) (*File, error) {
-	st, err := newFSDagOp[*File](ctx, dagop, inputs)
+	st, err := newFSDagOp[*File](ctx, dagop)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +96,6 @@ func NewFileDagOp(
 func newFSDagOp[T dagql.Typed](
 	ctx context.Context,
 	dagop *FSDagOp,
-	inputs []llb.State,
 ) (llb.State, error) {
 	if dagop.ID == nil {
 		return llb.State{}, fmt.Errorf("dagop ID is nil")
@@ -127,7 +107,7 @@ func newFSDagOp[T dagql.Typed](
 		return llb.State{}, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, dagop.ID.Type().NamedType())
 	}
 
-	return newDagOpLLB(ctx, dagop, dagop.ID, inputs)
+	return newDagOpLLB(ctx, dagop, dagop.ID)
 }
 
 type FSDagOp struct {
@@ -137,8 +117,6 @@ type FSDagOp struct {
 	// (except for contributing to the cache key). However, it can be used by
 	// dagql running inside a dagop to determine where it should write data.
 	Path string
-
-	CacheKey digest.Digest
 }
 
 func (op FSDagOp) Name() string {
@@ -158,54 +136,21 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 }
 
 func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
-	var inputs []string
-	if op.CacheKey.String() == "" {
-		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
-		inputs = []string{
-			engine.BaseVersion(engine.Version),
-			op.ID.ContentPreferredDigest().String(),
-			op.Path,
-		}
-	} else {
-		inputs = []string{
-			engine.BaseVersion(engine.Version),
-			op.CacheKey.String(),
-		}
+	var err error
+	cm.Digest, err = op.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute digest: %w", err)
 	}
-	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
-
-	// Read digests of results from dagger ref metadata, only doing a real content hash if that's
-	// not available. Reading the digest from the ref metadata enables us to use possibly optimized
-	// digests as determined from within dag-ops. e.g. `Directory.Without` may determine that no
-	// files were removed and thus we can reuse the parent object digest.
 	for i, dep := range cm.Deps {
 		dep.PreprocessFunc = nil
-		origFunc := dep.ComputeDigestFunc
-		dep.ComputeDigestFunc = func(ctx context.Context, res solver.Result, g bksession.Group) (digest.Digest, error) {
-			workerRef, ok := res.Sys().(*worker.WorkerRef)
-			if !ok {
-				return "", fmt.Errorf("invalid ref: %T", res.Sys())
-			}
-			ref := workerRef.ImmutableRef
-			if ref == nil {
-				return origFunc(ctx, res, g)
-			}
-
-			dgstStr := ref.GetString(keyDaggerDigest)
-			if dgstStr == "" {
-				// fall back to original function if no dagger digest found
-				return origFunc(ctx, res, g)
-			}
-
-			return digest.Digest(dgstStr), nil
-		}
+		dep.ComputeDigestFunc = nil
 		cm.Deps[i] = dep
 	}
 
 	return cm, nil
 }
 
-func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
+func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, _ []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
 	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
@@ -292,7 +237,6 @@ func NewRawDagOp[T dagql.Typed](
 	ctx context.Context,
 	srv *dagql.Server,
 	dagop *RawDagOp,
-	inputs []llb.State,
 ) (t T, err error) {
 	if dagop.ID == nil {
 		return t, fmt.Errorf("dagop ID is nil")
@@ -301,7 +245,7 @@ func NewRawDagOp[T dagql.Typed](
 		return t, fmt.Errorf("dagop filename is empty")
 	}
 
-	st, err := newDagOpLLB(ctx, dagop, dagop.ID, inputs)
+	st, err := newDagOpLLB(ctx, dagop, dagop.ID)
 	if err != nil {
 		return t, err
 	}
@@ -340,15 +284,11 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 }
 
 func (op RawDagOp) CacheMap(_ context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
-	cm.Digest = digest.FromString(strings.Join([]string{
-		engine.BaseVersion(engine.Version),
-		op.ID.ContentPreferredDigest().String(),
-		op.Filename,
-	}, "\x00"))
-
-	// disable content hashing of inputs, which is extremely expensive; we rely
-	// on the content digests of dagql inputs being mixed into the op ID digest
-	// instead now
+	var err error
+	cm.Digest, err = op.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute digest: %w", err)
+	}
 	for i, dep := range cm.Deps {
 		dep.PreprocessFunc = nil
 		dep.ComputeDigestFunc = nil
@@ -440,15 +380,13 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 func NewContainerDagOp(
 	ctx context.Context,
 	id *call.ID,
-	inputs []llb.State,
 	ctr *Container,
 	execMD *buildkit.ExecutionMetadata,
 ) (*Container, error) {
-	mounts, ctrInputs, dgsts, _, outputCount, err := getAllContainerMounts(ctx, ctr)
+	mounts, inputDefs, _, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, err
 	}
-	inputs = append(inputs, ctrInputs...)
 
 	dagop := &ContainerDagOp{
 		ID: id,
@@ -459,8 +397,8 @@ func NewContainerDagOp(
 			}, "\x00"),
 		),
 		ContainerMountData: ContainerMountData{
+			InputDefs:   inputDefs,
 			Mounts:      mounts,
-			Digests:     dgsts,
 			OutputCount: outputCount,
 		},
 	}
@@ -468,7 +406,7 @@ func NewContainerDagOp(
 		dagop.CacheKey = execMD.OverrideBuildkitCacheKey
 	}
 
-	st, err := newContainerDagOp(ctx, dagop, inputs)
+	st, err := newContainerDagOp(ctx, dagop)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +432,6 @@ func NewContainerDagOp(
 func newContainerDagOp(
 	ctx context.Context,
 	dagop *ContainerDagOp,
-	inputs []llb.State,
 ) (llb.State, error) {
 	if dagop.ID == nil {
 		return llb.State{}, fmt.Errorf("dagop ID is nil")
@@ -506,7 +443,7 @@ func newContainerDagOp(
 		return llb.State{}, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, dagop.ID.Type().NamedType())
 	}
 
-	return newDagOpLLB(ctx, dagop, dagop.ID, inputs)
+	return newDagOpLLB(ctx, dagop, dagop.ID)
 }
 
 type ContainerDagOp struct {
@@ -517,12 +454,14 @@ type ContainerDagOp struct {
 }
 
 type ContainerMountData struct {
+	InputDefs []*pb.Definition
+
 	// inputs are all the inputs provided to the op
 	//
 	// be careful accessing it directly (stable order is not guaranteed, and it
 	// may also contain a bunch of other stuff), ideally access it through a
 	// known pb.Mount.Output index.
-	Inputs []solver.Result
+	Inputs []*buildkit.Result
 
 	// all the container mounts - the order here should be guaranteed:
 	// - rootfs is at 0
@@ -531,19 +470,24 @@ type ContainerMountData struct {
 	// - secret/socket mounts are at the very end
 	Mounts []*pb.Mount
 
-	// The digests corresponding to each Mount, or "" if no digest available.
-	Digests []digest.Digest
-
 	// the number of outputs produced
 	OutputCount int
 }
 
-func (mounts ContainerMountData) InputRefs() []bkcache.ImmutableRef {
+func (mounts ContainerMountData) InputRefs(ctx context.Context) ([]bkcache.ImmutableRef, error) {
 	refs := make([]bkcache.ImmutableRef, 0, len(mounts.Inputs))
 	for _, input := range mounts.Inputs {
-		refs = append(refs, input.Sys().(*worker.WorkerRef).ImmutableRef)
+		r, err := input.SingleRef()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get single ref for input: %w", err)
+		}
+		rr, err := r.CacheRef(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cache ref for input: %w", err)
+		}
+		refs = append(refs, rr)
 	}
-	return refs
+	return refs, nil
 }
 
 type mountDataContextKey struct{}
@@ -573,29 +517,15 @@ func (op ContainerDagOp) CacheMap(_ context.Context, cm *solver.CacheMap) (*solv
 	// Use our precomputed cache key and additional content-hashing for mounts that are associated with
 	// a known digest.
 	cm.Digest = op.CacheKey
-	for i, mount := range op.Mounts {
-		if mount.Input == pb.Empty {
-			// No inputs, so no content-caching to apply.
-			continue
-		}
-		cm.Deps[mount.Input].PreprocessFunc = nil
-
-		if dgst := op.Digests[i]; dgst != "" {
-			cm.Deps[mount.Input].ComputeDigestFunc = func(
-				context.Context,
-				solver.Result,
-				bksession.Group,
-			) (digest.Digest, error) {
-				return dgst, nil
-			}
-		} else {
-			cm.Deps[mount.Input].ComputeDigestFunc = nil
-		}
+	for i, dep := range cm.Deps {
+		dep.PreprocessFunc = nil
+		dep.ComputeDigestFunc = nil
+		cm.Deps[i] = dep
 	}
 	return cm, nil
 }
 
-func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
+func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, _ []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
 	loadCtx := ctx
 
 	query, ok := opt.Server.Root().Unwrap().(*Query)
@@ -605,7 +535,30 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	loadCtx = ContextWithQuery(loadCtx, query)
 
 	mountData := op.ContainerMountData
-	mountData.Inputs = inputs
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	var eg errgroup.Group
+	mountData.Inputs = make([]*buildkit.Result, len(mountData.InputDefs))
+	for i, def := range mountData.InputDefs {
+		eg.Go(func() error {
+			res, err := bk.Solve(ctx, bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: def,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to solve input definition: %w", err)
+			}
+			mountData.Inputs[i] = res
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
 	loadCtx = ctxWithMountData(loadCtx, mountData)
 
 	loadID := op.ID
@@ -627,11 +580,6 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 		return nil, fmt.Errorf("invalid unset wrapped container load: %s", loadID.Display())
 	}
 
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
 	switch inst := obj.Unwrap().(type) {
 	case *Container:
 		return extractContainerBkOutputs(ctx, inst, bk, opt.Worker, op.ContainerMountData)
@@ -646,7 +594,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 // Input maps to an index in the returned states.
 func getAllContainerMounts(ctx context.Context, container *Container) (
 	mounts []*pb.Mount,
-	states []llb.State,
+	defs []*pb.Definition,
 	dgsts []digest.Digest,
 	refs []bkcache.ImmutableRef,
 	outputCount int,
@@ -728,9 +676,9 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				// we already track this input, reuse the index
 				mount.Input = idx
 			} else {
-				mount.Input = pb.InputIndex(len(states))
+				mount.Input = pb.InputIndex(len(defs))
 				inputIdxs[indexKey] = mount.Input
-				states = append(states, st)
+				defs = append(defs, llb)
 				refs = append(refs, res)
 			}
 		case st.Output() != nil:
@@ -743,9 +691,9 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				// we already track this input, reuse the index
 				mount.Input = idx
 			} else {
-				mount.Input = pb.InputIndex(len(states))
+				mount.Input = pb.InputIndex(len(defs))
 				inputIdxs[indexKey] = mount.Input
-				states = append(states, st)
+				defs = append(defs, llb)
 				refs = append(refs, res)
 			}
 		}
@@ -846,7 +794,7 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 		mounts = append(mounts, mount)
 	}
 
-	return mounts, states, dgsts, refs, outputIdx, nil
+	return mounts, defs, dgsts, refs, outputIdx, nil
 }
 
 // setAllContainerMounts is the reverse of getAllContainerMounts, and rewrites
@@ -1024,8 +972,8 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 	return outputs, nil
 }
 
-func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inputs []llb.State) (llb.State, error) {
-	return buildkit.NewCustomLLB(ctx, id, dagOp, inputs,
+func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID) (llb.State, error) {
+	return buildkit.NewCustomLLB(ctx, id, dagOp,
 		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
 		buildkit.WithTracePropagation(ctx),
 		buildkit.WithPassthrough(),

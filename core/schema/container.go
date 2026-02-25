@@ -901,7 +901,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			)), nil
 		}
 
-			ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, nil)
+		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, nil)
 		if err != nil {
 			return inst, err
 		}
@@ -2087,7 +2087,8 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return inst, err
 }
 
 type containerWithFilesArgs struct {

@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -42,11 +41,6 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	args A,
 	fn dagql.NodeFuncHandler[T, A, R],
 ) (inst dagql.Result[R], err error) {
-	deps, err := core.InputsOf(ctx, args)
-	if err != nil {
-		return inst, err
-	}
-
 	filename := rawDagOpFilename
 	curIDForRawDagOp, err := currentIDForRawDagOp(ctx, filename)
 	if err != nil {
@@ -59,9 +53,9 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	}
 
 	val, err := core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
-		ID:       curIDForRawDagOp, // FIXME: using this in the cache key means we effectively disable buildkit content caching
+		ID:       curIDForRawDagOp,
 		Filename: filename,
-	}, deps)
+	})
 	if err != nil {
 		return inst, err
 	}
@@ -127,32 +121,15 @@ func DagOpFile[T dagql.Typed, A any](
 		}
 	}
 
-	selfDigest, deps, err := getSelfDigest(ctx, self)
-	if err != nil {
-		return nil, "", err
-	}
-	argDigest, err := core.DigestOf(args)
-	if err != nil {
-		return nil, "", err
-	}
-
 	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
 	if err != nil {
 		return nil, "", err
 	}
 
-	cacheKey := digest.FromString(
-		strings.Join([]string{
-			selfDigest.String(),
-			argDigest.String(),
-		}, "\x00"),
-	)
-
 	f, err := core.NewFileDagOp(ctx, srv, &core.FSDagOp{
-		ID:       curIDForFSDagOp,
-		Path:     filename,
-		CacheKey: cacheKey,
-	}, deps)
+		ID:   curIDForFSDagOp,
+		Path: filename,
+	})
 	if err != nil {
 		return nil, "", err
 	}
@@ -346,21 +323,8 @@ func DagOpDirectory[T dagql.Typed, A any](
 ) (*core.Directory, string, error) {
 	o := getOpts(opts...)
 
-	selfDigest, deps, err := getSelfDigest(ctx, self)
-	if err != nil {
-		return nil, "", err
-	}
-	argDigest, err := core.DigestOf(args)
-	if err != nil {
-		return nil, "", err
-	}
-	argDeps, err := core.InputsOf(ctx, args)
-	if err != nil {
-		return nil, "", err
-	}
-	deps = append(deps, argDeps...)
-
 	filename := "/"
+	var err error
 	if o.pfn != nil {
 		filename, err = o.pfn(ctx, self, args)
 		if err != nil {
@@ -368,23 +332,15 @@ func DagOpDirectory[T dagql.Typed, A any](
 		}
 	}
 
-	cacheKey := digest.FromString(
-		strings.Join([]string{
-			selfDigest.String(),
-			argDigest.String(),
-		}, "\x00"),
-	)
-
 	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
 	if err != nil {
 		return nil, "", err
 	}
 
 	dir, err := core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
-		ID:       curIDForFSDagOp,
-		Path:     filename,
-		CacheKey: cacheKey,
-	}, deps, selfDigest, argDigest)
+		ID:   curIDForFSDagOp,
+		Path: filename,
+	})
 	if err != nil {
 		return nil, "", err
 	}
@@ -427,17 +383,12 @@ func DagOpContainer[A any](
 	args A,
 	execMD *buildkit.ExecutionMetadata,
 ) (*core.Container, string, error) {
-	deps, err := core.InputsOf(ctx, args)
-	if err != nil {
-		return nil, "", err
-	}
-
 	curIDForContainerDagOp, err := currentIDForContainerDagOp(ctx)
 	if err != nil {
 		return nil, "", err
 	}
 
-	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, deps, ctr, execMD)
+	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, ctr, execMD)
 	if err != nil {
 		return nil, "", err
 	}

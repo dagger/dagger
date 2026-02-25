@@ -249,7 +249,11 @@ func (container *Container) WithExec(
 	}
 
 	workerRefs := make([]*worker.WorkerRef, 0, len(mounts.Inputs))
-	for _, ref := range mounts.InputRefs() {
+	inRefs, err := mounts.InputRefs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get input refs: %w", err)
+	}
+	for _, ref := range inRefs {
 		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
 	}
 
@@ -294,7 +298,18 @@ func (container *Container) WithExec(
 					rerr = errors.Join(rerr, fmt.Errorf("mount index %d references input %d outside available inputs (%d)", i, m.Input, len(mounts.Inputs)))
 					continue
 				}
-				execInputs[i] = mounts.Inputs[m.Input].Clone()
+				r := mounts.Inputs[m.Input].Clone()
+				rr, err := r.SingleRef()
+				if err != nil {
+					rerr = errors.Join(rerr, fmt.Errorf("error getting single ref for mount input %d: %w", i, err))
+					continue
+				}
+				rrr, err := rr.CacheRef(ctx)
+				if err != nil {
+					rerr = errors.Join(rerr, fmt.Errorf("error getting cache ref for mount input %d: %w", i, err))
+					continue
+				}
+				execInputs[i] = worker.NewWorkerRefResult(rrr, opt.Worker)
 			}
 			execMounts := make([]bksolver.Result, len(mounts.Mounts))
 			copy(execMounts, execInputs)

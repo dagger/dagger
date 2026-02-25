@@ -2719,7 +2719,6 @@ func UpdatedRootFS(
 
 // updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
 // The returned ObjectResult uses the ID of the current operation.
-//
 func updatedDirMount(
 	ctx context.Context,
 	dir *Directory,
@@ -2735,7 +2734,6 @@ func updatedDirMount(
 
 // updatedFileMount returns an updated mount for a given file after an exec/import/etc.
 // The returned ObjectResult uses the ID of the current operation.
-//
 func updatedFileMount(
 	ctx context.Context,
 	file *File,

@@ -144,6 +144,8 @@ type Call struct {
 	ExtraDigests []*ExtraDigest `protobuf:"bytes,14,rep,name=extraDigests,proto3" json:"extraDigests,omitempty"`
 	// Implicit inputs are engine-computed call inputs that are not explicit
 	// GraphQL field arguments, but still contribute to recipe identity.
+	// During cache checking, ID-able implicit inputs are treated as equivalence
+	// set inputs, same as ID-able explicit arguments.
 	ImplicitInputs []*Argument `protobuf:"bytes,15,rep,name=implicitInputs,proto3" json:"implicitInputs,omitempty"`
 }
 
