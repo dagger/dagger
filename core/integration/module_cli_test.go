@@ -593,6 +593,48 @@ func (CLISuite) TestDevelopDeterministicCodegen(ctx context.Context, t *testctx.
 	// Test that running codegen multiple times produces identical output.
 	// This is critical for version control - we want to be able to commit
 	// generated files and know they won't change unless the API changes.
+	t.Run("go split methods across files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("/work/main.go", `package main
+
+type GitRepo struct{}
+
+func (m *GitRepo) RemoteA() *RemoteA {
+	return &RemoteA{}
+}
+
+func (m *GitRepo) RemoteB() *RemoteB {
+	return &RemoteB{}
+}
+`,
+			).
+			WithNewFile("/work/remote_a.go", `package main
+
+type RemoteA struct{}
+`,
+			).
+			WithNewFile("/work/remote_b.go", `package main
+
+type RemoteB struct{}
+`,
+			)
+
+		modGen = modGen.With(daggerExec("develop"))
+		firstGen, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+
+		modGen = modGen.With(daggerExec("develop"))
+		secondGen, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, firstGen, secondGen, "Generated code should be deterministic across multiple runs")
+	})
+
 	t.Run("go with dependencies", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -811,6 +853,33 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			Sync(ctx)
 
 		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
+	})
+
+	t.Run("install with eager-runtime", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--sdk=go", "--name=dep", "--source=.")).
+			WithNewFile("/work/dep/main.go", `package main
+
+import "context"
+
+type Dep struct{}
+
+func (m *Dep) Fn(ctx context.Context) string {
+	return definitelyUndefinedSymbol
+}
+`,
+			).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			With(daggerExec("install", "--eager-runtime", "./dep")).
+			Sync(ctx)
+
+		requireErrOut(t, err, "failed to install module")
+		requireErrOut(t, err, "definitelyUndefinedSymbol")
 	})
 
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {

@@ -542,6 +542,23 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 	})
 }
 
+func (EngineSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// create some cache content so entries exist
+	_, err := c.Container().From(alpineImage).WithExec([]string{"echo", "hello"}).Sync(ctx)
+	require.NoError(t, err)
+
+	ents, err := c.Engine().LocalCache().EntrySet().Entries(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, ents)
+
+	for _, ent := range ents {
+		entVal := getCacheEntryVals(ctx, t, ent)
+		assert.NotEmpty(t, entVal.RecordType, "RecordType should be populated for entry %q", entVal.Description)
+	}
+}
+
 func engineConfigWithEnabled(enabled bool) func(context.Context, *testctx.T, config.Config) config.Config {
 	return func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
 		t.Helper()
@@ -601,6 +618,7 @@ type cacheEntryVals struct {
 	CreatedTimeUnixNano       int
 	MostRecentUseTimeUnixNano int
 	ActivelyUsed              bool
+	RecordType                string
 }
 
 func getCacheEntryVals(ctx context.Context, t *testctx.T, ent daggerio.EngineCacheEntry) *cacheEntryVals {
@@ -622,6 +640,9 @@ func getCacheEntryVals(ctx context.Context, t *testctx.T, ent daggerio.EngineCac
 	require.NoError(t, err)
 
 	vals.ActivelyUsed, err = ent.ActivelyUsed(ctx)
+	require.NoError(t, err)
+
+	vals.RecordType, err = ent.RecordType(ctx)
 	require.NoError(t, err)
 
 	return vals

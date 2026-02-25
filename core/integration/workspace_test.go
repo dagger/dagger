@@ -447,6 +447,92 @@ type Magic {
 	require.NotContains(t, help, "--source")
 }
 
+// TestWorkspaceDirectoryGitignore verifies that Workspace.directory with
+// gitignore: true filters out files matched by .gitignore rules.
+func (WorkspaceSuite) TestWorkspaceDirectoryGitignore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile(".gitignore", "*.log\nbuild/\n").
+		WithNewFile("keep.txt", "kept").
+		WithNewFile("drop.log", "dropped").
+		WithNewFile("build/out.bin", "binary").
+		WithNewFile("src/app.txt", "app").
+		WithNewFile("src/debug.log", "debug log").
+		// commit so .gitignore is well-established
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init"})
+
+	t.Run("root directory respects gitignore", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("gi-root", `
+type GiRoot {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".", gitignore: true)
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("gi-root", "ls")).Stdout(ctx)
+		require.NoError(t, err)
+		entries := strings.TrimSpace(out)
+		require.Contains(t, entries, "keep.txt")
+		require.Contains(t, entries, "src/")
+		require.NotContains(t, entries, "drop.log")
+		require.NotContains(t, entries, "build/")
+	})
+
+	t.Run("subdirectory respects gitignore", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("gi-sub", `
+type GiSub {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory("src", gitignore: true)
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("gi-sub", "ls")).Stdout(ctx)
+		require.NoError(t, err)
+		entries := strings.TrimSpace(out)
+		require.Contains(t, entries, "app.txt")
+		require.NotContains(t, entries, "debug.log")
+	})
+
+	t.Run("without gitignore flag includes all files", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("gi-off", `
+type GiOff {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("gi-off", "ls")).Stdout(ctx)
+		require.NoError(t, err)
+		entries := strings.TrimSpace(out)
+		require.Contains(t, entries, "keep.txt")
+		require.Contains(t, entries, "drop.log")
+		require.Contains(t, entries, "build/")
+	})
+}
+
 // TestWorkspaceContentAddressed verifies that when a module constructor takes
 // a Workspace argument, the result is content-addressed: calling a function
 // twice with the same workspace content should be cached (the function body

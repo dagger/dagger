@@ -1761,6 +1761,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Check::error",
+			"p": "Dagger/Check.html#method_error",
+			"d": "<p>If the check failed, this is the error</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Check::id",
 			"p": "Dagger/Check.html#method_id",
 			"d": "<p>A unique identifier for this Check.</p>"
@@ -3300,6 +3306,12 @@
 			"n": "Dagger\\EngineCacheEntry::mostRecentUseTimeUnixNano",
 			"p": "Dagger/EngineCacheEntry.html#method_mostRecentUseTimeUnixNano",
 			"d": "<p>The most recent time the cache entry was used, in Unix nanoseconds.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EngineCacheEntry::recordType",
+			"p": "Dagger/EngineCacheEntry.html#method_recordType",
+			"d": "<p>The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).</p>"
 		},
 		{
 			"t": "M",

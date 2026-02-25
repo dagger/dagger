@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -5440,4 +5441,60 @@ func (ContainerSuite) TestContainerCaching(ctx context.Context, t *testctx.T) {
 	}
 
 	require.Equal(t, output[0], output[1], "container exec was not cached")
+}
+
+// test for https://github.com/dagger/dagger/issues/8955
+func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *testctx.T) {
+	wd := t.TempDir()
+
+	// Note: this bug is particularly nasty, running a command such as `head -c 128 /dev/random | sha256sum > some-file`
+	// will not work -- it will be executed twice; however, the data from the first run is returned in both cases.
+	// Instead we use a unix socket to count how many times it is connected to (which corresponds to each time WithExec is executed.
+
+	sock := filepath.Join(wd, "test.sock")
+	l, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	defer l.Close()
+
+	var numConnections atomic.Uint32
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err == nil {
+				t.Logf("New connection from %s\n", conn.RemoteAddr().String())
+				numConnections.Add(1)
+				conn.Close()
+			}
+		}
+	}()
+
+	// This single buster value is shared between the two clients
+	buster := identity.NewID()
+
+	getContainer := func(c *dagger.Client) *dagger.Container {
+		return c.Container().From(alpineImage).
+			WithUnixSocket("testsock", c.Host().UnixSocket(sock)).
+			WithMountedDirectory("/src", c.Host().Directory(".")).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("echo %s | nc local:/testsock", buster)})
+	}
+
+	c1 := connect(ctx, t, dagger.WithWorkdir(wd))
+	_, err = getContainer(c1).Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c1.Close())
+
+	c2 := connect(ctx, t, dagger.WithWorkdir(wd))
+	_, err = getContainer(c2).
+		WithExec([]string{"true"}). // Note this second WithExec triggers the original netcat withExec command to re-execute, when it should be cached
+		Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c2.Close())
+
+	// TODO: once https://github.com/dagger/dagger/issues/8955 is fixed, enable this test, and delete the tests below
+	// require.Equal(t, 1, int(numConnections.Load()), "socket should be accessed exactly once")
+
+	if int(numConnections.Load()) == 1 {
+		t.Errorf("Congrats you fixed the bug; please enable the above test and delete this line")
+	}
+	require.Positive(t, int(numConnections.Load()), "the socket was never connected to")
 }

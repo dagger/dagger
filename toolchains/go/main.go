@@ -27,7 +27,7 @@ func New(
 	source *dagger.Directory,
 	// Go version
 	// +optional
-	// +default="1.25.7"
+	// +default="1.26"
 	version string,
 	// Use a custom module cache
 	// +optional
@@ -83,7 +83,7 @@ func New(
 	}
 	if base == nil {
 		packages := []string{
-			"go~" + version,
+			"go-" + version,
 			"ca-certificates",
 			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 			"build-base",

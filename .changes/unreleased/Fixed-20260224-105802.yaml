@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix ONBUILD commands in Dockerfiles not being published when calling directory.dockerbuild().Publish()
+time: 2026-02-24T10:58:02.110342303-08:00
+custom:
+    Author: alexcb
+    PR: "11901"

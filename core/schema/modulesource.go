@@ -3157,6 +3157,15 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 						defaultValue = argCfg.Default
 					}
 
+					// If the JSON parsed as a non-string type (e.g. number) but
+					// the argument expects a string, use the raw config value
+					// as-is. See https://github.com/dagger/dagger/issues/11882
+					if _, isString := defaultValue.(string); !isString {
+						if _, err := arg.TypeDef.ToInput().Decoder().DecodeInput(defaultValue); err != nil {
+							defaultValue = argCfg.Default
+						}
+					}
+
 					// Validate the type matches the argument type
 					_, err := arg.TypeDef.ToInput().Decoder().DecodeInput(defaultValue)
 					if err != nil {

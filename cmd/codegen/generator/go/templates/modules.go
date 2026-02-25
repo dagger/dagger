@@ -83,12 +83,6 @@ func (funcs goTemplateFuncs) getTypes(ps *parseState, strict bool) ([]types.Type
 		ps.objs = append(ps.objs, obj)
 	}
 
-	// preserve definition order, so developer can keep more important /
-	// entrypoint types higher up
-	sort.Slice(ps.objs, func(i, j int) bool {
-		return ps.objs[i].Pos() < ps.objs[j].Pos()
-	})
-
 	tps := []types.Type{}
 	for _, obj := range ps.objs {
 		// ignore any private definitions, they may be part of the runtime itself

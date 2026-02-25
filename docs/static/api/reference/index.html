@@ -5583,6 +5583,10 @@
                         <td> The description of the check </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-error" href="#Check-error"><code>error</code></a> - <span class="property-type"><a href="#definition-Error"><code>Error</code></a></span> </td>
+                        <td> If the check failed, this is the error </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Check-id" href="#Check-id"><code>id</code></a> - <span class="property-type"><a href="#definition-CheckID"><code>CheckID!</code></a></span> </td>
                         <td> A unique identifier for this Check. </td>
                       </tr>
@@ -8392,6 +8396,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EngineCacheEntry-mostRecentUseTimeUnixNano" href="#EngineCacheEntry-mostRecentUseTimeUnixNano"><code>mostRecentUseTimeUnixNano</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
                         <td> The most recent time the cache entry was used, in Unix nanoseconds. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntry-recordType" href="#EngineCacheEntry-recordType"><code>recordType</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount). </td>
                       </tr>
                     </tbody>
                   </table>
@@ -15524,6 +15532,7 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Apply .gitignore filter rules inside the directory.</p>
                               </div>
                             </div>
                           </div>

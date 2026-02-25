@@ -35,7 +35,7 @@ const (
 
 	// NOTE: when changing this version, check if the `DefaultNodeVersion` var in sdk/typescript/runtime/tsdistconsts/consts.go
 	// should be updated to an image that has the same version of npm pre-installed in the container
-	NpmDefaultVersion = "10.9.0"
+	NpmDefaultVersion = "11.8.0"
 )
 
 type SDKLibOrigin string

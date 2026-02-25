@@ -23,8 +23,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/distribution/reference"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core"
@@ -1258,7 +1258,7 @@ type containerWithEntrypointArgs struct {
 }
 
 func (s *containerSchema) withEntrypoint(ctx context.Context, parent *core.Container, args containerWithEntrypointArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Entrypoint = args.Args
 		if !args.KeepDefaultArgs {
 			cfg.Cmd = nil
@@ -1272,7 +1272,7 @@ type containerWithoutEntrypointArgs struct {
 }
 
 func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent *core.Container, args containerWithoutEntrypointArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Entrypoint = nil
 		if !args.KeepDefaultArgs {
 			cfg.Cmd = nil
@@ -1297,7 +1297,7 @@ type containerWithDefaultArgs struct {
 func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Container, args containerWithDefaultArgs) (*core.Container, error) {
 	c := parent.Clone()
 	c.DefaultArgs = true
-	return c.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return c.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		if args.Args == nil {
 			cfg.Cmd = []string{}
 			return cfg
@@ -1311,7 +1311,7 @@ func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Cont
 func (s *containerSchema) withoutDefaultArgs(ctx context.Context, parent *core.Container, _ struct{}) (*core.Container, error) {
 	c := parent.Clone()
 	c.DefaultArgs = false
-	return c.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return c.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Cmd = nil
 		return cfg
 	})
@@ -1331,14 +1331,14 @@ type containerWithUserArgs struct {
 }
 
 func (s *containerSchema) withUser(ctx context.Context, parent *core.Container, args containerWithUserArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.User = args.Name
 		return cfg
 	})
 }
 
 func (s *containerSchema) withoutUser(ctx context.Context, parent *core.Container, _ struct{}) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.User = ""
 		return cfg
 	})
@@ -1364,14 +1364,14 @@ func (s *containerSchema) withWorkdir(ctx context.Context, parent *core.Containe
 		return nil, err
 	}
 
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.WorkingDir = absPath(cfg.WorkingDir, path)
 		return cfg
 	})
 }
 
 func (s *containerSchema) withoutWorkdir(ctx context.Context, parent *core.Container, _ struct{}) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.WorkingDir = ""
 		return cfg
 	})
@@ -1393,7 +1393,7 @@ type containerWithVariableArgs struct {
 }
 
 func (s *containerSchema) withEnvVariable(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		value := args.Value
 
 		if args.Expand {
@@ -1429,7 +1429,7 @@ func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent *core
 		return nil, err
 	}
 
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		for _, v := range vars {
 			cfg.Env = core.AddEnv(cfg.Env, v.Name, v.Value)
 		}
@@ -1452,7 +1452,7 @@ type containerWithoutVariableArgs struct {
 }
 
 func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		newEnv := []string{}
 
 		core.WalkEnv(cfg.Env, func(k, _, env string) {
@@ -1762,7 +1762,7 @@ type containerWithLabelArgs struct {
 }
 
 func (s *containerSchema) withLabel(ctx context.Context, parent *core.Container, args containerWithLabelArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		if cfg.Labels == nil {
 			cfg.Labels = make(map[string]string)
 		}
@@ -1776,7 +1776,7 @@ type containerWithoutLabelArgs struct {
 }
 
 func (s *containerSchema) withoutLabel(ctx context.Context, parent *core.Container, args containerWithoutLabelArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		delete(cfg.Labels, args.Name)
 		return cfg
 	})

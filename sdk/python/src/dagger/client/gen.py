@@ -1319,6 +1319,12 @@ class Check(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
+    def error(self) -> "Error":
+        """If the check failed, this is the error"""
+        _args: list[Arg] = []
+        _ctx = self._select("error", _args)
+        return Error(_ctx)
+
     async def id(self) -> CheckID:
         """A unique identifier for this Check.
 
@@ -5024,6 +5030,28 @@ class EngineCacheEntry(Type):
         _args: list[Arg] = []
         _ctx = self._select("mostRecentUseTimeUnixNano", _args)
         return await _ctx.execute(int)
+
+    async def record_type(self) -> str:
+        """The type of the cache record (e.g. regular, internal, frontend,
+        source.local, source.git.checkout, exec.cachemount).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("recordType", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -13903,6 +13931,7 @@ class Workspace(Type):
             Include only artifacts that match the given pattern (e.g.,
             ["app/", "package.*"]).
         gitignore:
+            Apply .gitignore filter rules inside the directory.
         """
         _args = [
             Arg("path", path),

@@ -2676,6 +2676,10 @@ export type WorkspaceDirectoryOpts = {
    * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * Apply .gitignore filter rules inside the directory.
+   */
   gitignore?: boolean
 }
 
@@ -3469,6 +3473,14 @@ export class Check extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * If the check failed, this is the error
+   */
+  error = (): Error => {
+    const ctx = this._ctx.select("error")
+    return new Error(ctx)
   }
 
   /**
@@ -5823,6 +5835,7 @@ export class EngineCacheEntry extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _diskSpaceBytes?: number = undefined
   private readonly _mostRecentUseTimeUnixNano?: number = undefined
+  private readonly _recordType?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5835,6 +5848,7 @@ export class EngineCacheEntry extends BaseClient {
     _description?: string,
     _diskSpaceBytes?: number,
     _mostRecentUseTimeUnixNano?: number,
+    _recordType?: string,
   ) {
     super(ctx)
 
@@ -5844,6 +5858,7 @@ export class EngineCacheEntry extends BaseClient {
     this._description = _description
     this._diskSpaceBytes = _diskSpaceBytes
     this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
+    this._recordType = _recordType
   }
 
   /**
@@ -5932,6 +5947,21 @@ export class EngineCacheEntry extends BaseClient {
     const ctx = this._ctx.select("mostRecentUseTimeUnixNano")
 
     const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+   */
+  recordType = async (): Promise<string> => {
+    if (this._recordType) {
+      return this._recordType
+    }
+
+    const ctx = this._ctx.select("recordType")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -13463,6 +13493,7 @@ export class Workspace extends BaseClient {
    * @param path Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * @param opts.gitignore Apply .gitignore filter rules inside the directory.
    */
   directory = (path: string, opts?: WorkspaceDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
