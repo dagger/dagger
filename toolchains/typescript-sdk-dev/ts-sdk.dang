@@ -93,6 +93,19 @@ type TypescriptSdkDev {
   }
 
   """
+  Test the telemetry package
+  """
+  pub testTelemetryPackage: Void! @check {
+    bunjsDevContainer.
+      withWorkdir(sourcePath + "/telemetry").
+      withExec(["bun", "test"]).
+      sync
+
+    null
+  }
+
+
+  """
   Generate the Typescript client library
   """
   pub clientLibrary: Changeset! @generate {
