@@ -39,7 +39,7 @@ func (repo *LocalGitRepository) Get(ctx context.Context, ref *gitutil.Ref) (GitR
 
 func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, error) {
 	var remote *gitutil.Remote
-	err := repo.mount(ctx, 0, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return err
@@ -55,7 +55,7 @@ func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, er
 
 func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*File, error) {
 	var gitDir string
-	err := repo.mount(ctx, 0, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
 		dir, err := git.GitDir(ctx)
 		if err != nil {
 			return err
@@ -206,7 +206,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
-func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
+func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -232,11 +232,11 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []Git
 	})
 }
 
-func (ref *LocalGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error {
-	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
+func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
 }
 
-func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {
+func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -261,7 +261,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		}
 	}()
 
-	err = ref.mount(ctx, depth, func(git *gitutil.GitCLI) error {
+	err = ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git url: %w", err)
