@@ -998,11 +998,13 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
 	var skipWorkspaceModules bool
+	var eagerRuntime bool
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
 		extraModules = md.ExtraModules
 		skipWorkspaceModules = md.SkipWorkspaceModules
+		eagerRuntime = md.EagerRuntime
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -1018,6 +1020,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			AllowedLLMModules:    allowedLLMModules,
 			ExtraModules:         extraModules,
 			SkipWorkspaceModules: skipWorkspaceModules,
+			EagerRuntime:         eagerRuntime,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,

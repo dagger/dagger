@@ -116,6 +116,7 @@ a module dependency regardless of workspace context.`,
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
+			EagerRuntime:         eagerRuntime,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 

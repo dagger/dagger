@@ -440,6 +440,7 @@ var moduleDepInstallCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
+			EagerRuntime:         eagerRuntime,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 

@@ -3521,6 +3521,14 @@ export class Check extends BaseClient {
   }
 
   /**
+   * If the check failed, this is the error
+   */
+  error = (): Error => {
+    const ctx = this._ctx.select("error")
+    return new Error(ctx)
+  }
+
+  /**
    * Return the fully qualified name of the check
    */
   name = async (): Promise<string> => {
@@ -5872,6 +5880,7 @@ export class EngineCacheEntry extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _diskSpaceBytes?: number = undefined
   private readonly _mostRecentUseTimeUnixNano?: number = undefined
+  private readonly _recordType?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5884,6 +5893,7 @@ export class EngineCacheEntry extends BaseClient {
     _description?: string,
     _diskSpaceBytes?: number,
     _mostRecentUseTimeUnixNano?: number,
+    _recordType?: string,
   ) {
     super(ctx)
 
@@ -5893,6 +5903,7 @@ export class EngineCacheEntry extends BaseClient {
     this._description = _description
     this._diskSpaceBytes = _diskSpaceBytes
     this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
+    this._recordType = _recordType
   }
 
   /**
@@ -5981,6 +5992,21 @@ export class EngineCacheEntry extends BaseClient {
     const ctx = this._ctx.select("mostRecentUseTimeUnixNano")
 
     const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+   */
+  recordType = async (): Promise<string> => {
+    if (this._recordType) {
+      return this._recordType
+    }
+
+    const ctx = this._ctx.select("recordType")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }

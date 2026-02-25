@@ -232,11 +232,7 @@ type enumValue struct {
 var _ DaggerValue = &enumValue{}
 
 func (v *enumValue) Type() string {
-	vs := make([]string, 0, len(v.typedef.Members))
-	for _, v := range v.typedef.Members {
-		vs = append(vs, v.Name)
-	}
-	return strings.Join(vs, ",")
+	return strings.Join(v.typedef.ValueNames(), ",")
 }
 
 func (v *enumValue) String() string {

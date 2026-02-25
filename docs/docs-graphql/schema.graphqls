@@ -332,6 +332,9 @@ type Check {
   """The description of the check"""
   description: String!
 
+  """If the check failed, this is the error"""
+  error: Error
+
   """A unique identifier for this Check."""
   id: CheckID!
 
@@ -2171,6 +2174,11 @@ type EngineCacheEntry {
 
   """The most recent time the cache entry was used, in Unix nanoseconds."""
   mostRecentUseTimeUnixNano: Int!
+
+  """
+  The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+  """
+  recordType: String!
 }
 
 """

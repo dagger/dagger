@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
 	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/util/containerutil"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/engine"
@@ -78,7 +79,7 @@ func (c *Client) PublishContainerImage(
 
 type ContainerExport struct {
 	Ref         bkcache.ImmutableRef
-	Config      specs.ImageConfig
+	Config      dockerspec.DockerOCIImageConfig
 	Annotations []containerutil.ContainerAnnotation
 }
 
@@ -273,12 +274,15 @@ func (c *Client) combineContainerRefs(
 		if err != nil {
 			return nil, err
 		}
-		cfgBytes, err := json.Marshal(specs.Image{
-			Platform: specs.Platform{
-				Architecture: platform.Architecture,
-				OS:           platform.OS,
-				OSVersion:    platform.OSVersion,
-				OSFeatures:   platform.OSFeatures,
+
+		cfgBytes, err := json.Marshal(dockerspec.DockerOCIImage{
+			Image: specs.Image{
+				Platform: specs.Platform{
+					Architecture: platform.Architecture,
+					OS:           platform.OS,
+					OSVersion:    platform.OSVersion,
+					OSFeatures:   platform.OSFeatures,
+				},
 			},
 			Config: input.Config,
 		})

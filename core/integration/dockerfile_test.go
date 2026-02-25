@@ -315,6 +315,37 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		require.NoError(t, err)
 		require.Equal(t, "bay-contents", content)
 	})
+
+	t.Run("onbuild command is published", func(ctx context.Context, t *testctx.T) {
+		testRef := registryRef("dockerfile-publish")
+
+		pushedRef, err := baseDir.
+			WithNewFile("Dockerfile",
+				`FROM `+golangImage+`
+	ONBUILD COPY some-file-that-might-exist .
+	`).DockerBuild().Publish(ctx, testRef)
+
+		// The initial build doesn't depend on some-file-that-might-exist existing
+		require.NoError(t, err)
+		require.Contains(t, pushedRef, "@sha256:")
+
+		// However, when we perform a second build that references the above Dockerfile
+		// it should return an error since some-file-that-might-exist doesn't actually exist
+		_, err = baseDir.
+			WithNewFile("Dockerfile",
+				`FROM `+pushedRef+`
+	`).DockerBuild().Sync(ctx)
+		require.ErrorContains(t, err, "\"/some-file-that-might-exist\": not found")
+
+		// Test again, after some-file-that-might-exist is created.
+		s, err := baseDir.
+			WithNewFile("some-file-that-might-exist", "existence is futile").
+			WithNewFile("Dockerfile",
+				`FROM `+pushedRef+`
+	`).DockerBuild().File("some-file-that-might-exist").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "existence is futile", s)
+	})
 }
 
 func (DockerfileSuite) TestBuildMergesWithParent(ctx context.Context, t *testctx.T) {

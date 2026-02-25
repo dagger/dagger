@@ -2687,6 +2687,15 @@ impl Check {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// If the check failed, this is the error
+    pub fn error(&self) -> Error {
+        let query = self.selection.select("error");
+        Error {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this Check.
     pub async fn id(&self) -> Result<CheckId, DaggerError> {
         let query = self.selection.select("id");
@@ -6781,6 +6790,11 @@ impl EngineCacheEntry {
     /// The most recent time the cache entry was used, in Unix nanoseconds.
     pub async fn most_recent_use_time_unix_nano(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("mostRecentUseTimeUnixNano");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+    pub async fn record_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("recordType");
         query.execute(self.graphql_client.clone()).await
     }
 }

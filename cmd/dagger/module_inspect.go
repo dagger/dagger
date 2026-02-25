@@ -887,6 +887,7 @@ func (e *modEnum) ValueNames() []string {
 	for _, v := range e.Members {
 		values = append(values, v.Name)
 	}
+	slices.Sort(values)
 	return values
 }
 

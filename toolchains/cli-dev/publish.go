@@ -229,7 +229,7 @@ func (cli *CliDev) goreleaserBinaries() *dagger.Directory {
 	dir := dag.Directory()
 	for _, os := range oses {
 		for _, arch := range arches {
-			if arch == "arm" && os == "darwin" {
+			if arch == "arm" && (os == "darwin" || os == "windows") {
 				continue
 			}
 

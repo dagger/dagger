@@ -33,6 +33,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/containerutil"
 	"github.com/distribution/reference"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -64,7 +65,7 @@ type Container struct {
 	FS *dagql.ObjectResult[*Directory]
 
 	// Image configuration (env, workdir, etc)
-	Config specs.ImageConfig
+	Config dockerspec.DockerOCIImageConfig
 
 	// List of GPU devices that will be exposed to the container
 	EnabledGPUs []string
@@ -616,7 +617,7 @@ func (container *Container) FromCanonicalRefUpdateConfig(
 		}
 	}
 
-	var imgSpec specs.Image
+	var imgSpec dockerspec.DockerOCIImage
 	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
 		return nil, err
 	}
@@ -799,7 +800,7 @@ func (container *Container) Build(
 
 	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
 	if found {
-		var imgSpec specs.Image
+		var imgSpec dockerspec.DockerOCIImage
 		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
 			return nil, err
 		}
@@ -1688,11 +1689,11 @@ func (container *Container) chownFile(
 	return res, nil
 }
 
-func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
+func (container *Container) ImageConfig(ctx context.Context) (dockerspec.DockerOCIImageConfig, error) {
 	return container.Config, nil
 }
 
-func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func(specs.ImageConfig) specs.ImageConfig) (*Container, error) {
+func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func(dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig) (*Container, error) {
 	container = container.Clone()
 	container.Config = updateFn(container.Config)
 	return container, nil
@@ -2210,7 +2211,7 @@ func (container *Container) FromInternal(
 	if err != nil {
 		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
 	}
-	var imgSpec specs.Image
+	var imgSpec dockerspec.DockerOCIImage
 	err = json.Unmarshal(configBlob, &imgSpec)
 	if err != nil {
 		return nil, fmt.Errorf("load image config: %w", err)
