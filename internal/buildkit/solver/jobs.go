@@ -957,6 +957,28 @@ func (s *sharedOp) Exec(ctx context.Context, inputs []Result) (outputs []Result,
 	}
 	flightControlKey := "exec"
 	res, err := s.gExecRes.Do(ctx, flightControlKey, func(ctx context.Context) (ret *execRes, retErr error) {
+		if active, ok := flightcontrol.CurrentActiveCall(ctx); ok {
+			started := time.Now()
+			bklog.G(ctx).Debugf(
+				"flightcontrol.exec.trace event=exec_run_start callID=%d key=%s vertexDigest=%s vertexName=%q",
+				active.CallID,
+				active.Key,
+				s.st.vtx.Digest(),
+				s.st.vtx.Name(),
+			)
+			defer func() {
+				bklog.G(ctx).Debugf(
+					"flightcontrol.exec.trace event=exec_run_done callID=%d key=%s vertexDigest=%s vertexName=%q elapsedMs=%d err=%v",
+					active.CallID,
+					active.Key,
+					s.st.vtx.Digest(),
+					s.st.vtx.Name(),
+					time.Since(started).Milliseconds(),
+					retErr,
+				)
+			}()
+		}
+
 		if s.execDone {
 			if s.execErr != nil {
 				return nil, s.execErr

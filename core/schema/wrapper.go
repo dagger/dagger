@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -383,14 +384,41 @@ func DagOpContainer[A any](
 	args A,
 	execMD *buildkit.ExecutionMetadata,
 ) (*core.Container, string, error) {
+	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
 	curIDForContainerDagOp, err := currentIDForContainerDagOp(ctx)
 	if err != nil {
 		return nil, "", err
 	}
+	if traceEnabled {
+		slog.ExtraDebug("core.schema.dagop_container.trace",
+			"event", "dagop_container_start",
+			"idField", curIDForContainerDagOp.Field(),
+			"idDigest", curIDForContainerDagOp.Digest().String(),
+			"idContentPreferredDigest", curIDForContainerDagOp.ContentPreferredDigest().String(),
+			"hasExecMD", execMD != nil,
+		)
+	}
 
 	ctrRes, err := core.NewContainerDagOp(ctx, curIDForContainerDagOp, ctr, execMD)
 	if err != nil {
+		if traceEnabled {
+			slog.ExtraDebug("core.schema.dagop_container.trace",
+				"event", "dagop_container_done",
+				"idField", curIDForContainerDagOp.Field(),
+				"idDigest", curIDForContainerDagOp.Digest().String(),
+				"idContentPreferredDigest", curIDForContainerDagOp.ContentPreferredDigest().String(),
+				"err", err,
+			)
+		}
 		return nil, "", err
+	}
+	if traceEnabled {
+		slog.ExtraDebug("core.schema.dagop_container.trace",
+			"event", "dagop_container_done",
+			"idField", curIDForContainerDagOp.Field(),
+			"idDigest", curIDForContainerDagOp.Digest().String(),
+			"idContentPreferredDigest", curIDForContainerDagOp.ContentPreferredDigest().String(),
+		)
 	}
 	return ctrRes, curIDForContainerDagOp.ContentPreferredDigest().String(), nil
 }
