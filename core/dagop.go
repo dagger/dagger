@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -24,6 +23,11 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
+)
+
+const (
+	keyDaggerDigest = "dagger.digest"
+	daggerDigestIdx = keyDaggerDigest + ":"
 )
 
 func init() {
@@ -210,6 +214,19 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, _ []solver.Result
 		solverRes = worker.NewWorkerRefResult(nil, opt.Worker)
 	}
 
+	workerRef, ok := solverRes.Sys().(*worker.WorkerRef)
+	if !ok {
+		return nil, fmt.Errorf("invalid ref: %T", solverRes.Sys())
+	}
+	ref := workerRef.ImmutableRef
+	if ref != nil {
+		idDgst := obj.ID().ContentPreferredDigest().String()
+
+		if err := ref.SetString(keyDaggerDigest, idDgst, daggerDigestIdx+idDgst); err != nil {
+			return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
+		}
+	}
+
 	return []solver.Result{solverRes}, nil
 }
 
@@ -366,7 +383,6 @@ func NewContainerDagOp(
 	ctr *Container,
 	execMD *buildkit.ExecutionMetadata,
 ) (*Container, error) {
-	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
 	mounts, inputDefs, _, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, err
@@ -388,19 +404,6 @@ func NewContainerDagOp(
 	}
 	if execMD != nil && execMD.OverrideBuildkitCacheKey != "" {
 		dagop.CacheKey = execMD.OverrideBuildkitCacheKey
-	}
-	if traceEnabled {
-		slog.ExtraDebug("core.container_dagop.trace",
-			"event", "container_dagop_new",
-			"idField", id.Field(),
-			"idDigest", id.Digest().String(),
-			"idContentPreferredDigest", id.ContentPreferredDigest().String(),
-			"cacheKey", dagop.CacheKey.String(),
-			"inputDefs", len(inputDefs),
-			"mounts", len(mounts),
-			"outputCount", outputCount,
-			"hasOverrideBuildkitCacheKey", execMD != nil && execMD.OverrideBuildkitCacheKey != "",
-		)
 	}
 
 	st, err := newContainerDagOp(ctx, dagop)
@@ -523,19 +526,6 @@ func (op ContainerDagOp) CacheMap(_ context.Context, cm *solver.CacheMap) (*solv
 }
 
 func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, _ []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
-	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
-	if traceEnabled {
-		slog.ExtraDebug("core.container_dagop.trace",
-			"event", "container_dagop_exec_start",
-			"idField", op.ID.Field(),
-			"idDigest", op.ID.Digest().String(),
-			"idContentPreferredDigest", op.ID.ContentPreferredDigest().String(),
-			"cacheKey", op.CacheKey.String(),
-			"inputDefs", len(op.InputDefs),
-			"mounts", len(op.Mounts),
-			"outputCount", op.OutputCount,
-		)
-	}
 	loadCtx := ctx
 
 	query, ok := opt.Server.Root().Unwrap().(*Query)
@@ -554,48 +544,18 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, _ []solver
 	mountData.Inputs = make([]*buildkit.Result, len(mountData.InputDefs))
 	for i, def := range mountData.InputDefs {
 		eg.Go(func() error {
-			if traceEnabled {
-				slog.ExtraDebug("core.container_dagop.trace",
-					"event", "container_dagop_input_solve_start",
-					"idDigest", op.ID.Digest().String(),
-					"inputIndex", i,
-				)
-			}
 			res, err := bk.Solve(ctx, bkgw.SolveRequest{
 				Evaluate:   true,
 				Definition: def,
 			})
 			if err != nil {
-				if traceEnabled {
-					slog.ExtraDebug("core.container_dagop.trace",
-						"event", "container_dagop_input_solve_done",
-						"idDigest", op.ID.Digest().String(),
-						"inputIndex", i,
-						"err", err,
-					)
-				}
 				return fmt.Errorf("failed to solve input definition: %w", err)
 			}
 			mountData.Inputs[i] = res
-			if traceEnabled {
-				slog.ExtraDebug("core.container_dagop.trace",
-					"event", "container_dagop_input_solve_done",
-					"idDigest", op.ID.Digest().String(),
-					"inputIndex", i,
-				)
-			}
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.container_dagop.trace",
-				"event", "container_dagop_exec_done",
-				"idDigest", op.ID.Digest().String(),
-				"phase", "input_solves",
-				"err", err,
-			)
-		}
 		return nil, err
 	}
 
@@ -607,39 +567,11 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, _ []solver
 	}
 	loadServer, err := dagOpLoadServer(loadCtx, query, opt.Server, loadID)
 	if err != nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.container_dagop.trace",
-				"event", "container_dagop_exec_done",
-				"idDigest", op.ID.Digest().String(),
-				"phase", "load_server",
-				"err", err,
-			)
-		}
 		return nil, err
-	}
-	if traceEnabled {
-		slog.ExtraDebug("core.container_dagop.trace",
-			"event", "container_dagop_load_type_start",
-			"idDigest", op.ID.Digest().String(),
-		)
 	}
 	obj, err := loadServer.LoadType(loadCtx, loadID)
 	if err != nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.container_dagop.trace",
-				"event", "container_dagop_load_type_done",
-				"idDigest", op.ID.Digest().String(),
-				"err", err,
-			)
-		}
 		return nil, err
-	}
-	if traceEnabled {
-		slog.ExtraDebug("core.container_dagop.trace",
-			"event", "container_dagop_load_type_done",
-			"idDigest", op.ID.Digest().String(),
-			"loadedType", fmt.Sprintf("%T", obj.Unwrap()),
-		)
 	}
 	if obj == nil {
 		return nil, fmt.Errorf("invalid unset container load: %s", loadID.Display())
@@ -650,22 +582,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, _ []solver
 
 	switch inst := obj.Unwrap().(type) {
 	case *Container:
-		if traceEnabled {
-			slog.ExtraDebug("core.container_dagop.trace",
-				"event", "container_dagop_extract_outputs_start",
-				"idDigest", op.ID.Digest().String(),
-			)
-		}
-		outs, err := extractContainerBkOutputs(ctx, inst, bk, opt.Worker, op.ContainerMountData)
-		if traceEnabled {
-			slog.ExtraDebug("core.container_dagop.trace",
-				"event", "container_dagop_extract_outputs_done",
-				"idDigest", op.ID.Digest().String(),
-				"outputs", len(outs),
-				"err", err,
-			)
-		}
-		return outs, err
+		return extractContainerBkOutputs(ctx, inst, bk, opt.Worker, op.ContainerMountData)
 	default:
 		// shouldn't happen, should have errored in DagLLB already
 		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)
@@ -990,6 +907,16 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 			ref = cachedRes.Sys().(*worker.WorkerRef).ImmutableRef
 		default:
 			return worker.NewWorkerRefResult(nil, wkr), nil
+		}
+
+		if ref != nil && id != nil {
+			dgst := id.ContentPreferredDigest()
+
+			if dgst != "" {
+				if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {
+					return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
+				}
+			}
 		}
 
 		return worker.NewWorkerRefResult(ref, wkr), nil

@@ -40,7 +40,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	engineslog "github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/cleanups"
 )
@@ -381,69 +380,7 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return nil, err
 	}
-	traceEnabled := engineslog.Default().Enabled(ctx, engineslog.LevelExtraDebug)
-	startBindingsStart := time.Now()
-	if traceEnabled {
-		currentDigest := ""
-		currentContentPreferredDigest := ""
-		currentPath := ""
-		if id != nil {
-			currentDigest = id.Digest().String()
-			currentContentPreferredDigest = id.ContentPreferredDigest().String()
-			currentPath = id.DisplaySelf()
-		}
-		bindingSummaries := make([]string, 0, len(ctr.Services))
-		selfDependencyCount := 0
-		for _, bnd := range ctr.Services {
-			depDigest := ""
-			depContentPreferredDigest := ""
-			depPath := ""
-			sameContentPreferredDigest := false
-			if depID := bnd.Service.ID(); depID != nil {
-				depDigest = depID.Digest().String()
-				depContentPreferredDigest = depID.ContentPreferredDigest().String()
-				depPath = depID.DisplaySelf()
-				sameContentPreferredDigest = depContentPreferredDigest == currentContentPreferredDigest
-				if sameContentPreferredDigest {
-					selfDependencyCount++
-				}
-			}
-			bindingSummaries = append(bindingSummaries, fmt.Sprintf(
-				"hostname=%s aliases=%s depDigest=%s depContentPreferredDigest=%s sameAsCurrentContentPreferred=%t depPath=%s",
-				bnd.Hostname,
-				bnd.Aliases.String(),
-				depDigest,
-				depContentPreferredDigest,
-				sameContentPreferredDigest,
-				depPath,
-			))
-		}
-		engineslog.ExtraDebug("core.service.start_container.trace",
-			"event", "start_bindings_start",
-			"serviceDigest", currentDigest,
-			"serviceContentPreferredDigest", currentContentPreferredDigest,
-			"servicePath", currentPath,
-			"bindingCount", len(ctr.Services),
-			"selfDependencyCount", selfDependencyCount,
-			"bindingSummary", strings.Join(bindingSummaries, " || "),
-			"clientID", clientMetadata.ClientID,
-			"sessionID", clientMetadata.SessionID,
-			"clientHostname", clientMetadata.ClientHostname,
-		)
-	}
 	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
-	if traceEnabled {
-		engineslog.ExtraDebug("core.service.start_container.trace",
-			"event", "start_bindings_done",
-			"serviceDigest", id.Digest().String(),
-			"serviceContentPreferredDigest", id.ContentPreferredDigest().String(),
-			"elapsedMs", time.Since(startBindingsStart).Milliseconds(),
-			"err", err,
-			"clientID", clientMetadata.ClientID,
-			"sessionID", clientMetadata.SessionID,
-			"clientHostname", clientMetadata.ClientHostname,
-		)
-	}
 	if err != nil {
 		return nil, fmt.Errorf("start dependent services: %w", err)
 	}

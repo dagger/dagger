@@ -3,11 +3,9 @@ package flightcontrol
 import (
 	"context"
 	"io"
-	"log"
 	"math/rand"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
@@ -42,45 +40,6 @@ func (e RetryableError) Unwrap() error {
 type contextKeyT string
 
 var contextKey = contextKeyT("buildkit/util/flightcontrol.progress")
-var activeCallContextKey = contextKeyT("buildkit/util/flightcontrol.active-call")
-var nextCallID uint64
-var loggedWaitEdges sync.Map
-var loggedWaitStalls sync.Map
-var loggedStartEdges sync.Map
-
-type waitEdgeKey struct {
-	fromCallID uint64
-	toCallID   uint64
-}
-
-type waitStallKey struct {
-	waiterCallID uint64
-	toCallID     uint64
-}
-
-type activeCallContext struct {
-	callID uint64
-	key    string
-}
-
-type ActiveCallInfo struct {
-	CallID uint64
-	Key    string
-}
-
-func CurrentActiveCall(ctx context.Context) (ActiveCallInfo, bool) {
-	if ctx == nil {
-		return ActiveCallInfo{}, false
-	}
-	active, ok := ctx.Value(activeCallContextKey).(activeCallContext)
-	if !ok {
-		return ActiveCallInfo{}, false
-	}
-	return ActiveCallInfo{
-		CallID: active.callID,
-		Key:    active.key,
-	}, true
-}
 
 // Group is a flightcontrol synchronization group
 type Group[T any] struct {
@@ -119,38 +78,11 @@ func (g *Group[T]) do(ctx context.Context, key string, fn func(ctx context.Conte
 	}
 
 	if c, ok := g.m[key]; ok { // register 2nd waiter
-		if active, ok := ctx.Value(activeCallContextKey).(activeCallContext); ok {
-			edge := waitEdgeKey{fromCallID: active.callID, toCallID: c.id}
-			if _, loaded := loggedWaitEdges.LoadOrStore(edge, struct{}{}); !loaded {
-				log.Printf(
-					"flightcontrol.trace event=wait_existing fromCallID=%d fromKey=%q toCallID=%d toKey=%q",
-					active.callID,
-					active.key,
-					c.id,
-					c.key,
-				)
-			}
-			if active.callID == c.id {
-				log.Printf("flightcontrol.trace event=self_recursive_wait key=%q callID=%d", key, c.id)
-			}
-		}
 		g.mu.Unlock()
 		return c.wait(ctx)
 	}
 
-	c := newCall(key, fn)
-	if active, ok := ctx.Value(activeCallContextKey).(activeCallContext); ok {
-		edge := waitEdgeKey{fromCallID: active.callID, toCallID: c.id}
-		if _, loaded := loggedStartEdges.LoadOrStore(edge, struct{}{}); !loaded {
-			log.Printf(
-				"flightcontrol.trace event=start_new fromCallID=%d fromKey=%q toCallID=%d toKey=%q",
-				active.callID,
-				active.key,
-				c.id,
-				c.key,
-			)
-		}
-	}
+	c := newCall(fn)
 	g.m[key] = c
 	go func() {
 		// cleanup after a caller has returned
@@ -165,8 +97,6 @@ func (g *Group[T]) do(ctx context.Context, key string, fn func(ctx context.Conte
 }
 
 type call[T any] struct {
-	id      uint64
-	key     string
 	mu      sync.Mutex
 	result  T
 	err     error
@@ -183,10 +113,8 @@ type call[T any] struct {
 	progressCtx         context.Context
 }
 
-func newCall[T any](key string, fn func(ctx context.Context) (T, error)) *call[T] {
+func newCall[T any](fn func(ctx context.Context) (T, error)) *call[T] {
 	c := &call[T]{
-		id:            atomic.AddUint64(&nextCallID, 1),
-		key:           key,
 		fn:            fn,
 		ready:         make(chan struct{}),
 		cleaned:       make(chan struct{}),
@@ -208,10 +136,6 @@ func (c *call[T]) run() {
 	defer c.closeProgressWriter(errors.WithStack(context.Canceled))
 	ctx, cancel := context.WithCancelCause(c.ctx)
 	defer cancel(errors.WithStack(context.Canceled))
-	ctx = context.WithValue(ctx, activeCallContextKey, activeCallContext{
-		callID: c.id,
-		key:    c.key,
-	})
 	v, err := c.fn(ctx)
 	c.mu.Lock()
 	c.result = v
@@ -258,17 +182,6 @@ func (c *call[T]) wait(ctx context.Context) (v T, err error) {
 
 	go c.once.Do(c.run)
 
-	stallTimer := time.NewTimer(10 * time.Second)
-	defer func() {
-		if !stallTimer.Stop() {
-			select {
-			case <-stallTimer.C:
-			default:
-			}
-		}
-	}()
-	stallCh := stallTimer.C
-
 	select {
 	case <-ctx.Done():
 		if c.ctx.checkDone() {
@@ -283,34 +196,6 @@ func (c *call[T]) wait(ctx context.Context) (v T, err error) {
 		return empty, context.Cause(ctx)
 	case <-c.ready:
 		return c.result, c.err // shared not implemented yet
-	case <-stallCh:
-		active, _ := ctx.Value(activeCallContextKey).(activeCallContext)
-		stall := waitStallKey{
-			waiterCallID: active.callID,
-			toCallID:     c.id,
-		}
-		if _, loaded := loggedWaitStalls.LoadOrStore(stall, struct{}{}); !loaded {
-			log.Printf(
-				"flightcontrol.trace event=wait_stall waiterCallID=%d waiterKey=%q waitingOnCallID=%d waitingOnKey=%q",
-				active.callID,
-				active.key,
-				c.id,
-				c.key,
-			)
-		}
-		select {
-		case <-ctx.Done():
-			if c.ctx.checkDone() {
-				<-c.ready
-				return c.result, c.err
-			}
-			if ok {
-				c.progressState.close(pw)
-			}
-			return empty, context.Cause(ctx)
-		case <-c.ready:
-			return c.result, c.err
-		}
 	}
 }
 

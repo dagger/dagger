@@ -574,131 +574,25 @@ func TrimErrPathPrefix(err error, prefix string) error {
 }
 
 func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
-	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
-	traceField, traceDigest, traceContentPreferredDigest := "", "", ""
-	if traceEnabled {
-		if curID := dagql.CurrentID(ctx); curID != nil {
-			traceField = curID.Field()
-			traceDigest = curID.Digest().String()
-			traceContentPreferredDigest = curID.ContentPreferredDigest().String()
-		}
-		slog.ExtraDebug("core.ref_eval.trace",
-			"event", "ref_eval_start",
-			"objectType", fmt.Sprintf("%T", t),
-			"field", traceField,
-			"callDigest", traceDigest,
-			"contentPreferredDigest", traceContentPreferredDigest,
-		)
-	}
-
 	ref := t.getResult()
 	if ref != nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.ref_eval.trace",
-				"event", "ref_eval_done",
-				"phase", "cached_result_ref",
-				"objectType", fmt.Sprintf("%T", t),
-				"field", traceField,
-				"callDigest", traceDigest,
-				"contentPreferredDigest", traceContentPreferredDigest,
-				"hasRef", true,
-			)
-		}
 		return ref, nil
-	}
-	if traceEnabled {
-		slog.ExtraDebug("core.ref_eval.trace",
-			"event", "ref_eval_evaluate_start",
-			"objectType", fmt.Sprintf("%T", t),
-			"field", traceField,
-			"callDigest", traceDigest,
-			"contentPreferredDigest", traceContentPreferredDigest,
-		)
 	}
 	res, err := t.Evaluate(ctx)
 	if err != nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.ref_eval.trace",
-				"event", "ref_eval_done",
-				"phase", "evaluate",
-				"objectType", fmt.Sprintf("%T", t),
-				"field", traceField,
-				"callDigest", traceDigest,
-				"contentPreferredDigest", traceContentPreferredDigest,
-				"err", err,
-			)
-		}
 		return nil, err
 	}
 	if res == nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.ref_eval.trace",
-				"event", "ref_eval_done",
-				"phase", "evaluate",
-				"objectType", fmt.Sprintf("%T", t),
-				"field", traceField,
-				"callDigest", traceDigest,
-				"contentPreferredDigest", traceContentPreferredDigest,
-				"hasResult", false,
-			)
-		}
 		return nil, nil
-	}
-	if traceEnabled {
-		slog.ExtraDebug("core.ref_eval.trace",
-			"event", "ref_eval_single_ref_start",
-			"objectType", fmt.Sprintf("%T", t),
-			"field", traceField,
-			"callDigest", traceDigest,
-			"contentPreferredDigest", traceContentPreferredDigest,
-		)
 	}
 	cacheRef, err := res.SingleRef()
 	if err != nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.ref_eval.trace",
-				"event", "ref_eval_done",
-				"phase", "single_ref",
-				"objectType", fmt.Sprintf("%T", t),
-				"field", traceField,
-				"callDigest", traceDigest,
-				"contentPreferredDigest", traceContentPreferredDigest,
-				"err", err,
-			)
-		}
 		return nil, err
 	}
 	if cacheRef == nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.ref_eval.trace",
-				"event", "ref_eval_done",
-				"phase", "single_ref",
-				"objectType", fmt.Sprintf("%T", t),
-				"field", traceField,
-				"callDigest", traceDigest,
-				"contentPreferredDigest", traceContentPreferredDigest,
-				"hasCacheRef", false,
-			)
-		}
 		return nil, nil
 	}
-	immutableRef, err := cacheRef.CacheRef(ctx)
-	if traceEnabled {
-		slog.ExtraDebug("core.ref_eval.trace",
-			"event", "ref_eval_done",
-			"phase", "cache_ref",
-			"objectType", fmt.Sprintf("%T", t),
-			"field", traceField,
-			"callDigest", traceDigest,
-			"contentPreferredDigest", traceContentPreferredDigest,
-			"hasRef", immutableRef != nil,
-			"err", err,
-		)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return immutableRef, nil
+	return cacheRef.CacheRef(ctx)
 }
 
 func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {

@@ -298,30 +298,6 @@ func (rp *resultProxy) Result(ctx context.Context) (res solver.CachedResult, err
 		err = rp.wrapError(err)
 	}()
 	return rp.g.Do(ctx, "result", func(ctx context.Context) (solver.CachedResult, error) {
-		if active, ok := flightcontrol.CurrentActiveCall(ctx); ok {
-			started := time.Now()
-			reqRootDigest := digest.Digest("")
-			if rp.req.Definition != nil && len(rp.req.Definition.Def) > 0 {
-				reqRootDigest = digest.FromBytes(rp.req.Definition.Def[len(rp.req.Definition.Def)-1])
-			}
-			bklog.G(ctx).Debugf(
-				"flightcontrol.result.trace event=result_run_start callID=%d key=%s reqRootDigest=%s",
-				active.CallID,
-				active.Key,
-				reqRootDigest,
-			)
-			defer func() {
-				bklog.G(ctx).Debugf(
-					"flightcontrol.result.trace event=result_run_done callID=%d key=%s reqRootDigest=%s elapsedMs=%d err=%v",
-					active.CallID,
-					active.Key,
-					reqRootDigest,
-					time.Since(started).Milliseconds(),
-					err,
-				)
-			}()
-		}
-
 		rp.mu.Lock()
 		if rp.released {
 			rp.mu.Unlock()

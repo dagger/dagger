@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"slices"
-	"strings"
 	"time"
 
 	"dagger.io/dagger/telemetry"
@@ -1062,23 +1061,6 @@ func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResu
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
-	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
-	traceCallField, traceCallDigest, traceCallContentPreferredDigest := "", "", ""
-	if traceEnabled {
-		if curID := dagql.CurrentID(ctx); curID != nil {
-			traceCallField = curID.Field()
-			traceCallDigest = curID.Digest().String()
-			traceCallContentPreferredDigest = curID.ContentPreferredDigest().String()
-		}
-		slog.ExtraDebug("core.schema.with_exec.trace",
-			"event", "with_exec_schema_enter",
-			"field", traceCallField,
-			"callDigest", traceCallDigest,
-			"contentPreferredDigest", traceCallContentPreferredDigest,
-			"isDagOp", args.IsDagOp,
-			"argsCount", len(args.Args),
-		)
-	}
 	ctr := parent.Self().Clone()
 
 	if args.Stdin != "" && args.RedirectStdin != "" {
@@ -1092,35 +1074,9 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 
 	if !args.IsDagOp {
 		ctr.Meta = nil
-		if traceEnabled {
-			slog.ExtraDebug("core.schema.with_exec.trace",
-				"event", "with_exec_schema_dagop_container_start",
-				"field", traceCallField,
-				"callDigest", traceCallDigest,
-				"contentPreferredDigest", traceCallContentPreferredDigest,
-			)
-		}
 		ctr, effectID, err := DagOpContainer(ctx, srv, ctr, args, args.ExecMD.Self)
 		if err != nil {
-			if traceEnabled {
-				slog.ExtraDebug("core.schema.with_exec.trace",
-					"event", "with_exec_schema_dagop_container_done",
-					"field", traceCallField,
-					"callDigest", traceCallDigest,
-					"contentPreferredDigest", traceCallContentPreferredDigest,
-					"err", err,
-				)
-			}
 			return inst, err
-		}
-		if traceEnabled {
-			slog.ExtraDebug("core.schema.with_exec.trace",
-				"event", "with_exec_schema_dagop_container_done",
-				"field", traceCallField,
-				"callDigest", traceCallDigest,
-				"contentPreferredDigest", traceCallContentPreferredDigest,
-				"effectID", effectID,
-			)
 		}
 
 		ctr.ImageRef = ""
@@ -1154,35 +1110,10 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if args.ExecMD.Self != nil {
 		md = args.ExecMD.Self
 	}
-	if traceEnabled {
-		slog.ExtraDebug("core.schema.with_exec.trace",
-			"event", "with_exec_schema_core_exec_start",
-			"field", traceCallField,
-			"callDigest", traceCallDigest,
-			"contentPreferredDigest", traceCallContentPreferredDigest,
-		)
-	}
 
 	ctr, err = parent.Self().WithExec(ctx, args.ContainerExecOpts, md)
 	if err != nil {
-		if traceEnabled {
-			slog.ExtraDebug("core.schema.with_exec.trace",
-				"event", "with_exec_schema_core_exec_done",
-				"field", traceCallField,
-				"callDigest", traceCallDigest,
-				"contentPreferredDigest", traceCallContentPreferredDigest,
-				"err", err,
-			)
-		}
 		return inst, err
-	}
-	if traceEnabled {
-		slog.ExtraDebug("core.schema.with_exec.trace",
-			"event", "with_exec_schema_core_exec_done",
-			"field", traceCallField,
-			"callDigest", traceCallDigest,
-			"contentPreferredDigest", traceCallContentPreferredDigest,
-		)
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
@@ -2578,160 +2509,14 @@ type containerWithServiceBindingArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
-	traceEnabled := slog.Default().Enabled(ctx, slog.LevelExtraDebug)
-	traceClientID, traceSessionID, traceClientHostname := "", "", ""
-	traceCallField, traceCallDigest, traceCallContentPreferredDigest := "", "", ""
-	traceReceiverField, traceReceiverDigest, traceReceiverContentPreferredDigest := "", "", ""
-	traceReceiverPath := ""
-	if traceEnabled {
-		if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md != nil {
-			traceClientID = md.ClientID
-			traceSessionID = md.SessionID
-			traceClientHostname = md.ClientHostname
-		}
-		if curID := dagql.CurrentID(ctx); curID != nil {
-			traceCallField = curID.Field()
-			traceCallDigest = curID.Digest().String()
-			traceCallContentPreferredDigest = curID.ContentPreferredDigest().String()
-			if recv := curID.Receiver(); recv != nil {
-				traceReceiverField = recv.Field()
-				traceReceiverDigest = recv.Digest().String()
-				traceReceiverContentPreferredDigest = recv.ContentPreferredDigest().String()
-				chainParts := make([]string, 0, 16)
-				for cur := recv; cur != nil; cur = cur.Receiver() {
-					chainParts = append(chainParts, fmt.Sprintf("%s:%s:%s", cur.Field(), cur.Digest().String(), cur.ContentPreferredDigest().String()))
-				}
-				traceReceiverPath = strings.Join(chainParts, " <- ")
-			}
-		}
-		serviceIDDigest := ""
-		serviceIDContentPreferredDigest := ""
-		serviceIDPath := ""
-		serviceIDDAGCallCount := 0
-		serviceIDDAGRootDigest := ""
-		serviceIDDAGHasCurrentCall := false
-		serviceIDDAGWithServiceBindingCount := 0
-		serviceIDDAGWithServiceBindingDigests := ""
-		serviceIDDAGErr := ""
-		if serviceID := args.Service.ID(); serviceID != nil {
-			serviceIDDigest = serviceID.Digest().String()
-			serviceIDContentPreferredDigest = serviceID.ContentPreferredDigest().String()
-			chainParts := make([]string, 0, 16)
-			for cur := serviceID; cur != nil; cur = cur.Receiver() {
-				chainParts = append(chainParts, fmt.Sprintf("%s:%s:%s", cur.Field(), cur.Digest().String(), cur.ContentPreferredDigest().String()))
-			}
-			serviceIDPath = strings.Join(chainParts, " <- ")
-			dagPB, err := serviceID.ToProto()
-			if err != nil {
-				serviceIDDAGErr = err.Error()
-			} else {
-				serviceIDDAGRootDigest = dagPB.GetRootDigest()
-				callsByDigest := dagPB.GetCallsByDigest()
-				serviceIDDAGCallCount = len(callsByDigest)
-				withServiceBindingDigests := make([]string, 0, 8)
-				for callDigest, callPB := range callsByDigest {
-					if traceCallDigest != "" && callDigest == traceCallDigest {
-						serviceIDDAGHasCurrentCall = true
-					}
-					if callPB != nil && callPB.GetField() == "withServiceBinding" {
-						serviceIDDAGWithServiceBindingCount++
-						if len(withServiceBindingDigests) < 8 {
-							withServiceBindingDigests = append(withServiceBindingDigests, callDigest)
-						}
-					}
-				}
-				slices.Sort(withServiceBindingDigests)
-				serviceIDDAGWithServiceBindingDigests = strings.Join(withServiceBindingDigests, ",")
-			}
-		}
-		slog.ExtraDebug("container.with_service_binding.trace",
-			"event", "service_id_load_start",
-			"alias", args.Alias,
-			"serviceIDDigest", serviceIDDigest,
-			"serviceIDContentPreferredDigest", serviceIDContentPreferredDigest,
-			"serviceIDPath", serviceIDPath,
-			"serviceIDDAGCallCount", serviceIDDAGCallCount,
-			"serviceIDDAGRootDigest", serviceIDDAGRootDigest,
-			"serviceIDDAGHasCurrentCall", serviceIDDAGHasCurrentCall,
-			"serviceIDDAGWithServiceBindingCount", serviceIDDAGWithServiceBindingCount,
-			"serviceIDDAGWithServiceBindingDigests", serviceIDDAGWithServiceBindingDigests,
-			"serviceIDDAGErr", serviceIDDAGErr,
-			"callField", traceCallField,
-			"callDigest", traceCallDigest,
-			"callContentPreferredDigest", traceCallContentPreferredDigest,
-			"receiverField", traceReceiverField,
-			"receiverDigest", traceReceiverDigest,
-			"receiverContentPreferredDigest", traceReceiverContentPreferredDigest,
-			"receiverPath", traceReceiverPath,
-			"clientID", traceClientID,
-			"sessionID", traceSessionID,
-			"clientHostname", traceClientHostname,
-		)
-	}
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	loadStart := time.Now()
 	svc, err := args.Service.Load(ctx, srv)
 	if err != nil {
-		if traceEnabled {
-			serviceIDDigest := ""
-			if serviceID := args.Service.ID(); serviceID != nil {
-				serviceIDDigest = serviceID.Digest().String()
-			}
-			slog.ExtraDebug("container.with_service_binding.trace",
-				"event", "service_id_load_done",
-				"alias", args.Alias,
-				"serviceIDDigest", serviceIDDigest,
-				"err", err,
-				"elapsedMs", time.Since(loadStart).Milliseconds(),
-				"callField", traceCallField,
-				"callDigest", traceCallDigest,
-				"callContentPreferredDigest", traceCallContentPreferredDigest,
-				"receiverField", traceReceiverField,
-				"receiverDigest", traceReceiverDigest,
-				"receiverContentPreferredDigest", traceReceiverContentPreferredDigest,
-				"clientID", traceClientID,
-				"sessionID", traceSessionID,
-				"clientHostname", traceClientHostname,
-			)
-		}
 		return nil, err
-	}
-	if traceEnabled {
-		serviceIDDigest := ""
-		serviceIDContentPreferredDigest := ""
-		if serviceID := args.Service.ID(); serviceID != nil {
-			serviceIDDigest = serviceID.Digest().String()
-			serviceIDContentPreferredDigest = serviceID.ContentPreferredDigest().String()
-		}
-		loadedServiceDigest := ""
-		loadedServiceContentPreferredDigest := ""
-		if loadedServiceID := svc.ID(); loadedServiceID != nil {
-			loadedServiceDigest = loadedServiceID.Digest().String()
-			loadedServiceContentPreferredDigest = loadedServiceID.ContentPreferredDigest().String()
-		}
-		slog.ExtraDebug("container.with_service_binding.trace",
-			"event", "service_id_load_done",
-			"alias", args.Alias,
-			"serviceIDDigest", serviceIDDigest,
-			"serviceIDContentPreferredDigest", serviceIDContentPreferredDigest,
-			"loadedServiceDigest", loadedServiceDigest,
-			"loadedServiceContentPreferredDigest", loadedServiceContentPreferredDigest,
-			"elapsedMs", time.Since(loadStart).Milliseconds(),
-			"callField", traceCallField,
-			"callDigest", traceCallDigest,
-			"callContentPreferredDigest", traceCallContentPreferredDigest,
-			"receiverField", traceReceiverField,
-			"receiverDigest", traceReceiverDigest,
-			"receiverContentPreferredDigest", traceReceiverContentPreferredDigest,
-			"clientID", traceClientID,
-			"sessionID", traceSessionID,
-			"clientHostname", traceClientHostname,
-		)
 	}
 
 	return parent.WithServiceBinding(ctx, svc, args.Alias)
