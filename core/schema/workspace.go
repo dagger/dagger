@@ -911,13 +911,13 @@ func (s *workspaceSchema) checks(
 	if err != nil {
 		return nil, err
 	}
-	deps, err := query.Server.CurrentServedDeps(ctx)
+	served, err := query.Server.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("current served deps: %w", err)
 	}
 
 	var allChecks []*core.Check
-	for _, mod := range deps.Mods {
+	for _, mod := range served.Mods() {
 		userMod, ok := mod.(*core.Module)
 		if !ok {
 			continue
@@ -961,13 +961,13 @@ func (s *workspaceSchema) generators(
 	if err != nil {
 		return nil, err
 	}
-	deps, err := query.Server.CurrentServedDeps(ctx)
+	served, err := query.Server.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("current served deps: %w", err)
 	}
 
 	var allGenerators []*core.Generator
-	for _, mod := range deps.Mods {
+	for _, mod := range served.Mods() {
 		userMod, ok := mod.(*core.Module)
 		if !ok {
 			continue

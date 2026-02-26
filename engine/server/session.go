@@ -144,8 +144,9 @@ type daggerClient struct {
 	// if the client is coming from a module, this is that module
 	mod *core.Module
 
-	// the DAG of modules being served to this client
-	deps *core.ModDeps
+	// the set of modules being served to this client, with per-module
+	// install policy (constructor vs type-only)
+	servedMods *core.ServedMods
 	// the default deps that each client/module starts out with (currently just core)
 	defaultDeps *core.ModDeps
 
@@ -651,7 +652,8 @@ func (srv *Server) initializeDaggerClient(
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
-	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	client.servedMods = core.NewServedMods(client.dagqlRoot)
+	client.servedMods.Add(coreMod, false)
 	coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
@@ -679,10 +681,14 @@ func (srv *Server) initializeDaggerClient(
 		// }
 		// client.mod = modInst.Self
 
-		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Deps.Mods)
+		client.servedMods = core.NewServedMods(client.dagqlRoot)
+		client.servedMods.Add(coreMod, false)
+		for _, dep := range client.mod.Deps.Mods {
+			client.servedMods.Add(dep, false)
+		}
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
-			client.deps = client.deps.Append(client.mod)
+			client.servedMods.Add(client.mod, false)
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
@@ -1260,7 +1266,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	}
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
-	schema, err := client.deps.Schema(ctx)
+	schema, err := client.servedMods.Schema(ctx)
 	if err != nil {
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
@@ -1365,7 +1371,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	return nil
 }
 
-// Stitch in the given module to the list being served to the current client
+// Stitch in the given module to the list being served to the current client.
+// When includeDependencies is true, dependency modules are also served with
+// their constructors on the Query root (used by `dagger query`).
 func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
@@ -1375,39 +1383,51 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	err = srv.serveModule(client, mod)
-	if err != nil {
+	if err := srv.serveModule(client, mod, false); err != nil {
 		return err
 	}
 	if includeDependencies {
-		for _, depMod := range mod.Deps.Mods {
-			err = srv.serveModule(client, depMod)
-			if err != nil {
-				return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
+		for _, dep := range mod.Deps.Mods {
+			if err := srv.serveModule(client, dep, false); err != nil {
+				return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
 			}
 		}
 	}
 	return nil
 }
 
-// not threadsafe, client.stateMu must be held when calling
-func (srv *Server) serveModule(client *daggerClient, mod core.Mod) error {
-	// don't add the same module twice
-	// This can happen with generated clients since all remote dependencies are added
-	// on each connection and this could happen multiple times.
-	depMod, exist := client.deps.LookupDep(mod.Name())
-	if exist {
-		// Error if there's a conflict between dependencies
-		if !isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
+// serveModuleWithDeps serves a module with its constructor on the Query
+// root, and its dependencies as type-only (types available for schema
+// resolution but no constructors).
+//
+// Not threadsafe: client.stateMu must be held when calling.
+func (srv *Server) serveModuleWithDeps(client *daggerClient, mod *core.Module) error {
+	if err := srv.serveModule(client, mod, false); err != nil {
+		return err
+	}
+	for _, dep := range mod.Deps.Mods {
+		if err := srv.serveModule(client, dep, true); err != nil {
+			return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
+		}
+	}
+	return nil
+}
+
+// serveModule adds a module to the client's served set. skipConstructor
+// controls whether the module's constructor appears on the Query root.
+//
+// Not threadsafe: client.stateMu must be held when calling.
+func (srv *Server) serveModule(client *daggerClient, mod core.Mod, skipConstructor bool) error {
+	existing, ok := client.servedMods.Lookup(mod.Name())
+	if ok {
+		if !isSameModuleReference(existing.GetSource(), mod.GetSource()) {
 			return fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
-				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), depMod.GetSource().AsString(), depMod.GetSource().Pin(),
+				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), existing.GetSource().AsString(), existing.GetSource().Pin(),
 			)
 		}
-
-		return nil
 	}
-
-	client.deps = client.deps.Append(mod)
+	// Add handles deduplication and promotion internally.
+	client.servedMods.Add(mod, skipConstructor)
 	return nil
 }
 
@@ -1881,21 +1901,13 @@ func (srv *Server) loadModule(
 		resolved.Self().ApplyWorkspaceDefaultsToTypeDefs()
 	}
 
-	// Serve the module and its dependencies to the client. Dependencies must
-	// be served because module functions can return dependency types (e.g. via
-	// interfaces), and the caller's schema needs those types for sub-selection.
-	// This mirrors the old CLI path which called Serve(IncludeDependencies: true).
+	// Serve the module and its dependencies to the client. Dependencies are
+	// served without constructors — their types are available for schema
+	// resolution (e.g. when a function returns a dependency type through an
+	// interface) but only directly-loaded modules get constructors on Query.
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
-	if err := srv.serveModule(client, resolved.Self()); err != nil {
-		return err
-	}
-	for _, depMod := range resolved.Self().Deps.Mods {
-		if err := srv.serveModule(client, depMod); err != nil {
-			return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
-		}
-	}
-	return nil
+	return srv.serveModuleWithDeps(client, resolved.Self())
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.
@@ -1956,13 +1968,13 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 	return client.fnCall, nil
 }
 
-// Return the list of deps being served to the current client
-func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error) {
+// Return the modules being served to the current client
+func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ServedMods, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return client.deps, nil
+	return client.servedMods, nil
 }
 
 // The Client metadata of the main client caller (i.e. the one who created the

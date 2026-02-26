@@ -39,7 +39,7 @@ func (m *CoreMod) View() (call.View, bool) {
 	return m.Dag.View, true
 }
 
-func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
+func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.InstallOpts) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},
 		&environmentSchema{dag}, // install environment middleware first

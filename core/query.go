@@ -51,8 +51,8 @@ type Server interface {
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 
-	// Return the list of deps being served to the current client
-	CurrentServedDeps(context.Context) (*ModDeps, error)
+	// Return the modules being served to the current client
+	CurrentServedDeps(context.Context) (*ServedMods, error)
 
 	// The Client metadata of the main client caller (i.e. the one who created
 	// the session, typically the CLI invoked by the user)

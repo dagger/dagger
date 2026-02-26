@@ -754,15 +754,15 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args struct {
 	IncludeCore dagql.Optional[dagql.Boolean]
 }) (dagql.Array[*core.TypeDef], error) {
-	deps, err := self.CurrentServedDeps(ctx)
+	served, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	dag, err := deps.Schema(ctx)
+	dag, err := served.Schema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current schema: %w", err)
 	}
-	typeDefs, err := deps.TypeDefs(ctx, dag)
+	typeDefs, err := served.ModDeps().TypeDefs(ctx, dag)
 	if err != nil {
 		return nil, err
 	}

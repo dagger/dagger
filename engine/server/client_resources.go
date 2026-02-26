@@ -73,7 +73,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		srcClientCtx = core.ContextWithQuery(srcClientCtx, srcClient.dagqlRoot)
 	}
 
-	srcDag, err := srcClient.deps.Schema(srcClientCtx)
+	srcDag, err := srcClient.servedMods.Schema(srcClientCtx)
 	if err != nil {
 		return fmt.Errorf("failed to get source schema: %w", err)
 	}
