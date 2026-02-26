@@ -100,28 +100,6 @@ func inferSourcePathDir(srcRootPath string) (string, error) {
 	return ".", nil
 }
 
-// dirIsEmpty reports whether the working directory contains no visible
-// project files — i.e. nothing besides dotfiles, and no existing
-// workspace (.dagger/) or module config (dagger.json). When true,
-// `dagger module init` defaults to a standalone module (source=.)
-// rather than creating a workspace module under .dagger/modules/.
-func dirIsEmpty() bool {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		// Existing workspace or module config means this isn't a fresh start.
-		if e.Name() == ".dagger" || e.Name() == "dagger.json" {
-			return false
-		}
-		if !strings.HasPrefix(e.Name(), ".") {
-			return false
-		}
-	}
-	return true
-}
-
 func getCompatVersion() string {
 	if compatVersion == "skip" {
 		return ""
@@ -203,26 +181,25 @@ func init() {
 
 // moduleModInitCmd is the "dagger module init" subcommand.
 //
-// With no name or just a name, it creates a workspace module inside
-// .dagger/modules/<name>/ and auto-installs it in .dagger/config.toml.
-// If no name is given, it defaults to the current working directory name.
-//
-// With a name and a path, it creates a standalone module at that path
-// WITHOUT adding it to the workspace config.
+// Creates a new module. If a workspace config (.dagger/config.toml) exists,
+// the module is created inside .dagger/modules/<name>/ and auto-installed.
+// Otherwise, the module is created at the current directory or specified path
+// without creating a workspace.
 var moduleModInitCmd = &cobra.Command{
 	Use:   "init [options] --sdk=<sdk> [name] [path]",
 	Short: "Create a new module",
-	Long: `Create a new module, either in the workspace or at a standalone path.
+	Long: `Create a new module.
 
 The module name can be given as the first positional argument or via --name.
 If neither is given, it defaults to the current working directory name.
 
-The standalone path can be given as the second positional argument or via
---source. With just a name (or no name and no path), the module is created at
-.dagger/modules/<name>/ and automatically added to .dagger/config.toml.
+If a workspace config (.dagger/config.toml) already exists, the module is
+created at .dagger/modules/<name>/ and automatically installed. Otherwise,
+the module is created at the current directory (or the specified path) as
+a standalone module.
 
-With a path, the module is created at that path as a standalone module with
-its own dagger.json — it is NOT added to the workspace config.`,
+A path can be given as the second positional argument to create the module
+at that specific location without adding it to any workspace.`,
 	Example: `  dagger module init --sdk=go
   dagger module init --sdk=go ci
   dagger module init --sdk=go --name=ci
@@ -263,20 +240,6 @@ its own dagger.json — it is NOT added to the workspace config.`,
 				return fmt.Errorf("cannot specify both a positional path and --source flag")
 			}
 			return initStandaloneModule(ctx, cmd, moduleName, standalonePath, "")
-		}
-
-		// --source sets the source subpath within a standalone module at
-		// the current directory (e.g. dagger module init --source=dagger
-		// creates dagger.json here with source subpath "dagger").
-		if moduleSourcePath != "" {
-			return initStandaloneModule(ctx, cmd, moduleName, ".", moduleSourcePath)
-		}
-
-		// If the working directory is empty, default to standalone module
-		// with source=. rather than creating a workspace module. This is the
-		// common "start a new module from scratch" case.
-		if dirIsEmpty() {
-			return initStandaloneModule(ctx, cmd, moduleName, ".", "")
 		}
 
 		return initWorkspaceModule(ctx, cmd, moduleName)

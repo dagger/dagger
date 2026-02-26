@@ -1422,3 +1422,86 @@ type Test {
 		require.Equal(t, "lint passed", strings.TrimSpace(out))
 	})
 }
+
+// TestModuleInitNoWorkspace verifies that `dagger module init` does NOT
+// create a workspace config when none exists. The module should be
+// initialized as a standalone module in the working directory.
+func (WorkspaceSuite) TestModuleInitNoWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Start with a directory that has NO .dagger/config.toml.
+	base := workspaceBase(t, c)
+
+	t.Run("no config creates standalone module in cwd", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			With(daggerExec("module", "init", "--sdk="+dangSDK, "mymod")).
+			WithNewFile("main.dang", `
+type Mymod {
+  pub greet: String! {
+    "hello standalone"
+  }
+}
+`)
+
+		// dagger.json should exist in the working directory
+		djson, err := ctr.WithExec([]string{"cat", "dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "mymod"`)
+
+		// .dagger/config.toml should NOT be created
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.Error(t, err, ".dagger/config.toml should not exist when no workspace was present")
+
+		// Module should still be callable
+		out, err := ctr.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello standalone", strings.TrimSpace(out))
+	})
+
+	t.Run("existing config creates workspace module", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			// Create a workspace config first
+			WithNewFile(".dagger/config.toml", "[modules]\n").
+			With(daggerExec("module", "init", "--sdk="+dangSDK, "mymod")).
+			WithNewFile(".dagger/modules/mymod/main.dang", `
+type Mymod {
+  pub greet: String! {
+    "hello workspace"
+  }
+}
+`)
+
+		// Module should be at .dagger/modules/mymod/
+		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/mymod/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "mymod"`)
+
+		// config.toml should reference the module
+		cfg, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, cfg, "modules/mymod")
+
+		// Module should be callable
+		out, err := ctr.With(daggerCall("mymod", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello workspace", strings.TrimSpace(out))
+	})
+
+	t.Run("no config with existing files creates standalone", func(ctx context.Context, t *testctx.T) {
+		// Even in a directory with existing files but no workspace config,
+		// module init should create a standalone module, not a workspace.
+		ctr := base.
+			WithNewFile("README.md", "# My Project").
+			WithNewFile("main.go", "package main\n").
+			With(daggerExec("module", "init", "--sdk="+dangSDK, "--source=.dagger", "mymod"))
+
+		// dagger.json should be in the working directory
+		djson, err := ctr.WithExec([]string{"cat", "dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "mymod"`)
+
+		// .dagger/config.toml should NOT be created
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.Error(t, err, ".dagger/config.toml should not exist when no workspace was present")
+	})
+}

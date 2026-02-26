@@ -611,11 +611,20 @@ func (s *workspaceSchema) moduleInit(
 		return "", fmt.Errorf("buildkit: %w", err)
 	}
 
-	// Ensure workspace is initialized before creating a module
-	if err := ensureWorkspaceInitialized(ctx, bk, parent); err != nil {
-		return "", err
+	if parent.HasConfig {
+		return s.moduleInitInWorkspace(ctx, bk, parent, args)
 	}
+	return s.moduleInitStandalone(ctx, bk, parent, args)
+}
 
+// moduleInitInWorkspace creates a module inside .dagger/modules/<name>/
+// and auto-installs it in the workspace config.
+func (s *workspaceSchema) moduleInitInWorkspace(
+	ctx context.Context,
+	bk *buildkit.Client,
+	parent *core.Workspace,
+	args moduleInitArgs,
+) (dagql.String, error) {
 	hp, err := workspaceHostPath(parent)
 	if err != nil {
 		return "", err
@@ -635,6 +644,65 @@ func (s *workspaceSchema) moduleInit(
 		return "", fmt.Errorf("compute relative path: %w", err)
 	}
 
+	contextDirPath, err := s.initModule(ctx, relPath, args)
+	if err != nil {
+		return "", err
+	}
+	_ = contextDirPath
+
+	// Auto-install in workspace config
+	cfg, err := readWorkspaceConfig(ctx, bk, parent)
+	if err != nil {
+		return "", err
+	}
+
+	sourcePath := filepath.Join("modules", args.Name)
+	cfg.Modules[args.Name] = workspace.ModuleEntry{Source: sourcePath}
+
+	// Read existing raw TOML for comment preservation
+	var existingTOML []byte
+	cfgPath, err := configHostPath(parent)
+	if err == nil {
+		existingTOML, _ = bk.ReadCallerHostFile(ctx, cfgPath)
+	}
+
+	if err := writeWorkspaceConfigWithHints(ctx, bk, parent, cfg, existingTOML, nil); err != nil {
+		return "", err
+	}
+
+	configPath := filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName, workspace.ConfigFileName)
+	return dagql.String(fmt.Sprintf("Created module %q at %s\nInstalled in %s", args.Name, modulePath, configPath)), nil
+}
+
+// moduleInitStandalone creates a module at the current working directory
+// without creating or modifying any workspace config.
+func (s *workspaceSchema) moduleInitStandalone(
+	ctx context.Context,
+	bk *buildkit.Client,
+	parent *core.Workspace,
+	args moduleInitArgs,
+) (dagql.String, error) {
+	cwd, err := bk.AbsPath(ctx, ".")
+	if err != nil {
+		return "", fmt.Errorf("cwd: %w", err)
+	}
+
+	contextDirPath, err := s.initModule(ctx, ".", args)
+	if err != nil {
+		return "", err
+	}
+	_ = contextDirPath
+
+	return dagql.String(fmt.Sprintf("Initialized module %q in %s", args.Name, cwd)), nil
+}
+
+// initModule generates the module at the given refPath and exports it to the host.
+// Returns the context directory path used for the export.
+func (s *workspaceSchema) initModule(
+	ctx context.Context,
+	refPath string,
+	args moduleInitArgs,
+) (string, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("dagql server: %w", err)
@@ -646,7 +714,7 @@ func (s *workspaceSchema) moduleInit(
 		dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(relPath)},
+				{Name: "refString", Value: dagql.String(refPath)},
 				{Name: "disableFindUp", Value: dagql.Boolean(true)},
 				{Name: "allowNotExists", Value: dagql.Boolean(true)},
 			},
@@ -657,7 +725,7 @@ func (s *workspaceSchema) moduleInit(
 		return "", fmt.Errorf("check module exists: %w", err)
 	}
 	if bool(configExists) {
-		return "", fmt.Errorf("module %q already exists at %s", args.Name, modulePath)
+		return "", fmt.Errorf("module %q already exists at %s", args.Name, refPath)
 	}
 
 	// Get the context directory path for export
@@ -666,7 +734,7 @@ func (s *workspaceSchema) moduleInit(
 		dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(relPath)},
+				{Name: "refString", Value: dagql.String(refPath)},
 				{Name: "disableFindUp", Value: dagql.Boolean(true)},
 				{Name: "allowNotExists", Value: dagql.Boolean(true)},
 			},
@@ -683,7 +751,7 @@ func (s *workspaceSchema) moduleInit(
 		{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(relPath)},
+				{Name: "refString", Value: dagql.String(refPath)},
 				{Name: "disableFindUp", Value: dagql.Boolean(true)},
 				{Name: "allowNotExists", Value: dagql.Boolean(true)},
 			},
@@ -734,30 +802,7 @@ func (s *workspaceSchema) moduleInit(
 		return "", fmt.Errorf("generate module: %w", err)
 	}
 
-	// Auto-install in workspace config
-	cfg, err := readWorkspaceConfig(ctx, bk, parent)
-	if err != nil {
-		return "", err
-	}
-
-	sourcePath := filepath.Join("modules", args.Name)
-	cfg.Modules[args.Name] = workspace.ModuleEntry{Source: sourcePath}
-
-	// Read existing raw TOML for comment preservation
-	var existingTOML []byte
-	if parent.HasConfig {
-		cfgPath, err := configHostPath(parent)
-		if err == nil {
-			existingTOML, _ = bk.ReadCallerHostFile(ctx, cfgPath)
-		}
-	}
-
-	if err := writeWorkspaceConfigWithHints(ctx, bk, parent, cfg, existingTOML, nil); err != nil {
-		return "", err
-	}
-
-	configPath := filepath.Join(workspaceAbsPath, workspace.WorkspaceDirName, workspace.ConfigFileName)
-	return dagql.String(fmt.Sprintf("Created module %q at %s\nInstalled in %s", args.Name, modulePath, configPath)), nil
+	return string(contextDirPath), nil
 }
 
 type configReadArgs struct {
