@@ -51,3 +51,4 @@ go.work.sum
 
 # pi configuration (maybe we centralize later)
 /.pi
+/.wt
