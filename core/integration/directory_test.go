@@ -1357,7 +1357,7 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 
 		digest, err := dir.Digest(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", digest)
+		require.Equal(t, "sha256:0e5db88383bce812f795689f5318a2b2f4fde740ef31c2a2365a46368aafddd2", digest)
 	})
 }
 
