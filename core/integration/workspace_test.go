@@ -41,6 +41,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 		// module rather than defaulting to standalone in an empty dir.
 		return ctr.
 			WithExec([]string{"mkdir", "-p", ".dagger"}).
+			With(daggerExec("init")).
 			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
