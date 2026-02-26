@@ -1238,6 +1238,15 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (LazyInitFunc,
 
 func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get dagql server: %w", err)
+		}
+		if dir.Parent.Self() == nil {
+			return fmt.Errorf("directory has no parent for withChanges")
+		}
+		curDir := dir.Parent
+
 		patch, err := changes.AsPatch(ctx)
 		if err != nil {
 			return fmt.Errorf("get changes patch: %w", err)
@@ -1252,11 +1261,13 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (Lazy
 			}
 
 			if len(patchBytes) > 0 {
-				withPatch, err := dir.WithPatch(ctx, string(patchBytes))
+				err = srv.Select(ctx, curDir, &curDir, dagql.Selector{
+					Field: "withPatch",
+					Args: []dagql.NamedInput{
+						{Name: "patch", Value: dagql.NewString(string(patchBytes))},
+					},
+				})
 				if err != nil {
-					return fmt.Errorf("prepare patch apply: %w", err)
-				}
-				if err := withPatch(ctx); err != nil {
 					return fmt.Errorf("apply patch: %w", err)
 				}
 			}
@@ -1267,20 +1278,32 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (Lazy
 			return fmt.Errorf("compute paths: %w", err)
 		}
 		if len(paths.Removed) == 0 {
+			snapshot, err := curDir.Self().getSnapshot(ctx)
+			if err != nil {
+				return fmt.Errorf("get directory snapshot: %w", err)
+			}
+			if snapshot != nil {
+				dir.Snapshot = snapshot.Clone()
+			}
 			return nil
 		}
 
-		srv, err := CurrentDagqlServer(ctx)
+		err = srv.Select(ctx, curDir, &curDir, dagql.Selector{
+			Field: "withoutFiles",
+			Args: []dagql.NamedInput{
+				{Name: "paths", Value: asArrayInput(paths.Removed, dagql.NewString)},
+			},
+		})
 		if err != nil {
-			return fmt.Errorf("failed to get dagql server: %w", err)
+			return fmt.Errorf("remove paths: %w", err)
 		}
 
-		without, err := dir.Without(ctx, srv, paths.Removed...)
+		snapshot, err := curDir.Self().getSnapshot(ctx)
 		if err != nil {
-			return fmt.Errorf("prepare remove paths: %w", err)
+			return fmt.Errorf("get directory snapshot: %w", err)
 		}
-		if err := without(ctx); err != nil {
-			return fmt.Errorf("remove paths: %w", err)
+		if snapshot != nil {
+			dir.Snapshot = snapshot.Clone()
 		}
 
 		return nil

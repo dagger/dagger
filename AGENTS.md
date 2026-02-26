@@ -9,6 +9,8 @@ with all persistent caching going through purely dagql and NOT buildkit.
 4. Don't take any of my ideas+suggestions as gospel. Consider them, do they make sense? Is there something I'm missing? Is there a better way? I'm right a lot, but far from always! And the same is true of you. We're a team and together greater than the sum of our parts.
 5. We are working on a LARGE project with lots of moving parts that can't always move all at once. There are times where existing comments and unit tests are OUT OF DATE and can thus be SELECTIVELY disregarded. Unit tests and comments are NOTgospel. Known updated ones are a useful tool for understanding, but must be followed with caution.
 
+Also, if I refer to a WHITEBOARD.md file where we collaborate on notes, TODOs, task progress, etc. you can find it in ./scratch/WHITEBOARD.md
+
 # DEBUGGING
 
 ./skills/cache-expert/references/debugging.md HAS CRUCIAL INFORMATION WHICH MUST BE READ AND NEVER FORGOTTEN!
@@ -31,4 +33,5 @@ Preferred pattern:
   1. Write the message to a temp file with actual line breaks.
   2. Run `git commit -s --amend -F /tmp/commitmsg.txt` (or `git commit -F /tmp/commitmsg.txt`).
   3. Verify with `git log -1 --format=%B`.
+
 

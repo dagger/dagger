@@ -660,10 +660,6 @@ func (src *ModuleSource) loadContextFromSource(
 	if err != nil {
 		return inst, err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
-	}
 	switch src.Kind {
 	case ModuleSourceKindLocal:
 		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
@@ -794,7 +790,7 @@ func (src *ModuleSource) loadContextFromSource(
 			}
 		}
 
-		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
+		inst, err = MakeDirectoryContentHashed(ctx, ctxDir)
 		if err != nil {
 			return inst, err
 		}
