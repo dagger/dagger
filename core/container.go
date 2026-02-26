@@ -1901,12 +1901,7 @@ func (container *Container) AsTarball(
 		return nil, err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group found")
-	}
-
-	bkref, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
+	bkref, err := query.BuildkitCache().New(ctx, nil, nil,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("dagop.fs container.asTarball "+filePath),
@@ -1919,7 +1914,7 @@ func (container *Container) AsTarball(
 			bkref.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	err = MountRef(ctx, bkref, bkSessionGroup, func(out string, _ *mount.Mount) error {
+	err = MountRef(ctx, bkref, nil, func(out string, _ *mount.Mount) error {
 		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, filePath), inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
 		if err != nil {
 			return fmt.Errorf("container image to tarball file conversion failed: %w", err)

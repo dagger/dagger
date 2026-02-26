@@ -338,12 +338,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]
 		return []*SearchResult{}, nil
 	}
 
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
-	}
-
-	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 
 	results := []*SearchResult{}
 	err = MountRef(ctx, ref, nil, func(root string, _ *mount.Mount) error {
@@ -366,11 +361,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]
 
 func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
-		opt, ok := buildkit.CurrentOpOpts(ctx)
-		if !ok {
-			return fmt.Errorf("no buildkit opts in context")
-		}
-		ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+		ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 
 		query, err := CurrentQuery(ctx)
 		if err != nil {

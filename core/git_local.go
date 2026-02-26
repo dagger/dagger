@@ -11,7 +11,6 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/gitutil"
@@ -88,17 +87,12 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 	}
 	cache := query.BuildkitCache()
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return inst, fmt.Errorf("no buildkit session group in context")
-	}
-
 	parent, err := repo.Directory.Self().getSnapshot(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("get git directory snapshot: %w", err)
 	}
 
-	bkref, err := cache.New(ctx, parent, bkSessionGroup,
+	bkref, err := cache.New(ctx, parent, nil,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("git cleaned worktree"))
@@ -112,7 +106,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		}
 	}()
 	skip := false
-	err = MountRef(ctx, bkref, bkSessionGroup, func(parentRoot string, _ *mount.Mount) error {
+	err = MountRef(ctx, bkref, nil, func(parentRoot string, _ *mount.Mount) error {
 		src, err := fs.RootPath(parentRoot, repo.Directory.Self().Dir)
 		if err != nil {
 			return err
@@ -240,12 +234,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	}
 	cache := query.BuildkitCache()
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	bkref, err := cache.New(ctx, nil, bkSessionGroup,
+	bkref, err := cache.New(ctx, nil, nil,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("git local checkout (%s %s)", ref.Ref.Name, ref.Ref.SHA)))
@@ -264,7 +253,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git url: %w", err)
 		}
 
-		return MountRef(ctx, bkref, bkSessionGroup, func(checkoutDir string, _ *mount.Mount) error {
+		return MountRef(ctx, bkref, nil, func(checkoutDir string, _ *mount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
