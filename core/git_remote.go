@@ -522,8 +522,12 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		if err != nil {
 			return nil, err
 		}
-		checkout := NewDirectory(nil, "/", query.Platform(), nil)
-		checkout.Result = res
+		checkout := &Directory{
+			Dir:       "/",
+			Platform:  query.Platform(),
+			LazyState: NewLazyState(),
+			Snapshot:  res,
+		}
 		return checkout, nil
 	}
 
@@ -587,8 +591,12 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, err
 	}
 
-	checkout := NewDirectory(nil, "/", query.Platform(), nil)
-	checkout.Result = snap
+	checkout := &Directory{
+		Dir:       "/",
+		Platform:  query.Platform(),
+		LazyState: NewLazyState(),
+		Snapshot:  snap,
+	}
 	return checkout, nil
 }
 
