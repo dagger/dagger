@@ -190,11 +190,14 @@ type Site {
   The Docusaurus site source files.
   """
   pub source(ws: Workspace!): Directory! {
-    # include is optional for ws.directory; pass null when no patterns are set
-    let include = if (packageJson.include.length == 0) {
-      null
+    let siteInclude = if (path == ".") {
+      ["**"] :: [String!]!
     } else {
-      packageJson.include.map { inc => path + "/" + inc }
+      [path + "/**"] :: [String!]!
+    }
+
+    let include = siteInclude + packageJson.include.map { inc =>
+      if (path == ".") { inc } else { path + "/" + inc }
     }
 
     ws.directory(
@@ -205,7 +208,9 @@ type Site {
         ".docusaurus/",
         "build/",
         ".git/",
-      ] + packageJson.exclude.map { exc => path + "/" + exc },
+      ] + packageJson.exclude.map { exc =>
+        if (path == ".") { exc } else { path + "/" + exc }
+      },
     )
   }
 
