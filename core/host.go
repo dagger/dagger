@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/filesync"
 
 	"github.com/dagger/dagger/engine"
@@ -115,11 +114,6 @@ func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, 
 		return nil, fmt.Errorf("failed to get current query: %w", err)
 	}
 
-	bkGroupSession, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
 	snapshotOpts := filesync.SnapshotOpts{
 		IncludePatterns: filter.Include,
 		ExcludePatterns: filter.Exclude,
@@ -131,7 +125,7 @@ func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, 
 		snapshotOpts.CacheBuster = rand.Text()
 	}
 
-	ref, err := query.FileSyncer().Snapshot(ctx, bkGroupSession, query.BuildkitSession(), rootPath, snapshotOpts)
+	ref, err := query.FileSyncer().Snapshot(ctx, nil, query.BuildkitSession(), rootPath, snapshotOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get snapshot: %w", err)
 	}

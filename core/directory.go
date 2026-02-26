@@ -31,7 +31,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -114,103 +113,7 @@ func (dir *Directory) getParentSnapshot(ctx context.Context) (bkcache.ImmutableR
 	if dir.Parent.Self() != nil {
 		return dir.Parent.Self().getSnapshot(ctx)
 	}
-	if dir.Snapshot != nil {
-		return dir.Snapshot, nil
-	}
 	return nil, nil
-}
-
-type directoryExecInMountOpt struct {
-	commitSnapshot          bool
-	cacheDesc               string
-	allowNilBuildkitSession bool
-}
-
-type directoryExecInMountOptFn func(opt *directoryExecInMountOpt)
-
-func withSavedDirectorySnapshot(format string, a ...any) directoryExecInMountOptFn {
-	return func(opt *directoryExecInMountOpt) {
-		opt.cacheDesc = fmt.Sprintf(format, a...)
-		opt.commitSnapshot = true
-	}
-}
-
-func allowNilDirectoryBuildkitSession(opt *directoryExecInMountOpt) {
-	opt.allowNilBuildkitSession = true
-}
-
-func (dir *Directory) execInMount(ctx context.Context, f func(string) error, optFns ...directoryExecInMountOptFn) (rerr error) {
-	var opt directoryExecInMountOpt
-	for _, optFn := range optFns {
-		optFn(&opt)
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-
-	var mountRef bkcache.Ref
-	var newRef bkcache.MutableRef
-	if opt.commitSnapshot {
-		if opt.cacheDesc == "" {
-			return fmt.Errorf("execInMount missing cache description")
-		}
-		parentSnapshot, err := dir.getParentSnapshot(ctx)
-		if err != nil {
-			return err
-		}
-		newRef, err = query.BuildkitCache().New(
-			ctx,
-			parentSnapshot,
-			nil,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-			bkcache.WithDescription(opt.cacheDesc),
-		)
-		if err != nil {
-			return err
-		}
-		mountRef = newRef
-	} else {
-		snapshot, err := dir.getSnapshot(ctx)
-		if err != nil {
-			return err
-		}
-		if snapshot == nil {
-			return errEmptyResultRef
-		}
-		mountRef = snapshot
-	}
-
-	var mountRefOpts []mountRefOptFn
-	if !opt.commitSnapshot {
-		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
-	}
-	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, nil, mountRefOpts...)
-	if err != nil {
-		return err
-	}
-
-	if err := f(rootPath); err != nil {
-		if closeErr := closer(); closeErr != nil {
-			err = errors.Join(err, closeErr)
-		}
-		return err
-	}
-	if err := closer(); err != nil {
-		return err
-	}
-
-	if !opt.commitSnapshot {
-		return nil
-	}
-
-	snapshot, err := newRef.Commit(ctx)
-	if err != nil {
-		return err
-	}
-	dir.Snapshot = snapshot
-
-	return nil
 }
 
 func (dir *Directory) Digest(ctx context.Context) (string, error) {
@@ -240,24 +143,32 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 	src = path.Join(dir.Dir, src)
 	paths := []string{}
 	useSlash := SupportsDirSlash(ctx)
-	err := dir.execInMount(ctx, func(root string) error {
-		resolvedDir, err := containerdfs.RootPath(root, src)
-		if err != nil {
-			return err
-		}
-		entries, err := os.ReadDir(resolvedDir)
-		if err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			path := entry.Name()
-			if useSlash && entry.IsDir() {
-				path += "/"
+	snapshot, err := dir.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		err = errEmptyResultRef
+	} else {
+		err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+			resolvedDir, err := containerdfs.RootPath(root, src)
+			if err != nil {
+				return err
 			}
-			paths = append(paths, path)
-		}
-		return nil
-	})
+			entries, err := os.ReadDir(resolvedDir)
+			if err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				path := entry.Name()
+				if useSlash && entry.IsDir() {
+					path += "/"
+				}
+				paths = append(paths, path)
+			}
+			return nil
+		}, mountRefAsReadOnly)
+	}
 	if err != nil {
 		if errors.Is(err, errEmptyResultRef) {
 			// empty directory, i.e. llb.Scratch()
@@ -299,58 +210,66 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	onlyPrefixIncludes := !strings.ContainsAny(patternWithoutTrailingGlob(pat), patternChars)
 
 	useSlash := SupportsDirSlash(ctx)
-	err = dir.execInMount(ctx, func(root string) error {
-		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
-		if err != nil {
-			return err
-		}
-
-		return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
-			if prevErr != nil {
-				return prevErr
-			}
-
-			path, err := filepath.Rel(resolvedDir, path)
-			if err != nil {
-				return err
-			}
-			// Skip root
-			if path == "." {
-				return nil
-			}
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				break
-			}
-
-			match, err := pat.Match(path)
+	snapshot, err := dir.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		err = errEmptyResultRef
+	} else {
+		err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+			resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 			if err != nil {
 				return err
 			}
 
-			if match {
-				if useSlash && d.IsDir() {
-					path += "/"
+			return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
+				if prevErr != nil {
+					return prevErr
 				}
-				paths = append(paths, path)
-			} else if d.IsDir() && onlyPrefixIncludes {
-				// fsutils Optimization: we can skip walking this dir if no include
-				// patterns could match anything inside it.
-				dirSlash := path + string(filepath.Separator)
-				if !pat.Exclusion() {
-					patStr := patternWithoutTrailingGlob(pat) + string(filepath.Separator)
-					if !strings.HasPrefix(patStr, dirSlash) {
-						return filepath.SkipDir
+
+				path, err := filepath.Rel(resolvedDir, path)
+				if err != nil {
+					return err
+				}
+				// Skip root
+				if path == "." {
+					return nil
+				}
+
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					break
+				}
+
+				match, err := pat.Match(path)
+				if err != nil {
+					return err
+				}
+
+				if match {
+					if useSlash && d.IsDir() {
+						path += "/"
+					}
+					paths = append(paths, path)
+				} else if d.IsDir() && onlyPrefixIncludes {
+					// fsutils Optimization: we can skip walking this dir if no include
+					// patterns could match anything inside it.
+					dirSlash := path + string(filepath.Separator)
+					if !pat.Exclusion() {
+						patStr := patternWithoutTrailingGlob(pat) + string(filepath.Separator)
+						if !strings.HasPrefix(patStr, dirSlash) {
+							return filepath.SkipDir
+						}
 					}
 				}
-			}
 
-			return nil
-		})
-	})
+				return nil
+			})
+		}, mountRefAsReadOnly)
+	}
 	if err != nil {
 		if errors.Is(err, errEmptyResultRef) {
 			// empty directory, i.e. llb.Scratch()
@@ -373,7 +292,25 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 	}
 
 	return func(ctx context.Context) error {
-		return dir.execInMount(ctx, func(root string) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content))))),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
 			if err != nil {
 				return err
@@ -412,7 +349,16 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 			}
 
 			return nil
-		}, withSavedDirectorySnapshot("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content)))))
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+		return nil
 	}, nil
 }
 
@@ -428,11 +374,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (LazyInitFunc
 			return err
 		}
 
-		opt, ok := buildkit.CurrentOpOpts(ctx)
-		if !ok {
-			return fmt.Errorf("no buildkit opts in context")
-		}
-		ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+		ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 		defer stdio.Close()
 
@@ -497,11 +439,7 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool,
 		return []*SearchResult{}, nil
 	}
 
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
-	}
-	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 
 	results := []*SearchResult{}
 	err = MountRef(ctx, ref, nil, func(root string, _ *mount.Mount) error {
@@ -1074,36 +1012,27 @@ func (dir *Directory) WithFile(
 	}, nil
 }
 
-// TODO: address https://github.com/dagger/dagger/pull/6556/files#r1482830091
-func (dir *Directory) WithFiles(
-	ctx context.Context,
-	destDir string,
-	src []*File,
-	permissions *int,
-) (LazyInitFunc, error) {
-	return func(ctx context.Context) error {
-		for _, file := range src {
-			withFile, err := dir.WithFile(
-				ctx,
-				path.Join(destDir, path.Base(file.File)),
-				file,
-				permissions,
-				"",
-			)
-			if err != nil {
-				return err
-			}
-			if err := withFile(ctx); err != nil {
-				return err
-			}
-		}
-		return nil
-	}, nil
-}
-
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
-		return dir.execInMount(ctx, func(root string) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withTimestamps %d", unix)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 			if err != nil {
 				return err
@@ -1115,7 +1044,16 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (LazyInitFun
 				modTime := time.Unix(int64(unix), 0)
 				return os.Chtimes(path, modTime, modTime)
 			})
-		}, withSavedDirectorySnapshot("withTimestamps %d", unix))
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+		return nil
 	}, nil
 }
 
@@ -1130,13 +1068,40 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	}
 
 	return func(ctx context.Context) error {
-		return dir.execInMount(ctx, func(root string) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withNewDirectory %s", dest)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			resolvedDir, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
 			if err != nil {
 				return err
 			}
 			return TrimErrPathPrefix(os.MkdirAll(resolvedDir, permissions), root)
-		}, withSavedDirectorySnapshot("withNewDirectory %s", dest))
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+		return nil
 	}, nil
 }
 
@@ -1285,7 +1250,25 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (Lazy
 
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
-		return dir.execInMount(ctx, func(root string) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("without %s", strings.Join(paths, ","))),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			for _, p := range paths {
 				p = path.Join(dir.Dir, p)
 				var matches []string
@@ -1318,7 +1301,16 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 				}
 			}
 			return nil
-		}, withSavedDirectorySnapshot("without %s", strings.Join(paths, ",")))
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+		return nil
 	}, nil
 }
 
@@ -1460,9 +1452,27 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 
 func (dir *Directory) WithSymlink(ctx context.Context, target, linkName string) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
-		return dir.execInMount(ctx, func(root string) error {
-			linkName = path.Join(dir.Dir, linkName)
-			linkDir, linkBasename := filepath.Split(linkName)
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			fullLinkName := path.Join(dir.Dir, linkName)
+			linkDir, linkBasename := filepath.Split(fullLinkName)
 			resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
 			if err != nil {
 				return err
@@ -1473,7 +1483,16 @@ func (dir *Directory) WithSymlink(ctx context.Context, target, linkName string) 
 			}
 			resolvedLinkName := path.Join(resolvedLinkDir, linkBasename)
 			return os.Symlink(target, resolvedLinkName)
-		}, withSavedDirectorySnapshot("symlink %s -> %s", linkName, target))
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+		return nil
 	}, nil
 }
 
@@ -1518,7 +1537,25 @@ func (dir *Directory) Chown(ctx context.Context, chownPath string, owner string)
 		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 	}
 	return func(ctx context.Context) error {
-		return dir.execInMount(ctx, func(root string) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("chown %s %s", chownPath, owner)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			chownPath := path.Join(dir.Dir, chownPath)
 			chownPath, err := containerdfs.RootPath(root, chownPath)
 			if err != nil {
@@ -1538,7 +1575,16 @@ func (dir *Directory) Chown(ctx context.Context, chownPath string, owner string)
 				return fmt.Errorf("failed to walk %s: %w", chownPath, err)
 			}
 			return nil
-		}, withSavedDirectorySnapshot("chown %s %s", chownPath, owner))
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+		return nil
 	}, nil
 }
 

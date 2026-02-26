@@ -731,26 +731,33 @@ func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
-	files := []*core.File{}
+	inst = parent
 	for _, id := range args.Sources {
 		file, err := id.Load(ctx, srv)
 		if err != nil {
 			return inst, err
 		}
-		files = append(files, file.Self())
-	}
 
-	var perms *int
-	if args.Permissions.Valid {
-		p := int(args.Permissions.Value)
-		perms = &p
+		withFileArgs := []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(path.Join(args.Path, path.Base(file.Self().File)))},
+			{Name: "source", Value: dagql.NewID[*core.File](file.ID())},
+		}
+		if args.Permissions.Valid {
+			withFileArgs = append(withFileArgs, dagql.NamedInput{
+				Name:  "permissions",
+				Value: dagql.Opt(args.Permissions.Value),
+			})
+		}
+
+		err = srv.Select(ctx, inst, &inst, dagql.Selector{
+			Field: "withFile",
+			Args:  withFileArgs,
+		})
+		if err != nil {
+			return inst, err
+		}
 	}
-	dir := core.NewDirectoryChild(parent)
-	dir.LazyInit, err = dir.WithFiles(ctx, args.Path, files, perms)
-	if err != nil {
-		return inst, err
-	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	return inst, nil
 }
 
 type withoutDirectoryArgs struct {

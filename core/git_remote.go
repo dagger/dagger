@@ -538,17 +538,13 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 	}()
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
 	err = ref.mount(ctx, depth, func(git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git dir: %w", err)
 		}
 
-		checkoutRef, err = cache.New(ctx, nil, bkSessionGroup,
+		checkoutRef, err = cache.New(ctx, nil, nil,
 			bkcache.CachePolicyRetain,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 			bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.repo.URL.Remote(), ref.Name, ref.SHA)))
@@ -556,7 +552,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			return err
 		}
 
-		err = MountRef(ctx, checkoutRef, bkSessionGroup, func(checkoutDir string, _ *ctdmount.Mount) error {
+		err = MountRef(ctx, checkoutRef, nil, func(checkoutDir string, _ *ctdmount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
