@@ -178,7 +178,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("other").Doc(`The directory to compare against`),
 			),
-		dagql.Func("findUp", s.findUp).
+		dagql.NodeFunc("findUp", s.findUp).
 			Doc(`Search up the directory tree for a file or directory, and return its path. If no match, return null`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the file or directory to search for`),
@@ -1208,7 +1208,6 @@ func mergeConflictsStrategyToCore(onConflict ChangesetsMergeConflict) core.WithC
 type changesetWithChangesetArgs struct {
 	Changes    dagql.ID[*core.Changeset]
 	OnConflict ChangesetMergeConflict `default:"FAIL"`
-	DagOpInternalArgs
 }
 
 func mergeConflictStrategyToCore(onConflict ChangesetMergeConflict) core.WithChangesetMergeConflict {
@@ -1247,7 +1246,6 @@ func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dag
 type changesetWithChangesetsArgs struct {
 	Changes    dagql.ArrayInput[dagql.ID[*core.Changeset]]
 	OnConflict ChangesetsMergeConflict `default:"FAIL"`
-	DagOpInternalArgs
 }
 
 func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Changeset, error) {

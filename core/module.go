@@ -13,7 +13,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 )
@@ -263,8 +262,8 @@ func (mod *Module) IDModule(ctx context.Context) (*call.Module, error) {
 	), nil
 }
 
-func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (mod *Module) Evaluate(context.Context) error {
+	return nil
 }
 
 func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {

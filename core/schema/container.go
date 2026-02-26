@@ -100,7 +100,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("directory").Doc("The new root filesystem."),
 			),
-		dagql.Func("directory", s.directory).
+		dagql.NodeFunc("directory", s.directory).
 			Doc(`Retrieve a directory from the container's root filesystem`,
 				`Mounts are included.`).
 			Args(
@@ -109,7 +109,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("file", s.file).
+		dagql.NodeFunc("file", s.file).
 			Doc(`Retrieves a file at the given path.`, `Mounts are included.`).
 			Args(
 				dagql.Arg("path").Doc(`The path of the file to retrieve (e.g., "./README.md").`),

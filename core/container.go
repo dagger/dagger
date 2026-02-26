@@ -2563,8 +2563,8 @@ func (*TerminalLegacy) TypeDescription() string {
 	return "An interactive terminal that clients can connect to."
 }
 
-func (*TerminalLegacy) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (*TerminalLegacy) Evaluate(ctx context.Context) error {
+	return nil
 }
 
 // UpdatedRootFS returns an updated rootfs for a given directory after an exec/import/etc.

@@ -134,8 +134,6 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 
 type schemaJSONArgs struct {
 	HiddenTypes []string `default:"[]"`
-	Schema      string   `internal:"true" default:"" name:"schema"`
-	RawDagOpInternalArgs
 }
 
 func (s *querySchema) schemaJSONFile(
@@ -151,43 +149,25 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	if args.InDagOp() {
-		f, err := core.NewFileWithContents(ctx, schemaJSONFilename, []byte(args.Schema), perm, nil, parent.Self().Platform())
-		if err != nil {
-			return inst, err
-		}
-
-		return dagql.NewObjectResultForCurrentID(ctx, dag, f)
-	}
-
 	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, dag.View, dag)
 	if err != nil {
 		return inst, err
 	}
-	args.Schema = string(moduleSchemaJSON)
-
-	newID := dagql.CurrentID(ctx).
-		WithArgument(call.NewArgument(
-			"schema",
-			call.NewLiteralString(args.Schema),
-			false,
-		))
-	ctxDagOp := dagql.ContextWithID(ctx, newID)
-
-	f, effectID, err := DagOpFile(ctxDagOp, dag, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
+	err = dag.Select(ctx, parent, &inst,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(schemaJSONFilename)},
+			{Name: "contents", Value: dagql.String(string(moduleSchemaJSON))},
+			{Name: "permissions", Value: dagql.Int(int(perm))},
+		}},
+		dagql.Selector{Field: "file", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(schemaJSONFilename)},
+		}},
+	)
 	if err != nil {
 		return inst, err
 	}
-
-	if _, err := f.Evaluate(ctx); err != nil {
-		return inst, err
-	}
-
-	curID := dagql.CurrentID(ctx)
-	if effectID != "" {
-		curID = curID.AppendEffectIDs(effectID)
-	}
-	return dagql.NewObjectResultForID(f, dag, curID)
+	return inst, nil
 }
 
 func dagqlToCodegenType(dagqlType *introspection.Type) (*codegenintrospection.Type, error) {
