@@ -95,12 +95,22 @@ available functions.
 			filterCore := len(cmd.Flags().Args()) == 0 &&
 				mod.MainObject.AsObject != nil &&
 				mod.MainObject.AsObject.Name == "Query"
-			return functionListRun(o, cmd.OutOrStdout(), filterCore)
+
+			// When the default module is focused (not Query) and we're
+			// at the top level, also show sibling workspace module
+			// entrypoints alongside the default module's functions.
+			var siblingFns []*modFunction
+			if len(cmd.Flags().Args()) == 0 &&
+				mod.MainObject.AsObject != nil &&
+				mod.MainObject.AsObject.Name != "Query" {
+				siblingFns = mod.siblingModuleEntrypoints()
+			}
+			return functionListRun(o, cmd.OutOrStdout(), filterCore, siblingFns)
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer, filterCore bool) error {
+func functionListRun(o functionProvider, writer io.Writer, filterCore bool, siblingFns []*modFunction) error {
 	fns, skipped := GetSupportedFunctions(o)
 
 	// At the Query root, filter out core API constructors — only show module
@@ -115,6 +125,10 @@ func functionListRun(o functionProvider, writer io.Writer, filterCore bool) erro
 		fns = filtered
 		skipped = nil // don't show core "skipped" noise either
 	}
+
+	// Append sibling module entrypoints (from workspace peers of the
+	// default module). Conflicts are already filtered out.
+	fns = append(fns, siblingFns...)
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",

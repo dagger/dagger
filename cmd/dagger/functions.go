@@ -473,6 +473,16 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 		cmd.AddCommand(subCmd)
 	}
 
+	// When the default module's type is shown (not Query), also add
+	// sibling workspace module entrypoints so that `dagger functions`
+	// and `dagger call` surface all workspace modules alongside the
+	// default module's functions. Only applies at the top level (when
+	// typeDef is the MainObject).
+	if !fc.DisableModuleLoad && fc.mod.MainObject == typeDef &&
+		typeDef.AsObject != nil && typeDef.AsObject.Name != "Query" {
+		fc.addSiblingModuleCommands(ctx, cmd)
+	}
+
 	if cmd.HasAvailableSubCommands() {
 		cmd.Use += " <function>"
 	}
@@ -480,6 +490,53 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	if len(skipped) > 0 {
 		cmd.Annotations[skippedCmdsAnnotation] = strings.Join(skipped, ", ")
 	}
+}
+
+// addSiblingModuleCommands adds sub-commands for other workspace modules
+// alongside the default module's own functions. This ensures that when a
+// blueprint is focused, `dagger functions` still shows entrypoints for the
+// other modules in the workspace.
+//
+// These commands reset the query builder to the root so that selecting them
+// starts a fresh query chain (e.g. `{ lint { ... } }` instead of
+// `{ ci { lint { ... } } }`).
+func (fc *FuncCommand) addSiblingModuleCommands(ctx context.Context, cmd *cobra.Command) {
+	for _, fn := range fc.mod.siblingModuleEntrypoints() {
+		cmd.AddCommand(fc.makeSiblingModuleCmd(ctx, fn))
+	}
+}
+
+// makeSiblingModuleCmd creates a sub-command for a sibling workspace module.
+// Unlike makeSubCmd, this resets the query builder to the root before adding
+// the module's constructor selection, since the sibling module is not a
+// function of the current default module.
+func (fc *FuncCommand) makeSiblingModuleCmd(ctx context.Context, fn *modFunction) *cobra.Command {
+	siblingBuilder := func(c *cobra.Command, a []string) error {
+		// Reset the query builder to root — this module is a peer, not a
+		// child of the default module.
+		fc.q = querybuilder.Query().Client(fc.c.Dagger().GraphQLClient())
+
+		// Delegate to the normal builder which adds flags and sub-commands.
+		return fc.cobraBuilder(ctx, fn)(c, a)
+	}
+
+	newCmd := &cobra.Command{
+		Use:                   cliName(fn.Name),
+		Short:                 fn.Short(),
+		Long:                  fn.Description,
+		GroupID:               funcGroup.ID,
+		DisableFlagsInUseLine: true,
+		Annotations: map[string]string{
+			"help:hideInherited": "true",
+		},
+		PreRunE: siblingBuilder,
+		RunE:    fc.RunE(ctx, fn),
+	}
+
+	newCmd.Flags().SetInterspersed(false)
+	newCmd.SetContext(ctx)
+
+	return newCmd
 }
 
 // makeSubCmd creates a sub-command for a function definition.

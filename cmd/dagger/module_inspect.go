@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
@@ -378,6 +379,48 @@ func (m *moduleDef) Long() string {
 		return s + "\n\n" + m.Description
 	}
 	return s
+}
+
+// siblingModuleEntrypoints returns Query root functions from workspace modules
+// other than the default module. These are module constructors that should
+// appear alongside the default module's own functions in `dagger functions`.
+// If a sibling module's CLI name conflicts with an existing function of the
+// default module, it is skipped and a warning is logged.
+func (m *moduleDef) siblingModuleEntrypoints() []*modFunction {
+	rootType := m.GetTypeDef("Query")
+	if rootType == nil || rootType.AsObject == nil {
+		return nil
+	}
+
+	// Collect CLI names of the default module's functions to detect conflicts.
+	existing := make(map[string]bool)
+	if m.MainObject != nil && m.MainObject.AsObject != nil {
+		for _, fn := range m.MainObject.AsObject.GetFunctions() {
+			existing[fn.CmdName()] = true
+		}
+	}
+
+	var siblings []*modFunction
+	for _, fn := range rootType.AsObject.Functions {
+		// Only include module-provided functions (skip core API).
+		if fn.SourceModuleName == "" {
+			continue
+		}
+		// Skip the default module's own constructor.
+		if fn.SourceModuleName == m.Name {
+			continue
+		}
+		if existing[fn.CmdName()] {
+			slog.Warn("default module function shadows workspace module entrypoint",
+				"function", fn.CmdName(),
+				"module", m.Name,
+				"shadowed", fn.SourceModuleName,
+			)
+			continue
+		}
+		siblings = append(siblings, fn)
+	}
+	return siblings
 }
 
 func (m *moduleDef) AsFunctionProviders() []functionProvider {
