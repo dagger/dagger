@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -66,8 +65,8 @@ func (*EngineCacheEntrySet) TypeDescription() string {
 	return "A set of cache entries returned by a query to a cache"
 }
 
-func (*EngineCacheEntrySet) Evaluate(context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (*EngineCacheEntrySet) Evaluate(context.Context) error {
+	return nil
 }
 
 type EngineCacheEntry struct {
