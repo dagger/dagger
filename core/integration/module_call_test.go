@@ -2065,7 +2065,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.")).
+			With(daggerExec("module", "init", "--source=.", "--name=wrapper", "--sdk=go")).
 			With(daggerExec("module", "install", "--name", "foo", "./mod-a")).
 			With(daggerExec("module", "install", "--name", "bar", "./mod-b"))
 
@@ -2110,7 +2110,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.")).
+			With(daggerExec("module", "init", "--source=.", "--name=wrapper", "--sdk=go")).
 			With(daggerExec("module", "install", "--name", "foo", "/work/mod-a")).
 			With(daggerExec("module", "install", "--name", "bar", "/work/mod-b"))
 
@@ -2173,7 +2173,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.")).
+			With(daggerExec("module", "init", "--source=.", "--name=wrapper", "--sdk=go")).
 			With(daggerExec("module", "install", "--name", "foo", "/outside/mod-a"))
 
 		// call main module at /work path
@@ -2188,7 +2188,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/").
-			With(daggerExec("module", "init", "--source=test@test", "--name=mod-a", "--sdk=go", "test@test")).
+			With(daggerExec("module", "init", "--sdk=go", "mod-a", "test@test")).
 			WithNewFile("/work/test@test/main.go", `package main
 
 			import "context"
@@ -2200,7 +2200,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
-			With(daggerExec("module", "init", "--source=.")).
+			With(daggerExec("module", "init", "--source=.", "--name=wrapper", "--sdk=go")).
 			With(daggerExec("module", "install", "--name", "foo", "/work/test@test"))
 
 		// call main module at /work path
@@ -2219,7 +2219,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(privateSetup).
-				With(daggerExec("module", "init", "--source=.")).
+				With(daggerExec("module", "init", "--source=.", "--name=wrapper", "--sdk=go")).
 				With(daggerExec("module", "install", "--name", "foo", testGitModuleRef(tc, ""))).
 				With(daggerExec("module", "install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
 
