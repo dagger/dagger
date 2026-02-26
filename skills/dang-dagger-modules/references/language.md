@@ -35,6 +35,48 @@
 - `String!` satisfies `String`, but `String` does not satisfy `String!`
 - `??` operator for null coalescing: `value ?? "default"`
 
+#### Nullable Propagation
+
+Accessing a field or calling a method on a nullable receiver always produces a nullable result, even if the field is declared `Type!`. This is **contagious nullability**:
+
+```dang
+let json: JSONValue   # nullable
+json.field(["name"])  # nullable JSONValue (not JSONValue!)
+  .asString           # nullable String (not String!)
+```
+
+The error `cannot use String as String!` means you have a nullable `String` where a non-null `String!` is expected.
+
+#### Flow-Sensitive Null Narrowing
+
+Inside an `if` block that checks for null, the type system narrows the variable to non-null:
+
+```dang
+let x: String   # nullable
+
+if (x != null) {
+  # x is String! here — safe to use where String! is required
+  x.split("/")
+}
+
+if (x == null) {
+  "default"
+} else {
+  # x is String! in the else branch
+  x.split("/")
+}
+```
+
+Both `x == null` and `null == x` forms are supported, as are `!=` equivalents.
+
+**Limitations:**
+
+- Only simple `x == null` and `x != null` conditions narrow types
+- Compound conditions with `and`/`or` do not narrow
+- Boolean negation `!` does not narrow
+- Only direct variable references are narrowed (not `a.b` or function calls)
+- Narrowing is single-level: checking `obj != null` narrows `obj`, but fields accessed on `obj` still follow normal nullability rules
+
 ### Composite Types
 
 - Lists: `[String!]!`, `[Int!]!`, `[Container!]!`
@@ -489,6 +531,29 @@ container.
   from("alpine").
   withWorkdir("/app")
 ```
+
+### Nullable propagation through field access
+
+Accessing a field on a nullable value makes the result nullable, even if the field is `Type!`. This is the most common source of type errors.
+
+```dang
+# WRONG — json is nullable, so .field() and .asString return nullable types
+pub packageManager: String! {
+  json.field(["packageManager"]).asString
+  # Error: cannot use String as String!
+}
+
+# RIGHT — guard against null first, then access fields in the non-null branch
+pub packageManager: String! {
+  if (json == null) {
+    "npm"
+  } else {
+    json.field(["packageManager"]).asString ?? "npm"
+  }
+}
+```
+
+The pattern: check the nullable receiver for null **before** accessing its fields. Inside the non-null branch, `json` is narrowed to non-null, so field access produces non-null results.
 
 ## Complete Examples
 
