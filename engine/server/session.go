@@ -1375,58 +1375,39 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	if includeDependencies {
-		return srv.serveModuleWithDeps(client, mod)
-	}
-	return srv.serveModule(client, mod, true)
-}
-
-// serveModuleWithDeps serves a module as a main module (constructor on
-// Query root) and its dependencies as type-only (types available for
-// schema resolution but no constructors).
-//
-// Not threadsafe: client.stateMu must be held when calling.
-func (srv *Server) serveModuleWithDeps(client *daggerClient, mod *core.Module) error {
-	if err := srv.serveModule(client, mod, true); err != nil {
+	err = srv.serveModule(client, mod)
+	if err != nil {
 		return err
 	}
-	for _, dep := range mod.Deps.Mods {
-		if err := srv.serveModule(client, dep, false); err != nil {
-			return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
+	if includeDependencies {
+		for _, depMod := range mod.Deps.Mods {
+			err = srv.serveModule(client, depMod)
+			if err != nil {
+				return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
+			}
 		}
 	}
 	return nil
 }
 
-// serveModule adds a module to the client's dependency set. When main is
-// true the module's constructor will be installed on the Query root;
-// otherwise only its types are available for schema resolution.
-//
-// Not threadsafe: client.stateMu must be held when calling.
-func (srv *Server) serveModule(client *daggerClient, mod core.Mod, main bool) error {
-	_, exist := client.deps.LookupDep(mod.Name())
+// not threadsafe, client.stateMu must be held when calling
+func (srv *Server) serveModule(client *daggerClient, mod core.Mod) error {
+	// don't add the same module twice
+	// This can happen with generated clients since all remote dependencies are added
+	// on each connection and this could happen multiple times.
+	depMod, exist := client.deps.LookupDep(mod.Name())
 	if exist {
 		// Error if there's a conflict between dependencies
-		depMod, _ := client.deps.LookupDep(mod.Name())
 		if !isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
 			return fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
 				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), depMod.GetSource().AsString(), depMod.GetSource().Pin(),
 			)
 		}
 
-		// If we're now loading as main, mark it so its constructor gets
-		// installed even though the module was already in the list.
-		if main && !client.deps.IsMain(mod.Name()) {
-			client.deps = client.deps.SetMain(mod.Name())
-		}
-
 		return nil
 	}
 
 	client.deps = client.deps.Append(mod)
-	if main {
-		client.deps = client.deps.SetMain(mod.Name())
-	}
 	return nil
 }
 
@@ -1900,13 +1881,21 @@ func (srv *Server) loadModule(
 		resolved.Self().ApplyWorkspaceDefaultsToTypeDefs()
 	}
 
-	// Serve the module and its dependencies to the client. Dependencies are
-	// served without constructors — their types are available for schema
-	// resolution (e.g. when a function returns a dependency type through an
-	// interface) but only directly-loaded modules get constructors on Query.
+	// Serve the module and its dependencies to the client. Dependencies must
+	// be served because module functions can return dependency types (e.g. via
+	// interfaces), and the caller's schema needs those types for sub-selection.
+	// This mirrors the old CLI path which called Serve(IncludeDependencies: true).
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
-	return srv.serveModuleWithDeps(client, resolved.Self())
+	if err := srv.serveModule(client, resolved.Self()); err != nil {
+		return err
+	}
+	for _, depMod := range resolved.Self().Deps.Mods {
+		if err := srv.serveModule(client, depMod); err != nil {
+			return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
+		}
+	}
+	return nil
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.

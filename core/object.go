@@ -226,14 +226,9 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	return def
 }
 
-func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error {
+func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	if obj.Module.ResultID == nil {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
-	}
-
-	var opt InstallOpts
-	if len(opts) > 0 {
-		opt = opts[0]
 	}
 
 	class := dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
@@ -241,7 +236,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	})
 	objDef := obj.TypeDef
 	mod := obj.Module
-	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) && !opt.SkipConstructor {
+	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}

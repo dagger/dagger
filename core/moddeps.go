@@ -30,12 +30,6 @@ type ModDeps struct {
 	root *Query
 	Mods []Mod // TODO hide
 
-	// mains tracks module names whose constructors should be installed
-	// on the Query root. Modules not in this set are installed for type
-	// resolution only (e.g. transitive dependencies whose types may be
-	// returned through interfaces).
-	mains map[string]bool
-
 	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
 	lazilyLoadedSchema         *dagql.Server
 	lazilyLoadedSchemaJSONFile dagql.Result[*File]
@@ -50,55 +44,20 @@ func NewModDeps(root *Query, mods []Mod) *ModDeps {
 	}
 }
 
-func (d *ModDeps) cloneMains() map[string]bool {
-	if len(d.mains) == 0 {
-		return nil
-	}
-	cp := make(map[string]bool, len(d.mains))
-	for k, v := range d.mains {
-		cp[k] = v
-	}
-	return cp
-}
-
 func (d *ModDeps) Clone() *ModDeps {
-	cp := NewModDeps(d.root, slices.Clone(d.Mods))
-	cp.mains = d.cloneMains()
-	return cp
+	return NewModDeps(d.root, slices.Clone(d.Mods))
 }
 
 func (d *ModDeps) Prepend(mods ...Mod) *ModDeps {
-	cp := d.Clone()
-	cp.Mods = append(slices.Clone(mods), cp.Mods...)
-	return cp
+	deps := slices.Clone(mods)
+	deps = append(deps, d.Mods...)
+	return NewModDeps(d.root, deps)
 }
 
 func (d *ModDeps) Append(mods ...Mod) *ModDeps {
-	cp := d.Clone()
-	cp.Mods = append(cp.Mods, mods...)
-	return cp
-}
-
-// SetMain marks a module name as a "main" module whose constructor should
-// be installed on the Query root. Modules not marked are installed for
-// type resolution only.
-func (d *ModDeps) SetMain(name string) *ModDeps {
-	cp := d.Clone()
-	if cp.mains == nil {
-		cp.mains = make(map[string]bool)
-	}
-	cp.mains[name] = true
-	return cp
-}
-
-// IsMain reports whether the named module should have its constructor
-// installed on the Query root. If no modules have been explicitly marked
-// as main (via SetMain), all modules are treated as main by default.
-func (d *ModDeps) IsMain(name string) bool {
-	if len(d.mains) == 0 {
-		return true
-	}
-	return d.mains[name]
+	deps := slices.Clone(d.Mods)
+	deps = append(deps, mods...)
+	return NewModDeps(d.root, deps)
 }
 
 func (d *ModDeps) LookupDep(name string) (Mod, bool) {
@@ -187,9 +146,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
 	for _, mod := range d.Mods {
-		err := mod.Install(ctx, dag, InstallOpts{
-			SkipConstructor: !d.IsMain(mod.Name()),
-		})
+		err := mod.Install(ctx, dag)
 		if err != nil {
 			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}

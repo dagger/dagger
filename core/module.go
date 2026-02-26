@@ -363,7 +363,7 @@ func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
 	return nil, nil
 }
 
-func (mod *Module) Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error {
+func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	slog.ExtraDebug("installing module", "name", mod.Name())
 	start := time.Now()
 	defer func() { slog.ExtraDebug("done installing module", "name", mod.Name(), "took", time.Since(start)) }()
@@ -398,7 +398,7 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server, opts ...Insta
 			TypeDef: objDef,
 		}
 
-		if err := obj.Install(ctx, dag, opts...); err != nil {
+		if err := obj.Install(ctx, dag); err != nil {
 			return err
 		}
 	}
@@ -960,15 +960,6 @@ func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[
 Mod is a module in loaded into the server's DAG of modules; it's the vertex type of the DAG.
 It's an interface so we can abstract over user modules and core and treat them the same.
 */
-// InstallOpts controls how a module is installed into a dagql server.
-type InstallOpts struct {
-	// SkipConstructor omits the module's constructor from the Query
-	// root. The module's types are still installed for schema
-	// resolution. Used for transitive dependencies whose types may
-	// be returned through interfaces.
-	SkipConstructor bool
-}
-
 type Mod interface {
 	// Name gets the name of the module
 	Name() string
@@ -978,7 +969,7 @@ type Mod interface {
 
 	// Install modifies the provided server to install the contents of the
 	// modules declared fields.
-	Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error
+	Install(ctx context.Context, dag *dagql.Server) error
 
 	// ModTypeFor returns the ModType for the given typedef based on this module's schema.
 	// The returned type will have any namespacing already applied.
