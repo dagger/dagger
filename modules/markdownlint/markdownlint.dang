@@ -1,7 +1,7 @@
-pub description = "A Dagger module for markdownlint, a markdown linter. https://github.com/DavidAnson/markdownlint-cli2"
-
+"""
+A Dagger module for markdownlint, a markdown linter. https://github.com/DavidAnson/markdownlint-cli2
+"""
 type MarkdownLint {
-
   """
   The version of markdownlint to use.
   """
