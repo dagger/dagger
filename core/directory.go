@@ -141,12 +141,6 @@ func (dir *Directory) execInMount(ctx context.Context, f func(string) error, opt
 	for _, optFn := range optFns {
 		optFn(&opt)
 	}
-
-	parentSnapshot, err := dir.getParentSnapshot(ctx)
-	if err != nil {
-		return err
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -157,6 +151,10 @@ func (dir *Directory) execInMount(ctx context.Context, f func(string) error, opt
 	if opt.commitSnapshot {
 		if opt.cacheDesc == "" {
 			return fmt.Errorf("execInMount missing cache description")
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
 		}
 		newRef, err = query.BuildkitCache().New(
 			ctx,
@@ -170,10 +168,14 @@ func (dir *Directory) execInMount(ctx context.Context, f func(string) error, opt
 		}
 		mountRef = newRef
 	} else {
-		if parentSnapshot == nil {
+		snapshot, err := dir.getSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		if snapshot == nil {
 			return errEmptyResultRef
 		}
-		mountRef = parentSnapshot
+		mountRef = snapshot
 	}
 
 	var mountRefOpts []mountRefOptFn
