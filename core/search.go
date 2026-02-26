@@ -149,6 +149,11 @@ func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd, verbose bo
 			return []*SearchResult{}, nil
 		}
 		if errBuf.Len() > 0 {
+			if strings.Contains(errBuf.String(), "No files were searched") {
+				if errs == nil {
+					return []*SearchResult{}, nil
+				}
+			}
 			errs = errors.Join(errs, fmt.Errorf("ripgrep error: %s", errBuf.String()))
 		} else {
 			errs = errors.Join(errs, err)
