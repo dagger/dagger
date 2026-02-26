@@ -233,6 +233,41 @@ type Site {
   }
 
   """
+  Make sure the site is configured optimally for use with Dagger
+  """
+  pub optimizeConfig(ws: Workspace!): Changeset! {
+    let siteDir = ws.directory(path, include: [
+      "package.json",
+      "docusaurus.config.ts",
+      "docusaurus.config.js",
+    ])
+
+    if (siteDir.stat("package.json") == null) {
+      siteDir = siteDir.withNewFile("package.json", "{}")
+    }
+
+    let updatedSite = llm
+      .withEnv(
+        env
+          .withDirectoryInput(
+            "site",
+            siteDir,
+            "Site directory with package.json and docusaurus config.",
+          )
+          .withDirectoryOutput(
+            "updatedSite",
+            "Updated site directory with package.json modified for workspace include patterns. Include patterns must be a list of strings at the key docusaurus.include",
+          ),
+      )
+      .withPrompt("Analyze the docusaurus config. Infer paths that must be included from outside the site directory." + "Modify package.json to reference those include paths." + "Only modify package.json, and only by appending strings to docusaurus.include. Include paths must be relative to the site directory" + "Balance efficiency and correctness: avoid broad globs, but use common sense to avoid under-including likely transitive dependencies. For example, if the docusaurus config includes ../libs/foo/src/bla.js, consider including ../libs/foo/src, in case other files are transitively included.")
+      .loop
+      .env
+      .output("updatedSite")
+      .asDirectory
+    updatedSite.changes(siteDir)
+  }
+
+  """
   Serve the static site with nginx.
   """
   pub server(ws: Workspace!): Service! {
