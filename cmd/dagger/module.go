@@ -259,6 +259,7 @@ func initWorkspaceModule(ctx context.Context, cmd *cobra.Command, modName string
 		msg, err := ws.ModuleInit(ctx, modName, sdk, dagger.WorkspaceModuleInitOpts{
 			Source:  moduleSourcePath,
 			Include: moduleIncludes,
+			License: licenseID,
 		})
 		if err != nil {
 			return err
@@ -312,23 +313,12 @@ func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName strin
 		}
 		modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
 
-		srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get source root subpath: %w", err)
-		}
-		srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
-
 		_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
 		if err != nil {
 			return fmt.Errorf("failed to generate module: %w", err)
 		}
 
-		searchExisting := !cmd.Flags().Lookup("license").Changed
-		if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
-			return err
-		}
-
-		fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", modName, "in", srcRootAbsPath)
+		fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", modName, "in", contextDirPath)
 		return nil
 	})
 }

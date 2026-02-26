@@ -77,6 +77,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("SDK to use (go, python, typescript)."),
 				dagql.Arg("source").Doc("Source subpath within the module root."),
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
+				dagql.Arg("license").Doc("SPDX license identifier to generate (empty to skip)."),
 			),
 		dagql.Func("configRead", s.configRead).
 			DoNotCache("Reads live config from host").
@@ -595,6 +596,7 @@ type moduleInitArgs struct {
 	SDK     string
 	Source  string   `default:""`
 	Include []string `default:"[]"`
+	License string   `default:"Apache-2.0"`
 }
 
 func (s *workspaceSchema) moduleInit(
@@ -691,7 +693,16 @@ func (s *workspaceSchema) moduleInitStandalone(
 	if err != nil {
 		return "", err
 	}
-	_ = contextDirPath
+
+	// Determine the source root for license placement
+	srcRootAbsPath := contextDirPath
+	if args.Source != "" {
+		srcRootAbsPath = filepath.Join(contextDirPath, args.Source)
+	}
+
+	if err := findOrCreateLicense(ctx, bk, srcRootAbsPath, args.License, true); err != nil {
+		return "", err
+	}
 
 	return dagql.String(fmt.Sprintf("Initialized module %q in %s", args.Name, cwd)), nil
 }

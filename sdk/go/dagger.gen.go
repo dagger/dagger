@@ -14238,6 +14238,8 @@ type WorkspaceModuleInitOpts struct {
 	Source string
 	// Additional include patterns for the module.
 	Include []string
+	// SPDX license identifier to generate (empty to skip).
+	License string
 }
 
 // Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.
@@ -14254,6 +14256,10 @@ func (r *Workspace) ModuleInit(ctx context.Context, name string, sdk string, opt
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `license` optional argument
+		if !querybuilder.IsZeroValue(opts[i].License) {
+			q = q.Arg("license", opts[i].License)
 		}
 	}
 	q = q.Arg("name", name)
