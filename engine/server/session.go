@@ -1701,7 +1701,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// (3) Implicit module (dagger.json near CWD)
 	{
 		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
-		if hasModuleConfig {
+		if hasModuleConfig && moduleDir != ws.Root {
 			wsDir := filepath.Join(ws.Root, ws.Path)
 			rel, _ := filepath.Rel(wsDir, moduleDir)
 			name := cwdModuleName(ctx, readFile, moduleDir)
