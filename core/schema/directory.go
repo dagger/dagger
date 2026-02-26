@@ -507,7 +507,7 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 	err = srv.Select(ctx, srv.Root(), &filtered,
 		dagql.Selector{Field: "directory"}, // scratch
 		dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(parent.Self().Dir)},
+			{Name: "path", Value: dagql.String("/")},
 			{Name: "source", Value: dagql.NewID[*core.Directory](parent.ID())},
 			{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Exclude...))},
 			{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Include...))},
