@@ -35,9 +35,12 @@ A Docusaurus site.
 """
 Package.json helpers.
 """
-
 type PackageJson {
   let json: JSONValue
+
+  let hasField(obj: JSONValue!, key: String!): Boolean! {
+    obj.fields.filter { field => field == key }.length > 0
+  }
 
   """
   The package manager command (read from package.json "packageManager" field).
@@ -45,18 +48,12 @@ type PackageJson {
   pub packageManager: String! {
     if (json == null) {
       "npm"
+    } else if (hasField(json, "packageManager") == false) {
+      "npm"
     } else {
-      let pmField = try {
-        json.field(["packageManager"])
-      } catch {
-        err => null
-      }
-      if (pmField == null) {
-        "npm"
-      } else {
-        # packageManager field is like "pnpm@8.15.0" — take the name before @
-        pmField.asString.split("@")[0] ?? "npm"
-      }
+      let pmField = json.field(["packageManager"])
+      # packageManager field is like "pnpm@8.15.0" — take the name before @
+      pmField.asString.split("@")[0] ?? "npm"
     }
   }
 
@@ -64,17 +61,18 @@ type PackageJson {
   Optional source include paths from package.json "docusaurus.include".
   """
   pub include: [String!] {
-    let ds = if (json != null) {
-      try {
-        json.field(["docusaurus", "include"])
-      } catch {
-        err => null
-      }
-    } else { null }
-    if (ds == null) {
+    if (json == null) {
+      null
+    } else if (hasField(json, "docusaurus") == false) {
       null
     } else {
-      ds.asArray.{asString}.map { item => item.asString }
+      let docusaurus = json.field(["docusaurus"])
+      if (hasField(docusaurus, "include") == false) {
+        null
+      } else {
+        let include = docusaurus.field(["include"])
+        include.asArray.{asString}.map { item => item.asString }
+      }
     }
   }
 
@@ -82,17 +80,18 @@ type PackageJson {
   Source exclude paths from package.json "docusaurus.exclude".
   """
   pub exclude: [String!]! {
-    let ds = if (json != null) {
-      try {
-        json.field(["docusaurus", "exclude"])
-      } catch {
-        err => null
-      }
-    } else { null }
-    if (ds == null) {
+    if (json == null) {
+      []::[String!]!
+    } else if (hasField(json, "docusaurus") == false) {
       []::[String!]!
     } else {
-      ds.asArray.{asString}.map { item => item.asString }
+      let docusaurus = json.field(["docusaurus"])
+      if (hasField(docusaurus, "exclude") == false) {
+        []::[String!]!
+      } else {
+        let exclude = docusaurus.field(["exclude"])
+        exclude.asArray.{asString}.map { item => item.asString }
+      }
     }
   }
 }
