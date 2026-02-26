@@ -210,6 +210,10 @@ func mergeImageConfig(dst, src dockerspec.DockerOCIImageConfig) dockerspec.Docke
 	return res
 }
 
+func MergeImageConfig(dst, src dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+	return mergeImageConfig(dst, src)
+}
+
 func ptr[T any](v T) *T {
 	return &v
 }
