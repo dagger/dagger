@@ -7,14 +7,24 @@ builds:
     binary: ./dagger
     goos:
       - linux
-      - windows
-      - darwin
     goarch:
       - amd64
       - arm64
       - arm
     goarm:
       - "7"
+
+    prebuilt:
+      path: build/dagger_{{ .Env.ENGINE_VERSION }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}_v{{ . }}{{ end }}/dagger
+
+  - builder: prebuilt
+    binary: ./dagger
+    goos:
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
 
     prebuilt:
       path: build/dagger_{{ .Env.ENGINE_VERSION }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}_v{{ . }}{{ end }}/dagger
