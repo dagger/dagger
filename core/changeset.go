@@ -355,9 +355,10 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 	return &File{
-		Result:   snap,
-		File:     ChangesetPatchFilename,
-		Platform: query.Platform(),
+		File:      ChangesetPatchFilename,
+		Platform:  query.Platform(),
+		LazyState: NewLazyState(),
+		Snapshot:  snap,
 	}, nil
 }
 
@@ -367,7 +368,8 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return fmt.Errorf("compute paths: %w", err)
 	}
 
-	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
+	dir := NewDirectoryChild(ch.Before)
+	dir.LazyInit, err = dir.Diff(ctx, ch.After.Self())
 	if err != nil {
 		return err
 	}
@@ -682,12 +684,20 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 		return nil, err
 	}
 
+	afterRef, err := afterDir.getSnapshot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("evaluate merged directory snapshot: %w", err)
+	}
+	if afterRef == nil {
+		return nil, fmt.Errorf("evaluate merged directory snapshot: nil")
+	}
+
 	var after dagql.ObjectResult[*Directory]
 	if err := srv.Select(ctx, srv.Root(), &after,
 		dagql.Selector{
 			Field: "__immutableRef",
 			Args: []dagql.NamedInput{
-				{Name: "ref", Value: dagql.NewString(afterDir.Result.ID())},
+				{Name: "ref", Value: dagql.NewString(afterRef.ID())},
 			},
 		},
 	); err != nil {
@@ -773,9 +783,11 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 	}
 
 	return &Directory{
-		Result:   snap,
-		Dir:      base.Dir,
-		Platform: query.Platform(),
+		Dir:       base.Dir,
+		Platform:  query.Platform(),
+		Services:  slices.Clone(base.Services),
+		LazyState: NewLazyState(),
+		Snapshot:  snap,
 	}, nil
 }
 
@@ -1047,17 +1059,38 @@ func mergeChangesetsWithoutGit(ctx context.Context, ch *Changeset, others ...*Ch
 	// Start with merged before and apply each changeset sequentially
 	afterDir := before.Self()
 
-	afterDir, err = afterDir.WithChanges(ctx, ch)
+	afterDir, err = applyChangesetToDirectory(ctx, afterDir, ch)
 	if err != nil {
 		return nil, fmt.Errorf("apply changeset: %w", err)
 	}
 
 	for i, other := range others {
-		afterDir, err = afterDir.WithChanges(ctx, other)
+		afterDir, err = applyChangesetToDirectory(ctx, afterDir, other)
 		if err != nil {
 			return nil, fmt.Errorf("apply changeset %d: %w", i, err)
 		}
 	}
 
 	return newChangesetFromMerge(ctx, before, afterDir)
+}
+
+func applyChangesetToDirectory(ctx context.Context, base *Directory, changes *Changeset) (*Directory, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parent, err := dagql.NewObjectResultForCurrentID(ctx, srv, base)
+	if err != nil {
+		return nil, err
+	}
+
+	next := NewDirectoryChild(parent)
+	next.LazyInit, err = next.WithChanges(ctx, changes)
+	if err != nil {
+		return nil, err
+	}
+	if err := next.Evaluate(ctx); err != nil {
+		return nil, err
+	}
+	return next, nil
 }
