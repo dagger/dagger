@@ -35,6 +35,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var ErrNoCommand = errors.New("no command has been set")
@@ -473,14 +474,16 @@ func (container *Container) withExecNow(
 		return nil, err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
+	bkSessionGroup, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
 
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
+	bkClient, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	opWorker := bkClient.Worker
+	causeCtx := trace.SpanContextFromContext(ctx)
+	if opWorker == nil {
+		return nil, fmt.Errorf("missing buildkit worker")
 	}
 
 	mm := bkmounts.NewMountManager(fmt.Sprintf("exec %s", strings.Join(metaSpec.Args, " ")), cache, session)
@@ -505,7 +508,7 @@ func (container *Container) withExecNow(
 				if mountData.Inputs[m.Input] == nil {
 					continue
 				}
-				execInputs[i] = worker.NewWorkerRefResult(mountData.Inputs[m.Input].Clone(), opt.Worker)
+				execInputs[i] = worker.NewWorkerRefResult(mountData.Inputs[m.Input].Clone(), opWorker)
 			}
 			execMounts := make([]bksolver.Result, len(mountData.Mounts))
 			copy(execMounts, execInputs)
@@ -513,7 +516,7 @@ func (container *Container) withExecNow(
 				if ref == nil {
 					continue
 				}
-				execMounts[i] = worker.NewWorkerRefResult(ref.Clone(), opt.Worker)
+				execMounts[i] = worker.NewWorkerRefResult(ref.Clone(), opWorker)
 			}
 			for _, active := range p.Actives {
 				if active.NoCommit {
@@ -528,14 +531,14 @@ func (container *Container) withExecNow(
 						rerr = errors.Join(rerr, fmt.Errorf("active mount index %d outside exec mounts (%d)", active.MountIndex, len(execMounts)))
 						continue
 					}
-					execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, opt.Worker)
+					execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, opWorker)
 				}
 			}
 
 			rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
 			rerr = buildkit.RichError{
 				ExecError: rerr.(*errdefs.ExecError),
-				Origin:    opt.CauseCtx,
+				Origin:    causeCtx,
 				Mounts:    mountData.Mounts,
 				ExecMD:    execMD,
 				Meta:      metaSpec,
@@ -596,9 +599,8 @@ func (container *Container) withExecNow(
 	}
 	defer detach()
 
-	worker := opt.Worker.(*buildkit.Worker)
-	worker = worker.ExecWorker(opt.CauseCtx, *execMD)
-	exec := worker.Executor()
+	execWorker := opWorker.ExecWorker(causeCtx, *execMD)
+	exec := execWorker.Executor()
 	procInfo := executor.ProcessInfo{Meta: meta}
 	if opts.Stdin != "" {
 		// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
@@ -746,6 +748,10 @@ func (container *Container) usedClientID(ctx context.Context) (string, error) {
 }
 
 func (container *Container) metaFileContents(ctx context.Context, filePath string) (string, error) {
+	if err := container.Evaluate(ctx); err != nil {
+		return "", err
+	}
+
 	if container.Meta == nil {
 		return "", ErrNoCommand
 	}

@@ -384,6 +384,7 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export changeset to host %s", destPath))
 	defer telemetry.EndWithCause(span, &rerr)
 
+	// TODO: stop using mountObj, it is weird as hell
 	root, closer, err := mountObj(ctx, dir.Self())
 	if err != nil {
 		return fmt.Errorf("failed to mount directory: %w", err)

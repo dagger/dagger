@@ -1897,6 +1897,12 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (*core.Container, error) {
+	if parent.Self() != nil {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
