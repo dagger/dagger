@@ -111,10 +111,13 @@ func (dir *Directory) setSnapshot(ref bkcache.ImmutableRef) {
 }
 
 func (dir *Directory) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
-	if dir.Parent.Self() == nil {
-		return nil, nil
+	if dir.Parent.Self() != nil {
+		return dir.Parent.Self().getSnapshot(ctx)
 	}
-	return dir.Parent.Self().getSnapshot(ctx)
+	if dir.Snapshot != nil {
+		return dir.Snapshot, nil
+	}
+	return nil, nil
 }
 
 type directoryExecInMountOpt struct {
@@ -703,21 +706,13 @@ func (dir *Directory) WithDirectory(
 				owner == ""
 
 		cache := query.BuildkitCache()
-
-		if dirRef == nil {
-			// handle case where WithDirectory is called on an empty dir (i.e. scratch dir)
-			// note this always occurs when creating the rebasedDir (to prevent infinite recursion)
-
-			if canDoDirectMerge && srcRef != nil {
-				dir.Snapshot = srcRef.Clone()
-				return nil
-			}
+		copySourceToScratch := func() (bkcache.ImmutableRef, error) {
 			newRef, err := query.BuildkitCache().New(ctx, nil, nil,
 				bkcache.CachePolicyRetain,
 				bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 				bkcache.WithDescription("Directory.withDirectory source"))
 			if err != nil {
-				return fmt.Errorf("buildkitcache.New failed: %w", err)
+				return nil, fmt.Errorf("buildkitcache.New failed: %w", err)
 			}
 
 			err = MountRef(ctx, newRef, nil, func(copyDest string, destMnt *mount.Mount) error {
@@ -802,15 +797,29 @@ func (dir *Directory) WithDirectory(
 				return nil
 			})
 			if err != nil {
+				return nil, err
+			}
+
+			rebasedDirRef, err := newRef.Commit(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+			}
+			return rebasedDirRef, nil
+		}
+
+		if dirRef == nil {
+			// handle case where WithDirectory is called on an empty dir (i.e. scratch dir)
+			// note this always occurs when creating the rebasedDir
+
+			if canDoDirectMerge && srcRef != nil {
+				dir.Snapshot = srcRef.Clone()
+				return nil
+			}
+			rebasedDirRef, err := copySourceToScratch()
+			if err != nil {
 				return err
 			}
-
-			dirRef, err = newRef.Commit(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to commit copied directory: %w", err)
-			}
-
-			dir.Snapshot = dirRef
+			dir.Snapshot = rebasedDirRef
 			return nil
 		}
 
@@ -830,27 +839,14 @@ func (dir *Directory) WithDirectory(
 			// copying to scratch and then merging that. This still results in an on-disk
 			// copy but preserves the other caching benefits of MergeOp. This is the same
 			// behavior as "COPY --link" in Dockerfiles.
-
-			var rebasedDir dagql.ObjectResult[*Directory]
-			err = srv.Select(ctx, srv.Root(), &rebasedDir,
-				dagql.Selector{Field: "directory"}, // scratch
-				dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(destDir)},
-					{Name: "source", Value: dagql.NewID[*Directory](srcID)},
-					{Name: "exclude", Value: asArrayInput(filter.Exclude, dagql.NewString)},
-					{Name: "include", Value: asArrayInput(filter.Include, dagql.NewString)},
-					{Name: "gitignore", Value: dagql.Boolean(filter.Gitignore)},
-					{Name: "owner", Value: dagql.String(owner)},
-				}},
-			)
+			//
+			// NOTE: do this directly rather than recursively selecting withDirectory,
+			// which can resolve to this same object and deadlock on lazy-state mutex.
+			rebasedDirRef, err := copySourceToScratch()
 			if err != nil {
 				return err
 			}
-
-			rebasedDirRef, err := rebasedDir.Self().getSnapshot(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get rebased dir for merging: %w", err)
-			}
+			defer rebasedDirRef.Release(context.WithoutCancel(ctx))
 			mergeRefs = append(mergeRefs, rebasedDirRef)
 		}
 

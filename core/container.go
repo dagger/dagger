@@ -497,10 +497,7 @@ func (container *Container) FromCanonicalRef(
 		return nil, err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group found")
-	}
+	bkSessionGroup, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
 
 	ref, err := src.Snapshot(ctx, bkSessionGroup)
 	if err != nil {

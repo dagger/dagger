@@ -374,23 +374,6 @@ type fileOrDirectory interface {
 	setSnapshot(bkcache.ImmutableRef)
 }
 
-// execInMount evaluates a file or directory, mounts it, then calls the supplied callback function.
-func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...mountObjOptFn) (T, error) {
-	root, closer, err := mountObj(ctx, obj, optFns...)
-	if err != nil {
-		return nil, err
-	}
-	err = f(root)
-	if err != nil {
-		_, closeErr := closer(true)
-		if closeErr != nil {
-			err = errors.Join(err, closeErr)
-		}
-		return nil, err
-	}
-	return closer(false)
-}
-
 // mountObj evaluates an object and mounts the root fs and returns the mounted path and a closer, which will unmount
 // the file or directory object's root filesystem, and potentially return a modified object, if both the withSavedSnapshot option is specified and the abort flag was not set.
 // The abort flag is only used when the withSavedSnapshot option is specified.
