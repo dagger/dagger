@@ -23,7 +23,7 @@ type Docusaurus {
         } else {
           null
         }
-        Site(sourcePath: sourcePath, pkgJson: pkgJson)
+        Site(sourcePath: sourcePath, pkg: PackageJson(json: pkgJson))
       }
   }
 }
@@ -38,25 +38,15 @@ type Site {
   pub sourcePath: String!
 
   """
-  Parsed package.json for the site.
+  Parsed package.json helpers for the site.
   """
-  let pkgJson: JSONValue
+  let pkg: PackageJson!
 
   """
-  The package manager command (read from package.json "packageManager" field).
+  The package manager command.
   """
   let pm: String! {
-    if (pkgJson == null) {
-      "npm"
-    } else {
-      let pmField = pkgJson.field(["packageManager"])
-      if (pmField == null) {
-        "npm"
-      } else {
-        # packageManager field is like "pnpm@8.15.0" — take the name before @
-        pmField.asString.split("@")[0] ?? "npm"
-      }
-    }
+    pkg.packageManager
   }
 
   """
@@ -71,46 +61,18 @@ type Site {
   }
 
   """
-  Extra source include paths from package.json "docusaurus.include".
-  """
-  let extraInclude: [String!]! {
-    let ds = if (pkgJson != null) {
-      pkgJson.field(["docusaurus", "include"])
-    } else { null }
-    if (ds == null) {
-      []::[String!]!
-    } else {
-      ds.asArray.{asString}.map { item => item.asString }
-    }
-  }
-
-  """
-  Extra source exclude paths from package.json "docusaurus.exclude".
-  """
-  let extraExclude: [String!]! {
-    let ds = if (pkgJson != null) {
-      pkgJson.field(["docusaurus", "exclude"])
-    } else { null }
-    if (ds == null) {
-      []::[String!]!
-    } else {
-      ds.asArray.{asString}.map { item => item.asString }
-    }
-  }
-
-  """
   The Docusaurus site source files.
   """
   pub source(ws: Workspace!): Directory! {
     ws.directory(
       sourcePath,
-      include: extraInclude,
+      include: pkg.include,
       exclude: [
         "node_modules/",
         ".docusaurus/",
         "build/",
         ".git/",
-      ] + extraExclude,
+      ] + pkg.exclude,
     )
   }
 
@@ -163,11 +125,75 @@ type Site {
   """
   Serve the static site with nginx.
   """
-  pub serve(site: Directory!): Service! {
+  pub server(ws: Workspace!): Service! {
     container
       .from("nginx:alpine")
-      .withDirectory("/usr/share/nginx/html", site)
+      .withDirectory("/usr/share/nginx/html", build(ws))
       .withExposedPort(80)
       .asService
+  }
+}
+
+"""
+Package.json helpers.
+"""
+type PackageJson {
+  let json: JSONValue
+
+  """
+  The package manager command (read from package.json "packageManager" field).
+  """
+  pub packageManager: String! {
+    if (json == null) {
+      "npm"
+    } else {
+      let pmField = try {
+        json.field(["packageManager"])
+      } catch {
+        err => null
+      }
+      if (pmField == null) {
+        "npm"
+      } else {
+        # packageManager field is like "pnpm@8.15.0" — take the name before @
+        pmField.asString.split("@")[0] ?? "npm"
+      }
+    }
+  }
+
+  """
+  Optional source include paths from package.json "docusaurus.include".
+  """
+  pub include: [String!] {
+    let ds = if (json != null) {
+      try {
+        json.field(["docusaurus", "include"])
+      } catch {
+        err => null
+      }
+    } else { null }
+    if (ds == null) {
+      null
+    } else {
+      ds.asArray.{asString}.map { item => item.asString }
+    }
+  }
+
+  """
+  Source exclude paths from package.json "docusaurus.exclude".
+  """
+  pub exclude: [String!]! {
+    let ds = if (json != null) {
+      try {
+        json.field(["docusaurus", "exclude"])
+      } catch {
+        err => null
+      }
+    } else { null }
+    if (ds == null) {
+      []::[String!]!
+    } else {
+      ds.asArray.{asString}.map { item => item.asString }
+    }
   }
 }
