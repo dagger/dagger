@@ -7,16 +7,12 @@ import (
 
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"resenje.org/singleflight"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/contenthash"
 )
 
@@ -27,10 +23,9 @@ var checksumG singleflight.Group[string, digest.Digest]
 // directory instances with the same content to be deduplicated in dagql's cache.
 func MakeDirectoryContentHashed(
 	ctx context.Context,
-	bk *buildkit.Client,
 	dirInst dagql.ObjectResult[*Directory],
 ) (retInst dagql.ObjectResult[*Directory], err error) {
-	dgst, err := GetContentHashFromDirectory(ctx, bk, dirInst)
+	dgst, err := GetContentHashFromDirectory(ctx, dirInst)
 	if err != nil {
 		return retInst, err
 	}
@@ -40,11 +35,8 @@ func MakeDirectoryContentHashed(
 
 func GetContentHashFromDirectory(
 	ctx context.Context,
-	bk *buildkit.Client,
 	dirInst dagql.ObjectResult[*Directory],
 ) (digest.Digest, error) {
-	_ = bk
-
 	if dirInst.Self() == nil {
 		return "", fmt.Errorf("directory instance is nil")
 	}
@@ -72,11 +64,8 @@ func GetContentHashFromDirectory(
 
 func GetContentHashFromFile(
 	ctx context.Context,
-	bk *buildkit.Client,
 	fileInst dagql.ObjectResult[*File],
 ) (digest.Digest, error) {
-	_ = bk
-
 	if fileInst.Self() == nil {
 		return "", fmt.Errorf("file instance is nil")
 	}
@@ -95,38 +84,6 @@ func GetContentHashFromFile(
 	}
 
 	return dgst, nil
-}
-
-func GetContentHashFromDef(
-	ctx context.Context,
-	bk *buildkit.Client,
-	def *pb.Definition,
-	subdir string,
-) (digest.Digest, error) {
-	if subdir == "" {
-		subdir = "/"
-	}
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: def,
-		Evaluate:   true,
-	})
-	if err != nil {
-		return "", err
-	}
-	resultProxy, err := res.SingleRef()
-	if err != nil {
-		return "", fmt.Errorf("failed to get single ref: %w", err)
-	}
-	cachedRes, err := resultProxy.Result(ctx)
-	if err != nil {
-		return "", buildkit.WrapError(ctx, err, bk)
-	}
-	workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
-	if !ok {
-		return "", fmt.Errorf("invalid ref: %T", cachedRes.Sys())
-	}
-	return getContentHashFromRef(ctx, workerRef.ImmutableRef, subdir)
 }
 
 func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir string) (digest.Digest, error) {

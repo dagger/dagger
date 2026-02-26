@@ -366,10 +366,20 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return fmt.Errorf("compute paths: %w", err)
 	}
 
-	dir := NewDirectoryChild(ch.Before)
-	dir.LazyInit, err = dir.Diff(ctx, ch.After.Self())
+	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return err
+	}
+	var dir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, ch.Before, &dir,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*Directory](ch.After.ID())},
+			},
+		},
+	); err != nil {
+		return fmt.Errorf("get changeset diff directory: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -384,13 +394,13 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export changeset to host %s", destPath))
 	defer telemetry.EndWithCause(span, &rerr)
 
-	root, closer, err := mountObj(ctx, dir)
+	root, closer, err := mountObj(ctx, dir.Self())
 	if err != nil {
 		return fmt.Errorf("failed to mount directory: %w", err)
 	}
 	defer closer(false)
 
-	root, err = containerdfs.RootPath(root, dir.Dir)
+	root, err = containerdfs.RootPath(root, dir.Self().Dir)
 	if err != nil {
 		return err
 	}

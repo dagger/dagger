@@ -653,15 +653,7 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	dgst, err := core.GetContentHashFromFile(ctx, bk, fileResult)
+	dgst, err := core.GetContentHashFromFile(ctx, fileResult)
 	if err != nil {
 		return inst, err
 	}
@@ -1522,15 +1514,7 @@ func maintainContentHashing[A any](
 		}
 
 		if parent.ID().ContentDigest() != "" {
-			query, err := core.CurrentQuery(ctx)
-			if err != nil {
-				return res, err
-			}
-			bk, err := query.Buildkit(ctx)
-			if err != nil {
-				return res, err
-			}
-			res, err = core.MakeDirectoryContentHashed(ctx, bk, res)
+			res, err = core.MakeDirectoryContentHashed(ctx, res)
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
 			}

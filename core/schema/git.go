@@ -988,15 +988,6 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, err
 	}
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, err
-	}
-
 	remoteRepo, isRemoteRepo := parent.Self().Repo.Self().Backend.(*core.RemoteGitRepository)
 	if isRemoteRepo {
 		usedAuth := remoteRepo.AuthToken.Self() != nil ||
@@ -1006,7 +997,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 			// do a full hash of the actual files/dirs in the private git repo so
 			// that the cache key of the returned value can't be known unless the
 			// full contents are already known
-			dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
+			dgst, err := core.GetContentHashFromDirectory(ctx, inst)
 			if err != nil {
 				return inst, fmt.Errorf("failed to get content hash: %w", err)
 			}
