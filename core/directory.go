@@ -623,14 +623,7 @@ func (e notADirectoryError) Unwrap() error {
 	return e.inner
 }
 
-func DirectorySubfile(ctx context.Context, parent dagql.ObjectResult[*Directory], file string) (*File, error) {
-	parentSnapshot, err := dir.getSnapshot(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get directory ref: %w", err)
-	}
-
-	filePath := path.Join(dir.Dir, file)
-
+func (dir *Directory) Subfile(ctx context.Context, parent dagql.ObjectResult[*Directory], file string) (*File, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -649,17 +642,26 @@ func DirectorySubfile(ctx context.Context, parent dagql.ObjectResult[*Directory]
 		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", file)}
 	}
 
-	var fileSnapshot bkcache.ImmutableRef
-	if parentSnapshot != nil {
-		fileSnapshot = parentSnapshot.Clone()
-	}
-
-	return &File{
-		Snapshot: fileSnapshot,
+	filePath := path.Join(dir.Dir, file)
+	subfile := &File{
 		File:     filePath,
 		Platform: dir.Platform,
-		Services: dir.Services,
-	}, nil
+		Services: slices.Clone(dir.Services),
+		Parent:   parent,
+		LazyMu:   new(sync.Mutex),
+	}
+	subfile.LazyInit = func(ctx context.Context) error {
+		parentSnapshot, err := parent.Self().getSnapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get directory ref: %w", err)
+		}
+		if parentSnapshot != nil {
+			subfile.Snapshot = parentSnapshot.Clone()
+		}
+		return nil
+	}
+
+	return subfile, nil
 }
 
 type notAFileError struct {
