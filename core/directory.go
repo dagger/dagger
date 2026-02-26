@@ -147,8 +147,8 @@ func (dir *Directory) execInMount(ctx context.Context, f func(string) error, opt
 		return err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok && !opt.allowNilBuildkitSession {
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	if bkSessionGroup == nil && !opt.allowNilBuildkitSession {
 		return fmt.Errorf("no buildkit session group in context")
 	}
 
@@ -423,8 +423,8 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (LazyInitFunc
 			return err
 		}
 
-		bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-		if !ok {
+		bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+		if bkSessionGroup == nil {
 			return fmt.Errorf("no buildkit session group in context")
 		}
 
@@ -508,8 +508,8 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool,
 	}
 	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	if bkSessionGroup == nil {
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
@@ -974,8 +974,8 @@ func (dir *Directory) WithFile(
 			return err
 		}
 
-		bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-		if !ok {
+		bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+		if bkSessionGroup == nil {
 			return fmt.Errorf("no buildkit session group in context")
 		}
 
@@ -1186,8 +1186,8 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (LazyInitFunc,
 		if err != nil {
 			return fmt.Errorf("failed to get current query: %w", err)
 		}
-		bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-		if !ok {
+		bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+		if bkSessionGroup == nil {
 			return fmt.Errorf("no buildkit session group in context")
 		}
 
@@ -1238,9 +1238,36 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (LazyInitFunc,
 
 func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
-		parentRef, err := dir.getParentSnapshot(ctx)
+		patch, err := changes.AsPatch(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("get changes patch: %w", err)
+		}
+		if patch != nil {
+			patchBytes, err := patch.Contents(ctx, nil, nil)
+			if err != nil {
+				if !errors.Is(err, errEmptyResultRef) {
+					return fmt.Errorf("read changes patch: %w", err)
+				}
+				patchBytes = nil
+			}
+
+			if len(patchBytes) > 0 {
+				withPatch, err := dir.WithPatch(ctx, string(patchBytes))
+				if err != nil {
+					return fmt.Errorf("prepare patch apply: %w", err)
+				}
+				if err := withPatch(ctx); err != nil {
+					return fmt.Errorf("apply patch: %w", err)
+				}
+			}
+		}
+
+		paths, err := changes.ComputePaths(ctx)
+		if err != nil {
+			return fmt.Errorf("compute paths: %w", err)
+		}
+		if len(paths.Removed) == 0 {
+			return nil
 		}
 
 		srv, err := CurrentDagqlServer(ctx)
@@ -1248,79 +1275,12 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (Lazy
 			return fmt.Errorf("failed to get dagql server: %w", err)
 		}
 
-		var diffDir dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, changes.Before, &diffDir,
-			dagql.Selector{Field: "diff", Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*Directory](changes.After.ID())},
-			}},
-		)
+		without, err := dir.Without(ctx, srv, paths.Removed...)
 		if err != nil {
-			return err
+			return fmt.Errorf("prepare remove paths: %w", err)
 		}
-		if diffDir.Self().Dir != "/" {
-			return fmt.Errorf("internal error: expected diff Dir path to be %q but got %q", "/", diffDir.Self().Dir)
-		}
-
-		var diffDirRef bkcache.ImmutableRef
-
-		if dir.IsRootDir() {
-			// no need to rebase the directory, since diffDir will also be stored under the root
-			diffDirRef, err = diffDir.Self().getSnapshot(ctx)
-			if err != nil {
-				return err
-			}
-		} else {
-			var rebasedDir dagql.ObjectResult[*Directory]
-			err = srv.Select(ctx, srv.Root(), &rebasedDir,
-				dagql.Selector{Field: "directory"}, // scratch
-				dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(dir.Dir)},
-					{Name: "source", Value: dagql.NewID[*Directory](diffDir.ID())},
-				}},
-			)
-			if err != nil {
-				return err
-			}
-			diffDirRef, err = rebasedDir.Self().getSnapshot(ctx)
-			if err != nil {
-				return err
-			}
-		}
-
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get current query: %w", err)
-		}
-
-		mergeRefs := []bkcache.ImmutableRef{parentRef, diffDirRef}
-		ref, err := query.BuildkitCache().Merge(ctx, mergeRefs, nil)
-		if err != nil {
-			return fmt.Errorf("failed to merge directories: %w", err)
-		}
-		err = ref.Finalize(ctx)
-		if err != nil {
-			return err
-		}
-		dir.Snapshot = ref
-
-		paths, err := changes.ComputePaths(ctx)
-		if err != nil {
-			return fmt.Errorf("compute paths: %w", err)
-		}
-
-		if len(paths.Removed) > 0 {
-			srv, err := CurrentDagqlServer(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get dagql server: %w", err)
-			}
-
-			without, err := dir.Without(ctx, srv, paths.Removed...)
-			if err != nil {
-				return fmt.Errorf("failed to remove paths: %w", err)
-			}
-			if err := without(ctx); err != nil {
-				return fmt.Errorf("failed to remove paths: %w", err)
-			}
+		if err := without(ctx); err != nil {
+			return fmt.Errorf("remove paths: %w", err)
 		}
 
 		return nil

@@ -184,8 +184,8 @@ func (file *File) execInMount(ctx context.Context, f func(string) error, optFns 
 		return err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok && !opt.allowNilBuildkitSession {
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	if bkSessionGroup == nil && !opt.allowNilBuildkitSession {
 		return fmt.Errorf("no buildkit session group in context")
 	}
 
@@ -348,8 +348,8 @@ func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]
 
 	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	if bkSessionGroup == nil {
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
@@ -390,8 +390,8 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 			return err
 		}
 
-		bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-		if !ok {
+		bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+		if bkSessionGroup == nil {
 			return fmt.Errorf("no buildkit session group in context")
 		}
 
@@ -667,7 +667,7 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 		return nil, errEmptyResultRef
 	}
 
-	bkSessionGroup, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
 	root, _, closer, err := MountRefCloser(ctx, snapshot, bkSessionGroup, mountRefAsReadOnly)
 	if err != nil {
 		return nil, err

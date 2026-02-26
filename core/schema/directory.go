@@ -28,6 +28,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("directory", s.directory).
 			Doc(`Creates an empty directory.`),
+		dagql.NodeFunc("__immutableRef", s.immutableRef).
+			Doc(`(Internal-only) Returns a directory backed by a pre-existing immutable ref.`).
+			Args(dagql.Arg("ref").Doc("The immutable ref ID.")),
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
@@ -344,6 +347,33 @@ type directoryPipelineArgs struct {
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
 
+type immutableRefArgs struct {
+	Ref string
+}
+
+func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectResult[*core.Query], args immutableRefArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	immutable, err := parent.Self().BuildkitCache().Get(ctx, args.Ref, nil)
+	if err != nil {
+		return res, fmt.Errorf("get immutable ref %q: %w", args.Ref, err)
+	}
+	defer immutable.Release(context.WithoutCancel(ctx))
+
+	dir := &core.Directory{
+		Dir:       "/",
+		Platform:  parent.Self().Platform(),
+		LazyState: core.NewLazyState(),
+		Snapshot:  immutable.Clone(),
+	}
+	dir.LazyInitComplete = true
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
 	// deprecated and a no-op
 	return parent, nil
@@ -364,7 +394,11 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok {
-		return inst, errors.New("no buildkit session group in context")
+		bk, err := parent.Self().Buildkit(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("get buildkit client for scratch directory session group: %w", err)
+		}
+		bkSessionGroup = buildkit.NewSessionGroup(bk.ID())
 	}
 	scratchRef, err := parent.Self().BuildkitCache().New(ctx, nil, bkSessionGroup,
 		bkcache.CachePolicyRetain,
