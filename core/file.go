@@ -40,10 +40,12 @@ type File struct {
 	// Services necessary to provision the file.
 	Services ServiceBindings
 
-	lazyMu   *sync.Mutex
-	lazyInit func(context.Context) error
+	Parent dagql.ObjectResult[*Directory]
+
+	LazyMu   *sync.Mutex
+	LazyInit LazyInitFunc
 	// Below is lazily initialized and shoud not be accessed directly
-	snapshot bkcache.ImmutableRef
+	Snapshot bkcache.ImmutableRef
 }
 
 func (*File) Type() *ast.Type {
@@ -60,86 +62,106 @@ func (*File) TypeDescription() string {
 var _ dagql.OnReleaser = (*File)(nil)
 
 func (file *File) OnRelease(ctx context.Context) error {
-	if file.snapshot != nil {
-		return file.snapshot.Release(ctx)
+	if file.Snapshot != nil {
+		return file.Snapshot.Release(ctx)
 	}
 	return nil
 }
 
-func NewFile(file string, platform Platform, services ServiceBindings) *File {
-	return &File{
-		File:     file,
-		Platform: platform,
-		Services: services,
-		lazyMu:   new(sync.Mutex),
-		lazyInit: func(context.Context) error { return nil },
-	}
-}
-
-func NewFileWithContents(
-	ctx context.Context,
-	name string,
-	content []byte,
-	permissions fs.FileMode,
-	ownership *Ownership,
-	platform Platform,
-) (*File, error) {
-	if dir, _ := filepath.Split(name); dir != "" {
-		return nil, fmt.Errorf("file name %q must not contain a directory", name)
-	}
-
-	dir, err := NewScratchDirectoryDagOp(ctx, platform)
-	if err != nil {
-		return nil, err
-	}
-	dir, err = dir.WithNewFile(ctx, name, content, permissions, ownership)
-	if err != nil {
-		return nil, err
-	}
-	return dir.File(ctx, name)
-}
-
-func (file *File) CloneWithoutSnapshot() *File {
-	if file == nil {
+func NewFileChild(parent dagql.ObjectResult[*File]) *File {
+	if parent.Self() == nil {
 		return nil
 	}
 
-	cp := *file
+	cp := *parent.Self()
 	cp.Services = slices.Clone(cp.Services)
-
-	cp.lazyMu = nil
-	cp.lazyInit = nil
-	cp.snapshot = nil
+	cp.LazyMu = new(sync.Mutex)
 
 	return &cp
 }
 
-func (file *File) Evaluate(ctx context.Context) error {
-	if file.lazyMu == nil {
-		file.lazyMu = new(sync.Mutex)
+func (file *File) WithContents(ctx context.Context, content []byte, permissions fs.FileMode, ownership *Ownership) (LazyInitFunc, error) {
+	if dir, _ := filepath.Split(file.File); dir != "" {
+		return nil, fmt.Errorf("file name %q must not contain a directory", file.File)
 	}
 
-	file.lazyMu.Lock()
-	defer file.lazyMu.Unlock()
+	if permissions == 0 {
+		permissions = 0o644
+	}
 
-	if file.snapshot != nil {
+	return func(ctx context.Context) error {
+		return file.execInMount(ctx, func(root string) error {
+			resolvedDest, err := containerdfs.RootPath(root, file.File)
+			if err != nil {
+				return err
+			}
+			destPathDir, _ := filepath.Split(resolvedDest)
+			err = os.MkdirAll(filepath.Dir(destPathDir), 0o755)
+			if err != nil {
+				return err
+			}
+			dst, err := os.OpenFile(resolvedDest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, permissions)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if dst != nil {
+					_ = dst.Close()
+				}
+			}()
+
+			if _, err := dst.Write(content); err != nil {
+				return err
+			}
+			if err := dst.Close(); err != nil {
+				return err
+			}
+			dst = nil
+
+			if ownership != nil {
+				if err := os.Chown(resolvedDest, ownership.UID, ownership.GID); err != nil {
+					return fmt.Errorf("failed to set chown %s: err", resolvedDest)
+				}
+			}
+			return nil
+		}, withSavedFileSnapshot("newFile %s", file.File))
+	}, nil
+}
+
+func (file *File) Evaluate(ctx context.Context) error {
+	// If this file re-uses the parent snapshot, just eval that parent snapshot.
+	if file.LazyInit == nil {
+		if file.Parent.Self() == nil {
+			return nil
+		}
+		return file.Parent.Self().Evaluate(ctx)
+	}
+
+	if file.LazyMu == nil {
+		return fmt.Errorf("invalid File: missing LazyMu")
+	}
+	file.LazyMu.Lock()
+	defer file.LazyMu.Unlock()
+
+	if file.Snapshot != nil {
 		return nil
 	}
 
-	if file.lazyInit != nil {
-		if err := file.lazyInit(ctx); err != nil {
-			return fmt.Errorf("failed to initialize File: %w", err)
-		}
-	}
-
-	return nil
+	return file.LazyInit(ctx)
 }
 
 func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if err := file.Evaluate(ctx); err != nil {
 		return nil, err
 	}
-	return file.snapshot, nil
+	return file.Snapshot, nil
+}
+
+func (file *File) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
+	if file.Parent.Self() == nil {
+		return nil, nil
+	}
+	return file.Parent.Self().getSnapshot(ctx)
 }
 
 type fileExecInMountOpt struct {
@@ -161,32 +183,32 @@ func allowNilFileBuildkitSession(opt *fileExecInMountOpt) {
 	opt.allowNilBuildkitSession = true
 }
 
-func (file *File) execInMount(ctx context.Context, f func(string) error, optFns ...fileExecInMountOptFn) (_ *File, rerr error) {
+func (file *File) execInMount(ctx context.Context, f func(string) error, optFns ...fileExecInMountOptFn) (rerr error) {
 	var opt fileExecInMountOpt
 	for _, optFn := range optFns {
 		optFn(&opt)
 	}
 
-	parentSnapshot, err := file.getSnapshot(ctx)
+	parentSnapshot, err := file.getParentSnapshot(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok && !opt.allowNilBuildkitSession {
-		return nil, fmt.Errorf("no buildkit session group in context")
+		return fmt.Errorf("no buildkit session group in context")
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var mountRef bkcache.Ref
 	var newRef bkcache.MutableRef
 	if opt.commitSnapshot {
 		if opt.cacheDesc == "" {
-			return nil, fmt.Errorf("execInMount missing cache description")
+			return fmt.Errorf("execInMount missing cache description")
 		}
 		newRef, err = query.BuildkitCache().New(
 			ctx,
@@ -196,12 +218,12 @@ func (file *File) execInMount(ctx context.Context, f func(string) error, optFns 
 			bkcache.WithDescription(opt.cacheDesc),
 		)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		mountRef = newRef
 	} else {
 		if parentSnapshot == nil {
-			return nil, errEmptyResultRef
+			return errEmptyResultRef
 		}
 		mountRef = parentSnapshot
 	}
@@ -212,30 +234,30 @@ func (file *File) execInMount(ctx context.Context, f func(string) error, optFns 
 	}
 	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := f(rootPath); err != nil {
 		if closeErr := closer(); closeErr != nil {
 			err = errors.Join(err, closeErr)
 		}
-		return nil, err
+		return err
 	}
 	if err := closer(); err != nil {
-		return nil, err
+		return err
 	}
 
 	if !opt.commitSnapshot {
-		return file, nil
+		return nil
 	}
 
 	snapshot, err := newRef.Commit(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	file.snapshot = snapshot
+	file.Snapshot = snapshot
 
-	return file, nil
+	return nil
 }
 
 // Contents handles file content retrieval
@@ -251,7 +273,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 		Writer: &buf,
 	}
 
-	_, err := file.execInMount(ctx, func(root string) error {
+	err := file.execInMount(ctx, func(root string) error {
 		fullPath, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -360,141 +382,151 @@ func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]
 	return results, nil
 }
 
-func FileWithReplaced(ctx context.Context, parent dagql.ObjectResult[*File], searchStr, replacementStr string, firstFrom *int, all bool) (*File, error) {
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
-	}
-	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
+func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		opt, ok := buildkit.CurrentOpOpts(ctx)
+		if !ok {
+			return fmt.Errorf("no buildkit opts in context")
+		}
+		ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
 
-	parentSnapshot, err := file.getSnapshot(ctx)
-	if err != nil {
-		return nil, err
-	}
+		parentSnapshot, err := file.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
 
-	file = file.CloneWithoutSnapshot()
-	file.snapshot = parentSnapshot
+		bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+		if !ok {
+			return fmt.Errorf("no buildkit session group in context")
+		}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
+		sourceFile := &File{
+			File:     file.File,
+			Platform: file.Platform,
+			Services: slices.Clone(file.Services),
+			Parent:   file.Parent,
+			LazyMu:   new(sync.Mutex),
+			LazyInit: func(context.Context) error { return nil },
+			Snapshot: parentSnapshot,
+		}
 
-	// reuse Search internally so we get convenient line numbers for an error if
-	// there are multiple matches
-	matches, err := file.Search(ctx, SearchOpts{
-		Pattern:   searchStr,
-		Literal:   true,
-		Multiline: strings.ContainsRune(searchStr, '\n'),
-	}, false)
-	if err != nil {
-		return nil, err
-	}
+		// reuse Search internally so we get convenient line numbers for an error if
+		// there are multiple matches
+		matches, err := sourceFile.Search(ctx, SearchOpts{
+			Pattern:   searchStr,
+			Literal:   true,
+			Multiline: strings.ContainsRune(searchStr, '\n'),
+		}, false)
+		if err != nil {
+			return err
+		}
 
-	// Drop any matches before *firstFrom
-	if firstFrom != nil {
-		var matchesFrom []*SearchResult
+		// Drop any matches before *firstFrom
+		if firstFrom != nil {
+			var matchesFrom []*SearchResult
+			for _, match := range matches {
+				if match.LineNumber >= *firstFrom {
+					matchesFrom = append(matchesFrom, match)
+				}
+			}
+			matches = matchesFrom
+		}
+
+		// Check for matches
+		if len(matches) == 0 {
+			if all {
+				// If we're replacing all, it's not an error if there are no matches
+				// (just a no-op)
+				if parentSnapshot != nil {
+					file.Snapshot = parentSnapshot.Clone()
+				}
+				return nil
+			}
+			return fmt.Errorf("search string not found")
+		}
+
+		var matchedLocs []string
 		for _, match := range matches {
-			if match.LineNumber >= *firstFrom {
-				matchesFrom = append(matchesFrom, match)
+			for _, sub := range match.Submatches {
+				matchedLocs = append(matchedLocs, fmt.Sprintf("line %d (%d-%d)", match.LineNumber, sub.Start, sub.End))
 			}
 		}
-		matches = matchesFrom
-	}
 
-	// Check for matches
-	if len(matches) == 0 {
+		// Load content into memory for simple bytes.Replace
+		//
+		// This is obviously less efficient than streaming, but:
+		// 1. it is far simpler (I tried streaming text/transform and hit cryptic errors),
+		// 2. we already faced the music on that with File.contents,
+		// 3. this will mainly be used for code which is fine to hold in memory, and
+		// 4. it is far simpler.
+		var offset *int
+		if firstFrom != nil {
+			o := *firstFrom - 1
+			offset = &o
+		}
+		contents, err := sourceFile.Contents(ctx, offset, nil)
+		if err != nil {
+			return err
+		}
+		search := []byte(searchStr)
+		replacement := []byte(replacementStr)
 		if all {
-			// If we're replacing all, it's not an error if there are no matches
-			// (just a no-op)
-			return file, nil
+			contents = bytes.ReplaceAll(contents, search, replacement)
+		} else if firstFrom != nil || len(matchedLocs) == 1 {
+			contents = bytes.Replace(contents, search, replacement, 1)
+		} else if len(matchedLocs) > 0 {
+			return fmt.Errorf("search string found multiple times: %s", strings.Join(matchedLocs, ", "))
 		}
-		return nil, fmt.Errorf("search string not found")
-	}
 
-	var matchedLocs []string
-	for _, match := range matches {
-		for _, sub := range match.Submatches {
-			matchedLocs = append(matchedLocs, fmt.Sprintf("line %d (%d-%d)", match.LineNumber, sub.Start, sub.End))
+		// If we replaced after a certain line, bring the content before it back
+		if offset != nil && *offset > 0 {
+			previous, err := sourceFile.Contents(ctx, nil, offset)
+			if err != nil {
+				return err
+			}
+			contents = append(previous, contents...)
 		}
-	}
 
-	// Load content into memory for simple bytes.Replace
-	//
-	// This is obviously less efficient than streaming, but:
-	// 1. it is far simpler (I tried streaming text/transform and hit cryptic errors),
-	// 2. we already faced the music on that with File.contents,
-	// 3. this will mainly be used for code which is fine to hold in memory, and
-	// 4. it is far simpler.
-	var offset *int
-	if firstFrom != nil {
-		o := *firstFrom - 1
-		offset = &o
-	}
-	contents, err := file.Contents(ctx, offset, nil)
-	if err != nil {
-		return nil, err
-	}
-	search := []byte(searchStr)
-	replacement := []byte(replacementStr)
-	if all {
-		contents = bytes.ReplaceAll(contents, search, replacement)
-	} else if firstFrom != nil || len(matchedLocs) == 1 {
-		contents = bytes.Replace(contents, search, replacement, 1)
-	} else if len(matchedLocs) > 0 {
-		return nil, fmt.Errorf("search string found multiple times: %s", strings.Join(matchedLocs, ", "))
-	}
-
-	// If we replaced after a certain line, bring the content before it back
-	if offset != nil && *offset > 0 {
-		previous, err := file.Contents(ctx, nil, offset)
-		if err != nil {
-			return nil, err
-		}
-		contents = append(previous, contents...)
-	}
-
-	// Create a new layer for the replaced content
-	newRef, err := query.BuildkitCache().New(ctx, parentSnapshot, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("patch"))
-	if err != nil {
-		return nil, err
-	}
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedPath, err := containerdfs.RootPath(root, file.File)
+		// Create a new layer for the replaced content
+		newRef, err := query.BuildkitCache().New(ctx, parentSnapshot, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription("patch"))
 		if err != nil {
 			return err
 		}
-		// We're in a new copy-on-write layer, so truncating and rewriting in-place
-		// should be fine; we don't need to worry about atomic writes, and this way
-		// we preserve permissions and other metadata.
-		if err := os.Truncate(resolvedPath, 0); err != nil {
+		err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
+			resolvedPath, err := containerdfs.RootPath(root, file.File)
+			if err != nil {
+				return err
+			}
+			// We're in a new copy-on-write layer, so truncating and rewriting in-place
+			// should be fine; we don't need to worry about atomic writes, and this way
+			// we preserve permissions and other metadata.
+			if err := os.Truncate(resolvedPath, 0); err != nil {
+				return err
+			}
+			f, err := os.OpenFile(resolvedPath, os.O_WRONLY, 0)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = f.Write(contents)
 			return err
-		}
-		f, err := os.OpenFile(resolvedPath, os.O_WRONLY, 0)
+		})
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-		_, err = f.Write(contents)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	snap, err := newRef.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-	file.snapshot = snap
-	return file, nil
+		snap, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		file.Snapshot = snap
+		return nil
+	}, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
@@ -584,53 +616,41 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 	return stat, nil
 }
 
-func FileWithName(ctx context.Context, parent dagql.ObjectResult[*File], filename string) (*File, error) {
-	parentSnapshot, err := file.getSnapshot(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	file = file.CloneWithoutSnapshot()
-	file.snapshot = parentSnapshot
-
-	return file.execInMount(ctx, func(root string) error {
-		src, err := RootPathWithoutFinalSymlink(root, file.File)
-		if err != nil {
-			return err
-		}
-		dst, err := RootPathWithoutFinalSymlink(root, filename)
-		if err != nil {
-			return err
-		}
-		err = os.Rename(src, dst)
-		if err != nil {
-			return TrimErrPathPrefix(err, root)
-		}
-		return nil
-	}, withSavedFileSnapshot("withName %s", filename))
+func (file *File) WithName(ctx context.Context, filename string) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		return file.execInMount(ctx, func(root string) error {
+			src, err := RootPathWithoutFinalSymlink(root, file.File)
+			if err != nil {
+				return err
+			}
+			dst, err := RootPathWithoutFinalSymlink(root, filename)
+			if err != nil {
+				return err
+			}
+			err = os.Rename(src, dst)
+			if err != nil {
+				return TrimErrPathPrefix(err, root)
+			}
+			return nil
+		}, withSavedFileSnapshot("withName %s", filename))
+	}, nil
 }
 
-func FileWithTimestamps(ctx context.Context, parent dagql.ObjectResult[*File], unix int) (*File, error) {
-	parentSnapshot, err := file.getSnapshot(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	file = file.CloneWithoutSnapshot()
-	file.snapshot = parentSnapshot
-
-	return file.execInMount(ctx, func(root string) error {
-		fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
-		if err != nil {
-			return err
-		}
-		t := time.Unix(int64(unix), 0)
-		err = os.Chtimes(fullPath, t, t)
-		if err != nil {
-			return err
-		}
-		return nil
-	}, withSavedFileSnapshot("withTimestamps %d", unix))
+func (file *File) WithTimestamps(ctx context.Context, unix int) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		return file.execInMount(ctx, func(root string) error {
+			fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
+			if err != nil {
+				return err
+			}
+			t := time.Unix(int64(unix), 0)
+			err = os.Chtimes(fullPath, t, t)
+			if err != nil {
+				return err
+			}
+			return nil
+		}, withSavedFileSnapshot("withTimestamps %d", unix))
+	}, nil
 }
 
 type fileReadCloser struct {
@@ -728,7 +748,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 }
 
 func (file *File) Mount(ctx context.Context, f func(string) error) error {
-	_, err := file.execInMount(ctx, func(root string) error {
+	err := file.execInMount(ctx, func(root string) error {
 		src, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -764,39 +784,32 @@ func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) 
 	}).WithContents(string(contents))
 }
 
-func FileChown(ctx context.Context, parent dagql.ObjectResult[*File], owner string) (*File, error) {
+func (file *File) Chown(ctx context.Context, owner string) (LazyInitFunc, error) {
 	ownership, err := parseDirectoryOwner(owner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 	}
-
-	parentSnapshot, err := file.getSnapshot(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	file = file.CloneWithoutSnapshot()
-	file.snapshot = parentSnapshot
-
-	return file.execInMount(ctx, func(root string) error {
-		chownPath := file.File
-		chownPath, err := containerdfs.RootPath(root, chownPath)
-		if err != nil {
-			return err
-		}
-
-		err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+	return func(ctx context.Context) error {
+		return file.execInMount(ctx, func(root string) error {
+			chownPath := file.File
+			chownPath, err := containerdfs.RootPath(root, chownPath)
 			if err != nil {
 				return err
 			}
-			if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
-				return fmt.Errorf("failed to set chown %s: %w", path, err)
+
+			err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
+					return fmt.Errorf("failed to set chown %s: %w", path, err)
+				}
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("failed to walk %s: %w", chownPath, err)
 			}
 			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
-		}
-		return nil
-	}, withSavedFileSnapshot("chown %s %s", file.File, owner))
+		}, withSavedFileSnapshot("chown %s %s", file.File, owner))
+	}, nil
 }

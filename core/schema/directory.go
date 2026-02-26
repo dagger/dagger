@@ -639,7 +639,7 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	f, err := core.DirectorySubfile(ctx, parent, args.Path)
+	f, err := parent.Self().Subfile(ctx, parent, args.Path)
 	if err != nil {
 		return inst, err
 	}
