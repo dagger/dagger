@@ -106,6 +106,77 @@ type MyModule {
 - Runtime error if non-null fields aren't assigned
 - Types without `new()` derive constructors from fields (existing behavior)
 
+### Nullable Value Handling
+
+Nullable vs non-null type mismatches are the most common source of errors in dang code. Understanding how nullability propagates is essential.
+
+**The contagious nullability rule:** When you access a field or call a method on a nullable receiver, the result is always nullable — even if the field itself is declared `Type!`. In other words: `field of (nullable thing) == nullable (field of thing)`.
+
+**The confusing error:** `cannot use String as String!` means you have a nullable `String` where a non-null `String!` is expected. The `!` denotes non-null.
+
+**Three patterns to fix it:**
+
+1. **Null coalescing `??`** — use when there's a sensible default:
+
+```dang
+# json.field(...).asString returns nullable String
+let name = json.field(["name"]).asString ?? "unknown"
+```
+
+2. **Flow-sensitive null check** — use when you need to branch on null vs non-null:
+
+```dang
+# After `if (x != null)`, x is narrowed to non-null inside the block
+let pkgJson = if (pkgDir.stat("package.json") != null) {
+  pkgDir.file("package.json").asJSON
+} else {
+  null
+}
+```
+
+3. **Guard early, access late** — check the nullable value for null *before* accessing its fields, so the fields come back non-null:
+
+```dang
+# WRONG: accessing fields on nullable json produces nullable results
+let pm = json.field(["packageManager"]).asString  # String, not String!
+
+# RIGHT: check json for null first, then access fields in non-null branch
+if (json == null) {
+  "npm"
+} else if (hasField(json, "packageManager") == false) {
+  "npm"
+} else {
+  let pmField = json.field(["packageManager"])
+  pmField.asString.split("@")[0] ?? "npm"
+}
+```
+
+**Common pattern: JSON field access.** `json.field(...)` returns nullable values. Chaining `.field().field().asString` on a nullable receiver produces a nullable string even when a function expects `String!`. Always check for null before accessing:
+
+```dang
+# Defensive JSON access pattern
+if (json == null) {
+  [] :: [String!]!
+} else if (hasField(json, "docusaurus") == false) {
+  [] :: [String!]!
+} else {
+  let docusaurus = json.field(["docusaurus"])
+  if (hasField(docusaurus, "include") == false) {
+    [] :: [String!]!
+  } else {
+    let include = docusaurus.field(["include"])
+    include.asArray.{asString}.map { item => item.asString }
+  }
+}
+```
+
+**Null narrowing limitations:**
+
+- Only simple `x == null` / `x != null` checks narrow types
+- Compound conditions (`and`, `or`) and negation (`!`) do not narrow
+- Only direct variable names are narrowed (not nested field access like `a.b`)
+- Function calls in conditions do not trigger narrowing
+
 ### Container Building (Method Chaining)
 
 ```dang
