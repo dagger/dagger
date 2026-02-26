@@ -1,5 +1,3 @@
-pub description = "Build Docusaurus documentation sites"
-
 """
 A Dagger module for docusaurus, a documentation website builder. https://docusaurus.io
 """
