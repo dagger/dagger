@@ -1,4 +1,4 @@
-# Workspace Lockfile
+# Lockfile: Lookup Resolution
 
 ## Status: Draft
 
@@ -6,194 +6,218 @@ Builds on:
 - [Part 1: Workspaces and Modules](https://gist.github.com/shykes/e4778dc5ec17c9a8bbd3120f5c21ce73)
 - [Part 2: Workspace API](https://gist.github.com/shykes/86c05de3921675944087cb0849e1a3be)
 
+## Scope and Workspace Relationship
+
+The lockfile design predates Workspace and is orthogonal to it.
+
+Workspace makes lockfile support urgent because `.dagger/config.toml` intentionally stores symbolic lookup inputs and does not store pinned lookup results. That means `modules.resolve` lock entries are now a blocker for deterministic Workspace loading.
+
+This document defines:
+- Target state: one lock model for all lookup functions (`modules`, `git`, `http`, `container`, and future extension points).
+- V1 delivery scope: `modules.resolve` first, with the same model and terminology used for future rollout.
+
+## Terminology
+
+| Term | Meaning |
+| --- | --- |
+| Lookup function | A function that turns symbolic lookup inputs into a concrete lookup result. |
+| Lookup inputs | The symbolic arguments to a lookup function (branch, tag, URL, image tag, module ref). |
+| Lookup result | The concrete resolved value (commit, digest, immutable identifier, etc.). |
+| Lock entry | A recorded mapping from `(namespace, operation, inputs)` to `{value, policy}`. |
+| Policy | Update intent for a lock entry: `pin` (manual update) or `float` (auto-update allowed). |
+| Lock mode | Run-level behavior for lock mutation: `strict`, `auto`, or `update`. |
+| Offline flag | `--offline`; separate from lock mode, disables network and requires local resolution/content. |
+
+Notes:
+- Using `lookup` terminology maps directly to Dagger API calls.
+- This also leaves room for future user-defined lookup functions (for example via a `+lookup` annotation) without changing the lock model.
+
 ## Problem
 
-1. Lookup inputs across Dagger are often symbolic (`branch`, `tag`, `latest`, mutable HTTP URLs), so resolution can drift over time.
-2. Workspace loading currently has no `.dagger/lock` read path, so there is no deterministic lock resolution for workspace-installed git modules.
-3. Legacy `dagger.json` toolchain/blueprint `pin` fields are parsed but not preserved in the new workspace flow.
-4. There is no consistent policy model for whether a lookup should stay fixed vs automatically refresh.
-5. Airgapped execution needs both resolution determinism and clear failure behavior when network is unavailable.
+1. Symbolic lookup inputs can drift over time.
+2. Workspace currently lacks `.dagger/lock` read/write behavior for `modules.resolve`.
+3. There is no single policy model for manual-only vs auto-updatable lookup entries.
+4. Airgapped execution requires explicit lock semantics plus clear failure behavior.
 
-## Solution
+## Proposal
 
-Add a machine-managed `.dagger/lock` file that records lookup results for modules, git, HTTP, and container references. Keep `.dagger/config.toml` human-editable and symbolic. The engine reads lock entries at lookup time and enforces per-entry update policy.
+Add a machine-managed `.dagger/lock` file that records lookup results and their policy.
 
-Adopt the lockfile tuple format and core plumbing from PR [#11156](https://github.com/dagger/dagger/pull/11156) (branch `universal-lockfile`), adapted to workspace location and module-v2 loading.
+- Every lookup entry is recorded in the same tuple format.
+- Policy is explicit per entry: `pin` or `float`.
+- Lock mode controls when entries may be discovered or updated.
+- `--offline` is a separate flag that composes with lock mode.
 
-Each lock entry stores:
-- resolved value.
-- policy: `pin` (manual update) or `float` (auto-update allowed).
+## Normative Engine Behavior
 
-Execution mode controls updates:
-- `lock=strict`: no updates, no missing-entry discovery.
-- `lock=update`: update all entries (including `pin` policy entries).
-- `lock=auto` (default): `strict` for `pin` policy, `update` for `float` policy.
+For each lookup call:
 
-`--offline` is a separate execution flag layered on top of lock mode. It disables network access and requires resolution/content from lock + local stores.
+1. Build lock key from `(namespace, operation, inputs)`.
+2. Determine requested policy from API annotation (or API default).
+3. Read current lock mode.
+4. If an entry exists:
+   - In `strict`: use entry; do not mutate.
+   - In `auto`: use policy-specific behavior table below.
+   - In `update`: refresh and rewrite.
+5. If no entry exists: apply missing-entry behavior table below.
+6. If requested policy differs from stored policy: treat as a lock mutation and require an update-capable flow (`lock=update` or explicit update command).
 
-Implementation rolls out incrementally:
-- v1: workspace `modules.resolve` with `pin|float` policy.
-- v2+: apply same model to `core.git.*`, `core.http.*`, and container registry lookups.
+## Lock Schema
 
-## Design
+Use PR #11156 tuple format (JSON lines), with a structured result envelope:
 
-### Goals
+```json
+[["version","1"]]
+["","modules.resolve",["github.com/dagger/go-toolchain@v1.0"],{"value":"3d23f8ef4f4f8f95e8f4c10a6f2b8b7d1646e001","policy":"pin"}]
+["","git.resolveRef",["https://github.com/acme/ci","refs/heads/main"],{"value":"6e4d4d1f5d8e7d8f1a8f74264f63e1f9c5f2bb0c","policy":"float"}]
+["github.com/acme/release","lookupVersion",["stable"],{"value":"v1.2.3","policy":"float"}]
+```
 
-- Deterministic lookup resolution with explicit update policy (`pin|float`).
-- Keep `config.toml` ergonomic for humans.
-- Make lock behavior engine-driven (CLI remains thin).
-- Preserve DRY by sharing read/write helpers with existing workspace config flows.
-- Keep one lock format for all lookup classes.
+Tuple shape:
+1. `namespace` (string)
+2. `operation` (string)
+3. `inputs` (ordered JSON array)
+4. `result` (JSON object)
 
-### Non-goals (v1)
+Result envelope:
+- `value`: concrete lookup result.
+- `policy`: `pin` or `float`.
 
-- Shipping every lookup class in the first implementation increment.
-- Changing `dagger.json` dependency lock behavior.
-- Defining all update-command UX flags now (targeted update filters can follow).
+### Naming Proposal
+
+Canonical key naming:
+- `namespace`:
+  - `""` for core lookup functions.
+  - `"<module-address>"` for lookup functions defined by modules.
+- `operation`:
+  - `functionName` or `Type.functionName`.
+  - In modules, if `Type` is the module main type, type name MUST be omitted.
+  - In core, operation naming is implementation-defined and may use:
+    - `functionName`
+    - `Type.functionName`
+    - virtual type/group prefixes such as `git.resolveRef`.
+
+Rationale:
+- One core namespace is sufficient and consistent with treating core as a special module.
+- Module namespace naturally maps to module ownership.
+- Main-type omission rule prevents duplicate entries for the same logical lookup.
+
+Collision guidance:
+- Core operations should include subsystem-style prefixes (for example `git.*`, `http.*`, `container.*`, `modules.*`) to avoid name collisions inside `namespace=""`.
+- Stateful typed lookups should include a stable receiver fingerprint in `inputs` when object state affects lookup result.
+
+## API Annotation
+
+Lookup APIs expose a single annotation:
+- `pin: true` => policy `pin`
+- `pin: false` => policy `float`
+
+No third intent in v1.
+
+If omitted, each lookup API defines a default policy. Explicit annotation overrides the default.
+
+## Lock Modes
+
+### Entry exists behavior
+
+| Mode | `policy=pin` | `policy=float` |
+| --- | --- | --- |
+| `strict` | Use lock result, no update | Use lock result, no update |
+| `auto` | Use lock result, no update | Resolve live and update lock entry |
+| `update` | Resolve live and update lock entry | Resolve live and update lock entry |
+
+### Missing entry behavior
+
+| Mode | Requested policy | Behavior |
+| --- | --- | --- |
+| `strict` | `pin` or `float` | Error |
+| `auto` | `pin` | Error |
+| `auto` | `float` | Resolve live and create lock entry |
+| `update` | `pin` or `float` | Resolve live and create lock entry |
+
+## Offline Flag (`--offline`)
+
+`--offline` is separate from lock mode and is only sketched here. Full offline design should be specified in a dedicated follow-up doc.
+
+Current constraints:
+- disables remote lookup/fetch.
+- requires lookup results to come from lock state.
+- requires content bytes to exist in local cache/store.
+- `--offline` with `lock=update` is invalid.
+
+## V1 Rollout vs Target State
+
+| Dimension | V1 | Target state |
+| --- | --- | --- |
+| Lookup coverage | `modules.resolve` | modules + git + http + container + extension points |
+| Lock policy model | `pin|float` | same |
+| Lock modes | apply to workspace lookup path first | apply across all lookup paths |
+| Offline | sketched only | fully specified and implemented |
+
+## Workspace-Specific Behavior (V1)
 
 ### File location
 
 `.dagger/lock` at workspace root (sibling to `config.toml`).
 
-### Lock schema
+### Read path
 
-Use the tuple format from PR #11156 (JSON lines):
-
-```json
-[["version","1"]]
-["modules","resolve",["github.com/dagger/go-toolchain@v1.0"],{"value":"3d23f8ef4f4f8f95e8f4c10a6f2b8b7d1646e001","policy":"pin"}]
-["core","git.resolve",["https://github.com/acme/ci","refs/heads/main"],{"value":"6e4d4d1f5d8e7d8f1a8f74264f63e1f9c5f2bb0c","policy":"float"}]
-```
-
-Tuple shape:
-1. `module` (string)
-2. `function` (string)
-3. `args` (ordered JSON array)
-4. `result` (JSON value)
-
-Result envelope:
-- `value`: resolved result (commit digest/content digest/etc)
-- `policy`: `pin` or `float`
-
-For workspace module resolution:
-- `module = "modules"`
-- `function = "resolve"`
-- `args = [<workspace-module-source>]`
-- `result.value = <git-commit-sha>`
-- `result.policy = "pin" | "float"`
-
-Local modules (`modules/foo`, `../foo`) are not looked up remotely and do not require lock entries.
-
-### Reuse from PR #11156
-
-Reusable as-is:
-- `util/lockfile` deterministic tuple reader/writer (`Load`, `Save`, `Get`, `Set`)
-- Version header convention: `[["version","1"]]`
-- Ordered argument arrays for deterministic keys
-
-Adapt for workspaces:
-- Path resolution: old code used `dagger.lock` next to `dagger.json`; new code should use `.dagger/lock` from workspace detection.
-- Lookup namespace: old examples used `core.*` functions; workspace module locking uses `modules.resolve`.
-- v1 does not require the session attachable RPC (`engine/session/lockfile`) because workspace module locking can be handled directly in workspace load/mutate flows.
-
-### API annotation
-
-Lookups get a single policy annotation:
-- `pin: true` -> `policy = "pin"` (manual update only)
-- `pin: false` -> `policy = "float"` (auto-update allowed)
-
-If annotation is omitted, API-specific defaults apply (to be documented per lookup API). Explicit annotation always wins.
-
-### Lock modes
-
-`lock=strict`:
-- lock entries are required for remote lookup keys.
-- no entry may be updated.
-- lock file is read-only for the run.
-
-`lock=update`:
-- existing entries are refreshed.
-- missing entries may be discovered and written.
-- `pin` and `float` policy entries are both updated (explicit user intent).
-
-`lock=auto` (default):
-- `pin` policy entries follow `strict`.
-- `float` policy entries follow `update`.
-
-### Offline behavior
-
-`--offline` is a separate execution flag, not a lock mode. It composes with lock mode:
-- disables remote discovery/fetch.
-- requires lookup resolution to come from lock state.
-- requires content bytes to exist in local cache/store.
-
-`--offline` with `lock=update` is invalid (cannot update without network).
-
-### Engine load path
-
-1. `workspace.Detect()` reads `.dagger/config.toml` and `.dagger/lock` (if present).
+1. `workspace.Detect()` reads `.dagger/config.toml` and `.dagger/lock`.
 2. `detectAndLoadWorkspaceWithRootfs()` maps config modules to `pendingModule`.
-3. For each pending module:
-   - lookup `("modules", "resolve", [source])`.
-   - if present, set `pendingModule.Pin` from `result.value` and track `result.policy` (`pin`/`float`).
-   - if missing, behavior depends on lock mode (`strict` fails, `auto/update` may resolve).
-4. `loadModule()` passes `refPin` when `pendingModule.Pin != ""`.
+3. For each module source:
+   - read lock entry `("", "modules.resolve", [source])`.
+   - apply mode/policy behavior.
+4. `loadModule()` passes `refPin` when a locked lookup result exists.
 
-This keeps module resolution engine-driven and lets lock mode decide if/when updates occur.
-
-### Compat mode and migration
-
-- Compat-mode legacy toolchains/blueprints should carry `pin` directly from legacy `dagger.json` into `pendingModule.Pin` (no lockfile required for this path).
-- `dagger migrate` writes lock entries with `policy="pin"` when legacy toolchain/blueprint entries include `pin`.
-
-### Write path (mutating workspace operations)
+### Write path
 
 #### `workspace.install`
 
-- Resolve module as today.
-- If resolved source is git:
-  - write/update lock tuple `["modules","resolve",[source],{"value":pin,"policy":...}]`.
-  - policy comes from install annotation/flag (`pin` default for workspace installs unless overridden).
-- If local source:
-  - no lock entry is needed.
-- Optional prune (v1.1): remove orphaned `"modules.resolve"` entries whose source is not present in current `config.toml`.
+- Resolve module source.
+- If source is git, write/update:
+  - `["modules","resolve",[source],{"value":<commit>,"policy":...}]`
+- If source is local, no lock entry.
+- Optional prune (v1.1): remove orphaned `modules.resolve` entries not present in config sources.
 
 #### `workspace.moduleInit`
 
-- Installs a local module in workspace config.
-- No lock entry is written.
+- Installs local module.
+- No lock entry.
 
 #### `workspace.configWrite`
 
-- Keep generic key writing as-is.
-- After config write, optionally prune orphaned `"modules.resolve"` entries (same helper as install).
-- Do not auto-resolve new entries from `configWrite`; resolution stays explicit in install/update commands.
+- Keep generic key writing.
+- Optional orphan prune after write.
+- No implicit live lookup resolution here.
 
 ### Workspace update UX
 
-Add `dagger workspace update [MODULE...]`:
+`dagger workspace update [MODULE...]`:
+- No args: update all workspace git module lock entries.
+- Args: update selected modules.
+- Leaves `config.toml` unchanged.
+- Rewrites corresponding lock entries.
+- Output per change: `<name> <oldPin> -> <newPin>`.
 
-- No args: update all git workspace modules (including `pin` policy entries, by explicit user intent).
-- Args: update selected workspace module names.
-- Leaves `config.toml` untouched; rewrites `.dagger/lock` module resolutions.
-- Output per changed module: `<name> <oldPin> -> <newPin>`.
+### Compat and migration
 
-This introduces a lock-driven update workflow without changing existing module dependency update semantics (`dagger update` for `dagger.json` modules).
+- Compat-mode toolchains/blueprints in legacy `dagger.json` carry forward their `pin` into lookup result usage.
+- `dagger migrate` writes lock entries with `policy="pin"` when legacy `pin` fields exist.
 
 ### Remote workspace behavior
 
-- Remote workspace (`-C <git-ref>`) reads lock file from cloned repo and applies lock resolutions/policies.
-- Mutating commands remain disallowed for remote workdirs (no lock writes).
+- Remote workspace (`-C <git-ref>`) reads and applies lock entries.
+- Mutating commands remain disallowed for remote workdirs.
 
-### Error model
+## Error Model
 
 - Missing lock file:
-  - `lock=strict`: hard error on first remote lookup key.
-  - `lock=auto|update`: no error; entries are created as needed.
-- Malformed lock file: hard error (explicit fix required).
-- Unknown lock entries (module/function not used by current engine path): ignore.
-- Invalid result envelope (missing `value` or bad `policy`): hard error.
-- `pin` policy result unavailable at fetch time (for example missing digest in upstream + no local content): hard error.
+  - `strict`: error on first required remote lookup.
+  - `auto|update`: allowed; entries may be created per mode/policy rules.
+- Malformed lock file: hard error.
+- Unknown lock entries: ignored.
+- Invalid result envelope (`value`/`policy` missing or invalid): hard error.
+- `pin` policy result unavailable at fetch time (and not locally cached): hard error.
 
 ## Tasks
 
@@ -238,13 +262,13 @@ This introduces a lock-driven update workflow without changing existing module d
    API:
    - `func Parse(data []byte) (*Lockfile, error)`
    - `func (l *Lockfile) Marshal() ([]byte, error)`
-   - `func (l *Lockfile) Get(module, function string, args []any) (any, bool)`
-   - `func (l *Lockfile) Set(module, function string, args []any, result any) error`
-   - `func (l *Lockfile) Delete(module, function string, args []any) bool`
+   - `func (l *Lockfile) Get(namespace, operation string, inputs []any) (any, bool)`
+   - `func (l *Lockfile) Set(namespace, operation string, inputs []any, result any) error`
+   - `func (l *Lockfile) Delete(namespace, operation string, inputs []any) bool`
    Behavior:
    - Require version header `[["version","1"]]` on non-empty files.
    - Preserve unknown entries (do not drop tuples outside workspace usage).
-   - Stable output ordering by `(module, function, args-json)`.
+   - Stable output ordering by `(namespace, operation, inputs-json)`.
    - Support structured result envelope `{value, policy}`.
 
 2. Add generic lockfile tests.
@@ -266,7 +290,7 @@ This introduces a lock-driven update workflow without changing existing module d
    - `func (l *Lock) DeleteModuleResolve(source string) bool`
    - `func (l *Lock) PruneModuleResolveEntries(validSources map[string]struct{}) int`
    Representation:
-   - maps to tuple key `("modules", "resolve", [source])`.
+   - maps to tuple key `("", "modules.resolve", [source])`.
 
 4. Add workspace lock wrapper tests.
    File: `core/workspace/lock_test.go`
@@ -274,7 +298,7 @@ This introduces a lock-driven update workflow without changing existing module d
    - source -> pin+policy lookup/set/delete.
    - policy validation (`pin`/`float` only).
    - prune behavior against `config.toml` source set.
-   - unknown tuple preservation (`core.git.*` etc.).
+   - unknown tuple preservation (`""/"git.*` operations, module namespaces, etc.).
    - marshal determinism.
 
 5. Add workspace constants.
@@ -282,7 +306,7 @@ This introduces a lock-driven update workflow without changing existing module d
    Constants:
    - `LockFileName = "lock"`
    - `PolicyPin = "pin"` and `PolicyFloat = "float"`
-   - tuple namespace constants for `"modules"` / `"resolve"` to avoid string duplication.
+   - tuple constants for `"modules"` / `"resolve"` to avoid string duplication.
 
 6. Keep task #1 isolated.
    Do not wire engine loading or CLI mutation in this step.
@@ -292,7 +316,7 @@ This introduces a lock-driven update workflow without changing existing module d
   Extend `pendingModule` with `Pin` and `Policy`, lookup lock tuple by source during workspace gathering, pass `refPin` in `loadModule`, and gate behavior by lock mode.
 
 - [ ] **#3: Update `workspace.install` lock write path (`core/schema/workspace.go`)**  
-  Persist git resolutions via `"modules.resolve"` lock entries with `policy`; optional orphan pruning.
+  Persist git lookup results via `"modules.resolve"` lock entries with `policy`; optional orphan pruning.
 
 - [ ] **#4: Prune stale lock entries on config mutation (`core/schema/workspace.go`)**  
   Run optional orphan pruning after `configWrite`.
@@ -311,12 +335,13 @@ This introduces a lock-driven update workflow without changing existing module d
 
 ### Phase 2+ tasks (after v1 modules.resolve)
 
-- [ ] Add lock mode plumbing (`--lock strict|auto|update`) and engine enforcement for non-workspace lookups.
-- [ ] Add `--offline` execution flag plumbing (`strict`-compatible, network-disabled, local-content required).
-- [ ] Extend schema hooks to write/read lock entries for `core.git.*`, `core.http.*`, and container registry lookups.
+- [ ] Apply lock mode enforcement across non-workspace lookup paths.
+- [ ] Add full `--offline` behavior with dedicated design and implementation.
+- [ ] Add lock read/write hooks for core operations (`git.*`, `http.*`, `container.*`) under `namespace=""`.
+- [ ] Design and implement extension model for user-defined lookup functions.
 
 ## Open questions
 
-1. What are default policies when `pin` annotation is omitted for each lookup API (`git`, `http`, `container`, `module`)?
-2. Should `dagger update` eventually dispatch between module-dependency update and workspace lock update based on context, or keep `workspace update` separate?
-3. For v1 rollout, should we implement only `"modules.resolve"` writes first, while preserving other tuples for forward compatibility?
+1. Default policies when `pin` annotation is omitted for each lookup API (`git`, `http`, `container`, `module`).
+2. Should `dagger update` dispatch between dependency update and workspace lock update based on context, or stay separate?
+3. Should policy flips (`pin` <-> `float`) require explicit user command even under `lock=update`?
