@@ -115,8 +115,7 @@ type PackageJson {
     if (hasNginxConfig == false) {
       "./nginx.conf"
     } else {
-      let docusaurus = json.field(["docusaurus"])
-      docusaurus.field(["nginxConfig"]).asString
+      json.field(["docusaurus", "nginxConfig"]).asString ?? "./nginx.conf"
     }
   }
 }
