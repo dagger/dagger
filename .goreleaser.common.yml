@@ -4,6 +4,7 @@ project_name: dagger
 
 builds:
   - builder: prebuilt
+    id: dagger-linux
     binary: ./dagger
     goos:
       - linux
@@ -18,6 +19,7 @@ builds:
       path: build/dagger_{{ .Env.ENGINE_VERSION }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}_v{{ . }}{{ end }}/dagger
 
   - builder: prebuilt
+    id: dagger-desktop
     binary: ./dagger
     goos:
       - windows
