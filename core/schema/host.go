@@ -8,16 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/containerd/containerd/v2/core/leases"
-	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
-	"github.com/distribution/reference"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/util/ctrns"
 	"github.com/dagger/dagger/util/hashutil"
 )
 
@@ -35,11 +30,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		dagql.NodeFunc("directory",
-			DagOpDirectoryWrapper(
-				srv, s.directory,
-				WithHashContentDir[*core.Host, hostDirectoryArgs](),
-			)).
+		dagql.NodeFunc("directory", s.directory).
 			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Accesses a directory on the host.`).
 			Args(
@@ -110,19 +101,21 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("host").Doc(`Upstream host to forward traffic to.`),
 			),
 
-		dagql.NodeFunc("containerImage", s.containerImage).
-			WithInput(dagql.PerClientInput).
-			Doc(`Accesses a container image on the host.`).
-			Args(
-				dagql.Arg("name").Doc(`Name of the image to access.`),
-			),
+		/*
+			TODO: re-implement host.containerImage after container import/fromInternal is re-introduced.
+
+			dagql.NodeFunc("containerImage", s.containerImage).
+				WithInput(dagql.PerClientInput).
+				Doc(`Accesses a container image on the host.`).
+				Args(
+					dagql.Arg("name").Doc(`Name of the image to access.`),
+				),
+		*/
 	}.Install(srv)
 }
 
 type builtinContainerArgs struct {
 	Digest string `doc:"Digest of the image manifest"`
-
-	ContainerDagOpInternalArgs
 }
 
 func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectResult[*core.Query], args builtinContainerArgs) (inst dagql.ObjectResult[*core.Container], err error) {
@@ -131,38 +124,15 @@ func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectRe
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	if !args.InDagOp() {
-		dummyCtr := core.NewContainer(parent.Self().Platform())
-		ctr, effectID, err := DagOpContainer(ctx, srv, dummyCtr, args, nil)
-		if err != nil {
-			return inst, err
-		}
-
-		err = core.BuiltInContainerUpdateConfig(ctx, ctr, args.Digest)
-		if err != nil {
-			return inst, err
-		}
-		if ctr.FS.Self().Dir == "" {
-			// Note that this is set inside the dagop; however it doesn't correctly get propagated back, so we need to reset it here
-			// containerSchema.from has the same issue and work-around
-			ctr.FS.Self().Dir = "/"
-		}
-
-		resultID := dagql.CurrentID(ctx)
-		if effectID != "" && resultID != nil {
-			resultID = resultID.AppendEffectIDs(effectID)
-		}
-		inst, err = dagql.NewObjectResultForID(ctr, srv, resultID)
-		if err != nil {
-			return inst, err
-		}
-		return inst, nil
-	}
-
 	ctr, err := core.BuiltInContainer(ctx, parent.Self().Platform(), args.Digest)
 	if err != nil {
 		return inst, err
 	}
+
+	if err := core.BuiltInContainerUpdateConfig(ctx, ctr, args.Digest); err != nil {
+		return inst, err
+	}
+
 	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
@@ -174,7 +144,6 @@ type hostDirectoryArgs struct {
 
 	GitIgnoreRoot string `internal:"true" default:""`
 	Gitignore     bool   `default:"false"`
-	DagOpInternalArgs
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -612,85 +581,17 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 	}, nil
 }
 
+/*
+TODO: re-implement host.containerImage after container import/fromInternal is re-introduced.
+
 type hostContainerArgs struct {
 	Name string
 }
 
 func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostContainerArgs) (inst dagql.Result[*core.Container], err error) {
-	refName, err := reference.ParseNormalizedNamed(args.Name)
-	if err != nil {
-		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Name, err)
-	}
-	refName = reference.TagNameOnly(refName)
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	imageReader, err := bk.ReadImage(ctx, refName.String())
-	if err != nil {
-		return inst, err
-	}
-
-	if imageReader.ContentStore != nil && imageReader.ImagesStore != nil {
-		// create and use a lease to write to our content store, prevents
-		// content being cleaned up while we're writing
-		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, imageReader.LeaseManager, leaseutil.MakeTemporary)
-		if err != nil {
-			return inst, err
-		}
-		defer leaseDone(context.WithoutCancel(leaseCtx))
-		leaseID, _ := leases.FromContext(leaseCtx)
-
-		contentStore := ctrns.ContentStoreWithLease(imageReader.ContentStore, leaseID)
-
-		img, err := imageReader.ImagesStore.Get(ctx, refName.String())
-		if err != nil {
-			return inst, fmt.Errorf("failed to get image from host store: %w", err)
-		}
-		target, err := core.ResolveIndex(ctx, contentStore, img.Target, query.Platform().Spec(), "")
-		if err != nil {
-			return inst, fmt.Errorf("failed to resolve image index: %w", err)
-		}
-
-		ctx, release, err := leaseutil.WithLease(ctx, query.LeaseManager(), leaseutil.MakeTemporary)
-		if err != nil {
-			return inst, err
-		}
-		defer release(context.WithoutCancel(ctx))
-		err = contentutil.CopyChain(ctx, query.OCIStore(), contentStore, *target)
-		if err != nil {
-			return inst, fmt.Errorf("failed to copy image content: %w", err)
-		}
-
-		ctr := core.NewContainer(query.Platform())
-		ctr, err = ctr.FromInternal(ctx, *target)
-		if err != nil {
-			return inst, err
-		}
-
-		return dagql.NewResultForCurrentID(ctx, ctr)
-	}
-
-	if src := imageReader.Tarball; src != nil {
-		defer src.Close()
-
-		ctr := core.NewContainer(query.Platform())
-		ctr, err := ctr.Import(ctx, src, "")
-		if err != nil {
-			return inst, err
-		}
-
-		return dagql.NewResultForCurrentID(ctx, ctr)
-	}
-
-	return inst, errors.New("invalid save config")
+	return inst, errors.New("host.containerImage is temporarily unavailable")
 }
+*/
 
 type hostServiceArgs struct {
 	Host  string `default:"localhost"`

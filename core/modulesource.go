@@ -249,8 +249,8 @@ func (src ModuleSource) Clone() *ModuleSource {
 	return &src
 }
 
-func (src *ModuleSource) Evaluate(context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (src *ModuleSource) Evaluate(context.Context) error {
+	return nil
 }
 
 func (src *ModuleSource) AsString() string {

@@ -100,8 +100,8 @@ func (svc *Service) Clone() *Service {
 	return &cp
 }
 
-func (svc *Service) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (svc *Service) Evaluate(ctx context.Context) error {
+	return nil
 }
 
 func (svc *Service) WithHostname(hostname string) *Service {
