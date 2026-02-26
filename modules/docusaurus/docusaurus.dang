@@ -12,18 +12,18 @@ type Docusaurus {
       ])
       .glob("**/docusaurus.config.*")
       .map { configPath =>
-        let sourcePath = configPath
+        let path = configPath
           .trimSuffix("docusaurus.config.ts")
           .trimSuffix("docusaurus.config.js")
           .trimSuffix("/")
-        let sourcePath = if (sourcePath == "") { "." } else { sourcePath }
-        let pkgDir = ws.directory(sourcePath, include: ["package.json"])
+        let path = if (path == "") { "." } else { path }
+        let pkgDir = ws.directory(path, include: ["package.json"])
         let pkgJson = if (pkgDir.stat("package.json") != null) {
           pkgDir.file("package.json").asJSON
         } else {
           null
         }
-        Site(sourcePath: sourcePath, pkg: PackageJson(json: pkgJson))
+        Site(path: path, packageJson: PackageJson(json: pkgJson))
       }
   }
 }
@@ -81,13 +81,13 @@ type PackageJson {
   """
   pub exclude: [String!]! {
     if (json == null) {
-      []::[String!]!
+      [] :: [String!]!
     } else if (hasField(json, "docusaurus") == false) {
-      []::[String!]!
+      [] :: [String!]!
     } else {
       let docusaurus = json.field(["docusaurus"])
       if (hasField(docusaurus, "exclude") == false) {
-        []::[String!]!
+        [] :: [String!]!
       } else {
         let exclude = docusaurus.field(["exclude"])
         exclude.asArray.{asString}.map { item => item.asString }
@@ -98,20 +98,20 @@ type PackageJson {
 
 type Site {
   """
-  Path to the site directory, relative to workspace rootfs.
+  Path of the site directory in the workspace
   """
-  pub sourcePath: String!
+  pub path: String!
 
   """
   Parsed package.json helpers for the site.
   """
-  let pkg: PackageJson!
+  let packageJson: PackageJson!
 
   """
   The package manager command.
   """
   let pm: String! {
-    pkg.packageManager
+    packageJson.packageManager
   }
 
   """
@@ -129,15 +129,22 @@ type Site {
   The Docusaurus site source files.
   """
   pub source(ws: Workspace!): Directory! {
+    # include is nullable; map requires a non-null list
+    let include = if (packageJson.include == null) {
+      null
+    } else {
+      packageJson.include.map { inc => path + "/" + inc }
+    }
+
     ws.directory(
-      sourcePath,
-      include: pkg.include,
+      ".",
+      include: include,
       exclude: [
         "node_modules/",
         ".docusaurus/",
         "build/",
         ".git/",
-      ] + pkg.exclude,
+      ] + packageJson.exclude.map { exc => path + "/" + exc },
     )
   }
 
@@ -170,9 +177,10 @@ type Site {
   pub sandbox(ws: Workspace!): Container! {
     base
       .withMountedDirectory("/app", source(ws))
+      .withWorkdir("/app/" + path)
       .withMountedCache(
         "./node_modules/.cache",
-        cacheVolume("docusaurus-cache-" + sourcePath),
+        cacheVolume("docusaurus-cache-" + path),
         sharing: CacheSharingMode.PRIVATE,
       )
       .withExec(installCmd)
