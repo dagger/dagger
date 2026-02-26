@@ -692,15 +692,17 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 		return nil, fmt.Errorf("evaluate merged directory snapshot: nil")
 	}
 
-	var after dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &after,
-		dagql.Selector{
-			Field: "__immutableRef",
-			Args: []dagql.NamedInput{
-				{Name: "ref", Value: dagql.NewString(afterRef.ID())},
-			},
-		},
-	); err != nil {
+	afterDirClone := &Directory{
+		Dir:       afterDir.Dir,
+		Platform:  afterDir.Platform,
+		Services:  slices.Clone(afterDir.Services),
+		LazyState: NewLazyState(),
+		Snapshot:  afterRef.Clone(),
+	}
+	afterDirClone.LazyInitComplete = true
+
+	after, err := dagql.NewObjectResultForCurrentID(ctx, srv, afterDirClone)
+	if err != nil {
 		return nil, fmt.Errorf("create after directory: %w", err)
 	}
 
