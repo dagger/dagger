@@ -2,6 +2,31 @@
 A Dagger module for docusaurus, a documentation website builder. https://docusaurus.io
 """
 type Docusaurus {
+  """
+  Scan all docusaurus sites, and ensure they are configured to build properly in Dagger.
+  Note: requires valid LLM configuration
+  """
+  pub optimizeConfig(ws: Workspace!): Changeset! @generate {
+    let root = ws.directory(".")
+    let combined = root.changes(root)
+    for (site in sites(ws)) {
+      combined = combined.withChangeset(site.optimizeConfig(ws))
+    }
+    combined
+  }
+
+  """
+  Scan all docusaurus sites, and ensure that they build.
+  """
+  pub checkBuild(ws: Workspace!): Void @check {
+    let builds = directory
+    for (site in sites(ws)) {
+      builds = builds.withDirectory(site.path, site.build(ws))
+    }
+    builds.sync
+    null
+  }
+
   pub sites(ws: Workspace!): [Site!]! {
     ws
       .directory(".", include: [
@@ -235,6 +260,13 @@ type Site {
   Make sure the site is configured optimally for use with Dagger
   """
   pub optimizeConfig(ws: Workspace!): Changeset! {
+    let pkgPath = if (path == ".") {
+      "package.json"
+    } else {
+      path + "/package.json"
+    }
+    let root = ws.directory(".", include: [pkgPath])
+
     let siteDir = ws.directory(path, include: [
       "package.json",
       "docusaurus.config.ts",
@@ -263,7 +295,10 @@ type Site {
       .env
       .output("updatedSite")
       .asDirectory
-    updatedSite.changes(siteDir)
+
+    root
+      .withFile(pkgPath, updatedSite.file("package.json"))
+      .changes(root)
   }
 
   """
