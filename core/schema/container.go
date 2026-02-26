@@ -898,7 +898,19 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		ctr.ImageRef = refStr
 		ctr.Platform = core.Platform(platforms.Normalize(imgSpec.Platform))
 
-		ctr.LazyInit, err = ctr.FromCanonicalRef(ctx, refName)
+		rootfsDir := &core.Directory{
+			Dir:       "/",
+			Platform:  ctr.Platform,
+			Services:  ctr.Services,
+			LazyState: core.NewLazyState(),
+		}
+		updatedRootFS, err := core.UpdatedRootFS(ctx, ctr, rootfsDir)
+		if err != nil {
+			return inst, fmt.Errorf("failed to initialize rootfs selection: %w", err)
+		}
+		ctr.FS = updatedRootFS
+
+		rootfsDir.LazyInit, err = ctr.FromCanonicalRef(ctx, refName)
 		if err != nil {
 			return inst, err
 		}
@@ -1547,14 +1559,6 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	/* TODO: rm, shouldn't be necessary ideally.
-	if parent.Self() != nil {
-		if err := parent.Self().Evaluate(ctx); err != nil {
-			return nil, err
-		}
-	}
-	*/
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1648,14 +1652,6 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (*core.Container, error) {
-	/* TODO: rm, shouldn't be necessary ideally.
-	if parent.Self() != nil {
-		if err := parent.Self().Evaluate(ctx); err != nil {
-			return nil, err
-		}
-	}
-	*/
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
