@@ -117,18 +117,13 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 		return fmt.Errorf("evaluate after: %w", err)
 	}
 
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-	if bkSessionGroup == nil {
-		return fmt.Errorf("no buildkit session group in context")
-	}
-
-	return MountRef(ctx, beforeRef, bkSessionGroup, func(beforeMount string, _ *mount.Mount) error {
+	return MountRef(ctx, beforeRef, nil, func(beforeMount string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(beforeMount, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
 
-		return MountRef(ctx, afterRef, bkSessionGroup, func(afterMount string, _ *mount.Mount) error {
+		return MountRef(ctx, afterRef, nil, func(afterMount string, _ *mount.Mount) error {
 			afterDir, err := containerdfs.RootPath(afterMount, ch.After.Self().Dir)
 			if err != nil {
 				return err
@@ -269,11 +264,6 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-	if bkSessionGroup == nil {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -285,23 +275,23 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 
-	newRef, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
+	newRef, err := query.BuildkitCache().New(ctx, nil, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("Changeset.asPatch"))
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, beforeRef, bkSessionGroup, func(before string, _ *mount.Mount) error {
+	err = MountRef(ctx, beforeRef, nil, func(before string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(before, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
-		return MountRef(ctx, afterRef, bkSessionGroup, func(after string, _ *mount.Mount) error {
+		return MountRef(ctx, afterRef, nil, func(after string, _ *mount.Mount) error {
 			afterDir, err := containerdfs.RootPath(after, ch.After.Self().Dir)
 			if err != nil {
 				return err
 			}
-			return MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
+			return MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) (rerr error) {
 				beforeMount := filepath.Join(root, "a")
 				afterMount := filepath.Join(root, "b")
 				if err := os.Mkdir(beforeMount, 0755); err != nil {
@@ -752,24 +742,19 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 		return nil, fmt.Errorf("evaluate base: %w", err)
 	}
 
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-	if bkSessionGroup == nil {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
+	newRef, err := query.BuildkitCache().New(ctx, baseRef, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(description))
 	if err != nil {
 		return nil, err
 	}
 
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 		workDir, err := containerdfs.RootPath(root, base.Dir)
 		if err != nil {
 			return err
@@ -915,12 +900,7 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 		return fmt.Errorf("evaluate patch ref: %w", err)
 	}
 
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-	if bkSessionGroup == nil {
-		return fmt.Errorf("no buildkit session group in context")
-	}
-
-	return MountRef(ctx, patchRef, bkSessionGroup, func(patchMount string, _ *mount.Mount) error {
+	return MountRef(ctx, patchRef, nil, func(patchMount string, _ *mount.Mount) error {
 		patchPath, err := containerdfs.RootPath(patchMount, patch.File)
 		if err != nil {
 			return err

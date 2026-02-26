@@ -119,7 +119,7 @@ func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir
 
 		dgst, err := bkcontenthash.Checksum(ctx, ref, subdir, bkcontenthash.ChecksumOpts{
 			FollowLinks: true,
-		}, requiresBuildkitSessionGroup(ctx))
+		}, nil)
 		if err != nil {
 			return "", fmt.Errorf("failed to checksum ref at subdir %s: %w", subdir, err)
 		}
