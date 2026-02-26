@@ -52,6 +52,10 @@ func NewSession(ctx context.Context, sharedKey string) (*Session, error) {
 	id := identity.NewID()
 
 	serverOpts := []grpc.ServerOption{
+		grpc.InitialWindowSize(sessionGRPCInitialStreamWindowSize),
+		grpc.InitialConnWindowSize(sessionGRPCInitialConnWindowSize),
+		grpc.ReadBufferSize(sessionGRPCReadWriteBufferSize),
+		grpc.WriteBufferSize(sessionGRPCReadWriteBufferSize),
 		grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor),
 		grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor),
 	}
