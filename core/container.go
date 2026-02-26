@@ -22,8 +22,6 @@ import (
 	"github.com/dagger/dagger/core/containersource"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/containerutil"
@@ -437,141 +435,91 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 	return ctr.Self(), nil
 }
 
-// FromCanonicalRef implements the dagop portion of the "from" command: it fetches an image, and updates the root fs
-// to point to a snapshot of the referenced image
-// mutates container caller must have handled cloning or creating a new child.
+// FromCanonicalRef returns a lazy initializer for digest-addressed image pulls.
+// It updates only rootfs snapshot state.
 func (container *Container) FromCanonicalRef(
 	ctx context.Context,
 	refName reference.Canonical,
-	// cfgBytes is optional, will be retrieved if not provided
-	cfgBytes []byte,
-) (*Container, error) {
-	if container.OpID == nil {
-		container.OpID = dagql.CurrentID(ctx)
-	}
-	if container.OpID == nil {
-		return nil, fmt.Errorf("missing operation ID for fromCanonicalRef")
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	platform := container.Platform
-
-	refStr := refName.String()
-
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	hsm, err := containersource.NewSource(containersource.SourceOpt{
-		Snapshotter:   bk.Worker.Snapshotter,
-		ContentStore:  bk.Worker.ContentStore(),
-		ImageStore:    bk.Worker.ImageStore,
-		CacheAccessor: query.BuildkitCache(),
-		RegistryHosts: bk.Worker.RegistryHosts,
-		ResolverType:  containersource.ResolverTypeRegistry,
-		LeaseManager:  bk.Worker.LeaseManager(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	attrs := map[string]string{}
-	id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
-		Architecture: platform.Architecture,
-		OS:           platform.OS,
-		Variant:      platform.Variant,
-		OSVersion:    platform.OSVersion,
-		OSFeatures:   platform.OSFeatures,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
-	if err != nil {
-		return nil, err
-	}
-
-	bkSessionGroup, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
-
-	ref, err := src.Snapshot(ctx, bkSessionGroup)
-	if err != nil {
-		return nil, err
-	}
-
-	rootfsDir := &Directory{
-		Snapshot: ref,
-	}
-	if container.FS != nil {
-		rootfsDir.Dir = container.FS.Self().Dir
-		if rootfsDir.Dir == "" {
-			return nil, fmt.Errorf("SetFSFromCanonicalRef got an empty dir")
-		} else if rootfsDir.Dir != "/" {
-			return nil, fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
+) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		if container.OpID == nil {
+			container.OpID = dagql.CurrentID(ctx)
 		}
-		rootfsDir.Platform = container.FS.Self().Platform
-		rootfsDir.Services = container.FS.Self().Services
-	} else {
-		rootfsDir.Dir = "/"
-	}
-	updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update rootfs: %w", err)
-	}
-	container.FS = updatedRootFS
-	return container, nil
-}
+		if container.OpID == nil {
+			return fmt.Errorf("missing operation ID for fromCanonicalRef")
+		}
 
-// FromCanonicalRefUpdateConfig is must be called outside of a dagop context, and is responsible for fetching the image config
-// and applying it to the container's metadata
-func (container *Container) FromCanonicalRefUpdateConfig(
-	ctx context.Context,
-	refName reference.Canonical,
-	// cfgBytes is optional, will be retrieved if not provided
-	cfgBytes []byte,
-) (*Container, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
 
-	platform := container.Platform
-	refStr := refName.String()
+		platform := container.Platform
+		refStr := refName.String()
 
-	// since this is an image ref w/ a digest, always check the local cache for the image
-	// first before making any network requests
-	resolveMode := llb.ResolveModePreferLocal
-	if cfgBytes == nil {
-		_, _, cfgBytes, err = bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
-			Platform: ptr(platform.Spec()),
-			ImageOpt: &sourceresolver.ResolveImageOpt{
-				ResolveMode: resolveMode.String(),
-			},
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+
+		hsm, err := containersource.NewSource(containersource.SourceOpt{
+			Snapshotter:   bk.Worker.Snapshotter,
+			ContentStore:  bk.Worker.ContentStore(),
+			ImageStore:    bk.Worker.ImageStore,
+			CacheAccessor: query.BuildkitCache(),
+			RegistryHosts: bk.Worker.RegistryHosts,
+			ResolverType:  containersource.ResolverTypeRegistry,
+			LeaseManager:  bk.Worker.LeaseManager(),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
+			return err
 		}
-	}
 
-	var imgSpec dockerspec.DockerOCIImage
-	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-		return nil, err
-	}
+		attrs := map[string]string{}
+		id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
+			Architecture: platform.Architecture,
+			OS:           platform.OS,
+			Variant:      platform.Variant,
+			OSVersion:    platform.OSVersion,
+			OSFeatures:   platform.OSFeatures,
+		})
+		if err != nil {
+			return err
+		}
 
-	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	container.ImageRef = refStr
-	container.Platform = Platform(platforms.Normalize(imgSpec.Platform))
+		src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
+		if err != nil {
+			return err
+		}
 
-	return container, nil
+		ref, err := src.Snapshot(ctx, nil)
+		if err != nil {
+			return err
+		}
+
+		rootfsDir := &Directory{
+			Snapshot: ref,
+		}
+		if container.FS != nil {
+			rootfsDir.Dir = container.FS.Self().Dir
+			if rootfsDir.Dir == "" {
+				return fmt.Errorf("SetFSFromCanonicalRef got an empty dir")
+			} else if rootfsDir.Dir != "/" {
+				return fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
+			}
+			rootfsDir.Platform = container.FS.Self().Platform
+			rootfsDir.Services = container.FS.Self().Services
+		} else {
+			rootfsDir.Dir = "/"
+		}
+		updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
+		if err != nil {
+			return fmt.Errorf("failed to update rootfs: %w", err)
+		}
+		container.FS = updatedRootFS
+
+		return nil
+	}, nil
 }
 
 /*

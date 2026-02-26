@@ -3,6 +3,7 @@ package schema
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
@@ -875,22 +877,30 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		if ctr.OpID == nil {
 			return inst, fmt.Errorf("missing operation ID for container.from")
 		}
-		ctr.LazyInit = func(ctx context.Context) error {
-			var err error
-			ctrState, err := ctr.FromCanonicalRef(ctx, refName, nil)
-			if err != nil {
-				return err
-			}
 
-			// NOTE: config update must happen outside the rootfs snapshot fetch path.
-			ctrState, err = ctrState.FromCanonicalRefUpdateConfig(ctx, refName, nil)
-			if err != nil {
-				return err
-			}
+		refStr := refName.String()
+		_, _, cfgBytes, err := bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
+			Platform: ptr(platform.Spec()),
+			ImageOpt: &sourceresolver.ResolveImageOpt{
+				ResolveMode: llb.ResolveModePreferLocal.String(),
+			},
+		})
+		if err != nil {
+			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
+		}
 
-			*ctr = *ctrState
-			ctr.LazyInitComplete = true
-			return nil
+		var imgSpec dockerspec.DockerOCIImage
+		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+			return inst, err
+		}
+
+		ctr.Config = core.MergeImageConfig(ctr.Config, imgSpec.Config)
+		ctr.ImageRef = refStr
+		ctr.Platform = core.Platform(platforms.Normalize(imgSpec.Platform))
+
+		ctr.LazyInit, err = ctr.FromCanonicalRef(ctx, refName)
+		if err != nil {
+			return inst, err
 		}
 
 		inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
@@ -1087,7 +1097,8 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 
 	ctr := core.NewContainerChild(parent)
 	ctr.OpID = opID
-	ctr, err = ctr.WithExec(ctx, args.ContainerExecOpts, md)
+	ctr.Meta = nil
+	ctr.LazyInit, err = ctr.WithExec(ctx, args.ContainerExecOpts, md)
 	if err != nil {
 		return inst, err
 	}
@@ -1536,6 +1547,14 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (*core.Container, error) {
+	/* TODO: rm, shouldn't be necessary ideally.
+	if parent.Self() != nil {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
+		}
+	}
+	*/
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1629,6 +1648,14 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (*core.Container, error) {
+	/* TODO: rm, shouldn't be necessary ideally.
+	if parent.Self() != nil {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
+		}
+	}
+	*/
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)

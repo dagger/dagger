@@ -409,302 +409,279 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 	return data, nil
 }
 
-// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExec(
 	ctx context.Context,
 	opts ContainerExecOpts,
 	execMD *buildkit.ExecutionMetadata,
-) (_ *Container, rerr error) {
-	container.Meta = nil
-	container.LazyMu = new(sync.Mutex)
-	if container.OpID == nil {
-		container.OpID = dagql.CurrentID(ctx)
-	}
-	container.LazyInitComplete = false
-	if container.OpID == nil {
-		return nil, fmt.Errorf("missing operation ID for withExec")
-	}
+) (LazyInitFunc, error) {
+	return func(ctx context.Context) (rerr error) {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return fmt.Errorf("get current query: %w", err)
+		}
 
-	container.LazyInit = func(ctx context.Context) error {
-		_, err := container.withExecNow(ctx, opts, execMD)
-		return err
-	}
+		platform := container.Platform
+		if platform.OS == "" {
+			platform = query.Platform()
+		}
 
-	return container, nil
-}
+		secretEnvs := container.secretEnvs()
 
-//nolint:gocyclo
-func (container *Container) withExecNow(
-	ctx context.Context,
-	opts ContainerExecOpts,
-	execMD *buildkit.ExecutionMetadata,
-) (_ *Container, rerr error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get current query: %w", err)
-	}
+		execMD, err = container.execMeta(ctx, opts, execMD)
+		if err != nil {
+			return err
+		}
 
-	platform := container.Platform
-	if platform.OS == "" {
-		platform = query.Platform()
-	}
+		mountData, err := container.GetMountData(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get mount data: %w", err)
+		}
 
-	secretEnvs := container.secretEnvs()
+		workerRefs := make([]*worker.WorkerRef, 0, len(mountData.Inputs))
+		for _, ref := range mountData.Inputs {
+			workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
+		}
 
-	execMD, err = container.execMeta(ctx, opts, execMD)
-	if err != nil {
-		return nil, err
-	}
+		cache := query.BuildkitCache()
+		session := query.BuildkitSession()
 
-	mountData, err := container.GetMountData(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get mount data: %w", err)
-	}
+		metaSpec, err := container.metaSpec(ctx, opts)
+		if err != nil {
+			return err
+		}
 
-	workerRefs := make([]*worker.WorkerRef, 0, len(mountData.Inputs))
-	for _, ref := range mountData.Inputs {
-		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
-	}
+		bkSessionGroup, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
 
-	cache := query.BuildkitCache()
-	session := query.BuildkitSession()
+		bkClient, err := query.Buildkit(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+		opWorker := bkClient.Worker
+		causeCtx := trace.SpanContextFromContext(ctx)
+		if opWorker == nil {
+			return fmt.Errorf("missing buildkit worker")
+		}
 
-	metaSpec, err := container.metaSpec(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	bkSessionGroup, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
-
-	bkClient, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	opWorker := bkClient.Worker
-	causeCtx := trace.SpanContextFromContext(ctx)
-	if opWorker == nil {
-		return nil, fmt.Errorf("missing buildkit worker")
-	}
-
-	mm := bkmounts.NewMountManager(fmt.Sprintf("exec %s", strings.Join(metaSpec.Args, " ")), cache, session)
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, container.Config.WorkingDir, mountData.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
-		desc := fmt.Sprintf("mount %s from exec %s", m.Dest, strings.Join(metaSpec.Args, " "))
-		return cache.New(ctx, ref, bkSessionGroup, bkcache.WithDescription(desc))
-	}, runtime.GOOS)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if rerr != nil {
-			execInputs := make([]bksolver.Result, len(mountData.Mounts))
-			for i, m := range mountData.Mounts {
-				if m.Input == pb.Empty {
-					continue
-				}
-				if m.Input < 0 || int(m.Input) >= len(mountData.Inputs) {
-					rerr = errors.Join(rerr, fmt.Errorf("mount index %d references input %d outside available inputs (%d)", i, m.Input, len(mountData.Inputs)))
-					continue
-				}
-				if mountData.Inputs[m.Input] == nil {
-					continue
-				}
-				execInputs[i] = worker.NewWorkerRefResult(mountData.Inputs[m.Input].Clone(), opWorker)
-			}
-			execMounts := make([]bksolver.Result, len(mountData.Mounts))
-			copy(execMounts, execInputs)
-			for i, ref := range mountData.MountRefs {
-				if ref == nil {
-					continue
-				}
-				execMounts[i] = worker.NewWorkerRefResult(ref.Clone(), opWorker)
-			}
-			for _, active := range p.Actives {
-				if active.NoCommit {
-					active.Ref.Release(context.WithoutCancel(ctx))
-				} else {
-					ref, cerr := active.Ref.Commit(ctx)
-					if cerr != nil {
-						rerr = errors.Join(rerr, fmt.Errorf("error committing %s: %w: %w", active.Ref.ID(), cerr, err))
+		mm := bkmounts.NewMountManager(fmt.Sprintf("exec %s", strings.Join(metaSpec.Args, " ")), cache, session)
+		p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, container.Config.WorkingDir, mountData.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+			desc := fmt.Sprintf("mount %s from exec %s", m.Dest, strings.Join(metaSpec.Args, " "))
+			return cache.New(ctx, ref, bkSessionGroup, bkcache.WithDescription(desc))
+		}, runtime.GOOS)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if rerr != nil {
+				execInputs := make([]bksolver.Result, len(mountData.Mounts))
+				for i, m := range mountData.Mounts {
+					if m.Input == pb.Empty {
 						continue
 					}
-					if active.MountIndex < 0 || active.MountIndex >= len(execMounts) {
-						rerr = errors.Join(rerr, fmt.Errorf("active mount index %d outside exec mounts (%d)", active.MountIndex, len(execMounts)))
+					if m.Input < 0 || int(m.Input) >= len(mountData.Inputs) {
+						rerr = errors.Join(rerr, fmt.Errorf("mount index %d references input %d outside available inputs (%d)", i, m.Input, len(mountData.Inputs)))
 						continue
 					}
-					execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, opWorker)
+					if mountData.Inputs[m.Input] == nil {
+						continue
+					}
+					execInputs[i] = worker.NewWorkerRefResult(mountData.Inputs[m.Input].Clone(), opWorker)
 				}
-			}
+				execMounts := make([]bksolver.Result, len(mountData.Mounts))
+				copy(execMounts, execInputs)
+				for i, ref := range mountData.MountRefs {
+					if ref == nil {
+						continue
+					}
+					execMounts[i] = worker.NewWorkerRefResult(ref.Clone(), opWorker)
+				}
+				for _, active := range p.Actives {
+					if active.NoCommit {
+						active.Ref.Release(context.WithoutCancel(ctx))
+					} else {
+						ref, cerr := active.Ref.Commit(ctx)
+						if cerr != nil {
+							rerr = errors.Join(rerr, fmt.Errorf("error committing %s: %w: %w", active.Ref.ID(), cerr, err))
+							continue
+						}
+						if active.MountIndex < 0 || active.MountIndex >= len(execMounts) {
+							rerr = errors.Join(rerr, fmt.Errorf("active mount index %d outside exec mounts (%d)", active.MountIndex, len(execMounts)))
+							continue
+						}
+						execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, opWorker)
+					}
+				}
 
-			rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
-			rerr = buildkit.RichError{
-				ExecError: rerr.(*errdefs.ExecError),
-				Origin:    causeCtx,
-				Mounts:    mountData.Mounts,
-				ExecMD:    execMD,
-				Meta:      metaSpec,
-				Terminal: func(ctx context.Context, richErr *buildkit.RichError) error {
-					return container.TerminalError(ctx, richErr.ExecMD.CallID, richErr)
-				},
-			}
-		} else {
-			// Only release actives if err is nil.
-			for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
-				p.Actives[i].Ref.Release(context.WithoutCancel(ctx))
-			}
-		}
-		for _, o := range p.OutputRefs {
-			if o.Ref != nil {
-				o.Ref.Release(context.WithoutCancel(ctx))
-			}
-		}
-	}()
-
-	// NOTE: seems to be a longstanding bug in buildkit that selector on root mount doesn't work, fix here
-	for _, mnt := range mountData.Mounts {
-		if mnt.Dest != "/" {
-			continue
-		}
-		p.Root.Selector = mnt.Selector
-		break
-	}
-
-	emu, err := getEmulator(ctx, specs.Platform(container.Platform))
-	if err != nil {
-		return nil, err
-	}
-	if emu != nil {
-		metaSpec.Args = append([]string{buildkit.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
-		p.Mounts = append(p.Mounts, executor.Mount{
-			Readonly: true,
-			Src:      emu,
-			Dest:     buildkit.BuildkitQemuEmulatorMountPoint,
-		})
-	}
-
-	meta := *metaSpec
-	meta.Env = slices.Clone(meta.Env)
-	secretEnv, err := loadSecretEnv(ctx, bkSessionGroup, session, secretEnvs)
-	if err != nil {
-		return nil, err
-	}
-	meta.Env = append(meta.Env, secretEnv...)
-
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, container.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	execWorker := opWorker.ExecWorker(causeCtx, *execMD)
-	exec := execWorker.Executor()
-	procInfo := executor.ProcessInfo{Meta: meta}
-	if opts.Stdin != "" {
-		// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
-		procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
-	}
-	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, procInfo, nil)
-
-	for i, ref := range p.OutputRefs {
-		// commit all refs
-		var err error
-		var iref bkcache.ImmutableRef
-		if mutable, ok := ref.Ref.(bkcache.MutableRef); ok {
-			iref, err = mutable.Commit(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("error committing %s: %w", mutable.ID(), err)
-			}
-		} else {
-			iref = ref.Ref.(bkcache.ImmutableRef)
-		}
-
-		// put the ref to the right mount point
-		switch ref.MountIndex {
-		case 0:
-			rootfsDir := &Directory{
-				Snapshot: iref,
-			}
-			if container.FS != nil {
-				rootfsDir.Dir = container.FS.Self().Dir
-				rootfsDir.Platform = container.FS.Self().Platform
-				rootfsDir.Services = container.FS.Self().Services
+				rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
+				rerr = buildkit.RichError{
+					ExecError: rerr.(*errdefs.ExecError),
+					Origin:    causeCtx,
+					Mounts:    mountData.Mounts,
+					ExecMD:    execMD,
+					Meta:      metaSpec,
+					Terminal: func(ctx context.Context, richErr *buildkit.RichError) error {
+						return container.TerminalError(ctx, richErr.ExecMD.CallID, richErr)
+					},
+				}
 			} else {
-				rootfsDir.Dir = "/"
+				// Only release actives if err is nil.
+				for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
+					p.Actives[i].Ref.Release(context.WithoutCancel(ctx))
+				}
 			}
-			updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update rootfs: %w", err)
+			for _, o := range p.OutputRefs {
+				if o.Ref != nil {
+					o.Ref.Release(context.WithoutCancel(ctx))
+				}
 			}
-			container.FS = updatedRootFS
+		}()
 
-		case 1:
-			container.Meta = &Directory{
-				Snapshot: iref,
+		// NOTE: seems to be a longstanding bug in buildkit that selector on root mount doesn't work, fix here
+		for _, mnt := range mountData.Mounts {
+			if mnt.Dest != "/" {
+				continue
 			}
-
-		default:
-			mountIdx := ref.MountIndex - 2
-			if mountIdx < 0 || mountIdx >= len(container.Mounts) {
-				return nil, errors.Join(rerr, fmt.Errorf("output mount index %d maps outside container mounts (%d)", ref.MountIndex, len(container.Mounts)))
-			}
-			ctrMnt := container.Mounts[mountIdx]
-
-			err = handleMountValue(ctrMnt,
-				func(dirMnt *dagql.ObjectResult[*Directory]) error {
-					dir := &Directory{
-						Snapshot: iref,
-						Dir:      dirMnt.Self().Dir,
-						Platform: dirMnt.Self().Platform,
-						Services: dirMnt.Self().Services,
-					}
-					ctrMnt.DirectorySource, err = updatedDirMount(ctx, container, dir, ctrMnt.Target)
-					if err != nil {
-						return fmt.Errorf("failed to update directory mount: %w", err)
-					}
-					container.Mounts[mountIdx] = ctrMnt
-					return nil
-				},
-				func(fileMnt *dagql.ObjectResult[*File]) error {
-					file := &File{
-						Snapshot: iref,
-						File:     fileMnt.Self().File,
-						Platform: fileMnt.Self().Platform,
-						Services: fileMnt.Self().Services,
-					}
-					ctrMnt.FileSource, err = updatedFileMount(ctx, container, file, ctrMnt.Target)
-					if err != nil {
-						return fmt.Errorf("failed to update file mount: %w", err)
-					}
-					container.Mounts[mountIdx] = ctrMnt
-					return nil
-				},
-				func(cache *CacheMountSource) error {
-					return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)
-				},
-				func(tmpfs *TmpfsMountSource) error {
-					return fmt.Errorf("unhandled tmpfs mount source type for mount %d", mountIdx)
-				},
-			)
-			if err != nil {
-				return nil, err
-			}
+			p.Root.Selector = mnt.Selector
+			break
 		}
 
-		// prevent the result from being released by the defer
-		p.OutputRefs[i].Ref = nil
-	}
+		emu, err := getEmulator(ctx, specs.Platform(container.Platform))
+		if err != nil {
+			return err
+		}
+		if emu != nil {
+			metaSpec.Args = append([]string{buildkit.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
+			p.Mounts = append(p.Mounts, executor.Mount{
+				Readonly: true,
+				Src:      emu,
+				Dest:     buildkit.BuildkitQemuEmulatorMountPoint,
+			})
+		}
 
-	if execErr != nil {
-		slog.Warn("process did not complete successfully",
-			"process", strings.Join(metaSpec.Args, " "),
-			"error", execErr)
-		return nil, execErr
-	}
+		meta := *metaSpec
+		meta.Env = slices.Clone(meta.Env)
+		secretEnv, err := loadSecretEnv(ctx, bkSessionGroup, session, secretEnvs)
+		if err != nil {
+			return err
+		}
+		meta.Env = append(meta.Env, secretEnv...)
 
-	return container, nil
+		svcs, err := query.Services(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get services: %w", err)
+		}
+		detach, _, err := svcs.StartBindings(ctx, container.Services)
+		if err != nil {
+			return err
+		}
+		defer detach()
+
+		execWorker := opWorker.ExecWorker(causeCtx, *execMD)
+		exec := execWorker.Executor()
+		procInfo := executor.ProcessInfo{Meta: meta}
+		if opts.Stdin != "" {
+			// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
+			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
+		}
+		_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, procInfo, nil)
+
+		for i, ref := range p.OutputRefs {
+			// commit all refs
+			var err error
+			var iref bkcache.ImmutableRef
+			if mutable, ok := ref.Ref.(bkcache.MutableRef); ok {
+				iref, err = mutable.Commit(ctx)
+				if err != nil {
+					return fmt.Errorf("error committing %s: %w", mutable.ID(), err)
+				}
+			} else {
+				iref = ref.Ref.(bkcache.ImmutableRef)
+			}
+
+			// put the ref to the right mount point
+			switch ref.MountIndex {
+			case 0:
+				rootfsDir := &Directory{
+					Snapshot: iref,
+				}
+				if container.FS != nil {
+					rootfsDir.Dir = container.FS.Self().Dir
+					rootfsDir.Platform = container.FS.Self().Platform
+					rootfsDir.Services = container.FS.Self().Services
+				} else {
+					rootfsDir.Dir = "/"
+				}
+				updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
+				if err != nil {
+					return fmt.Errorf("failed to update rootfs: %w", err)
+				}
+				container.FS = updatedRootFS
+
+			case 1:
+				container.Meta = &Directory{
+					Snapshot: iref,
+				}
+
+			default:
+				mountIdx := ref.MountIndex - 2
+				if mountIdx < 0 || mountIdx >= len(container.Mounts) {
+					return errors.Join(rerr, fmt.Errorf("output mount index %d maps outside container mounts (%d)", ref.MountIndex, len(container.Mounts)))
+				}
+				ctrMnt := container.Mounts[mountIdx]
+
+				err = handleMountValue(ctrMnt,
+					func(dirMnt *dagql.ObjectResult[*Directory]) error {
+						dir := &Directory{
+							Snapshot: iref,
+							Dir:      dirMnt.Self().Dir,
+							Platform: dirMnt.Self().Platform,
+							Services: dirMnt.Self().Services,
+						}
+						ctrMnt.DirectorySource, err = updatedDirMount(ctx, container, dir, ctrMnt.Target)
+						if err != nil {
+							return fmt.Errorf("failed to update directory mount: %w", err)
+						}
+						container.Mounts[mountIdx] = ctrMnt
+						return nil
+					},
+					func(fileMnt *dagql.ObjectResult[*File]) error {
+						file := &File{
+							Snapshot: iref,
+							File:     fileMnt.Self().File,
+							Platform: fileMnt.Self().Platform,
+							Services: fileMnt.Self().Services,
+						}
+						ctrMnt.FileSource, err = updatedFileMount(ctx, container, file, ctrMnt.Target)
+						if err != nil {
+							return fmt.Errorf("failed to update file mount: %w", err)
+						}
+						container.Mounts[mountIdx] = ctrMnt
+						return nil
+					},
+					func(cache *CacheMountSource) error {
+						return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)
+					},
+					func(tmpfs *TmpfsMountSource) error {
+						return fmt.Errorf("unhandled tmpfs mount source type for mount %d", mountIdx)
+					},
+				)
+				if err != nil {
+					return err
+				}
+			}
+
+			// prevent the result from being released by the defer
+			p.OutputRefs[i].Ref = nil
+		}
+
+		if execErr != nil {
+			slog.Warn("process did not complete successfully",
+				"process", strings.Join(metaSpec.Args, " "),
+				"error", execErr)
+			return execErr
+		}
+
+		return nil
+	}, nil
 }
 
 func addDefaultEnvvar(env []string, k, v string) []string {
