@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
@@ -34,9 +33,9 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic = string(anthropic.ModelClaudeSonnet4_5)
+	modelDefaultAnthropic = "claude-sonnet-4-6"
 	modelDefaultGoogle    = "gemini-2.5-flash"
-	modelDefaultOpenAI    = "gpt-4.1"
+	modelDefaultOpenAI    = "gpt-5.2"
 	modelDefaultMeta      = "llama-3.2"
 	modelDefaultMistral   = "mistral-7b-instruct"
 )
