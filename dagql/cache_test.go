@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
@@ -2347,7 +2349,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	assert.NilError(t, err)
 
 	storageKey := storageID.Digest().String()
-	resultOutputEq := resultID.OutputEquivalentDigest().String()
+	resultOutputEq := resultID.ContentPreferredDigest().String()
 
 	assert.Assert(t, storageKey != resultOutputEq)
 	assert.Equal(t, 1, len(c.egraphResultTerms))
@@ -2652,12 +2654,12 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 	waiterPollDeadline := time.Now().Add(3 * time.Second)
 	lastObservedWaiters := -1
 	for time.Now().Before(waiterPollDeadline) {
-		c.mu.Lock()
+		c.callsMu.Lock()
 		oc := c.ongoingArbitraryCalls[key]
 		if oc != nil {
 			lastObservedWaiters = oc.waiters
 		}
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 
 		if oc != nil && lastObservedWaiters == totalCallers {
 			waiterCountReached = true
@@ -2672,9 +2674,9 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 	ongoingCleared := false
 	clearPollDeadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(clearPollDeadline) {
-		c.mu.Lock()
+		c.callsMu.Lock()
 		_, exists := c.ongoingArbitraryCalls[key]
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 		if !exists {
 			ongoingCleared = true
 			break
