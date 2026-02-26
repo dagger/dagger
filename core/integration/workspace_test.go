@@ -19,9 +19,9 @@ func TestWorkspace(t *testing.T) {
 
 const dangSDK = "github.com/vito/dang/dagger-sdk@be6466632453a52120517e5551c266a239d3899b"
 
-// workspaceBase returns a container with git, the dagger CLI, and an
+// gitBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
-func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+func gitBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
 	return c.Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
@@ -32,6 +32,13 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithExec([]string{"git", "init"})
 }
 
+// workspaceBase is gitBase with an initialized workspace.
+func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	t.Helper()
+	return gitBase(t, c).
+		With(daggerExec("init"))
+}
+
 // initDangModule creates a Dang module in the workspace with the given name
 // and source code. Uses "dagger module init" to scaffold the workspace and
 // module, then overwrites main.dang with the provided source.
@@ -40,8 +47,6 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 		// Ensure .dagger/ exists so that module init creates a workspace
 		// module rather than defaulting to standalone in an empty dir.
 		return ctr.
-			WithExec([]string{"mkdir", "-p", ".dagger"}).
-			With(daggerExec("init")).
 			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
@@ -1088,7 +1093,7 @@ func (WorkspaceSuite) TestWorkspaceMigrateNonLocalSource(ctx context.Context, t 
 	c := connect(ctx, t)
 
 	// Set up a legacy project with source = "ci" — the source code lives in ci/
-	ctr := workspaceBase(t, c).
+	ctr := gitBase(t, c).
 		// Create legacy dagger.json with source = "ci"
 		WithNewFile("dagger.json", `{
   "name": "myapp",
@@ -1143,7 +1148,7 @@ func (WorkspaceSuite) TestWorkspaceMigrateLocalSource(ctx context.Context, t *te
 
 	// Set up a legacy project with source = "." (implicit, SDK set but no source field)
 	// We need toolchains for needsProjectModuleMigration to be true with source="."
-	ctr := workspaceBase(t, c).
+	ctr := gitBase(t, c).
 		WithNewFile("dagger.json", `{
   "name": "myapp",
   "sdk": {"source": "`+dangSDK+`"},
@@ -1188,7 +1193,7 @@ type Myapp {
 func (WorkspaceSuite) TestWorkspaceMigrateSummary(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := workspaceBase(t, c).
+	ctr := gitBase(t, c).
 		WithNewFile("dagger.json", `{
   "name": "myapp",
   "sdk": {"source": "`+dangSDK+`"},
@@ -1431,7 +1436,7 @@ func (WorkspaceSuite) TestModuleInitNoWorkspace(ctx context.Context, t *testctx.
 	c := connect(ctx, t)
 
 	// Start with a directory that has NO .dagger/config.toml.
-	base := workspaceBase(t, c)
+	base := gitBase(t, c)
 
 	t.Run("no config creates standalone module in cwd", func(ctx context.Context, t *testctx.T) {
 		ctr := base.
@@ -1462,7 +1467,7 @@ type Mymod {
 	t.Run("existing config creates workspace module", func(ctx context.Context, t *testctx.T) {
 		ctr := base.
 			// Create a workspace config first
-			WithNewFile(".dagger/config.toml", "[modules]\n").
+			With(daggerExec("init")).
 			With(daggerExec("module", "init", "--sdk="+dangSDK, "mymod")).
 			WithNewFile(".dagger/modules/mymod/main.dang", `
 type Mymod {
