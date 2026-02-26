@@ -694,13 +694,9 @@ func (s *workspaceSchema) moduleInitStandalone(
 		return "", err
 	}
 
-	// Determine the source root for license placement
-	srcRootAbsPath := contextDirPath
-	if args.Source != "" {
-		srcRootAbsPath = filepath.Join(contextDirPath, args.Source)
-	}
-
-	if err := findOrCreateLicense(ctx, bk, srcRootAbsPath, args.License, true); err != nil {
+	// Place the license at the module root (context directory), not the
+	// source subpath — the license covers the whole project.
+	if err := findOrCreateLicense(ctx, bk, contextDirPath, args.License, true); err != nil {
 		return "", err
 	}
 
