@@ -1025,8 +1025,8 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
 	}
 
-	// release unconditionally here, since we Clone it using the __immutableRef
-	// API call below
+	// Release unconditionally here, since we take our own cloned ref for the
+	// returned directory object below.
 	defer immutableRef.Release(ctx)
 
 	// Create a new mutable ref to leave the service with, to prevent further
@@ -1069,25 +1069,21 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
-	var snapshot dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
-		Field: "__immutableRef",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "ref",
-				Value: dagql.String(immutableRef.ID()),
-			},
-		},
-	}); err != nil {
+	snapshot := &Directory{
+		Dir:       source.Dir,
+		Platform:  source.Platform,
+		Services:  slices.Clone(source.Services),
+		LazyState: NewLazyState(),
+		Snapshot:  immutableRef.Clone(),
+	}
+	snapshot.LazyInitComplete = true
+
+	inst, err := dagql.NewObjectResultForCurrentID(ctx, srv, snapshot)
+	if err != nil {
 		return res, false, err
 	}
 
-	// ensure we actually run the __immutableRef DagOp that does a Clone()
-	if err := snapshot.Self().Evaluate(ctx); err != nil {
-		return res, false, fmt.Errorf("failed to evaluate snapshot: %w", err)
-	}
-
-	return snapshot, true, nil
+	return inst, true, nil
 }
 
 func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath string) error {

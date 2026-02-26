@@ -28,9 +28,6 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("directory", s.directory).
 			Doc(`Creates an empty directory.`),
-		dagql.NodeFunc("__immutableRef", s.immutableRef).
-			Doc(`Returns a directory backed by a pre-existing immutable ref.`).
-			Args(dagql.Arg("ref").Doc("The immutable ref ID.")),
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
@@ -345,31 +342,6 @@ type directoryPipelineArgs struct {
 	Name        string
 	Description string                             `default:""`
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
-}
-
-func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {
-	Ref string
-	// DagOpInternalArgs
-}) (res dagql.ObjectResult[*core.Directory], _ error) {
-	/* TODO: re-implement or more likely update callers to not need this anymore since it's highly sus
-	query := parent.Self()
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return res, err
-	}
-	immutable, err := query.BuildkitCache().Get(ctx, args.Ref, nil)
-	if err != nil {
-		return res, fmt.Errorf("failed to get immutable ref %q: %w", args.Ref, err)
-	}
-	dir, err := core.NewScratchDirectoryDagOp(ctx, query.Platform())
-	if err != nil {
-		return res, fmt.Errorf("failed to create scratch directory: %w", err)
-	}
-	dir.Result = immutable.Clone() // FIXME(vito): is this Clone redundant/harmful?
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-	*/
-
-	return res, errors.New("immutableRef is not implemented anymore, update to something else")
 }
 
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
