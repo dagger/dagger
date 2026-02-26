@@ -136,8 +136,12 @@ func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, 
 		return nil, fmt.Errorf("failed to get snapshot: %w", err)
 	}
 
-	dir := NewDirectory(nil, "/", query.Platform(), nil)
-	dir.Result = ref
+	dir := &Directory{
+		Dir:       "/",
+		Platform:  query.Platform(),
+		LazyState: NewLazyState(),
+		Snapshot:  ref,
+	}
 
 	return dir, nil
 }
