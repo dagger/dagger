@@ -1,6 +1,0 @@
-kind: Added
-body: Add support for individual gc settings in `engine local-cache prune`.
-time: 2026-02-09T14:36:26.453867904-08:00
-custom:
-  Author: sipsma
-  PR: "11830"
