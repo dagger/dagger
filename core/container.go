@@ -442,13 +442,6 @@ func (container *Container) FromCanonicalRef(
 	refName reference.Canonical,
 ) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
-		if container.OpID == nil {
-			container.OpID = dagql.CurrentID(ctx)
-		}
-		if container.OpID == nil {
-			return fmt.Errorf("missing operation ID for fromCanonicalRef")
-		}
-
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
@@ -497,26 +490,16 @@ func (container *Container) FromCanonicalRef(
 			return err
 		}
 
-		rootfsDir := &Directory{
-			Snapshot: ref,
+		if container.FS == nil || container.FS.Self() == nil {
+			return fmt.Errorf("missing rootfs directory for fromCanonicalRef")
 		}
-		if container.FS != nil {
-			rootfsDir.Dir = container.FS.Self().Dir
-			if rootfsDir.Dir == "" {
-				return fmt.Errorf("SetFSFromCanonicalRef got an empty dir")
-			} else if rootfsDir.Dir != "/" {
-				return fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
-			}
-			rootfsDir.Platform = container.FS.Self().Platform
-			rootfsDir.Services = container.FS.Self().Services
-		} else {
+		rootfsDir := container.FS.Self()
+		if rootfsDir.Dir == "" {
 			rootfsDir.Dir = "/"
+		} else if rootfsDir.Dir != "/" {
+			return fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
 		}
-		updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
-		if err != nil {
-			return fmt.Errorf("failed to update rootfs: %w", err)
-		}
-		container.FS = updatedRootFS
+		rootfsDir.setSnapshot(ref)
 
 		return nil
 	}, nil
