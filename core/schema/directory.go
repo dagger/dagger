@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"path"
 	"strings"
-	"sync"
 
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -412,10 +411,10 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	dir := &core.Directory{
-		Dir:      "/",
-		Platform: platform,
-		LazyMu:   new(sync.Mutex),
-		Snapshot: finalRef,
+		Dir:       "/",
+		Platform:  platform,
+		LazyState: core.NewLazyState(),
+		Snapshot:  finalRef,
 	}
 
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)

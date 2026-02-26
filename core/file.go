@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -41,9 +40,7 @@ type File struct {
 	Services ServiceBindings
 
 	Parent dagql.ObjectResult[*Directory]
-
-	LazyMu   *sync.Mutex
-	LazyInit LazyInitFunc
+	LazyState
 	// Below is lazily initialized and shoud not be accessed directly
 	Snapshot bkcache.ImmutableRef
 }
@@ -75,7 +72,8 @@ func NewFileChild(parent dagql.ObjectResult[*File]) *File {
 
 	cp := *parent.Self()
 	cp.Services = slices.Clone(cp.Services)
-	cp.LazyMu = new(sync.Mutex)
+	cp.LazyState = NewLazyState()
+	cp.Snapshot = nil
 
 	return &cp
 }
@@ -129,32 +127,20 @@ func (file *File) WithContents(ctx context.Context, content []byte, permissions 
 }
 
 func (file *File) Evaluate(ctx context.Context) error {
-	// If this file re-uses the parent snapshot, just eval that parent snapshot.
-	if file.LazyInit == nil {
-		if file.Parent.Self() == nil {
-			return nil
-		}
-		return file.Parent.Self().Evaluate(ctx)
-	}
-
-	if file.LazyMu == nil {
-		return fmt.Errorf("invalid File: missing LazyMu")
-	}
-	file.LazyMu.Lock()
-	defer file.LazyMu.Unlock()
-
-	if file.Snapshot != nil {
-		return nil
-	}
-
-	return file.LazyInit(ctx)
+	return file.LazyState.Evaluate(ctx, "File")
 }
 
 func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if err := file.Evaluate(ctx); err != nil {
 		return nil, err
 	}
-	return file.Snapshot, nil
+	if file.Snapshot != nil {
+		return file.Snapshot, nil
+	}
+	if file.Parent.Self() != nil {
+		return file.Parent.Self().getSnapshot(ctx)
+	}
+	return nil, nil
 }
 
 func (file *File) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
@@ -406,14 +392,14 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 		}
 
 		sourceFile := &File{
-			File:     file.File,
-			Platform: file.Platform,
-			Services: slices.Clone(file.Services),
-			Parent:   file.Parent,
-			LazyMu:   new(sync.Mutex),
-			LazyInit: func(context.Context) error { return nil },
-			Snapshot: parentSnapshot,
+			File:      file.File,
+			Platform:  file.Platform,
+			Services:  slices.Clone(file.Services),
+			Parent:    file.Parent,
+			LazyState: NewLazyState(),
+			Snapshot:  parentSnapshot,
 		}
+		sourceFile.LazyInit = func(context.Context) error { return nil }
 
 		// reuse Search internally so we get convenient line numbers for an error if
 		// there are multiple matches
