@@ -689,14 +689,14 @@ func (s *workspaceSchema) moduleInitStandalone(
 		return "", fmt.Errorf("cwd: %w", err)
 	}
 
-	contextDirPath, err := s.initModule(ctx, ".", args)
+	_, err = s.initModule(ctx, ".", args)
 	if err != nil {
 		return "", err
 	}
 
-	// Place the license at the module root (context directory), not the
-	// source subpath — the license covers the whole project.
-	if err := findOrCreateLicense(ctx, bk, contextDirPath, args.License, true); err != nil {
+	// Place the license at the module root (cwd), not the context
+	// directory (which may be the git root).
+	if err := findOrCreateLicense(ctx, bk, cwd, args.License, true); err != nil {
 		return "", err
 	}
 
