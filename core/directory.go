@@ -147,11 +147,6 @@ func (dir *Directory) execInMount(ctx context.Context, f func(string) error, opt
 		return err
 	}
 
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-	if bkSessionGroup == nil && !opt.allowNilBuildkitSession {
-		return fmt.Errorf("no buildkit session group in context")
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -166,7 +161,7 @@ func (dir *Directory) execInMount(ctx context.Context, f func(string) error, opt
 		newRef, err = query.BuildkitCache().New(
 			ctx,
 			parentSnapshot,
-			bkSessionGroup,
+			nil,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 			bkcache.WithDescription(opt.cacheDesc),
 		)
@@ -185,7 +180,7 @@ func (dir *Directory) execInMount(ctx context.Context, f func(string) error, opt
 	if !opt.commitSnapshot {
 		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
 	}
-	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
+	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, nil, mountRefOpts...)
 	if err != nil {
 		return err
 	}
@@ -227,7 +222,7 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 		snapshot,
 		dir.Dir,
 		bkcontenthash.ChecksumOpts{},
-		requiresBuildkitSessionGroup(ctx),
+		nil,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to compute digest: %w", err)
@@ -423,11 +418,6 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (LazyInitFunc
 			return err
 		}
 
-		bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-		if bkSessionGroup == nil {
-			return fmt.Errorf("no buildkit session group in context")
-		}
-
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
@@ -441,12 +431,12 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (LazyInitFunc
 		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 		defer stdio.Close()
 
-		newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 			bkcache.WithDescription("patch"))
 		if err != nil {
 			return err
 		}
-		err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) (rerr error) {
 			resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 			if err != nil {
 				return err
@@ -508,13 +498,8 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool,
 	}
 	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
 
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-	if bkSessionGroup == nil {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
 	results := []*SearchResult{}
-	err = MountRef(ctx, ref, bkSessionGroup, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, ref, nil, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
@@ -974,25 +959,20 @@ func (dir *Directory) WithFile(
 			return err
 		}
 
-		bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-		if bkSessionGroup == nil {
-			return fmt.Errorf("no buildkit session group in context")
-		}
-
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
 		}
 
 		destPath := path.Join(dir.Dir, destPath)
-		newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 			bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(src.File))))
 		if err != nil {
 			return err
 		}
 
 		var realDestPath string
-		if err := MountRef(ctx, newRef, bkSessionGroup, func(root string, destMnt *mount.Mount) (rerr error) {
+		if err := MountRef(ctx, newRef, nil, func(root string, destMnt *mount.Mount) (rerr error) {
 			mntedDestPath, err := containerdfs.RootPath(root, destPath)
 			if err != nil {
 				return err
@@ -1047,7 +1027,7 @@ func (dir *Directory) WithFile(
 		}
 
 		var realSrcPath string
-		if err := MountRef(ctx, srcCacheRef, bkSessionGroup, func(root string, srcMnt *mount.Mount) (rerr error) {
+		if err := MountRef(ctx, srcCacheRef, nil, func(root string, srcMnt *mount.Mount) (rerr error) {
 			srcPath, err := containerdfs.RootPath(root, src.File)
 			if err != nil {
 				return err
@@ -1186,11 +1166,6 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (LazyInitFunc,
 		if err != nil {
 			return fmt.Errorf("failed to get current query: %w", err)
 		}
-		bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-		if bkSessionGroup == nil {
-			return fmt.Errorf("no buildkit session group in context")
-		}
-
 		otherDirRef, err := other.getSnapshot(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get other directory ref: %w", err)
@@ -1209,13 +1184,13 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (LazyInitFunc,
 			}
 		}
 
-		newRef, err := cache.New(ctx, ref, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		newRef, err := cache.New(ctx, ref, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 			bkcache.WithDescription("diff"))
 		if err != nil {
 			return err
 		}
 
-		err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			fullPath, err := RootPathWithoutFinalSymlink(root, dir.Dir)
 			if err != nil {
 				return err
@@ -1412,8 +1387,6 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
 	}
 
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-
 	osStatFunc := os.Stat
 	rootPathFunc := containerdfs.RootPath
 	if doNotFollowSymlinks {
@@ -1424,7 +1397,7 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 	}
 
 	var fileInfo os.FileInfo
-	err = MountRef(ctx, immutableRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, path.Join(dir.Dir, targetPath))
 		if err != nil {
 			return err
@@ -1478,8 +1451,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 		return errEmptyResultRef
 	}
 
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
-	return MountRef(ctx, immutableRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+	return MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
 		root, err = containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err

@@ -17,11 +17,9 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
@@ -38,24 +36,6 @@ import (
 var (
 	errEmptyResultRef = fmt.Errorf("empty result reference")
 )
-
-// requiresBuildkitSessionGroup returns a session group for operations that need client resources
-// (credentials, secrets, etc). Some operations run outside the DagOp context (e.g., Stat called
-// internally by Directory.Directory), so we fall back to the buildkit client's session.
-func requiresBuildkitSessionGroup(ctx context.Context) bksession.Group {
-	if g, ok := buildkit.CurrentBuildkitSessionGroup(ctx); ok {
-		return g
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil
-	}
-	return buildkit.NewSessionGroup(bk.ID())
-}
 
 type Evaluatable interface {
 	dagql.Typed
@@ -89,23 +69,6 @@ func absPath(workDir string, containerPath string) string {
 	}
 
 	return path.Join(workDir, containerPath)
-}
-
-func defToState(def *pb.Definition) (llb.State, error) {
-	if def == nil || def.Def == nil {
-		// NB(vito): llb.Scratch().Marshal().ToPB() produces an empty
-		// *pb.Definition. If we don't convert it properly back to a llb.Scratch()
-		// we'll hit 'cannot marshal empty definition op' when trying to marshal it
-		// again.
-		return llb.Scratch(), nil
-	}
-
-	defop, err := llb.NewDefinitionOp(def)
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	return llb.NewState(defop), nil
 }
 
 func findUID(f io.Reader, uname string) (int, error) {

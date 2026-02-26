@@ -218,7 +218,7 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []Git
 		return err
 	}
 
-	return MountRef(ctx, ref, requiresBuildkitSessionGroup(ctx), func(root string, _ *mount.Mount) error {
+	return MountRef(ctx, ref, nil, func(root string, _ *mount.Mount) error {
 		src, err := fs.RootPath(root, repo.Directory.Self().Dir)
 		if err != nil {
 			return err
