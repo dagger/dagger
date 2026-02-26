@@ -32,7 +32,6 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	"dagger.io/dagger/telemetry"
@@ -94,7 +93,7 @@ func (svc *Service) Clone() *Service {
 	cp := *svc
 	cp.Args = slices.Clone(cp.Args)
 	if cp.Container != nil {
-		cp.Container = cp.Container.Clone()
+		cp.Container = cloneContainerForTerminal(cp.Container)
 	}
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
@@ -413,52 +412,13 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, inputDefs, _, refs, _, err := getAllContainerMounts(ctx, ctr)
+	mountData, err := ctr.GetMountData(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
 
-	inputs := make([]bkcache.ImmutableRef, len(inputDefs))
-	eg, egctx := errgroup.WithContext(ctx)
-	for _, pbmount := range pbmounts {
-		if pbmount.Input == pb.Empty {
-			continue
-		}
-
-		if ref := refs[pbmount.Input]; ref != nil {
-			inputs[pbmount.Input] = ref
-			continue
-		}
-
-		def := inputDefs[pbmount.Input]
-		if def == nil {
-			continue
-		}
-
-		eg.Go(func() error {
-			res, err := bk.Solve(egctx, bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: def,
-			})
-			if err != nil {
-				return err
-			}
-			ref, err := res.Ref.Result(egctx)
-			if err != nil {
-				return err
-			}
-			if ref != nil {
-				inputs[pbmount.Input] = ref.Sys().(*worker.WorkerRef).ImmutableRef
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	workerRefs := make([]*worker.WorkerRef, 0, len(inputs))
-	for _, ref := range inputs {
+	workerRefs := make([]*worker.WorkerRef, 0, len(mountData.Inputs))
+	for _, ref := range mountData.Inputs {
 		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
 	}
 
@@ -468,7 +428,7 @@ func (svc *Service) startContainer(
 	mm := bkmounts.NewMountManager(name, cache, session)
 
 	bkSessionGroup := bksession.NewGroup(bk.ID())
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, "", pbmounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, "", mountData.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 		return cache.New(ctx, ref, bkSessionGroup)
 	}, runtime.GOOS)
 	if err != nil {
@@ -1123,7 +1083,7 @@ func (svc *Service) runAndSnapshotChanges(
 	}
 
 	// ensure we actually run the __immutableRef DagOp that does a Clone()
-	if _, err := snapshot.Self().Evaluate(ctx); err != nil {
+	if err := snapshot.Self().Evaluate(ctx); err != nil {
 		return res, false, fmt.Errorf("failed to evaluate snapshot: %w", err)
 	}
 

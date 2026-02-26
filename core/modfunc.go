@@ -824,7 +824,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("get buildkit client: %w", err)
 	}
 
-	_, err = ctr.Self().Evaluate(ctx)
+	err = ctr.Self().Evaluate(ctx)
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
 		if extractErr != nil {

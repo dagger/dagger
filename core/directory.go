@@ -106,6 +106,10 @@ func (dir *Directory) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, er
 	return nil, nil
 }
 
+func (dir *Directory) setSnapshot(ref bkcache.ImmutableRef) {
+	dir.Snapshot = ref
+}
+
 func (dir *Directory) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if dir.Parent.Self() == nil {
 		return nil, nil

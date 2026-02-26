@@ -67,14 +67,17 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 	if err != nil {
 		return nil, err
 	}
+	container := NewContainer(platform)
 	rootfsDir := &Directory{
-		Result: ref,
+		Dir:       "/",
+		Platform:  platform,
+		LazyState: NewLazyState(),
+		Snapshot:  ref,
 	}
-	updatedRootFS, err := UpdatedRootFS(ctx, rootfsDir)
+	updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update rootfs: %w", err)
 	}
-	container := NewContainer(platform)
 	container.FS = updatedRootFS
 	return container, nil
 }

@@ -143,6 +143,10 @@ func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error)
 	return nil, nil
 }
 
+func (file *File) setSnapshot(ref bkcache.ImmutableRef) {
+	file.Snapshot = ref
+}
+
 func (file *File) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if file.Parent.Self() == nil {
 		return nil, nil
