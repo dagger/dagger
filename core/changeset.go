@@ -117,8 +117,8 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 		return fmt.Errorf("evaluate after: %w", err)
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	if bkSessionGroup == nil {
 		return fmt.Errorf("no buildkit session group in context")
 	}
 
@@ -269,8 +269,8 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	if bkSessionGroup == nil {
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
@@ -279,11 +279,9 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
+	if opt, ok := buildkit.CurrentOpOpts(ctx); ok {
+		ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
 	}
-	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 
@@ -544,9 +542,7 @@ func (ch *Changeset) WithChangeset(
 
 	conflicts := ourPaths.CheckConflicts(theirPaths)
 
-	if conflicts.IsEmpty() {
-		return mergeChangesetsWithoutGit(ctx, ch, other)
-	} else if onConflictStrategy == FailEarlyOnConflict {
+	if !conflicts.IsEmpty() && onConflictStrategy == FailEarlyOnConflict {
 		return nil, conflicts.Error()
 	}
 
@@ -604,10 +600,7 @@ func (ch *Changeset) WithChangesets(
 	}
 
 	err := checkAllPairwiseConflicts(ctx, ch, others)
-
-	if err == nil {
-		return mergeChangesetsWithoutGit(ctx, ch, others...)
-	} else if onConflictStrategy == FailEarlyOnConflicts {
+	if err != nil && onConflictStrategy == FailEarlyOnConflicts {
 		return nil, err
 	}
 
@@ -692,17 +685,15 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 		return nil, fmt.Errorf("evaluate merged directory snapshot: nil")
 	}
 
-	afterDirClone := &Directory{
-		Dir:       afterDir.Dir,
-		Platform:  afterDir.Platform,
-		Services:  slices.Clone(afterDir.Services),
-		LazyState: NewLazyState(),
-		Snapshot:  afterRef.Clone(),
-	}
-	afterDirClone.LazyInitComplete = true
-
-	after, err := dagql.NewObjectResultForCurrentID(ctx, srv, afterDirClone)
-	if err != nil {
+	var after dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &after,
+		dagql.Selector{
+			Field: "__immutableRef",
+			Args: []dagql.NamedInput{
+				{Name: "ref", Value: dagql.NewString(afterRef.ID())},
+			},
+		},
+	); err != nil {
 		return nil, fmt.Errorf("create after directory: %w", err)
 	}
 
@@ -751,8 +742,8 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 		return nil, fmt.Errorf("evaluate base: %w", err)
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	if bkSessionGroup == nil {
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
@@ -914,8 +905,8 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 		return fmt.Errorf("evaluate patch ref: %w", err)
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
+	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
+	if bkSessionGroup == nil {
 		return fmt.Errorf("no buildkit session group in context")
 	}
 
@@ -1046,53 +1037,4 @@ func toSet(slice []string) map[string]struct{} {
 		set[s] = struct{}{}
 	}
 	return set
-}
-
-// mergeChangesetsWithoutGit merges changesets without using git by applying
-// each changeset sequentially. This is only safe when there are no file overlaps
-// between changesets.
-func mergeChangesetsWithoutGit(ctx context.Context, ch *Changeset, others ...*Changeset) (*Changeset, error) {
-	// Merge before directories (same as git path)
-	before, err := mergeBeforeDirectories(ctx, ch, others...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Start with merged before and apply each changeset sequentially
-	afterDir := before.Self()
-
-	afterDir, err = applyChangesetToDirectory(ctx, afterDir, ch)
-	if err != nil {
-		return nil, fmt.Errorf("apply changeset: %w", err)
-	}
-
-	for i, other := range others {
-		afterDir, err = applyChangesetToDirectory(ctx, afterDir, other)
-		if err != nil {
-			return nil, fmt.Errorf("apply changeset %d: %w", i, err)
-		}
-	}
-
-	return newChangesetFromMerge(ctx, before, afterDir)
-}
-
-func applyChangesetToDirectory(ctx context.Context, base *Directory, changes *Changeset) (*Directory, error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	parent, err := dagql.NewObjectResultForCurrentID(ctx, srv, base)
-	if err != nil {
-		return nil, err
-	}
-
-	next := NewDirectoryChild(parent)
-	next.LazyInit, err = next.WithChanges(ctx, changes)
-	if err != nil {
-		return nil, err
-	}
-	if err := next.Evaluate(ctx); err != nil {
-		return nil, err
-	}
-	return next, nil
 }
