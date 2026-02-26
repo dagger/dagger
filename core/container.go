@@ -102,12 +102,7 @@ type Container struct {
 	DefaultArgs bool
 
 	Parent dagql.ObjectResult[*Container]
-
-	LazyMu   *sync.Mutex
-	LazyInit LazyInitFunc
-	// LazyInitComplete tracks whether this container's lazy init callback has
-	// already been executed.
-	LazyInitComplete bool
+	LazyState
 
 	// OpID is the operation call ID that should be used as the base when
 	// synthesizing updated container child selection IDs (e.g. rootfs, file,
@@ -127,14 +122,17 @@ func (*Container) TypeDescription() string {
 }
 
 func NewContainer(platform Platform) *Container {
-	return &Container{Platform: platform}
+	return &Container{
+		Platform:  platform,
+		LazyState: NewLazyState(),
+	}
 }
 
 func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
 	if parent.Self() == nil {
 		return &Container{
-			Parent: parent,
-			LazyMu: new(sync.Mutex),
+			Parent:    parent,
+			LazyState: NewLazyState(),
 		}
 	}
 
@@ -152,14 +150,19 @@ func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	cp.Parent = parent
-	cp.LazyMu = new(sync.Mutex)
-	cp.LazyInit = nil
-	cp.LazyInitComplete = false
+	cp.LazyState = NewLazyState()
 	cp.OpID = nil
 	return &cp
 }
 
 var _ dagql.OnReleaser = (*Container)(nil)
+
+func (container *Container) Evaluate(ctx context.Context) error {
+	if container == nil {
+		return nil
+	}
+	return container.LazyState.Evaluate(ctx, "Container")
+}
 
 func (container *Container) OnRelease(ctx context.Context) error {
 	if container == nil {
@@ -1696,49 +1699,6 @@ type ContainerGPUOpts struct {
 func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpts) (*Container, error) {
 	container.EnabledGPUs = gpuOpts.Devices
 	return container, nil
-}
-
-func (container *Container) Evaluate(ctx context.Context) error {
-	if container == nil {
-		return nil
-	}
-
-	if container.LazyInitComplete {
-		return nil
-	}
-
-	// If this container re-uses the parent state, just eval that parent.
-	if container.LazyInit == nil {
-		if container.Parent.Self() == nil {
-			return nil
-		}
-		return container.Parent.Self().Evaluate(ctx)
-	}
-
-	if container.LazyMu == nil {
-		return fmt.Errorf("invalid Container: missing LazyMu")
-	}
-
-	container.LazyMu.Lock()
-	defer container.LazyMu.Unlock()
-
-	if container.LazyInitComplete {
-		return nil
-	}
-
-	if container.LazyInit == nil {
-		if container.Parent.Self() == nil {
-			return nil
-		}
-		return container.Parent.Self().Evaluate(ctx)
-	}
-
-	if err := container.LazyInit(ctx); err != nil {
-		return err
-	}
-
-	container.LazyInitComplete = true
-	return nil
 }
 
 func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {

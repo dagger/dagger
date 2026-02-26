@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -44,14 +43,10 @@ type Directory struct {
 	Services ServiceBindings
 
 	Parent dagql.ObjectResult[*Directory]
-
-	LazyMu   *sync.Mutex
-	LazyInit func(context.Context) error
+	LazyState
 	// Below is lazily initialized and shoud not be accessed directly
 	Snapshot bkcache.ImmutableRef
 }
-
-type LazyInitFunc func(context.Context) error
 
 func (*Directory) Type() *ast.Type {
 	return &ast.Type{
@@ -68,9 +63,8 @@ func (dir *Directory) IsRootDir() bool {
 	return dir.Dir == "" || dir.Dir == "/"
 }
 
-// Create a new directory derived from the given parent directory. By default,
-// the child will have the same snapshot as the parent, so callers that need
-// a new snapshot will have to override it after this func returns.
+// Create a new directory derived from the given parent directory. Child
+// snapshots are always resolved lazily via getSnapshot parent fallback.
 func NewDirectoryChild(parent dagql.ObjectResult[*Directory]) *Directory {
 	if parent.Self() == nil {
 		return nil
@@ -80,7 +74,8 @@ func NewDirectoryChild(parent dagql.ObjectResult[*Directory]) *Directory {
 	cp.Services = slices.Clone(cp.Services)
 
 	cp.Parent = parent
-	cp.LazyMu = new(sync.Mutex)
+	cp.LazyState = NewLazyState()
+	cp.Snapshot = nil
 
 	return &cp
 }
@@ -95,35 +90,20 @@ func (dir *Directory) OnRelease(ctx context.Context) error {
 }
 
 func (dir *Directory) Evaluate(ctx context.Context) error {
-	// If this directory re-uses the parent snapshot, just eval
-	// that parent snapshot
-	if dir.LazyInit == nil {
-		if dir.Parent.Self() == nil {
-			return nil
-		}
-		return dir.Parent.Self().Evaluate(ctx)
-	}
-
-	// otherwise, make sure this directory's snapshot is initialized
-	if dir.LazyMu == nil {
-		return fmt.Errorf("invalid Directory: missing LazyMu")
-	}
-	dir.LazyMu.Lock()
-	defer dir.LazyMu.Unlock()
-
-	if dir.Snapshot != nil {
-		// already initialized
-		return nil
-	}
-
-	return dir.LazyInit(ctx)
+	return dir.LazyState.Evaluate(ctx, "Directory")
 }
 
 func (dir *Directory) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if err := dir.Evaluate(ctx); err != nil {
 		return nil, err
 	}
-	return dir.Snapshot, nil
+	if dir.Snapshot != nil {
+		return dir.Snapshot, nil
+	}
+	if dir.Parent.Self() != nil {
+		return dir.Parent.Self().getSnapshot(ctx)
+	}
+	return nil, nil
 }
 
 func (dir *Directory) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
@@ -644,11 +624,11 @@ func (dir *Directory) Subfile(ctx context.Context, parent dagql.ObjectResult[*Di
 
 	filePath := path.Join(dir.Dir, file)
 	subfile := &File{
-		File:     filePath,
-		Platform: dir.Platform,
-		Services: slices.Clone(dir.Services),
-		Parent:   parent,
-		LazyMu:   new(sync.Mutex),
+		File:      filePath,
+		Platform:  dir.Platform,
+		Services:  slices.Clone(dir.Services),
+		Parent:    parent,
+		LazyState: NewLazyState(),
 	}
 	subfile.LazyInit = func(ctx context.Context) error {
 		parentSnapshot, err := parent.Self().getSnapshot(ctx)
@@ -850,7 +830,7 @@ func (dir *Directory) WithDirectory(
 			// copies and caches inputs individually instead of invalidating the whole
 			// chain following any modified input.
 			if srcRef == nil {
-				dir.Snapshot = dirRef
+				dir.Snapshot = dirRef.Clone()
 				return nil
 			}
 			mergeRefs = append(mergeRefs, srcRef)
