@@ -407,9 +407,8 @@ func allowNilBuildkitSession(opt *mountObjOpt) {
 
 type fileOrDirectory interface {
 	*File | *Directory
-	getResult() bkcache.ImmutableRef
-	setResult(bkcache.ImmutableRef)
-	Evaluatable
+	getSnapshot(context.Context) (bkcache.ImmutableRef, error)
+	setSnapshot(bkcache.ImmutableRef)
 }
 
 // execInMount evaluates a file or directory, mounts it, then calls the supplied callback function.
@@ -498,7 +497,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 				if err != nil {
 					return nil, err
 				}
-				obj.setResult(snap)
+				obj.setSnapshot(snap)
 			}
 			return obj, nil
 		}, nil
@@ -540,25 +539,7 @@ func TrimErrPathPrefix(err error, prefix string) error {
 }
 
 func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
-	ref := t.getResult()
-	if ref != nil {
-		return ref, nil
-	}
-	res, err := t.Evaluate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if res == nil {
-		return nil, nil
-	}
-	cacheRef, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	if cacheRef == nil {
-		return nil, nil
-	}
-	return cacheRef.CacheRef(ctx)
+	return t.getSnapshot(ctx)
 }
 
 func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {
