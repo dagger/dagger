@@ -60,15 +60,15 @@ type PackageJson {
   """
   Optional source include paths from package.json "docusaurus.include".
   """
-  pub include: [String!] {
+  pub include: [String!]! {
     if (json == null) {
-      null
+      [] :: [String!]!
     } else if (hasField(json, "docusaurus") == false) {
-      null
+      [] :: [String!]!
     } else {
       let docusaurus = json.field(["docusaurus"])
       if (hasField(docusaurus, "include") == false) {
-        null
+        [] :: [String!]!
       } else {
         let include = docusaurus.field(["include"])
         include.asArray.{asString}.map { item => item.asString }
@@ -129,8 +129,8 @@ type Site {
   The Docusaurus site source files.
   """
   pub source(ws: Workspace!): Directory! {
-    # include is nullable; map requires a non-null list
-    let include = if (packageJson.include == null) {
+    # include is optional for ws.directory; pass null when no patterns are set
+    let include = if (packageJson.include.length == 0) {
       null
     } else {
       packageJson.include.map { inc => path + "/" + inc }
