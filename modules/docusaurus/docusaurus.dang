@@ -117,11 +117,11 @@ type Site {
   """
   The install command for the package manager.
   """
-  let installCmd: [String!]! {
+  let installCmd(ws: Workspace!): [String!]! {
     case (pm) {
       "yarn" => ["yarn", "install", "--frozen-lockfile"]
       "pnpm" => ["pnpm", "install", "--frozen-lockfile"]
-      else => ["npm", "ci"]
+      else => ["npm", "install"]
     }
   }
 
@@ -183,7 +183,7 @@ type Site {
         cacheVolume("docusaurus-cache-" + path),
         sharing: CacheSharingMode.PRIVATE,
       )
-      .withExec(installCmd)
+      .withExec(installCmd(ws))
   }
 
   """
