@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"slices"
-	"time"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/v2/core/images"
@@ -29,7 +28,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 type containerSchema struct{}
@@ -97,7 +95,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		dagql.Func("rootfs", s.rootfs).
 			Doc(`Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.`),
-		dagql.Func("withRootfs", s.withRootfs).
+		dagql.NodeFunc("withRootfs", s.withRootfs).
 			Doc(`Change the container's root filesystem. The previous root filesystem will be lost.`).
 			Args(
 				dagql.Arg("directory").Doc("The new root filesystem."),
@@ -122,20 +120,20 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("user", s.user).
 			Doc("Retrieves the user to be set for all commands."),
 
-		dagql.Func("withUser", s.withUser).
+		dagql.NodeFunc("withUser", s.withUser).
 			Doc(`Retrieves this container with a different command user.`).
 			Args(
 				dagql.Arg("name").Doc(`The user to set (e.g., "root").`),
 			),
 
-		dagql.Func("withoutUser", s.withoutUser).
+		dagql.NodeFunc("withoutUser", s.withoutUser).
 			Doc(`Retrieves this container with an unset command user.`,
 				`Should default to root.`),
 
 		dagql.Func("workdir", s.workdir).
 			Doc("Retrieves the working directory for all commands."),
 
-		dagql.Func("withWorkdir", s.withWorkdir).
+		dagql.NodeFunc("withWorkdir", s.withWorkdir).
 			Doc(`Change the container's working directory. Like WORKDIR in Dockerfile.`).
 			Args(
 				dagql.Arg("path").Doc(`The path to set as the working directory (e.g., "/app").`),
@@ -143,7 +141,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withoutWorkdir", s.withoutWorkdir).
+		dagql.NodeFunc("withoutWorkdir", s.withoutWorkdir).
 			Doc(`Unset the container's working directory.`,
 				`Should default to "/".`),
 
@@ -156,7 +154,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the environment variable to retrieve (e.g., "PATH").`),
 			),
 
-		dagql.Func("withEnvVariable", s.withEnvVariable).
+		dagql.NodeFunc("withEnvVariable", s.withEnvVariable).
 			Doc(`Set a new environment variable in the container.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the environment variable (e.g., "HOST").`),
@@ -165,7 +163,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/opt/bin:$PATH").`),
 			),
 
-		dagql.Func("withEnvFileVariables", s.withEnvFileVariables).
+		dagql.NodeFunc("withEnvFileVariables", s.withEnvFileVariables).
 			Doc(`Export environment variables from an env-file to the container.`).
 			Args(
 				dagql.Arg("source").Doc(`Identifier of the envfile`),
@@ -175,29 +173,29 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		// currently only want to use it for allowing the Go SDK to inherit custom GOPROXY
 		// settings from the engine container. It may be made public in the future with more
 		// refined design.
-		dagql.Func("__withSystemEnvVariable", s.withSystemEnvVariable).
+		dagql.NodeFunc("__withSystemEnvVariable", s.withSystemEnvVariable).
 			Doc(`(Internal-only) Inherit this environment variable from the engine container if set there with a special prefix.`),
 
-		dagql.Func("withSecretVariable", s.withSecretVariable).
+		dagql.NodeFunc("withSecretVariable", s.withSecretVariable).
 			Doc(`Set a new environment variable, using a secret value`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the secret variable (e.g., "API_SECRET").`),
 				dagql.Arg("secret").Doc(`Identifier of the secret value.`),
 			),
 
-		dagql.Func("withoutEnvVariable", s.withoutEnvVariable).
+		dagql.NodeFunc("withoutEnvVariable", s.withoutEnvVariable).
 			Doc(`Retrieves this container minus the given environment variable.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the environment variable (e.g., "HOST").`),
 			),
 
-		dagql.Func("withoutSecretVariable", s.withoutSecretVariable).
+		dagql.NodeFunc("withoutSecretVariable", s.withoutSecretVariable).
 			Doc(`Retrieves this container minus the given environment variable containing the secret.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the environment variable (e.g., "HOST").`),
 			),
 
-		dagql.Func("withLabel", s.withLabel).
+		dagql.NodeFunc("withLabel", s.withLabel).
 			Doc(`Retrieves this container plus the given label.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the label (e.g., "org.opencontainers.artifact.created").`),
@@ -213,7 +211,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("labels", s.labels).
 			Doc(`Retrieves the list of labels passed to container.`),
 
-		dagql.Func("withoutLabel", s.withoutLabel).
+		dagql.NodeFunc("withoutLabel", s.withoutLabel).
 			Doc(`Retrieves this container minus the given environment label.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the label to remove (e.g., "org.opencontainers.artifact.created").`),
@@ -222,14 +220,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("entrypoint", s.entrypoint).
 			Doc(`Return the container's OCI entrypoint.`),
 
-		dagql.Func("withEntrypoint", s.withEntrypoint).
+		dagql.NodeFunc("withEntrypoint", s.withEntrypoint).
 			Doc(`Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.`).
 			Args(
 				dagql.Arg("args").Doc(`Arguments of the entrypoint. Example: ["go", "run"].`),
 				dagql.Arg("keepDefaultArgs").Doc(`Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.`),
 			),
 
-		dagql.Func("withoutEntrypoint", s.withoutEntrypoint).
+		dagql.NodeFunc("withoutEntrypoint", s.withoutEntrypoint).
 			Doc(`Reset the container's OCI entrypoint.`).
 			Args(
 				dagql.Arg("keepDefaultArgs").Doc(`Don't remove the default arguments when unsetting the entrypoint.`),
@@ -238,19 +236,19 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("defaultArgs", s.defaultArgs).
 			Doc(`Return the container's default arguments.`),
 
-		dagql.Func("withDefaultArgs", s.withDefaultArgs).
+		dagql.NodeFunc("withDefaultArgs", s.withDefaultArgs).
 			Doc(`Configures default arguments for future commands. Like CMD in Dockerfile.`).
 			Args(
 				dagql.Arg("args").Doc(`Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).`),
 			),
 
-		dagql.Func("withoutDefaultArgs", s.withoutDefaultArgs).
+		dagql.NodeFunc("withoutDefaultArgs", s.withoutDefaultArgs).
 			Doc(`Remove the container's default arguments.`),
 
 		dagql.Func("mounts", s.mounts).
 			Doc(`Retrieves the list of paths where a directory is mounted.`),
 
-		dagql.Func("withMountedDirectory", s.withMountedDirectory).
+		dagql.NodeFunc("withMountedDirectory", s.withMountedDirectory).
 			Doc(`Retrieves this container plus a directory mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the mounted directory (e.g., "/mnt/directory").`),
@@ -262,7 +260,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withMountedFile", s.withMountedFile).
+		dagql.NodeFunc("withMountedFile", s.withMountedFile).
 			Doc(`Retrieves this container plus a file mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the mounted file (e.g., "/tmp/file.txt").`),
@@ -274,7 +272,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.Func("withMountedTemp", s.withMountedTemp).
+		dagql.NodeFunc("withMountedTemp", s.withMountedTemp).
 			Doc(`Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the temporary directory (e.g., "/tmp/temp_dir").`),
@@ -283,7 +281,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withMountedCache", s.withMountedCache).
+		dagql.NodeFunc("withMountedCache", s.withMountedCache).
 			Doc(`Retrieves this container plus a cache volume mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the cache directory (e.g., "/root/.npm").`),
@@ -300,7 +298,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withMountedSecret", s.withMountedSecret).
+		dagql.NodeFunc("withMountedSecret", s.withMountedSecret).
 			Doc(`Retrieves this container plus a secret mounted into a file at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the secret file (e.g., "/tmp/secret.txt").`),
@@ -314,7 +312,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withUnixSocket", s.withUnixSocket).
+		dagql.NodeFunc("withUnixSocket", s.withUnixSocket).
 			Doc(`Retrieves this container plus a socket forwarded to the given Unix socket path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the forwarded Unix socket (e.g., "/tmp/socket").`),
@@ -326,7 +324,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withoutUnixSocket", s.withoutUnixSocket).
+		dagql.NodeFunc("withoutUnixSocket", s.withoutUnixSocket).
 			Doc(`Retrieves this container with a previously added Unix socket removed.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the socket to remove (e.g., "/tmp/socket").`),
@@ -334,7 +332,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withoutMount", s.withoutMount).
+		dagql.NodeFunc("withoutMount", s.withoutMount).
 			Doc(`Retrieves this container after unmounting everything at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the cache directory (e.g., "/root/.npm").`),
@@ -411,7 +409,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 
-		dagql.Func("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", s.withDirectory).
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			Args(
@@ -535,20 +533,20 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.Func("withAnnotation", s.withAnnotation).
+		dagql.NodeFunc("withAnnotation", s.withAnnotation).
 			Doc(`Retrieves this container plus the given OCI annotation.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the annotation.`),
 				dagql.Arg("value").Doc(`The value of the annotation.`),
 			),
 
-		dagql.Func("withoutAnnotation", s.withoutAnnotation).
+		dagql.NodeFunc("withoutAnnotation", s.withoutAnnotation).
 			Doc(`Retrieves this container minus the given OCI annotation.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the annotation.`),
 			),
 
-		dagql.NodeFunc("publish", DagOpWrapper(srv, s.publish)).
+		dagql.NodeFunc("publish", s.publish).
 			WithInput(dagql.PerCallInput).
 			DoNotCache("side effect on an external system (OCI registry)").
 			Doc(`Package the container state as an OCI image, and publish it to a registry`,
@@ -578,7 +576,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("platform", s.platform).
 			Doc(`The platform this container executes and publishes as.`),
 
-		dagql.NodeFunc("export", DagOpWrapper(srv, s.export)).
+		dagql.NodeFunc("export", s.export).
 			WithInput(dagql.PerCallInput).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -607,12 +605,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
-		dagql.NodeFunc("export", DagOpWrapper(srv, s.exportLegacy)).
+		dagql.NodeFunc("export", s.exportLegacy).
 			WithInput(dagql.PerCallInput).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.NodeFunc("exportImage", DagOpWrapper(srv, s.exportImage)).
+		dagql.NodeFunc("exportImage", s.exportImage).
 			DoNotCache("Writes to the local host.").
 			Doc("Exports the container as an image to the host's container image store.").
 			Args(
@@ -634,7 +632,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					OCI support.`),
 			),
 
-		dagql.NodeFunc("asTarball", DagOpFileWrapper(srv, s.asTarball, WithStaticPath[*core.Container, containerAsTarballArgs]("container.tar"))).
+		dagql.NodeFunc("asTarball", s.asTarball).
 			Doc(`Package the container state as an OCI image, and return it as a tar archive`).
 			Args(
 				dagql.Arg("platformVariants").Doc(
@@ -653,12 +651,16 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					OCI support.`),
 			),
 
-		dagql.NodeFunc("import", s.import_).
-			Doc(`Reads the container from an OCI tarball.`).
-			Args(
-				dagql.Arg("source").Doc(`File to read the container from.`),
-				dagql.Arg("tag").Doc(`Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
-			),
+		/*
+			TODO: re-implement import/fromInternal.
+
+			dagql.NodeFunc("import", s.import_).
+				Doc(`Reads the container from an OCI tarball.`).
+				Args(
+					dagql.Arg("source").Doc(`File to read the container from.`),
+					dagql.Arg("tag").Doc(`Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
+				),
+		*/
 
 		dagql.Func("withRegistryAuth", s.withRegistryAuth).
 			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
@@ -678,7 +680,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("imageRef", s.imageRef).
 			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
 
-		dagql.Func("withExposedPort", s.withExposedPort).
+		dagql.NodeFunc("withExposedPort", s.withExposedPort).
 			Doc(`Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)`,
 				`Exposed ports serve two purposes:`,
 				`- For health checks and introspection, when running services`,
@@ -690,7 +692,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("experimentalSkipHealthcheck").Doc(`Skip the health check when run as a service.`),
 			),
 
-		dagql.Func("withoutExposedPort", s.withoutExposedPort).
+		dagql.NodeFunc("withoutExposedPort", s.withoutExposedPort).
 			Doc(`Unexpose a previously exposed port.`).
 			Args(
 				dagql.Arg("port").Doc(`Port number to unexpose`),
@@ -701,7 +703,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves the list of exposed ports.`,
 				`This includes ports already exposed by the image, even if not explicitly added with dagger.`),
 
-		dagql.Func("withServiceBinding", s.withServiceBinding).
+		dagql.NodeFunc("withServiceBinding", s.withServiceBinding).
 			Doc(`Establish a runtime dependency from a container to a network service.`,
 				`The service will be started automatically when needed and detached
 				when it is no longer needed, executing the default command if none is
@@ -721,7 +723,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Indicate that subsequent operations should not be featured more prominently in the UI.`,
 				`This is the initial state of all containers.`),
 
-		dagql.Func("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
+		dagql.NodeFunc("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
 			Doc(`Set the default command to invoke for the container's terminal API.`).
 			Args(
 				dagql.Arg("args").Doc(`The args of the command.`),
@@ -765,7 +767,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				absolutely necessary and only with trusted commands.`),
 			),
 
-		dagql.Func("experimentalWithGPU", s.withGPU).
+		dagql.NodeFunc("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures the provided list of devices to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`).
@@ -773,7 +775,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
 			),
 
-		dagql.Func("experimentalWithAllGPUs", s.withAllGPUs).
+		dagql.NodeFunc("experimentalWithAllGPUs", s.withAllGPUs).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
@@ -807,8 +809,6 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 
 type containerFromArgs struct {
 	Address string
-
-	ContainerDagOpInternalArgs
 }
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
@@ -870,57 +870,40 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		if args.InDagOp() {
-			ctr, err := parent.Self().FromCanonicalRef(ctx, refName, nil)
+		ctr := core.NewContainerChild(parent)
+		ctr.OpID = dagql.CurrentID(ctx)
+		if ctr.OpID == nil {
+			return inst, fmt.Errorf("missing operation ID for container.from")
+		}
+		ctr.LazyInit = func(ctx context.Context) error {
+			var err error
+			ctrState, err := ctr.FromCanonicalRef(ctx, refName, nil)
 			if err != nil {
-				return inst, err
+				return err
 			}
-			inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+
+			// NOTE: config update must happen outside the rootfs snapshot fetch path.
+			ctrState, err = ctrState.FromCanonicalRefUpdateConfig(ctx, refName, nil)
 			if err != nil {
-				return inst, err
+				return err
 			}
-			// detach identity from the :tag, make the result purely content-addressed based on the digest
-			return inst.WithContentDigest(hashutil.HashStrings(
-				"container.from.dagop",
-				refName.Digest().String(),
-				ctr.Platform.Format(),
-			)), nil
+
+			*ctr = *ctrState
+			ctr.LazyInitComplete = true
+			return nil
 		}
 
-		ctr, effectID, err := DagOpContainer(ctx, srv, parent.Self(), args, nil)
+		inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 		if err != nil {
 			return inst, err
 		}
 
-		// Note that this must be done outside the dagop context, otherwise the image config data will be lost
-		ctr.FromCanonicalRefUpdateConfig(ctx, refName, nil)
-
-		if ctr.FS.Self().Dir == "" {
-			// FIXME The dir is set under FromCanonicalRef; however it's done inside a dagop, which doesn't propigate back here
-			// As a result, if FromCanonicalRef sets it to anything besides a "/", it will preemptively return an error.
-			// Ideally, we should simply return an error here when this is empty (indicating it failed to propigate)
-			// however, for the time being we will just set it to the root dir.
-			ctr.FS.Self().Dir = "/"
-		}
-
-		resultID := dagql.CurrentID(ctx)
-		if effectID != "" && resultID != nil {
-			resultID = resultID.AppendEffectIDs(effectID)
-		}
-		inst, err = dagql.NewObjectResultForID(ctr, srv, resultID)
-		if err != nil {
-			return inst, err
-		}
 		// detach identity from the :tag, make the result purely content-addressed based on the digest
 		return inst.WithContentDigest(hashutil.HashStrings(
 			"container.from",
 			refName.Digest().String(),
 			ctr.Platform.Format(),
 		)), nil
-	}
-
-	if args.InDagOp() {
-		return inst, fmt.Errorf("container.from called in a dagop context but without canonical image name, this shouldnt happen")
 	}
 
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical
@@ -1019,7 +1002,7 @@ type containerWithRootFSArgs struct {
 	Directory core.DirectoryID
 }
 
-func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
+func (s *containerSchema) withRootfs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithRootFSArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1029,7 +1012,8 @@ func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithRootFS(ctx, dir)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithRootFS(ctx, dir)
 }
 
 type containerPipelineArgs struct {
@@ -1056,8 +1040,6 @@ type containerExecArgs struct {
 
 	// ExecMD carries internal runtime execution metadata.
 	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
-
-	ContainerDagOpInternalArgs
 }
 
 func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (dagql.ObjectResult[*core.Container], error) {
@@ -1069,8 +1051,6 @@ func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResu
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
-	ctr := parent.Self().Clone()
-
 	if args.Stdin != "" && args.RedirectStdin != "" {
 		return inst, fmt.Errorf("cannot set both stdin and redirectStdin")
 	}
@@ -1078,25 +1058,6 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
-	}
-
-	if !args.IsDagOp {
-		ctr.Meta = nil
-		ctr, effectID, err := DagOpContainer(ctx, srv, ctr, args, args.ExecMD.Self)
-		if err != nil {
-			return inst, err
-		}
-
-		ctr.ImageRef = ""
-		resultID := dagql.CurrentID(ctx)
-		if effectID != "" && resultID != nil {
-			resultID = resultID.AppendEffectIDs(effectID)
-		}
-		inst, err = dagql.NewObjectResultForID(ctr, srv, resultID)
-		if err != nil {
-			return inst, err
-		}
-		return inst, nil
 	}
 
 	if args.SkipEntrypoint != nil {
@@ -1119,7 +1080,14 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		md = args.ExecMD.Self
 	}
 
-	ctr, err = parent.Self().WithExec(ctx, args.ContainerExecOpts, md)
+	opID := dagql.CurrentID(ctx)
+	if opID == nil {
+		return inst, fmt.Errorf("missing operation ID for withExec")
+	}
+
+	ctr := core.NewContainerChild(parent)
+	ctr.OpID = opID
+	ctr, err = ctr.WithExec(ctx, args.ContainerExecOpts, md)
 	if err != nil {
 		return inst, err
 	}
@@ -1224,7 +1192,8 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	ctr, err := parent.Self().WithSymlink(ctx, srv, target, linkName)
+	ctr := core.NewContainerChild(parent)
+	ctr, err = ctr.WithSymlink(ctx, srv, target, linkName)
 	if err != nil {
 		return inst, err
 	}
@@ -1235,12 +1204,14 @@ type containerGpuArgs struct {
 	core.ContainerGPUOpts
 }
 
-func (s *containerSchema) withGPU(ctx context.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
-	return parent.WithGPU(ctx, args.ContainerGPUOpts)
+func (s *containerSchema) withGPU(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerGpuArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithGPU(ctx, args.ContainerGPUOpts)
 }
 
-func (s *containerSchema) withAllGPUs(ctx context.Context, parent *core.Container, args struct{}) (*core.Container, error) {
-	return parent.WithGPU(ctx, core.ContainerGPUOpts{Devices: []string{"all"}})
+func (s *containerSchema) withAllGPUs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithGPU(ctx, core.ContainerGPUOpts{Devices: []string{"all"}})
 }
 
 type containerWithEntrypointArgs struct {
@@ -1248,8 +1219,9 @@ type containerWithEntrypointArgs struct {
 	KeepDefaultArgs bool `default:"false"`
 }
 
-func (s *containerSchema) withEntrypoint(ctx context.Context, parent *core.Container, args containerWithEntrypointArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withEntrypoint(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithEntrypointArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Entrypoint = args.Args
 		if !args.KeepDefaultArgs {
 			cfg.Cmd = nil
@@ -1262,8 +1234,9 @@ type containerWithoutEntrypointArgs struct {
 	KeepDefaultArgs bool `default:"false"`
 }
 
-func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent *core.Container, args containerWithoutEntrypointArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutEntrypointArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Entrypoint = nil
 		if !args.KeepDefaultArgs {
 			cfg.Cmd = nil
@@ -1285,8 +1258,8 @@ type containerWithDefaultArgs struct {
 	Args []string
 }
 
-func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Container, args containerWithDefaultArgs) (*core.Container, error) {
-	c := parent.Clone()
+func (s *containerSchema) withDefaultArgs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDefaultArgs) (*core.Container, error) {
+	c := core.NewContainerChild(parent)
 	c.DefaultArgs = true
 	return c.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		if args.Args == nil {
@@ -1299,8 +1272,8 @@ func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Cont
 	})
 }
 
-func (s *containerSchema) withoutDefaultArgs(ctx context.Context, parent *core.Container, _ struct{}) (*core.Container, error) {
-	c := parent.Clone()
+func (s *containerSchema) withoutDefaultArgs(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (*core.Container, error) {
+	c := core.NewContainerChild(parent)
 	c.DefaultArgs = false
 	return c.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.Cmd = nil
@@ -1321,15 +1294,17 @@ type containerWithUserArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withUser(ctx context.Context, parent *core.Container, args containerWithUserArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withUser(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithUserArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.User = args.Name
 		return cfg
 	})
 }
 
-func (s *containerSchema) withoutUser(ctx context.Context, parent *core.Container, _ struct{}) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withoutUser(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.User = ""
 		return cfg
 	})
@@ -1349,20 +1324,22 @@ type containerWithWorkdirArgs struct {
 	Expand bool `default:"false"`
 }
 
-func (s *containerSchema) withWorkdir(ctx context.Context, parent *core.Container, args containerWithWorkdirArgs) (*core.Container, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) withWorkdir(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithWorkdirArgs) (*core.Container, error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.WorkingDir = absPath(cfg.WorkingDir, path)
 		return cfg
 	})
 }
 
-func (s *containerSchema) withoutWorkdir(ctx context.Context, parent *core.Container, _ struct{}) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withoutWorkdir(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		cfg.WorkingDir = ""
 		return cfg
 	})
@@ -1383,8 +1360,9 @@ type containerWithVariableArgs struct {
 	Expand bool `default:"false"`
 }
 
-func (s *containerSchema) withEnvVariable(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withEnvVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithVariableArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		value := args.Value
 
 		if args.Expand {
@@ -1404,7 +1382,7 @@ type withEnvFileVariablesArgs struct {
 	Source core.EnvFileID
 }
 
-func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent *core.Container, args withEnvFileVariablesArgs) (*core.Container, error) {
+func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent dagql.ObjectResult[*core.Container], args withEnvFileVariablesArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1420,7 +1398,8 @@ func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent *core
 		return nil, err
 	}
 
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		for _, v := range vars {
 			cfg.Env = core.AddEnv(cfg.Env, v.Name, v.Value)
 		}
@@ -1432,8 +1411,8 @@ type containerWithSystemEnvArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent *core.Container, args containerWithSystemEnvArgs) (*core.Container, error) {
-	ctr := parent.Clone()
+func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithSystemEnvArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
 	ctr.SystemEnvNames = append(ctr.SystemEnvNames, args.Name)
 	return ctr, nil
 }
@@ -1442,8 +1421,9 @@ type containerWithoutVariableArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutVariableArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		newEnv := []string{}
 
 		core.WalkEnv(cfg.Env, func(k, _, env string) {
@@ -1555,7 +1535,7 @@ type containerWithMountedDirectoryArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1566,12 +1546,13 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 		return nil, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithMountedDirectory(ctx, path, dir, args.Owner, false)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithMountedDirectory(ctx, path, dir, args.Owner, false)
 }
 
 type containerWithAnnotationArgs struct {
@@ -1579,16 +1560,18 @@ type containerWithAnnotationArgs struct {
 	Value string
 }
 
-func (s *containerSchema) withAnnotation(ctx context.Context, parent *core.Container, args containerWithAnnotationArgs) (*core.Container, error) {
-	return parent.WithAnnotation(ctx, args.Name, args.Value)
+func (s *containerSchema) withAnnotation(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithAnnotationArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithAnnotation(ctx, args.Name, args.Value)
 }
 
 type containerWithoutAnnotationArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutAnnotation(ctx context.Context, parent *core.Container, args containerWithoutAnnotationArgs) (*core.Container, error) {
-	return parent.WithoutAnnotation(ctx, args.Name)
+func (s *containerSchema) withoutAnnotation(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutAnnotationArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithoutAnnotation(ctx, args.Name)
 }
 
 func (s *containerSchema) exists(ctx context.Context, parent *core.Container, args existsArgs) (dagql.Boolean, error) {
@@ -1613,8 +1596,6 @@ type containerPublishArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
-
-	RawDagOpInternalArgs
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerPublishArgs) (dagql.String, error) {
@@ -1647,7 +1628,7 @@ type containerWithMountedFileArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withMountedFile(ctx context.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1658,12 +1639,13 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent *core.Cont
 		return nil, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithMountedFile(ctx, path, file, args.Owner, false)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithMountedFile(ctx, path, file, args.Owner, false)
 }
 
 type containerWithMountedCacheArgs struct {
@@ -1675,7 +1657,7 @@ type containerWithMountedCacheArgs struct {
 	Expand  bool                  `default:"false"`
 }
 
-func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedCacheArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1695,12 +1677,13 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Con
 		return nil, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithMountedCache(
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithMountedCache(
 		ctx,
 		path,
 		cache.Self(),
@@ -1716,13 +1699,14 @@ type containerWithMountedTempArgs struct {
 	Expand bool `default:"false"`
 }
 
-func (s *containerSchema) withMountedTemp(ctx context.Context, parent *core.Container, args containerWithMountedTempArgs) (*core.Container, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedTempArgs) (*core.Container, error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithMountedTemp(ctx, path, args.Size.Value.Int())
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithMountedTemp(ctx, path, args.Size.Value.Int())
 }
 
 type containerWithoutMountArgs struct {
@@ -1730,13 +1714,14 @@ type containerWithoutMountArgs struct {
 	Expand bool `default:"false"`
 }
 
-func (s *containerSchema) withoutMount(ctx context.Context, parent *core.Container, args containerWithoutMountArgs) (*core.Container, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) withoutMount(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutMountArgs) (*core.Container, error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithoutMount(ctx, path)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithoutMount(ctx, path)
 }
 
 func (s *containerSchema) mounts(ctx context.Context, parent *core.Container, _ struct{}) (dagql.Array[dagql.String], error) {
@@ -1752,8 +1737,9 @@ type containerWithLabelArgs struct {
 	Value string
 }
 
-func (s *containerSchema) withLabel(ctx context.Context, parent *core.Container, args containerWithLabelArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withLabel(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithLabelArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		if cfg.Labels == nil {
 			cfg.Labels = make(map[string]string)
 		}
@@ -1766,8 +1752,9 @@ type containerWithoutLabelArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutLabel(ctx context.Context, parent *core.Container, args containerWithoutLabelArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+func (s *containerSchema) withoutLabel(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutLabelArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 		delete(cfg.Labels, args.Name)
 		return cfg
 	})
@@ -1778,13 +1765,13 @@ type containerDirectoryArgs struct {
 	Expand bool `default:"false"`
 }
 
-func (s *containerSchema) directory(ctx context.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.Directory]{}, err
 	}
 
-	return parent.Directory(ctx, path)
+	return parent.Self().Directory(ctx, path)
 }
 
 type containerFileArgs struct {
@@ -1792,13 +1779,13 @@ type containerFileArgs struct {
 	Expand bool `default:"false"`
 }
 
-func (s *containerSchema) file(ctx context.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFileArgs) (dagql.ObjectResult[*core.File], error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.File]{}, err
 	}
 
-	return parent.File(ctx, path)
+	return parent.Self().File(ctx, path)
 }
 
 func absPath(workDir string, containerPath string) string {
@@ -1852,7 +1839,7 @@ type containerWithSecretVariableArgs struct {
 	Secret core.SecretID
 }
 
-func (s *containerSchema) withSecretVariable(ctx context.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withSecretVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithSecretVariableArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1862,15 +1849,17 @@ func (s *containerSchema) withSecretVariable(ctx context.Context, parent *core.C
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithSecretVariable(ctx, args.Name, secret)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithSecretVariable(ctx, args.Name, secret)
 }
 
 type containerWithoutSecretVariableArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutSecretVariable(ctx context.Context, parent *core.Container, args containerWithoutSecretVariableArgs) (*core.Container, error) {
-	return parent.WithoutSecretVariable(ctx, args.Name)
+func (s *containerSchema) withoutSecretVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutSecretVariableArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithoutSecretVariable(ctx, args.Name)
 }
 
 type containerWithMountedSecretArgs struct {
@@ -1881,7 +1870,7 @@ type containerWithMountedSecretArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withMountedSecret(ctx context.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedSecretArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1892,12 +1881,13 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent *core.Co
 		return nil, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithMountedSecret(ctx, path, secret, args.Owner, fs.FileMode(args.Mode))
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithMountedSecret(ctx, path, secret, args.Owner, fs.FileMode(args.Mode))
 }
 
 type containerWithDirectoryArgs struct {
@@ -1906,7 +1896,7 @@ type containerWithDirectoryArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -1917,12 +1907,13 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		return nil, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner)
 }
 
 type containerWithFileArgs struct {
@@ -1952,7 +1943,8 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	ctr, err := parent.Self().WithFile(ctx, srv, path, file, perms, args.Owner)
+	ctr := core.NewContainerChild(parent)
+	ctr, err = ctr.WithFile(ctx, srv, path, file, perms, args.Owner)
 	if err != nil {
 		return inst, err
 	}
@@ -1992,7 +1984,8 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	ctr, err := parent.Self().WithFiles(ctx, srv, path, files, perms, args.Owner)
+	ctr := core.NewContainerChild(parent)
+	ctr, err = ctr.WithFiles(ctx, srv, path, files, perms, args.Owner)
 	if err != nil {
 		return inst, err
 	}
@@ -2015,7 +2008,8 @@ func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	ctr, err := parent.Self().WithoutPaths(ctx, srv, path)
+	ctr := core.NewContainerChild(parent)
+	ctr, err = ctr.WithoutPaths(ctx, srv, path)
 	if err != nil {
 		return inst, err
 	}
@@ -2038,7 +2032,8 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	ctr, err := parent.Self().WithoutPaths(ctx, srv, path)
+	ctr := core.NewContainerChild(parent)
+	ctr, err = ctr.WithoutPaths(ctx, srv, path)
 	if err != nil {
 		return inst, err
 	}
@@ -2064,7 +2059,8 @@ func (s *containerSchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 		}
 	}
 
-	ctr, err := parent.Self().WithoutPaths(ctx, srv, paths...)
+	ctr := core.NewContainerChild(parent)
+	ctr, err = ctr.WithoutPaths(ctx, srv, paths...)
 	if err != nil {
 		return inst, err
 	}
@@ -2090,7 +2086,8 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	ctr, err := parent.Self().WithNewFile(ctx, path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
+	ctr := core.NewContainerChild(parent)
+	ctr, err = ctr.WithNewFile(ctx, path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
 	if err != nil {
 		return inst, err
 	}
@@ -2111,7 +2108,8 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	ctr, err := parent.Self().WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
+	ctr := core.NewContainerChild(parent)
+	ctr, err = ctr.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
 	if err != nil {
 		return inst, err
 	}
@@ -2126,7 +2124,7 @@ type containerWithUnixSocketArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withUnixSocket(ctx context.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
+func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithUnixSocketArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2137,12 +2135,13 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent *core.Conta
 		return nil, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithUnixSocket(ctx, path, socket.Self(), args.Owner)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithUnixSocket(ctx, path, socket.Self(), args.Owner)
 }
 
 type containerWithoutUnixSocketArgs struct {
@@ -2150,13 +2149,14 @@ type containerWithoutUnixSocketArgs struct {
 	Expand bool `default:"false"`
 }
 
-func (s *containerSchema) withoutUnixSocket(ctx context.Context, parent *core.Container, args containerWithoutUnixSocketArgs) (*core.Container, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) withoutUnixSocket(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutUnixSocketArgs) (*core.Container, error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithoutUnixSocket(ctx, path)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithoutUnixSocket(ctx, path)
 }
 
 func (s *containerSchema) platform(ctx context.Context, parent *core.Container, args struct{}) (core.Platform, error) {
@@ -2169,8 +2169,6 @@ type containerExportArgs struct {
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 	Expand            bool                 `default:"false"`
-
-	RawDagOpInternalArgs
 }
 
 func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExportArgs) (dagql.String, error) {
@@ -2229,8 +2227,6 @@ type containerAsTarballArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
-
-	FSDagOpInternalArgs
 }
 
 func (s *containerSchema) asTarball(
@@ -2255,7 +2251,7 @@ func (s *containerSchema) asTarball(
 	f, err := parent.Self().AsTarball(ctx, platformVariants,
 		args.ForcedCompression.Value,
 		args.MediaTypes,
-		args.DagOpPath,
+		"container.tar",
 	)
 	if err != nil {
 		return inst, err
@@ -2273,8 +2269,6 @@ type containerExportImageArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
-
-	RawDagOpInternalArgs
 }
 
 func (s *containerSchema) exportImage(
@@ -2415,36 +2409,18 @@ func (s *containerSchema) exportImage(
 	return core.Void{}, errors.New("invalid load config")
 }
 
+/*
+TODO: re-implement import/fromInternal.
+
 type containerImportArgs struct {
 	Source core.FileID
 	Tag    string `default:""`
 }
 
 func (s *containerSchema) import_(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerImportArgs) (*core.Container, error) {
-	start := time.Now()
-	slog.ExtraDebug("importing container", "source", args.Source.Display(), "tag", args.Tag)
-	defer func() {
-		slog.ExtraDebug("done importing container", "source", args.Source.Display(), "tag", args.Tag, "took", start)
-	}()
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
-	}
-
-	source, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		return nil, err
-	}
-
-	r, err := source.Self().Open(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-
-	return parent.Self().Import(ctx, r, args.Tag)
+	...
 }
+*/
 
 type containerWithRegistryAuthArgs struct {
 	Address  string
@@ -2516,7 +2492,7 @@ type containerWithServiceBindingArgs struct {
 	Service core.ServiceID
 }
 
-func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
+func (s *containerSchema) withServiceBinding(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithServiceBindingArgs) (*core.Container, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2527,7 +2503,8 @@ func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.C
 		return nil, err
 	}
 
-	return parent.WithServiceBinding(ctx, svc, args.Alias)
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithServiceBinding(ctx, svc, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {
@@ -2537,8 +2514,9 @@ type containerWithExposedPortArgs struct {
 	ExperimentalSkipHealthcheck bool `default:"false"`
 }
 
-func (s *containerSchema) withExposedPort(ctx context.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
-	return parent.WithExposedPort(core.Port{
+func (s *containerSchema) withExposedPort(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithExposedPortArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithExposedPort(core.Port{
 		Protocol:                    args.Protocol,
 		Port:                        args.Port,
 		Description:                 args.Description,
@@ -2551,8 +2529,9 @@ type containerWithoutExposedPortArgs struct {
 	Protocol core.NetworkProtocol `default:"TCP"`
 }
 
-func (s *containerSchema) withoutExposedPort(ctx context.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
-	return parent.WithoutExposedPort(args.Port, args.Protocol)
+func (s *containerSchema) withoutExposedPort(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutExposedPortArgs) (*core.Container, error) {
+	ctr := core.NewContainerChild(parent)
+	return ctr.WithoutExposedPort(args.Port, args.Protocol)
 }
 
 func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Container, args struct{}) (dagql.Array[core.Port], error) {
@@ -2594,10 +2573,10 @@ type containerWithDefaultTerminalCmdArgs struct {
 
 func (s *containerSchema) withDefaultTerminalCmd(
 	ctx context.Context,
-	ctr *core.Container,
+	parent dagql.ObjectResult[*core.Container],
 	args containerWithDefaultTerminalCmdArgs,
 ) (*core.Container, error) {
-	ctr = ctr.Clone()
+	ctr := core.NewContainerChild(parent)
 	ctr.DefaultTerminalCmd = args.DefaultTerminalCmdOpts
 	return ctr, nil
 }

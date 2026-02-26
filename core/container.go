@@ -18,7 +18,6 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/mount"
-	"github.com/containerd/containerd/v2/core/transfer/archive"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/containersource"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
@@ -26,9 +25,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/containerutil"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
@@ -103,6 +100,19 @@ type Container struct {
 
 	// DefaultArgs have been explicitly set by the user
 	DefaultArgs bool
+
+	Parent dagql.ObjectResult[*Container]
+
+	LazyMu   *sync.Mutex
+	LazyInit LazyInitFunc
+	// LazyInitComplete tracks whether this container's lazy init callback has
+	// already been executed.
+	LazyInitComplete bool
+
+	// OpID is the operation call ID that should be used as the base when
+	// synthesizing updated container child selection IDs (e.g. rootfs, file,
+	// directory) after operations like exec/import.
+	OpID *call.ID
 }
 
 func (*Container) Type() *ast.Type {
@@ -120,13 +130,15 @@ func NewContainer(platform Platform) *Container {
 	return &Container{Platform: platform}
 }
 
-// Clone returns a deep copy of the container suitable for modifying in a
-// WithXXX method.
-func (container *Container) Clone() *Container {
-	if container == nil {
-		return nil
+func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
+	if parent.Self() == nil {
+		return &Container{
+			Parent: parent,
+			LazyMu: new(sync.Mutex),
+		}
 	}
-	cp := *container
+
+	cp := *parent.Self()
 	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
 	cp.Config.Env = slices.Clone(cp.Config.Env)
 	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
@@ -139,24 +151,12 @@ func (container *Container) Clone() *Container {
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
+	cp.Parent = parent
+	cp.LazyMu = new(sync.Mutex)
+	cp.LazyInit = nil
+	cp.LazyInitComplete = false
+	cp.OpID = nil
 	return &cp
-}
-
-func (container *Container) WithoutInputs() *Container {
-	container = container.Clone()
-
-	container.FS = nil
-	container.Meta = nil
-
-	for i, mount := range container.Mounts {
-		mount.DirectorySource = nil
-		mount.FileSource = nil
-		mount.CacheSource = nil
-		mount.TmpfsSource = nil
-		container.Mounts[i] = mount
-	}
-
-	return container
 }
 
 var _ dagql.OnReleaser = (*Container)(nil)
@@ -165,7 +165,11 @@ func (container *Container) OnRelease(ctx context.Context) error {
 	if container == nil {
 		return nil
 	}
-	// TODO: this might be problematic if directories overlap, could release same result multiple times
+	/* TODO: we don't do this anymore because the dagql cache should know our deps and handle their releases as needed
+	  Leaving for the moment as a reference and reminder that we gotta make the dagql cache do that
+
+
+	// this might be problematic if directories overlap, could release same result multiple times
 	if rootfs := container.FS; rootfs != nil {
 		rootfsRes := rootfs.Self().Result
 		if rootfsRes != nil {
@@ -208,6 +212,7 @@ func (container *Container) OnRelease(ctx context.Context) error {
 			}
 		}
 	}
+	*/
 	return nil
 }
 
@@ -235,31 +240,6 @@ type ContainerSocket struct {
 	Source        *Socket
 	ContainerPath string
 	Owner         *Ownership
-}
-
-// FSState returns the container's root filesystem mount state. If there is
-// none (as with an empty container ID), it returns scratch.
-func (container *Container) FSState() (llb.State, error) {
-	if container.FS == nil {
-		return llb.Scratch(), nil
-	}
-
-	return container.FS.Self().StateWithSourcePath()
-}
-
-// MetaState returns the container's metadata mount state. If the container has
-// yet to run, it returns nil.
-func (container *Container) MetaState() (*llb.State, error) {
-	if container.Meta == nil {
-		return nil, nil
-	}
-
-	metaSt, err := defToState(container.Meta.LLB)
-	if err != nil {
-		return nil, err
-	}
-
-	return &metaSt, nil
 }
 
 // ContainerMount is a mount point configured in a container.
@@ -371,32 +351,6 @@ func handleMount(
 	)
 }
 
-// GetLLB returns the associated LLB with a mount
-func (mnt *ContainerMount) GetLLB() *pb.Definition {
-	var llb *pb.Definition
-	handleMount(*mnt,
-		func(dir *dagql.ObjectResult[*Directory]) {
-			if dir != nil && dir.Self() != nil {
-				llb = dir.Self().LLB
-			}
-		},
-		func(file *dagql.ObjectResult[*File]) {
-			if file != nil && file.Self() != nil {
-				llb = file.Self().LLB
-			}
-		},
-		func(cacheMount *CacheMountSource) {
-			if cacheMount != nil && cacheMount.Base != nil && cacheMount.Base.Self() != nil {
-				llb = cacheMount.Base.Self().LLB
-			}
-		},
-		func(tmpMount *TmpfsMountSource) {
-			// no LLB
-		},
-	)
-	return llb
-}
-
 type ContainerMounts []ContainerMount
 
 func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
@@ -482,13 +436,19 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 
 // FromCanonicalRef implements the dagop portion of the "from" command: it fetches an image, and updates the root fs
 // to point to a snapshot of the referenced image
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) FromCanonicalRef(
 	ctx context.Context,
 	refName reference.Canonical,
 	// cfgBytes is optional, will be retrieved if not provided
 	cfgBytes []byte,
 ) (*Container, error) {
-	container = container.Clone()
+	if container.OpID == nil {
+		container.OpID = dagql.CurrentID(ctx)
+	}
+	if container.OpID == nil {
+		return nil, fmt.Errorf("missing operation ID for fromCanonicalRef")
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -545,7 +505,7 @@ func (container *Container) FromCanonicalRef(
 	}
 
 	rootfsDir := &Directory{
-		Result: ref,
+		Snapshot: ref,
 	}
 	if container.FS != nil {
 		rootfsDir.Dir = container.FS.Self().Dir
@@ -559,7 +519,7 @@ func (container *Container) FromCanonicalRef(
 	} else {
 		rootfsDir.Dir = "/"
 	}
-	updatedRootFS, err := UpdatedRootFS(ctx, rootfsDir)
+	updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update rootfs: %w", err)
 	}
@@ -804,11 +764,24 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	if container.FS != nil {
 		return container.FS.Self(), nil
 	}
-	return NewScratchDirectoryDagOp(ctx, container.Platform)
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	var rootfs dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &rootfs, dagql.Selector{
+		Field: "directory",
+	}); err != nil {
+		return nil, err
+	}
+
+	return rootfs.Self(), nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResult[*Directory]) (*Container, error) {
-	container = container.Clone()
 	container.FS = &dir
 
 	// set image ref to empty string
@@ -817,6 +790,7 @@ func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResu
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithDirectory(
 	ctx context.Context,
 	subdir string,
@@ -824,8 +798,6 @@ func (container *Container) WithDirectory(
 	filter CopyFilter,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	mnt, mntSubpath, err := locatePath(container, subdir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", subdir, err)
@@ -913,6 +885,7 @@ func (container *Container) WithDirectory(
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithFile(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -921,8 +894,6 @@ func (container *Container) WithFile(
 	permissions *int,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	mnt, mntSubpath, err := locatePath(container, destPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", destPath, err)
@@ -997,9 +968,8 @@ func (container *Container) WithFile(
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutPaths(ctx context.Context, srv *dagql.Server, destPaths ...string) (*Container, error) {
-	container = container.Clone()
-
 	for _, destPath := range destPaths {
 		var err error
 		container, err = container.withoutPath(ctx, srv, destPath)
@@ -1072,6 +1042,7 @@ func (container *Container) withoutPath(
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithFiles(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -1080,8 +1051,6 @@ func (container *Container) WithFiles(
 	permissions *int,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	for _, file := range src {
 		destPath := filepath.Join(destDir, filepath.Base(file.Self().File))
 		var err error
@@ -1094,6 +1063,7 @@ func (container *Container) WithFiles(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithNewFile(
 	ctx context.Context,
 	dest string,
@@ -1101,8 +1071,6 @@ func (container *Container) WithNewFile(
 	permissions fs.FileMode,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	_, fileName := filepath.Split(filepath.Clean(dest))
 
 	srv, err := CurrentDagqlServer(ctx)
@@ -1129,9 +1097,8 @@ func (container *Container) WithNewFile(
 	return container.WithFile(ctx, srv, dest, newFile, nil, owner)
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkPath string) (*Container, error) {
-	container = container.Clone()
-
 	mnt, mntSubpath, err := locatePath(container, linkPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", linkPath, err)
@@ -1193,6 +1160,7 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedDirectory(
 	ctx context.Context,
 	target string,
@@ -1200,8 +1168,6 @@ func (container *Container) WithMountedDirectory(
 	owner string,
 	readonly bool,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var err error
@@ -1224,6 +1190,7 @@ func (container *Container) WithMountedDirectory(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedFile(
 	ctx context.Context,
 	target string,
@@ -1231,8 +1198,6 @@ func (container *Container) WithMountedFile(
 	owner string,
 	readonly bool,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var err error
@@ -1257,6 +1222,7 @@ func (container *Container) WithMountedFile(
 
 var SeenCacheKeys = new(sync.Map)
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedCache(
 	ctx context.Context,
 	target string,
@@ -1265,8 +1231,6 @@ func (container *Container) WithMountedCache(
 	sharingMode CacheSharingMode,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -1315,9 +1279,8 @@ func (container *Container) WithMountedCache(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	container.Mounts = container.Mounts.With(ContainerMount{
@@ -1333,6 +1296,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string, 
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedSecret(
 	ctx context.Context,
 	target string,
@@ -1340,8 +1304,6 @@ func (container *Container) WithMountedSecret(
 	owner string,
 	mode fs.FileMode,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	ownership, err := container.ownership(ctx, owner)
@@ -1362,9 +1324,8 @@ func (container *Container) WithMountedSecret(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutMount(ctx context.Context, target string) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var found bool
@@ -1396,9 +1357,8 @@ func (container *Container) MountTargets(ctx context.Context) ([]string, error) 
 	return mounts, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket, owner string) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	ownership, err := container.ownership(ctx, owner)
@@ -1431,9 +1391,8 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutUnixSocket(ctx context.Context, target string) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	for i, sock := range container.Sockets {
@@ -1449,13 +1408,12 @@ func (container *Container) WithoutUnixSocket(ctx context.Context, target string
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithSecretVariable(
 	ctx context.Context,
 	name string,
 	secret dagql.ObjectResult[*Secret],
 ) (*Container, error) {
-	container = container.Clone()
-
 	container.Secrets = append(container.Secrets, ContainerSecret{
 		Secret:  secret,
 		EnvName: name,
@@ -1467,9 +1425,8 @@ func (container *Container) WithSecretVariable(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutSecretVariable(ctx context.Context, name string) (*Container, error) {
-	container = container.Clone()
-
 	for i, secret := range container.Secrets {
 		if secret.EnvName == name {
 			container.Secrets = slices.Delete(container.Secrets, i, i+1)
@@ -1483,30 +1440,52 @@ func (container *Container) WithoutSecretVariable(ctx context.Context, name stri
 	return container, nil
 }
 
-func (container *Container) Directory(ctx context.Context, dirPath string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, dirPath string) (dagql.ObjectResult[*Directory], error) {
+	var dir dagql.ObjectResult[*Directory]
+
 	mnt, subpath, err := locatePath(container, dirPath)
 	if err != nil {
-		return nil, err
+		return dir, err
 	}
 
-	var dir *Directory
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dir, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	directorySelector := dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(subpath)},
+		},
+	}
+
 	switch {
 	case mnt == nil: // rootfs
+		rootfs := container.FS
 		if container.FS == nil {
-			dir, err = NewScratchDirectoryDagOp(ctx, container.Platform)
+			var scratchRootfs dagql.ObjectResult[*Directory]
+			err = srv.Select(ctx, srv.Root(), &scratchRootfs, dagql.Selector{
+				Field: "directory",
+			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to create scratch directory: %w", err)
+				return dir, err
 			}
-			dir, err = dir.Directory(ctx, subpath)
-		} else {
-			dir, err = container.FS.Self().Directory(ctx, subpath)
+			rootfs = &scratchRootfs
 		}
+		if subpath == "" || subpath == "." {
+			return *rootfs, nil
+		}
+		err = srv.Select(ctx, *rootfs, &dir, directorySelector)
 	case mnt.DirectorySource != nil: // mounted directory
-		dir, err = mnt.DirectorySource.Self().Directory(ctx, subpath)
+		if subpath == "" || subpath == "." {
+			return *mnt.DirectorySource, nil
+		}
+		err = srv.Select(ctx, *mnt.DirectorySource, &dir, directorySelector)
 	case mnt.FileSource != nil: // mounted file
-		return nil, fmt.Errorf("path %s is a file, not a directory", dirPath)
+		return dir, fmt.Errorf("path %s is a file, not a directory", dirPath)
 	default:
-		return nil, fmt.Errorf("invalid path %s in container mounts", dirPath)
+		return dir, fmt.Errorf("invalid path %s in container mounts", dirPath)
 	}
 
 	switch {
@@ -1514,32 +1493,53 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 		return dir, nil
 	case errors.As(err, &notADirectoryError{}):
 		// fix the error message to use dirPath rather than subpath
-		return nil, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", dirPath)}
+		return dir, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", dirPath)}
 	default:
-		return nil, err
+		return dir, err
 	}
 }
 
-func (container *Container) File(ctx context.Context, filePath string) (*File, error) {
+func (container *Container) File(ctx context.Context, filePath string) (dagql.ObjectResult[*File], error) {
+	var f dagql.ObjectResult[*File]
+
 	mnt, subpath, err := locatePath(container, filePath)
 	if err != nil {
-		return nil, err
+		return f, err
 	}
 
-	var f *File
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return f, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	fileSelector := dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(subpath)},
+		},
+	}
+
 	switch {
 	case mnt == nil: // rootfs
-		if container.FS == nil {
-			return nil, fmt.Errorf("container rootfs is not set")
+		rootfs := container.FS
+		if rootfs == nil {
+			var scratchRootfs dagql.ObjectResult[*Directory]
+			err = srv.Select(ctx, srv.Root(), &scratchRootfs, dagql.Selector{
+				Field: "directory",
+			})
+			if err != nil {
+				return f, err
+			}
+			rootfs = &scratchRootfs
 		}
-		f, err = container.FS.Self().File(ctx, subpath)
+		err = srv.Select(ctx, *rootfs, &f, fileSelector)
 	case mnt.DirectorySource != nil: // mounted directory
-		f, err = mnt.DirectorySource.Self().File(ctx, subpath)
+		err = srv.Select(ctx, *mnt.DirectorySource, &f, fileSelector)
 		err = RestoreErrPath(err, filePath) // preserve the full filePath, rather than subpath
 	case mnt.FileSource != nil: // mounted file
-		return mnt.FileSource.Self(), nil
+		return *mnt.FileSource, nil
 	default:
-		return nil, fmt.Errorf("invalid path %s in container mounts", filePath)
+		return f, fmt.Errorf("invalid path %s in container mounts", filePath)
 	}
 
 	switch {
@@ -1547,9 +1547,9 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 		return f, nil
 	case errors.As(err, &notAFileError{}):
 		// fix the error message to use filePath rather than subpath
-		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", filePath)}
+		return f, notAFileError{fmt.Errorf("path %s is a directory, not a file", filePath)}
 	default:
-		return nil, err
+		return f, err
 	}
 }
 
@@ -1682,8 +1682,8 @@ func (container *Container) ImageConfig(ctx context.Context) (dockerspec.DockerO
 	return container.Config, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func(dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig) (*Container, error) {
-	container = container.Clone()
 	container.Config = updateFn(container.Config)
 	return container, nil
 }
@@ -1692,43 +1692,53 @@ type ContainerGPUOpts struct {
 	Devices []string
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpts) (*Container, error) {
-	container = container.Clone()
 	container.EnabledGPUs = gpuOpts.Devices
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+func (container *Container) Evaluate(ctx context.Context) error {
 	if container == nil {
-		return nil, nil
-	}
-	if container.FS == nil {
-		return nil, nil
+		return nil
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
+	if container.LazyInitComplete {
+		return nil
 	}
 
-	st, err := container.FSState()
-	if err != nil {
-		return nil, err
+	// If this container re-uses the parent state, just eval that parent.
+	if container.LazyInit == nil {
+		if container.Parent.Self() == nil {
+			return nil
+		}
+		return container.Parent.Self().Evaluate(ctx)
 	}
 
-	def, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
-	if err != nil {
-		return nil, err
+	if container.LazyMu == nil {
+		return fmt.Errorf("invalid Container: missing LazyMu")
 	}
 
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	container.LazyMu.Lock()
+	defer container.LazyMu.Unlock()
+
+	if container.LazyInitComplete {
+		return nil
 	}
-	return bk.Solve(ctx, bkgw.SolveRequest{
-		Evaluate:   true,
-		Definition: def.ToPB(),
-	})
+
+	if container.LazyInit == nil {
+		if container.Parent.Self() == nil {
+			return nil
+		}
+		return container.Parent.Self().Evaluate(ctx)
+	}
+
+	if err := container.LazyInit(ctx); err != nil {
+		return err
+	}
+
+	container.LazyInitComplete = true
+	return nil
 }
 
 func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
@@ -1828,9 +1838,8 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 	return stat, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithAnnotation(ctx context.Context, key, value string) (*Container, error) {
-	container = container.Clone()
-
 	container.Annotations = append(container.Annotations, containerutil.ContainerAnnotation{
 		Key:   key,
 		Value: value,
@@ -1842,9 +1851,8 @@ func (container *Container) WithAnnotation(ctx context.Context, key, value strin
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutAnnotation(ctx context.Context, name string) (*Container, error) {
-	container = container.Clone()
-
 	for i, annotation := range container.Annotations {
 		if annotation.Key == name {
 			container.Annotations = slices.Delete(container.Annotations, i, i+1)
@@ -1965,13 +1973,16 @@ func (container *Container) AsTarball(
 		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
 
-	f = NewFile(nil, filePath, query.Platform(), nil)
 	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return nil, err
 	}
 	bkref = nil
-	f.Result = snap
+	f = &File{
+		File:     filePath,
+		Platform: query.Platform(),
+		Snapshot: snap,
+	}
 	return f, nil
 }
 
@@ -2029,7 +2040,7 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buil
 		}
 
 		eg.Go(func() error {
-			fsRef, err := getRefOrEvaluate(ctx, rootFS)
+			fsRef, err := rootFS.getSnapshot(ctx)
 			if err != nil {
 				return err
 			}
@@ -2094,49 +2105,15 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 	return &desc, nil
 }
 
+/*
+TODO: re-implement import/fromInternal.
+
 func (container *Container) Import(
 	ctx context.Context,
 	tarball io.Reader,
 	tag string,
 ) (*Container, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	store := query.OCIStore()
-	lm := query.LeaseManager()
-
-	container = container.Clone()
-
-	var release func(context.Context) error
-	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
-		// override outer ctx with release ctx and set release
-		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
-		if err != nil {
-			return nil, err
-		}
-
-		stream := archive.NewImageImportStream(tarball, "")
-
-		desc, err := stream.Import(ctx, store)
-		if err != nil {
-			return nil, fmt.Errorf("image archive import: %w", err)
-		}
-
-		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
-	}
-	defer func() {
-		if release != nil {
-			release(ctx)
-		}
-	}()
-
-	manifestDesc, err := loadManifest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("recover: %w", err)
-	}
-
-	return container.FromInternal(ctx, *manifestDesc)
+	...
 }
 
 // FromInternal creates a Container from an OCI image descriptor, loading the
@@ -2145,73 +2122,12 @@ func (container *Container) FromInternal(
 	ctx context.Context,
 	desc specs.Descriptor,
 ) (*Container, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	// NB: the repository portion of this ref doesn't actually matter, but it's
-	// pleasant to see something recognizable.
-	dummyRepo := "dagger/import"
-
-	st := llb.OCILayout(
-		fmt.Sprintf("%s@%s", dummyRepo, desc.Digest),
-		llb.OCIStore("", buildkit.OCIStoreName),
-		llb.Platform(container.Platform.Spec()),
-		buildkit.WithTracePropagation(ctx),
-	)
-
-	execDef, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
-	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-
-	container = container.Clone()
-	rootfsDir := NewDirectory(execDef.ToPB(), "/", container.Platform, container.Services)
-	container.FS, err = UpdatedRootFS(ctx, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("updated rootfs: %w", err)
-	}
-
-	// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
-	_, err = bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: container.FS.Self().LLB,
-		Evaluate:   true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("solve: %w", err)
-	}
-
-	manifestBlob, err := content.ReadBlob(ctx, query.OCIStore(), desc)
-	if err != nil {
-		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
-	}
-	var man specs.Manifest
-	err = json.Unmarshal(manifestBlob, &man)
-	if err != nil {
-		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
-	}
-	configBlob, err := content.ReadBlob(ctx, query.OCIStore(), man.Config)
-	if err != nil {
-		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
-	}
-	var imgSpec dockerspec.DockerOCIImage
-	err = json.Unmarshal(configBlob, &imgSpec)
-	if err != nil {
-		return nil, fmt.Errorf("load image config: %w", err)
-	}
-	container.Config = imgSpec.Config
-
-	return container, nil
+	...
 }
+*/
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExposedPort(port Port) (*Container, error) {
-	container = container.Clone()
-
 	// replace existing port to avoid duplicates
 	gotOne := false
 
@@ -2237,9 +2153,8 @@ func (container *Container) WithExposedPort(port Port) (*Container, error) {
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutExposedPort(port int, protocol NetworkProtocol) (*Container, error) {
-	container = container.Clone()
-
 	filtered := []Port{}
 	filteredOCI := map[string]struct{}{}
 	for _, p := range container.Ports {
@@ -2256,9 +2171,8 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.ObjectResult[*Service], alias string) (*Container, error) {
-	container = container.Clone()
-
 	host, err := svc.Self().Hostname(ctx, svc.ID())
 	if err != nil {
 		return nil, err
@@ -2694,12 +2608,13 @@ func (*TerminalLegacy) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 }
 
 // UpdatedRootFS returns an updated rootfs for a given directory after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
+// The returned ObjectResult uses owner.OpID as the operation ID base.
 func UpdatedRootFS(
 	ctx context.Context,
+	owner *Container,
 	dir *Directory,
 ) (*dagql.ObjectResult[*Directory], error) {
-	updatedRootfs, err := updatedContainerSelectionResult(ctx, dir, "rootfs", nil)
+	updatedRootfs, err := updatedContainerSelectionResult(ctx, owner, dir, "rootfs", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2707,14 +2622,15 @@ func UpdatedRootFS(
 }
 
 // updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
+// The returned ObjectResult uses owner.OpID as the operation ID base.
 func updatedDirMount(
 	ctx context.Context,
+	owner *Container,
 	dir *Directory,
 	mntTarget string,
 ) (*dagql.ObjectResult[*Directory], error) {
 	dirIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	updatedDirMnt, err := updatedContainerSelectionResult(ctx, dir, "directory", []*call.Argument{dirIDPathArg})
+	updatedDirMnt, err := updatedContainerSelectionResult(ctx, owner, dir, "directory", []*call.Argument{dirIDPathArg})
 	if err != nil {
 		return nil, err
 	}
@@ -2722,14 +2638,15 @@ func updatedDirMount(
 }
 
 // updatedFileMount returns an updated mount for a given file after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
+// The returned ObjectResult uses owner.OpID as the operation ID base.
 func updatedFileMount(
 	ctx context.Context,
+	owner *Container,
 	file *File,
 	mntTarget string,
 ) (*dagql.ObjectResult[*File], error) {
 	fileIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	updatedFileMnt, err := updatedContainerSelectionResult(ctx, file, "file", []*call.Argument{fileIDPathArg})
+	updatedFileMnt, err := updatedContainerSelectionResult(ctx, owner, file, "file", []*call.Argument{fileIDPathArg})
 	if err != nil {
 		return nil, err
 	}
@@ -2738,10 +2655,18 @@ func updatedFileMount(
 
 func updatedContainerSelectionResult[T dagql.Typed](
 	ctx context.Context,
+	owner *Container,
 	val T,
 	fieldName string,
 	args []*call.Argument,
 ) (dagql.ObjectResult[T], error) {
+	if owner == nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("missing container owner for %s selection", fieldName)
+	}
+	if owner.OpID == nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("missing operation ID on container for %s selection", fieldName)
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return dagql.ObjectResult[T]{}, err
@@ -2750,8 +2675,7 @@ func updatedContainerSelectionResult[T dagql.Typed](
 	if err != nil {
 		return dagql.ObjectResult[T]{}, err
 	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
+	view := owner.OpID.View()
 	objType, ok := curSrv.ObjectType("Container")
 	if !ok {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("object type Container not found in server")
@@ -2760,7 +2684,7 @@ func updatedContainerSelectionResult[T dagql.Typed](
 	if !ok {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("field spec for %s not found in object type Container", fieldName)
 	}
-	newID := curID.Append(
+	newID := owner.OpID.Append(
 		fieldSpec.Type.Type(),
 		fieldName,
 		call.WithView(view),

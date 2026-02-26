@@ -846,18 +846,30 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}
 
-	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
+	var ctrOutputDir dagql.ObjectResult[*Directory]
+	err = opts.Server.Select(ctx, ctr, &ctrOutputDir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(modMetaDirPath)},
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("get function output directory: %w", err)
 	}
 
-	modMetaFile, err := ctrOutputDir.File(ctx, modMetaOutputPath)
+	var modMetaFile dagql.ObjectResult[*File]
+	err = opts.Server.Select(ctx, ctrOutputDir, &modMetaFile, dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(modMetaOutputPath)},
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mod meta file: %w", err)
 	}
 
 	// Read the output of the function
-	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
+	outputBytes, err := modMetaFile.Self().Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read function output file: %w", err)
 	}
