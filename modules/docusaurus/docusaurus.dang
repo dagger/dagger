@@ -265,45 +265,23 @@ type Site {
   Make sure the site is configured optimally for use with Dagger
   """
   pub optimizeConfig(ws: Workspace!): Changeset! {
-    let pkgPath = if (path == ".") {
-      "package.json"
-    } else {
-      path + "/package.json"
-    }
-    let root = ws.directory(".", include: [pkgPath])
-
-    let siteDir = ws.directory(path, include: [
-      "package.json",
-      "docusaurus.config.ts",
-      "docusaurus.config.js",
-    ])
-
-    if (siteDir.stat("package.json") == null) {
-      siteDir = siteDir.withNewFile("package.json", "{}")
-    }
-
-    let updatedSite = llm
+    let updatedPackageJson = llm
       .withEnv(
         env
-          .withDirectoryInput(
-            "site",
-            siteDir,
-            "Site directory with package.json and docusaurus config.",
-          )
-          .withDirectoryOutput(
-            "updatedSite",
-            "Updated site directory with package.json modified for workspace include patterns. Include patterns must be a list of strings at the key docusaurus.include",
-          ),
+          .withWorkspaceInput("workspace", ws, "The full workspace containing the Docusaurus site and its deps. I/O is expensive. Use include/exclude to only access what you need.")
+          .withStringInput("sitePath", path, "Path to the Docusaurus site")
+          .withFileOutput("packageJson", "Updated package.json for the Docusaurus site at sitePath."),
       )
-      .withPrompt("Analyze the docusaurus config. Infer paths that must be included from outside the site directory." + "Modify package.json to reference those include paths." + "Only modify package.json, and only by appending strings to docusaurus.include. Include paths must be relative to the site directory" + "Balance efficiency and correctness: avoid broad globs, but use common sense to avoid under-including likely transitive dependencies. For example, if the docusaurus config includes ../libs/foo/src/bla.js, consider including ../libs/foo/src, in case other files are transitively included.")
+      .withPromptFile(currentModule.source.file("optimize-config-prompt.txt"))
       .loop
       .env
-      .output("updatedSite")
-      .asDirectory
-
-    root
-      .withFile(pkgPath, updatedSite.file("package.json"))
-      .changes(root)
+      .output("packageJson")
+      .asFile
+    let packageJsonPath = path + "/package.json"
+    let before = ws.directory("/", include: [packageJsonPath])
+    before
+      .withFile(packageJsonPath, updatedPackageJson)
+      .changes(before)
   }
 
   """
