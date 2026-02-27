@@ -20,11 +20,10 @@ import (
 	"github.com/pelletier/go-toml"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +59,7 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 		ctr = with(ctr)
 	}
 
-	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
+	deviceName, cidr := GetUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
@@ -137,17 +136,17 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
 }
 
-// withNonNestedDevEngine configures a Container to use the same dev engine
+// nonNestedDevEngine configures a Container to use the same dev engine
 // as the tests are running against but while avoiding use of a nested exec.
 // This is needed occasionally for tests like TestClientGenerator where we
 // can't use nested execs.
-// It works because our integ test setup code in the dagger-dev module mount
-// in the engine service's unix sock to the test container.
+// It sets _EXPERIMENTAL_DAGGER_RUNNER_HOST to the engine's TCP endpoint,
+// which the container can reach via the service network.
 func nonNestedDevEngine(c *dagger.Client) func(*dagger.Container) *dagger.Container {
+	runnerHost := os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			WithUnixSocket("/run/dagger-engine.sock", c.Host().UnixSocket("/run/dagger-engine.sock")).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///run/dagger-engine.sock")
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", runnerHost)
 	}
 }
 

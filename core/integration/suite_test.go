@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -15,23 +17,135 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/testutil"
+
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
 )
 
 func TestMain(m *testing.M) {
-	// Preserve original SSH_AUTH_SOCK value and
-	// Ensure SSH_AUTH_SOCK does not pollute tests state
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
+	ctx := context.Background()
+
+	// Create shared registry services (must happen before unsetting session vars,
+	// since dag.* needs the outer session to function)
+	registrySvc := dag.Container().
+		From("registry:2").
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
+	privateRegistrySvc := dag.Container().
+		From("registry:2").
+		WithNewFile("/auth/htpasswd", htpasswd).
+		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	// Start registries to get their endpoints for the test process
+	// (the test container doesn't have service bindings, so tests that need
+	// direct HTTP access to registries use these endpoints)
+	startedRegistry, err := registrySvc.Start(ctx)
+	if err != nil {
+		panic(err)
+	}
+	startedPrivateRegistry, err := privateRegistrySvc.Start(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	registryEndpoint, err := startedRegistry.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 5000, Scheme: "tcp"})
+	if err != nil {
+		panic(err)
+	}
+	privateRegistryEndpoint, err := startedPrivateRegistry.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 5000, Scheme: "tcp"})
+	if err != nil {
+		panic(err)
+	}
+
+	// Strip tcp:// scheme to get host:port for use as registry addresses.
+	// These are set as package-level vars so tests can build registry refs
+	// that are reachable from both the test process and the inner engine.
+	registryHost = mustParseEndpointHost(registryEndpoint)
+	privateRegistryHost = mustParseEndpointHost(privateRegistryEndpoint)
+
+	// Compute version/tag once for consistent values across engine, engine tar,
+	// and test binary. Must happen before TestEngine so version is baked in.
+	version, err := dag.Version().Version(ctx)
+	if err != nil {
+		panic(err)
+	}
+	tag, err := dag.Version().ImageTag(ctx)
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("_EXPERIMENTAL_DAGGER_VERSION", version)
+	os.Setenv("_EXPERIMENTAL_DAGGER_TAG", tag)
+	// Set engine.Version/Tag directly since init() already ran before TestMain
+	// and couldn't read the env vars we just set.
+	engine.Version = version
+	engine.Tag = tag
+
+	// Start inner engine with shared registries and buildkit HTTP config
+	// for the endpoint addresses (so the engine can push/pull via HTTP).
+	engineRunVol := dag.CacheVolume("integ-test-engine-run")
+	engineSvc, err := dag.EngineDev().
+		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
+		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
+		TestEngine(dagger.EngineDevTestEngineOpts{
+			RegistrySvc:        startedRegistry,
+			PrivateRegistrySvc: startedPrivateRegistry,
+			EngineRunVol:       engineRunVol,
+			Version:            version,
+			Tag:                tag,
+		}).Start(ctx)
+	if err != nil {
+		var execErr *dagger.ExecError
+		if errors.As(err, &execErr) {
+			panic(fmt.Sprintf("engine failed to start: %v\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr))
+		}
+		panic(fmt.Sprintf("engine failed to start: %v", err))
+	}
+
+	// Export engine tar for tests that spin up additional dev engines
+	// (must happen before FinalizeTestMain which unsets session vars)
+	engineTar := dag.EngineDev().
+		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
+		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
+		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+		Container(dagger.EngineDevContainerOpts{Version: version, Tag: tag}).
+		AsTarball()
+	_, err = engineTar.Export(ctx, "/tmp/engine.tar")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("_DAGGER_TESTS_ENGINE_TAR", "/tmp/engine.tar")
+
+	// Set repo path
+	os.Setenv("_DAGGER_TESTS_REPO_PATH", "../..")
+
+	// Export CLI, set runner host, and unset session vars
+	testutil.FinalizeTestMain(ctx, engineSvc)
+
+	// Monitor the engine in the background; if it crashes, fail immediately
+	// instead of letting tests hang on DNS/connection errors.
+	engineEndpoint := os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	stopMonitor := monitorEngine(engineEndpoint)
+
 	res := oteltest.Main(m)
+
+	close(stopMonitor)
 
 	if origAuthSock != "" {
 		os.Setenv("SSH_AUTH_SOCK", origAuthSock)
@@ -74,7 +188,7 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 }
 
 func newCache(t *testctx.T) core.CacheVolumeID {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		CacheVolume struct {
 			ID core.CacheVolumeID
 		}
@@ -84,7 +198,7 @@ func newCache(t *testctx.T) core.CacheVolumeID {
 				id
 			}
 		}
-	`, &testutil.QueryOptions{Variables: map[string]any{
+	`, &QueryOptions{Variables: map[string]any{
 		"key": identity.NewID(),
 	}})
 	require.NoError(t, err)
@@ -93,7 +207,7 @@ func newCache(t *testctx.T) core.CacheVolumeID {
 }
 
 func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
@@ -106,7 +220,7 @@ func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
 					id
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"path":     path,
 			"contents": contents,
 		}})
@@ -116,7 +230,7 @@ func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
 }
 
 func newFile(t *testctx.T, path, contents string) core.FileID {
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
@@ -133,7 +247,7 @@ func newFile(t *testctx.T, path, contents string) core.FileID {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &QueryOptions{Variables: map[string]any{
 			"path":     path,
 			"contents": contents,
 		}})
@@ -145,9 +259,10 @@ func newFile(t *testctx.T, path, contents string) core.FileID {
 	return fileID
 }
 
-const (
-	registryHost        = "registry:5000"
-	privateRegistryHost = "privateregistry:5000"
+var (
+	// Set by TestMain to the registry endpoints reachable from the test process.
+	registryHost        string
+	privateRegistryHost string
 )
 
 func registryRef(name string) string {
@@ -291,6 +406,48 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
+}
+
+// monitorEngine starts a background goroutine that periodically TCP-dials the
+// engine endpoint. If the dial fails, the engine has crashed — we print a clear
+// error and exit immediately rather than letting tests hang. Returns a channel
+// that should be closed to stop monitoring.
+func monitorEngine(endpoint string) chan struct{} {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse engine endpoint %q: %v", endpoint, err))
+	}
+	host := u.Host
+
+	stop := make(chan struct{})
+	go func() {
+		// Give the engine a moment to stabilize before starting checks.
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				conn, err := net.DialTimeout("tcp", host, 2*time.Second)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "\n\nFATAL: dev engine at %s is unreachable: %v\n", host, err)
+					fmt.Fprintf(os.Stderr, "The engine has likely crashed. Failing the test suite immediately.\n\n")
+					os.Exit(1)
+				}
+				conn.Close()
+			}
+		}
+	}()
+	return stop
+}
+
+func mustParseEndpointHost(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse endpoint %q: %v", endpoint, err))
+	}
+	return u.Host
 }
 
 func limitTicker(interval time.Duration, limit int) <-chan time.Time {

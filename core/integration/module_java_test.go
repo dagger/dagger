@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 
@@ -378,7 +378,7 @@ func (JavaSuite) TestGitRef(ctx context.Context, t *testctx.T) {
 
 func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
-	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/java", moduleName))
+	modSrc, err := filepath.Abs(filepath.Join("testdata/modules/java", moduleName))
 	require.NoError(t, err)
 
 	sdkSrc, err := filepath.Abs("../../sdk/java")

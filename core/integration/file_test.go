@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/testctx"
@@ -129,9 +129,7 @@ func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
 }
 
 func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
-	wd := t.TempDir()
-
-	c := connect(ctx, t, dagger.WithWorkdir(wd))
+	c := connect(ctx, t)
 
 	t.Run("new file", func(ctx context.Context, t *testctx.T) {
 		file := c.Directory().WithNewFile("/foo/bar", "content1").File("foo/bar")
@@ -158,21 +156,25 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("host file", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+
 		err := os.WriteFile(filepath.Join(wd, "file.txt"), []byte{}, 0o600)
 		require.NoError(t, err)
 
-		name, err := c.Host().File("file.txt").Name(ctx)
+		name, err := c.Host().File(filepath.Join(wd, "file.txt")).Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file.txt", name)
 	})
 
 	t.Run("host file in dir", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+
 		err := os.MkdirAll(filepath.Join(wd, "path/to/"), 0o700)
 		require.NoError(t, err)
 		err = os.WriteFile(filepath.Join(wd, "path/to/file.txt"), []byte{}, 0o600)
 		require.NoError(t, err)
 
-		name, err := c.Host().Directory("path").File("to/file.txt").Name(ctx)
+		name, err := c.Host().Directory(filepath.Join(wd, "path")).File("to/file.txt").Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file.txt", name)
 	})
@@ -253,12 +255,13 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to relative path", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t, dagger.WithWorkdir(wd))
-		actual, err := file(c).Export(ctx, "some-file")
+		c := connect(ctx, t)
+		dest := filepath.Join(wd, "some-file")
+		actual, err := file(c).Export(ctx, dest)
 		require.NoError(t, err)
-		require.Equal(t, filepath.Join(wd, "some-file"), actual)
+		require.Equal(t, dest, actual)
 
-		contents, err := os.ReadFile(filepath.Join(wd, "some-file"))
+		contents, err := os.ReadFile(dest)
 		require.NoError(t, err)
 		require.True(t, strings.HasPrefix(string(contents), distconsts.AlpineVersion), string(contents))
 
@@ -269,10 +272,12 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to path in outer dir", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t, dagger.WithWorkdir(wd))
-		actual, err := file(c).Export(ctx, "../some-file")
+		c := connect(ctx, t)
+		parentDir := filepath.Dir(wd)
+		dest := filepath.Join(parentDir, "some-file")
+		actual, err := file(c).Export(ctx, dest)
 		require.NoError(t, err)
-		require.Contains(t, actual, "/some-file")
+		require.Equal(t, dest, actual)
 	})
 
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
@@ -285,8 +290,8 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t, dagger.WithWorkdir(wd))
-		actual, err := file(c).Export(ctx, ".")
+		c := connect(ctx, t)
+		actual, err := file(c).Export(ctx, wd)
 		require.Error(t, err)
 		require.Empty(t, actual)
 	})
@@ -319,7 +324,7 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("file larger than max chunk size", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		c := connect(ctx, t)
 		maxChunkSize := buildkit.MaxFileContentsChunkSize
 		fileSizeBytes := maxChunkSize*4 + 1 // +1 so it's not an exact number of chunks, to ensure we cover that case
 
@@ -332,22 +337,24 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, fileSizeBytes, len(dt))
 
-		_, err = file.Export(ctx, "some-pretty-big-file")
+		dest := filepath.Join(wd, "some-pretty-big-file")
+		_, err = file.Export(ctx, dest)
 		require.NoError(t, err)
 
-		stat, err := os.Stat(filepath.Join(wd, "some-pretty-big-file"))
+		stat, err := os.Stat(dest)
 		require.NoError(t, err)
 		require.EqualValues(t, fileSizeBytes, stat.Size())
 	})
 
 	t.Run("file permissions are retained", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		c := connect(ctx, t)
+		dest := filepath.Join(wd, "some-executable-file")
 		_, err := c.Directory().WithNewFile("/file", "#!/bin/sh\necho hello", dagger.DirectoryWithNewFileOpts{
 			Permissions: 0o744,
-		}).File("/file").Export(ctx, "some-executable-file")
+		}).File("/file").Export(ctx, dest)
 		require.NoError(t, err)
-		stat, err := os.Stat(filepath.Join(wd, "some-executable-file"))
+		stat, err := os.Stat(dest)
 		require.NoError(t, err)
 		require.EqualValues(t, 0o744, stat.Mode().Perm())
 	})
@@ -1154,7 +1161,7 @@ func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
 // regression test for https://github.com/dagger/dagger/issues/11552
 func (FileSuite) TestFileCachingContents(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
-	c := connect(ctx, t, dagger.WithWorkdir(wd))
+	c := connect(ctx, t)
 
 	var eg errgroup.Group
 	startCh := make(chan struct{})
@@ -1166,7 +1173,7 @@ func (FileSuite) TestFileCachingContents(ctx context.Context, t *testctx.T) {
 
 		eg.Go(func() error {
 			<-startCh
-			file := c.Host().Directory(".").File(filename)
+			file := c.Host().Directory(wd).File(filename)
 
 			actualContents, err := c.Directory().
 				WithFile("the-file", file).

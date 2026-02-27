@@ -424,8 +424,8 @@ type Test struct {
 		_, err = hostDaggerExec(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
-		thisRepoPath, err := filepath.Abs("../..")
-		require.NoError(t, err)
+		thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+		require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 		nestedSrcDir := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(nestedSrcDir, "sdk/go"), 0755))

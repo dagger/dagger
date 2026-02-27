@@ -28,13 +28,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -1686,7 +1686,7 @@ export class Test {
 func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	moduleSrcPath, err := filepath.Abs("./testdata/modules/go/namespacing")
+	moduleSrcPath, err := filepath.Abs("testdata/modules/go/namespacing")
 	require.NoError(t, err)
 
 	ctr := c.Container().From(alpineImage).
@@ -6746,7 +6746,7 @@ query ModuleIntrospection($path: String!) {
 
 			c := connect(ctx, t)
 
-			res, err := testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			res, err := QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			require.NoError(t, err)
@@ -7006,7 +7006,7 @@ class Test:
 
 			c := connect(ctx, t)
 
-			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			_, err = QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			require.Error(t, err)
@@ -7135,7 +7135,7 @@ class Test:
 
 			c := connect(ctx, t)
 
-			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			_, err = QueryWithClient[Resp](c, t, introspect, &QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			if err != nil {
@@ -7348,7 +7348,7 @@ func (m *Test) ReadFile(
 		err = c.ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		res1, err := testutil.QueryWithClient[struct {
+		res1, err := QueryWithClient[struct {
 			Test struct {
 				ReadFile string
 			}
@@ -7360,7 +7360,7 @@ func (m *Test) ReadFile(
 		err = os.WriteFile(testFilePath, []byte(newContent), 0o644)
 		require.NoError(t, err)
 
-		res2, err := testutil.QueryWithClient[struct {
+		res2, err := QueryWithClient[struct {
 			Test struct {
 				ReadFile string
 			}
@@ -7409,7 +7409,7 @@ func (m *Test) RunNoisy(ctx context.Context) error {
 	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
 
-	_, err = testutil.QueryWithClient[struct {
+	_, err = QueryWithClient[struct {
 		Test struct {
 			RunNoisy any
 		}

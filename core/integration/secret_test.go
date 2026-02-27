@@ -7,12 +7,11 @@ import (
 	"io"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -26,7 +25,7 @@ func TestSecret(t *testing.T) {
 }
 
 func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
-	_, err := testutil.Query[any](t,
+	_, err := Query[any](t,
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -37,14 +36,14 @@ func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Secrets: map[string]string{
+		}`, &QueryOptions{Secrets: map[string]string{
 			"secret": "some-content",
 		}})
 	require.NoError(t, err)
 }
 
 func (SecretSuite) TestMountFromFile(ctx context.Context, t *testctx.T) {
-	_, err := testutil.Query[any](t,
+	_, err := Query[any](t,
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -55,7 +54,7 @@ func (SecretSuite) TestMountFromFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{Secrets: map[string]string{
+		}`, &QueryOptions{Secrets: map[string]string{
 			"secret": "some-content",
 		}})
 	require.NoError(t, err)
@@ -65,7 +64,7 @@ func (SecretSuite) TestMountFromFileWithOverridingMount(ctx context.Context, t *
 	plaintext := "some-secret"
 	fileID := newFile(t, "some-file", "some-content")
 
-	res, err := testutil.Query[struct {
+	res, err := Query[struct {
 		Container struct {
 			From struct {
 				WithMountedSecret struct {
@@ -93,7 +92,7 @@ func (SecretSuite) TestMountFromFileWithOverridingMount(ctx context.Context, t *
 					}
 				}
 			}
-		}`, &testutil.QueryOptions{
+		}`, &QueryOptions{
 			Variables: map[string]any{
 				"file": fileID,
 			},

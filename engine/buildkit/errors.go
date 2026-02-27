@@ -2,6 +2,7 @@ package buildkit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -91,6 +92,34 @@ func (e RichError) AsExecErr(ctx context.Context, client *Client) (*ExecError, b
 	stdout, stderr, exitCode, err := getExecMeta(ctx, client, metaMountResult)
 	if err != nil {
 		return nil, false, err
+	}
+
+	// Check for nested GraphQL error from privileged nesting
+	workerRef, ok := metaMountResult.Sys().(*bkworker.WorkerRef)
+	if ok && workerRef.ImmutableRef != nil {
+		mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(client.ID()))
+		if err == nil {
+			nestedError, _ := getExecMetaFile(ctx, client, mntable, MetaMountNestedErrorPath)
+			if len(nestedError) > 0 {
+				var nestedErrData struct {
+					Message    string         `json:"message"`
+					Extensions map[string]any `json:"extensions,omitempty"`
+				}
+				if json.Unmarshal(nestedError, &nestedErrData) == nil {
+					if len(stderr) > 0 {
+						stderr = append(stderr, '\n')
+					}
+					stderr = append(stderr, []byte("Nested error: "+nestedErrData.Message)...)
+
+					if nestedErrData.Extensions["_type"] == "EXEC_ERROR" {
+						if nestedStderr, ok := nestedErrData.Extensions["stderr"].(string); ok && nestedStderr != "" {
+							stderr = append(stderr, '\n')
+							stderr = append(stderr, []byte(nestedStderr)...)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Embed the error origin, either from when the op was built, or from the

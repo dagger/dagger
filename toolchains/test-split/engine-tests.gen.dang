@@ -1,11 +1,26 @@
+"""
+Note: For now, this file is not actually generated. Feel free to make edits.
+"""
 type TestSplit {
+  pub source: Directory! @defaultPath(path: "/")
+
   let testSpecific(
     run: [String!]!,
-    ebpfProgs: [String!],
     pkg: String! = "./core/integration",
-    race: Boolean,
+    parallel: String! = "2",
   ): Void {
-    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
+      .withExec(
+        ["go", "test", pkg, "-run", run.join("|"), "-v", "-parallel", parallel, "-count", "1", "-timeout", "30m", "-failfast"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
   }
 
   let testSkip(
@@ -14,7 +29,19 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
   ): Void {
-    engineDev.test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
+      .withEnvVariable("CGO_ENABLED", "1")
+      .withExec(
+        ["go", "test", pkg, "-v", "-skip", skip.join("|"), "-parallel", "2", "-count", "1", "-race", "-timeout", "30m"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
   }
 
   """
@@ -64,17 +91,48 @@ type TestSplit {
   }
 
   """
-  Test Container
+  Test Container (excluding DinD/nested engine tests)
   """
   pub testContainer: Void @check {
-    testSpecific(["TestContainer", "TestDockerfile"])
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
+      .withExec(
+        ["go", "test", "./core/integration",
+         "-run", "TestContainer|TestDockerfile",
+         "-skip", "TestInsecureRootCapabilitesWithService|TestImageLoadCompatibility|TestSaveHostDocker|TestLoadHostDocker|TestSaveHostContainerd|TestLoadHostContainerd|TestLoadSaveNone|TestSaveInNested|TestWithRegistryAuthFileAndDirectoryAccess",
+         "-v", "-parallel", "2", "-count", "1", "-timeout", "30m"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
+  }
+
+  """
+  Test Container DinD/nested engine tests (isolated to prevent cascading failures)
+  """
+  pub testContainerProvision: Void @check {
+    testSpecific([
+      "TestContainer/TestInsecureRootCapabilitesWithService",
+      "TestContainer/TestImageLoadCompatibility",
+      "TestContainer/TestSaveHostDocker",
+      "TestContainer/TestLoadHostDocker",
+      "TestContainer/TestSaveHostContainerd",
+      "TestContainer/TestLoadHostContainerd",
+      "TestContainer/TestLoadSaveNone",
+      "TestContainer/TestSaveInNested",
+      "TestContainer/TestWithRegistryAuthFileAndDirectoryAccess",
+    ])
   }
 
   """
   Test Interface
   """
   pub testInterface: Void @check {
-    testSpecific(["TestInterface"])
+    testSpecific(["TestInterface"], parallel: "1")
   }
 
   """

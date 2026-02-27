@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/koron-go/prefixw"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -151,7 +151,7 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 // We use this in tests to do quick-and-easy checks against the schemas served
 // (without needing to do fancy module manipulation).
 func (ClientSuite) TestQuerySchemaVersion(ctx context.Context, t *testctx.T) {
-	v, err := testutil.Query[struct {
+	v, err := Query[struct {
 		SchemaVersion string `json:"__schemaVersion"`
 	}](t, `{ __schemaVersion }`, nil, dagger.WithVersionOverride("v123.456.789"))
 	require.NoError(t, err)
@@ -189,8 +189,8 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 	c := connect(ctx, t)
 
 	devEngine := devEngineContainerAsService(devEngineContainer(c))
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
+	thisRepoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, thisRepoPath, "_DAGGER_TESTS_REPO_PATH not set")
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{
@@ -223,6 +223,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 
 	daggerCli := daggerCliFile(t, c)
 
+	var err error
 	_, err = withCode.
 		WithServiceBinding("dev-engine", devEngine).
 		WithMountedFile("/bin/dagger", daggerCli).

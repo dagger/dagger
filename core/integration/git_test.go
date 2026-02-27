@@ -20,7 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/testctx"
@@ -1724,9 +1724,9 @@ require (
 replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
-		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
-		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
-		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
+		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "engine/session/git"))).
+		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "util/netrc"))).
+		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "util/grpcutil"))).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file

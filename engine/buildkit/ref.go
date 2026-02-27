@@ -53,6 +53,7 @@ const (
 	MetaMountStderrPath         = "stderr"
 	MetaMountCombinedOutputPath = "combinedOutput"
 	MetaMountClientIDPath       = "clientID"
+	MetaMountNestedErrorPath    = "nested_error"
 )
 
 type Result = solverresult.Result[*ref]
