@@ -6,24 +6,22 @@ type Docusaurus {
   Scan all docusaurus sites, and ensure they are configured to build properly in Dagger.
   """
   pub optimizeConfig(ws: Workspace!): Changeset! @generate {
+    # TODO: a bit awkward, need a better way to merge 0-n changesets ("empty changeset"?)
     let root = ws.directory(".")
-    let combined = root.changes(root)
-    for (site in sites(ws)) {
-      combined = combined.withChangeset(site.optimizeConfig(ws))
-    }
-    combined
+    root.changes(root).withChangesets(
+      sites(ws).map { site =>
+        site.optimizeConfig(ws)
+      },
+    )
   }
 
   """
   Scan all docusaurus sites, and ensure that they build.
   """
-  pub checkBuild(ws: Workspace!): Void @check {
-    let builds = directory
-    for (site in sites(ws)) {
-      builds = builds.withDirectory(site.path, site.build(ws))
+  pub checkBuild(ws: Workspace!): Directory! @check {
+    sites(ws).reduce(directory) { builds, site =>
+      builds.withDirectory(site.path, site.build(ws))
     }
-    builds.sync
-    null
   }
 
   pub sites(ws: Workspace!): [Site!]! {
@@ -53,26 +51,12 @@ type Docusaurus {
   Return one docusaurus site by its workspace-relative path.
   """
   pub site(ws: Workspace!, path: String!): Site! {
-    let selected = null
-    let matches = 0
-    for (candidate in sites(ws)) {
-      if (candidate.path == path) {
-        selected = candidate
-        matches = matches + 1
-      }
-    }
-
-    if (matches == 0) {
+    let match = sites(ws).filter { site => site.path == path }[0]
+    if (match != null) {
+      match
+    } else {
       raise "docusaurus site not found: " + path
     }
-    if (matches > 1) {
-      raise "duplicate docusaurus site path: " + path
-    }
-    if (selected == null) {
-      raise "docusaurus site selection failed: " + path
-    }
-
-    selected
   }
 }
 
@@ -86,75 +70,43 @@ Package.json helpers.
 type PackageJson {
   let json: JSONValue
 
-  let hasField(obj: JSONValue!, key: String!): Boolean! {
-    obj.fields.filter { field => field == key }.length > 0
+  # TODO: remove when JSONValue.field becomes nullable
+  let tryField(path: [String!]!): JSONValue {
+    try {
+      let field = json.field(path)
+      field.id # force querying
+      field
+    } catch {
+      _ => null
+    }
   }
 
   """
   The package manager command (read from package.json "packageManager" field).
   """
   pub packageManager: String! {
-    if (json == null) {
-      "npm"
-    } else if (hasField(json, "packageManager") == false) {
-      "npm"
-    } else {
-      let pmField = json.field(["packageManager"])
-      # packageManager field is like "pnpm@8.15.0" — take the name before @
-      pmField.asString.split("@")[0] ?? "npm"
-    }
+    tryField(["packageManager"]).asString.split("@")[0] ?? "npm"
   }
 
   """
   Optional source include paths from package.json "docusaurus.include".
   """
   pub include: [String!]! {
-    if (json == null) {
-      [] :: [String!]!
-    } else if (hasField(json, "docusaurus") == false) {
-      [] :: [String!]!
-    } else {
-      let docusaurus = json.field(["docusaurus"])
-      if (hasField(docusaurus, "include") == false) {
-        [] :: [String!]!
-      } else {
-        let include = docusaurus.field(["include"])
-        include.asArray.{asString}.map { item => item.asString }
-      }
-    }
+    tryField(["docusaurus", "include"]).asArray.{asString}.map { item => item.asString } ?? []
   }
 
   """
   Source exclude paths from package.json "docusaurus.exclude".
   """
   pub exclude: [String!]! {
-    if (json == null) {
-      [] :: [String!]!
-    } else if (hasField(json, "docusaurus") == false) {
-      [] :: [String!]!
-    } else {
-      let docusaurus = json.field(["docusaurus"])
-      if (hasField(docusaurus, "exclude") == false) {
-        [] :: [String!]!
-      } else {
-        let exclude = docusaurus.field(["exclude"])
-        exclude.asArray.{asString}.map { item => item.asString }
-      }
-    }
+    tryField(["docusaurus", "exclude"]).asArray.{asString}.map { item => item.asString } ?? []
   }
 
   """
   Whether package.json "docusaurus.nginxConfig" is explicitly set.
   """
   pub hasNginxConfig: Boolean! {
-    if (json == null) {
-      false
-    } else if (hasField(json, "docusaurus") == false) {
-      false
-    } else {
-      let docusaurus = json.field(["docusaurus"])
-      hasField(docusaurus, "nginxConfig")
-    }
+    tryField(["docusaurus", "nginxConfig"]) != null
   }
 
   """
@@ -162,11 +114,7 @@ type PackageJson {
   Defaults to "./nginx.conf" when the field is not set.
   """
   pub nginxConfig: String! {
-    if (hasNginxConfig == false) {
-      "./nginx.conf"
-    } else {
-      json.field(["docusaurus", "nginxConfig"]).asString ?? "./nginx.conf"
-    }
+    tryField(["docusaurus", "nginxConfig"]).asString ?? "./nginx.conf"
   }
 }
 
@@ -216,9 +164,9 @@ type Site {
   """
   let siteOnlyIncludes: [String!]! {
     if (path == ".") {
-      ["**"] :: [String!]!
+      ["**"]
     } else {
-      [path + "/**"] :: [String!]!
+      [path + "/**"]
     }
   }
 
@@ -313,7 +261,7 @@ type Site {
       site: Site(path: path, packageJson: packageJson),
       ctr: initialCtr,
       nesting: false,
-      workspaceExcludes: [] :: [String!]!,
+      workspaceExcludes: [],
       justInTimeWorkspace: false,
     )
   }
@@ -325,27 +273,15 @@ type Site {
   """
   pub runtimeExternalPaths(ws: Workspace!): [String!]! {
     if (path == ".") {
-      [] :: [String!]!
+      []
     } else {
       let traced = sandbox(ws)
         .withWorkspaceExcludes(sourceExcludes)
-        .withWorkspaceFiles(
-          ws,
-          siteOnlyIncludes,
-          [] :: [String!]!,
-        )
+        .withWorkspaceFiles(ws, siteOnlyIncludes, [])
         .withJustInTimeWorkspace(true)
         .withNesting(true)
-        .withExec(
-          ws,
-          installCmd(ws),
-          ReturnType.SUCCESS,
-        )
-        .withExec(
-          ws,
-          docusaurusBuildCmd,
-          ReturnType.ANY,
-        )
+        .withExec(ws, installCmd(ws), ReturnType.SUCCESS)
+        .withExec(ws, docusaurusBuildCmd, ReturnType.ANY)
 
       traced.justInTimeWorkspaceLog
     }
@@ -357,21 +293,9 @@ type Site {
   pub build(ws: Workspace!): Directory! {
     sandbox(ws)
       .withWorkspaceExcludes(sourceExcludes)
-      .withWorkspaceFiles(
-        ws,
-        sourceIncludes,
-        [] :: [String!]!,
-      )
-      .withExec(
-        ws,
-        installCmd(ws),
-        ReturnType.SUCCESS,
-      )
-      .withExec(
-        ws,
-        docusaurusBuildCmd,
-        ReturnType.SUCCESS,
-      )
+      .withWorkspaceFiles(ws, sourceIncludes, [])
+      .withExec(ws, installCmd(ws), ReturnType.SUCCESS)
+      .withExec(ws, docusaurusBuildCmd, ReturnType.SUCCESS)
       .container
       .directory("build")
   }
@@ -383,10 +307,7 @@ type Site {
         currentModule.source.directory("tools"),
       )
       .withWorkdir(docusaurusToolsPath)
-      .withExec(
-        ["npm", "ci"],
-        expect: ReturnType.SUCCESS,
-      )
+      .withExec(["npm", "ci"], expect: ReturnType.SUCCESS)
   }
 
   """
@@ -401,10 +322,7 @@ type Site {
     let before = ws.directory("/", include: [packageJsonPath])
     let includesJSON = toJSON(runtimeExternalPaths(ws))
     let after = optimizeConfigContainer
-      .withDirectory(
-        workspaceRootPath,
-        before,
-      )
+      .withDirectory(workspaceRootPath, before)
       .withExec(
         [
           "node",
@@ -444,9 +362,7 @@ type Site {
       }
     }
 
-    ctr
-      .withExposedPort(80)
-      .asService
+    ctr.withExposedPort(80).asService
   }
 }
 
@@ -498,10 +414,6 @@ type Sandbox {
   }
 
   let withRuntimeTrace(ws: Workspace!): Container! {
-    let workspaceID = json
-      .withContents(toJSON(ws.id) :: JSON!)
-      .asString
-
     ctr
       .withFile(
         "/jit-workspace-hook.cjs",
@@ -522,7 +434,7 @@ type Sandbox {
       .withEnvVariable("DAGGER_JIT_WORKSPACE_LOG_DIR", jitWorkspaceLogDir)
       .withEnvVariable("DAGGER_JIT_WORKSPACE_ROOT", workspaceRootPath)
       .withEnvVariable("DAGGER_JIT_WORKSPACE_SITE_ROOT", siteWorkspacePath)
-      .withEnvVariable("DAGGER_JIT_WORKSPACE_ID", workspaceID)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_ID", toJSON(ws.id))
       .withEnvVariable("DAGGER_JIT_WORKSPACE_EXCLUDES_JSON", workspaceExcludesJSON)
       .withEnvVariable("DAGGER_JIT_WORKSPACE_HYDRATE_HELPER", "/jit-workspace-hydrate.cjs")
       .withEnvVariable("NODE_OPTIONS", "--require=/jit-workspace-hook.cjs")
@@ -611,10 +523,7 @@ type Sandbox {
         experimentalPrivilegedNesting: true,
       )
     } else {
-      execBase.withExec(
-        cmd,
-        expect: expect,
-      )
+      execBase.withExec(cmd, expect: expect)
     }
 
     withContainer(nextCtr)
@@ -625,7 +534,7 @@ type Sandbox {
   """
   pub justInTimeWorkspaceLog: [String!]! {
     if (justInTimeWorkspace == false) {
-      [] :: [String!]!
+      []
     } else {
       let pathsRaw = ctr
         .withFile(
@@ -641,10 +550,10 @@ type Sandbox {
         .withExec(["node", "/jit-workspace-log.cjs"])
         .stdout
 
-      json
+      Dagger
+        .json
         .withContents(pathsRaw :: JSON!)
-        .asArray
-        .{asString}
+        .asArray.{asString}
         .map { item => item.asString }
     }
   }
