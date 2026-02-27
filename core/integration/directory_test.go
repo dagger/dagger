@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -2722,16 +2723,18 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 	// if this side-effect were to ever change (i.e. adopting SOURCE_DATE_EPOCH functionality),
 	// then this test will break.
 
+	randID := rand.Text()
+
 	c := connect(ctx, t)
 	d1, err := c.Directory().
 		WithoutFile("non-existent").
-		WithNewFile("file", "data").
+		WithNewFile("file", randID).
 		Sync(ctx)
 	require.NoError(t, err)
 
 	d2, err := c.Directory().
 		WithoutFile("also-non-existent").
-		WithNewFile("file", "data").
+		WithNewFile("file", randID).
 		Sync(ctx)
 	require.NoError(t, err)
 
