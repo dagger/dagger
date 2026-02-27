@@ -37,11 +37,26 @@ function envWithFallback(primary, secondary) {
 const outputDir = canonicalize(mustEnv('TRACE_OUTPUT_DIR'));
 const workspaceDir = canonicalize(envWithFallback('TRACE_WORKSPACE_ROOT', 'TRACE_WORKSPACE_DIR'));
 const siteDir = canonicalize(envWithFallback('TRACE_SITE_ROOT', 'TRACE_SITE_DIR'));
+const collectMode = (process.env.TRACE_COLLECT_MODE || 'hydrated').toLowerCase();
 const collected = new Set();
+
+function shouldReadEntry(entry) {
+  if (entry.endsWith('.json') == false) {
+    return false;
+  }
+
+  if (collectMode == 'seen') {
+    return entry.endsWith('.hydrated.json') == false;
+  }
+  if (collectMode == 'all') {
+    return true;
+  }
+  return entry.endsWith('.hydrated.json');
+}
 
 if (fs.existsSync(outputDir)) {
   for (const entry of fs.readdirSync(outputDir)) {
-    if (entry.endsWith('.json') == false) {
+    if (shouldReadEntry(entry) == false) {
       continue;
     }
 

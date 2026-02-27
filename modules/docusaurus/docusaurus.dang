@@ -611,6 +611,7 @@ type Sandbox {
         .withEnvVariable("TRACE_OUTPUT_DIR", traceOutputDir)
         .withEnvVariable("TRACE_WORKSPACE_ROOT", workspaceRootPath)
         .withEnvVariable("TRACE_SITE_ROOT", siteWorkspacePath)
+        .withEnvVariable("TRACE_COLLECT_MODE", "hydrated")
         .withEnvVariable("NODE_OPTIONS", "")
         .withEnvVariable("DAGGER_RUNTIME_DEPS_DISABLE_HYDRATE", "1")
         .withExec(["node", "/collect-runtime-deps.cjs"])
