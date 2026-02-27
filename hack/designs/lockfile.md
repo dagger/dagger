@@ -251,7 +251,7 @@ Current constraints:
 
 ### Task list
 
-- [ ] **#1: Add lock schema in `core/workspace`**  
+- [x] **#1: Add lock schema in `core/workspace`**  
   Port/adapt `util/lockfile` from PR #11156 and add workspace helper wrappers for `"modules.resolve"`.
 
 #### #1 Detailed Checklist (file-level)
@@ -312,25 +312,25 @@ Current constraints:
    Do not wire engine loading or CLI mutation in this step.
    Deliverable for #1 is parse/serialize + workspace wrappers + unit tests only.
 
-- [ ] **#2: Thread lock policy into module loading (`engine/server/session.go`)**  
+- [x] **#2: Thread lock policy into module loading (`engine/server/session.go`)**  
   Extend `pendingModule` with `Pin` and `Policy`, lookup lock tuple by source during workspace gathering, pass `refPin` in `loadModule`, and gate behavior by lock mode.
 
-- [ ] **#3: Update `workspace.install` lock write path (`core/schema/workspace.go`)**  
+- [x] **#3: Update `workspace.install` lock write path (`core/schema/workspace.go`)**  
   Persist git lookup results via `"modules.resolve"` lock entries with `policy`; optional orphan pruning.
 
-- [ ] **#4: Prune stale lock entries on config mutation (`core/schema/workspace.go`)**  
+- [x] **#4: Prune stale lock entries on config mutation (`core/schema/workspace.go`)**  
   Run optional orphan pruning after `configWrite`.
 
-- [ ] **#5: Preserve legacy `pin` fields in compat mode (`core/workspace/legacy.go`, `engine/server/session.go`)**  
+- [x] **#5: Preserve legacy `pin` fields in compat mode (`core/workspace/legacy.go`, `engine/server/session.go`)**  
   Use parsed legacy `Pin` when loading toolchains/blueprints from `dagger.json`.
 
-- [ ] **#6: Add workspace update API + CLI (`core/schema/workspace.go`, `cmd/dagger/workspace.go`)**  
+- [x] **#6: Add workspace update API + CLI (`core/schema/workspace.go`, `cmd/dagger/workspace.go`)**  
   Implement `workspace.update` and wire `dagger workspace update`.
 
-- [ ] **#7: Migration lock output (`core/workspace/migrate.go`)**  
+- [x] **#7: Migration lock output (`core/workspace/migrate.go`)**  
   Emit lock entries when legacy `pin` fields exist.
 
-- [ ] **#8: Tests (`core/integration/workspace_test.go` + unit tests)**  
+- [x] **#8: Tests (`core/integration/workspace_test.go` + unit tests)**  
   Cover lock read/write, `pin|float` policy semantics, lock mode behavior (`strict|auto|update`), stale entry pruning, update flow, compat pin behavior, and remote read behavior.
 
 ### Phase 2+ tasks (after v1 modules.resolve)
