@@ -23,11 +23,13 @@ const outputDirPath = canonicalRoot(outputDir);
 const workspaceRoot = canonicalRoot(process.env.TRACE_WORKSPACE_ROOT || '/workspace');
 const siteRoot = canonicalRoot(process.env.TRACE_SITE_ROOT || process.cwd());
 const hydrateHelperPath = process.env.TRACE_HYDRATE_HELPER || '/hydrate-runtime-path.cjs';
+const workspaceExcludes = parseExcludePatterns(process.env.TRACE_WORKSPACE_EXCLUDES_JSON);
 const disableHydrate = process.env.DAGGER_RUNTIME_DEPS_DISABLE_HYDRATE === '1';
 const originalExistsSync = fs.existsSync.bind(fs);
 const seen = new Set();
 const hydrated = new Set();
 const hydrateFailures = new Set();
+const globRegexCache = new Map();
 
 function toPath(value) {
   if (typeof value === 'string') {
@@ -68,6 +70,94 @@ function hasPathSegment(filePath, segment) {
   return filePath.split(path.sep).includes(segment);
 }
 
+function parseExcludePatterns(raw) {
+  if (raw == null || raw == '') {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) == false) {
+      return [];
+    }
+    return parsed
+      .filter((item) => typeof item == 'string')
+      .filter((item) => item.trim() != '');
+  } catch (_err) {
+    return [];
+  }
+}
+
+function normalizePattern(rawPattern) {
+  let pattern = rawPattern.trim().replaceAll('\\', '/');
+  pattern = pattern.replace(/^\.\/+/, '');
+  pattern = pattern.replace(/^\/+/, '');
+  if (pattern.endsWith('/')) {
+    pattern = pattern + '**';
+  }
+  return pattern;
+}
+
+function escapeRegExpChar(value) {
+  return /[\\^$*+?.()|[\]{}]/.test(value) ? '\\' + value : value;
+}
+
+function globToRegex(pattern) {
+  const cached = globRegexCache.get(pattern);
+  if (cached != null) {
+    return cached;
+  }
+
+  let source = '^';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const ch = pattern[index];
+    if (ch == '*') {
+      if (index + 1 < pattern.length && pattern[index + 1] == '*') {
+        source += '.*';
+        index += 1;
+      } else {
+        source += '[^/]*';
+      }
+      continue;
+    }
+    source += escapeRegExpChar(ch);
+  }
+  source += '$';
+
+  const regex = new RegExp(source);
+  globRegexCache.set(pattern, regex);
+  return regex;
+}
+
+function matchesPattern(relPath, rawPattern) {
+  const pattern = normalizePattern(rawPattern);
+  if (pattern == '') {
+    return false;
+  }
+
+  return globToRegex(pattern).test(relPath);
+}
+
+function isWorkspaceExcluded(filePath) {
+  if (workspaceExcludes.length == 0) {
+    return false;
+  }
+  if (within(workspaceRoot, filePath) == false) {
+    return false;
+  }
+
+  const relPath = path.relative(workspaceRoot, filePath).replaceAll(path.sep, '/');
+  if (relPath == '' || relPath == '.') {
+    return false;
+  }
+
+  for (const pattern of workspaceExcludes) {
+    if (matchesPattern(relPath, pattern)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function record(value) {
   const filePath = canonicalize(value);
   if (filePath == null) {
@@ -91,6 +181,9 @@ function shouldHydrate(filePath) {
     return false;
   }
   if (within(workspaceRoot, filePath) == false) {
+    return false;
+  }
+  if (isWorkspaceExcluded(filePath) == true) {
     return false;
   }
   if (within(siteRoot, filePath) == true) {
@@ -294,9 +387,10 @@ if (typeof originalDlopen == 'function') {
 
 function flush() {
   fs.mkdirSync(outputDirPath, { recursive: true });
-  const outputFile = path.join(outputDirPath, process.pid + '.json');
-  const sorted = Array.from(seen).sort();
-  fs.writeFileSync(outputFile, JSON.stringify(sorted), 'utf8');
+  const seenFile = path.join(outputDirPath, process.pid + '.json');
+  const hydratedFile = path.join(outputDirPath, process.pid + '.hydrated.json');
+  fs.writeFileSync(seenFile, JSON.stringify(Array.from(seen).sort()), 'utf8');
+  fs.writeFileSync(hydratedFile, JSON.stringify(Array.from(hydrated).sort()), 'utf8');
 }
 
 process.on('exit', flush);
