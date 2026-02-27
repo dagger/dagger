@@ -2,13 +2,10 @@ package core
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/dagger/dagger/engine/filesync"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -106,38 +103,6 @@ func (Host) FindUpAll(
 	}
 
 	return found, nil
-}
-
-func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, noCache bool, relPath string) (*Directory, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current query: %w", err)
-	}
-
-	snapshotOpts := filesync.SnapshotOpts{
-		IncludePatterns: filter.Include,
-		ExcludePatterns: filter.Exclude,
-		GitIgnore:       filter.Gitignore,
-		RelativePath:    relPath,
-	}
-
-	if noCache {
-		snapshotOpts.CacheBuster = rand.Text()
-	}
-
-	ref, err := query.FileSyncer().Snapshot(ctx, nil, query.BuildkitSession(), rootPath, snapshotOpts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get snapshot: %w", err)
-	}
-
-	dir := &Directory{
-		Dir:       "/",
-		Platform:  query.Platform(),
-		LazyState: NewLazyState(),
-		Snapshot:  ref,
-	}
-
-	return dir, nil
 }
 
 func (h *Host) Clone() *Host {
