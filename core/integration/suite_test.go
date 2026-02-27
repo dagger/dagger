@@ -34,6 +34,18 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
+	// Some tests (e.g., TestSystemProxies) compile and re-invoke the test binary
+	// inside a container with its own dev engine. In that case, the infrastructure
+	// setup below must be skipped — the re-invoked binary only runs a single test
+	// and doesn't need registries, inner engines, etc.
+	if os.Getenv("_DAGGER_TESTS_SKIP_SETUP") != "" {
+		res := oteltest.Main(m)
+		if origAuthSock != "" {
+			os.Setenv("SSH_AUTH_SOCK", origAuthSock)
+		}
+		os.Exit(res)
+	}
+
 	ctx := context.Background()
 
 	// Create shared registry services (must happen before unsetting session vars,
@@ -123,6 +135,9 @@ func TestMain(m *testing.M) {
 	engineTar := dag.EngineDev().
 		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
 		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
+		// Allow HTTP for test registries used by remotecache_test.go
+		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
+		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
 		Container(dagger.EngineDevContainerOpts{Version: version, Tag: tag}).
 		AsTarball()

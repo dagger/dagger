@@ -1,6 +1,8 @@
 module github.com/dagger/dagger/internal/testutil/dagger
 
-go 1.24
+go 1.24.0
+
+toolchain go1.24.1
 
 require (
 	dagger.io/dagger v0.19.11

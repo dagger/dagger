@@ -1700,7 +1700,9 @@ exit 1
 	// setup dagger
 	client := connect(ctx, t)
 
-	wd, err := os.Getwd()
+	repoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, repoPath, "_DAGGER_TESTS_REPO_PATH not set")
+	wd, err := filepath.Abs(repoPath)
 	require.NoError(t, err)
 
 	// Create base container with all dependencies

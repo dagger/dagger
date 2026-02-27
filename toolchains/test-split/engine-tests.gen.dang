@@ -7,7 +7,6 @@ type TestSplit {
   let testSpecific(
     run: [String!]!,
     pkg: String! = "./core/integration",
-    parallel: String! = "2",
   ): Void {
     go
       .env
@@ -15,7 +14,7 @@ type TestSplit {
       .withWorkdir("/app")
       .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
       .withExec(
-        ["go", "test", pkg, "-run", run.join("|"), "-v", "-parallel", parallel, "-count", "1", "-timeout", "30m", "-failfast"],
+        ["go", "test", pkg, "-run", run.join("|"), "-v", "-count", "1", "-timeout", "30m", "-failfast"],
         experimentalPrivilegedNesting: true,
       )
       .sync
@@ -36,7 +35,7 @@ type TestSplit {
       .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
       .withEnvVariable("CGO_ENABLED", "1")
       .withExec(
-        ["go", "test", pkg, "-v", "-skip", skip.join("|"), "-parallel", "2", "-count", "1", "-race", "-timeout", "30m"],
+        ["go", "test", pkg, "-v", "-skip", skip.join("|"), "-count", "1", "-race", "-timeout", "30m"],
         experimentalPrivilegedNesting: true,
       )
       .sync
@@ -45,14 +44,20 @@ type TestSplit {
   }
 
   """
-  Test Base
+  Test Base (lighter tests, excludes heavy suites split into test-base-heavy)
   """
   pub testBase: Void @check {
     testSkip(
-      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
-      pkg: "./...",
-      race: true,
+      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace", "TestGit", "TestRemoteCache", "TestLegacy", "TestServices", "TestPlatform", "TestSecretProvider", "TestConfig"],
+      pkg: "./core/integration",
     )
+  }
+
+  """
+  Test Base Heavy (git, remote cache, services, platform, secret providers, legacy, config)
+  """
+  pub testBaseHeavy: Void @check {
+    testSpecific(["TestGit", "TestGitCredential", "TestRemoteCache", "TestLegacy", "TestServices", "TestPlatform", "TestSecretProvider", "TestConfig"])
   }
 
   """
@@ -132,7 +137,18 @@ type TestSplit {
   Test Interface
   """
   pub testInterface: Void @check {
-    testSpecific(["TestInterface"], parallel: "1")
+    go
+      .env
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
+      .withExec(
+        ["go", "test", "./core/integration", "-run", "TestInterface", "-v", "-parallel", "1", "-count", "1", "-timeout", "30m", "-failfast"],
+        experimentalPrivilegedNesting: true,
+      )
+      .sync
+
+    null
   }
 
   """

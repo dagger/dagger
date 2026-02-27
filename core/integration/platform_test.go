@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -73,6 +74,9 @@ func (PlatformSuite) TestEmulatedExecAndPush(ctx context.Context, t *testctx.T) 
 func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	repoPath := os.Getenv("_DAGGER_TESTS_REPO_PATH")
+	require.NotEmpty(t, repoPath, "_DAGGER_TESTS_REPO_PATH not set")
+
 	// cross compile the dagger binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
 	require.NoError(t, err)
@@ -87,7 +91,7 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 				From("crazymax/goxx:latest").
 				WithMountedCache("/go/pkg/mod", c.CacheVolume("gomod")).
 				WithMountedCache("/root/.cache/go-build", c.CacheVolume("gobuild")).
-				WithMountedDirectory("/src", c.Host().Directory(".")).
+				WithMountedDirectory("/src", c.Host().Directory(repoPath)).
 				WithMountedDirectory("/out", c.Directory()).
 				WithWorkdir("/src").
 				WithEnvVariable("TARGETPLATFORM", string(platform)).

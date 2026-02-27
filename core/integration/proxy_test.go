@@ -239,6 +239,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
 			WithEnvVariable("_DAGGER_TESTS_REPO_PATH", "/src").
+			WithEnvVariable("_DAGGER_TESTS_SKIP_SETUP", "1").
 			WithEnvVariable(executeTestEnvName, "ya").
 			WithExec([]string{
 				"./test",
@@ -550,6 +551,7 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
 			WithEnvVariable("_DAGGER_TESTS_REPO_PATH", "/src").
+			WithEnvVariable("_DAGGER_TESTS_SKIP_SETUP", "1").
 			WithEnvVariable(executeTestEnvName, "ya").
 			WithExec([]string{
 				"./test",

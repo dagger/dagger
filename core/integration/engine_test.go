@@ -136,17 +136,19 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
 }
 
-// nonNestedDevEngine configures a Container to use the same dev engine
-// as the tests are running against but while avoiding use of a nested exec.
-// This is needed occasionally for tests like TestClientGenerator where we
-// can't use nested execs.
-// It sets _EXPERIMENTAL_DAGGER_RUNNER_HOST to the engine's TCP endpoint,
-// which the container can reach via the service network.
+// nonNestedDevEngine configures a Container to use a dedicated dev engine
+// while avoiding use of a nested exec. This is needed for tests like
+// TestClientGenerator and TestWorkspaceContentAddressed where each `dagger
+// call` must start a fresh session against the same persistent engine.
+//
+// It creates a dedicated dev engine service (from engine.tar) and binds it
+// to the container, so the container can reach it via the service hostname.
 func nonNestedDevEngine(c *dagger.Client) func(*dagger.Container) *dagger.Container {
-	runnerHost := os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	devEngine := devEngineContainerAsService(devEngineContainer(c))
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", runnerHost)
+			WithServiceBinding("dev-engine", devEngine).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234")
 	}
 }
 
