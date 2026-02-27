@@ -49,6 +49,32 @@ type Docusaurus {
         Site(path: path, packageJson: PackageJson(json: pkgJson))
       }
   }
+
+  """
+  Return one docusaurus site by its workspace-relative path.
+  """
+  pub site(ws: Workspace!, path: String!): Site! {
+    let selected = null
+    let matches = 0
+    for (candidate in sites(ws)) {
+      if (candidate.path == path) {
+        selected = candidate
+        matches = matches + 1
+      }
+    }
+
+    if (matches == 0) {
+      raise "docusaurus site not found: " + path
+    }
+    if (matches > 1) {
+      raise "duplicate docusaurus site path: " + path
+    }
+    if (selected == null) {
+      raise "docusaurus site selection failed: " + path
+    }
+
+    selected
+  }
 }
 
 """
@@ -237,6 +263,78 @@ type Site {
       )
   }
 
+  let runtimeProbeSitePath: String! {
+    if (path == ".") {
+      "/workspace"
+    } else {
+      "/workspace/" + path
+    }
+  }
+
+  """
+  Deterministically discover local paths outside of the site dir that are
+  accessed by a docusaurus build run.
+  Returned paths are relative to the site path, sorted, and deduplicated.
+  """
+  pub runtimeExternalPaths(ws: Workspace!): [String!]! {
+    if (path == ".") {
+      [] :: [String!]!
+    } else {
+      let workspaceID = json
+        .withContents(toJSON(ws.id) :: JSON!)
+        .asString
+
+      let tracedBuild = base
+        .withMountedDirectory(runtimeProbeSitePath, ws.directory(path))
+        .withWorkdir(runtimeProbeSitePath)
+        .withMountedCache(
+          "./node_modules/.cache",
+          cacheVolume("docusaurus-cache-" + path),
+          sharing: CacheSharingMode.PRIVATE,
+        )
+        .withFile(
+          "/trace-runtime-deps.cjs",
+          currentModule.source.file("runtime-deps-trace.cjs"),
+        )
+        .withFile(
+          "/hydrate-runtime-path.cjs",
+          currentModule.source.file("hydrate-runtime-path.cjs"),
+        )
+        .withFile(
+          "/collect-runtime-deps.cjs",
+          currentModule.source.file("collect-runtime-deps.cjs"),
+        )
+        .withEnvVariable("CI", "1")
+        .withEnvVariable("TZ", "UTC")
+        .withEnvVariable("LANG", "C")
+        .withEnvVariable("LC_ALL", "C")
+        .withEnvVariable("TRACE_OUTPUT_DIR", "/tmp/docusaurus-runtime-deps")
+        .withEnvVariable("TRACE_WORKSPACE_ROOT", "/workspace")
+        .withEnvVariable("TRACE_SITE_ROOT", runtimeProbeSitePath)
+        .withEnvVariable("TRACE_WORKSPACE_ID", workspaceID)
+        .withEnvVariable("TRACE_HYDRATE_HELPER", "/hydrate-runtime-path.cjs")
+        .withEnvVariable("NODE_OPTIONS", "--require=/trace-runtime-deps.cjs")
+        .withExec(installCmd(ws), experimentalPrivilegedNesting: true)
+        .withExec(
+          ["./node_modules/.bin/docusaurus", "build"],
+          expect: ReturnType.ANY,
+          experimentalPrivilegedNesting: true,
+        )
+
+      let pathsRaw = tracedBuild
+        .withEnvVariable("NODE_OPTIONS", "")
+        .withEnvVariable("DAGGER_RUNTIME_DEPS_DISABLE_HYDRATE", "1")
+        .withExec(["node", "/collect-runtime-deps.cjs"])
+        .stdout
+
+      json
+        .withContents(pathsRaw :: JSON!)
+        .asArray
+        .{asString}
+        .map { item => item.asString }
+    }
+  }
+
   """
   Container with source mounted and dependencies installed.
   """
@@ -266,7 +364,7 @@ type Site {
       .withEnv(
         env
           .withWorkspaceInput("workspace", ws, "The full workspace containing the Docusaurus site and its deps. I/O is expensive. Use include/exclude to only access what you need.")
-          .withStringInput("sitePath", path, "Path to the Docusaurus site. Contains the entrypoint config file to read first")
+          .withStringInput("sitePath", "/" + path, "Path to the Docusaurus site. Contains the entrypoint config file to read first")
           .withJSONValueInput(
             "knownIncludes",
             json.withContents("[]" :: JSON!),
@@ -278,7 +376,7 @@ type Site {
       .withPromptFile(currentModule.source.file("optimize-config-prompt.txt"))
       .loop
       .env
-      .output("includeListJSON")
+      .output("updatedIncludes")
       .asString
     json.withContents(includesRaw :: JSON!)
   }
@@ -290,15 +388,13 @@ type Site {
     let packageJsonPath = path + "/package.json"
     let before = ws.directory("/", include: [packageJsonPath])
     let updatedPackageJson = json
-      .withContents(
-        toJSON(
-          before
-            .file(packageJsonPath)
-            .asJSON
-            .withField(["docusaurus", "include"], inferIncludes(ws))
-            .contents(pretty: true),
-        ) :: JSON!,
-      )
+      .withContents(toJSON(
+        before
+          .file(packageJsonPath)
+          .asJSON
+          .withField(["docusaurus", "include"], inferIncludes(ws))
+          .contents(pretty: true),
+      ) :: JSON!)
       .asString
     before
       .withNewFile(

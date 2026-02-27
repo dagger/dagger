@@ -1,0 +1,58 @@
+type Tests {
+  let fixtureSitePath: String! = "modules/docusaurus/tests/testdata/runtime/site-basic"
+
+  let runtimePaths(ws: Workspace!): [String!]! {
+    docusaurus
+      .site(ws, fixtureSitePath)
+      .runtimeExternalPaths(ws)
+  }
+
+  """
+  Detects both external file and directory dependencies accessed at runtime.
+  """
+  pub detectsExternalDependencies(ws: Workspace!): Void @check {
+    let paths = runtimePaths(ws)
+
+    let hasExternalPlugin = paths
+      .filter { dep => dep == "../shared/local-plugin.js" }
+      .length > 0
+    if (hasExternalPlugin == false) {
+      raise "missing external plugin dependency"
+    }
+
+    let hasExternalAssetsDir = paths
+      .filter { dep => dep == "../shared-assets" }
+      .length > 0
+    let hasExternalAssetsFile = paths
+      .filter { dep => dep == "../shared-assets/a.txt" }
+      .length > 0
+    if (hasExternalAssetsDir == false and hasExternalAssetsFile == false) {
+      raise "missing external directory dependency"
+    }
+
+    null
+  }
+
+  """
+  Ensures all returned paths are outside the site directory.
+  """
+  pub excludesSiteLocalPaths(ws: Workspace!): Void @check {
+    let nonExternal = runtimePaths(ws)
+      .filter { dep => dep.trimPrefix("../") == dep }
+
+    if (nonExternal.length > 0) {
+      raise "runtimeExternalPaths returned an in-site path"
+    }
+
+    null
+  }
+
+  """
+  Runs all checks.
+  """
+  pub all(ws: Workspace!): Void @check {
+    detectsExternalDependencies(ws)
+    excludesSiteLocalPaths(ws)
+    null
+  }
+}
