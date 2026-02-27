@@ -15,6 +15,9 @@ const (
 	// ConfigFileName is the name of the workspace config file within .dagger/.
 	ConfigFileName = "config.toml"
 
+	// LockFileName is the name of the workspace lock file within .dagger/.
+	LockFileName = "lock"
+
 	// ModuleConfigFileName is the module config filename.
 	ModuleConfigFileName = "dagger.json"
 )
