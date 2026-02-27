@@ -2,6 +2,6 @@
   "name": "docusaurus",
   "engineVersion": "v0.19.11",
   "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk"
+    "source": "github.com/vito/dang/dagger-sdk@44669ab73741c0686e03a9a12cc938af3faccd33"
   }
 }
