@@ -113,9 +113,9 @@ async function main() {
     throw new Error('target path argument is required');
   }
 
-  const workspaceRoot = normalizePath(mustEnv('TRACE_WORKSPACE_ROOT'));
-  const siteRoot = normalizePath(mustEnv('TRACE_SITE_ROOT'));
-  const workspaceID = mustEnv('TRACE_WORKSPACE_ID');
+  const workspaceRoot = normalizePath(mustEnv('DAGGER_JIT_WORKSPACE_ROOT'));
+  const siteRoot = normalizePath(mustEnv('DAGGER_JIT_WORKSPACE_SITE_ROOT'));
+  const workspaceID = mustEnv('DAGGER_JIT_WORKSPACE_ID');
   const absTargetPath = normalizePath(targetArg);
 
   if (within(workspaceRoot, absTargetPath) == false) {

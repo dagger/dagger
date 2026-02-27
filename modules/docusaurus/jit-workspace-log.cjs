@@ -26,18 +26,10 @@ function within(parent, child) {
   return child == parent || child.startsWith(parent + path.sep);
 }
 
-function envWithFallback(primary, secondary) {
-  const value = process.env[primary];
-  if (value != null && value != '') {
-    return value;
-  }
-  return mustEnv(secondary);
-}
-
-const outputDir = canonicalize(mustEnv('TRACE_OUTPUT_DIR'));
-const workspaceDir = canonicalize(envWithFallback('TRACE_WORKSPACE_ROOT', 'TRACE_WORKSPACE_DIR'));
-const siteDir = canonicalize(envWithFallback('TRACE_SITE_ROOT', 'TRACE_SITE_DIR'));
-const collectMode = (process.env.TRACE_COLLECT_MODE || 'hydrated').toLowerCase();
+const outputDir = canonicalize(mustEnv('DAGGER_JIT_WORKSPACE_LOG_DIR'));
+const workspaceDir = canonicalize(mustEnv('DAGGER_JIT_WORKSPACE_ROOT'));
+const siteDir = canonicalize(mustEnv('DAGGER_JIT_WORKSPACE_SITE_ROOT'));
+const collectMode = (process.env.DAGGER_JIT_WORKSPACE_COLLECT_MODE || 'hydrated').toLowerCase();
 const collected = new Set();
 
 function shouldReadEntry(entry) {

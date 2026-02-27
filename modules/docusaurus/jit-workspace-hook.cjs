@@ -18,13 +18,13 @@ function canonicalRoot(rawPath) {
   }
 }
 
-const outputDir = process.env.TRACE_OUTPUT_DIR || '/tmp/docusaurus-runtime-deps';
+const outputDir = process.env.DAGGER_JIT_WORKSPACE_LOG_DIR || '/tmp/docusaurus-jit-workspace';
 const outputDirPath = canonicalRoot(outputDir);
-const workspaceRoot = canonicalRoot(process.env.TRACE_WORKSPACE_ROOT || '/workspace');
-const siteRoot = canonicalRoot(process.env.TRACE_SITE_ROOT || process.cwd());
-const hydrateHelperPath = process.env.TRACE_HYDRATE_HELPER || '/hydrate-runtime-path.cjs';
-const workspaceExcludes = parseExcludePatterns(process.env.TRACE_WORKSPACE_EXCLUDES_JSON);
-const disableHydrate = process.env.DAGGER_RUNTIME_DEPS_DISABLE_HYDRATE === '1';
+const workspaceRoot = canonicalRoot(process.env.DAGGER_JIT_WORKSPACE_ROOT || '/workspace');
+const siteRoot = canonicalRoot(process.env.DAGGER_JIT_WORKSPACE_SITE_ROOT || process.cwd());
+const hydrateHelperPath = process.env.DAGGER_JIT_WORKSPACE_HYDRATE_HELPER || '/jit-workspace-hydrate.cjs';
+const workspaceExcludes = parseExcludePatterns(process.env.DAGGER_JIT_WORKSPACE_EXCLUDES_JSON);
+const disableHydrate = process.env.DAGGER_JIT_WORKSPACE_DISABLE_HYDRATE === '1';
 const originalExistsSync = fs.existsSync.bind(fs);
 const seen = new Set();
 const hydrated = new Set();
@@ -220,7 +220,7 @@ function hydrate(filePath, hint) {
       env: {
         ...process.env,
         NODE_OPTIONS: '',
-        DAGGER_RUNTIME_DEPS_HELPER: '1',
+        DAGGER_JIT_WORKSPACE_HELPER: '1',
       },
     },
   );
