@@ -69,6 +69,10 @@ func (*EngineCacheEntrySet) Evaluate(context.Context) error {
 	return nil
 }
 
+func (entrySet *EngineCacheEntrySet) Sync(ctx context.Context) error {
+	return entrySet.Evaluate(ctx)
+}
+
 type EngineCacheEntry struct {
 	Description               string `field:"true" doc:"The description of the cache entry."`
 	DiskSpaceBytes            int    `field:"true" doc:"The disk space used by the cache entry."`

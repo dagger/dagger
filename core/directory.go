@@ -92,6 +92,10 @@ func (dir *Directory) Evaluate(ctx context.Context) error {
 	return dir.LazyState.Evaluate(ctx, "Directory")
 }
 
+func (dir *Directory) Sync(ctx context.Context) error {
+	return dir.Evaluate(ctx)
+}
+
 func (dir *Directory) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if err := dir.Evaluate(ctx); err != nil {
 		return nil, err

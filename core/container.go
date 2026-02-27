@@ -162,6 +162,26 @@ func (container *Container) Evaluate(ctx context.Context) error {
 	return container.LazyState.Evaluate(ctx, "Container")
 }
 
+func (container *Container) Sync(ctx context.Context) error {
+	if err := container.Evaluate(ctx); err != nil {
+		return err
+	}
+	if container == nil {
+		return nil
+	}
+	if container.FS != nil && container.FS.Self() != nil {
+		if err := container.FS.Self().Evaluate(ctx); err != nil {
+			return err
+		}
+	}
+	if container.Meta != nil {
+		if err := container.Meta.Evaluate(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (container *Container) OnRelease(ctx context.Context) error {
 	if container == nil {
 		return nil
@@ -2437,6 +2457,10 @@ func (*TerminalLegacy) TypeDescription() string {
 
 func (*TerminalLegacy) Evaluate(ctx context.Context) error {
 	return nil
+}
+
+func (terminal *TerminalLegacy) Sync(ctx context.Context) error {
+	return terminal.Evaluate(ctx)
 }
 
 // UpdatedRootFS returns an updated rootfs for a given directory after an exec/import/etc.

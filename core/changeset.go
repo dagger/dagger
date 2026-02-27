@@ -224,10 +224,14 @@ func (*Changeset) TypeDescription() string {
 	return "A comparison between two directories representing changes that can be applied."
 }
 
-var _ Evaluatable = (*Changeset)(nil)
+var _ Syncable = (*Changeset)(nil)
 
 func (ch *Changeset) Evaluate(context.Context) error {
 	return nil
+}
+
+func (ch *Changeset) Sync(ctx context.Context) error {
+	return ch.Evaluate(ctx)
 }
 
 const ChangesetPatchFilename = "diff.patch"

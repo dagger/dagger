@@ -82,6 +82,10 @@ func (file *File) Evaluate(ctx context.Context) error {
 	return file.LazyState.Evaluate(ctx, "File")
 }
 
+func (file *File) Sync(ctx context.Context) error {
+	return file.Evaluate(ctx)
+}
+
 func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if err := file.Evaluate(ctx); err != nil {
 		return nil, err

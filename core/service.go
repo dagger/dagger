@@ -104,6 +104,10 @@ func (svc *Service) Evaluate(ctx context.Context) error {
 	return nil
 }
 
+func (svc *Service) Sync(ctx context.Context) error {
+	return svc.Evaluate(ctx)
+}
+
 func (svc *Service) WithHostname(hostname string) *Service {
 	svc = svc.Clone()
 	svc.CustomHostname = hostname
