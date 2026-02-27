@@ -1188,6 +1188,55 @@ type Myapp {
 	require.Error(t, err, "root dagger.json should have been removed")
 }
 
+// TestWorkspaceMigrateWritesLockPins verifies that legacy pinned blueprint and
+// toolchain entries are migrated to .dagger/lock with policy=pin.
+func (WorkspaceSuite) TestWorkspaceMigrateWritesLockPins(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := gitBase(t, c).
+		WithNewFile("dagger.json", `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "tc", "source": "github.com/acme/toolchain@main", "pin": "1111111"}
+  ],
+  "blueprint": {"name": "bp", "source": "github.com/acme/blueprint@main", "pin": "2222222"}
+}`).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	ctr = ctr.With(daggerExec("migrate"))
+
+	lockOut, err := ctr.WithExec([]string{"cat", ".dagger/lock"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, lockOut, `"modules.resolve"`)
+	require.Contains(t, lockOut, `"github.com/acme/toolchain@main"`)
+	require.Contains(t, lockOut, `"1111111"`)
+	require.Contains(t, lockOut, `"github.com/acme/blueprint@main"`)
+	require.Contains(t, lockOut, `"2222222"`)
+	require.Contains(t, lockOut, `"policy":"pin"`)
+}
+
+// TestWorkspaceMigrateSkipsLockWithoutPins verifies that migration doesn't
+// create a lockfile when no legacy pin fields are present.
+func (WorkspaceSuite) TestWorkspaceMigrateSkipsLockWithoutPins(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := gitBase(t, c).
+		WithNewFile("dagger.json", `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "tc", "source": "github.com/acme/toolchain@main"}
+  ]
+}`).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	ctr = ctr.With(daggerExec("migrate"))
+
+	_, err := ctr.WithExec([]string{"test", "-f", ".dagger/lock"}).Sync(ctx)
+	require.Error(t, err, "lockfile should not exist when there are no legacy pins")
+}
+
 // TestWorkspaceMigrateSummary verifies that the migration output includes
 // relevant summary information.
 func (WorkspaceSuite) TestWorkspaceMigrateSummary(ctx context.Context, t *testctx.T) {
