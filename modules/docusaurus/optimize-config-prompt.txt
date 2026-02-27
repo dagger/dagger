@@ -1,0 +1,3 @@
+In $workspace, inspect the Docusaurus site at $sitePath. Find all runtime dependencies outside of the site directory. If necessary, follow the dependency tree to catch transitive dependencies. For example the main config file may import a javascript file, which in turn opens a data file.
+
+Your output is the site's package.json, modified by appending newly discovered include paths to the path docusaurus.include (list of strings). Make no other changes to package.json. All include paths must be relative to sitePath.
