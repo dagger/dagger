@@ -6,10 +6,6 @@
   },
   "toolchains": [
     {
-      "name": "markdownlint",
-      "source": "modules/markdownlint"
-    },
-    {
       "name": "changelog",
       "source": "toolchains/changelog"
     },
@@ -24,6 +20,10 @@
     {
       "name": "docs",
       "source": "toolchains/docs-dev"
+    },
+    {
+      "name": "docusaurus",
+      "source": "modules/docusaurus"
     },
     {
       "name": "elixir-sdk",
@@ -77,6 +77,10 @@
     {
       "name": "java-sdk",
       "source": "toolchains/java-sdk-dev"
+    },
+    {
+      "name": "markdownlint",
+      "source": "modules/markdownlint"
     },
     {
       "name": "php-sdk",
