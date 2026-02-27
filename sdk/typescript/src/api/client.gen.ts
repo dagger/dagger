@@ -1680,6 +1680,11 @@ export type GitRefTreeOpts = {
    * The depth of the tree to fetch.
    */
   depth?: number
+
+  /**
+   * Set to true to populate tag refs in the local checkout .git.
+   */
+  includeTags?: boolean
 }
 
 /**
@@ -9005,6 +9010,7 @@ export class GitRef extends BaseClient {
    * The filesystem tree at this ref.
    * @param opts.discardGitDir Set to true to discard .git directory.
    * @param opts.depth The depth of the tree to fetch.
+   * @param opts.includeTags Set to true to populate tag refs in the local checkout .git.
    */
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
