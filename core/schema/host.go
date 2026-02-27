@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"path"
@@ -13,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/util/hashutil"
 )
 
@@ -246,17 +248,35 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		excludePatterns = append(excludePatterns, exclude)
 	}
 
-	dir, err := host.Self().Directory(ctx, absRootCopyPath, core.CopyFilter{
-		Include:   includePatterns,
-		Exclude:   excludePatterns,
-		Gitignore: args.Gitignore,
-	}, args.NoCache, relPathFromRoot)
-
-	if err != nil {
-		return inst, fmt.Errorf("failed to get directory: %w", err)
+	snapshotOpts := filesync.SnapshotOpts{
+		IncludePatterns: includePatterns,
+		ExcludePatterns: excludePatterns,
+		GitIgnore:       args.Gitignore,
+		RelativePath:    relPathFromRoot,
+	}
+	if args.NoCache {
+		snapshotOpts.CacheBuster = rand.Text()
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	ref, contentDgst, err := query.FileSyncer().Snapshot(ctx, nil, query.BuildkitSession(), absRootCopyPath, snapshotOpts)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get snapshot: %w", err)
+	}
+
+	dir := &core.Directory{
+		Dir:       "/",
+		Platform:  query.Platform(),
+		LazyState: core.NewLazyState(),
+		Snapshot:  ref,
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create directory result: %w", err)
+	}
+	inst = inst.WithContentDigest(contentDgst)
+
+	return inst, nil
 }
 
 type hostSocketArgs struct {
