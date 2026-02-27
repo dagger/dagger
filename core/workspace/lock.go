@@ -10,6 +10,7 @@ import (
 const (
 	lockCoreNamespace    = ""
 	lockModulesResolveOp = "modules.resolve"
+	lockModuleResolveArg = "source"
 )
 
 // LockMode controls lockfile read/update behavior for a run.
@@ -77,7 +78,11 @@ func (l *Lock) GetModuleResolve(source string) (pin string, policy LockPolicy, o
 	if l == nil || l.file == nil {
 		return "", "", false
 	}
-	resultRaw, ok := l.file.Get(lockCoreNamespace, lockModulesResolveOp, []any{source})
+	resultRaw, ok := l.file.Get(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source))
+	if !ok {
+		// Legacy lockfile format used scalar source input instead of arg tuples.
+		resultRaw, ok = l.file.Get(lockCoreNamespace, lockModulesResolveOp, legacyModuleResolveInputs(source))
+	}
 	if !ok {
 		return "", "", false
 	}
@@ -102,7 +107,7 @@ func (l *Lock) SetModuleResolve(source, pin string, policy LockPolicy) error {
 	if !isValidLockPolicy(policy) {
 		return fmt.Errorf("invalid lock policy %q", policy)
 	}
-	return l.file.Set(lockCoreNamespace, lockModulesResolveOp, []any{source}, moduleResolveResult{
+	return l.file.Set(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source), moduleResolveResult{
 		Value:  pin,
 		Policy: policy,
 	})
@@ -113,7 +118,11 @@ func (l *Lock) DeleteModuleResolve(source string) bool {
 	if l == nil || l.file == nil {
 		return false
 	}
-	return l.file.Delete(lockCoreNamespace, lockModulesResolveOp, []any{source})
+	deleted := l.file.Delete(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source))
+	if l.file.Delete(lockCoreNamespace, lockModulesResolveOp, legacyModuleResolveInputs(source)) {
+		deleted = true
+	}
+	return deleted
 }
 
 // PruneModuleResolveEntries removes module.resolve entries whose source is absent
@@ -165,11 +174,35 @@ func parseModuleResolveInputs(inputs []any) (string, bool) {
 	if len(inputs) != 1 {
 		return "", false
 	}
-	source, ok := inputs[0].(string)
+
+	// Legacy lockfile format.
+	if source, ok := inputs[0].(string); ok {
+		return source, true
+	}
+
+	arg, ok := inputs[0].([]any)
+	if !ok || len(arg) != 2 {
+		return "", false
+	}
+	argName, ok := arg[0].(string)
+	if !ok || argName != lockModuleResolveArg {
+		return "", false
+	}
+	source, ok := arg[1].(string)
 	if !ok {
 		return "", false
 	}
 	return source, true
+}
+
+func moduleResolveInputs(source string) []any {
+	return []any{
+		[]any{lockModuleResolveArg, source},
+	}
+}
+
+func legacyModuleResolveInputs(source string) []any {
+	return []any{source}
 }
 
 func parseModuleResolveResult(value any) (moduleResolveResult, error) {

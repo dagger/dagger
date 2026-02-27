@@ -274,10 +274,15 @@ func canonicalizeInputs(inputs []any) ([]any, string, error) {
 	if err := decodeJSON(data, &canonical); err != nil {
 		return nil, "", err
 	}
-	if err := validateOrderedInputs(canonical); err != nil {
+	normalized, err := normalizeOrderedInputs(canonical)
+	if err != nil {
 		return nil, "", err
 	}
-	return canonical, string(data), nil
+	data, err = json.Marshal(normalized)
+	if err != nil {
+		return nil, "", err
+	}
+	return normalized, string(data), nil
 }
 
 func canonicalizeAny(value any) (any, error) {
@@ -292,27 +297,48 @@ func canonicalizeAny(value any) (any, error) {
 	return canonical, nil
 }
 
-func validateOrderedInputs(inputs []any) error {
+func normalizeOrderedInputs(inputs []any) ([]any, error) {
+	out := make([]any, len(inputs))
 	for i, value := range inputs {
-		if err := validateOrderedInputValue(value); err != nil {
-			return fmt.Errorf("input %d: %w", i, err)
+		normalized, err := normalizeOrderedInputValue(value)
+		if err != nil {
+			return nil, fmt.Errorf("input %d: %w", i, err)
 		}
+		out[i] = normalized
 	}
-	return nil
+	return out, nil
 }
 
-func validateOrderedInputValue(value any) error {
+func normalizeOrderedInputValue(value any) (any, error) {
 	switch typed := value.(type) {
 	case []any:
+		out := make([]any, len(typed))
 		for i, nested := range typed {
-			if err := validateOrderedInputValue(nested); err != nil {
-				return fmt.Errorf("nested input %d: %w", i, err)
+			normalized, err := normalizeOrderedInputValue(nested)
+			if err != nil {
+				return nil, fmt.Errorf("nested input %d: %w", i, err)
 			}
+			out[i] = normalized
 		}
+		return out, nil
 	case map[string]any:
-		return fmt.Errorf("unordered object/map/dict in lock inputs")
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
+		pairs := make([]any, 0, len(keys))
+		for _, key := range keys {
+			normalized, err := normalizeOrderedInputValue(typed[key])
+			if err != nil {
+				return nil, fmt.Errorf("input key %q: %w", key, err)
+			}
+			pairs = append(pairs, []any{key, normalized})
+		}
+		return pairs, nil
 	}
-	return nil
+	return value, nil
 }
 
 func decodeJSON(data []byte, out any) error {

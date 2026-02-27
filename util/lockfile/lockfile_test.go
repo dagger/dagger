@@ -113,19 +113,28 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 		require.ErrorContains(t, err, "invalid tuple JSON")
 	})
 
-	t.Run("unordered object input", func(t *testing.T) {
-		_, err := Parse([]byte(strings.Join([]string{
+	t.Run("object input is normalized to ordered pairs", func(t *testing.T) {
+		lock, err := Parse([]byte(strings.Join([]string{
 			`[["version","1"]]`,
-			`["","git.resolveRef",[{"ref":"main"}],{"value":"abc","policy":"pin"}]`,
+			`["","git.resolveRef",[{"b":"2","a":"1"}],"abc"]`,
 		}, "\n")))
-		require.Error(t, err)
-		require.ErrorContains(t, err, "unordered object/map/dict in lock inputs")
+		require.NoError(t, err)
+
+		output, err := lock.Marshal()
+		require.NoError(t, err)
+		require.Contains(t, string(output), `["","git.resolveRef",[[["a","1"],["b","2"]]],"abc"]`)
 	})
 }
 
-func TestSetRejectsUnorderedInputObjects(t *testing.T) {
+func TestSetNormalizesObjectInputsToOrderedPairs(t *testing.T) {
 	lock := New()
-	err := lock.Set("", "git.resolveRef", []any{map[string]any{"ref": "main"}}, "abc")
-	require.Error(t, err)
-	require.ErrorContains(t, err, "unordered object/map/dict in lock inputs")
+	require.NoError(t, lock.Set("", "git.resolveRef", []any{map[string]any{"b": "2", "a": "1"}}, "abc"))
+
+	output, err := lock.Marshal()
+	require.NoError(t, err)
+	require.Contains(t, string(output), `["","git.resolveRef",[[["a","1"],["b","2"]]],"abc"]`)
+
+	result, ok := lock.Get("", "git.resolveRef", []any{map[string]any{"a": "1", "b": "2"}})
+	require.True(t, ok)
+	require.Equal(t, "abc", result)
 }
