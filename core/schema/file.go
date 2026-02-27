@@ -197,7 +197,7 @@ func (s *fileSchema) withName(ctx context.Context, parent dagql.ObjectResult[*co
 	}
 
 	file := core.NewFileChild(parent)
-	file.LazyInit, err = file.WithName(ctx, args.Name)
+	file.LazyInit, err = file.WithName(ctx, parent, args.Name)
 	if err != nil {
 		return inst, err
 	}
@@ -275,7 +275,7 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	f := core.NewFileChild(parent)
-	f.LazyInit, err = f.WithTimestamps(ctx, args.Timestamp)
+	f.LazyInit, err = f.WithTimestamps(ctx, parent, args.Timestamp)
 	if err != nil {
 		return inst, err
 	}
@@ -297,7 +297,7 @@ func (s *fileSchema) chown(
 	}
 
 	f := core.NewFileChild(parent)
-	f.LazyInit, err = f.Chown(ctx, args.Owner)
+	f.LazyInit, err = f.Chown(ctx, parent, args.Owner)
 	if err != nil {
 		return inst, err
 	}
