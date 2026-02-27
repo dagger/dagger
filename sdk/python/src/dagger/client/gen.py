@@ -8651,6 +8651,7 @@ class GitRef(Type):
         *,
         discard_git_dir: bool | None = False,
         depth: int | None = 1,
+        include_tags: bool | None = False,
     ) -> Directory:
         """The filesystem tree at this ref.
 
@@ -8660,10 +8661,13 @@ class GitRef(Type):
             Set to true to discard .git directory.
         depth:
             The depth of the tree to fetch.
+        include_tags:
+            Set to true to populate tag refs in the local checkout .git.
         """
         _args = [
             Arg("discardGitDir", discard_git_dir, False),
             Arg("depth", depth, 1),
+            Arg("includeTags", include_tags, False),
         ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)

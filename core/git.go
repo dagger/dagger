@@ -38,7 +38,7 @@ type GitRepositoryBackend interface {
 	Cleaned(ctx context.Context) (dagql.ObjectResult[*Directory], error)
 
 	// mount mounts the repository with the provided refs and executes the given function.
-	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
+	mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
 }
 
 type GitRef struct {
@@ -48,9 +48,9 @@ type GitRef struct {
 }
 
 type GitRefBackend interface {
-	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int) (checkout *Directory, err error)
+	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool) (checkout *Directory, err error)
 
-	mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error
+	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
 }
 
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
@@ -93,8 +93,8 @@ func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
 }
 
-func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {
-	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth)
+func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
+	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
 }
 
 // doGitCheckout performs a git checkout using the given git helper.
@@ -199,7 +199,7 @@ func doGitCheckout(
 func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
 	if ref1.Repo.ID() == ref2.Repo.ID() { // fast-path, just grab both refs from the same repo
 		var mergeBase string
-		err := ref1.Repo.Self().Backend.mount(ctx, 0, []GitRefBackend{ref1.Backend, ref2.Backend}, func(git *gitutil.GitCLI) error {
+		err := ref1.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref1.Backend, ref2.Backend}, func(git *gitutil.GitCLI) error {
 			out, err := git.Run(ctx, "merge-base", ref1.Ref.SHA, ref2.Ref.SHA)
 			if err != nil {
 				return fmt.Errorf("git merge-base failed: %w", err)
@@ -269,7 +269,7 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 	for i, ref := range refs {
 		eg.Go(func() error {
 			commits[i] = ref.Ref.SHA
-			return ref.Backend.mount(egCtx, 0, func(gitN *gitutil.GitCLI) error {
+			return ref.Backend.mount(egCtx, 0, false, func(gitN *gitutil.GitCLI) error {
 				remoteURL, err := gitN.URL(egCtx)
 				if err != nil {
 					return err

@@ -143,6 +143,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					Doc(`Set to true to discard .git directory.`),
 				dagql.Arg("depth").
 					Doc(`The depth of the tree to fetch.`),
+				dagql.Arg("includeTags").
+					Doc(`Set to true to populate tag refs in the local checkout .git.`),
 				dagql.Arg("sshKnownHosts").
 					View(BeforeVersion("v0.12.0")).
 					Doc("This option should be passed to `git` instead.").Deprecated(),
@@ -971,6 +973,7 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 type treeArgs struct {
 	DiscardGitDir bool `default:"false"`
 	Depth         int  `default:"1"`
+	IncludeTags   bool `default:"false"`
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
@@ -992,7 +995,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	if args.IsDagOp {
-		dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth)
+		dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
 		if err != nil {
 			return inst, err
 		}
