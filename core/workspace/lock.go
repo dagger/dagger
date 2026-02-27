@@ -12,12 +12,28 @@ const (
 	lockModulesResolveOp = "modules.resolve"
 )
 
+// LockMode controls lockfile read/update behavior for a run.
+type LockMode string
+
+const (
+	LockModeStrict LockMode = "strict"
+	LockModeAuto   LockMode = "auto"
+	LockModeUpdate LockMode = "update"
+
+	// DefaultLockMode is used when no mode is explicitly set.
+	DefaultLockMode = LockModeAuto
+)
+
 // LockPolicy controls update intent for a lock entry.
 type LockPolicy string
 
 const (
 	PolicyPin   LockPolicy = "pin"
 	PolicyFloat LockPolicy = "float"
+
+	// DefaultModuleResolvePolicy is used by workspace module lookup when
+	// no policy annotation exists in config.toml.
+	DefaultModuleResolvePolicy = PolicyFloat
 )
 
 type moduleResolveResult struct {
@@ -177,4 +193,21 @@ func parseModuleResolveResult(value any) (moduleResolveResult, error) {
 
 func isValidLockPolicy(policy LockPolicy) bool {
 	return policy == PolicyPin || policy == PolicyFloat
+}
+
+// ParseLockMode parses lock mode, applying the default for empty input.
+func ParseLockMode(mode string) (LockMode, error) {
+	if mode == "" {
+		return DefaultLockMode, nil
+	}
+
+	lockMode := LockMode(mode)
+	if !isValidLockMode(lockMode) {
+		return "", fmt.Errorf("invalid lock mode %q", mode)
+	}
+	return lockMode, nil
+}
+
+func isValidLockMode(mode LockMode) bool {
+	return mode == LockModeStrict || mode == LockModeAuto || mode == LockModeUpdate
 }

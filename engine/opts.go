@@ -39,9 +39,9 @@ const (
 // ExtraModule specifies a module to load at connect time in addition to
 // (or instead of) workspace modules.
 type ExtraModule struct {
-	Ref   string `json:"ref"`
-	Name  string `json:"name,omitempty"`
-	Blueprint bool `json:"blueprint,omitempty"`
+	Ref       string `json:"ref"`
+	Name      string `json:"name,omitempty"`
+	Blueprint bool   `json:"blueprint,omitempty"`
 }
 
 type ClientMetadata struct {
@@ -118,6 +118,10 @@ type ClientMetadata struct {
 
 	// SkipWorkspaceModules skips loading workspace modules when true.
 	SkipWorkspaceModules bool `json:"skip_workspace_modules,omitempty"`
+
+	// LockMode controls lockfile behavior for lookup resolution.
+	// Valid values: "strict", "auto", "update".
+	LockMode string `json:"lock_mode,omitempty"`
 
 	// RemoteWorkdir is a git ref for loading a workspace from a remote
 	// repository (e.g. "github.com/foo/bar@v1.0"). When set, the engine

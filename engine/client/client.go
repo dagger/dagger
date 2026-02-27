@@ -127,6 +127,10 @@ type Params struct {
 
 	SkipWorkspaceModules bool
 
+	// LockMode controls lockfile behavior for lookup resolution.
+	// Valid values: "strict", "auto", "update".
+	LockMode string
+
 	// RemoteWorkdir is a git ref string (e.g. "github.com/foo/bar@v1.0")
 	// for loading a workspace from a remote git repository instead of the
 	// client's local filesystem.
@@ -1410,6 +1414,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.SkipWorkspaceModules {
 		md.SkipWorkspaceModules = true
+	}
+	if c.LockMode != "" {
+		md.LockMode = c.LockMode
 	}
 	if c.RemoteWorkdir != "" {
 		md.RemoteWorkdir = c.RemoteWorkdir

@@ -42,6 +42,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/analytics"
@@ -927,6 +929,9 @@ func (srv *Server) getOrInitClient(
 		if opts.SkipWorkspaceModules {
 			client.clientMetadata.SkipWorkspaceModules = true
 		}
+		if client.clientMetadata.LockMode == "" && opts.LockMode != "" {
+			client.clientMetadata.LockMode = opts.LockMode
+		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
 		// session attachable request already created the client without them.
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
@@ -1004,12 +1009,14 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
 	var skipWorkspaceModules bool
+	var lockMode string
 	var eagerRuntime bool
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
 		extraModules = md.ExtraModules
 		skipWorkspaceModules = md.SkipWorkspaceModules
+		lockMode = md.LockMode
 		eagerRuntime = md.EagerRuntime
 	}
 
@@ -1026,6 +1033,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			AllowedLLMModules:    allowedLLMModules,
 			ExtraModules:         extraModules,
 			SkipWorkspaceModules: skipWorkspaceModules,
+			LockMode:             lockMode,
 			EagerRuntime:         eagerRuntime,
 		},
 		CallID:              execMD.CallID,
@@ -1562,6 +1570,12 @@ type pendingModule struct {
 	// Source reference (local path or git URL).
 	Ref string
 
+	// Resolved pin from lockfile (for git/module refs). Empty means resolve live.
+	Pin string
+
+	// Lock policy associated with the module lookup entry.
+	Policy workspace.LockPolicy
+
 	// Name override (empty = derive from module).
 	Name string
 
@@ -1606,6 +1620,80 @@ func cwdModuleName(ctx context.Context, readFile func(context.Context, string) (
 		return ""
 	}
 	return cfg.Name
+}
+
+func parseWorkspaceLockMode(clientMD *engine.ClientMetadata) (workspace.LockMode, error) {
+	mode := ""
+	if clientMD != nil {
+		mode = clientMD.LockMode
+	}
+	return workspace.ParseLockMode(mode)
+}
+
+func loadWorkspaceLock(
+	ctx context.Context,
+	readFile func(context.Context, string) ([]byte, error),
+	ws *workspace.Workspace,
+) (*workspace.Lock, error) {
+	lockPath := filepath.Join(ws.Root, ws.Path, workspace.WorkspaceDirName, workspace.LockFileName)
+	data, err := readFile(ctx, lockPath)
+	if err != nil {
+		if isWorkspaceLockNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading workspace lock %s: %w", lockPath, err)
+	}
+
+	lock, err := workspace.ParseLock(data)
+	if err != nil {
+		return nil, fmt.Errorf("parsing workspace lock %s: %w", lockPath, err)
+	}
+	return lock, nil
+}
+
+func isWorkspaceLockNotFound(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+func resolveWorkspaceModuleLookup(
+	lockMode workspace.LockMode,
+	lock *workspace.Lock,
+	source string,
+	requestedPolicy workspace.LockPolicy,
+) (pin string, policy workspace.LockPolicy, err error) {
+	policy = requestedPolicy
+	if lock != nil {
+		if pin, lockPolicy, ok := lock.GetModuleResolve(source); ok {
+			policy = lockPolicy
+			switch lockMode {
+			case workspace.LockModeStrict:
+				return pin, policy, nil
+			case workspace.LockModeAuto:
+				if policy == workspace.PolicyPin {
+					return pin, policy, nil
+				}
+				return "", policy, nil
+			case workspace.LockModeUpdate:
+				return "", policy, nil
+			default:
+				return "", policy, fmt.Errorf("unsupported lock mode %q", lockMode)
+			}
+		}
+	}
+
+	switch lockMode {
+	case workspace.LockModeStrict:
+		return "", policy, fmt.Errorf("missing lock entry for modules.resolve source %q", source)
+	case workspace.LockModeAuto:
+		if policy == workspace.PolicyPin {
+			return "", policy, fmt.Errorf("missing lock entry for pinned modules.resolve source %q", source)
+		}
+		return "", policy, nil
+	case workspace.LockModeUpdate:
+		return "", policy, nil
+	default:
+		return "", policy, fmt.Errorf("unsupported lock mode %q", lockMode)
+	}
 }
 
 // detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
@@ -1668,6 +1756,19 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return nil
 	}
 
+	lockMode, err := parseWorkspaceLockMode(clientMD)
+	if err != nil {
+		return fmt.Errorf("workspace lock mode: %w", err)
+	}
+
+	var wsLock *workspace.Lock
+	if ws.Config != nil {
+		wsLock, err = loadWorkspaceLock(ctx, readFile, ws)
+		if err != nil {
+			return err
+		}
+	}
+
 	// --- Gather all modules to load ---
 	var pending []pendingModule
 
@@ -1675,10 +1776,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if ws.Config != nil {
 		for name, entry := range ws.Config.Modules {
 			ref := entry.Source
-			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
-				ref = resolveLocalRef(ws, filepath.Join(workspace.WorkspaceDirName, entry.Source))
-			}
-			pending = append(pending, pendingModule{
+			pendingMod := pendingModule{
 				Ref:                ref,
 				Name:               name,
 				Blueprint:          entry.Blueprint,
@@ -1686,7 +1784,21 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				DisableFindUp:      true,
 				ConfigDefaults:     entry.Config,
 				DefaultsFromDotEnv: ws.Config.DefaultsFromDotEnv,
-			})
+			}
+
+			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+				ref = resolveLocalRef(ws, filepath.Join(workspace.WorkspaceDirName, entry.Source))
+				pendingMod.Ref = ref
+			} else {
+				pin, policy, err := resolveWorkspaceModuleLookup(lockMode, wsLock, entry.Source, workspace.DefaultModuleResolvePolicy)
+				if err != nil {
+					return fmt.Errorf("workspace module %q source %q: %w", name, entry.Source, err)
+				}
+				pendingMod.Pin = pin
+				pendingMod.Policy = policy
+			}
+
+			pending = append(pending, pendingMod)
 		}
 	}
 
@@ -1874,6 +1986,9 @@ func (srv *Server) loadModule(
 ) error {
 	args := []dagql.NamedInput{
 		{Name: "refString", Value: dagql.String(mod.Ref)},
+	}
+	if mod.Pin != "" {
+		args = append(args, dagql.NamedInput{Name: "refPin", Value: dagql.String(mod.Pin)})
 	}
 	if mod.DisableFindUp {
 		args = append(args, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})

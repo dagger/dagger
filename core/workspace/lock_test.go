@@ -119,3 +119,35 @@ func TestLockMarshalDeterministic(t *testing.T) {
 
 	require.Equal(t, string(outputA), string(outputB))
 }
+
+func TestParseLockMode(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		mode, err := ParseLockMode("")
+		require.NoError(t, err)
+		require.Equal(t, DefaultLockMode, mode)
+	})
+
+	t.Run("strict", func(t *testing.T) {
+		mode, err := ParseLockMode("strict")
+		require.NoError(t, err)
+		require.Equal(t, LockModeStrict, mode)
+	})
+
+	t.Run("auto", func(t *testing.T) {
+		mode, err := ParseLockMode("auto")
+		require.NoError(t, err)
+		require.Equal(t, LockModeAuto, mode)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		mode, err := ParseLockMode("update")
+		require.NoError(t, err)
+		require.Equal(t, LockModeUpdate, mode)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		_, err := ParseLockMode("weird")
+		require.Error(t, err)
+		require.ErrorContains(t, err, "invalid lock mode")
+	})
+}
