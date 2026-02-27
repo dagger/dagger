@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-December%204,%202025-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-February%2026,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -14,9 +14,9 @@ cadence.
 To let the team know:
 
 - [ ] Create a new milestone in [GitHub](https://github.com/dagger/dagger/milestones),
-      e.g. [`v0.19.2 Milestone`](https://github.com/dagger/dagger/milestone/47)
+      e.g. [`v0.20.0 Milestone`](https://github.com/dagger/dagger/milestone/47)
 - [ ] Create a new post in [Discord #team](https://discord.com/channels/707636530424053791/783828171153866782),
-      e.g. [`v0.19.2 release`](https://discord.com/channels/707636530424053791/1430934913984499876/1430934919403671583)
+      e.g. [`v0.20.0 release`](https://discord.com/channels/707636530424053791/1430934913984499876/1430934919403671583)
 
 This allows others to weigh in whether:
 
