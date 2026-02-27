@@ -13908,6 +13908,7 @@ type Workspace struct {
 	install       *string
 	moduleInit    *string
 	path          *string
+	update        *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -14239,6 +14240,8 @@ type WorkspaceModuleInitOpts struct {
 	// Additional include patterns for the module.
 	Include []string
 	// SPDX license identifier to generate (empty to skip).
+	//
+	// Default: "Apache-2.0"
 	License string
 }
 
@@ -14277,6 +14280,33 @@ func (r *Workspace) Path(ctx context.Context) (string, error) {
 		return *r.path, nil
 	}
 	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceUpdateOpts contains options for Workspace.Update
+type WorkspaceUpdateOpts struct {
+	// Workspace module names to update. Empty updates all git modules.
+	Modules []string
+}
+
+// Update one or more workspace module lock entries in .dagger/lock.
+//
+// Leaves config.toml unchanged. If modules is empty, updates all git modules.
+func (r *Workspace) Update(ctx context.Context, opts ...WorkspaceUpdateOpts) (string, error) {
+	if r.update != nil {
+		return *r.update, nil
+	}
+	q := r.query.Select("update")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `modules` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Modules) {
+			q = q.Arg("modules", opts[i].Modules)
+		}
+	}
 
 	var response string
 
