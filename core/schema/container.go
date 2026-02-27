@@ -1114,8 +1114,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 
 	ctr := core.NewContainerChild(parent)
 	ctr.OpID = opID
-	ctr.Meta = nil
-	ctr.LazyInit, err = ctr.WithExec(ctx, args.ContainerExecOpts, md)
+	err = ctr.WithExec(ctx, args.ContainerExecOpts, md)
 	if err != nil {
 		return inst, err
 	}

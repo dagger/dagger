@@ -409,12 +409,116 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 	return data, nil
 }
 
+type execLazyGate struct {
+	mu   sync.Mutex
+	done bool
+	fn   LazyInitFunc
+}
+
+func (gate *execLazyGate) Run(ctx context.Context) error {
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+
+	if gate.done {
+		return nil
+	}
+	if err := gate.fn(ctx); err != nil {
+		return err
+	}
+
+	gate.done = true
+	return nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExec(
 	ctx context.Context,
 	opts ContainerExecOpts,
 	execMD *buildkit.ExecutionMetadata,
-) (LazyInitFunc, error) {
-	return func(ctx context.Context) (rerr error) {
+) error {
+	type mountOutput struct {
+		dir  *Directory
+		file *File
+	}
+	mountOutputs := make(map[int]mountOutput)
+
+	inputRootFS := container.FS
+	inputMeta := container.Meta
+	inputMounts := slices.Clone(container.Mounts)
+
+	rootfsOutput := &Directory{
+		Dir:       "/",
+		Platform:  container.Platform,
+		Services:  container.Services,
+		LazyState: NewLazyState(),
+	}
+	if inputRootFS != nil && inputRootFS.Self() != nil {
+		rootfsOutput.Dir = inputRootFS.Self().Dir
+		rootfsOutput.Platform = inputRootFS.Self().Platform
+		rootfsOutput.Services = inputRootFS.Self().Services
+	}
+	updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsOutput)
+	if err != nil {
+		return fmt.Errorf("failed to initialize rootfs output: %w", err)
+	}
+	container.FS = updatedRootFS
+
+	metaOutput := &Directory{
+		Dir:       "/",
+		Platform:  container.Platform,
+		Services:  container.Services,
+		LazyState: NewLazyState(),
+	}
+	container.Meta = metaOutput
+
+	for i, ctrMount := range container.Mounts {
+		if ctrMount.Readonly {
+			continue
+		}
+
+		switch {
+		case ctrMount.DirectorySource != nil:
+			if ctrMount.DirectorySource.Self() == nil {
+				return fmt.Errorf("mount %d has nil directory source", i)
+			}
+			dirMnt := ctrMount.DirectorySource.Self()
+			outputDir := &Directory{
+				Dir:       dirMnt.Dir,
+				Platform:  dirMnt.Platform,
+				Services:  dirMnt.Services,
+				LazyState: NewLazyState(),
+			}
+			updatedMnt, err := updatedDirMount(ctx, container, outputDir, ctrMount.Target)
+			if err != nil {
+				return fmt.Errorf("failed to initialize directory mount output %d: %w", i, err)
+			}
+			ctrMount.DirectorySource = updatedMnt
+			container.Mounts[i] = ctrMount
+			mountOutputs[i] = mountOutput{dir: outputDir}
+
+		case ctrMount.FileSource != nil:
+			if ctrMount.FileSource.Self() == nil {
+				return fmt.Errorf("mount %d has nil file source", i)
+			}
+			fileMnt := ctrMount.FileSource.Self()
+			outputFile := &File{
+				File:      fileMnt.File,
+				Platform:  fileMnt.Platform,
+				Services:  fileMnt.Services,
+				LazyState: NewLazyState(),
+			}
+			updatedMnt, err := updatedFileMount(ctx, container, outputFile, ctrMount.Target)
+			if err != nil {
+				return fmt.Errorf("failed to initialize file mount output %d: %w", i, err)
+			}
+			ctrMount.FileSource = updatedMnt
+			container.Mounts[i] = ctrMount
+			mountOutputs[i] = mountOutput{file: outputFile}
+		}
+	}
+
+	gate := &execLazyGate{}
+	gate.fn = func(ctx context.Context) (rerr error) {
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return fmt.Errorf("get current query: %w", err)
@@ -432,7 +536,12 @@ func (container *Container) WithExec(
 			return err
 		}
 
-		mountData, err := container.GetMountData(ctx)
+		execInputs := *container
+		execInputs.FS = inputRootFS
+		execInputs.Meta = inputMeta
+		execInputs.Mounts = inputMounts
+
+		mountData, err := execInputs.GetMountData(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get mount data: %w", err)
 		}
@@ -600,72 +709,27 @@ func (container *Container) WithExec(
 			// put the ref to the right mount point
 			switch ref.MountIndex {
 			case 0:
-				rootfsDir := &Directory{
-					Snapshot: iref,
-				}
-				if container.FS != nil {
-					rootfsDir.Dir = container.FS.Self().Dir
-					rootfsDir.Platform = container.FS.Self().Platform
-					rootfsDir.Services = container.FS.Self().Services
-				} else {
-					rootfsDir.Dir = "/"
-				}
-				updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
-				if err != nil {
-					return fmt.Errorf("failed to update rootfs: %w", err)
-				}
-				container.FS = updatedRootFS
+				rootfsOutput.setSnapshot(iref)
 
 			case 1:
-				container.Meta = &Directory{
-					Snapshot: iref,
-				}
+				metaOutput.setSnapshot(iref)
 
 			default:
 				mountIdx := ref.MountIndex - 2
-				if mountIdx < 0 || mountIdx >= len(container.Mounts) {
+				if mountIdx < 0 {
 					return errors.Join(rerr, fmt.Errorf("output mount index %d maps outside container mounts (%d)", ref.MountIndex, len(container.Mounts)))
 				}
-				ctrMnt := container.Mounts[mountIdx]
-
-				err = handleMountValue(ctrMnt,
-					func(dirMnt *dagql.ObjectResult[*Directory]) error {
-						dir := &Directory{
-							Snapshot: iref,
-							Dir:      dirMnt.Self().Dir,
-							Platform: dirMnt.Self().Platform,
-							Services: dirMnt.Self().Services,
-						}
-						ctrMnt.DirectorySource, err = updatedDirMount(ctx, container, dir, ctrMnt.Target)
-						if err != nil {
-							return fmt.Errorf("failed to update directory mount: %w", err)
-						}
-						container.Mounts[mountIdx] = ctrMnt
-						return nil
-					},
-					func(fileMnt *dagql.ObjectResult[*File]) error {
-						file := &File{
-							Snapshot: iref,
-							File:     fileMnt.Self().File,
-							Platform: fileMnt.Self().Platform,
-							Services: fileMnt.Self().Services,
-						}
-						ctrMnt.FileSource, err = updatedFileMount(ctx, container, file, ctrMnt.Target)
-						if err != nil {
-							return fmt.Errorf("failed to update file mount: %w", err)
-						}
-						container.Mounts[mountIdx] = ctrMnt
-						return nil
-					},
-					func(cache *CacheMountSource) error {
-						return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)
-					},
-					func(tmpfs *TmpfsMountSource) error {
-						return fmt.Errorf("unhandled tmpfs mount source type for mount %d", mountIdx)
-					},
-				)
-				if err != nil {
-					return err
+				output, ok := mountOutputs[mountIdx]
+				if !ok {
+					return errors.Join(rerr, fmt.Errorf("output mount index %d has no writable mount output", ref.MountIndex))
+				}
+				switch {
+				case output.dir != nil:
+					output.dir.setSnapshot(iref)
+				case output.file != nil:
+					output.file.setSnapshot(iref)
+				default:
+					return errors.Join(rerr, fmt.Errorf("output mount index %d has malformed mount output", ref.MountIndex))
 				}
 			}
 
@@ -681,7 +745,20 @@ func (container *Container) WithExec(
 		}
 
 		return nil
-	}, nil
+	}
+
+	rootfsOutput.LazyInit = gate.Run
+	metaOutput.LazyInit = gate.Run
+	for _, output := range mountOutputs {
+		if output.dir != nil {
+			output.dir.LazyInit = gate.Run
+		}
+		if output.file != nil {
+			output.file.LazyInit = gate.Run
+		}
+	}
+
+	return nil
 }
 
 func addDefaultEnvvar(env []string, k, v string) []string {
