@@ -334,7 +334,7 @@ To update only specific dependencies, specify their short names or a complete ad
 
 If no dependency is specified, all dependencies are updated.
 `,
-	Example: `"dagger update" or "dagger update hello" "dagger update github.com/shykes/daggerverse/hello@v0.3.0"`,
+	Example: `"dagger module update" or "dagger module update hello" or "dagger module update github.com/shykes/daggerverse/hello@v0.3.0"`,
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
