@@ -672,6 +672,34 @@ type Counter {
 	requireErrOut(t, err, "workspace module(s) not found")
 }
 
+func (WorkspaceSuite) TestWorkspaceUpdateMutatesLockNotModuleConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.hello]
+source = "github.com/shykes/daggerverse/hello@v0.3.0"
+`
+	ctr := workspaceWithConfig(t, c, configTOML).
+		// Create a standalone module at workspace root to ensure update does not
+		// mutate module config.
+		With(daggerExec("module", "init", "--sdk=go", "--name=app", "."))
+
+	beforeDaggerJSON, err := ctr.File("dagger.json").Contents(ctx)
+	require.NoError(t, err)
+
+	updated := ctr.With(daggerExec("update"))
+	_, err = updated.Stdout(ctx)
+	require.NoError(t, err)
+
+	afterDaggerJSON, err := updated.File("dagger.json").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, beforeDaggerJSON, afterDaggerJSON)
+
+	lockOut, err := updated.WithExec([]string{"cat", ".dagger/lock"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, lockOut, `"modules.resolve"`)
+	require.Contains(t, lockOut, `"github.com/shykes/daggerverse/hello@v0.3.0"`)
+}
+
 // TestWorkspaceDirectoryGitignore verifies that Workspace.directory with
 // gitignore: true filters out files matched by .gitignore rules.
 func (WorkspaceSuite) TestWorkspaceDirectoryGitignore(ctx context.Context, t *testctx.T) {

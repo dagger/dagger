@@ -1790,6 +1790,31 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 			}
 		})
 	}
+
+	t.Run("does not mutate workspace lockfile", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		lockBefore := `[["version","1"],["","modules.resolve",["github.com/acme/mod@main"],{"value":"1111111","policy":"pin"}]]`
+
+		ctr := c.Container().
+			From("alpine:latest").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("module", "init", "--sdk=go", "--name=foo", "--source=.")).
+			WithNewFile("dagger.json", depHasOldVersion).
+			WithNewFile(".dagger/lock", lockBefore)
+
+		updated := ctr.With(daggerExec("module", "update", "github.com/shykes/daggerverse/docker@v0.4.2"))
+
+		daggerjson, err := updated.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, `"github.com/shykes/daggerverse/docker@docker/v0.4.2"`)
+		require.Contains(t, daggerjson, v042DockerPin)
+
+		lockAfter, err := updated.File(".dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, lockBefore, lockAfter)
+	})
 }
 
 func (CLISuite) TestInvalidModule(ctx context.Context, t *testctx.T) {
