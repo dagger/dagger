@@ -561,12 +561,11 @@ func (container *Container) WithExec(
 			return err
 		}
 
-		bkSessionGroup, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
-
 		bkClient, err := query.Buildkit(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get buildkit client: %w", err)
 		}
+		bkSessionGroup := buildkit.NewSessionGroup(bkClient.ID())
 		opWorker := bkClient.Worker
 		causeCtx := trace.SpanContextFromContext(ctx)
 		if opWorker == nil {
@@ -621,9 +620,29 @@ func (container *Container) WithExec(
 						execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, opWorker)
 					}
 				}
+				setExecMountFromRef := func(mountIndex int, ref bkcache.ImmutableRef) {
+					if ref == nil {
+						return
+					}
+					if mountIndex < 0 || mountIndex >= len(execMounts) {
+						rerr = errors.Join(rerr, fmt.Errorf("output mount index %d outside exec mounts (%d)", mountIndex, len(execMounts)))
+						return
+					}
+					execMounts[mountIndex] = worker.NewWorkerRefResult(ref.Clone(), opWorker)
+				}
+				setExecMountFromRef(0, rootfsOutput.Snapshot)
+				setExecMountFromRef(1, metaOutput.Snapshot)
+				for mountIndex, output := range mountOutputs {
+					switch {
+					case output.dir != nil:
+						setExecMountFromRef(mountIndex+2, output.dir.Snapshot)
+					case output.file != nil:
+						setExecMountFromRef(mountIndex+2, output.file.Snapshot)
+					}
+				}
 
 				rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
-				rerr = buildkit.RichError{
+				richErr := buildkit.RichError{
 					ExecError: rerr.(*errdefs.ExecError),
 					Origin:    causeCtx,
 					Mounts:    mountData.Mounts,
@@ -633,6 +652,7 @@ func (container *Container) WithExec(
 						return container.TerminalError(ctx, richErr.ExecMD.CallID, richErr)
 					},
 				}
+				rerr = buildkit.WrapError(ctx, richErr, bkClient)
 			} else {
 				// Only release actives if err is nil.
 				for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
