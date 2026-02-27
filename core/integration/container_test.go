@@ -191,7 +191,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			{
 				container {
 					from(address: "` + alpineImage + `") {
-						withError(err: "error raised")
+						withError(err: "error raised") {
+							sync
+						}
 					}
 				}
 			}`,
@@ -203,7 +205,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			{
 				container {
 					from(address: "` + alpineImage + `") {
-						withError(err: "")
+						withError(err: "") {
+							sync
+						}
 					}
 				}
 			}`,
@@ -214,7 +218,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			_, err := testutil.Query[struct {
 				Container struct {
 					From struct {
-						WithError struct{}
+						WithError struct {
+							Sync string
+						}
 					}
 				}
 			}](t, tc.query, nil)

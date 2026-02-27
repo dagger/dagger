@@ -1066,12 +1066,11 @@ type containerExecArgs struct {
 	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
 }
 
-func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (dagql.ObjectResult[*core.Container], error) {
-	_ = ctx
+func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (inst dagql.ObjectResult[*core.Container], rerr error) {
 	if args.Err == "" {
 		return parent, nil
 	}
-	return parent, errors.New(args.Err)
+	return inst, errors.New(args.Err)
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
