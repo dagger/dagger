@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type workspaceSchema struct{}
@@ -311,6 +314,15 @@ func configHostPath(ws *core.Workspace) (string, error) {
 	return filepath.Join(hp, ws.ConfigPath), nil
 }
 
+// lockHostPath returns the absolute host path for the workspace lock file.
+func lockHostPath(ws *core.Workspace) (string, error) {
+	hp, err := workspaceHostPath(ws)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(hp, ws.Path, workspace.WorkspaceDirName, workspace.LockFileName), nil
+}
+
 type workspaceFindUpArgs struct {
 	Name string
 	From string `default:"."`
@@ -471,15 +483,17 @@ func (s *workspaceSchema) install(
 		return "", fmt.Errorf("dagql server: %w", err)
 	}
 
+	moduleSourceSelector := dagql.Selector{
+		Field: "moduleSource",
+		Args: []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(args.Ref)},
+			{Name: "disableFindUp", Value: dagql.Boolean(true)},
+		},
+	}
+
 	var moduleName dagql.String
 	err = srv.Select(ctx, srv.Root(), &moduleName,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(args.Ref)},
-				{Name: "disableFindUp", Value: dagql.Boolean(true)},
-			},
-		},
+		moduleSourceSelector,
 		dagql.Selector{Field: "moduleName"},
 	)
 	if err != nil {
@@ -495,17 +509,25 @@ func (s *workspaceSchema) install(
 	sourcePath := args.Ref
 	var kind core.ModuleSourceKind
 	err = srv.Select(ctx, srv.Root(), &kind,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(args.Ref)},
-				{Name: "disableFindUp", Value: dagql.Boolean(true)},
-			},
-		},
+		moduleSourceSelector,
 		dagql.Selector{Field: "kind"},
 	)
 	if err != nil {
 		return "", fmt.Errorf("resolve module kind: %w", err)
+	}
+
+	lockPin := ""
+	lockPolicy := workspace.PolicyPin
+	if kind == core.ModuleSourceKindGit {
+		var pin dagql.String
+		err = srv.Select(ctx, srv.Root(), &pin,
+			moduleSourceSelector,
+			dagql.Selector{Field: "pin"},
+		)
+		if err != nil {
+			return "", fmt.Errorf("resolve module pin: %w", err)
+		}
+		lockPin = string(pin)
 	}
 
 	if kind == core.ModuleSourceKindLocal {
@@ -516,13 +538,7 @@ func (s *workspaceSchema) install(
 
 		var contextDirPath dagql.String
 		err = srv.Select(ctx, srv.Root(), &contextDirPath,
-			dagql.Selector{
-				Field: "moduleSource",
-				Args: []dagql.NamedInput{
-					{Name: "refString", Value: dagql.String(args.Ref)},
-					{Name: "disableFindUp", Value: dagql.Boolean(true)},
-				},
-			},
+			moduleSourceSelector,
 			dagql.Selector{Field: "localContextDirectoryPath"},
 		)
 		if err != nil {
@@ -531,13 +547,7 @@ func (s *workspaceSchema) install(
 
 		var depRootSubpath dagql.String
 		err = srv.Select(ctx, srv.Root(), &depRootSubpath,
-			dagql.Selector{
-				Field: "moduleSource",
-				Args: []dagql.NamedInput{
-					{Name: "refString", Value: dagql.String(args.Ref)},
-					{Name: "disableFindUp", Value: dagql.Boolean(true)},
-				},
-			},
+			moduleSourceSelector,
 			dagql.Selector{Field: "sourceRootSubpath"},
 		)
 		if err != nil {
@@ -585,6 +595,20 @@ func (s *workspaceSchema) install(
 	// Write config with hints (preserving existing comments)
 	if err := writeWorkspaceConfigWithHints(ctx, bk, parent, cfg, existingTOML, hints); err != nil {
 		return "", err
+	}
+
+	// Persist lookup resolution for git installs.
+	if kind == core.ModuleSourceKindGit && lockPin != "" {
+		lock, err := readWorkspaceLock(ctx, bk, parent)
+		if err != nil {
+			return "", err
+		}
+		if err := lock.SetModuleResolve(sourcePath, lockPin, lockPolicy); err != nil {
+			return "", fmt.Errorf("set lock entry: %w", err)
+		}
+		if err := exportLockToHost(ctx, bk, parent, lock); err != nil {
+			return "", err
+		}
 	}
 
 	cfgPath, _ := configHostPath(parent)
@@ -890,6 +914,14 @@ func (s *workspaceSchema) configWrite(
 		return "", err
 	}
 
+	cfg, err := workspace.ParseConfig(result)
+	if err != nil {
+		return "", fmt.Errorf("parsing updated config: %w", err)
+	}
+	if err := pruneWorkspaceLockForConfig(ctx, bk, parent, cfg); err != nil {
+		return "", err
+	}
+
 	return dagql.String(args.Value), nil
 }
 
@@ -1056,6 +1088,93 @@ func exportConfigToHost(ctx context.Context, bk *buildkit.Client, parent *core.W
 		return fmt.Errorf("export config: %w", err)
 	}
 	return nil
+}
+
+func readWorkspaceLock(ctx context.Context, bk interface {
+	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
+}, parent *core.Workspace) (*workspace.Lock, error) {
+	lockPath, err := lockHostPath(parent)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := bk.ReadCallerHostFile(ctx, lockPath)
+	if err != nil {
+		if isWorkspaceLockNotFound(err) {
+			return workspace.NewLock(), nil
+		}
+		return nil, fmt.Errorf("reading lock: %w", err)
+	}
+
+	lock, err := workspace.ParseLock(data)
+	if err != nil {
+		return nil, fmt.Errorf("parsing lock: %w", err)
+	}
+	return lock, nil
+}
+
+func isWorkspaceLockNotFound(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+func exportLockToHost(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, lock *workspace.Lock) error {
+	lockBytes, err := lock.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshal lock: %w", err)
+	}
+
+	lockPath, err := lockHostPath(parent)
+	if err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp("", "workspace-lock-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(lockBytes); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	if err := bk.LocalFileExport(ctx, tmpFile.Name(), workspace.LockFileName, lockPath, true); err != nil {
+		return fmt.Errorf("export lock: %w", err)
+	}
+	return nil
+}
+
+func pruneWorkspaceLockForConfig(ctx context.Context, bk *buildkit.Client, parent *core.Workspace, cfg *workspace.Config) error {
+	lock, err := readWorkspaceLock(ctx, bk, parent)
+	if err != nil {
+		return err
+	}
+
+	validSources := moduleSources(cfg)
+	if lock.PruneModuleResolveEntries(validSources) == 0 {
+		return nil
+	}
+
+	if err := exportLockToHost(ctx, bk, parent, lock); err != nil {
+		return err
+	}
+	return nil
+}
+
+func moduleSources(cfg *workspace.Config) map[string]struct{} {
+	sources := map[string]struct{}{}
+	if cfg == nil {
+		return sources
+	}
+	for _, mod := range cfg.Modules {
+		if mod.Source == "" {
+			continue
+		}
+		sources[mod.Source] = struct{}{}
+	}
+	return sources
 }
 
 // IntrospectConstructorArgs loads a module and extracts its constructor arguments

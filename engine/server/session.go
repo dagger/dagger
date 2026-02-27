@@ -1804,30 +1804,42 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	// (2a) Legacy toolchains (from compat mode, extracted above)
 	for _, tc := range legacyToolchains {
+		kind := core.FastModuleSourceKindCheck(tc.Source, tc.Pin)
 		ref := tc.Source
-		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
+		if kind == core.ModuleSourceKindLocal {
 			ref = resolveLocalRef(ws, tc.Source)
 		}
-		pending = append(pending, pendingModule{
+		pendingMod := pendingModule{
 			Ref:               ref,
 			Name:              tc.Name,
 			LegacyDefaultPath: true,
 			ConfigDefaults:    tc.ConfigDefaults,
-		})
+		}
+		if kind != core.ModuleSourceKindLocal && tc.Pin != "" {
+			pendingMod.Pin = tc.Pin
+			pendingMod.Policy = workspace.PolicyPin
+		}
+		pending = append(pending, pendingMod)
 	}
 
 	// (2b) Legacy blueprint (from compat mode, extracted above)
 	if legacyBlueprint != nil {
+		kind := core.FastModuleSourceKindCheck(legacyBlueprint.Source, legacyBlueprint.Pin)
 		ref := legacyBlueprint.Source
-		if core.FastModuleSourceKindCheck(legacyBlueprint.Source, legacyBlueprint.Pin) == core.ModuleSourceKindLocal {
+		if kind == core.ModuleSourceKindLocal {
 			ref = resolveLocalRef(ws, legacyBlueprint.Source)
 		}
-		pending = append(pending, pendingModule{
+		pendingMod := pendingModule{
 			Ref:               ref,
 			Name:              legacyBlueprint.Name,
 			Blueprint:         true,
 			LegacyDefaultPath: true,
-		})
+		}
+		if kind != core.ModuleSourceKindLocal && legacyBlueprint.Pin != "" {
+			pendingMod.Pin = legacyBlueprint.Pin
+			pendingMod.Policy = workspace.PolicyPin
+		}
+		pending = append(pending, pendingMod)
 	}
 
 	// (3) Implicit module (dagger.json near CWD)
