@@ -10,6 +10,7 @@ type TypescriptSdkDev {
     @ignorePatterns(patterns: [
       "*",
       "!sdk/typescript",
+      "sdk/typescript/node_modules",
     ])
 
   pub sourcePath: String! = "sdk/typescript"
