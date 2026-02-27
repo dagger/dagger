@@ -436,7 +436,7 @@ type Sandbox {
   let justInTimeWorkspace: Boolean!
 
   let workspaceRootPath: String! = "/workspace"
-  let traceOutputDir: String! = "/tmp/docusaurus-runtime-deps"
+  let jitWorkspaceLogDir: String! = "/tmp/docusaurus-jit-workspace"
 
   let siteWorkspacePath: String! {
     if (site.path == ".") {
@@ -482,28 +482,28 @@ type Sandbox {
 
     ctr
       .withFile(
-        "/trace-runtime-deps.cjs",
-        currentModule.source.file("runtime-deps-trace.cjs"),
+        "/jit-workspace-hook.cjs",
+        currentModule.source.file("jit-workspace-hook.cjs"),
       )
       .withFile(
-        "/hydrate-runtime-path.cjs",
-        currentModule.source.file("hydrate-runtime-path.cjs"),
+        "/jit-workspace-hydrate.cjs",
+        currentModule.source.file("jit-workspace-hydrate.cjs"),
       )
       .withFile(
-        "/collect-runtime-deps.cjs",
-        currentModule.source.file("collect-runtime-deps.cjs"),
+        "/jit-workspace-log.cjs",
+        currentModule.source.file("jit-workspace-log.cjs"),
       )
       .withEnvVariable("CI", "1")
       .withEnvVariable("TZ", "UTC")
       .withEnvVariable("LANG", "C")
       .withEnvVariable("LC_ALL", "C")
-      .withEnvVariable("TRACE_OUTPUT_DIR", traceOutputDir)
-      .withEnvVariable("TRACE_WORKSPACE_ROOT", workspaceRootPath)
-      .withEnvVariable("TRACE_SITE_ROOT", siteWorkspacePath)
-      .withEnvVariable("TRACE_WORKSPACE_ID", workspaceID)
-      .withEnvVariable("TRACE_WORKSPACE_EXCLUDES_JSON", workspaceExcludesJSON)
-      .withEnvVariable("TRACE_HYDRATE_HELPER", "/hydrate-runtime-path.cjs")
-      .withEnvVariable("NODE_OPTIONS", "--require=/trace-runtime-deps.cjs")
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_LOG_DIR", jitWorkspaceLogDir)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_ROOT", workspaceRootPath)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_SITE_ROOT", siteWorkspacePath)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_ID", workspaceID)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_EXCLUDES_JSON", workspaceExcludesJSON)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_HYDRATE_HELPER", "/jit-workspace-hydrate.cjs")
+      .withEnvVariable("NODE_OPTIONS", "--require=/jit-workspace-hook.cjs")
   }
 
   """
@@ -607,16 +607,16 @@ type Sandbox {
     } else {
       let pathsRaw = ctr
         .withFile(
-          "/collect-runtime-deps.cjs",
-          currentModule.source.file("collect-runtime-deps.cjs"),
+          "/jit-workspace-log.cjs",
+          currentModule.source.file("jit-workspace-log.cjs"),
         )
-        .withEnvVariable("TRACE_OUTPUT_DIR", traceOutputDir)
-        .withEnvVariable("TRACE_WORKSPACE_ROOT", workspaceRootPath)
-        .withEnvVariable("TRACE_SITE_ROOT", siteWorkspacePath)
-        .withEnvVariable("TRACE_COLLECT_MODE", "hydrated")
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_LOG_DIR", jitWorkspaceLogDir)
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_ROOT", workspaceRootPath)
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_SITE_ROOT", siteWorkspacePath)
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_COLLECT_MODE", "hydrated")
         .withEnvVariable("NODE_OPTIONS", "")
-        .withEnvVariable("DAGGER_RUNTIME_DEPS_DISABLE_HYDRATE", "1")
-        .withExec(["node", "/collect-runtime-deps.cjs"])
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_DISABLE_HYDRATE", "1")
+        .withExec(["node", "/jit-workspace-log.cjs"])
         .stdout
 
       json
