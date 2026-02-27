@@ -1,6 +1,8 @@
 type Tests {
   let fixtureSitePath: String! = "modules/docusaurus/tests/testdata/runtime/site-basic"
   let fixturePackageJSONPath: String! = fixtureSitePath + "/package.json"
+  let fixtureFormatSitePath: String! = "modules/docusaurus/tests/testdata/runtime/site-format"
+  let fixtureFormatPackageJSONPath: String! = fixtureFormatSitePath + "/package.json"
 
   let runtimePaths(ws: Workspace!): [String!]! {
     docusaurus
@@ -81,12 +83,48 @@ type Tests {
   }
 
   """
+  Ensures optimizeConfig preserves unrelated package.json formatting.
+  """
+  pub optimizeConfigPreservesFormatting(ws: Workspace!): Void @check {
+    let site = docusaurus.site(ws, fixtureFormatSitePath)
+    let optimizedPackageJSON = site
+      .optimizeConfig(ws)
+      .layer
+      .file(fixtureFormatPackageJSONPath)
+    let optimizedPackageJSONContents = optimizedPackageJSON.contents
+
+    let hasOneLineScriptsField = optimizedPackageJSONContents
+      .split("\"scripts\": { \"build\": \"docusaurus build\" }")
+      .length > 1
+    if (hasOneLineScriptsField == false) {
+      raise "optimizeConfig rewrote unrelated package.json formatting"
+    }
+
+    let include = optimizedPackageJSON
+      .asJSON
+      .field(["docusaurus", "include"])
+      .asArray
+      .{asString}
+      .map { item => item.asString }
+
+    let hasExternalPlugin = include
+      .filter { dep => dep == "../shared/local-plugin.js" }
+      .length > 0
+    if (hasExternalPlugin == false) {
+      raise "optimizeConfig did not write expected include entries"
+    }
+
+    null
+  }
+
+  """
   Runs all checks.
   """
   pub all(ws: Workspace!): Void @check {
     detectsExternalDependencies(ws)
     excludesSiteLocalPaths(ws)
     optimizeConfigUsesRuntimePaths(ws)
+    optimizeConfigPreservesFormatting(ws)
     null
   }
 }
