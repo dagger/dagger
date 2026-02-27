@@ -621,6 +621,57 @@ source = "github.com/dagger/jest"
 	require.Contains(t, out, `"github.com/eunomie/jest"`)
 }
 
+func (WorkspaceSuite) TestWorkspaceUpdateNoGitModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("counter", `
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}
+`))
+
+	out, err := ctr.With(daggerExec("workspace", "update")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "No updates", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestWorkspaceUpdateExplicitLocalModuleErrors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("counter", `
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}
+`))
+
+	_, err := ctr.With(daggerExec("workspace", "update", "counter")).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "is not a git module")
+}
+
+func (WorkspaceSuite) TestWorkspaceUpdateUnknownModuleErrors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("counter", `
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}
+`))
+
+	_, err := ctr.With(daggerExec("workspace", "update", "missing")).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "workspace module(s) not found")
+}
+
 // TestWorkspaceDirectoryGitignore verifies that Workspace.directory with
 // gitignore: true filters out files matched by .gitignore rules.
 func (WorkspaceSuite) TestWorkspaceDirectoryGitignore(ctx context.Context, t *testctx.T) {
