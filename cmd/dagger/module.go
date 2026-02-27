@@ -158,6 +158,7 @@ func init() {
 
 	// dagger module install
 	moduleCmd.AddCommand(moduleDepInstallCmd)
+	moduleCmd.AddCommand(moduleUpdateCmd)
 	moduleDepInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleDepInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(moduleDepInstallCmd, moduleDepInstallCmd.Flags(), false)
@@ -326,11 +327,8 @@ func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName strin
 var moduleUpdateCmd = &cobra.Command{
 	Use:     "update [options] [<DEPENDENCY>...]",
 	Aliases: []string{"use"},
-	Short:   "Update dependencies or workspace lock entries",
+	Short:   "Update a module's dependencies",
 	Long: `Update the dependencies of a local module.
-
-If no local module is initialized but a workspace config exists, update
-workspace module lock entries instead.
 
 To update only specific dependencies, specify their short names or a complete address.
 
@@ -359,28 +357,6 @@ If no dependency is specified, all dependencies are updated.
 				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if !alreadyExists {
-				if moduleURL == "" {
-					ws := dag.CurrentWorkspace()
-					hasConfig, err := ws.HasConfig(ctx)
-					if err != nil {
-						return fmt.Errorf("workspace: %w", err)
-					}
-					if hasConfig {
-						if remoteWorkdir != "" {
-							return fmt.Errorf("workspace on git remote cannot be modified")
-						}
-						msg, err := ws.Update(ctx, dagger.WorkspaceUpdateOpts{
-							Modules: extraArgs,
-						})
-						if err != nil {
-							return err
-						}
-						if msg = strings.TrimSpace(msg); msg != "" {
-							fmt.Fprintln(cmd.OutOrStdout(), msg)
-						}
-						return nil
-					}
-				}
 				return fmt.Errorf("module must be fully initialized")
 			}
 

@@ -681,7 +681,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		cobraToShellCommand(logoutCmd),
 		cobraToShellCommand(moduleInstallCmd),
 		cobraToShellCommand(moduleUnInstallCmd),
-		cobraToShellCommand(moduleUpdateCmd),
+		cobraToShellCommand(updateCmd),
 	)
 
 	// Add LLM commands

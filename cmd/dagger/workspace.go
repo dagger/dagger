@@ -274,6 +274,40 @@ Works like "git config" for workspace settings.`,
 	},
 }
 
+var updateCmd = &cobra.Command{
+	Use:     "update [module...]",
+	Aliases: []string{"use"},
+	Short:   "Update workspace module lock entries",
+	Long:    "Update git module lock entries in .dagger/lock. With no module names, updates all git modules in the workspace config.",
+	GroupID: moduleGroup.ID,
+	Args:    cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if remoteWorkdir != "" {
+			return fmt.Errorf("workspace on git remote cannot be modified")
+		}
+
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+			LockMode:             string(workspace.LockModeUpdate),
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+			ws := dag.CurrentWorkspace()
+
+			msg, err := ws.Update(ctx, dagger.WorkspaceUpdateOpts{
+				Modules: args,
+			})
+			if err != nil {
+				return err
+			}
+			if msg = strings.TrimSpace(msg); msg != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), msg)
+			}
+			return nil
+		})
+	},
+}
+
 func init() {
 	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
