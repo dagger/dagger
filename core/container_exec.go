@@ -443,7 +443,9 @@ func (container *Container) WithExec(
 	mountOutputs := make(map[int]mountOutput)
 
 	inputRootFS := container.FS
-	inputMeta := container.Meta
+	// Meta mount data (stdout/stderr/combined/exitCode) is per-exec output.
+	// Carrying prior meta into the next exec causes output accumulation.
+	inputMeta := (*Directory)(nil)
 	inputMounts := slices.Clone(container.Mounts)
 
 	rootfsOutput := &Directory{
