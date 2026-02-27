@@ -36,7 +36,8 @@ const (
 	DefaultModuleResolvePolicy = PolicyFloat
 )
 
-type moduleResolveResult struct {
+// LookupResult is the structured lock result envelope.
+type LookupResult struct {
 	Value  string     `json:"value"`
 	Policy LockPolicy `json:"policy"`
 }
@@ -74,15 +75,8 @@ func (l *Lock) Marshal() ([]byte, error) {
 
 // GetModuleResolve retrieves the lock pin and policy for a module source.
 func (l *Lock) GetModuleResolve(source string) (pin string, policy LockPolicy, ok bool) {
-	if l == nil || l.file == nil {
-		return "", "", false
-	}
-	resultRaw, ok := l.file.Get(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source))
-	if !ok {
-		return "", "", false
-	}
-	result, err := parseModuleResolveResult(resultRaw)
-	if err != nil {
+	result, ok, err := l.GetLookup(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source))
+	if err != nil || !ok {
 		return "", "", false
 	}
 	return result.Value, result.Policy, true
@@ -102,7 +96,7 @@ func (l *Lock) SetModuleResolve(source, pin string, policy LockPolicy) error {
 	if !isValidLockPolicy(policy) {
 		return fmt.Errorf("invalid lock policy %q", policy)
 	}
-	return l.file.Set(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source), moduleResolveResult{
+	return l.SetLookup(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source), LookupResult{
 		Value:  pin,
 		Policy: policy,
 	})
@@ -110,10 +104,45 @@ func (l *Lock) SetModuleResolve(source, pin string, policy LockPolicy) error {
 
 // DeleteModuleResolve removes a module.resolve entry.
 func (l *Lock) DeleteModuleResolve(source string) bool {
+	return l.DeleteLookup(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source))
+}
+
+// GetLookup retrieves the lock result for a generic lookup tuple.
+func (l *Lock) GetLookup(namespace, operation string, inputs []any) (LookupResult, bool, error) {
+	if l == nil || l.file == nil {
+		return LookupResult{}, false, nil
+	}
+	resultRaw, ok := l.file.Get(namespace, operation, inputs)
+	if !ok {
+		return LookupResult{}, false, nil
+	}
+	result, err := parseLookupResult(resultRaw)
+	if err != nil {
+		return LookupResult{}, false, err
+	}
+	return result, true, nil
+}
+
+// SetLookup sets the lock result for a generic lookup tuple.
+func (l *Lock) SetLookup(namespace, operation string, inputs []any, result LookupResult) error {
+	if l == nil || l.file == nil {
+		return fmt.Errorf("nil lock")
+	}
+	if result.Value == "" {
+		return fmt.Errorf("lookup value is required")
+	}
+	if !isValidLockPolicy(result.Policy) {
+		return fmt.Errorf("invalid lock policy %q", result.Policy)
+	}
+	return l.file.Set(namespace, operation, inputs, result)
+}
+
+// DeleteLookup removes a generic lookup tuple entry.
+func (l *Lock) DeleteLookup(namespace, operation string, inputs []any) bool {
 	if l == nil || l.file == nil {
 		return false
 	}
-	return l.file.Delete(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source))
+	return l.file.Delete(namespace, operation, inputs)
 }
 
 // PruneModuleResolveEntries removes module.resolve entries whose source is absent
@@ -154,7 +183,7 @@ func (l *Lock) validateModuleResolveEntries() error {
 		if !ok || source == "" {
 			return fmt.Errorf("invalid modules.resolve entry inputs")
 		}
-		if _, err := parseModuleResolveResult(entry.Result); err != nil {
+		if _, err := parseLookupResult(entry.Result); err != nil {
 			return fmt.Errorf("invalid modules.resolve entry result: %w", err)
 		}
 	}
@@ -177,21 +206,21 @@ func moduleResolveInputs(source string) []any {
 	return []any{source}
 }
 
-func parseModuleResolveResult(value any) (moduleResolveResult, error) {
+func parseLookupResult(value any) (LookupResult, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return moduleResolveResult{}, err
+		return LookupResult{}, err
 	}
 
-	var result moduleResolveResult
+	var result LookupResult
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return moduleResolveResult{}, err
+		return LookupResult{}, err
 	}
 	if result.Value == "" {
-		return moduleResolveResult{}, fmt.Errorf("value is required")
+		return LookupResult{}, fmt.Errorf("value is required")
 	}
 	if !isValidLockPolicy(result.Policy) {
-		return moduleResolveResult{}, fmt.Errorf("invalid policy %q", result.Policy)
+		return LookupResult{}, fmt.Errorf("invalid policy %q", result.Policy)
 	}
 	return result, nil
 }

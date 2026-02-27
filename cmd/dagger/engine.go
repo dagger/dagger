@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
@@ -128,6 +129,12 @@ func withEngine(
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
 
+		effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
+		if err != nil {
+			return cleanup.Run, err
+		}
+		params.LockMode = effectiveLockMode
+
 		if hasTTY {
 			params.PromptHandler = Frontend
 		}
@@ -149,6 +156,22 @@ func withEngine(
 
 		return cleanup.Run, fn(ctx, sess)
 	})
+}
+
+func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
+	effective := paramLockMode
+	if effective == "" {
+		effective = globalLockMode
+	}
+	if effective == "" {
+		return "", nil
+	}
+
+	mode, err := workspace.ParseLockMode(effective)
+	if err != nil {
+		return "", err
+	}
+	return string(mode), nil
 }
 
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {

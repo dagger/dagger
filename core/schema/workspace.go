@@ -1519,6 +1519,13 @@ func formatDefaultAsToml(defaultValue core.JSON) string {
 // workspace's owning client ID. This ensures host filesystem operations route
 // through the correct client session, even when called from a module context.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	return withWorkspaceClientContext(ctx, ws)
+}
+
+// withWorkspaceClientContext overrides the client metadata in context to the
+// workspace's owning client ID. This ensures host filesystem operations route
+// through the correct client session, even when called from a module context.
+func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	if ws.ClientID == "" {
 		return nil, fmt.Errorf("workspace has no client ID")
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
@@ -804,6 +805,8 @@ type containerFromArgs struct {
 	ContainerDagOpInternalArgs
 }
 
+const lockContainerFromOperation = "container.from"
+
 func (s *containerSchema) fromCacheKey(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Container],
@@ -895,21 +898,76 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("container.from called in a dagop context but without canonical image name, this shouldnt happen")
 	}
 
-	// Doesn't have a digest, resolve that now and re-call this field using the canonical
-	// digested ref instead. This ensures the ID returned here is always stable w/ the
-	// digested image ref.
-	_, digest, _, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
-		Platform: ptr(platform.Spec()),
-		ImageOpt: &sourceresolver.ResolveImageOpt{
-			ResolveMode: llb.ResolveModeDefault.String(),
-		},
-	})
+	lockMode, err := currentLookupLockMode(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
+		return inst, fmt.Errorf("container.from lock mode: %w", err)
 	}
-	refName, err = reference.WithDigest(refName, digest)
+
+	lookupLock, err := loadWorkspaceLookupLock(ctx, query)
 	if err != nil {
-		return inst, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
+		return inst, fmt.Errorf("container.from lockfile: %w", err)
+	}
+	var rawLock *workspace.Lock
+	if lookupLock != nil {
+		rawLock = lookupLock.lock
+	}
+
+	lockInputs := []any{refName.String(), platform.Format()}
+	lockResolution, err := resolveLookupFromLock(
+		lockMode,
+		rawLock,
+		lockCoreNamespace,
+		lockContainerFromOperation,
+		lockInputs,
+		workspace.PolicyFloat,
+	)
+	if err != nil {
+		return inst, fmt.Errorf("container.from lock resolution: %w", err)
+	}
+
+	if lockResolution.Pin != "" {
+		resolvedDigest, err := digest.Parse(lockResolution.Pin)
+		if err != nil {
+			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
+		}
+		refName, err = reference.WithDigest(refName, resolvedDigest)
+		if err != nil {
+			return inst, fmt.Errorf("failed to apply lock digest on image %s: %w", refName.String(), err)
+		}
+	} else {
+		// Doesn't have a digest, resolve that now and re-call this field using the canonical
+		// digested ref instead. This ensures the ID returned here is always stable w/ the
+		// digested image ref.
+		_, resolvedDigest, _, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
+			Platform: ptr(platform.Spec()),
+			ImageOpt: &sourceresolver.ResolveImageOpt{
+				ResolveMode: llb.ResolveModeDefault.String(),
+			},
+		})
+		if err != nil {
+			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
+		}
+		refName, err = reference.WithDigest(refName, resolvedDigest)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
+		}
+
+		if lockResolution.ShouldWrite && lookupLock != nil {
+			if err := lookupLock.lock.SetLookup(
+				lockCoreNamespace,
+				lockContainerFromOperation,
+				lockInputs,
+				workspace.LookupResult{
+					Value:  resolvedDigest.String(),
+					Policy: lockResolution.Policy,
+				},
+			); err != nil {
+				return inst, fmt.Errorf("set lock entry for container.from: %w", err)
+			}
+			if err := lookupLock.Save(); err != nil {
+				return inst, fmt.Errorf("writing workspace lock: %w", err)
+			}
+		}
 	}
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("from %s", refName),

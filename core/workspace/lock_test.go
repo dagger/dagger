@@ -20,7 +20,15 @@ func TestModuleResolveSetGetDelete(t *testing.T) {
 
 	output, err := lock.Marshal()
 	require.NoError(t, err)
-	require.Contains(t, string(output), `["","modules.resolve",["github.com/acme/mod@v1.0"],{"value":"3d23f8","policy":"pin"}]`)
+	raw, err := lockfile.Parse(output)
+	require.NoError(t, err)
+
+	resultRaw, ok := raw.Get("", "modules.resolve", []any{"github.com/acme/mod@v1.0"})
+	require.True(t, ok)
+	result, err := parseLookupResult(resultRaw)
+	require.NoError(t, err)
+	require.Equal(t, "3d23f8", result.Value)
+	require.Equal(t, PolicyPin, result.Policy)
 
 	require.True(t, lock.DeleteModuleResolve("github.com/acme/mod@v1.0"))
 	_, _, ok = lock.GetModuleResolve("github.com/acme/mod@v1.0")
@@ -33,6 +41,40 @@ func TestSetModuleResolvePolicyValidation(t *testing.T) {
 	err := lock.SetModuleResolve("github.com/acme/mod@v1.0", "3d23f8", LockPolicy("weird"))
 	require.Error(t, err)
 	require.ErrorContains(t, err, "invalid lock policy")
+}
+
+func TestLookupSetGetDelete(t *testing.T) {
+	lock := NewLock()
+	inputs := []any{"alpine:latest", "linux/amd64"}
+
+	require.NoError(t, lock.SetLookup("", "container.from", inputs, LookupResult{
+		Value:  "sha256:deadbeef",
+		Policy: PolicyFloat,
+	}))
+
+	result, ok, err := lock.GetLookup("", "container.from", inputs)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "sha256:deadbeef", result.Value)
+	require.Equal(t, PolicyFloat, result.Policy)
+
+	require.True(t, lock.DeleteLookup("", "container.from", inputs))
+	_, ok, err = lock.GetLookup("", "container.from", inputs)
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestLookupGetValidation(t *testing.T) {
+	input := strings.Join([]string{
+		`[["version","1"]]`,
+		`["","container.from",["alpine:latest","linux/amd64"],{"value":"sha256:deadbeef","policy":"weird"}]`,
+	}, "\n")
+
+	lock, err := ParseLock([]byte(input))
+	require.NoError(t, err)
+
+	_, _, err = lock.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
+	require.ErrorContains(t, err, "invalid policy")
 }
 
 func TestParseLockValidation(t *testing.T) {

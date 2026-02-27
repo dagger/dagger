@@ -375,9 +375,14 @@ Notes:
 
 - [ ] **#9: Restore core lookup lock hooks (`core/schema/git.go`, `core/schema/http.go`, `core/schema/container.go`, `core/lockfile.go`)**  
   Add lock get/set integration for `git.resolve|head|ref|refs|symrefs|isPublic`, `http.get`, and `container.from`.
+  Progress:
+  - [ ] `git.resolve|head|ref|refs|symrefs|isPublic`
+  - [ ] `http.get`
+  - [x] `container.from`
 
 - [ ] **#10: Apply lock mode enforcement across non-workspace lookup paths**  
   Make `strict|auto|update` behavior consistent for core lookup operations, not just workspace module loading.
+  Progress: CLI global `--lock` flag is wired to session params; remaining work is operation-level enforcement across core lookup paths.
 
 ### Phase 2+ tasks (after v1 modules.resolve)
 

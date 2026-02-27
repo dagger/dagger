@@ -67,6 +67,7 @@ var (
 	interactive              bool
 	interactiveCommand       string
 	interactiveCommandParsed []string
+	lockMode                 string
 	web                      bool
 	noExit                   bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
@@ -349,6 +350,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs)")
+	flags.StringVar(&lockMode, "lock", "", "Lock mode for lookup resolution (strict, auto, update). Defaults to auto.")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
