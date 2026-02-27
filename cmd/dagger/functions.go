@@ -653,24 +653,30 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 		return nil
 	}
 
-	switch returnType.Name() {
-	case LLM:
-		return startInteractivePromptMode(ctx, dag, response)
-	case Changeset:
-		// Handle the `export` convenience, i.e, -o,--output flag.
-		if outputPath == "" {
-			return handleChangesetResponse(ctx, dag, response, autoApply)
-		}
-		fallthrough
-	case Container, Directory, File:
-		// Handle the `export` convenience, i.e, -o,--output flag.
-		if outputPath != "" {
-			respPath, ok := response.(string)
-			if !ok {
-				return fmt.Errorf("unexpected response %T: %+v", response, response)
+	if returnList := returnType.AsList; returnList != nil &&
+		returnList.ElementTypeDef.Name() == Changeset &&
+		outputPath == "" {
+		return handleChangesetResponse(ctx, dag, response, autoApply)
+	} else {
+		switch returnType.Name() {
+		case LLM:
+			return startInteractivePromptMode(ctx, dag, response)
+		case Changeset:
+			// Handle the `export` convenience, i.e, -o,--output flag.
+			if outputPath == "" {
+				return handleChangesetResponse(ctx, dag, response, autoApply)
 			}
-			fmt.Fprintf(e, "Saved to %q.\n", respPath)
-			return nil
+			fallthrough
+		case Container, Directory, File:
+			// Handle the `export` convenience, i.e, -o,--output flag.
+			if outputPath != "" {
+				respPath, ok := response.(string)
+				if !ok {
+					return fmt.Errorf("unexpected response %T: %+v", response, response)
+				}
+				fmt.Fprintf(e, "Saved to %q.\n", respPath)
+				return nil
+			}
 		}
 	}
 
@@ -705,15 +711,44 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 	return err
 }
 
-func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) (rerr error) {
-	var changeset *dagger.Changeset
-	switch v := response.(type) {
+func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
+	switch v := item.(type) {
 	case string:
-		changeset = dag.LoadChangesetFromID(dagger.ChangesetID(v))
+		return dag.LoadChangesetFromID(dagger.ChangesetID(v)), nil
+	case map[string]interface{}:
+		if id, ok := v["id"]; ok {
+			return toChangeset(dag, id)
+		}
+		return nil, fmt.Errorf("unexpected response type for changeset: %T", v)
 	case *dagger.Changeset:
-		changeset = v
+		return v, nil
+	case []interface{}:
+		l := len(v)
+		if l == 0 {
+			return nil, nil
+		}
+		css := make([]*dagger.Changeset, l)
+		for i, el := range v {
+			if cs, err := toChangeset(dag, el); err != nil {
+				return nil, err
+			} else {
+				css[i] = cs
+			}
+		}
+		return css[0].WithChangesets(css[1:]), nil
 	default:
-		return fmt.Errorf("unexpected response type for changeset: %T", v)
+		return nil, fmt.Errorf("unexpected response type for changeset: %T", v)
+	}
+}
+
+func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) (rerr error) {
+	changeset, err := toChangeset(dag, response)
+	if err != nil {
+		return err
+	}
+	if changeset == nil {
+		slog.Info("no changes to apply")
+		return nil
 	}
 
 	var summary strings.Builder
