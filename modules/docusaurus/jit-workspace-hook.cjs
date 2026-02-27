@@ -38,6 +38,39 @@ const hydrated = new Set();
 const hydrateFailures = new Set();
 const globRegexCache = new Map();
 let hasFlushed = false;
+const debugEnabled = process.env.DAGGER_JIT_WORKSPACE_DEBUG === '1';
+const debugStartedAt = Date.now();
+let hydrateAttemptCount = 0;
+let hydrateSuccessCount = 0;
+let hydrateFailureCount = 0;
+let hydrateKnownSuccessSkips = 0;
+let hydrateKnownFailureSkips = 0;
+let hydrateSpawnTotalMs = 0;
+let hydrateSpawnMaxMs = 0;
+const slowHydrates = [];
+
+function debugLine(label, payload) {
+  if (debugEnabled == false) {
+    return;
+  }
+  process.stderr.write('[jit-workspace-hook] ' + label + ' ' + JSON.stringify(payload) + '\n');
+}
+
+function rememberSlowHydrate(filePath, hint, elapsedMs, status) {
+  if (debugEnabled == false) {
+    return;
+  }
+  slowHydrates.push({
+    elapsedMs,
+    hint,
+    status,
+    path: filePath,
+  });
+  slowHydrates.sort((left, right) => right.elapsedMs - left.elapsedMs);
+  if (slowHydrates.length > 8) {
+    slowHydrates.length = 8;
+  }
+}
 
 function toPath(value) {
   if (typeof value === 'string') {
@@ -170,17 +203,45 @@ function isWorkspaceExcluded(filePath) {
   return false;
 }
 
-function record(value) {
-  const filePath = canonicalize(value);
+function hasNodeModulesFragment(rawPath) {
+  return rawPath.includes('node_modules/') || rawPath.includes('node_modules\\');
+}
+
+function shouldRecordPath(filePath) {
   if (filePath == null) {
-    return;
+    return false;
   }
 
   if (within(outputDirPath, filePath) == true) {
+    return false;
+  }
+  if (hasPathSegment(filePath, 'node_modules') == true) {
+    return false;
+  }
+  if (within(workspaceRoot, filePath) == false) {
+    return false;
+  }
+  if (isWorkspaceExcluded(filePath) == true) {
+    return false;
+  }
+  if (within(siteRoot, filePath) == true) {
+    return false;
+  }
+  if (within(filePath, siteRoot) == true) {
+    return false;
+  }
+  return true;
+}
+
+function recordCanonical(filePath) {
+  if (shouldRecordPath(filePath) == false) {
     return;
   }
-
   seen.add(filePath);
+}
+
+function record(value) {
+  recordCanonical(canonicalize(value));
 }
 
 function shouldHydrate(filePath) {
@@ -218,12 +279,16 @@ function hydrate(filePath, hint) {
     return false;
   }
   if (hydrated.has(filePath) == true) {
+    hydrateKnownSuccessSkips += 1;
     return true;
   }
   if (hydrateFailures.has(filePath) == true) {
+    hydrateKnownFailureSkips += 1;
     return false;
   }
 
+  hydrateAttemptCount += 1;
+  const startedAt = Date.now();
   const result = spawnSync(
     process.execPath,
     [hydrateHelperPath, filePath, hint],
@@ -237,13 +302,22 @@ function hydrate(filePath, hint) {
       },
     },
   );
+  const elapsedMs = Date.now() - startedAt;
+  hydrateSpawnTotalMs += elapsedMs;
+  if (elapsedMs > hydrateSpawnMaxMs) {
+    hydrateSpawnMaxMs = elapsedMs;
+  }
 
   if (result.status === 0) {
     hydrated.add(filePath);
+    hydrateSuccessCount += 1;
+    rememberSlowHydrate(filePath, hint, elapsedMs, 'success');
     return true;
   }
 
   hydrateFailures.add(filePath);
+  hydrateFailureCount += 1;
+  rememberSlowHydrate(filePath, hint, elapsedMs, 'failure');
   return false;
 }
 
@@ -295,10 +369,17 @@ function wrapPathMethod(target, method, pathArgIndexes) {
     const hint = methodHint(method);
     for (const index of pathArgIndexes) {
       if (index < args.length) {
-        const filePath = canonicalize(args[index]);
+        const rawPath = toPath(args[index]);
+        if (rawPath == null) {
+          continue;
+        }
+        if (hasNodeModulesFragment(rawPath)) {
+          continue;
+        }
+        const filePath = canonicalize(rawPath);
         try {
           hydrate(filePath, hint);
-          record(args[index]);
+          recordCanonical(filePath);
         } catch (_err) {
           // Keep tracing non-intrusive.
         }
@@ -365,7 +446,7 @@ if (typeof resolveFilename == 'function') {
     try {
       const resolved = resolveFilename.apply(this, args);
       if (typeof resolved == 'string' && path.isAbsolute(resolved)) {
-        record(resolved);
+        recordCanonical(canonicalize(resolved));
       }
       return resolved;
     } catch (originalErr) {
@@ -400,7 +481,7 @@ if (typeof resolveFilename == 'function') {
           }
           const retried = resolveFilename.apply(this, args);
           if (typeof retried == 'string' && path.isAbsolute(retried)) {
-            record(retried);
+            recordCanonical(canonicalize(retried));
           }
           return retried;
         }
@@ -413,8 +494,9 @@ if (typeof resolveFilename == 'function') {
 const originalDlopen = process.dlopen;
 if (typeof originalDlopen == 'function') {
   process.dlopen = function wrappedDlopen(module, filename, ...rest) {
-    hydrate(canonicalize(filename), 'file');
-    record(filename);
+    const filePath = canonicalize(filename);
+    hydrate(filePath, 'file');
+    recordCanonical(filePath);
     return originalDlopen.call(this, module, filename, ...rest);
   };
 }
@@ -430,6 +512,23 @@ function flush() {
   const hydratedFile = path.join(outputDirPath, process.pid + HYDRATED_LOG_SUFFIX);
   fs.writeFileSync(seenFile, JSON.stringify(Array.from(seen).sort()), 'utf8');
   fs.writeFileSync(hydratedFile, JSON.stringify(Array.from(hydrated).sort()), 'utf8');
+
+  debugLine('summary', {
+    pid: process.pid,
+    elapsedMs: Date.now() - debugStartedAt,
+    seenCount: seen.size,
+    hydratedCount: hydrated.size,
+    hydrateAttemptCount,
+    hydrateSuccessCount,
+    hydrateFailureCount,
+    hydrateKnownSuccessSkips,
+    hydrateKnownFailureSkips,
+    hydrateSpawnTotalMs,
+    hydrateSpawnMaxMs,
+  });
+  if (slowHydrates.length > 0) {
+    debugLine('slowHydrates', slowHydrates);
+  }
 }
 
 process.once('exit', flush);

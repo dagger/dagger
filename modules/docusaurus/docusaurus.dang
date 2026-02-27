@@ -81,11 +81,58 @@ type PackageJson {
     }
   }
 
+  let hasPrefix(value: String!, prefix: String!): Boolean! {
+    value.trimPrefix(prefix) != value
+  }
+
+  let isLocalDependencySpec(spec: String!): Boolean! {
+    if (hasPrefix(spec, "file:")) {
+      true
+    } else if (hasPrefix(spec, "link:")) {
+      true
+    } else if (hasPrefix(spec, "workspace:")) {
+      true
+    } else {
+      false
+    }
+  }
+
+  let sectionHasLocalDependencyRefs(section: String!): Boolean! {
+    let sectionValue = tryField([section])
+    if (sectionValue == null) {
+      false
+    } else {
+      let found = false
+      for (name in sectionValue.fields) {
+        let spec = sectionValue.field([name]).asString ?? ""
+        if (isLocalDependencySpec(spec)) {
+          found = true
+        }
+      }
+      found
+    }
+  }
+
   """
   The package manager command (read from package.json "packageManager" field).
   """
   pub packageManager: String! {
     tryField(["packageManager"]).asString.split("@")[0] ?? "npm"
+  }
+
+  """
+  Whether package.json uses local dependency protocols (file/link/workspace).
+  """
+  pub hasLocalDependencyRefs: Boolean! {
+    if (sectionHasLocalDependencyRefs("dependencies")) {
+      true
+    } else if (sectionHasLocalDependencyRefs("devDependencies")) {
+      true
+    } else if (sectionHasLocalDependencyRefs("optionalDependencies")) {
+      true
+    } else {
+      sectionHasLocalDependencyRefs("peerDependencies")
+    }
   }
 
   """
@@ -157,6 +204,10 @@ type Site {
       "pnpm" => ["pnpm", "install", "--frozen-lockfile"]
       else => ["npm", "install"]
     }
+  }
+
+  let traceInstallForRuntimeExternalPaths: Boolean! {
+    packageJson.hasLocalDependencyRefs
   }
 
   """
@@ -275,12 +326,25 @@ type Site {
     if (path == ".") {
       []
     } else {
-      let traced = sandbox(ws)
+      let prepared = sandbox(ws)
         .withWorkspaceExcludes(sourceExcludes)
         .withWorkspaceFiles(ws, siteOnlyIncludes, [])
+
+      let afterInstall = if (traceInstallForRuntimeExternalPaths) {
+        prepared
+          .withJustInTimeWorkspace(true)
+          .withNesting(true)
+          .withExec(ws, installCmd(ws), ReturnType.SUCCESS)
+      } else {
+        prepared
+          .withJustInTimeWorkspace(false)
+          .withNesting(false)
+          .withExec(ws, installCmd(ws), ReturnType.SUCCESS)
+      }
+
+      let traced = afterInstall
         .withJustInTimeWorkspace(true)
         .withNesting(true)
-        .withExec(ws, installCmd(ws), ReturnType.SUCCESS)
         .withExec(ws, docusaurusBuildCmd, ReturnType.ANY)
 
       traced.justInTimeWorkspaceLog

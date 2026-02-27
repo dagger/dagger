@@ -36,7 +36,19 @@ const outputDir = canonicalize(mustEnv('DAGGER_JIT_WORKSPACE_LOG_DIR'));
 const workspaceDir = canonicalize(mustEnv('DAGGER_JIT_WORKSPACE_ROOT'));
 const siteDir = canonicalize(mustEnv('DAGGER_JIT_WORKSPACE_SITE_ROOT'));
 const collectMode = (process.env.DAGGER_JIT_WORKSPACE_COLLECT_MODE || 'hydrated').toLowerCase();
+const debugEnabled = process.env.DAGGER_JIT_WORKSPACE_DEBUG === '1';
+const startedAt = Date.now();
 const collected = new Set();
+let filesScanned = 0;
+let rawPathsScanned = 0;
+let pathsCollected = 0;
+
+function debugLine(label, payload) {
+  if (debugEnabled == false) {
+    return;
+  }
+  process.stderr.write('[jit-workspace-log] ' + label + ' ' + JSON.stringify(payload) + '\n');
+}
 
 function shouldReadEntry(entry) {
   if (entry.endsWith('.json') == false) {
@@ -83,6 +95,7 @@ function shouldCollectPath(absPath) {
 
 if (fs.existsSync(outputDir)) {
   for (const entry of fs.readdirSync(outputDir)) {
+    filesScanned += 1;
     if (shouldReadEntry(entry) == false) {
       continue;
     }
@@ -90,6 +103,7 @@ if (fs.existsSync(outputDir)) {
     const filePath = path.join(outputDir, entry);
     const paths = loadPathList(filePath);
     for (const item of paths) {
+      rawPathsScanned += 1;
       const absPath = canonicalize(item);
       if (shouldCollectPath(absPath) == false) {
         continue;
@@ -100,8 +114,18 @@ if (fs.existsSync(outputDir)) {
         continue;
       }
       collected.add(relPath);
+      pathsCollected += 1;
     }
   }
 }
+
+debugLine('summary', {
+  collectMode,
+  elapsedMs: Date.now() - startedAt,
+  filesScanned,
+  rawPathsScanned,
+  pathsCollected,
+  uniqueCollected: collected.size,
+});
 
 process.stdout.write(JSON.stringify(Array.from(collected).sort()));
