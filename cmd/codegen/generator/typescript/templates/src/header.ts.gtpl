@@ -33,20 +33,19 @@ async function serveModuleDependencies(client: Client): Promise<void> {
     {{ end -}}
   {{- end -}}
 
-  {{/* Serve the local module if there are any local dependencies */}}
-
+  {{/* Serve local dependencies only if we're in a module context (dagger.json exists at ".") */}}
   const modSrc = client.moduleSource(".")
   const configExist = await modSrc.configExists()
 
-  {{- if (HasLocalDependencies) }}
-  if (!configExist) {
-    console.error("WARNING: dagger.json not found but is required to load local dependencies or the module itself")
-    return
-  }
-  {{- end }}
-
   if (configExist) {
-    await modSrc.asModule().serve({ includeDependencies: true })
+  {{- range $i, $dep := $dependencies -}}
+    {{- if eq $dep.Kind "LOCAL_SOURCE" }}
+    await client.moduleSource("{{ $dep.SourceRootSubpath }}")
+      .withName("{{ $dep.Name }}")
+      .asModule()
+      .serve()
+    {{ end -}}
+  {{- end -}}
   }
 }
 

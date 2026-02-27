@@ -136,17 +136,17 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
 }
 
-// withNonNestedDevEngine configures a Container to use the same dev engine
+// nonNestedDevEngine configures a Container to use the same dev engine
 // as the tests are running against but while avoiding use of a nested exec.
 // This is needed occasionally for tests like TestClientGenerator where we
 // can't use nested execs.
-// It works because the dang toolchain and suite_test.go share a cache volume
-// for the engine's /run directory, mounted at /run on the test container.
+// It sets _EXPERIMENTAL_DAGGER_RUNNER_HOST to the engine's TCP endpoint,
+// which the container can reach via the service network.
 func nonNestedDevEngine(c *dagger.Client) func(*dagger.Container) *dagger.Container {
+	runnerHost := os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			WithUnixSocket("/run/dagger-engine.sock", c.Host().UnixSocket("/run/dagger-engine.sock")).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///run/dagger-engine.sock")
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", runnerHost)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -137,7 +138,14 @@ func TestMain(m *testing.M) {
 	// Export CLI, set runner host, and unset session vars
 	testutil.FinalizeTestMain(ctx, engineSvc)
 
+	// Monitor the engine in the background; if it crashes, fail immediately
+	// instead of letting tests hang on DNS/connection errors.
+	engineEndpoint := os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	stopMonitor := monitorEngine(engineEndpoint)
+
 	res := oteltest.Main(m)
+
+	close(stopMonitor)
 
 	if origAuthSock != "" {
 		os.Setenv("SSH_AUTH_SOCK", origAuthSock)
@@ -398,6 +406,40 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
+}
+
+// monitorEngine starts a background goroutine that periodically TCP-dials the
+// engine endpoint. If the dial fails, the engine has crashed — we print a clear
+// error and exit immediately rather than letting tests hang. Returns a channel
+// that should be closed to stop monitoring.
+func monitorEngine(endpoint string) chan struct{} {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse engine endpoint %q: %v", endpoint, err))
+	}
+	host := u.Host
+
+	stop := make(chan struct{})
+	go func() {
+		// Give the engine a moment to stabilize before starting checks.
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				conn, err := net.DialTimeout("tcp", host, 2*time.Second)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "\n\nFATAL: dev engine at %s is unreachable: %v\n", host, err)
+					fmt.Fprintf(os.Stderr, "The engine has likely crashed. Failing the test suite immediately.\n\n")
+					os.Exit(1)
+				}
+				conn.Close()
+			}
+		}
+	}()
+	return stop
 }
 
 func mustParseEndpointHost(endpoint string) string {

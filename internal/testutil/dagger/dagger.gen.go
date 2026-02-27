@@ -259,6 +259,9 @@ type GoID string
 // The `GoSdkID` scalar type represents an identifier for an object of type GoSdk.
 type GoSDKID string
 
+// The `GolintID` scalar type represents an identifier for an object of type Golint.
+type GolintID string
+
 // The `HelmID` scalar type represents an identifier for an object of type Helm.
 type HelmID string
 
@@ -863,6 +866,15 @@ func (r *Binding) AsGoSDK() *GoSDK {
 	q := r.query.Select("asGoSdk")
 
 	return &GoSDK{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Golint
+func (r *Binding) AsGolint() *Golint {
+	q := r.query.Select("asGolint")
+
+	return &Golint{
 		query: q,
 	}
 }
@@ -1623,6 +1635,15 @@ func (r *Check) Description(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// If the check failed, this is the error
+func (r *Check) Error() *Error {
+	q := r.query.Select("error")
+
+	return &Error{
+		query: q,
+	}
 }
 
 // A unique identifier for this Check.
@@ -4480,7 +4501,7 @@ type DaggerDevGoOpts struct {
 	// Go version
 	//
 	//
-	// Default: "1.25.7"
+	// Default: "1.26"
 	Version string // go (../../toolchains/go/main.go:31:2)
 	//
 	// Use a custom module cache
@@ -4603,6 +4624,113 @@ func (r *DaggerDev) GoSDK(opts ...DaggerDevGoSDKOpts) *GoSDK {
 	}
 
 	return &GoSDK{
+		query: q,
+	}
+}
+
+// DaggerDevGolintOpts contains options for DaggerDev.Golint
+type DaggerDevGolintOpts struct {
+	//
+	// Project source directory
+	//
+	Source *Directory // golint (../../toolchains/go/main.go:27:2)
+	//
+	// Go version
+	//
+	//
+	// Default: "1.26"
+	Version string // golint (../../toolchains/go/main.go:31:2)
+	//
+	// Use a custom module cache
+	//
+	ModuleCache *CacheVolume // golint (../../toolchains/go/main.go:34:2)
+	//
+	// Use a custom build cache
+	//
+	BuildCache *CacheVolume // golint (../../toolchains/go/main.go:38:2)
+	//
+	// Use a custom base container.
+	// The container must have Go installed.
+	//
+	Base *Container // golint (../../toolchains/go/main.go:43:2)
+	//
+	// Pass arguments to 'go build -ldflags''
+	//
+	Ldflags []string // golint (../../toolchains/go/main.go:47:2)
+	//
+	// Add string value definition of the form importpath.name=value
+	// Example: "github.com/my/module.Foo=bar"
+	//
+	Values []string // golint (../../toolchains/go/main.go:52:2)
+	//
+	// Enable CGO
+	//
+	Cgo bool // golint (../../toolchains/go/main.go:56:2)
+	//
+	// Enable race detector. Implies cgo=true
+	//
+	Race bool // golint (../../toolchains/go/main.go:60:2)
+	//
+	// Enable go experiments https://pkg.go.dev/internal/goexperiment
+	//
+	Experiment []string // golint (../../toolchains/go/main.go:64:2)
+	//
+	// extra system packages to include in the default base image; only
+	// valid if 'base' arg is nil
+	//
+	ExtraPackages []string // golint (../../toolchains/go/main.go:69:2)
+}
+
+func (r *DaggerDev) Golint(opts ...DaggerDevGolintOpts) *Golint { // golint (../../toolchains/go/main.go:24:1)
+	q := r.query.Select("golint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+		// `moduleCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleCache) {
+			q = q.Arg("moduleCache", opts[i].ModuleCache)
+		}
+		// `buildCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].BuildCache) {
+			q = q.Arg("buildCache", opts[i].BuildCache)
+		}
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+		// `ldflags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ldflags) {
+			q = q.Arg("ldflags", opts[i].Ldflags)
+		}
+		// `values` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Values) {
+			q = q.Arg("values", opts[i].Values)
+		}
+		// `cgo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cgo) {
+			q = q.Arg("cgo", opts[i].Cgo)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `experiment` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Experiment) {
+			q = q.Arg("experiment", opts[i].Experiment)
+		}
+		// `extraPackages` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExtraPackages) {
+			q = q.Arg("extraPackages", opts[i].ExtraPackages)
+		}
+	}
+
+	return &Golint{
 		query: q,
 	}
 }
@@ -6399,6 +6527,7 @@ type EngineCacheEntry struct {
 	diskSpaceBytes            *int
 	id                        *EngineCacheEntryID
 	mostRecentUseTimeUnixNano *int
+	recordType                *string
 }
 
 func (r *EngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntry {
@@ -6507,6 +6636,19 @@ func (r *EngineCacheEntry) MostRecentUseTimeUnixNano(ctx context.Context) (int, 
 	q := r.query.Select("mostRecentUseTimeUnixNano")
 
 	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+func (r *EngineCacheEntry) RecordType(ctx context.Context) (string, error) {
+	if r.recordType != nil {
+		return *r.recordType, nil
+	}
+	q := r.query.Select("recordType")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8297,6 +8439,30 @@ func (r *Env) WithGoSDKInput(name string, value *GoSDK, description string) *Env
 // Declare a desired GoSdk output to be assigned in the environment
 func (r *Env) WithGoSDKOutput(name string, description string) *Env {
 	q := r.query.Select("withGoSdkOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Golint in the environment
+func (r *Env) WithGolintInput(name string, value *Golint, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withGolintInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Golint output to be assigned in the environment
+func (r *Env) WithGolintOutput(name string, description string) *Env {
+	q := r.query.Select("withGolintOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -12257,6 +12423,601 @@ func (r *GoSDK) Workspace() *Directory {
 	}
 }
 
+// A Go project
+type Golint struct { // golint (../../toolchains/go/main.go:128:6)
+	query *querybuilder.Selection
+
+	cgo        *bool
+	checkTidy  *Void
+	id         *GolintID
+	lint       *Void
+	lintModule *Void
+	race       *bool
+	test       *Void
+	tests      *string
+	version    *string
+}
+type WithGolintFunc func(r *Golint) *Golint
+
+// With calls the provided function with current Golint.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Golint) With(f WithGolintFunc) *Golint {
+	return f(r)
+}
+
+func (r *Golint) WithGraphQLQuery(q *querybuilder.Selection) *Golint {
+	return &Golint{
+		query: q,
+	}
+}
+
+// Base container from which to run all operations
+func (r *Golint) Base() *Container { // golint (../../toolchains/go/main.go:142:2)
+	q := r.query.Select("base")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// GolintBinaryOpts contains options for Golint.Binary
+type GolintBinaryOpts struct {
+	//
+	// Disable symbol table
+	//
+	NoSymbols bool // golint (../../toolchains/go/main.go:310:2)
+	//
+	// Disable DWARF generation
+	//
+	NoDwarf bool // golint (../../toolchains/go/main.go:313:2)
+	//
+	// Target build platform
+	//
+	Platform Platform // golint (../../toolchains/go/main.go:316:2)
+}
+
+// Build a single main package, and return the compiled binary
+func (r *Golint) Binary(pkg string, opts ...GolintBinaryOpts) *File { // golint (../../toolchains/go/main.go:304:1)
+	q := r.query.Select("binary")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noSymbols` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoSymbols) {
+			q = q.Arg("noSymbols", opts[i].NoSymbols)
+		}
+		// `noDwarf` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoDwarf) {
+			q = q.Arg("noDwarf", opts[i].NoDwarf)
+		}
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+	}
+	q = q.Arg("pkg", pkg)
+
+	return &File{
+		query: q,
+	}
+}
+
+// GolintBuildOpts contains options for Golint.Build
+type GolintBuildOpts struct {
+	//
+	// Which targets to build (default all main packages)
+	//
+	//
+	// Default: ["./..."]
+	Pkgs []string // golint (../../toolchains/go/main.go:252:2)
+	//
+	// Disable symbol table
+	//
+	NoSymbols bool // golint (../../toolchains/go/main.go:255:2)
+	//
+	// Disable DWARF generation
+	//
+	NoDwarf bool // golint (../../toolchains/go/main.go:258:2)
+	//
+	// Target build platform
+	//
+	Platform Platform // golint (../../toolchains/go/main.go:261:2)
+	//
+	// Output directory
+	//
+	//
+	// Default: "./bin/"
+	Output string // golint (../../toolchains/go/main.go:265:2)
+}
+
+// Build the given main packages, and return the build directory
+func (r *Golint) Build(opts ...GolintBuildOpts) *Directory { // golint (../../toolchains/go/main.go:247:1)
+	q := r.query.Select("build")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `pkgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
+			q = q.Arg("pkgs", opts[i].Pkgs)
+		}
+		// `noSymbols` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoSymbols) {
+			q = q.Arg("noSymbols", opts[i].NoSymbols)
+		}
+		// `noDwarf` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoDwarf) {
+			q = q.Arg("noDwarf", opts[i].NoDwarf)
+		}
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+		// `output` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Output) {
+			q = q.Arg("output", opts[i].Output)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Go build cache
+func (r *Golint) BuildCache() *CacheVolume { // golint (../../toolchains/go/main.go:139:2)
+	q := r.query.Select("buildCache")
+
+	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Enable CGO
+func (r *Golint) Cgo(ctx context.Context) (bool, error) { // golint (../../toolchains/go/main.go:151:2)
+	if r.cgo != nil {
+		return *r.cgo, nil
+	}
+	q := r.query.Select("cgo")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GolintCheckTidyOpts contains options for Golint.CheckTidy
+type GolintCheckTidyOpts struct {
+	Include []string // golint (../../toolchains/go/main.go:540:2)
+
+	Exclude []string // golint (../../toolchains/go/main.go:541:2)
+}
+
+// Check if 'go mod tidy' is up-to-date
+func (r *Golint) CheckTidy(ctx context.Context, opts ...GolintCheckTidyOpts) error { // golint (../../toolchains/go/main.go:538:1)
+	if r.checkTidy != nil {
+		return nil
+	}
+	q := r.query.Select("checkTidy")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+// Download dependencies into the module cache
+func (r *Golint) Download() *Golint { // golint (../../toolchains/go/main.go:171:1)
+	q := r.query.Select("download")
+
+	return &Golint{
+		query: q,
+	}
+}
+
+// GolintEnvOpts contains options for Golint.Env
+type GolintEnvOpts struct {
+	Platform Platform // golint (../../toolchains/go/main.go:192:2)
+}
+
+// Prepare a build environment for the given Go source code:
+//   - Build a base container with Go tooling installed and configured
+//   - Apply configuration
+//   - Mount the source code
+func (r *Golint) Env(opts ...GolintEnvOpts) *Container { // golint (../../toolchains/go/main.go:190:1)
+	q := r.query.Select("env")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+	}
+
+	return &Container{
+		query: q,
+	}
+}
+
+func (r *Golint) Exclude(ctx context.Context) ([]string, error) { // golint (../../toolchains/go/main.go:161:2)
+	q := r.query.Select("exclude")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Enable go experiments
+func (r *Golint) Experiment(ctx context.Context) ([]string, error) { // golint (../../toolchains/go/main.go:157:2)
+	q := r.query.Select("experiment")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *Golint) GenerateDaggerRuntime(start string) *Golint { // golint (../../toolchains/go/main.go:669:1)
+	q := r.query.Select("generateDaggerRuntime")
+	q = q.Arg("start", start)
+
+	return &Golint{
+		query: q,
+	}
+}
+
+// A unique identifier for this Golint.
+func (r *Golint) ID(ctx context.Context) (GolintID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response GolintID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Golint) XXX_GraphQLType() string {
+	return "Golint"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Golint) XXX_GraphQLIDType() string {
+	return "GolintID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Golint) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Golint) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *Golint) Include(ctx context.Context) ([]string, error) { // golint (../../toolchains/go/main.go:159:2)
+	q := r.query.Select("include")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Pass arguments to 'go build -ldflags”
+func (r *Golint) Ldflags(ctx context.Context) ([]string, error) { // golint (../../toolchains/go/main.go:145:2)
+	q := r.query.Select("ldflags")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GolintLintOpts contains options for Golint.Lint
+type GolintLintOpts struct {
+	Include []string // golint (../../toolchains/go/main.go:610:2)
+
+	Exclude []string // golint (../../toolchains/go/main.go:611:2)
+}
+
+// Lint the project
+func (r *Golint) Lint(ctx context.Context, opts ...GolintLintOpts) error { // golint (../../toolchains/go/main.go:608:1)
+	if r.lint != nil {
+		return nil
+	}
+	q := r.query.Select("lint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+func (r *Golint) LintModule(ctx context.Context, mod string) error { // golint (../../toolchains/go/main.go:636:1)
+	if r.lintModule != nil {
+		return nil
+	}
+	q := r.query.Select("lintModule")
+	q = q.Arg("mod", mod)
+
+	return q.Execute(ctx)
+}
+
+// GolintListPackagesOpts contains options for Golint.ListPackages
+type GolintListPackagesOpts struct {
+	//
+	// Filter by name or pattern. Example './foo/...'
+	//
+	//
+	// Default: ["./..."]
+	Pkgs []string // golint (../../toolchains/go/main.go:400:2)
+	//
+	// Only list main packages
+	//
+	OnlyMain bool // golint (../../toolchains/go/main.go:403:2)
+}
+
+// List packages matching the specified criteria
+func (r *Golint) ListPackages(ctx context.Context, opts ...GolintListPackagesOpts) ([]string, error) { // golint (../../toolchains/go/main.go:395:1)
+	q := r.query.Select("listPackages")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `pkgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
+			q = q.Arg("pkgs", opts[i].Pkgs)
+		}
+		// `onlyMain` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnlyMain) {
+			q = q.Arg("onlyMain", opts[i].OnlyMain)
+		}
+	}
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Go module cache
+func (r *Golint) ModuleCache() *CacheVolume { // golint (../../toolchains/go/main.go:136:2)
+	q := r.query.Select("moduleCache")
+
+	return &CacheVolume{
+		query: q,
+	}
+}
+
+// GolintModulesOpts contains options for Golint.Modules
+type GolintModulesOpts struct {
+	Include []string // golint (../../toolchains/go/main.go:471:2)
+
+	Exclude []string // golint (../../toolchains/go/main.go:472:2)
+}
+
+// Scan the source for go modules, and return their paths
+func (r *Golint) Modules(ctx context.Context, opts ...GolintModulesOpts) ([]string, error) { // golint (../../toolchains/go/main.go:469:1)
+	q := r.query.Select("modules")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Enable race detector
+func (r *Golint) Race(ctx context.Context) (bool, error) { // golint (../../toolchains/go/main.go:154:2)
+	if r.race != nil {
+		return *r.race, nil
+	}
+	q := r.query.Select("race")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Project source directory
+func (r *Golint) Source() *Directory { // golint (../../toolchains/go/main.go:133:2)
+	q := r.query.Select("source")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// GolintTestOpts contains options for Golint.Test
+type GolintTestOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // golint (../../toolchains/go/main.go:346:2)
+	//
+	// Skip these tests
+	//
+	Skip string // golint (../../toolchains/go/main.go:349:2)
+	//
+	// Abort test run on first failure
+	//
+	Failfast bool // golint (../../toolchains/go/main.go:352:2)
+	//
+	// How many tests to run in parallel - defaults to the number of CPUs
+	//
+	Parallel int // golint (../../toolchains/go/main.go:356:2)
+	//
+	// How long before timing out the test run
+	//
+	//
+	// Default: "30m"
+	Timeout string // golint (../../toolchains/go/main.go:360:2)
+
+	// Default: 1
+	Count int // golint (../../toolchains/go/main.go:363:2)
+	//
+	// Which packages to test
+	//
+	//
+	// Default: ["./..."]
+	Pkgs []string // golint (../../toolchains/go/main.go:367:2)
+}
+
+// Run tests for the given packages
+func (r *Golint) Test(ctx context.Context, opts ...GolintTestOpts) error { // golint (../../toolchains/go/main.go:342:1)
+	if r.test != nil {
+		return nil
+	}
+	q := r.query.Select("test")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `pkgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
+			q = q.Arg("pkgs", opts[i].Pkgs)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+// GolintTestsOpts contains options for Golint.Tests
+type GolintTestsOpts struct {
+	//
+	// Packages to list tests from (default all packages)
+	//
+	//
+	// Default: ["./..."]
+	Pkgs []string // golint (../../toolchains/go/main.go:237:2)
+}
+
+// List tests
+func (r *Golint) Tests(ctx context.Context, opts ...GolintTestsOpts) (string, error) { // golint (../../toolchains/go/main.go:232:1)
+	if r.tests != nil {
+		return *r.tests, nil
+	}
+	q := r.query.Select("tests")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `pkgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
+			q = q.Arg("pkgs", opts[i].Pkgs)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GolintTidyOpts contains options for Golint.Tidy
+type GolintTidyOpts struct {
+	Include []string // golint (../../toolchains/go/main.go:498:2)
+
+	Exclude []string // golint (../../toolchains/go/main.go:499:2)
+}
+
+func (r *Golint) Tidy(opts ...GolintTidyOpts) *Changeset { // golint (../../toolchains/go/main.go:496:1)
+	q := r.query.Select("tidy")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+func (r *Golint) TidyModule(mod string) *Changeset { // golint (../../toolchains/go/main.go:481:1)
+	q := r.query.Select("tidyModule")
+	q = q.Arg("mod", mod)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Add string value definition of the form importpath.name=value
+func (r *Golint) Values(ctx context.Context) ([]string, error) { // golint (../../toolchains/go/main.go:148:2)
+	q := r.query.Select("values")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Go version
+func (r *Golint) Version(ctx context.Context) (string, error) { // golint (../../toolchains/go/main.go:130:2)
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 type Helm struct { // helm (../../toolchains/helm-dev/main.go:27:6)
 	query *querybuilder.Selection
 
@@ -15799,14 +16560,12 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 type PythonSDK struct { // python-sdk (../../toolchains/python-sdk-dev/main.go:16:6)
 	query *querybuilder.Selection
 
-	id               *PythonSDKID
-	lint             *Void
-	lintDocsSnippets *Void
-	release          *Void
-	releaseDryRun    *Void
-	sourcePath       *string
-	test             *Void
-	typecheck        *Void
+	id            *PythonSDKID
+	release       *Void
+	releaseDryRun *Void
+	sourcePath    *string
+	test          *Void
+	typecheck     *Void
 }
 type WithPythonSDKFunc func(r *PythonSDK) *PythonSDK
 
@@ -15830,11 +16589,11 @@ type PythonSDKBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:280:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:273:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:277:1)
+func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:270:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -15849,7 +16608,7 @@ func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk
 }
 
 // Bump the Python SDK's Engine dependency
-func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:265:1)
+func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:258:1)
 	q := r.query.Select("bump")
 	q = q.Arg("version", version)
 
@@ -15859,7 +16618,7 @@ func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../toolc
 }
 
 // Regenerate the core Python client library
-func (r *PythonSDK) ClientLibrary() *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:172:1)
+func (r *PythonSDK) ClientLibrary() *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:165:1)
 	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
@@ -15877,7 +16636,7 @@ func (r *PythonSDK) DevContainer() *Container { // python-sdk (../../toolchains/
 }
 
 // Preview the reference documentation
-func (r *PythonSDK) Docs() *PythonSDKDocs { // python-sdk (../../toolchains/python-sdk-dev/main.go:318:1)
+func (r *PythonSDK) Docs() *PythonSDKDocs { // python-sdk (../../toolchains/python-sdk-dev/main.go:311:1)
 	q := r.query.Select("docs")
 
 	return &PythonSDKDocs{
@@ -15890,11 +16649,11 @@ type PythonSDKFormatOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-sdk (../../toolchains/python-sdk-dev/main.go:109:2)
+	Paths []string // python-sdk (../../toolchains/python-sdk-dev/main.go:105:2)
 }
 
 // Format source files
-func (r *PythonSDK) Format(opts ...PythonSDKFormatOpts) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:106:1)
+func (r *PythonSDK) Format(opts ...PythonSDKFormatOpts) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:102:1)
 	q := r.query.Select("format")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -15953,14 +16712,11 @@ type PythonSDKLintOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-sdk (../../toolchains/python-sdk-dev/main.go:95:2)
+	Paths []string // python-sdk (../../toolchains/python-sdk-dev/main.go:93:2)
 }
 
 // Check for linting errors
-func (r *PythonSDK) Lint(ctx context.Context, opts ...PythonSDKLintOpts) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:91:1)
-	if r.lint != nil {
-		return nil
-	}
+func (r *PythonSDK) Lint(opts ...PythonSDKLintOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:90:1)
 	q := r.query.Select("lint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -15969,19 +16725,18 @@ func (r *PythonSDK) Lint(ctx context.Context, opts ...PythonSDKLintOpts) error {
 		}
 	}
 
-	return q.Execute(ctx)
+	return &Container{
+		query: q,
+	}
 }
 
 // PythonSDKLintDocsSnippetsOpts contains options for PythonSDK.LintDocsSnippets
 type PythonSDKLintDocsSnippetsOpts struct {
-	Workspace *Directory // python-sdk (../../toolchains/python-sdk-dev/main.go:83:2)
+	Workspace *Directory // python-sdk (../../toolchains/python-sdk-dev/main.go:82:2)
 }
 
 // Lint the Python snippets in the documentation
-func (r *PythonSDK) LintDocsSnippets(ctx context.Context, opts ...PythonSDKLintDocsSnippetsOpts) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:75:1)
-	if r.lintDocsSnippets != nil {
-		return nil
-	}
+func (r *PythonSDK) LintDocsSnippets(opts ...PythonSDKLintDocsSnippetsOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:75:1)
 	q := r.query.Select("lintDocsSnippets")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -15990,7 +16745,9 @@ func (r *PythonSDK) LintDocsSnippets(ctx context.Context, opts ...PythonSDKLintD
 		}
 	}
 
-	return q.Execute(ctx)
+	return &Container{
+		query: q,
+	}
 }
 
 // PythonSDKPublishOpts contains options for PythonSDK.Publish
@@ -16000,15 +16757,15 @@ type PythonSDKPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:294:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:287:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-sdk (../../toolchains/python-sdk-dev/main.go:297:2)
+	URL string // python-sdk (../../toolchains/python-sdk-dev/main.go:290:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:289:1)
+func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:282:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16030,15 +16787,15 @@ func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Contai
 
 // PythonSDKReleaseOpts contains options for PythonSDK.Release
 type PythonSDKReleaseOpts struct {
-	DryRun bool // python-sdk (../../toolchains/python-sdk-dev/main.go:236:2)
+	DryRun bool // python-sdk (../../toolchains/python-sdk-dev/main.go:229:2)
 
-	PypiRepo string // python-sdk (../../toolchains/python-sdk-dev/main.go:239:2)
+	PypiRepo string // python-sdk (../../toolchains/python-sdk-dev/main.go:232:2)
 
-	PypiToken *Secret // python-sdk (../../toolchains/python-sdk-dev/main.go:242:2)
+	PypiToken *Secret // python-sdk (../../toolchains/python-sdk-dev/main.go:235:2)
 }
 
 // Release the Python SDK
-func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...PythonSDKReleaseOpts) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:229:1)
+func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...PythonSDKReleaseOpts) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:222:1)
 	if r.release != nil {
 		return nil
 	}
@@ -16063,7 +16820,7 @@ func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...Pytho
 }
 
 // Test the publishing process
-func (r *PythonSDK) ReleaseDryRun(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:218:1)
+func (r *PythonSDK) ReleaseDryRun(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:211:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -16095,7 +16852,7 @@ func (r *PythonSDK) SupportedVersions(ctx context.Context) ([]string, error) { /
 }
 
 // Test the Python SDK
-func (r *PythonSDK) Test(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:140:1)
+func (r *PythonSDK) Test(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:136:1)
 	if r.test != nil {
 		return nil
 	}
@@ -16111,11 +16868,11 @@ type PythonSDKTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:312:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:305:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonSDK) TestPublish(token *Secret, opts ...PythonSDKTestPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:307:1)
+func (r *PythonSDK) TestPublish(token *Secret, opts ...PythonSDKTestPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:300:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16136,15 +16893,15 @@ type PythonSDKTestSuiteOpts struct {
 	//
 	// Python version
 	//
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:158:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:151:2)
 	//
 	// Disable nested execution for the test runs
 	//
-	DisableNestedExec bool // python-sdk (../../toolchains/python-sdk-dev/main.go:161:2)
+	DisableNestedExec bool // python-sdk (../../toolchains/python-sdk-dev/main.go:154:2)
 }
 
 // TestSuite to run unit and other tests
-func (r *PythonSDK) TestSuite(opts ...PythonSDKTestSuiteOpts) *PythonSDKTestSuite { // python-sdk (../../toolchains/python-sdk-dev/main.go:155:1)
+func (r *PythonSDK) TestSuite(opts ...PythonSDKTestSuiteOpts) *PythonSDKTestSuite { // python-sdk (../../toolchains/python-sdk-dev/main.go:148:1)
 	q := r.query.Select("testSuite")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -16164,7 +16921,7 @@ func (r *PythonSDK) TestSuite(opts ...PythonSDKTestSuiteOpts) *PythonSDKTestSuit
 
 // Run the type checker (mypy)
 // FIXME: this is not included as an automated check. Should it?
-func (r *PythonSDK) Typecheck(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:121:1)
+func (r *PythonSDK) Typecheck(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:117:1)
 	if r.typecheck != nil {
 		return nil
 	}
@@ -16174,7 +16931,7 @@ func (r *PythonSDK) Typecheck(ctx context.Context) error { // python-sdk (../../
 }
 
 // Mount a directory on the base container
-func (r *PythonSDK) WithDirectory(source *Directory) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:130:1)
+func (r *PythonSDK) WithDirectory(source *Directory) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:126:1)
 	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	q = q.Arg("source", source)
@@ -16282,20 +17039,14 @@ func (r *PythonSDKDocs) Preview(opts ...PythonSDKDocsPreviewOpts) *Service { // 
 type PythonSDKTestSuite struct { // python-sdk (../../toolchains/python-sdk-dev/test.go:12:6)
 	query *querybuilder.Selection
 
-	id *PythonSDKTestSuiteID
+	id         *PythonSDKTestSuiteID
+	run        *Void
+	runDefault *Void
+	unit       *Void
 }
 
 func (r *PythonSDKTestSuite) WithGraphQLQuery(q *querybuilder.Selection) *PythonSDKTestSuite {
 	return &PythonSDKTestSuite{
-		query: q,
-	}
-}
-
-// Run python tests.
-func (r *PythonSDKTestSuite) Default() *Container { // python-sdk (../../toolchains/python-sdk-dev/test.go:40:1)
-	q := r.query.Select("default")
-
-	return &Container{
 		query: q,
 	}
 }
@@ -16369,22 +17120,34 @@ func (r *PythonSDKTestSuite) Provision(cliBin *File, opts ...PythonSDKTestSuiteP
 }
 
 // Run the pytest command.
-func (r *PythonSDKTestSuite) Run(args []string) *Container { // python-sdk (../../toolchains/python-sdk-dev/test.go:25:1)
+func (r *PythonSDKTestSuite) Run(ctx context.Context, args []string) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:25:1)
+	if r.run != nil {
+		return nil
+	}
 	q := r.query.Select("run")
 	q = q.Arg("args", args)
 
-	return &Container{
-		query: q,
+	return q.Execute(ctx)
+}
+
+// Run python tests.
+func (r *PythonSDKTestSuite) RunDefault(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:40:1)
+	if r.runDefault != nil {
+		return nil
 	}
+	q := r.query.Select("runDefault")
+
+	return q.Execute(ctx)
 }
 
 // Run unit tests.
-func (r *PythonSDKTestSuite) Unit() *Container { // python-sdk (../../toolchains/python-sdk-dev/test.go:45:1)
+func (r *PythonSDKTestSuite) Unit(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:45:1)
+	if r.unit != nil {
+		return nil
+	}
 	q := r.query.Select("unit")
 
-	return &Container{
-		query: q,
-	}
+	return q.Execute(ctx)
 }
 
 func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
@@ -16908,7 +17671,7 @@ type GoOpts struct {
 	// Go version
 	//
 	//
-	// Default: "1.25.7"
+	// Default: "1.26"
 	Version string // go (../../toolchains/go/main.go:31:2)
 	//
 	// Use a custom module cache
@@ -17031,6 +17794,113 @@ func (r *Client) GoSDK(opts ...GoSDKOpts) *GoSDK {
 	}
 
 	return &GoSDK{
+		query: q,
+	}
+}
+
+// GolintOpts contains options for Client.Golint
+type GolintOpts struct {
+	//
+	// Project source directory
+	//
+	Source *Directory // golint (../../toolchains/go/main.go:27:2)
+	//
+	// Go version
+	//
+	//
+	// Default: "1.26"
+	Version string // golint (../../toolchains/go/main.go:31:2)
+	//
+	// Use a custom module cache
+	//
+	ModuleCache *CacheVolume // golint (../../toolchains/go/main.go:34:2)
+	//
+	// Use a custom build cache
+	//
+	BuildCache *CacheVolume // golint (../../toolchains/go/main.go:38:2)
+	//
+	// Use a custom base container.
+	// The container must have Go installed.
+	//
+	Base *Container // golint (../../toolchains/go/main.go:43:2)
+	//
+	// Pass arguments to 'go build -ldflags''
+	//
+	Ldflags []string // golint (../../toolchains/go/main.go:47:2)
+	//
+	// Add string value definition of the form importpath.name=value
+	// Example: "github.com/my/module.Foo=bar"
+	//
+	Values []string // golint (../../toolchains/go/main.go:52:2)
+	//
+	// Enable CGO
+	//
+	Cgo bool // golint (../../toolchains/go/main.go:56:2)
+	//
+	// Enable race detector. Implies cgo=true
+	//
+	Race bool // golint (../../toolchains/go/main.go:60:2)
+	//
+	// Enable go experiments https://pkg.go.dev/internal/goexperiment
+	//
+	Experiment []string // golint (../../toolchains/go/main.go:64:2)
+	//
+	// extra system packages to include in the default base image; only
+	// valid if 'base' arg is nil
+	//
+	ExtraPackages []string // golint (../../toolchains/go/main.go:69:2)
+}
+
+func (r *Client) Golint(opts ...GolintOpts) *Golint { // golint (../../toolchains/go/main.go:24:1)
+	q := r.query.Select("golint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+		// `moduleCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleCache) {
+			q = q.Arg("moduleCache", opts[i].ModuleCache)
+		}
+		// `buildCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].BuildCache) {
+			q = q.Arg("buildCache", opts[i].BuildCache)
+		}
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+		// `ldflags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ldflags) {
+			q = q.Arg("ldflags", opts[i].Ldflags)
+		}
+		// `values` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Values) {
+			q = q.Arg("values", opts[i].Values)
+		}
+		// `cgo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cgo) {
+			q = q.Arg("cgo", opts[i].Cgo)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `experiment` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Experiment) {
+			q = q.Arg("experiment", opts[i].Experiment)
+		}
+		// `extraPackages` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExtraPackages) {
+			q = q.Arg("extraPackages", opts[i].ExtraPackages)
+		}
+	}
+
+	return &Golint{
 		query: q,
 	}
 }
@@ -17598,6 +18468,16 @@ func (r *Client) LoadGoSDKFromID(id GoSDKID) *GoSDK {
 	q = q.Arg("id", id)
 
 	return &GoSDK{
+		query: q,
+	}
+}
+
+// Load a Golint from its ID.
+func (r *Client) LoadGolintFromID(id GolintID) *Golint {
+	q := r.query.Select("loadGolintFromID")
+	q = q.Arg("id", id)
+
+	return &Golint{
 		query: q,
 	}
 }
@@ -21649,7 +22529,7 @@ type WorkspaceDirectoryOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
-
+	// Apply .gitignore filter rules inside the directory.
 	Gitignore bool
 }
 
@@ -22804,9 +23684,11 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 		dag:    dag,
 	}
 
-	if err := serveModuleDependencies(ctx, c); err != nil {
-		return nil, err
-	}
+	// Serve module dependencies on a best-effort basis. In some contexts
+	// (e.g., inside a container without access to host paths or when the
+	// engine can't resolve transitive git dependencies), serving may fail.
+	// This should not prevent the client from connecting.
+	_ = serveModuleDependencies(ctx, c)
 
 	return c, nil
 }
@@ -22844,28 +23726,79 @@ func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 	resp.Extensions = daggerResp.Extensions
 	resp.Errors = daggerResp.Errors
 
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+	}
 	return err
 }
 
-// serveModuleDependencies services all dependencies of the module.
-// Local dependencies are served by the dagger.json.
-// Remote dependencies are generated by the client generator.
+// serveModuleDependencies serves all dependencies of the module.
+// Dependencies are baked in at generation time by the client generator.
 func serveModuleDependencies(ctx context.Context, client *Client) error {
 	modSrc := client.ModuleSource(".")
 	configExist, err := modSrc.ConfigExists(ctx)
 	if err != nil {
 		return err
 	}
-	if !configExist {
-		return fmt.Errorf("dagger.json not found but is required to load local dependencies or the module itself")
-	}
 
 	if configExist {
-		if err := modSrc.AsModule().Serve(ctx, ModuleServeOpts{
-			IncludeDependencies: true,
-		}); err != nil {
-			return err
-		}
+		// Local dependencies may not be resolvable in all contexts (e.g.,
+		// when running inside a container where the engine can't access
+		// the host paths). Skip gracefully if they can't be served.
+		_ = client.ModuleSource("toolchains/changelog").
+			WithName("changelog").
+			AsModule().
+			Serve(ctx)
+
+		// Local dependencies may not be resolvable in all contexts (e.g.,
+		// when running inside a container where the engine can't access
+		// the host paths). Skip gracefully if they can't be served.
+		_ = client.ModuleSource("toolchains/docs-dev").
+			WithName("docs").
+			AsModule().
+			Serve(ctx)
+
+		// Local dependencies may not be resolvable in all contexts (e.g.,
+		// when running inside a container where the engine can't access
+		// the host paths). Skip gracefully if they can't be served.
+		_ = client.ModuleSource("toolchains/helm-dev").
+			WithName("helm").
+			AsModule().
+			Serve(ctx)
+
+		// Local dependencies may not be resolvable in all contexts (e.g.,
+		// when running inside a container where the engine can't access
+		// the host paths). Skip gracefully if they can't be served.
+		_ = client.ModuleSource("toolchains/all-sdks").
+			WithName("sdks").
+			AsModule().
+			Serve(ctx)
+
+		// Local dependencies may not be resolvable in all contexts (e.g.,
+		// when running inside a container where the engine can't access
+		// the host paths). Skip gracefully if they can't be served.
+		_ = client.ModuleSource("toolchains/engine-dev").
+			WithName("engine-dev").
+			AsModule().
+			Serve(ctx)
+
+		// Local dependencies may not be resolvable in all contexts (e.g.,
+		// when running inside a container where the engine can't access
+		// the host paths). Skip gracefully if they can't be served.
+		_ = client.ModuleSource("toolchains/cli-dev").
+			WithName("cli").
+			AsModule().
+			Serve(ctx)
+
+		// Local dependencies may not be resolvable in all contexts (e.g.,
+		// when running inside a container where the engine can't access
+		// the host paths). Skip gracefully if they can't be served.
+		_ = client.ModuleSource("version").
+			WithName("version").
+			AsModule().
+			Serve(ctx)
 	}
 
 	return nil

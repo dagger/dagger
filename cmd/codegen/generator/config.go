@@ -65,10 +65,11 @@ type ModuleGeneratorConfig struct {
 }
 
 type ModuleSourceDependency struct {
-	Kind   string
-	Name   string `json:"moduleOriginalName"`
-	Pin    string
-	Source string `json:"asString"`
+	Kind              string
+	Name              string `json:"moduleName"`
+	Pin               string
+	Source            string `json:"asString"`
+	SourceRootSubpath string `json:"sourceRootSubpath"`
 }
 
 // Specific configuration for client generation.

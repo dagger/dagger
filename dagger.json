@@ -32,7 +32,6 @@
     {
       "name": "go",
       "source": "toolchains/go",
-      "ignoreChecks": ["*"],
       "customizations": [
         {
           "argument": "source",
@@ -52,6 +51,9 @@
             "modules/evals/**"
           ]
         }
+      ],
+      "ignoreChecks": [
+        "*"
       ]
     },
     {

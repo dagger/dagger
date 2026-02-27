@@ -220,6 +220,11 @@ func GoSDK(opts ...dagger.GoSDKOpts) *dagger.GoSDK {
 	return client.GoSDK(opts...)
 }
 
+func Golint(opts ...dagger.GolintOpts) *dagger.Golint {
+	client := initClient()
+	return client.Golint(opts...)
+}
+
 func Helm(opts ...dagger.HelmOpts) *dagger.Helm {
 	client := initClient()
 	return client.Helm(opts...)
@@ -511,6 +516,12 @@ func LoadGoFromID(id dagger.GoID) *dagger.Go {
 func LoadGoSDKFromID(id dagger.GoSDKID) *dagger.GoSDK {
 	client := initClient()
 	return client.LoadGoSDKFromID(id)
+}
+
+// Load a Golint from its ID.
+func LoadGolintFromID(id dagger.GolintID) *dagger.Golint {
+	client := initClient()
+	return client.LoadGolintFromID(id)
 }
 
 // Load a Helm from its ID.

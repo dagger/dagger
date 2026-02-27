@@ -7,13 +7,15 @@ type TestSplit {
   let testSpecific(
     run: [String!]!,
     pkg: String! = "./core/integration",
+    parallel: String! = "2",
   ): Void {
     go
       .env
       .withDirectory("/app", source)
       .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
       .withExec(
-        ["go", "test", pkg, "-run", run.join("|"), "-v", "-count", "1", "-timeout", "30m"],
+        ["go", "test", pkg, "-run", run.join("|"), "-v", "-parallel", parallel, "-count", "1", "-timeout", "30m", "-failfast"],
         experimentalPrivilegedNesting: true,
       )
       .sync
@@ -31,9 +33,10 @@ type TestSplit {
       .env
       .withDirectory("/app", source)
       .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
       .withEnvVariable("CGO_ENABLED", "1")
       .withExec(
-        ["go", "test", pkg, "-v", "-skip", skip.join("|"), "-count", "1", "-race", "-timeout", "30m"],
+        ["go", "test", pkg, "-v", "-skip", skip.join("|"), "-parallel", "2", "-count", "1", "-race", "-timeout", "30m"],
         experimentalPrivilegedNesting: true,
       )
       .sync
@@ -95,11 +98,12 @@ type TestSplit {
       .env
       .withDirectory("/app", source)
       .withWorkdir("/app")
+      .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
       .withExec(
         ["go", "test", "./core/integration",
          "-run", "TestContainer|TestDockerfile",
          "-skip", "TestInsecureRootCapabilitesWithService|TestImageLoadCompatibility|TestSaveHostDocker|TestLoadHostDocker|TestSaveHostContainerd|TestLoadHostContainerd|TestLoadSaveNone|TestSaveInNested|TestWithRegistryAuthFileAndDirectoryAccess",
-         "-v", "-count", "1", "-timeout", "30m"],
+         "-v", "-parallel", "2", "-count", "1", "-timeout", "30m"],
         experimentalPrivilegedNesting: true,
       )
       .sync
@@ -128,7 +132,7 @@ type TestSplit {
   Test Interface
   """
   pub testInterface: Void @check {
-    testSpecific(["TestInterface"])
+    testSpecific(["TestInterface"], parallel: "1")
   }
 
   """
