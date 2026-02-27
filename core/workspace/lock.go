@@ -10,7 +10,6 @@ import (
 const (
 	lockCoreNamespace    = ""
 	lockModulesResolveOp = "modules.resolve"
-	lockModuleResolveArg = "source"
 )
 
 // LockMode controls lockfile read/update behavior for a run.
@@ -80,8 +79,8 @@ func (l *Lock) GetModuleResolve(source string) (pin string, policy LockPolicy, o
 	}
 	resultRaw, ok := l.file.Get(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source))
 	if !ok {
-		// Legacy lockfile format used scalar source input instead of arg tuples.
-		resultRaw, ok = l.file.Get(lockCoreNamespace, lockModulesResolveOp, legacyModuleResolveInputs(source))
+		// Compat: accept short-lived tuple argument encoding.
+		resultRaw, ok = l.file.Get(lockCoreNamespace, lockModulesResolveOp, tupleModuleResolveInputs(source))
 	}
 	if !ok {
 		return "", "", false
@@ -119,7 +118,7 @@ func (l *Lock) DeleteModuleResolve(source string) bool {
 		return false
 	}
 	deleted := l.file.Delete(lockCoreNamespace, lockModulesResolveOp, moduleResolveInputs(source))
-	if l.file.Delete(lockCoreNamespace, lockModulesResolveOp, legacyModuleResolveInputs(source)) {
+	if l.file.Delete(lockCoreNamespace, lockModulesResolveOp, tupleModuleResolveInputs(source)) {
 		deleted = true
 	}
 	return deleted
@@ -175,17 +174,18 @@ func parseModuleResolveInputs(inputs []any) (string, bool) {
 		return "", false
 	}
 
-	// Legacy lockfile format.
+	// Canonical lockfile format.
 	if source, ok := inputs[0].(string); ok {
 		return source, true
 	}
 
+	// Compat: accept short-lived tuple argument encoding.
 	arg, ok := inputs[0].([]any)
 	if !ok || len(arg) != 2 {
 		return "", false
 	}
 	argName, ok := arg[0].(string)
-	if !ok || argName != lockModuleResolveArg {
+	if !ok || argName != "source" {
 		return "", false
 	}
 	source, ok := arg[1].(string)
@@ -196,13 +196,13 @@ func parseModuleResolveInputs(inputs []any) (string, bool) {
 }
 
 func moduleResolveInputs(source string) []any {
-	return []any{
-		[]any{lockModuleResolveArg, source},
-	}
+	return []any{source}
 }
 
-func legacyModuleResolveInputs(source string) []any {
-	return []any{source}
+func tupleModuleResolveInputs(source string) []any {
+	return []any{
+		[]any{"source", source},
+	}
 }
 
 func parseModuleResolveResult(value any) (moduleResolveResult, error) {

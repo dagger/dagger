@@ -20,17 +20,17 @@ func TestModuleResolveSetGetDelete(t *testing.T) {
 
 	output, err := lock.Marshal()
 	require.NoError(t, err)
-	require.Contains(t, string(output), `["","modules.resolve",[["source","github.com/acme/mod@v1.0"]],{"value":"3d23f8","policy":"pin"}]`)
+	require.Contains(t, string(output), `["","modules.resolve",["github.com/acme/mod@v1.0"],{"value":"3d23f8","policy":"pin"}]`)
 
 	require.True(t, lock.DeleteModuleResolve("github.com/acme/mod@v1.0"))
 	_, _, ok = lock.GetModuleResolve("github.com/acme/mod@v1.0")
 	require.False(t, ok)
 }
 
-func TestModuleResolveLegacyInputCompatibility(t *testing.T) {
+func TestModuleResolveTupleInputCompatibility(t *testing.T) {
 	input := strings.Join([]string{
 		`[["version","1"]]`,
-		`["","modules.resolve",["github.com/acme/mod@main"],{"value":"111","policy":"pin"}]`,
+		`["","modules.resolve",[["source","github.com/acme/mod@main"]],{"value":"111","policy":"pin"}]`,
 	}, "\n")
 
 	lock, err := ParseLock([]byte(input))

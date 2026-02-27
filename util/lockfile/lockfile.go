@@ -274,15 +274,10 @@ func canonicalizeInputs(inputs []any) ([]any, string, error) {
 	if err := decodeJSON(data, &canonical); err != nil {
 		return nil, "", err
 	}
-	normalized, err := normalizeOrderedInputs(canonical)
-	if err != nil {
+	if err := validateOrderedInputs(canonical); err != nil {
 		return nil, "", err
 	}
-	data, err = json.Marshal(normalized)
-	if err != nil {
-		return nil, "", err
-	}
-	return normalized, string(data), nil
+	return canonical, string(data), nil
 }
 
 func canonicalizeAny(value any) (any, error) {
@@ -297,48 +292,27 @@ func canonicalizeAny(value any) (any, error) {
 	return canonical, nil
 }
 
-func normalizeOrderedInputs(inputs []any) ([]any, error) {
-	out := make([]any, len(inputs))
+func validateOrderedInputs(inputs []any) error {
 	for i, value := range inputs {
-		normalized, err := normalizeOrderedInputValue(value)
-		if err != nil {
-			return nil, fmt.Errorf("input %d: %w", i, err)
+		if err := validateOrderedInputValue(value); err != nil {
+			return fmt.Errorf("input %d: %w", i, err)
 		}
-		out[i] = normalized
 	}
-	return out, nil
+	return nil
 }
 
-func normalizeOrderedInputValue(value any) (any, error) {
+func validateOrderedInputValue(value any) error {
 	switch typed := value.(type) {
 	case []any:
-		out := make([]any, len(typed))
 		for i, nested := range typed {
-			normalized, err := normalizeOrderedInputValue(nested)
-			if err != nil {
-				return nil, fmt.Errorf("nested input %d: %w", i, err)
+			if err := validateOrderedInputValue(nested); err != nil {
+				return fmt.Errorf("nested input %d: %w", i, err)
 			}
-			out[i] = normalized
 		}
-		return out, nil
 	case map[string]any:
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-
-		pairs := make([]any, 0, len(keys))
-		for _, key := range keys {
-			normalized, err := normalizeOrderedInputValue(typed[key])
-			if err != nil {
-				return nil, fmt.Errorf("input key %q: %w", key, err)
-			}
-			pairs = append(pairs, []any{key, normalized})
-		}
-		return pairs, nil
+		return fmt.Errorf("unordered object/map/dict in lock inputs")
 	}
-	return value, nil
+	return nil
 }
 
 func decodeJSON(data []byte, out any) error {
