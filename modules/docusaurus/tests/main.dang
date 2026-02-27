@@ -1,5 +1,6 @@
 type Tests {
   let fixtureSitePath: String! = "modules/docusaurus/tests/testdata/runtime/site-basic"
+  let fixturePackageJSONPath: String! = fixtureSitePath + "/package.json"
 
   let runtimePaths(ws: Workspace!): [String!]! {
     docusaurus
@@ -48,11 +49,44 @@ type Tests {
   }
 
   """
+  Ensures optimizeConfig writes deterministic runtimeExternalPaths into package.json docusaurus.include.
+  """
+  pub optimizeConfigUsesRuntimePaths(ws: Workspace!): Void @check {
+    let site = docusaurus.site(ws, fixtureSitePath)
+    let expected = runtimePaths(ws)
+    let updatedPackageJSON = site
+      .optimizeConfig(ws)
+      .layer
+      .file(fixturePackageJSONPath)
+      .asJSON
+
+    let actual = updatedPackageJSON
+      .field(["docusaurus", "include"])
+      .asArray
+      .{asString}
+      .map { item => item.asString }
+
+    if (actual.length != expected.length) {
+      raise "optimizeConfig wrote an unexpected include list length"
+    }
+
+    for (dep in expected) {
+      let present = actual.filter { path => path == dep }.length > 0
+      if (present == false) {
+        raise "optimizeConfig missed runtime dependency: " + dep
+      }
+    }
+
+    null
+  }
+
+  """
   Runs all checks.
   """
   pub all(ws: Workspace!): Void @check {
     detectsExternalDependencies(ws)
     excludesSiteLocalPaths(ws)
+    optimizeConfigUsesRuntimePaths(ws)
     null
   }
 }
