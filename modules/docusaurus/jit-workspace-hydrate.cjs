@@ -1,5 +1,8 @@
 'use strict';
 
+// Helper process invoked by jit-workspace-hook.cjs to materialize
+// one missing workspace path into the current container filesystem.
+
 const fs = require('node:fs');
 const path = require('node:path');
 const realpathNative = fs.realpathSync.native || fs.realpathSync;
@@ -106,6 +109,37 @@ async function exportDirectory(workspaceID, workspacePath, absTargetPath) {
   });
 }
 
+function exportPlanForHint(hint) {
+  if (hint === 'dir') {
+    return ['directory', 'file'];
+  }
+  if (hint === 'file') {
+    return ['file', 'directory'];
+  }
+  return ['file', 'directory'];
+}
+
+function isEligiblePath(absTargetPath, workspaceRoot, siteRoot) {
+  if (within(workspaceRoot, absTargetPath) == false) {
+    return false;
+  }
+  if (within(siteRoot, absTargetPath) == true) {
+    return false;
+  }
+  if (within(absTargetPath, siteRoot) == true) {
+    return false;
+  }
+  return true;
+}
+
+async function exportPath(mode, workspaceID, workspacePath, absTargetPath) {
+  if (mode === 'file') {
+    await exportFile(workspaceID, workspacePath, absTargetPath);
+    return;
+  }
+  await exportDirectory(workspaceID, workspacePath, absTargetPath);
+}
+
 async function main() {
   const targetArg = process.argv[2];
   const hint = process.argv[3] || 'any';
@@ -118,13 +152,7 @@ async function main() {
   const workspaceID = mustEnv('DAGGER_JIT_WORKSPACE_ID');
   const absTargetPath = normalizePath(targetArg);
 
-  if (within(workspaceRoot, absTargetPath) == false) {
-    process.exit(1);
-  }
-  if (within(siteRoot, absTargetPath) == true) {
-    process.exit(1);
-  }
-  if (within(absTargetPath, siteRoot) == true) {
+  if (isEligiblePath(absTargetPath, workspaceRoot, siteRoot) == false) {
     process.exit(1);
   }
   if (fs.existsSync(absTargetPath) == true) {
@@ -132,16 +160,12 @@ async function main() {
   }
 
   const workspacePath = toWorkspacePath(absTargetPath, workspaceRoot);
-  const plan = ifHint(hint);
+  const plan = exportPlanForHint(hint);
   let lastErr = null;
 
   for (const mode of plan) {
     try {
-      if (mode == 'file') {
-        await exportFile(workspaceID, workspacePath, absTargetPath);
-      } else {
-        await exportDirectory(workspaceID, workspacePath, absTargetPath);
-      }
+      await exportPath(mode, workspaceID, workspacePath, absTargetPath);
 
       if (fs.existsSync(absTargetPath) == true) {
         process.exit(0);
@@ -155,16 +179,6 @@ async function main() {
     process.stderr.write(String(lastErr.message || lastErr) + '\n');
   }
   process.exit(1);
-}
-
-function ifHint(hint) {
-  if (hint === 'dir') {
-    return ['directory', 'file'];
-  }
-  if (hint === 'file') {
-    return ['file', 'directory'];
-  }
-  return ['file', 'directory'];
 }
 
 main().catch((err) => {
