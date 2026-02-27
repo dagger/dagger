@@ -1597,21 +1597,9 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
-	if args.Owner != "" {
-		uidOrName, gidOrName, hasGroup := strings.Cut(args.Owner, ":")
-		ownerNeedsLookup := false
-		if _, err := strconv.Atoi(uidOrName); err != nil {
-			ownerNeedsLookup = true
-		}
-		if !ownerNeedsLookup && hasGroup {
-			if _, err := strconv.Atoi(gidOrName); err != nil {
-				ownerNeedsLookup = true
-			}
-		}
-		if ownerNeedsLookup {
-			if err := parent.Self().Evaluate(ctx); err != nil {
-				return nil, err
-			}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1653,6 +1641,9 @@ func (s *containerSchema) exists(ctx context.Context, parent *core.Container, ar
 	if err != nil {
 		return false, fmt.Errorf("failed to get server: %w", err)
 	}
+	if err := parent.Evaluate(ctx); err != nil {
+		return false, err
+	}
 	exists, err := parent.Exists(ctx, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
 	return dagql.NewBoolean(exists), err
 }
@@ -1661,6 +1652,9 @@ func (s *containerSchema) stat(ctx context.Context, parent *core.Container, args
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+	if err := parent.Evaluate(ctx); err != nil {
+		return nil, err
 	}
 	return parent.Stat(ctx, srv, args.Path, args.DoNotFollowSymlinks)
 }
@@ -1718,6 +1712,11 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
+		}
+	}
 
 	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
@@ -1746,6 +1745,11 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.Obj
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	var dir dagql.ObjectResult[*core.Directory]
@@ -2005,6 +2009,23 @@ func absPath(workDir string, containerPath string) string {
 	return path.Join(workDir, containerPath)
 }
 
+func ownerNeedsLookup(owner string) bool {
+	if owner == "" {
+		return false
+	}
+
+	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
+	if _, err := strconv.Atoi(uidOrName); err != nil {
+		return true
+	}
+	if hasGroup {
+		if _, err := strconv.Atoi(gidOrName); err != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func expandEnvVar(ctx context.Context, parent *core.Container, input string, expand bool) (string, error) {
 	if !expand {
 		return input, nil
@@ -2080,6 +2101,11 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
+		}
+	}
 
 	secret, err := args.Source.Load(ctx, srv)
 	if err != nil {
@@ -2102,7 +2128,7 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (*core.Container, error) {
-	if parent.Self() != nil {
+	if ownerNeedsLookup(args.Owner) {
 		if err := parent.Self().Evaluate(ctx); err != nil {
 			return nil, err
 		}
@@ -2137,6 +2163,11 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return inst, err
+		}
 	}
 
 	file, err := args.Source.Load(ctx, srv)
@@ -2174,6 +2205,11 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return inst, err
+		}
 	}
 
 	files := []dagql.ObjectResult[*core.File]{}
@@ -2291,6 +2327,11 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return inst, err
+		}
+	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
@@ -2318,6 +2359,11 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return inst, err
+		}
+	}
 
 	ctr := core.NewContainerChild(parent)
 	ctr, err = ctr.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
@@ -2339,6 +2385,11 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+	if ownerNeedsLookup(args.Owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	socket, err := args.Source.Load(ctx, srv)

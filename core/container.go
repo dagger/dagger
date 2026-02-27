@@ -619,10 +619,6 @@ func (container *Container) Build(
 */
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
-	if err := container.Evaluate(ctx); err != nil {
-		return nil, err
-	}
-
 	if container.FS != nil {
 		return container.FS.Self(), nil
 	}
@@ -1305,10 +1301,6 @@ func (container *Container) WithoutSecretVariable(ctx context.Context, name stri
 func (container *Container) Directory(ctx context.Context, dirPath string) (dagql.ObjectResult[*Directory], error) {
 	var dir dagql.ObjectResult[*Directory]
 
-	if err := container.Evaluate(ctx); err != nil {
-		return dir, err
-	}
-
 	mnt, subpath, err := locatePath(container, dirPath)
 	if err != nil {
 		return dir, err
@@ -1367,10 +1359,6 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (dagq
 
 func (container *Container) File(ctx context.Context, filePath string) (dagql.ObjectResult[*File], error) {
 	var f dagql.ObjectResult[*File]
-
-	if err := container.Evaluate(ctx); err != nil {
-		return f, err
-	}
 
 	mnt, subpath, err := locatePath(container, filePath)
 	if err != nil {
@@ -1569,10 +1557,6 @@ func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpt
 }
 
 func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
-	if err := container.Evaluate(ctx); err != nil {
-		return false, err
-	}
-
 	mnt, mntSubpath, err := locatePath(container, targetPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to locate path %s: %w", targetPath, err)
@@ -1591,7 +1575,18 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 	var exists bool
 	switch {
 	case mnt == nil: // rootfs
-		err = srv.Select(ctx, container.FS, &exists, dagql.Selector{
+		rootfs := container.FS
+		if rootfs == nil {
+			var scratchRootfs dagql.ObjectResult[*Directory]
+			err = srv.Select(ctx, srv.Root(), &scratchRootfs, dagql.Selector{
+				Field: "directory",
+			})
+			if err != nil {
+				return false, err
+			}
+			rootfs = &scratchRootfs
+		}
+		err = srv.Select(ctx, *rootfs, &exists, dagql.Selector{
 			Field: "exists",
 			Args:  args,
 		})
@@ -1622,10 +1617,6 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 }
 
 func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetPath string, doNotFollowSymlinks bool) (*Stat, error) {
-	if err := container.Evaluate(ctx); err != nil {
-		return nil, err
-	}
-
 	mnt, mntSubpath, err := locatePath(container, targetPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", targetPath, err)
@@ -1641,7 +1632,18 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 	var stat *Stat
 	switch {
 	case mnt == nil: // rootfs
-		err = srv.Select(ctx, container.FS, &stat, dagql.Selector{
+		rootfs := container.FS
+		if rootfs == nil {
+			var scratchRootfs dagql.ObjectResult[*Directory]
+			err = srv.Select(ctx, srv.Root(), &scratchRootfs, dagql.Selector{
+				Field: "directory",
+			})
+			if err != nil {
+				return nil, err
+			}
+			rootfs = &scratchRootfs
+		}
+		err = srv.Select(ctx, *rootfs, &stat, dagql.Selector{
 			Field: "stat",
 			Args:  args,
 		})
