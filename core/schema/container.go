@@ -11,6 +11,8 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strconv"
+	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/v2/core/images"
@@ -1081,6 +1083,9 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
+	if err := parent.Self().Evaluate(ctx); err != nil {
+		return inst, err
+	}
 
 	if args.SkipEntrypoint != nil {
 		args.UseEntrypoint = !*args.SkipEntrypoint
@@ -1118,6 +1123,9 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	if err := parent.Evaluate(ctx); err != nil {
+		return "", err
+	}
 	return parent.Stdout(ctx)
 }
 
@@ -1152,6 +1160,9 @@ func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.ObjectR
 }
 
 func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	if err := parent.Evaluate(ctx); err != nil {
+		return "", err
+	}
 	return parent.Stderr(ctx)
 }
 
@@ -1186,10 +1197,16 @@ func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectR
 }
 
 func (s *containerSchema) combinedOutput(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	if err := parent.Evaluate(ctx); err != nil {
+		return "", err
+	}
 	return parent.CombinedOutput(ctx)
 }
 
 func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {
+	if err := parent.Evaluate(ctx); err != nil {
+		return 0, err
+	}
 	return parent.ExitCode(ctx)
 }
 
@@ -1563,6 +1580,23 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
+	if args.Owner != "" {
+		uidOrName, gidOrName, hasGroup := strings.Cut(args.Owner, ":")
+		ownerNeedsLookup := false
+		if _, err := strconv.Atoi(uidOrName); err != nil {
+			ownerNeedsLookup = true
+		}
+		if !ownerNeedsLookup && hasGroup {
+			if _, err := strconv.Atoi(gidOrName); err != nil {
+				ownerNeedsLookup = true
+			}
+		}
+		if ownerNeedsLookup {
+			if err := parent.Self().Evaluate(ctx); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	dir, err := args.Source.Load(ctx, srv)
 	if err != nil {
@@ -1626,10 +1660,21 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return "", fmt.Errorf("failed to get server: %w", err)
 	}
+	if err := parent.Self().Evaluate(ctx); err != nil {
+		return "", err
+	}
 
 	variants, err := dagql.LoadIDs(ctx, srv, args.PlatformVariants)
 	if err != nil {
 		return "", err
+	}
+	for _, variant := range variants {
+		if variant == nil {
+			continue
+		}
+		if err := variant.Evaluate(ctx); err != nil {
+			return "", err
+		}
 	}
 	ref, err := parent.Self().Publish(
 		ctx,
@@ -2209,10 +2254,21 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", fmt.Errorf("failed to get server: %w", err)
 	}
+	if err := parent.Self().Evaluate(ctx); err != nil {
+		return "", err
+	}
 
 	variants, err := dagql.LoadIDs(ctx, srv, args.PlatformVariants)
 	if err != nil {
 		return "", err
+	}
+	for _, variant := range variants {
+		if variant == nil {
+			continue
+		}
+		if err := variant.Evaluate(ctx); err != nil {
+			return "", err
+		}
 	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
@@ -2271,10 +2327,21 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
+	if err := parent.Self().Evaluate(ctx); err != nil {
+		return inst, err
+	}
 
 	platformVariants, err := dagql.LoadIDs(ctx, srv, args.PlatformVariants)
 	if err != nil {
 		return inst, err
+	}
+	for _, variant := range platformVariants {
+		if variant == nil {
+			continue
+		}
+		if err := variant.Evaluate(ctx); err != nil {
+			return inst, err
+		}
 	}
 
 	f, err := parent.Self().AsTarball(ctx, platformVariants,
@@ -2323,6 +2390,22 @@ func (s *containerSchema) exportImage(
 	if err != nil {
 		return core.Void{}, fmt.Errorf("failed to get server: %w", err)
 	}
+	if err := parent.Self().Evaluate(ctx); err != nil {
+		return core.Void{}, err
+	}
+
+	platformVariants, err := dagql.LoadIDs(ctx, srv, args.PlatformVariants)
+	if err != nil {
+		return core.Void{}, err
+	}
+	for _, variant := range platformVariants {
+		if variant == nil {
+			continue
+		}
+		if err := variant.Evaluate(ctx); err != nil {
+			return core.Void{}, err
+		}
+	}
 
 	imageWriter, err := bk.WriteImage(ctx, refName.String())
 	if err != nil {
@@ -2330,11 +2413,6 @@ func (s *containerSchema) exportImage(
 	}
 
 	if imageWriter.ContentStore != nil {
-		platformVariants, err := dagql.LoadIDs(ctx, srv, args.PlatformVariants)
-		if err != nil {
-			return core.Void{}, err
-		}
-
 		// create and use a lease to write to our content store, prevents
 		// content being cleaned up while we're writing
 		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, imageWriter.LeaseManager, leaseutil.MakeTemporary)
