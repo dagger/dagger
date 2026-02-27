@@ -1522,18 +1522,6 @@ func (dir *Directory) WithSymlink(ctx context.Context, target, linkName string) 
 	}, nil
 }
 
-/* TODO: rm if stays unused
-func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
-	return mountLLB(ctx, dir.LLB, func(root string) error {
-		src, err := containerdfs.RootPath(root, dir.Dir)
-		if err != nil {
-			return err
-		}
-		return f(src)
-	})
-}
-*/
-
 func parseDirectoryOwner(owner string) (*Ownership, error) {
 	uidStr, gidStr, hasGroup := strings.Cut(owner, ":")
 	var uid, gid int
