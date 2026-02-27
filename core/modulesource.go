@@ -253,6 +253,10 @@ func (src *ModuleSource) Evaluate(context.Context) error {
 	return nil
 }
 
+func (src *ModuleSource) Sync(ctx context.Context) error {
+	return src.Evaluate(ctx)
+}
+
 func (src *ModuleSource) AsString() string {
 	switch src.Kind {
 	case ModuleSourceKindLocal:

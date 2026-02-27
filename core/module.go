@@ -266,6 +266,10 @@ func (mod *Module) Evaluate(context.Context) error {
 	return nil
 }
 
+func (mod *Module) Sync(ctx context.Context) error {
+	return mod.Evaluate(ctx)
+}
+
 func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	slog.ExtraDebug("installing module", "name", mod.Name())
 	start := time.Now()

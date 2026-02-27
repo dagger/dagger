@@ -36,9 +36,9 @@ var (
 	errEmptyResultRef = fmt.Errorf("empty result reference")
 )
 
-type Evaluatable interface {
+type Syncable interface {
 	dagql.Typed
-	Evaluate(context.Context) error
+	Sync(context.Context) error
 }
 
 type Digestable interface {
