@@ -14,7 +14,7 @@ Workspace makes lockfile support urgent because `.dagger/config.toml` intentiona
 
 This document defines:
 - Target state: one lock model for all lookup functions (`modules`, `git`, `http`, `container`, and future extension points).
-- V1 delivery scope: `modules.resolve` first, with the same model and terminology used for future rollout.
+- Immediate implementation scope after workspace foundation: restore core lookup locking (`git`, `http`, `container`) following the same tuple model used by `modules.resolve`.
 
 ## Terminology
 
@@ -38,6 +38,7 @@ Notes:
 2. Workspace currently lacks `.dagger/lock` read/write behavior for `modules.resolve`.
 3. There is no single policy model for manual-only vs auto-updatable lookup entries.
 4. Airgapped execution requires explicit lock semantics plus clear failure behavior.
+5. Core lookup paths (`git`, `http`, `container`) are not yet consistently locked in the current workspace-first implementation.
 
 ## Proposal
 
@@ -153,14 +154,33 @@ Current constraints:
 - requires content bytes to exist in local cache/store.
 - `--offline` with `lock=update` is invalid.
 
-## V1 Rollout vs Target State
+## Current Implementation vs Design Scope
 
-| Dimension | V1 | Target state |
+| Dimension | Current implementation | Design scope |
 | --- | --- | --- |
-| Lookup coverage | `modules.resolve` | modules + git + http + container + extension points |
+| Lookup coverage | `modules.resolve` | `modules.resolve` + core `git.*` + `http.*` + `container.*` + extension points |
 | Lock policy model | `pin|float` | same |
-| Lock modes | apply to workspace lookup path first | apply across all lookup paths |
+| Lock modes | applied on workspace module lookup path | applied across all lookup paths |
 | Offline | sketched only | fully specified and implemented |
+
+## Core Lookup Coverage (Restored)
+
+Core operation locking should be restored in this design scope (as in the earlier universal lockfile work), using `namespace=""` and ordered positional `inputs`.
+
+| Operation key (core namespace) | Inputs (positional) | Result example |
+| --- | --- | --- |
+| `git.resolve` | `[remoteURL, ref]` | commit SHA |
+| `git.head` | `[remoteURL]` | head ref name |
+| `git.ref` | `[remoteURL, refName]` | commit SHA |
+| `git.refs` | `[remoteURL]` | ordered ref name list |
+| `git.symrefs` | `[remoteURL]` | ordered key/value tuple list |
+| `git.isPublic` | `[remoteURL]` | boolean |
+| `container.from` | `[imageRef, platform]` | image digest |
+| `http.get` | `[url]` | content digest |
+
+Notes:
+- Final naming can follow current core schema conventions, but coverage above is required.
+- Any key-value-like values in `inputs` must still use ordered tuple encoding (never JSON object).
 
 ## Workspace-Specific Behavior (V1)
 
@@ -353,11 +373,15 @@ Current constraints:
 - [x] **#8: Tests (`core/integration/workspace_test.go` + unit tests)**  
   Cover lock read/write, `pin|float` policy semantics, lock mode behavior (`strict|auto|update`), stale entry pruning, update flow, compat pin behavior, and remote read behavior.
 
+- [ ] **#9: Restore core lookup lock hooks (`core/schema/git.go`, `core/schema/http.go`, `core/schema/container.go`, `core/lockfile.go`)**  
+  Add lock get/set integration for `git.resolve|head|ref|refs|symrefs|isPublic`, `http.get`, and `container.from`.
+
+- [ ] **#10: Apply lock mode enforcement across non-workspace lookup paths**  
+  Make `strict|auto|update` behavior consistent for core lookup operations, not just workspace module loading.
+
 ### Phase 2+ tasks (after v1 modules.resolve)
 
-- [ ] Apply lock mode enforcement across non-workspace lookup paths.
 - [ ] Add full `--offline` behavior with dedicated design and implementation.
-- [ ] Add lock read/write hooks for core operations (`git.*`, `http.*`, `container.*`) under `namespace=""`.
 - [ ] Design and implement extension model for user-defined lookup functions.
 
 ## Open questions
