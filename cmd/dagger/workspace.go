@@ -274,10 +274,58 @@ Works like "git config" for workspace settings.`,
 	},
 }
 
+const workspaceUpdateQuery = `query WorkspaceUpdate($modules: [String!]!) {
+  currentWorkspace {
+    update(modules: $modules)
+  }
+}`
+
+var workspaceUpdateCmd = &cobra.Command{
+	Use:   "update [module...]",
+	Short: "Update workspace lock entries for one or more modules",
+	Long:  "Update git module lock entries in .dagger/lock. With no module names, updates all git modules in the workspace config.",
+	Args:  cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if remoteWorkdir != "" {
+			return fmt.Errorf("workspace on git remote cannot be modified")
+		}
+
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+			LockMode:             string(workspace.LockModeUpdate),
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+
+			var res struct {
+				CurrentWorkspace struct {
+					Update string
+				}
+			}
+			if err := dag.Do(ctx, &dagger.Request{
+				Query: workspaceUpdateQuery,
+				Variables: map[string]any{
+					"modules": args,
+				},
+			}, &dagger.Response{
+				Data: &res,
+			}); err != nil {
+				return err
+			}
+
+			if msg := strings.TrimSpace(res.CurrentWorkspace.Update); msg != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), msg)
+			}
+			return nil
+		})
+	},
+}
+
 func init() {
 	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
 	workspaceCmd.AddCommand(workspaceConfigCmd)
+	workspaceCmd.AddCommand(workspaceUpdateCmd)
 
 	migrateCmd.Flags().BoolVarP(&migrateList, "list", "l", false, "List migrateable modules instead of performing migration")
 

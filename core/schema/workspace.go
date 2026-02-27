@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -98,6 +99,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.mymod.source)."),
 				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
+			),
+		dagql.Func("update", s.update).
+			DoNotCache("Mutates workspace lock on host").
+			Doc("Update one or more workspace module lock entries in .dagger/lock.",
+				"Leaves config.toml unchanged. If modules is empty, updates all git modules.").
+			Args(
+				dagql.Arg("modules").Doc("Workspace module names to update. Empty updates all git modules."),
 			),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
@@ -483,13 +491,7 @@ func (s *workspaceSchema) install(
 		return "", fmt.Errorf("dagql server: %w", err)
 	}
 
-	moduleSourceSelector := dagql.Selector{
-		Field: "moduleSource",
-		Args: []dagql.NamedInput{
-			{Name: "refString", Value: dagql.String(args.Ref)},
-			{Name: "disableFindUp", Value: dagql.Boolean(true)},
-		},
-	}
+	moduleSourceSelector := moduleSourceSelectorForRef(args.Ref)
 
 	var moduleName dagql.String
 	err = srv.Select(ctx, srv.Root(), &moduleName,
@@ -507,27 +509,18 @@ func (s *workspaceSchema) install(
 
 	// Determine source path
 	sourcePath := args.Ref
-	var kind core.ModuleSourceKind
-	err = srv.Select(ctx, srv.Root(), &kind,
-		moduleSourceSelector,
-		dagql.Selector{Field: "kind"},
-	)
+	kind, err := resolveModuleSourceKind(ctx, srv, args.Ref)
 	if err != nil {
-		return "", fmt.Errorf("resolve module kind: %w", err)
+		return "", err
 	}
 
 	lockPin := ""
 	lockPolicy := workspace.PolicyPin
 	if kind == core.ModuleSourceKindGit {
-		var pin dagql.String
-		err = srv.Select(ctx, srv.Root(), &pin,
-			moduleSourceSelector,
-			dagql.Selector{Field: "pin"},
-		)
+		lockPin, err = resolveModuleSourcePin(ctx, srv, args.Ref)
 		if err != nil {
-			return "", fmt.Errorf("resolve module pin: %w", err)
+			return "", err
 		}
-		lockPin = string(pin)
 	}
 
 	if kind == core.ModuleSourceKindLocal {
@@ -925,6 +918,114 @@ func (s *workspaceSchema) configWrite(
 	return dagql.String(args.Value), nil
 }
 
+type updateArgs struct {
+	Modules []string `default:"[]"`
+}
+
+func (s *workspaceSchema) update(
+	ctx context.Context,
+	parent *core.Workspace,
+	args updateArgs,
+) (dagql.String, error) {
+	if !parent.HasConfig {
+		return "", fmt.Errorf("no config.toml found in workspace")
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("buildkit: %w", err)
+	}
+
+	cfg, err := readWorkspaceConfig(ctx, bk, parent)
+	if err != nil {
+		return "", err
+	}
+
+	targetModules, err := resolveWorkspaceUpdateTargets(cfg, args.Modules)
+	if err != nil {
+		return "", err
+	}
+
+	lock, err := readWorkspaceLock(ctx, bk, parent)
+	if err != nil {
+		return "", err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", fmt.Errorf("dagql server: %w", err)
+	}
+
+	type sourceUpdate struct {
+		OldPin  string
+		NewPin  string
+		Changed bool
+	}
+	updatesBySource := make(map[string]sourceUpdate, len(targetModules))
+
+	var lines []string
+	for _, name := range targetModules {
+		mod := cfg.Modules[name]
+		source := mod.Source
+
+		kind, err := resolveModuleSourceKind(ctx, srv, source)
+		if err != nil {
+			return "", fmt.Errorf("module %q source %q: %w", name, source, err)
+		}
+		if kind != core.ModuleSourceKindGit {
+			if len(args.Modules) > 0 {
+				return "", fmt.Errorf("module %q source %q is not a git module", name, source)
+			}
+			continue
+		}
+
+		update, ok := updatesBySource[source]
+		if !ok {
+			oldPin, oldPolicy, hasOld := lock.GetModuleResolve(source)
+			policy := oldPolicy
+			if !hasOld {
+				policy = workspace.PolicyPin
+			}
+
+			newPin, err := resolveModuleSourcePin(ctx, srv, source)
+			if err != nil {
+				return "", fmt.Errorf("module %q source %q: %w", name, source, err)
+			}
+			if err := lock.SetModuleResolve(source, newPin, policy); err != nil {
+				return "", fmt.Errorf("module %q source %q: %w", name, source, err)
+			}
+
+			oldDisplay := oldPin
+			if !hasOld {
+				oldDisplay = "<none>"
+			}
+			update = sourceUpdate{
+				OldPin:  oldDisplay,
+				NewPin:  newPin,
+				Changed: !hasOld || oldPin != newPin,
+			}
+			updatesBySource[source] = update
+		}
+
+		if update.Changed {
+			lines = append(lines, fmt.Sprintf("%s %s -> %s", name, update.OldPin, update.NewPin))
+		}
+	}
+
+	if len(lines) == 0 {
+		return dagql.String("No updates"), nil
+	}
+	if err := exportLockToHost(ctx, bk, parent, lock); err != nil {
+		return "", err
+	}
+
+	return dagql.String(strings.Join(lines, "\n")), nil
+}
+
 func (s *workspaceSchema) checks(
 	ctx context.Context,
 	parent *core.Workspace,
@@ -1175,6 +1276,82 @@ func moduleSources(cfg *workspace.Config) map[string]struct{} {
 		sources[mod.Source] = struct{}{}
 	}
 	return sources
+}
+
+func resolveWorkspaceUpdateTargets(cfg *workspace.Config, modules []string) ([]string, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("workspace config is missing")
+	}
+	if len(cfg.Modules) == 0 {
+		return []string{}, nil
+	}
+
+	if len(modules) == 0 {
+		names := make([]string, 0, len(cfg.Modules))
+		for name := range cfg.Modules {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return names, nil
+	}
+
+	targets := make([]string, 0, len(modules))
+	seen := make(map[string]struct{}, len(modules))
+	var missing []string
+	for _, name := range modules {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		if _, ok := cfg.Modules[name]; !ok {
+			missing = append(missing, name)
+			continue
+		}
+		targets = append(targets, name)
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return nil, fmt.Errorf("workspace module(s) not found: %s", strings.Join(missing, ", "))
+	}
+	return targets, nil
+}
+
+func moduleSourceSelectorForRef(ref string) dagql.Selector {
+	return dagql.Selector{
+		Field: "moduleSource",
+		Args: []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(ref)},
+			{Name: "disableFindUp", Value: dagql.Boolean(true)},
+		},
+	}
+}
+
+func resolveModuleSourceKind(ctx context.Context, srv *dagql.Server, ref string) (core.ModuleSourceKind, error) {
+	if kind := core.FastModuleSourceKindCheck(ref, ""); kind != "" {
+		return kind, nil
+	}
+
+	var kind core.ModuleSourceKind
+	err := srv.Select(ctx, srv.Root(), &kind,
+		moduleSourceSelectorForRef(ref),
+		dagql.Selector{Field: "kind"},
+	)
+	if err != nil {
+		return "", fmt.Errorf("resolve module kind: %w", err)
+	}
+	return kind, nil
+}
+
+func resolveModuleSourcePin(ctx context.Context, srv *dagql.Server, ref string) (string, error) {
+	var pin dagql.String
+	err := srv.Select(ctx, srv.Root(), &pin,
+		moduleSourceSelectorForRef(ref),
+		dagql.Selector{Field: "pin"},
+	)
+	if err != nil {
+		return "", fmt.Errorf("resolve module pin: %w", err)
+	}
+	return string(pin), nil
 }
 
 // IntrospectConstructorArgs loads a module and extracts its constructor arguments
