@@ -9,6 +9,16 @@ export default [
   eslintPluginPrettierRecommended,
   ...tseslint.configs.recommended,
   {
+    files: ["src/**/*.ts"],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        // Resolve project paths from this file
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
     ignores: [
       "dist/",
       "**/testdata/**",
@@ -17,6 +27,7 @@ export default [
       "*.cjs",
       ".changie.yaml",
       "**/*.md",
+      "telemetry/",
     ],
   },
   {

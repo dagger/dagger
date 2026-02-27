@@ -6,7 +6,7 @@ import { Context } from "./common/context.js"
 import { withGQLClient } from "./common/graphql/connect.js"
 import { Connection, globalConnection } from "./common/graphql/connection.js"
 import { ConnectOpts } from "./connectOpts.js"
-import * as telemetry from "./telemetry/telemetry.js"
+import * as telemetry from "./telemetry/index.js"
 
 export type CallbackFct = (client: Client) => Promise<void>
 
@@ -32,23 +32,26 @@ export async function connection(
   cfg: ConnectOpts = {},
 ) {
   try {
-    telemetry.initialize()
+    telemetry.start()
 
     // Wrap connection into the opentelemetry context for propagation
-    await opentelemetry.context.with(telemetry.getContext(), async () => {
-      try {
-        await withGQLClient(cfg, async (gqlClient) => {
-          // Set the GQL client inside the global dagger client
-          globalConnection.setGQLClient(gqlClient)
+    await opentelemetry.context.with(
+      opentelemetry.context.active(),
+      async () => {
+        try {
+          await withGQLClient(cfg, async (gqlClient) => {
+            // Set the GQL client inside the global dagger client
+            globalConnection.setGQLClient(gqlClient)
 
-          await fct()
-        })
-      } finally {
-        globalConnection.resetClient()
-      }
-    })
+            await fct()
+          })
+        } finally {
+          globalConnection.resetClient()
+        }
+      },
+    )
   } finally {
-    await telemetry.close()
+    await telemetry.shutdown()
   }
 }
 

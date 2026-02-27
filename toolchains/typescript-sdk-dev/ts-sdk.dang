@@ -93,6 +93,19 @@ type TypescriptSdkDev {
   }
 
   """
+  Test the telemetry package
+  """
+  pub testTelemetryPackage: Void! @check {
+    bunjsDevContainer.
+      withWorkdir(sourcePath + "/telemetry").
+      withExec(["bun", "test"]).
+      sync
+
+    null
+  }
+
+
+  """
   Generate the Typescript client library
   """
   pub clientLibrary: Changeset! @generate {
@@ -228,4 +241,29 @@ type TypescriptSdkDev {
   pub binary: File! {
     go(source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
   }
+
+# TODO: uncomment and complete that in a follow up once sdk/typescript/telemetry exist on dagger/dagger
+#  pub verifyTelemetryPkgVersionBump(
+#	  repo: Directory! @defaultPath(path:"/.git"),
+#		currentTelemetryDir: Directory! @defaultPath(path:"/sdk/typescript/telemetry") @ignorePatterns(patterns:[
+#		  "dist"
+#			"node_modules"
+#     ])
+#	): Void! @check {
+#	  let repoDir = repo.asGit().head().tree()
+#
+#		# The directory doesn't exist yet on git, remove it after the first merge
+#		let repoTelemetryDir = repoDir.directory("sdk/typescript/telemetry")
+#
+#		let binary=go(source:currentModule.source.directory("verify-pkg-version-bump")).binary("verify-pkg-version-bump")
+#
+#   let exitCode=container.
+#     from("alpine").
+#     withFile("/bin/verify-pkg-version-bump", binary).
+#     withMountedDirectory("/work/repo", repoTelemetryDir).
+#     withMountedDirectory("/work/current", currentTelemetryDir).
+#     withExec(["verify-pkg-version-bump"], expect: ReturnType.ANY, experimentalPrivilegedNesting: true).
+#     exitCode
+#   assert { exitCode == 0 }
+#	}
 }
