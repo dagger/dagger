@@ -212,30 +212,47 @@ type Site {
   }
 
   """
-  The Docusaurus site source files.
+  Include globs for files under the site path.
   """
-  pub source(ws: Workspace!): Directory! {
-    let siteInclude = if (path == ".") {
+  let siteOnlyIncludes: [String!]! {
+    if (path == ".") {
       ["**"] :: [String!]!
     } else {
       [path + "/**"] :: [String!]!
     }
+  }
 
-    let include = siteInclude + packageJson.include.map { inc =>
+  """
+  Include globs for source and known local dependencies.
+  """
+  let sourceIncludes: [String!]! {
+    siteOnlyIncludes + packageJson.include.map { inc =>
       if (path == ".") { inc } else { path + "/" + inc }
     }
+  }
 
+  """
+  Exclude globs for source selection.
+  """
+  let sourceExcludes: [String!]! {
+    [
+      "node_modules/",
+      ".docusaurus/",
+      "build/",
+      ".git/",
+    ] + packageJson.exclude.map { exc =>
+      if (path == ".") { exc } else { path + "/" + exc }
+    }
+  }
+
+  """
+  The Docusaurus site source files.
+  """
+  pub source(ws: Workspace!): Directory! {
     ws.directory(
       ".",
-      include: include,
-      exclude: [
-        "node_modules/",
-        ".docusaurus/",
-        "build/",
-        ".git/",
-      ] + packageJson.exclude.map { exc =>
-        if (path == ".") { exc } else { path + "/" + exc }
-      },
+      include: sourceIncludes,
+      exclude: sourceExcludes,
     )
   }
 
@@ -262,75 +279,37 @@ type Site {
       )
   }
 
-  let appRootPath: String! = "/app"
-  let runtimeWorkspaceRootPath: String! = "/workspace"
+  let workspaceRootPath: String! = "/workspace"
+  let docusaurusBuildCmd: [String!]! = ["./node_modules/.bin/docusaurus", "build"]
 
-  let sitePathAt(rootPath: String!): String! {
+  let workspaceSitePath: String! {
     if (path == ".") {
-      rootPath
+      workspaceRootPath
     } else {
-      rootPath + "/" + path
+      workspaceRootPath + "/" + path
     }
   }
 
-  let withSiteMount(
-    baseCtr: Container!,
-    mountPath: String!,
-    workdirPath: String!,
-    siteDir: Directory!,
-  ): Container! {
-    baseCtr
-      .withMountedDirectory(mountPath, siteDir)
-      .withWorkdir(workdirPath)
+  """
+  Site-specific build sandbox.
+  """
+  pub sandbox: Sandbox! {
+    let initialCtr = base
+      .withDirectory(workspaceRootPath, directory)
+      .withWorkdir(workspaceSitePath)
       .withMountedCache(
         "./node_modules/.cache",
         cacheVolume("docusaurus-cache-" + path),
         sharing: CacheSharingMode.PRIVATE,
       )
-  }
 
-  let withInstall(
-    baseCtr: Container!,
-    ws: Workspace!,
-    privilegedNesting: Boolean!,
-  ): Container! {
-    if (privilegedNesting) {
-      baseCtr.withExec(installCmd(ws), experimentalPrivilegedNesting: true)
-    } else {
-      baseCtr.withExec(installCmd(ws))
-    }
-  }
-
-  let docusaurusBuildCmd: [String!]! = ["./node_modules/.bin/docusaurus", "build"]
-
-  let runtimeProbeSitePath: String! {
-    sitePathAt(runtimeWorkspaceRootPath)
-  }
-
-  let withRuntimeTrace(baseCtr: Container!, workspaceID: String!): Container! {
-    baseCtr
-      .withFile(
-        "/trace-runtime-deps.cjs",
-        currentModule.source.file("runtime-deps-trace.cjs"),
-      )
-      .withFile(
-        "/hydrate-runtime-path.cjs",
-        currentModule.source.file("hydrate-runtime-path.cjs"),
-      )
-      .withFile(
-        "/collect-runtime-deps.cjs",
-        currentModule.source.file("collect-runtime-deps.cjs"),
-      )
-      .withEnvVariable("CI", "1")
-      .withEnvVariable("TZ", "UTC")
-      .withEnvVariable("LANG", "C")
-      .withEnvVariable("LC_ALL", "C")
-      .withEnvVariable("TRACE_OUTPUT_DIR", "/tmp/docusaurus-runtime-deps")
-      .withEnvVariable("TRACE_WORKSPACE_ROOT", runtimeWorkspaceRootPath)
-      .withEnvVariable("TRACE_SITE_ROOT", runtimeProbeSitePath)
-      .withEnvVariable("TRACE_WORKSPACE_ID", workspaceID)
-      .withEnvVariable("TRACE_HYDRATE_HELPER", "/hydrate-runtime-path.cjs")
-      .withEnvVariable("NODE_OPTIONS", "--require=/trace-runtime-deps.cjs")
+    Sandbox(
+      site: Site(path: path, packageJson: packageJson),
+      ctr: initialCtr,
+      nesting: false,
+      workspaceExcludes: [] :: [String!]!,
+      justInTimeWorkspace: false,
+    )
   }
 
   """
@@ -342,58 +321,50 @@ type Site {
     if (path == ".") {
       [] :: [String!]!
     } else {
-      let workspaceID = json
-        .withContents(toJSON(ws.id) :: JSON!)
-        .asString
-
-      let tracedBase = withRuntimeTrace(
-        withSiteMount(
-          base,
-          runtimeProbeSitePath,
-          runtimeProbeSitePath,
-          ws.directory(path),
-        ),
-        workspaceID,
-      )
-      let tracedInstalled = withInstall(tracedBase, ws, true)
-      let tracedBuild = tracedInstalled
+      let traced = sandbox
+        .withWorkspaceFiles(
+          ws,
+          siteOnlyIncludes,
+          sourceExcludes,
+        )
+        .withJustInTimeWorkspace(true)
+        .withNesting(true)
         .withExec(
+          ws,
+          installCmd(ws),
+          ReturnType.SUCCESS,
+        )
+        .withExec(
+          ws,
           docusaurusBuildCmd,
-          expect: ReturnType.ANY,
-          experimentalPrivilegedNesting: true,
+          ReturnType.ANY,
         )
 
-      let pathsRaw = tracedBuild
-        .withEnvVariable("NODE_OPTIONS", "")
-        .withEnvVariable("DAGGER_RUNTIME_DEPS_DISABLE_HYDRATE", "1")
-        .withExec(["node", "/collect-runtime-deps.cjs"])
-        .stdout
-
-      json
-        .withContents(pathsRaw :: JSON!)
-        .asArray
-        .{asString}
-        .map { item => item.asString }
+      traced.justInTimeWorkspaceLog
     }
-  }
-
-  """
-  Container with source mounted and dependencies installed.
-  """
-  pub sandbox(ws: Workspace!): Container! {
-    withInstall(
-      withSiteMount(base, appRootPath, sitePathAt(appRootPath), source(ws)),
-      ws,
-      false,
-    )
   }
 
   """
   Build the static site.
   """
   pub build(ws: Workspace!): Directory! {
-    sandbox(ws)
-      .withExec(docusaurusBuildCmd)
+    sandbox
+      .withWorkspaceFiles(
+        ws,
+        sourceIncludes,
+        sourceExcludes,
+      )
+      .withExec(
+        ws,
+        installCmd(ws),
+        ReturnType.SUCCESS,
+      )
+      .withExec(
+        ws,
+        docusaurusBuildCmd,
+        ReturnType.SUCCESS,
+      )
+      .container
       .directory("build")
   }
 
@@ -452,5 +423,204 @@ type Site {
     ctr
       .withExposedPort(80)
       .asService
+  }
+}
+
+type Sandbox {
+  let site: Site!
+  let ctr: Container!
+  let nesting: Boolean!
+  let workspaceExcludes: [String!]!
+  let justInTimeWorkspace: Boolean!
+
+  let workspaceRootPath: String! = "/workspace"
+  let traceOutputDir: String! = "/tmp/docusaurus-runtime-deps"
+
+  let siteWorkspacePath: String! {
+    if (site.path == ".") {
+      workspaceRootPath
+    } else {
+      workspaceRootPath + "/" + site.path
+    }
+  }
+
+  let withContainer(nextCtr: Container!): Sandbox! {
+    Sandbox(
+      site: site,
+      ctr: nextCtr,
+      nesting: nesting,
+      workspaceExcludes: workspaceExcludes,
+      justInTimeWorkspace: justInTimeWorkspace,
+    )
+  }
+
+  let withState(
+    nextCtr: Container!,
+    nextNesting: Boolean!,
+    nextExcludes: [String!]!,
+    nextJustInTimeWorkspace: Boolean!,
+  ): Sandbox! {
+    Sandbox(
+      site: site,
+      ctr: nextCtr,
+      nesting: nextNesting,
+      workspaceExcludes: nextExcludes,
+      justInTimeWorkspace: nextJustInTimeWorkspace,
+    )
+  }
+
+  let workspaceExcludesJSON: String! {
+    toJSON(workspaceExcludes)
+  }
+
+  let withRuntimeTrace(ws: Workspace!): Container! {
+    let workspaceID = json
+      .withContents(toJSON(ws.id) :: JSON!)
+      .asString
+
+    ctr
+      .withFile(
+        "/trace-runtime-deps.cjs",
+        currentModule.source.file("runtime-deps-trace.cjs"),
+      )
+      .withFile(
+        "/hydrate-runtime-path.cjs",
+        currentModule.source.file("hydrate-runtime-path.cjs"),
+      )
+      .withFile(
+        "/collect-runtime-deps.cjs",
+        currentModule.source.file("collect-runtime-deps.cjs"),
+      )
+      .withEnvVariable("CI", "1")
+      .withEnvVariable("TZ", "UTC")
+      .withEnvVariable("LANG", "C")
+      .withEnvVariable("LC_ALL", "C")
+      .withEnvVariable("TRACE_OUTPUT_DIR", traceOutputDir)
+      .withEnvVariable("TRACE_WORKSPACE_ROOT", workspaceRootPath)
+      .withEnvVariable("TRACE_SITE_ROOT", siteWorkspacePath)
+      .withEnvVariable("TRACE_WORKSPACE_ID", workspaceID)
+      .withEnvVariable("TRACE_WORKSPACE_EXCLUDES_JSON", workspaceExcludesJSON)
+      .withEnvVariable("TRACE_HYDRATE_HELPER", "/hydrate-runtime-path.cjs")
+      .withEnvVariable("NODE_OPTIONS", "--require=/trace-runtime-deps.cjs")
+  }
+
+  """
+  Return the underlying container.
+  """
+  pub container: Container! {
+    ctr
+  }
+
+  """
+  Toggle nested Dagger access in future exec steps.
+  """
+  pub withNesting(enabled: Boolean!): Sandbox! {
+    withState(
+      ctr,
+      enabled,
+      workspaceExcludes,
+      justInTimeWorkspace,
+    )
+  }
+
+  """
+  Add sticky workspace exclude paths.
+  """
+  pub withWorkspaceExcludes(exclude: [String!]!): Sandbox! {
+    withState(
+      ctr,
+      nesting,
+      workspaceExcludes + exclude,
+      justInTimeWorkspace,
+    )
+  }
+
+  """
+  Copy workspace files into /workspace.
+  """
+  pub withWorkspaceFiles(
+    ws: Workspace!,
+    include: [String!]!,
+    exclude: [String!]!,
+  ): Sandbox! {
+    let copied = ws.directory(
+      ".",
+      include: include,
+      exclude: workspaceExcludes + exclude,
+    )
+    let merged = ctr
+      .directory(workspaceRootPath)
+      .withDirectory("/", copied)
+    withContainer(ctr.withDirectory(workspaceRootPath, merged))
+  }
+
+  """
+  Toggle JIT workspace hydration for future exec steps.
+  """
+  pub withJustInTimeWorkspace(enabled: Boolean!): Sandbox! {
+    withState(
+      ctr,
+      nesting,
+      workspaceExcludes,
+      enabled,
+    )
+  }
+
+  """
+  Execute a command in the sandbox container.
+  """
+  pub withExec(
+    ws: Workspace!,
+    cmd: [String!]!,
+    expect: ReturnType!,
+  ): Sandbox! {
+    let execBase = if (justInTimeWorkspace) {
+      withRuntimeTrace(ws)
+    } else {
+      ctr.withEnvVariable("NODE_OPTIONS", "")
+    }
+
+    let nextCtr = if (nesting) {
+      execBase.withExec(
+        cmd,
+        expect: expect,
+        experimentalPrivilegedNesting: true,
+      )
+    } else {
+      execBase.withExec(
+        cmd,
+        expect: expect,
+      )
+    }
+
+    withContainer(nextCtr)
+  }
+
+  """
+  Paths hydrated on-demand from the workspace so far.
+  """
+  pub justInTimeWorkspaceLog: [String!]! {
+    if (justInTimeWorkspace == false) {
+      [] :: [String!]!
+    } else {
+      let pathsRaw = ctr
+        .withFile(
+          "/collect-runtime-deps.cjs",
+          currentModule.source.file("collect-runtime-deps.cjs"),
+        )
+        .withEnvVariable("TRACE_OUTPUT_DIR", traceOutputDir)
+        .withEnvVariable("TRACE_WORKSPACE_ROOT", workspaceRootPath)
+        .withEnvVariable("TRACE_SITE_ROOT", siteWorkspacePath)
+        .withEnvVariable("NODE_OPTIONS", "")
+        .withEnvVariable("DAGGER_RUNTIME_DEPS_DISABLE_HYDRATE", "1")
+        .withExec(["node", "/collect-runtime-deps.cjs"])
+        .stdout
+
+      json
+        .withContents(pathsRaw :: JSON!)
+        .asArray
+        .{asString}
+        .map { item => item.asString }
+    }
   }
 }
