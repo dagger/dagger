@@ -1,14 +1,10 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.19.11",
+  "engineVersion": "v0.20.0",
   "sdk": {
     "source": "go"
   },
   "toolchains": [
-    {
-      "name": "markdownlint",
-      "source": "modules/markdownlint"
-    },
     {
       "name": "changelog",
       "source": "toolchains/changelog"
@@ -24,6 +20,10 @@
     {
       "name": "docs",
       "source": "toolchains/docs-dev"
+    },
+    {
+      "name": "docusaurus",
+      "source": "modules/docusaurus"
     },
     {
       "name": "elixir-sdk",
@@ -78,6 +78,10 @@
       "source": "toolchains/java-sdk-dev"
     },
     {
+      "name": "markdownlint",
+      "source": "modules/markdownlint"
+    },
+    {
       "name": "php-sdk",
       "source": "toolchains/php-sdk-dev"
     },
@@ -102,7 +106,9 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": ["scanSource"],
+          "function": [
+            "scanSource"
+          ],
           "argument": "source",
           "ignore": [
             "bin",
@@ -132,6 +138,5 @@
     "go.sum",
     "util/patchpreview"
   ],
-  "dependencies": [],
   "source": ".dagger"
 }
