@@ -526,7 +526,7 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 	return stat, nil
 }
 
-func (file *File) WithName(ctx context.Context, filename string) (LazyInitFunc, error) {
+func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File], filename string) (LazyInitFunc, error) {
 	sourcePath := file.File
 	file.File = filename
 
@@ -535,7 +535,7 @@ func (file *File) WithName(ctx context.Context, filename string) (LazyInitFunc, 
 		if err != nil {
 			return err
 		}
-		parentSnapshot, err := file.getParentSnapshot(ctx)
+		parentSnapshot, err := parent.Self().getSnapshot(ctx)
 		if err != nil {
 			return err
 		}
@@ -577,13 +577,13 @@ func (file *File) WithName(ctx context.Context, filename string) (LazyInitFunc, 
 	}, nil
 }
 
-func (file *File) WithTimestamps(ctx context.Context, unix int) (LazyInitFunc, error) {
+func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[*File], unix int) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
 		}
-		parentSnapshot, err := file.getParentSnapshot(ctx)
+		parentSnapshot, err := parent.Self().getSnapshot(ctx)
 		if err != nil {
 			return err
 		}
@@ -758,7 +758,7 @@ func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) 
 	}).WithContents(string(contents))
 }
 
-func (file *File) Chown(ctx context.Context, owner string) (LazyInitFunc, error) {
+func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], owner string) (LazyInitFunc, error) {
 	ownership, err := parseDirectoryOwner(owner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
@@ -768,7 +768,7 @@ func (file *File) Chown(ctx context.Context, owner string) (LazyInitFunc, error)
 		if err != nil {
 			return err
 		}
-		parentSnapshot, err := file.getParentSnapshot(ctx)
+		parentSnapshot, err := parent.Self().getSnapshot(ctx)
 		if err != nil {
 			return err
 		}
