@@ -78,6 +78,34 @@ func NewFileChild(parent dagql.ObjectResult[*File]) *File {
 	return &cp
 }
 
+func (file *File) Evaluate(ctx context.Context) error {
+	return file.LazyState.Evaluate(ctx, "File")
+}
+
+func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
+	if err := file.Evaluate(ctx); err != nil {
+		return nil, err
+	}
+	if file.Snapshot != nil {
+		return file.Snapshot, nil
+	}
+	if file.Parent.Self() != nil {
+		return file.Parent.Self().getSnapshot(ctx)
+	}
+	return nil, nil
+}
+
+func (file *File) setSnapshot(ref bkcache.ImmutableRef) {
+	file.Snapshot = ref
+}
+
+func (file *File) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
+	if file.Parent.Self() == nil {
+		return nil, nil
+	}
+	return file.Parent.Self().getSnapshot(ctx)
+}
+
 func (file *File) WithContents(ctx context.Context, content []byte, permissions fs.FileMode, ownership *Ownership) (LazyInitFunc, error) {
 	if dir, _ := filepath.Split(file.File); dir != "" {
 		return nil, fmt.Errorf("file name %q must not contain a directory", file.File)
@@ -88,7 +116,26 @@ func (file *File) WithContents(ctx context.Context, content []byte, permissions 
 	}
 
 	return func(ctx context.Context) error {
-		return file.execInMount(ctx, func(root string) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := file.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("newFile %s", file.File)),
+		)
+		if err != nil {
+			return err
+		}
+
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			resolvedDest, err := containerdfs.RootPath(root, file.File)
 			if err != nil {
 				return err
@@ -122,129 +169,18 @@ func (file *File) WithContents(ctx context.Context, content []byte, permissions 
 				}
 			}
 			return nil
-		}, withSavedFileSnapshot("newFile %s", file.File))
-	}, nil
-}
-
-func (file *File) Evaluate(ctx context.Context) error {
-	return file.LazyState.Evaluate(ctx, "File")
-}
-
-func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
-	if err := file.Evaluate(ctx); err != nil {
-		return nil, err
-	}
-	if file.Snapshot != nil {
-		return file.Snapshot, nil
-	}
-	if file.Parent.Self() != nil {
-		return file.Parent.Self().getSnapshot(ctx)
-	}
-	return nil, nil
-}
-
-func (file *File) setSnapshot(ref bkcache.ImmutableRef) {
-	file.Snapshot = ref
-}
-
-func (file *File) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
-	if file.Parent.Self() == nil {
-		return nil, nil
-	}
-	return file.Parent.Self().getSnapshot(ctx)
-}
-
-type fileExecInMountOpt struct {
-	commitSnapshot          bool
-	cacheDesc               string
-	allowNilBuildkitSession bool
-}
-
-type fileExecInMountOptFn func(opt *fileExecInMountOpt)
-
-func withSavedFileSnapshot(format string, a ...any) fileExecInMountOptFn {
-	return func(opt *fileExecInMountOpt) {
-		opt.cacheDesc = fmt.Sprintf(format, a...)
-		opt.commitSnapshot = true
-	}
-}
-
-func allowNilFileBuildkitSession(opt *fileExecInMountOpt) {
-	opt.allowNilBuildkitSession = true
-}
-
-func (file *File) execInMount(ctx context.Context, f func(string) error, optFns ...fileExecInMountOptFn) (rerr error) {
-	var opt fileExecInMountOpt
-	for _, optFn := range optFns {
-		optFn(&opt)
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-
-	var mountRef bkcache.Ref
-	var newRef bkcache.MutableRef
-	if opt.commitSnapshot {
-		if opt.cacheDesc == "" {
-			return fmt.Errorf("execInMount missing cache description")
-		}
-		parentSnapshot, err := file.getParentSnapshot(ctx)
+		})
 		if err != nil {
 			return err
 		}
-		newRef, err = query.BuildkitCache().New(
-			ctx,
-			parentSnapshot,
-			nil,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-			bkcache.WithDescription(opt.cacheDesc),
-		)
+
+		snapshot, err := newRef.Commit(ctx)
 		if err != nil {
 			return err
 		}
-		mountRef = newRef
-	} else {
-		snapshot, err := file.getSnapshot(ctx)
-		if err != nil {
-			return err
-		}
-		if snapshot == nil {
-			return errEmptyResultRef
-		}
-		mountRef = snapshot
-	}
-
-	var mountRefOpts []mountRefOptFn
-	if !opt.commitSnapshot {
-		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
-	}
-	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, nil, mountRefOpts...)
-	if err != nil {
-		return err
-	}
-
-	if err := f(rootPath); err != nil {
-		if closeErr := closer(); closeErr != nil {
-			err = errors.Join(err, closeErr)
-		}
-		return err
-	}
-	if err := closer(); err != nil {
-		return err
-	}
-
-	if !opt.commitSnapshot {
+		file.Snapshot = snapshot
 		return nil
-	}
-
-	snapshot, err := newRef.Commit(ctx)
-	if err != nil {
-		return err
-	}
-	file.Snapshot = snapshot
-
-	return nil
+	}, nil
 }
 
 // Contents handles file content retrieval
@@ -260,7 +196,15 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 		Writer: &buf,
 	}
 
-	err := file.execInMount(ctx, func(root string) error {
+	snapshot, err := file.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		return nil, errEmptyResultRef
+	}
+
+	err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
 		fullPath, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
@@ -303,7 +247,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 			}
 		}
 		return err
-	}, allowNilFileBuildkitSession)
+	}, mountRefAsReadOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +303,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]
 	return results, nil
 }
 
-func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (LazyInitFunc, error) {
+func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*File], searchStr, replacementStr string, firstFrom *int, all bool) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
 		ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 
@@ -368,7 +312,7 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 			return err
 		}
 
-		parentSnapshot, err := file.getParentSnapshot(ctx)
+		parentSnapshot, err := parent.Self().getSnapshot(ctx)
 		if err != nil {
 			return err
 		}
@@ -583,9 +527,30 @@ func (file *File) Stat(ctx context.Context) (*Stat, error) {
 }
 
 func (file *File) WithName(ctx context.Context, filename string) (LazyInitFunc, error) {
+	sourcePath := file.File
+	file.File = filename
+
 	return func(ctx context.Context) error {
-		return file.execInMount(ctx, func(root string) error {
-			src, err := RootPathWithoutFinalSymlink(root, file.File)
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := file.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withName %s", filename)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			src, err := RootPathWithoutFinalSymlink(root, sourcePath)
 			if err != nil {
 				return err
 			}
@@ -598,13 +563,41 @@ func (file *File) WithName(ctx context.Context, filename string) (LazyInitFunc, 
 				return TrimErrPathPrefix(err, root)
 			}
 			return nil
-		}, withSavedFileSnapshot("withName %s", filename))
+		})
+		if err != nil {
+			return err
+		}
+
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		file.Snapshot = snapshot
+		return nil
 	}, nil
 }
 
 func (file *File) WithTimestamps(ctx context.Context, unix int) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
-		return file.execInMount(ctx, func(root string) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := file.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withTimestamps %d", unix)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
 			if err != nil {
 				return err
@@ -615,7 +608,17 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (LazyInitFunc, e
 				return err
 			}
 			return nil
-		}, withSavedFileSnapshot("withTimestamps %d", unix))
+		})
+		if err != nil {
+			return err
+		}
+
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		file.Snapshot = snapshot
+		return nil
 	}, nil
 }
 
@@ -712,13 +715,20 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 }
 
 func (file *File) Mount(ctx context.Context, f func(string) error) error {
-	err := file.execInMount(ctx, func(root string) error {
+	snapshot, err := file.getSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	if snapshot == nil {
+		return errEmptyResultRef
+	}
+	err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
 		src, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
 		}
 		return f(src)
-	}, allowNilFileBuildkitSession)
+	}, mountRefAsReadOnly)
 	return err
 }
 
@@ -754,7 +764,25 @@ func (file *File) Chown(ctx context.Context, owner string) (LazyInitFunc, error)
 		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 	}
 	return func(ctx context.Context) error {
-		return file.execInMount(ctx, func(root string) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := file.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("chown %s %s", file.File, owner)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			chownPath := file.File
 			chownPath, err := containerdfs.RootPath(root, chownPath)
 			if err != nil {
@@ -774,6 +802,16 @@ func (file *File) Chown(ctx context.Context, owner string) (LazyInitFunc, error)
 				return fmt.Errorf("failed to walk %s: %w", chownPath, err)
 			}
 			return nil
-		}, withSavedFileSnapshot("chown %s %s", file.File, owner))
+		})
+		if err != nil {
+			return err
+		}
+
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		file.Snapshot = snapshot
+		return nil
 	}, nil
 }

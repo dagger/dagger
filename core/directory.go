@@ -1419,6 +1419,9 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		return TrimErrPathPrefix(err, root)
 	})
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
+		}
 		return nil, err
 	}
 
