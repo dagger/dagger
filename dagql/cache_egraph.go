@@ -333,14 +333,17 @@ func (c *cache) repairClassTermsLocked(root eqClassID) (merges []eqMergePair) {
 }
 
 func (c *cache) firstLiveTermInSetLocked(termSet map[egraphTermID]struct{}) *egraphTerm {
+	var best *egraphTerm
 	for termID := range termSet {
 		term := c.egraphTerms[termID]
 		if term == nil || term.result == nil {
 			continue
 		}
-		return term
+		if best == nil || term.id < best.id {
+			best = term
+		}
 	}
-	return nil
+	return best
 }
 
 func (c *cache) indexTermOutputDigestsLocked(term *egraphTerm) {
