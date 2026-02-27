@@ -118,6 +118,10 @@ func (s *fileSchema) file(
 	parent dagql.ObjectResult[*core.Query],
 	args newFileArgs,
 ) (inst dagql.ObjectResult[*core.File], err error) {
+	if dir, _ := filepath.Split(args.Name); dir != "" {
+		return inst, fmt.Errorf("file name %q must not contain a directory", args.Name)
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -224,7 +228,7 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 	}
 
 	file := core.NewFileChild(parent)
-	file.LazyInit, err = file.WithReplaced(ctx, args.Search, args.Replacement, args.FirstFrom, args.All)
+	file.LazyInit, err = file.WithReplaced(ctx, parent, args.Search, args.Replacement, args.FirstFrom, args.All)
 	if err != nil {
 		return inst, err
 	}
