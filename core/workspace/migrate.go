@@ -25,17 +25,17 @@ type MigrationIO interface {
 
 // MigrationResult holds the output of a successful migration.
 type MigrationResult struct {
-	ProjectRoot     string
-	ConfigPath      string   // path to new .dagger/config.toml
-	ModuleName      string   // name of migrated project module (if any)
-	ModuleNewPath   string   // new location of module config
-	OldSourcePath   string   // original source path (for moved modules)
-	DepRewriteCount int      // number of dependency paths rewritten
-	IncRewriteCount int      // number of include paths rewritten
-	ToolchainCount  int      // number of toolchains converted
-	BlueprintMigrated bool   // whether a blueprint was migrated
-	RemovedFiles    []string // files removed during migration
-	Warnings        []string // non-fatal warnings
+	ProjectRoot       string
+	ConfigPath        string   // path to new .dagger/config.toml
+	ModuleName        string   // name of migrated project module (if any)
+	ModuleNewPath     string   // new location of module config
+	OldSourcePath     string   // original source path (for moved modules)
+	DepRewriteCount   int      // number of dependency paths rewritten
+	IncRewriteCount   int      // number of include paths rewritten
+	ToolchainCount    int      // number of toolchains converted
+	BlueprintMigrated bool     // whether a blueprint was migrated
+	RemovedFiles      []string // files removed during migration
+	Warnings          []string // non-fatal warnings
 }
 
 // Summary returns a human-readable summary of the migration.
@@ -101,6 +101,8 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 	wsCfg := &Config{
 		Modules: make(map[string]ModuleEntry),
 	}
+	migrateLock := NewLock()
+	hasLockEntries := false
 
 	// 3a. Handle project module
 	if needsProjectModuleMigration {
@@ -175,6 +177,13 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 		}
 		wsCfg.Modules[tc.Name] = entry
 		result.ToolchainCount++
+
+		if tc.Pin != "" {
+			if err := setMigrationModuleResolvePin(migrateLock, source, tc.Pin); err != nil {
+				return nil, fmt.Errorf("setting lock for toolchain %q: %w", tc.Name, err)
+			}
+			hasLockEntries = true
+		}
 	}
 
 	// 3c. Handle blueprint -> workspace module
@@ -193,6 +202,13 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 			LegacyDefaultPath: true,
 		}
 		result.BlueprintMigrated = true
+
+		if cfg.Blueprint.Pin != "" {
+			if err := setMigrationModuleResolvePin(migrateLock, source, cfg.Blueprint.Pin); err != nil {
+				return nil, fmt.Errorf("setting lock for blueprint %q: %w", name, err)
+			}
+			hasLockEntries = true
+		}
 	}
 
 	// 3d. Introspect constructor args for config hints (in parallel)
@@ -227,6 +243,17 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 	configPath := filepath.Join(migErr.ProjectRoot, WorkspaceDirName, ConfigFileName)
 	if err := writeHostFile(ctx, bk, configPath, []byte(configContent)); err != nil {
 		return nil, fmt.Errorf("writing workspace config: %w", err)
+	}
+
+	if hasLockEntries {
+		lockPath := filepath.Join(migErr.ProjectRoot, WorkspaceDirName, LockFileName)
+		lockBytes, err := migrateLock.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("serializing workspace lock: %w", err)
+		}
+		if err := writeHostFile(ctx, bk, lockPath, lockBytes); err != nil {
+			return nil, fmt.Errorf("writing workspace lock: %w", err)
+		}
 	}
 
 	// 5. Delete root dagger.json
@@ -599,4 +626,19 @@ func copyDirLocal(src, dst string) error {
 		}
 		return os.WriteFile(target, data, info.Mode())
 	})
+}
+
+func setMigrationModuleResolvePin(lock *Lock, source, pin string) error {
+	if source == "" || pin == "" {
+		return nil
+	}
+
+	if existingPin, _, ok := lock.GetModuleResolve(source); ok {
+		if existingPin != pin {
+			return fmt.Errorf("conflicting pins for source %q: %q vs %q", source, existingPin, pin)
+		}
+		return nil
+	}
+
+	return lock.SetModuleResolve(source, pin, PolicyPin)
 }
