@@ -1,5 +1,11 @@
 'use strict';
 
+// Collect JIT workspace logs emitted by jit-workspace-hook.cjs.
+// Modes:
+// - hydrated: only paths that were actually materialized on demand
+// - seen: all traced accesses (excluding hydrated files)
+// - all: both sets
+
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -46,6 +52,35 @@ function shouldReadEntry(entry) {
   return entry.endsWith('.hydrated.json');
 }
 
+function loadPathList(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) == false) {
+      return [];
+    }
+    return parsed.filter((item) => typeof item == 'string');
+  } catch (_err) {
+    return [];
+  }
+}
+
+function shouldCollectPath(absPath) {
+  if (fs.existsSync(absPath) == false) {
+    return false;
+  }
+  if (within(workspaceDir, absPath) == false) {
+    return false;
+  }
+  if (within(siteDir, absPath) == true) {
+    return false;
+  }
+  if (within(absPath, siteDir) == true) {
+    return false;
+  }
+  return true;
+}
+
 if (fs.existsSync(outputDir)) {
   for (const entry of fs.readdirSync(outputDir)) {
     if (shouldReadEntry(entry) == false) {
@@ -53,35 +88,10 @@ if (fs.existsSync(outputDir)) {
     }
 
     const filePath = path.join(outputDir, entry);
-    const raw = fs.readFileSync(filePath, 'utf8');
-    let paths = null;
-
-    try {
-      paths = JSON.parse(raw);
-    } catch (_err) {
-      continue;
-    }
-
-    if (Array.isArray(paths) == false) {
-      continue;
-    }
-
+    const paths = loadPathList(filePath);
     for (const item of paths) {
-      if (typeof item != 'string') {
-        continue;
-      }
-
       const absPath = canonicalize(item);
-      if (fs.existsSync(absPath) == false) {
-        continue;
-      }
-      if (within(workspaceDir, absPath) == false) {
-        continue;
-      }
-      if (within(siteDir, absPath) == true) {
-        continue;
-      }
-      if (within(absPath, siteDir) == true) {
+      if (shouldCollectPath(absPath) == false) {
         continue;
       }
 

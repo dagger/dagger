@@ -1,5 +1,10 @@
 'use strict';
 
+// Node preload hook used by Sandbox.withJustInTimeWorkspace():
+// - intercept fs/module path resolution
+// - hydrate missing workspace paths on demand
+// - persist "seen" and "hydrated" path logs for later collection
+
 const fs = require('node:fs');
 const fsPromises = require('node:fs/promises');
 const path = require('node:path');
@@ -8,6 +13,8 @@ const { spawnSync } = require('node:child_process');
 const Module = require('node:module');
 
 const realpathNative = fs.realpathSync.native || fs.realpathSync;
+const SEEN_LOG_SUFFIX = '.json';
+const HYDRATED_LOG_SUFFIX = '.hydrated.json';
 
 function canonicalRoot(rawPath) {
   const resolved = path.resolve(rawPath);
@@ -30,6 +37,7 @@ const seen = new Set();
 const hydrated = new Set();
 const hydrateFailures = new Set();
 const globRegexCache = new Map();
+let hasFlushed = false;
 
 function toPath(value) {
   if (typeof value === 'string') {
@@ -91,6 +99,7 @@ function normalizePattern(rawPattern) {
   let pattern = rawPattern.trim().replaceAll('\\', '/');
   pattern = pattern.replace(/^\.\/+/, '');
   pattern = pattern.replace(/^\/+/, '');
+  // "dir/" means "everything under dir".
   if (pattern.endsWith('/')) {
     pattern = pattern + '**';
   }
@@ -107,6 +116,9 @@ function globToRegex(pattern) {
     return cached;
   }
 
+  // Intentionally minimal glob support:
+  // - *  => segment wildcard
+  // - ** => cross-segment wildcard
   let source = '^';
   for (let index = 0; index < pattern.length; index += 1) {
     const ch = pattern[index];
@@ -221,6 +233,7 @@ function hydrate(filePath, hint) {
         ...process.env,
         NODE_OPTIONS: '',
         DAGGER_JIT_WORKSPACE_HELPER: '1',
+        DAGGER_JIT_WORKSPACE_DISABLE_HYDRATE: '1',
       },
     },
   );
@@ -254,13 +267,31 @@ function methodHint(method) {
   }
 }
 
+function copyFunctionProps(targetFn, sourceFn) {
+  // Preserve attached properties (e.g. fs.realpath.native, custom symbols).
+  for (const key of Reflect.ownKeys(sourceFn)) {
+    if (key === 'length' || key === 'name' || key === 'prototype') {
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(sourceFn, key);
+    if (descriptor == null) {
+      continue;
+    }
+    try {
+      Object.defineProperty(targetFn, key, descriptor);
+    } catch (_err) {
+      // Some engine-provided properties are non-redefinable; ignore.
+    }
+  }
+}
+
 function wrapPathMethod(target, method, pathArgIndexes) {
   const original = target[method];
   if (typeof original != 'function') {
     return;
   }
 
-  target[method] = function wrappedPathMethod(...args) {
+  function wrappedPathMethod(...args) {
     const hint = methodHint(method);
     for (const index of pathArgIndexes) {
       if (index < args.length) {
@@ -274,7 +305,10 @@ function wrapPathMethod(target, method, pathArgIndexes) {
       }
     }
     return original.apply(this, args);
-  };
+  }
+
+  copyFunctionProps(wrappedPathMethod, original);
+  target[method] = wrappedPathMethod;
 }
 
 const onePathMethods = [
@@ -386,19 +420,24 @@ if (typeof originalDlopen == 'function') {
 }
 
 function flush() {
+  if (hasFlushed == true) {
+    return;
+  }
+  hasFlushed = true;
+
   fs.mkdirSync(outputDirPath, { recursive: true });
-  const seenFile = path.join(outputDirPath, process.pid + '.json');
-  const hydratedFile = path.join(outputDirPath, process.pid + '.hydrated.json');
+  const seenFile = path.join(outputDirPath, process.pid + SEEN_LOG_SUFFIX);
+  const hydratedFile = path.join(outputDirPath, process.pid + HYDRATED_LOG_SUFFIX);
   fs.writeFileSync(seenFile, JSON.stringify(Array.from(seen).sort()), 'utf8');
   fs.writeFileSync(hydratedFile, JSON.stringify(Array.from(hydrated).sort()), 'utf8');
 }
 
-process.on('exit', flush);
-process.on('SIGINT', () => {
+process.once('exit', flush);
+process.once('SIGINT', () => {
   flush();
   process.exit(130);
 });
-process.on('SIGTERM', () => {
+process.once('SIGTERM', () => {
   flush();
   process.exit(143);
 });
