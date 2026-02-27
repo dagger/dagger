@@ -7097,10 +7097,11 @@ func (r *File) WithTimestamps(timestamp int) *File {
 type Function struct {
 	query *querybuilder.Selection
 
-	deprecated  *string
-	description *string
-	id          *FunctionID
-	name        *string
+	deprecated       *string
+	description      *string
+	id               *FunctionID
+	name             *string
+	sourceModuleName *string
 }
 type WithFunctionFunc func(r *Function) *Function
 
@@ -7245,6 +7246,19 @@ func (r *Function) SourceMap() *SourceMap {
 	return &SourceMap{
 		query: q,
 	}
+}
+
+// If this function is provided by a module, the name of the module. Unset otherwise.
+func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // FunctionWithArgOpts contains options for Function.WithArg
@@ -10380,15 +10394,6 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The blueprint referenced by the module source.
-func (r *ModuleSource) Blueprint() *ModuleSource {
-	q := r.query.Select("blueprint")
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
 // The ref to clone the root of the git repo from. Only valid for git sources.
 func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
 	if r.cloneRef != nil {
@@ -10766,39 +10771,6 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}, nil
 }
 
-// The toolchains referenced by the module source.
-func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
-	q := r.query.Select("toolchains")
-
-	q = q.Select("id")
-
-	type toolchains struct {
-		Id ModuleSourceID
-	}
-
-	convert := func(fields []toolchains) []ModuleSource {
-		out := []ModuleSource{}
-
-		for i := range fields {
-			val := ModuleSource{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []toolchains
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
 // User-defined defaults read from local .env files
 func (r *ModuleSource) UserDefaults() *EnvFile {
 	q := r.query.Select("userDefaults")
@@ -10819,17 +10791,6 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Set a blueprint for the module source.
-func (r *ModuleSource) WithBlueprint(blueprint *ModuleSource) *ModuleSource {
-	assertNotNil("blueprint", blueprint)
-	q := r.query.Select("withBlueprint")
-	q = q.Arg("blueprint", blueprint)
-
-	return &ModuleSource{
-		query: q,
-	}
 }
 
 // Update the module source with a new client to generate.
@@ -10913,25 +10874,6 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
-// Add toolchains to the module source.
-func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
-	q := r.query.Select("withToolchains")
-	q = q.Arg("toolchains", toolchains)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Update the blueprint module to the latest version.
-func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
-	q := r.query.Select("withUpdateBlueprint")
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
 // Update one or more module dependencies.
 func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withUpdateDependencies")
@@ -10942,29 +10884,10 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 	}
 }
 
-// Update one or more toolchains.
-func (r *ModuleSource) WithUpdateToolchains(toolchains []string) *ModuleSource {
-	q := r.query.Select("withUpdateToolchains")
-	q = q.Arg("toolchains", toolchains)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
 // Update one or more clients.
 func (r *ModuleSource) WithUpdatedClients(clients []string) *ModuleSource {
 	q := r.query.Select("withUpdatedClients")
 	q = q.Arg("clients", clients)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Remove the current blueprint from the module source.
-func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
-	q := r.query.Select("withoutBlueprint")
 
 	return &ModuleSource{
 		query: q,
@@ -10995,16 +10918,6 @@ func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource 
 func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperimentalFeature) *ModuleSource {
 	q := r.query.Select("withoutExperimentalFeatures")
 	q = q.Arg("features", features)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Remove the provided toolchains from the module source.
-func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
-	q := r.query.Select("withoutToolchains")
-	q = q.Arg("toolchains", toolchains)
 
 	return &ModuleSource{
 		query: q,
@@ -11407,9 +11320,21 @@ func (r *Client) CurrentModule() *CurrentModule {
 	}
 }
 
+// CurrentTypeDefsOpts contains options for Client.CurrentTypeDefs
+type CurrentTypeDefsOpts struct {
+	// Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
+	IncludeCore bool
+}
+
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+func (r *Client) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includeCore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeCore) {
+			q = q.Arg("includeCore", opts[i].IncludeCore)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -11440,23 +11365,11 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// CurrentWorkspaceOpts contains options for Client.CurrentWorkspace
-type CurrentWorkspaceOpts struct {
-	// If true, skip legacy dagger.json migration checks.
-	SkipMigrationCheck bool
-}
-
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
+func (r *Client) CurrentWorkspace() *Workspace {
 	q := r.query.Select("currentWorkspace")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `skipMigrationCheck` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SkipMigrationCheck) {
-			q = q.Arg("skipMigrationCheck", opts[i].SkipMigrationCheck)
-		}
-	}
 
 	return &Workspace{
 		query: q,
@@ -13982,14 +13895,45 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
-	clientId *string
-	findUp   *string
-	id       *WorkspaceID
-	root     *string
+	clientId      *string
+	configPath    *string
+	configRead    *string
+	configWrite   *string
+	defaultModule *string
+	findUp        *string
+	hasConfig     *bool
+	id            *WorkspaceID
+	init          *string
+	initialized   *bool
+	install       *string
+	moduleInit    *string
+	path          *string
+	update        *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceChecksOpts contains options for Workspace.Checks
+type WorkspaceChecksOpts struct {
+	// Only include checks matching the specified patterns
+	Include []string
+}
+
+// Return all checks from modules loaded in the workspace.
+func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
+	q := r.query.Select("checks")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &CheckGroup{
 		query: q,
 	}
 }
@@ -14000,6 +13944,76 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 		return *r.clientId, nil
 	}
 	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Path to config.toml relative to root (empty if not initialized).
+func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
+	if r.configPath != nil {
+		return *r.configPath, nil
+	}
+	q := r.query.Select("configPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceConfigReadOpts contains options for Workspace.ConfigRead
+type WorkspaceConfigReadOpts struct {
+	// Dotted key path (e.g. modules.mymod.source). Empty for full config.
+	Key string
+}
+
+// Read a configuration value from config.toml.
+//
+// If key is empty, returns the full config. If key points to a scalar, returns the value. If key points to a table, returns flattened dotted-key output.
+func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadOpts) (string, error) {
+	if r.configRead != nil {
+		return *r.configRead, nil
+	}
+	q := r.query.Select("configRead")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Write a configuration value to config.toml.
+//
+// Validates the key against the config schema and auto-detects value types.
+func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (string, error) {
+	if r.configWrite != nil {
+		return *r.configWrite, nil
+	}
+	q := r.query.Select("configWrite")
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+func (r *Workspace) DefaultModule(ctx context.Context) (string, error) {
+	if r.defaultModule != nil {
+		return *r.defaultModule, nil
+	}
+	q := r.query.Select("defaultModule")
 
 	var response string
 
@@ -14019,7 +14033,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Path is relative to workspace root. Use "." for the root directory.
+// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -14045,7 +14059,7 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 
 // Returns a File from the workspace.
 //
-// Path is relative to workspace root.
+// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -14082,6 +14096,40 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	q = q.Arg("name", name)
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceGeneratorsOpts contains options for Workspace.Generators
+type WorkspaceGeneratorsOpts struct {
+	// Only include generators matching the specified patterns
+	Include []string
+}
+
+// Return all generators from modules loaded in the workspace.
+func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup {
+	q := r.query.Select("generators")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// Whether a config.toml file exists in the workspace.
+func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
+	if r.hasConfig != nil {
+		return *r.hasConfig, nil
+	}
+	q := r.query.Select("hasConfig")
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14127,12 +14175,138 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Absolute path to the workspace root directory.
-func (r *Workspace) Root(ctx context.Context) (string, error) {
-	if r.root != nil {
-		return *r.root, nil
+// Initialize a new workspace, creating .dagger/config.toml.
+func (r *Workspace) Init(ctx context.Context) (string, error) {
+	if r.init != nil {
+		return *r.init, nil
 	}
-	q := r.query.Select("root")
+	q := r.query.Select("init")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether .dagger/config.toml exists.
+func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
+	if r.initialized != nil {
+		return *r.initialized, nil
+	}
+	q := r.query.Select("initialized")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceInstallOpts contains options for Workspace.Install
+type WorkspaceInstallOpts struct {
+	// Override name for the installed module entry.
+	Name string
+	// Mark the module as a blueprint (functions aliased to Query root).
+	Blueprint bool
+}
+
+// Install a module into the workspace, writing config.toml to the host.
+func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceInstallOpts) (string, error) {
+	if r.install != nil {
+		return *r.install, nil
+	}
+	q := r.query.Select("install")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `blueprint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Blueprint) {
+			q = q.Arg("blueprint", opts[i].Blueprint)
+		}
+	}
+	q = q.Arg("ref", ref)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
+type WorkspaceModuleInitOpts struct {
+	// Source subpath within the module root.
+	Source string
+	// Additional include patterns for the module.
+	Include []string
+	// SPDX license identifier to generate (empty to skip).
+	//
+	// Default: "Apache-2.0"
+	License string
+}
+
+// Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.
+func (r *Workspace) ModuleInit(ctx context.Context, name string, sdk string, opts ...WorkspaceModuleInitOpts) (string, error) {
+	if r.moduleInit != nil {
+		return *r.moduleInit, nil
+	}
+	q := r.query.Select("moduleInit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `license` optional argument
+		if !querybuilder.IsZeroValue(opts[i].License) {
+			q = q.Arg("license", opts[i].License)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("sdk", sdk)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Workspace path relative to root.
+func (r *Workspace) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceUpdateOpts contains options for Workspace.Update
+type WorkspaceUpdateOpts struct {
+	// Workspace module names to update. Empty updates all git modules.
+	Modules []string
+}
+
+// Update one or more workspace module lock entries in .dagger/lock.
+//
+// Leaves config.toml unchanged. If modules is empty, updates all git modules.
+func (r *Workspace) Update(ctx context.Context, opts ...WorkspaceUpdateOpts) (string, error) {
+	if r.update != nil {
+		return *r.update, nil
+	}
+	q := r.query.Select("update")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `modules` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Modules) {
+			q = q.Arg("modules", opts[i].Modules)
+		}
+	}
 
 	var response string
 

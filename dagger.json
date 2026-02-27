@@ -130,5 +130,5 @@
     "go.sum",
     "util/patchpreview"
   ],
-  "source": ".dagger"
+  "source": ".dagger/modules/dagger-dev"
 }

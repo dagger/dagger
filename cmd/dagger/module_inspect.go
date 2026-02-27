@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
@@ -25,26 +26,53 @@ var errModuleNotFound = errors.New("module not found")
 func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
 	def := &moduleDef{}
 
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
 	}
 
 	return def, nil
 }
 
-// initializeDefaultModule loads the module referenced by the -m,--mod flag
+// initializeWorkspace loads type definitions from the workspace.
+// Modules are already served by the engine at connect time.
 //
-// By default, looks for a module in the current directory, or above.
-// Returns an error if the module is not found or invalid.
-func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
-	if moduleNoURL {
-		return nil, fmt.Errorf("cannot load module when --no-mod is specified")
+// When a specific module was requested via -m, the CLI identifies that module
+// among the loaded types and sets it as the MainObject so that the module's
+// constructor flags are available at the top level (e.g. dagger call --model x run).
+//
+// When no specific module was requested, MainObject is the Query root and
+// workspace module constructors appear as Query root sub-commands.
+//
+// FIXME(vito): this needs to be cleaned up or renamed, since it also handles
+// support for standalone modules and implicit `-m .`
+func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
+	def := &moduleDef{}
+
+	// If a specific module was requested via -m, resolve its name so that
+	// loadTypeDefs can match it and set MainObject to the module's type
+	// (rather than Query). This makes the module's constructor flags
+	// available at the top level (e.g. dagger call --model x run).
+	if modRef, explicit := getExplicitModuleSourceRef(); explicit && modRef != "" {
+		modName, err := dag.ModuleSource(modRef).ModuleName(ctx)
+		if err == nil && modName != "" {
+			def.Name = modName
+		}
 	}
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
+
+	// Ask the engine which module is the default for this workspace.
+	// This is authoritative: blueprint modules, standalone modules, etc.
+	if def.Name == "" {
+		name, err := dag.CurrentWorkspace().DefaultModule(ctx)
+		if err == nil && name != "" {
+			def.Name = name
+		}
 	}
-	return initializeModule(ctx, dag, modRef, dag.ModuleSource(modRef))
+
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
+		return nil, err
+	}
+
+	return def, nil
 }
 
 // initializeModule loads the module at the given source ref
@@ -82,7 +110,7 @@ func initializeModule(
 		return nil, err
 	}
 
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
 	}
 
@@ -278,7 +306,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 }
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
-func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr error) {
+// When includeCore is false, core types (Container, Directory, etc.) are excluded from the result.
+func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includeCore bool) (rerr error) {
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)
 
@@ -287,7 +316,8 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	}
 
 	err := dag.Do(ctx, &dagger.Request{
-		Query: loadTypeDefsQuery,
+		Query:     loadTypeDefsQuery,
+		Variables: map[string]interface{}{"includeCore": includeCore},
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -349,6 +379,48 @@ func (m *moduleDef) Long() string {
 		return s + "\n\n" + m.Description
 	}
 	return s
+}
+
+// siblingModuleEntrypoints returns Query root functions from workspace modules
+// other than the default module. These are module constructors that should
+// appear alongside the default module's own functions in `dagger functions`.
+// If a sibling module's CLI name conflicts with an existing function of the
+// default module, it is skipped and a warning is logged.
+func (m *moduleDef) siblingModuleEntrypoints() []*modFunction {
+	rootType := m.GetTypeDef("Query")
+	if rootType == nil || rootType.AsObject == nil {
+		return nil
+	}
+
+	// Collect CLI names of the default module's functions to detect conflicts.
+	existing := make(map[string]bool)
+	if m.MainObject != nil && m.MainObject.AsObject != nil {
+		for _, fn := range m.MainObject.AsObject.GetFunctions() {
+			existing[fn.CmdName()] = true
+		}
+	}
+
+	var siblings []*modFunction
+	for _, fn := range rootType.AsObject.Functions {
+		// Only include module-provided functions (skip core API).
+		if fn.SourceModuleName == "" {
+			continue
+		}
+		// Skip the default module's own constructor.
+		if fn.SourceModuleName == m.Name {
+			continue
+		}
+		if existing[fn.CmdName()] {
+			slog.Warn("default module function shadows workspace module entrypoint",
+				"function", fn.CmdName(),
+				"module", m.Name,
+				"shadowed", fn.SourceModuleName,
+			)
+			continue
+		}
+		siblings = append(siblings, fn)
+	}
+	return siblings
 }
 
 func (m *moduleDef) AsFunctionProviders() []functionProvider {
@@ -903,12 +975,13 @@ func shortDescription(desc string) string {
 
 // modFunction is a representation of dagger.Function.
 type modFunction struct {
-	Name        string
-	Description string
-	ReturnType  *modTypeDef
-	Args        []*modFunctionArg
-	cmdName     string
-	once        sync.Once
+	Name             string
+	Description      string
+	SourceModuleName string
+	ReturnType       *modTypeDef
+	Args             []*modFunctionArg
+	cmdName          string
+	once             sync.Once
 }
 
 func (f *modFunction) CmdName() string {

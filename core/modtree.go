@@ -28,7 +28,7 @@ type ModTreeNode struct {
 	DagqlServer *dagql.Server
 	// This module is the same across all ModTreeNode, this is the root module.
 	Module *Module
-	// This original module is the one in which the node has been defined. Could be one from a toolchain for instance.
+	// This original module is the one in which the node has been defined.
 	OriginalModule *Module
 	Type           *TypeDef
 	IsCheck        bool
@@ -349,14 +349,6 @@ func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, erro
 			return nil, fmt.Errorf("%q: serve core schema: %w", mod.Name(), err)
 		}
 	}
-	// Install toolchains
-	if mod.Toolchains != nil {
-		for _, entry := range mod.Toolchains.Entries() {
-			if err := entry.Module.Install(ctx, srv); err != nil {
-				return nil, fmt.Errorf("%q: serve toolchain module %q: %w", mod.Name(), entry.Module.Name(), err)
-			}
-		}
-	}
 	// Install the main module
 	if err := mod.Install(ctx, srv); err != nil {
 		return nil, fmt.Errorf("%q: serve module: %w", mod.Name(), err)
@@ -389,7 +381,10 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// FIXME: as an optimization, one-shot when possible?
 	srv := node.DagqlServer
 	// 1. Are we the root? Select the module's main object from Query root.
-	if node.Parent == nil {
+	// A node is also treated as root if its parent is a synthetic naming-only
+	// node (e.g. injected by workspace checks reparenting, which sets
+	// Parent to an empty ModTreeNode with nil Module).
+	if node.Parent == nil || node.Parent.Module == nil {
 		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(node.Module.Name())})
 	}
 	// 2. Is parent an object?
@@ -579,29 +574,20 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				continue
 			}
 			returnType := fn.ReturnType.ToType().Name()
-			// toolchains are exposed as a function.
-			// if the function name returns a toolchain, set the right module so children will
-			// know they are coming from a toolchain
-			// other functions can't return a type not defined in the module itself (or core)
-			// so the original module is always the parent one in other cases
-			originalModule := node.OriginalModule
-			if tc, ok := node.Module.Toolchains.GetByFieldName(fn.Name); ok {
-				originalModule = tc.Module
-			}
 			objectAdded := false
 			// if the type returned by the function is an object, check the children of the return type
 			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
 				// avoid cycles (X.withFoo: X)
 				returnType != nodeType {
 				// search for the object defined by the return type, in the "originalModule" that can be the toolchain one
-				if subObj, ok := originalModule.ObjectByName(fn.ReturnType.ToType().Name()); ok {
+				if subObj, ok := node.OriginalModule.ObjectByName(fn.ReturnType.ToType().Name()); ok {
 					objectAdded = true
 					children = append(children, &ModTreeNode{
 						Parent:         node,
 						Name:           fn.Name, // use the name of the function and not the name of the type as we want the chain
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
-						OriginalModule: originalModule,
+						OriginalModule: node.OriginalModule,
 						Type:           &TypeDef{AsObject: dagql.NonNull(subObj)},
 						IsCheck:        false,
 						IsGenerator:    false,
@@ -615,7 +601,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 					Name:           fn.Name,
 					DagqlServer:    node.DagqlServer,
 					Module:         node.Module,
-					OriginalModule: originalModule,
+					OriginalModule: node.OriginalModule,
 					Type:           fn.ReturnType,
 					IsCheck:        fn.IsCheck,
 					IsGenerator:    fn.IsGenerator,
@@ -666,5 +652,8 @@ func (node *ModTreeNode) Child(ctx context.Context, name string) (*ModTreeNode, 
 }
 
 func (node *ModTreeNode) ObjectType() *ObjectTypeDef {
+	if node.Type == nil {
+		return nil
+	}
 	return node.Type.AsObject.Value
 }

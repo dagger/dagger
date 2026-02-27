@@ -19,9 +19,9 @@ func TestWorkspace(t *testing.T) {
 
 const dangSDK = "github.com/vito/dang/dagger-sdk@be6466632453a52120517e5551c266a239d3899b"
 
-// workspaceBase returns a container with git, the dagger CLI, and an
+// gitBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
-func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+func gitBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
 	return c.Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
@@ -32,19 +32,23 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithExec([]string{"git", "init"})
 }
 
+// workspaceBase is gitBase with an initialized workspace.
+func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	t.Helper()
+	return gitBase(t, c).
+		With(daggerExec("init"))
+}
+
 // initDangModule creates a Dang module in the workspace with the given name
-// and source code. Uses "dagger init" and "dagger toolchain install" to
-// scaffold the workspace and module, then overwrites main.dang with the
-// provided source.
+// and source code. Uses "dagger module init" to scaffold the workspace and
+// module, then overwrites main.dang with the provided source.
 func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
+		// Ensure .dagger/ exists so that module init creates a workspace
+		// module rather than defaulting to standalone in an empty dir.
 		return ctr.
-			WithWorkdir("toolchains/"+name).
-			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
-			WithNewFile("main.dang", source).
-			WithWorkdir("../../").
-			With(daggerExec("init")).
-			With(daggerExec("toolchain", "install", "./toolchains/"+name))
+			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
+			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
 }
 
@@ -55,12 +59,10 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			// Create the blueprint module
-			WithWorkdir("blueprints/"+name).
-			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
-			WithNewFile("main.dang", source).
-			WithWorkdir("../../").
+			With(daggerExec("module", "init", "--sdk="+dangSDK, name, "blueprints/"+name)).
+			WithNewFile("blueprints/"+name+"/main.dang", source).
 			// Init the workspace root module using the blueprint
-			With(daggerExec("init", "--blueprint=./blueprints/"+name))
+			With(daggerExec("install", "--blueprint", "blueprints/"+name))
 	}
 }
 
@@ -447,6 +449,257 @@ type Magic {
 	require.NotContains(t, help, "--source")
 }
 
+// workspaceWithConfig returns a container with a workspace containing a config.toml.
+func workspaceWithConfig(t testing.TB, c *dagger.Client, configTOML string) *dagger.Container {
+	t.Helper()
+	return workspaceBase(t, c).
+		WithNewFile(".dagger/config.toml", configTOML)
+}
+
+func (WorkspaceSuite) TestConfigReadFullConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+blueprint = true
+
+[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	out, err := ctr.With(daggerExec("workspace", "config")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `source = "modules/my-module"`)
+	require.Contains(t, out, "blueprint = true")
+	require.Contains(t, out, `source = "github.com/dagger/jest"`)
+}
+
+func (WorkspaceSuite) TestConfigReadScalar(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+blueprint = true
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Read string value
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module.source")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "modules/my-module", strings.TrimSpace(out))
+
+	// Read bool value
+	out, err = ctr.With(daggerExec("workspace", "config", "modules.my-module.blueprint")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "true", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestConfigReadTable(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+blueprint = true
+
+[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Read a module table
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `source = "modules/my-module"`)
+	require.Contains(t, out, "blueprint = true")
+
+	// Read the modules table (should flatten with dotted keys)
+	out, err = ctr.With(daggerExec("workspace", "config", "modules")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `my-module.source = "modules/my-module"`)
+	require.Contains(t, out, "my-module.blueprint = true")
+	require.Contains(t, out, `jest.source = "github.com/dagger/jest"`)
+}
+
+func (WorkspaceSuite) TestConfigReadKeyNotSet(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	_, err := ctr.With(daggerExec("workspace", "config", "modules.nonexistent.source")).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "not set")
+}
+
+func (WorkspaceSuite) TestConfigWriteString(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Write a new source value
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.jest.source", "github.com/eunomie/jest"))
+
+	// Verify by reading back
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.jest.source")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/eunomie/jest", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestConfigWriteBool(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.my-module]
+source = "modules/my-module"
+blueprint = true
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Write a bool value
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.my-module.blueprint", "false"))
+
+	// Verify by reading back
+	out, err := ctr.With(daggerExec("workspace", "config", "modules.my-module.blueprint")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "false", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestConfigWriteArray(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Write a comma-separated array
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.jest.config.tags", "main,develop"))
+
+	// Verify the raw config file contains the array
+	out, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `tags`)
+	require.Contains(t, out, "main")
+	require.Contains(t, out, "develop")
+}
+
+func (WorkspaceSuite) TestConfigWriteInvalidKey(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Try to set an unknown key
+	_, err := ctr.With(daggerExec("workspace", "config", "modules.jest.badfield", "value")).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "unknown config key")
+}
+
+func (WorkspaceSuite) TestConfigWritePreservesComments(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `# My workspace config
+[modules.jest]
+source = "github.com/dagger/jest"
+`
+	ctr := workspaceWithConfig(t, c, configTOML)
+
+	// Write a value
+	ctr = ctr.With(daggerExec("workspace", "config", "modules.jest.source", "github.com/eunomie/jest"))
+
+	// Verify the comment is preserved
+	out, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "# My workspace config")
+	require.Contains(t, out, `"github.com/eunomie/jest"`)
+}
+
+func (WorkspaceSuite) TestWorkspaceUpdateNoGitModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("counter", `
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}
+`))
+
+	out, err := ctr.With(daggerExec("update")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "No updates", strings.TrimSpace(out))
+}
+
+func (WorkspaceSuite) TestWorkspaceUpdateExplicitLocalModuleErrors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("counter", `
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}
+`))
+
+	_, err := ctr.With(daggerExec("update", "counter")).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "is not a git module")
+}
+
+func (WorkspaceSuite) TestWorkspaceUpdateUnknownModuleErrors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("counter", `
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}
+`))
+
+	_, err := ctr.With(daggerExec("update", "missing")).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "workspace module(s) not found")
+}
+
+func (WorkspaceSuite) TestWorkspaceUpdateMutatesLockNotModuleConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	configTOML := `[modules.hello]
+source = "github.com/shykes/daggerverse/hello@v0.3.0"
+`
+	ctr := workspaceWithConfig(t, c, configTOML).
+		// Create a standalone module at workspace root to ensure update does not
+		// mutate module config.
+		With(daggerExec("module", "init", "--sdk=go", "--name=app", "."))
+
+	beforeDaggerJSON, err := ctr.File("dagger.json").Contents(ctx)
+	require.NoError(t, err)
+
+	updated := ctr.With(daggerExec("update"))
+	_, err = updated.Stdout(ctx)
+	require.NoError(t, err)
+
+	afterDaggerJSON, err := updated.File("dagger.json").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, beforeDaggerJSON, afterDaggerJSON)
+
+	lockOut, err := updated.WithExec([]string{"cat", ".dagger/lock"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, lockOut, `"modules.resolve"`)
+	require.Contains(t, lockOut, `"github.com/shykes/daggerverse/hello@v0.3.0"`)
+}
+
 // TestWorkspaceDirectoryGitignore verifies that Workspace.directory with
 // gitignore: true filters out files matched by .gitignore rules.
 func (WorkspaceSuite) TestWorkspaceDirectoryGitignore(ctx context.Context, t *testctx.T) {
@@ -743,5 +996,646 @@ type Cacheme {
 			"expected function to pick up the new text")
 		require.Contains(t, out4, marker,
 			"expected function to be re-executed on fourth call with changed workspace content")
+	})
+}
+
+// TestWorkspaceConfigDefaultString verifies that a string config value in
+// config.toml flows through the user defaults pipeline and is used as the
+// default for a constructor arg.
+func (WorkspaceSuite) TestWorkspaceConfigDefaultString(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("greeter", `
+type Greeter {
+  pub greeting: String!
+
+  new(greeting: String!) {
+    self.greeting = greeting
+    self
+  }
+
+  pub greet: String! {
+    greeting
+  }
+}
+`)).
+		// Overwrite config.toml to add a config default
+		WithNewFile(".dagger/config.toml", `[modules.greeter]
+source = "modules/greeter"
+
+[modules.greeter.config]
+greeting = "hello from config"
+`)
+
+	out, err := ctr.With(daggerCall("greeter", "greet")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from config", strings.TrimSpace(out))
+}
+
+// TestWorkspaceConfigDefaultEnvExpansion verifies that ${VAR} expansion works
+// in workspace config defaults, flowing through the user defaults pipeline.
+func (WorkspaceSuite) TestWorkspaceConfigDefaultEnvExpansion(ctx context.Context, t *testctx.T) {
+	t.Skip("not working yet")
+
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("greeter", `
+type Greeter {
+  pub greeting: String!
+
+  new(greeting: String!) {
+    self.greeting = greeting
+    self
+  }
+
+  pub greet: String! {
+    greeting
+  }
+}
+`)).
+		WithNewFile(".dagger/config.toml", `[modules.greeter]
+source = "modules/greeter"
+
+[modules.greeter.config]
+greeting = "${MY_GREETING}"
+`).
+		WithEnvVariable("MY_GREETING", "expanded greeting")
+
+	out, err := ctr.With(daggerCall("greeter", "greet")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "expanded greeting", strings.TrimSpace(out))
+}
+
+// TestWorkspaceConfigDefaultSecret verifies that env:// references in
+// workspace config defaults resolve as Secrets through the user defaults pipeline.
+func (WorkspaceSuite) TestWorkspaceConfigDefaultSecret(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("auth", `
+type Auth {
+  pub token: Secret!
+
+  new(token: Secret!) {
+    self.token = token
+    self
+  }
+
+  pub reveal: String! {
+    token.plaintext
+  }
+}
+`)).
+		WithNewFile(".dagger/config.toml", `[modules.auth]
+source = "modules/auth"
+
+[modules.auth.config]
+token = "env://MY_TOKEN"
+`).
+		WithEnvVariable("MY_TOKEN", "supersecret")
+
+	out, err := ctr.With(daggerCall("auth", "reveal")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "supersecret", strings.TrimSpace(out))
+}
+
+// TestWorkspaceConfigDefaultBool verifies that boolean config values work
+// through the user defaults pipeline.
+func (WorkspaceSuite) TestWorkspaceConfigDefaultBool(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("toggler", `
+type Toggler {
+  pub enabled: Boolean!
+
+  new(enabled: Boolean!) {
+    self.enabled = enabled
+    self
+  }
+
+  pub check: String! {
+    if (enabled) { "on" } else { "off" }
+  }
+}
+`)).
+		WithNewFile(".dagger/config.toml", `[modules.toggler]
+source = "modules/toggler"
+
+[modules.toggler.config]
+enabled = true
+`)
+
+	out, err := ctr.With(daggerCall("toggler", "check")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "on", strings.TrimSpace(out))
+}
+
+// TestWorkspaceConfigDefaultInteger verifies that integer config values work
+// through the user defaults pipeline.
+func (WorkspaceSuite) TestWorkspaceConfigDefaultInteger(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		With(initDangModule("counter", `
+type Counter {
+  pub count: Int!
+
+  new(count: Int!) {
+    self.count = count
+    self
+  }
+
+  pub value: Int! {
+    count
+  }
+}
+`)).
+		WithNewFile(".dagger/config.toml", `[modules.counter]
+source = "modules/counter"
+
+[modules.counter.config]
+count = 42
+`)
+
+	out, err := ctr.With(daggerCall("counter", "value")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "42", strings.TrimSpace(out))
+}
+
+// TestWorkspaceMigrateNonLocalSource verifies that `dagger migrate`
+// moves source files from a non-"." source directory to .dagger/modules/<name>/
+// and removes the old source directory.
+func (WorkspaceSuite) TestWorkspaceMigrateNonLocalSource(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a legacy project with source = "ci" — the source code lives in ci/
+	ctr := gitBase(t, c).
+		// Create legacy dagger.json with source = "ci"
+		WithNewFile("dagger.json", `{
+  "name": "myapp",
+  "sdk": {"source": "`+dangSDK+`"},
+  "source": "ci"
+}`).
+		// Create source files in ci/
+		WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from migrated source"
+  }
+}
+`).
+		// Commit so git status is clean (workspace detection needs git)
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	// Run migration
+	ctr = ctr.With(daggerExec("migrate"))
+
+	// Verify: old ci/ directory should be removed
+	_, err := ctr.WithExec([]string{"test", "-d", "ci"}).Sync(ctx)
+	require.Error(t, err, "old source directory 'ci' should have been removed")
+
+	// Verify: source files should now be at .dagger/modules/myapp/
+	out, err := ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
+	require.NoError(t, err, "source file should exist at new location")
+	_ = out
+
+	// Verify: .dagger/modules/myapp/dagger.json should exist
+	djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, djson, `"name": "myapp"`)
+	// source should be empty (omitted) since files are now co-located
+	require.NotContains(t, djson, `"source": "ci"`)
+
+	// Verify: .dagger/config.toml should exist and reference the module
+	configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, configOut, "modules/myapp")
+
+	// Verify: root dagger.json should be removed
+	_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+	require.Error(t, err, "root dagger.json should have been removed")
+}
+
+// TestWorkspaceMigrateLocalSource verifies that `dagger migrate`
+// does NOT move source files when source = "." (the default case).
+func (WorkspaceSuite) TestWorkspaceMigrateLocalSource(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a legacy project with source = "." (implicit, SDK set but no source field)
+	// We need toolchains for needsProjectModuleMigration to be true with source="."
+	ctr := gitBase(t, c).
+		WithNewFile("dagger.json", `{
+  "name": "myapp",
+  "sdk": {"source": "`+dangSDK+`"},
+  "toolchains": [
+    {"name": "test-tc", "source": "`+dangSDK+`"}
+  ]
+}`).
+		WithNewFile("main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from root source"
+  }
+}
+`).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	// Run migration
+	ctr = ctr.With(daggerExec("migrate"))
+
+	// Verify: main.dang should still be at root (not moved)
+	_, err := ctr.WithExec([]string{"test", "-f", "main.dang"}).Sync(ctx)
+	require.NoError(t, err, "source file should remain at root for source='.'")
+
+	// Verify: .dagger/modules/myapp/dagger.json should exist with source pointing back to root
+	djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, djson, `"name": "myapp"`)
+	require.Contains(t, djson, `"source": "../../../"`)
+
+	// Verify: .dagger/config.toml should exist
+	_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+	require.NoError(t, err, ".dagger/config.toml should exist after migration")
+
+	// Verify: root dagger.json should be removed
+	_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+	require.Error(t, err, "root dagger.json should have been removed")
+}
+
+// TestWorkspaceMigrateWritesLockPins verifies that legacy pinned blueprint and
+// toolchain entries are migrated to .dagger/lock with policy=pin.
+func (WorkspaceSuite) TestWorkspaceMigrateWritesLockPins(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := gitBase(t, c).
+		WithNewFile("dagger.json", `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "tc", "source": "github.com/acme/toolchain@main", "pin": "1111111"}
+  ],
+  "blueprint": {"name": "bp", "source": "github.com/acme/blueprint@main", "pin": "2222222"}
+}`).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	ctr = ctr.With(daggerExec("migrate"))
+
+	lockOut, err := ctr.WithExec([]string{"cat", ".dagger/lock"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, lockOut, `"modules.resolve"`)
+	require.Contains(t, lockOut, `"github.com/acme/toolchain@main"`)
+	require.Contains(t, lockOut, `"1111111"`)
+	require.Contains(t, lockOut, `"github.com/acme/blueprint@main"`)
+	require.Contains(t, lockOut, `"2222222"`)
+	require.Contains(t, lockOut, `"policy":"pin"`)
+}
+
+// TestWorkspaceMigrateSkipsLockWithoutPins verifies that migration doesn't
+// create a lockfile when no legacy pin fields are present.
+func (WorkspaceSuite) TestWorkspaceMigrateSkipsLockWithoutPins(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := gitBase(t, c).
+		WithNewFile("dagger.json", `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "tc", "source": "github.com/acme/toolchain@main"}
+  ]
+}`).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	ctr = ctr.With(daggerExec("migrate"))
+
+	_, err := ctr.WithExec([]string{"test", "-f", ".dagger/lock"}).Sync(ctx)
+	require.Error(t, err, "lockfile should not exist when there are no legacy pins")
+}
+
+// TestWorkspaceMigrateSummary verifies that the migration output includes
+// relevant summary information.
+func (WorkspaceSuite) TestWorkspaceMigrateSummary(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := gitBase(t, c).
+		WithNewFile("dagger.json", `{
+  "name": "myapp",
+  "sdk": {"source": "`+dangSDK+`"},
+  "source": "ci",
+  "dependencies": [
+    {"name": "dep1", "source": "./lib/dep1"}
+  ],
+  "include": ["extra/"]
+}`).
+		WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! { "hi" }
+}
+`).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	// Run migration — should print summary
+	out, err := ctr.With(daggerExec("migrate")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Migrated to workspace format")
+}
+
+// TestNestedModuleBeneathWorkspace verifies that a standalone dagger.json
+// module nested inside a workspace takes precedence over the outer workspace
+// when running from the module's directory. This tests the precedence rule:
+//
+//	./dagger.json > ../../.dagger/config.toml
+//
+// The user should be able to `cd` into the nested module and run `dagger call`
+// / `dagger functions` without `-m .`.
+func (WorkspaceSuite) TestNestedModuleBeneathWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a workspace at /work with a module in .dagger/modules/outer.
+	base := workspaceBase(t, c).
+		With(initDangModule("outer", `
+type Outer {
+  pub greet: String! {
+    "hello from outer"
+  }
+}
+`))
+
+	// Now create a standalone dagger.json module nested beneath the workspace.
+	// Using "dagger module init" with a path creates the module WITHOUT adding
+	// it to the workspace config.
+	base = base.
+		With(daggerExec("module", "init", "--sdk="+dangSDK, "inner", "./nested/inner")).
+		WithNewFile("/work/nested/inner/main.dang", `
+type Inner {
+  pub msg: String!
+
+  new(msg: String! = "hello from inner") {
+    self.msg = msg
+    self
+  }
+
+  pub greet: String! {
+    msg
+  }
+}
+`).
+		WithWorkdir("/work/nested/inner")
+
+	t.Run("standalone module not added to workspace config", func(ctx context.Context, t *testctx.T) {
+		// The standalone module should NOT appear in the workspace config.
+		out, err := base.
+			WithWorkdir("/work").
+			WithExec([]string{"cat", ".dagger/config.toml"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "inner")
+	})
+
+	t.Run("dagger functions lists the nested module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "greet")
+		// The outer workspace module should also be visible as an entrypoint.
+		require.Contains(t, out, "outer")
+	})
+
+	t.Run("dagger call works without -m", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from inner", strings.TrimSpace(out))
+	})
+
+	t.Run("constructor flags work at top level", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("--msg", "custom message", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "custom message", strings.TrimSpace(out))
+	})
+}
+
+// TestFunctionsWithModFlag verifies that `dagger functions -m <module>` shows
+// the module's promoted (auto-aliased) functions and hides the redundant
+// constructor.
+func (WorkspaceSuite) TestFunctionsWithModFlag(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(daggerExec("module", "init", "--sdk="+dangSDK, "greeter", "./greeter")).
+		WithNewFile("/work/greeter/main.dang", `
+type Greeter {
+  pub name: String!
+
+  new(name: String! = "world") {
+    self.name = name
+    self
+  }
+
+  pub greet: String! {
+    "hello, " + name
+  }
+
+  pub shout: String! {
+    "HELLO, " + name
+  }
+}
+`).
+		WithWorkdir("/work")
+
+	runWithNiceFailure := func(ctx context.Context, base *dagger.Container, t *testctx.T, cmd ...string) string {
+		exec := base.WithExec(append([]string{"dagger"}, cmd...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeAny,
+		})
+		out, err := exec.CombinedOutput(ctx)
+		require.NoError(t, err)
+		code, err := exec.ExitCode(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0, code, "Command should not have failed. Output:\n\n%s", out)
+		out, err = exec.Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("shows promoted functions not constructor", func(ctx context.Context, t *testctx.T) {
+		out := runWithNiceFailure(ctx, base, t, "-m", "./greeter", "functions")
+		lines := strings.Split(out, "\n")
+		// The promoted functions should be listed.
+		require.Contains(t, lines, "greet   -")
+		require.Contains(t, lines, "shout   -")
+		// The constructor should NOT appear — its functions are already promoted.
+		for _, line := range lines {
+			require.NotContains(t, line, "greeter")
+		}
+	})
+
+	t.Run("call works with promoted functions", func(ctx context.Context, t *testctx.T) {
+		out := runWithNiceFailure(ctx, base, t, "-m", "./greeter", "call", "greet")
+		require.Equal(t, "hello, world", strings.TrimSpace(out))
+	})
+
+	t.Run("call works with constructor args and promoted functions", func(ctx context.Context, t *testctx.T) {
+		out := runWithNiceFailure(ctx, base, t, "-m", "./greeter", "call", "--name", "dagger", "shout")
+		require.Equal(t, "HELLO, dagger", strings.TrimSpace(out))
+	})
+}
+
+// TestBlueprintFunctionsIncludesOtherModules verifies that `dagger functions`
+// in a workspace with a blueprint module shows both the blueprint's own
+// functions AND entrypoint functions for the other (non-blueprint) workspace
+// modules.
+func (WorkspaceSuite) TestBlueprintFunctionsIncludesOtherModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a workspace with:
+	// - a blueprint module ("ci") whose functions should be promoted
+	// - two regular modules ("lint" and "test") whose constructors should
+	//   appear as entrypoint functions alongside the blueprint's functions
+	base := workspaceBase(t, c).
+		// Create the blueprint module
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub build: String! {
+    "built!"
+  }
+
+  pub deploy: String! {
+    "deployed!"
+  }
+}
+`)).
+		// Create two additional non-blueprint modules
+		With(initDangModule("lint", `
+type Lint {
+  pub check: String! {
+    "lint passed"
+  }
+}
+`)).
+		With(initDangModule("test", `
+type Test {
+  pub run: String! {
+    "tests passed"
+  }
+}
+`))
+
+	t.Run("dagger functions shows all modules", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+
+		// Blueprint functions should be promoted to the top level.
+		require.Contains(t, out, "build")
+		require.Contains(t, out, "deploy")
+
+		// Non-blueprint modules should appear as entrypoint functions.
+		require.Contains(t, out, "lint")
+		require.Contains(t, out, "test")
+	})
+
+	t.Run("dagger call blueprint function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "built!", strings.TrimSpace(out))
+	})
+
+	t.Run("dagger call sibling module function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("lint", "check")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "lint passed", strings.TrimSpace(out))
+	})
+}
+
+// TestModuleInitNoWorkspace verifies that `dagger module init` does NOT
+// create a workspace config when none exists. The module should be
+// initialized as a standalone module in the working directory.
+func (WorkspaceSuite) TestModuleInitNoWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Start with a directory that has NO .dagger/config.toml.
+	base := gitBase(t, c)
+
+	t.Run("no config creates standalone module in cwd", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			With(daggerExec("module", "init", "--sdk="+dangSDK, "mymod")).
+			WithNewFile("main.dang", `
+type Mymod {
+  pub greet: String! {
+    "hello standalone"
+  }
+}
+`)
+
+		// dagger.json should exist in the working directory
+		djson, err := ctr.WithExec([]string{"cat", "dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "mymod"`)
+
+		// .dagger/config.toml should NOT be created
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.Error(t, err, ".dagger/config.toml should not exist when no workspace was present")
+
+		// Module should still be callable
+		out, err := ctr.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello standalone", strings.TrimSpace(out))
+	})
+
+	t.Run("existing config creates workspace module", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			// Create a workspace config first
+			With(daggerExec("init")).
+			With(daggerExec("module", "init", "--sdk="+dangSDK, "mymod")).
+			WithNewFile(".dagger/modules/mymod/main.dang", `
+type Mymod {
+  pub greet: String! {
+    "hello workspace"
+  }
+}
+`)
+
+		// Module should be at .dagger/modules/mymod/
+		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/mymod/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "mymod"`)
+
+		// config.toml should reference the module
+		cfg, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, cfg, "modules/mymod")
+
+		// Module should be callable
+		out, err := ctr.With(daggerCall("mymod", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello workspace", strings.TrimSpace(out))
+	})
+
+	t.Run("no config with existing files creates standalone", func(ctx context.Context, t *testctx.T) {
+		// Even in a directory with existing files but no workspace config,
+		// module init should create a standalone module, not a workspace.
+		ctr := base.
+			WithNewFile("README.md", "# My Project").
+			WithNewFile("main.go", "package main\n").
+			With(daggerExec("module", "init", "--sdk="+dangSDK, "--source=.dagger", "mymod"))
+
+		// dagger.json should be in the working directory
+		djson, err := ctr.WithExec([]string{"cat", "dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "mymod"`)
+
+		// .dagger/config.toml should NOT be created
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.Error(t, err, ".dagger/config.toml should not exist when no workspace was present")
 	})
 }

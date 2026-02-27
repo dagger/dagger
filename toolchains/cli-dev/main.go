@@ -31,7 +31,8 @@ func New(
 	//   "!LICENSE",
 	//   "!install.sh",
 	//   "!install.ps1",
-	//   "!**/*.sql"
+	//   "!**/*.sql",
+	//   "!core/prompts/*.md"
 	// ]
 	source *dagger.Directory,
 

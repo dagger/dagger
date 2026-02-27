@@ -1,0 +1,129 @@
+[modules.dagger-dev]
+source = "modules/dagger-dev"
+alias = true
+
+[modules.changelog]
+source = "../toolchains/changelog"
+
+[modules.changelog.config]
+# source = "./path" # Directory
+
+[modules.ci]
+source = "../toolchains/ci"
+
+[modules.cli]
+source = "../toolchains/cli-dev"
+
+[modules.cli.config]
+# runnerHost = "" # string
+# source = "./path" # Directory
+# base = "alpine:latest" # Container
+
+[modules.docs]
+source = "../toolchains/docs-dev"
+
+[modules.docs.config]
+# source = "./path" # Directory
+# nginxConfig = "./file" # File
+
+[modules.elixir-sdk]
+source = "../toolchains/elixir-sdk-dev"
+
+[modules.elixir-sdk.config]
+# baseImage = "" # string
+# workspace = "./path" # Directory
+# sourcePath = "" # string
+
+[modules.engine-dev]
+source = "../toolchains/engine-dev"
+
+[modules.engine-dev.config]
+# source = "./path" # Directory
+# subnetNumber = 89 # int
+# clientDockerConfig = "env://MY_SECRET" # Secret
+
+# WARNING: constructor arg "source" has 'ignore' customization that cannot be expressed as a config value
+# Original: {"argument":"source","ignore":["bin",".git","**/node_modules","**/.venv","**/__pycache__","**/sdk/runtime/**","docs/node_modules","sdk/typescript/node_modules","sdk/typescript/dist","sdk/rust/examples/backend/target","sdk/rust/target","sdk/php/vendor","docs/**","dagql/idtui/viztest/broken/**","modules/evals/**","**/broken*/**","core/integration/testdata/checks/hello-with-checks/","core/integration/testdata/generators/hello-with-generators/"]}
+[modules.go]
+source = "../toolchains/go"
+
+[modules.go.config]
+# version = "1.25.7" # string
+# moduleCache = "..." # CacheVolume (not configurable via config)
+# buildCache = "..." # CacheVolume (not configurable via config)
+# base = "alpine:latest" # Container
+# ldflags = "..." # []string (not configurable via config)
+# values = "..." # []string (not configurable via config)
+# cgo = false # bool
+# race = false # bool
+# experiment = "..." # []string (not configurable via config)
+# extraPackages = "..." # []string (not configurable via config)
+
+[modules.go-sdk]
+source = "../toolchains/go-sdk-dev"
+
+[modules.go-sdk.config]
+# workspace = "./path" # Directory
+# sourcePath = "" # string
+
+[modules.helm]
+source = "../toolchains/helm-dev"
+
+[modules.helm.config]
+# chart = "./path" # Directory
+
+[modules.installers]
+source = "../toolchains/installers"
+
+[modules.java-sdk]
+source = "../toolchains/java-sdk-dev"
+
+[modules.java-sdk.config]
+# workspace = "./path" # Directory
+# sourcePath = "" # string
+
+[modules.php-sdk]
+source = "../toolchains/php-sdk-dev"
+
+[modules.php-sdk.config]
+# workspace = "./path" # Directory
+# sourcePath = "sdk/php" # string
+# doctumConfigPath = "docs/doctum-config.php" # string
+
+[modules.python-sdk]
+source = "../toolchains/python-sdk-dev"
+
+[modules.python-sdk.config]
+# workspace = "./path" # Directory
+# sourcePath = "sdk/python" # string
+
+[modules.release]
+source = "../toolchains/release"
+
+[modules.rust-sdk]
+source = "../toolchains/rust-sdk-dev"
+
+[modules.rust-sdk.config]
+# workspace = "./path" # Directory
+# sourcePath = "sdk/rust" # string
+
+[modules.sdks]
+source = "../toolchains/all-sdks"
+
+# WARNING: customization for function "scanSource" could not be migrated (non-constructor)
+# Original: {"function":["scanSource"],"argument":"source","ignore":["bin",".git","docs","sdk/rust/examples","sdk/rust/crates/dagger-sdk/examples","core/integration/testdata","dagql/idtui/viztest"]}
+[modules.security]
+source = "../toolchains/security"
+
+[modules.test-split]
+source = "../toolchains/test-split"
+
+[modules.typescript-sdk]
+source = "../toolchains/typescript-sdk-dev"
+
+[modules.typescript-sdk.config]
+# nodeVersionPrevLts = "" # string
+# nodeVersionLts = "" # string
+# bunVersion = "" # string
+# workspace = "./path" # Directory
+# sourcePath = "" # string

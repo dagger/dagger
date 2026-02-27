@@ -8,14 +8,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/util/gitutil"
-	"github.com/dagger/dagger/util/parallel"
 	"github.com/go-git/go-git/v5"
-	"github.com/juju/ansiterm/tabwriter"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
@@ -23,7 +19,6 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -48,10 +43,8 @@ var (
 	moduleSourcePath string
 	moduleIncludes   []string
 
-	installName string
-
-	initBlueprint        string
-	toolchainInstallName string
+	installName      string
+	installBlueprint bool
 
 	developSDK        string
 	developSourcePath string
@@ -69,6 +62,12 @@ var (
 const (
 	moduleURLDefault = "."
 )
+
+var moduleCmd = &cobra.Command{
+	Use:     "module",
+	Short:   "Manage workspace modules",
+	GroupID: moduleGroup.ID,
+}
 
 // if the source root path already has some files
 // then use `srcRootPath/.dagger` for source
@@ -145,21 +144,24 @@ func init() {
 	// module management commands
 	moduleAddFlags(configCmd, configCmd.PersistentFlags(), false)
 
-	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
-	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
-	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
-	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
-	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
-	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
-	moduleInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
+	// dagger module init
+	moduleCmd.AddCommand(moduleModInitCmd)
+	moduleModInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK to use (go, python, typescript)")
+	moduleModInitCmd.Flags().StringVar(&moduleName, "name", "", "Module name (defaults to working directory name)")
+	moduleModInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
+	moduleModInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
+	moduleModInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module")
+	moduleModInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
 
-	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
-
-	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
-	moduleAddFlags(moduleInstallCmd, moduleInstallCmd.Flags(), false)
+	// dagger module install
+	moduleCmd.AddCommand(moduleDepInstallCmd)
+	moduleCmd.AddCommand(moduleUpdateCmd)
+	moduleDepInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+	moduleDepInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(moduleDepInstallCmd, moduleDepInstallCmd.Flags(), false)
 
 	moduleUnInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(moduleUnInstallCmd, moduleUnInstallCmd.Flags(), false)
@@ -176,308 +178,150 @@ func init() {
 	moduleDevelopCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 	moduleDevelopCmd.Flags().BoolVar(&noSelfCalls, "without-self-calls", false, "Disable self-calls capability for the module")
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
-
-	toolchainInstallCmd.Flags().StringVarP(&toolchainInstallName, "name", "n", "", "Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.")
-	toolchainInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
-	moduleAddFlags(toolchainInstallCmd, toolchainInstallCmd.Flags(), false)
-
-	toolchainUpdateCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
-	moduleAddFlags(toolchainUpdateCmd, toolchainUpdateCmd.Flags(), false)
-
-	toolchainUninstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
-	moduleAddFlags(toolchainUninstallCmd, toolchainUninstallCmd.Flags(), false)
-
-	moduleAddFlags(toolchainListCmd, toolchainListCmd.Flags(), false)
-
-	toolchainCmd.AddCommand(toolchainInstallCmd)
-	toolchainCmd.AddCommand(toolchainUpdateCmd)
-	toolchainCmd.AddCommand(toolchainUninstallCmd)
-	toolchainCmd.AddCommand(toolchainListCmd)
 }
 
-var moduleInitCmd = &cobra.Command{
-	Use:   "init [options] [path]",
-	Short: "Initialize a new module",
-	Long: `Initialize a new module at the given path.
+// moduleModInitCmd is the "dagger module init" subcommand.
+//
+// Creates a new module. If a workspace config (.dagger/config.toml) exists,
+// the module is created inside .dagger/modules/<name>/ and auto-installed.
+// Otherwise, the module is created at the current directory or specified path
+// without creating a workspace.
+var moduleModInitCmd = &cobra.Command{
+	Use:   "init [options] --sdk=<sdk> [name] [path]",
+	Short: "Create a new module",
+	Long: `Create a new module.
 
-This creates a dagger.json file at the specified directory, making it the root of the new module.
+The module name can be given as the first positional argument or via --name.
+If neither is given, it defaults to the current working directory name.
 
-If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
-If --blueprint is specified, the given blueprint is installed in the module.
-`,
-	Example: `
-# Reference a remote module as blueprint
-dagger init --blueprint=github.com/example/blueprint
+If a workspace config (.dagger/config.toml) already exists, the module is
+created at .dagger/modules/<name>/ and automatically installed. Otherwise,
+the module is created at the current directory (or the specified path) as
+a standalone module.
 
-# Reference a local module as blueprint
-dagger init --blueprint=../my/blueprints/simple-webapp
-
-# Implement a standalone module in Go
-dagger init --sdk=go
-`,
-	GroupID: moduleGroup.ID,
-	Args:    cobra.MaximumNArgs(1),
+A path can be given as the second positional argument to create the module
+at that specific location without adding it to any workspace.`,
+	Example: `  dagger module init --sdk=go
+  dagger module init --sdk=go ci
+  dagger module init --sdk=go --name=ci
+  dagger module init --sdk=python deploy
+  dagger module init --sdk=go mymod ./sub/mymod
+  dagger module init --sdk=go --name=mymod --source=./sub/mymod`,
+	Args: cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
+		if remoteWorkdir != "" {
+			return fmt.Errorf("cannot init module with a remote workdir")
+		}
 
-			// default the module source root to the current working directory if it doesn't exist yet
-			cwd, err := pathutil.Getwd()
+		if sdk == "" {
+			return fmt.Errorf("--sdk is required; specify the SDK to use (go, python, typescript)")
+		}
+
+		// Resolve module name: positional arg > --name flag > workdir basename
+		if len(extraArgs) >= 1 {
+			if moduleName != "" {
+				return fmt.Errorf("cannot specify module name as both a positional argument and --name flag")
+			}
+			moduleName = extraArgs[0]
+		}
+		if moduleName == "" {
+			wd, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("failed to get current working directory: %w", err)
+				return fmt.Errorf("failed to get working directory: %w", err)
 			}
-			srcRootArg := cwd
-			if len(extraArgs) > 0 {
-				srcRootArg = extraArgs[0]
-			}
-			if filepath.IsAbs(srcRootArg) {
-				srcRootArg, err = filepath.Rel(cwd, srcRootArg)
-				if err != nil {
-					return fmt.Errorf("failed to get relative path: %w", err)
-				}
-			}
+			moduleName = filepath.Base(wd)
+		}
 
-			modSrc := dag.ModuleSource(srcRootArg, dagger.ModuleSourceOpts{
-				// Tell the engine to use the provided arg as the source root, don't
-				// try to find-up a dagger.json in a parent directory and use that as
-				// the source root.
-				// This enables cases like initializing a new module in a subdirectory of
-				// another existing module.
-				DisableFindUp: true,
-				// It's okay if the source root/source dir don't exist yet since we'll
-				// create them when exporting the generated context directory.
-				AllowNotExists: true,
-				// We can only init local modules
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if alreadyExists {
-				return fmt.Errorf("module already exists")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
-			}
-			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get source root subpath: %w", err)
-			}
-			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
-
-			// default module name to directory of source root
-			if moduleName == "" {
-				moduleName = filepath.Base(srcRootAbsPath)
-			}
-
-			// only bother setting source path if there's an sdk at this time
-			if sdk != "" {
-				// if user didn't specify moduleSourcePath explicitly,
-				// check if current dir is non-empty and infer the source
-				// path accordingly.
-				if moduleSourcePath == "" {
-					moduleSourcePath, err = inferSourcePathDir(srcRootAbsPath)
-					if err != nil {
-						return err
-					}
-				} else {
-					// ensure source path is relative to the source root
-					sourceAbsPath, err := pathutil.Abs(moduleSourcePath)
-					if err != nil {
-						return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
-					}
-
-					moduleSourcePath, err = filepath.Rel(srcRootAbsPath, sourceAbsPath)
-					if err != nil {
-						return fmt.Errorf("failed to get relative source path: %w", err)
-					}
-				}
-			}
-
-			modSrc = modSrc.WithName(moduleName)
-			if sdk != "" {
-				modSrc = modSrc.WithSDK(sdk)
-			}
+		// A second positional argument specifies a standalone module path.
+		if len(extraArgs) >= 2 {
+			standalonePath := extraArgs[1]
 			if moduleSourcePath != "" {
-				modSrc = modSrc.WithSourceSubpath(moduleSourcePath)
+				return fmt.Errorf("cannot specify both a positional path and --source flag")
 			}
-			if len(moduleIncludes) > 0 {
-				modSrc = modSrc.WithIncludes(moduleIncludes)
-			}
-			// engine version must be set before setting blueprint
-			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
-			// Install blueprint if specified
-			if initBlueprint != "" {
-				// Validate that we don't have both SDK and blueprint
-				if sdk != "" {
-					return fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
-				}
-				// Create a new module source for the blueprint installation
-				blueprintSrc := dag.ModuleSource(initBlueprint, dagger.ModuleSourceOpts{
-					DisableFindUp: true,
-				})
-				// Install the blueprint
-				modSrc = modSrc.WithBlueprint(blueprintSrc)
-			}
+			return initStandaloneModule(ctx, cmd, moduleName, standalonePath, "")
+		}
 
-			if selfCalls {
-				if sdk == "" {
-					return fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
-				}
-				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
-			}
-
-			// Export generated files, including dagger.json
-			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
-			}
-
-			if sdk != "" {
-				// If we're generating code by setting a SDK, we should also generate a license
-				// if it doesn't already exists.
-				searchExisting := !cmd.Flags().Lookup("license").Changed
-				if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
-					return err
-				}
-			}
-
-			// Print success message to user
-			infoMessage := []any{"Initialized module", moduleName, "in", srcRootAbsPath}
-			if initBlueprint != "" {
-				infoMessage = append(infoMessage, "with blueprint", initBlueprint)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), infoMessage...)
-			return nil
-		})
+		return initWorkspaceModule(ctx, cmd, moduleName)
 	},
 }
 
-var moduleInstallCmd = &cobra.Command{
-	Use:     "install [options] <module>",
-	Aliases: []string{"use"},
-	Short:   "Install a dependency",
-	Long:    "Install another module as a dependency to the current module.",
-	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
-	GroupID: moduleGroup.ID,
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{EagerRuntime: eagerRuntime}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			defer func() {
-				if err != nil {
-					err = fmt.Errorf("failed to install module: %w", err)
-				}
-			}()
-			dag := engineClient.Dagger()
+// initWorkspaceModule creates a module inside .dagger/modules/<name>/ and
+// auto-installs it in .dagger/config.toml.
+func initWorkspaceModule(ctx context.Context, cmd *cobra.Command, modName string) error {
+	return withEngine(ctx, client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		dag := engineClient.Dagger()
 
-			modRef, err := getModuleSourceRefWithDefault()
-			if err != nil {
-				return err
-			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only install dependencies to a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
+		ws := dag.CurrentWorkspace()
 
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
-			}
-
-			depRefStr := extraArgs[0]
-			depSrc := dag.ModuleSource(depRefStr, dagger.ModuleSourceOpts{
-				DisableFindUp: true,
-			})
-
-			origDepName, err := depSrc.ModuleName(ctx)
-			if err != nil {
-				return err
-			}
-			if installName != "" {
-				depSrc = depSrc.WithName(installName)
-			}
-
-			modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{depSrc})
-			if engineVersion := getCompatVersion(); engineVersion != "" {
-				modSrc = modSrc.WithEngineVersion(engineVersion)
-			}
-
-			_, err = modSrc.
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to update dependencies: %w", err)
-			}
-
-			sdk, err := depSrc.SDK().Source(ctx)
-			if err != nil {
-				return err
-			}
-			depRootSubpath, err := depSrc.SourceRootSubpath(ctx)
-			if err != nil {
-				return err
-			}
-			depSrcKind, err := depSrc.Kind(ctx)
-			if err != nil {
-				return err
-			}
-
-			switch depSrcKind {
-			case dagger.ModuleSourceKindLocalSource:
-				analyticsType := "module_install"
-				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
-					"module_name":   origDepName,
-					"install_name":  installName,
-					"module_sdk":    sdk,
-					"source_kind":   "local",
-					"local_subpath": depRootSubpath,
-				})
-			case dagger.ModuleSourceKindGitSource:
-				gitURL, err := depSrc.CloneRef(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get git clone URL: %w", err)
-				}
-				gitVersion, err := depSrc.Version(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get git version: %w", err)
-				}
-				gitCommit, err := depSrc.Commit(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get git commit: %w", err)
-				}
-
-				analyticsType := "module_install"
-				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
-					"module_name":   origDepName,
-					"install_name":  installName,
-					"module_sdk":    sdk,
-					"source_kind":   "git",
-					"git_subpath":   depRootSubpath,
-					"git_symbolic":  filepath.Join(gitURL, depRootSubpath),
-					"git_clone_url": gitURL,
-					"git_version":   gitVersion,
-					"git_commit":    gitCommit,
-				})
-			}
-
-			return nil
+		msg, err := ws.ModuleInit(ctx, modName, sdk, dagger.WorkspaceModuleInitOpts{
+			Source:  moduleSourcePath,
+			Include: moduleIncludes,
+			License: licenseID,
 		})
-	},
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), msg)
+		return nil
+	})
+}
+
+// initStandaloneModule creates a module at the given path with its own
+// dagger.json, without adding it to any workspace config. If sourceSubpath
+// is non-empty, the module source is placed in that subdirectory relative
+// to modPath (e.g. modPath="." sourceSubpath="dagger" creates dagger.json
+// at "." with source in "./dagger/").
+func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName string, modPath string, sourceSubpath string) error {
+	return withEngine(ctx, client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		dag := engineClient.Dagger()
+
+		modSrc := dag.ModuleSource(modPath, dagger.ModuleSourceOpts{
+			DisableFindUp:  true,
+			AllowNotExists: true,
+			RequireKind:    dagger.ModuleSourceKindLocalSource,
+		})
+
+		alreadyExists, err := modSrc.ConfigExists(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check if module already exists: %w", err)
+		}
+		if alreadyExists {
+			return fmt.Errorf("module already exists at %s", modPath)
+		}
+
+		contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get local context directory path: %w", err)
+		}
+
+		modSrc = modSrc.WithName(modName)
+		modSrc = modSrc.WithSDK(sdk)
+		if sourceSubpath != "" {
+			modSrc = modSrc.WithSourceSubpath(sourceSubpath)
+		}
+		if len(moduleIncludes) > 0 {
+			modSrc = modSrc.WithIncludes(moduleIncludes)
+		}
+		if selfCalls {
+			modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
+		}
+		modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
+
+		_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
+		if err != nil {
+			return fmt.Errorf("failed to generate module: %w", err)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", modName, "in", contextDirPath)
+		return nil
+	})
 }
 
 var moduleUpdateCmd = &cobra.Command{
@@ -488,13 +332,14 @@ var moduleUpdateCmd = &cobra.Command{
 
 To update only specific dependencies, specify their short names or a complete address.
 
-If no dependency is specified, all dependencies are updated, as well as the module's blueprint, if it exists.
+If no dependency is specified, all dependencies are updated.
 `,
-	Example: `"dagger update" or "dagger update hello" "dagger update github.com/shykes/daggerverse/hello@v0.3.0"`,
-	GroupID: moduleGroup.ID,
+	Example: `"dagger module update" or "dagger module update hello" or "dagger module update github.com/shykes/daggerverse/hello@v0.3.0"`,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
 			modRef, err := getModuleSourceRefWithDefault()
@@ -519,10 +364,6 @@ If no dependency is specified, all dependencies are updated, as well as the modu
 				return localModuleErrorf("failed to get local context directory path: %w", err)
 			}
 
-			// If no dependency is specified, also update the blueprint
-			if len(extraArgs) == 0 {
-				modSrc = modSrc.WithUpdateBlueprint()
-			}
 			modSrc = modSrc.WithUpdateDependencies(extraArgs)
 			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)
@@ -540,6 +381,78 @@ If no dependency is specified, all dependencies are updated, as well as the modu
 	},
 }
 
+var moduleDepInstallCmd = &cobra.Command{
+	Use:     "install [options] <module>",
+	Aliases: []string{"use"},
+	Short:   "Add a module dependency",
+	Long:    "Add another module as a dependency of the current module, updating its dagger.json.",
+	Example: `  dagger module install github.com/shykes/daggerverse/hello@v0.3.0
+  dagger module install ./path/to/local/module`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+			EagerRuntime:         eagerRuntime,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return localModuleErrorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return localModuleErrorf("failed to get local context directory path: %w", err)
+			}
+
+			depRefStr := extraArgs[0]
+			depSrc := dag.ModuleSource(depRefStr, dagger.ModuleSourceOpts{
+				DisableFindUp: true,
+			})
+
+			if installName != "" {
+				depSrc = depSrc.WithName(installName)
+			}
+
+			modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{depSrc})
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to install dependency: %w", err)
+			}
+
+			depName, err := depSrc.ModuleName(ctx)
+			if err != nil {
+				return err
+			}
+			if installName != "" {
+				depName = installName
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Installed module dependency %q\n", depName)
+			return nil
+		})
+	},
+}
+
 var moduleUnInstallCmd = &cobra.Command{
 	Use:     "uninstall [options] <module>",
 	Short:   "Uninstall a dependency",
@@ -549,7 +462,9 @@ var moduleUnInstallCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 			modRef, err := getModuleSourceRefWithDefault()
 			if err != nil {
@@ -620,7 +535,11 @@ This command is idempotent: you can run it at any time, any number of times. It 
 	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{
+			// develop only generates code — it doesn't need workspace
+			// modules loaded (which would fail for codegen-only SDKs).
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
 			modRef, err := getModuleSourceRefWithDefault()
@@ -761,261 +680,6 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				})
 			}
 			return eg.Wait()
-		})
-	},
-}
-
-var toolchainCmd = &cobra.Command{
-	Use:   "toolchain",
-	Short: "Manage toolchains",
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-}
-
-var toolchainInstallCmd = &cobra.Command{
-	Use:     "install [options] <module>",
-	Short:   "Install a toolchain to the current module",
-	Long:    "Install another module as a toolchain to the current module.",
-	Example: "dagger toolchain install github.com/dagger/dagger/toolchains/go",
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
-
-			modRef, err := getModuleSourceRefWithDefault()
-			if err != nil {
-				return err
-			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only install toolchains to a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
-			}
-
-			toolchainRefStr := extraArgs[0]
-			toolchainSrc := dag.ModuleSource(toolchainRefStr, dagger.ModuleSourceOpts{
-				DisableFindUp: true,
-			})
-
-			if toolchainInstallName != "" {
-				toolchainSrc = toolchainSrc.WithName(toolchainInstallName)
-			}
-
-			modSrc = modSrc.WithToolchains([]*dagger.ModuleSource{toolchainSrc})
-
-			if engineVersion := getCompatVersion(); engineVersion != "" {
-				modSrc = modSrc.WithEngineVersion(engineVersion)
-			}
-
-			_, err = modSrc.
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to install toolchain: %w", err)
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "toolchain installed\n")
-			return nil
-		})
-	},
-}
-
-var toolchainUpdateCmd = &cobra.Command{
-	Use:     "update [options] [<toolchain>...]",
-	Short:   "Update toolchains",
-	Long:    "Update all or specific toolchains of the current module.",
-	Example: "dagger toolchain update",
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
-
-			modRef, err := getModuleSourceRefWithDefault()
-			if err != nil {
-				return err
-			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only update toolchains on a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
-			}
-
-			modSrc = modSrc.WithUpdateBlueprint()
-			if engineVersion := getCompatVersion(); engineVersion != "" {
-				modSrc = modSrc.WithEngineVersion(engineVersion)
-			}
-
-			_, err = modSrc.
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to update toolchains: %w", err)
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "toolchains updated\n")
-			return nil
-		})
-	},
-}
-
-var toolchainUninstallCmd = &cobra.Command{
-	Use:     "uninstall [options] <toolchain>",
-	Short:   "Uninstall a toolchain",
-	Long:    "Uninstall a toolchain from the current module.",
-	Example: "dagger toolchain uninstall mytoolchain",
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
-
-			modRef, err := getModuleSourceRefWithDefault()
-			if err != nil {
-				return err
-			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only uninstall toolchains on a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-
-			alreadyExists, err := modSrc.ConfigExists(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to check if module already exists: %w", err)
-			}
-			if !alreadyExists {
-				return fmt.Errorf("module must be fully initialized")
-			}
-
-			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return localModuleErrorf("failed to get local context directory path: %w", err)
-			}
-
-			toolchainRefStr := extraArgs[0]
-
-			modSrc = modSrc.WithoutToolchains(([]string{toolchainRefStr}))
-			if engineVersion := getCompatVersion(); engineVersion != "" {
-				modSrc = modSrc.WithEngineVersion(engineVersion)
-			}
-
-			_, err = modSrc.
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to uninstall toolchain: %w", err)
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "toolchain uninstalled\n")
-			return nil
-		})
-	},
-}
-
-func loadToolchainInfo(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) ([]toolchainInfo, error) {
-	var info []toolchainInfo
-	err := parallel.Run(ctx, "fetch toolchain information", func(ctx context.Context) error {
-		alreadyExists, err := modSrc.ConfigExists(ctx)
-		if err != nil {
-			return localModuleErrorf("failed to check if module already exists: %w", err)
-		}
-		if !alreadyExists {
-			return fmt.Errorf("module must be fully initialized")
-		}
-		toolchains, err := modSrc.Toolchains(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get toolchains: %w", err)
-		}
-		if len(toolchains) == 0 {
-			return nil
-		}
-		info = make([]toolchainInfo, len(toolchains))
-		jobs := parallel.New().WithInternal(true).WithReveal(false)
-		for i, toolchain := range toolchains {
-			jobs = jobs.WithJob("", func(ctx context.Context) error {
-				toolchainDef, err := inspectModule(ctx, dag, &toolchain)
-				if err != nil {
-					return fmt.Errorf("inspect toolchain: %w", err)
-				}
-				info[i].name = toolchainDef.Name
-				info[i].description = toolchainDef.Description
-				return nil
-			})
-		}
-		return jobs.Run(ctx)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return info, nil
-}
-
-type toolchainInfo struct {
-	name        string
-	description string
-}
-
-var toolchainListCmd = &cobra.Command{
-	Use:     "list [options]",
-	Short:   "List all toolchains",
-	Long:    "List all toolchains of the current module.",
-	Example: "dagger toolchain list",
-	Args:    cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			dag := engineClient.Dagger()
-			modRef, err := getModuleSourceRefWithDefault()
-			if err != nil {
-				return err
-			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only list toolchains from a local module
-				RequireKind: dagger.ModuleSourceKindLocalSource,
-			})
-			toolchains, err := loadToolchainInfo(ctx, dag, modSrc)
-			if err != nil {
-				return err
-			}
-			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				termenv.String("Name").Bold(),
-				termenv.String("Description").Bold(),
-			)
-			sort.Slice(toolchains, func(i, j int) bool {
-				return toolchains[i].name < toolchains[j].name
-			})
-			for _, toolchain := range toolchains {
-				fmt.Fprintf(tw, "%s\t%s\n",
-					toolchain.name,
-					shortDescription(toolchain.description))
-			}
-			return tw.Flush()
 		})
 	},
 }
@@ -1264,13 +928,6 @@ func optionalModCmdWrapper(
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			_, explicitModRefSet := getExplicitModuleSourceRef()
 
-			if disableHostRW {
-				// we could never possibly load a module, don't even try
-				if explicitModRefSet {
-					return fmt.Errorf("cannot load module with --disable-host-read-write enabled")
-				}
-				return fn(ctx, engineClient, nil, cmd, cmdArgs)
-			}
 			if moduleNoURL {
 				return fn(ctx, engineClient, nil, cmd, cmdArgs)
 			}
@@ -1285,12 +942,6 @@ func optionalModCmdWrapper(
 			})
 			configExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				if strings.Contains(err.Error(), "rpc error: code = Unimplemented desc") {
-					// this is a very obscure corner case: when running `dagger listen --disable-host-read-write`
-					// and then running `dagger query` against that listener, we will not have disableHostRW set
-					// true but do need to ignore this error about filesync being disabled
-					return fn(ctx, engineClient, nil, cmd, cmdArgs)
-				}
 				return fmt.Errorf("failed to check if module exists: %w", err)
 			}
 			switch {

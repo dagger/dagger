@@ -40,41 +40,28 @@ Examples:
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		params := client.Params{
+			EnableCloudScaleOut: enableScaleOut,
+		}
 		return withEngine(
 			cmd.Context(),
-			client.Params{
-				EnableCloudScaleOut: enableScaleOut,
-			},
+			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				mod, err := loadModule(ctx, dag)
-				if err != nil {
-					return err
-				}
+				ws := dag.CurrentWorkspace()
 				var checks *dagger.CheckGroup
 				if len(args) > 0 {
-					checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
+					checks = ws.Checks(dagger.WorkspaceChecksOpts{Include: args})
 				} else {
-					checks = mod.Checks()
+					checks = ws.Checks()
 				}
 				if checksListMode {
 					return listChecks(ctx, checks, cmd)
-				} else {
-					return runChecks(ctx, checks, cmd)
 				}
+				return runChecks(ctx, checks, cmd)
 			},
 		)
 	},
-}
-
-func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error) {
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
-	}
-	ctx, span := Tracer().Start(ctx, "load "+modRef)
-	defer span.End()
-	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
 
 func loadCheckGroupInfo(ctx context.Context, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {

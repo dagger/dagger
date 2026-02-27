@@ -226,9 +226,14 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	return def
 }
 
-func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
+func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ...InstallOpts) error {
 	if obj.Module.ResultID == nil {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
+	}
+
+	var opt InstallOpts
+	if len(opts) > 0 {
+		opt = opts[0]
 	}
 
 	class := dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
@@ -236,7 +241,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	})
 	objDef := obj.TypeDef
 	mod := obj.Module
-	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
+	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) && !opt.SkipConstructor {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
@@ -263,6 +268,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
 			Name:             gqlFieldName(mod.Name()),
+			Description:      formatGqlDescription(objDef.Description),
 			Type:             obj,
 			Module:           obj.Module.IDModule(),
 			GetCacheConfig:   mod.CacheConfigForCall,
@@ -342,18 +348,6 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
 	for _, fun := range obj.TypeDef.Functions {
-		// Check if this is a toolchain proxy function using the registry
-		if obj.Module.Toolchains != nil {
-			if entry, ok := obj.Module.Toolchains.Get(fun.OriginalName); ok {
-				proxyField, err := entry.CreateProxyField(ctx, obj.Module, fun, dag)
-				if err != nil {
-					return nil, err
-				}
-				fields = append(fields, proxyField)
-				continue
-			}
-		}
-
 		objFun, err := objFun(ctx, obj.Module, objDef, fun, dag)
 		if err != nil {
 			return nil, err

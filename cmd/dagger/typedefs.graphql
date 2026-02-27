@@ -41,6 +41,7 @@ fragment TypeDefRefParts on TypeDef {
 fragment FunctionParts on Function {
 	name
 	description
+	sourceModuleName
 	returnType {
 		...TypeDefRefParts
 	}
@@ -64,8 +65,8 @@ fragment FieldParts on FieldTypeDef {
 	}
 }
 
-query TypeDefs {
-	typeDefs: currentTypeDefs {
+query TypeDefs($includeCore: Boolean) {
+	typeDefs: currentTypeDefs(includeCore: $includeCore) {
 		kind
 		optional
 		asObject {

@@ -293,3 +293,4 @@ func (ef *EnvFile) Digest(ctx context.Context) (digest.Digest, error) {
 	}
 	return hashutil.HashStrings(vals...), nil
 }
+

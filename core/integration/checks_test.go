@@ -112,7 +112,7 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 			modGen, err := checksTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.WithWorkdir("app").
-				With(daggerExec("init", "--blueprint", "../"+tc.path))
+				With(daggerExec("install", "--blueprint", "../"+tc.path))
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).
@@ -160,7 +160,7 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				With(daggerExec("init")).
+				With(daggerExec("module", "init")).
 				With(daggerExec("toolchain", "install", "../"+tc.path))
 			// list checks
 			out, err := modGen.

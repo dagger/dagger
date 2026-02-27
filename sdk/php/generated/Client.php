@@ -42,6 +42,22 @@ class Client extends Client\AbstractClient
         return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    public function codegen(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): GeneratedCode
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
+        $innerQueryBuilder->setArgument('modSource', $modSource);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function codegenBase(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
+        $innerQueryBuilder->setArgument('modSource', $modSource);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     /**
      * Creates a scratch container, with no image or metadata.
      *
@@ -92,21 +108,21 @@ class Client extends Client\AbstractClient
     /**
      * The TypeDef representations of the objects currently being served in the session.
      */
-    public function currentTypeDefs(): array
+    public function currentTypeDefs(?bool $includeCore = null): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTypeDefs');
+        if (null !== $includeCore) {
+        $leafQueryBuilder->setArgument('includeCore', $includeCore);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'currentTypeDefs');
     }
 
     /**
      * Detect and return the current workspace.
      */
-    public function currentWorkspace(?bool $skipMigrationCheck = false): Workspace
+    public function currentWorkspace(): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentWorkspace');
-        if (null !== $skipMigrationCheck) {
-        $innerQueryBuilder->setArgument('skipMigrationCheck', $skipMigrationCheck);
-        }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -750,6 +766,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a PhpSdk from its ID.
+     */
+    public function loadPhpSdkFromID(PhpSdkId|PhpSdk $id): PhpSdk
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadPhpSdkFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Port from its ID.
      */
     public function loadPortFromID(PortId|Port $id): Port
@@ -888,6 +914,14 @@ class Client extends Client\AbstractClient
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    public function moduleRuntime(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
+        $innerQueryBuilder->setArgument('modSource', $modSource);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     /**
      * Create a new module source instance from a source ref string
      */
@@ -913,6 +947,15 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('requireKind', $requireKind);
         }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function phpSdk(DirectoryId|Directory|null $sdkSourceDir = null): PhpSdk
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('phpSdk');
+        if (null !== $sdkSourceDir) {
+        $innerQueryBuilder->setArgument('sdkSourceDir', $sdkSourceDir);
+        }
+        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
-	dagintro "github.com/dagger/dagger/dagql/introspection"
 )
 
 const (
@@ -127,107 +126,17 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 		d.loadSchemaErr = rerr
 	}()
 
-	dagqlCache, err := d.root.Cache(ctx)
+	// All modules in a ModDeps get full installation (with constructors).
+	mods := make([]modInstall, len(d.Mods))
+	for i, mod := range d.Mods {
+		mods[i] = modInstall{mod: mod}
+	}
+
+	dag, schemaJSONFile, err := buildSchema(ctx, d.root, mods, hiddenTypes)
 	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
+		return nil, loadedSchemaJSONFile, err
 	}
-	dag := dagql.NewServer(d.root, dagqlCache)
-	for _, mod := range d.Mods {
-		if version, ok := mod.View(); ok {
-			dag.View = version
-			break
-		}
-	}
-
-	dag.Around(AroundFunc)
-
-	dagintro.Install[*Query](dag)
-
-	var objects []*ModuleObjectType
-	var ifaces []*InterfaceType
-	for _, mod := range d.Mods {
-		err := mod.Install(ctx, dag)
-		if err != nil {
-			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
-		}
-
-		// TODO support core interfaces types
-		if userMod, ok := mod.(*Module); ok {
-			defs, err := mod.TypeDefs(ctx, dag)
-			if err != nil {
-				return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
-			}
-			for _, def := range defs {
-				switch def.Kind {
-				case TypeDefKindObject:
-					objects = append(objects, &ModuleObjectType{
-						typeDef: def.AsObject.Value,
-						mod:     userMod,
-					})
-				case TypeDefKindInterface:
-					ifaces = append(ifaces, &InterfaceType{
-						typeDef: def.AsInterface.Value,
-						mod:     userMod,
-					})
-				}
-			}
-		}
-	}
-
-	// add any extensions to objects for the interfaces they implement (if any)
-	// fmt.Fprintf(os.Stderr, "🧪 objects: %d, interfaces: %d\n", len(objects), len(ifaces))
-	for _, objType := range objects {
-		// fmt.Fprintf(os.Stderr, "🔍 object=%s\n", objType.typeDef.Name)
-		obj := objType.typeDef
-		class, found := dag.ObjectType(obj.Name)
-		if !found {
-			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to find object %q in schema", obj.Name)
-		}
-		for _, ifaceType := range ifaces {
-			iface := ifaceType.typeDef
-			if !obj.IsSubtypeOf(iface) {
-				continue
-			}
-			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
-			class.Extend(
-				dagql.FieldSpec{
-					Name:           asIfaceFieldName,
-					Description:    fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:           &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:         ifaceType.mod.IDModule(),
-					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
-				},
-				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
-					if !ok {
-						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
-					}
-					return dagql.NewObjectResultForCurrentID(ctx, dag, &InterfaceAnnotatedValue{
-						TypeDef:        iface,
-						Fields:         inst.Fields,
-						UnderlyingType: objType,
-						IfaceType:      ifaceType,
-					})
-				},
-			)
-		}
-	}
-
-	if err := dag.Select(ctx, dag.Root(), &loadedSchemaJSONFile,
-		dagql.Selector{
-			Field: "__schemaJSONFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "hiddenTypes",
-					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
-				},
-			},
-		},
-	); err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
-	}
-
-	return dag, loadedSchemaJSONFile, nil
+	return dag, schemaJSONFile, nil
 }
 
 // Search the deps for the given type def, returning the ModType if found. This does not recurse

@@ -49,36 +49,6 @@ func (proto ModuleSourceKind) Type() *ast.Type {
 	}
 }
 
-// ModuleRelationType distinguishes between dependencies and toolchains in error messages and field access
-type ModuleRelationType int
-
-const (
-	ModuleRelationTypeDependency ModuleRelationType = iota
-	ModuleRelationTypeToolchain
-)
-
-func (t ModuleRelationType) String() string {
-	switch t {
-	case ModuleRelationTypeDependency:
-		return "dependency"
-	case ModuleRelationTypeToolchain:
-		return "toolchain"
-	default:
-		return "unknown"
-	}
-}
-
-func (t ModuleRelationType) Plural() string {
-	switch t {
-	case ModuleRelationTypeDependency:
-		return "dependencies"
-	case ModuleRelationTypeToolchain:
-		return "toolchains"
-	default:
-		return "unknowns"
-	}
-}
-
 func (proto ModuleSourceKind) TypeDescription() string {
 	return "The kind of module source."
 }
@@ -160,14 +130,6 @@ type ModuleSource struct {
 	// Dependencies are the loaded sources for the module's dependencies
 	Dependencies dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
-	// Blueprint (from `dagger init --blueprint`)
-	ConfigBlueprint *modules.ModuleConfigDependency
-	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source."`
-
-	// Toolchains (from `dagger toolchain install`)
-	ConfigToolchains []*modules.ModuleConfigDependency
-	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
-
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
@@ -223,13 +185,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 	src.Dependencies = make([]dagql.ObjectResult[*ModuleSource], len(origDependencies))
 	copy(src.Dependencies, origDependencies)
 
-	origConfigToolchains := src.ConfigToolchains
-	src.ConfigToolchains = make([]*modules.ModuleConfigDependency, len(origConfigToolchains))
-	copy(src.ConfigToolchains, origConfigToolchains)
-	origToolchains := src.Toolchains
-	src.Toolchains = make([]dagql.ObjectResult[*ModuleSource], len(origToolchains))
-	copy(src.Toolchains, origToolchains)
-
 	if src.Local != nil {
 		src.Local = src.Local.Clone()
 	}
@@ -282,23 +237,6 @@ func (src *ModuleSource) Pin() string {
 		return src.Git.Commit
 	default:
 		return ""
-	}
-}
-
-// GetRelatedModules returns the related modules (dependencies or toolchains) based on the type
-func (src *ModuleSource) GetRelatedModules(typ ModuleRelationType) []dagql.ObjectResult[*ModuleSource] {
-	if typ == ModuleRelationTypeDependency {
-		return src.Dependencies
-	}
-	return src.Toolchains
-}
-
-// SetRelatedModules sets the related modules (dependencies or toolchains) based on the type
-func (src *ModuleSource) SetRelatedModules(typ ModuleRelationType, modules []dagql.ObjectResult[*ModuleSource]) {
-	if typ == ModuleRelationTypeDependency {
-		src.Dependencies = modules
-	} else {
-		src.Toolchains = modules
 	}
 }
 
@@ -505,19 +443,6 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 			continue
 		}
 		inputs = append(inputs, dep.Self().Digest)
-	}
-
-	// Include blueprint in digest so changes to blueprint invalidate cache
-	if src.Blueprint.Self() != nil {
-		inputs = append(inputs, "blueprint:"+src.Blueprint.Self().Digest)
-	}
-
-	// Include toolchains in digest so changes to toolchains invalidate cache
-	for _, toolchain := range src.Toolchains {
-		if toolchain.Self() == nil {
-			continue
-		}
-		inputs = append(inputs, "toolchain:"+toolchain.Self().Digest)
 	}
 
 	for _, client := range src.ConfigClients {
@@ -1311,6 +1236,32 @@ func CallDirStat(ctx context.Context, dir dagql.ObjectResult[*Directory], path s
 		return "", nil, err
 	}
 	return filepath.Dir(path), info, nil
+}
+
+// DirectoryStatFS implements StatFS over a dagql Directory.
+type DirectoryStatFS struct {
+	Dir dagql.ObjectResult[*Directory]
+}
+
+func (dfs *DirectoryStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	return CallDirStat(ctx, dfs.Dir, path)
+}
+
+// DirectoryReadFile reads file contents from a dagql Directory.
+func DirectoryReadFile(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) ([]byte, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var contents dagql.String
+	err = dag.Select(ctx, dir, &contents,
+		dagql.Selector{Field: "file", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(path)}}},
+		dagql.Selector{Field: "contents"},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(contents), nil
 }
 
 func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {

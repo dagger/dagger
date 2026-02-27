@@ -36,6 +36,14 @@ const (
 	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
 )
 
+// ExtraModule specifies a module to load at connect time in addition to
+// (or instead of) workspace modules.
+type ExtraModule struct {
+	Ref       string `json:"ref"`
+	Name      string `json:"name,omitempty"`
+	Blueprint bool   `json:"blueprint,omitempty"`
+}
+
 type ClientMetadata struct {
 	// ClientID is unique to each client, randomly generated each time a client initializes.
 	// It's also used as the *buildkit* session ID (as opposed to the dagger session ID), which
@@ -103,6 +111,23 @@ type ClientMetadata struct {
 	// TODO: This is a bit convoluted; it would be nicer if an engine could figure out its own ID
 	// rather than being told what it is by the client connecting to it.
 	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
+
+	// ExtraModules specifies additional modules to load at connect time.
+	// When Blueprint is true, the module's functions are aliased to the Query root.
+	ExtraModules []ExtraModule `json:"extra_modules,omitempty"`
+
+	// SkipWorkspaceModules skips loading workspace modules when true.
+	SkipWorkspaceModules bool `json:"skip_workspace_modules,omitempty"`
+
+	// LockMode controls lockfile behavior for lookup resolution.
+	// Valid values: "strict", "auto", "update".
+	LockMode string `json:"lock_mode,omitempty"`
+
+	// RemoteWorkdir is a git ref for loading a workspace from a remote
+	// repository (e.g. "github.com/foo/bar@v1.0"). When set, the engine
+	// clones this repo and performs workspace detection within it instead
+	// of using the client's local filesystem.
+	RemoteWorkdir string `json:"remote_workdir,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}

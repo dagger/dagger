@@ -58,13 +58,16 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")
 	}
-	modDef, err := initializeDefaultModule(ctx, engineClient.Dagger())
-	if err != nil && err != errModuleNotFound {
-		return err
+	// -m modules are loaded at engine connect time as extra modules.
+	modDef, _ := initializeWorkspace(ctx, engineClient.Dagger())
+	if modDef != nil && !modDef.HasModule() {
+		// When -m is used, modDef.Name is "" but the module constructor
+		// is at Query root. Find it.
+		modDef = findAutoAliasedModule(modDef)
 	}
 
-	if err == errModuleNotFound && !envPrivileged {
-		return fmt.Errorf("%w and --core not specified", errModuleNotFound)
+	if modDef == nil && !envPrivileged {
+		return fmt.Errorf("no module found and --env-privileged not specified")
 	}
 
 	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
@@ -116,5 +119,33 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return fmt.Errorf("error starting MCP server: %w", err)
 	}
 
+	return nil
+}
+
+// findAutoAliasedModule detects a module loaded with auto-alias at Query root.
+// When -m is used, the module's constructor appears as a Query root function
+// whose return type has a non-empty SourceModuleName. If exactly one such
+// constructor is found, return a moduleDef pointing to it as the main object.
+func findAutoAliasedModule(def *moduleDef) *moduleDef {
+	if def == nil || def.MainObject == nil {
+		return nil
+	}
+	fp := def.MainObject.AsFunctionProvider()
+	if fp == nil {
+		return nil
+	}
+	for _, fn := range fp.GetFunctions() {
+		if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
+			// Found a module constructor — set up modDef to point to this module
+			return &moduleDef{
+				Name:       fn.ReturnType.AsObject.SourceModuleName,
+				MainObject: fn.ReturnType,
+				Objects:    def.Objects,
+				Interfaces: def.Interfaces,
+				Enums:      def.Enums,
+				Inputs:     def.Inputs,
+			}
+		}
+	}
 	return nil
 }

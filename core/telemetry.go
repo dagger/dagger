@@ -132,7 +132,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 	cm, _ := q.MainClientCallerMetadata(ctx)
 	fc, _ := q.CurrentFunctionCall(ctx)
 	m, _ := q.CurrentModule(ctx)
-	sd, _ := q.CurrentServedDeps(ctx)
+	served, _ := q.CurrentServedDeps(ctx)
 
 	call := callID.Call()
 	calleeModule := call.Module
@@ -143,8 +143,10 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 	var ms *ModuleSource
 	if m != nil {
 		ms = m.GetSource()
-	} else if m, ok := sd.LookupDep(calleeModule.Name); ok {
-		ms = m.GetSource()
+	} else if served != nil {
+		if found, ok := served.Lookup(calleeModule.Name); ok {
+			ms = found.GetSource()
+		}
 	}
 
 	if ms == nil {

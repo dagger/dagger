@@ -3,9 +3,10 @@ module github.com/dagger/dagger/.dagger
 go 1.24.4
 
 replace (
-	github.com/dagger/dagger => ..
-	github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
-	github.com/dagger/dagger/sdk/typescript/runtime => ../sdk/typescript/runtime
+	github.com/dagger/dagger => ../../..
+	github.com/dagger/dagger/engine/distconsts => ../../../engine/distconsts
+	github.com/dagger/dagger/sdk/typescript/runtime => ../../../sdk/typescript/runtime
+	github.com/dagger/dagger/util/patchpreview => ../../../util/patchpreview
 )
 
 require (

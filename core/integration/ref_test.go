@@ -20,7 +20,7 @@ func (ModuleSuite) TestRefIntegration(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/github.com/dagger/dagger").
 			WithExec([]string{"pwd"}).
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=dep", "--sdk=go")).
 			WithNewFile("/work/github.com/dagger/dagger/main.go", `package main
 
 				import "context"
