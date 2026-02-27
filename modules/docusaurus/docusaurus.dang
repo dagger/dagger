@@ -261,26 +261,50 @@ type Site {
       .directory("build")
   }
 
+  let inferIncludes(ws: Workspace!): JSONValue! {
+    let includesRaw = llm
+      .withEnv(
+        env
+          .withWorkspaceInput("workspace", ws, "The full workspace containing the Docusaurus site and its deps. I/O is expensive. Use include/exclude to only access what you need.")
+          .withStringInput("sitePath", path, "Path to the Docusaurus site. Contains the entrypoint config file to read first")
+          .withJSONValueInput(
+            "knownIncludes",
+            json.withContents("[]" :: JSON!),
+            "List of known includes",
+          ) # FIXME: fill with existing includes
+          .withStringOutput("updatedIncludes", "known includes + newly discovered includes. All relative to the site path"),
+      )
+      .withBlockedFunction("Workspace", "directory")
+      .withPromptFile(currentModule.source.file("optimize-config-prompt.txt"))
+      .loop
+      .env
+      .output("includeListJSON")
+      .asString
+    json.withContents(includesRaw :: JSON!)
+  }
+
   """
   Make sure the site is configured optimally for use with Dagger
   """
   pub optimizeConfig(ws: Workspace!): Changeset! {
-    let updatedPackageJson = llm
-      .withEnv(
-        env
-          .withWorkspaceInput("workspace", ws, "The full workspace containing the Docusaurus site and its deps. I/O is expensive. Use include/exclude to only access what you need.")
-          .withStringInput("sitePath", path, "Path to the Docusaurus site")
-          .withFileOutput("packageJson", "Updated package.json for the Docusaurus site at sitePath."),
-      )
-      .withPromptFile(currentModule.source.file("optimize-config-prompt.txt"))
-      .loop
-      .env
-      .output("packageJson")
-      .asFile
     let packageJsonPath = path + "/package.json"
     let before = ws.directory("/", include: [packageJsonPath])
+    let updatedPackageJson = json
+      .withContents(
+        toJSON(
+          before
+            .file(packageJsonPath)
+            .asJSON
+            .withField(["docusaurus", "include"], inferIncludes(ws))
+            .contents(pretty: true),
+        ) :: JSON!,
+      )
+      .asString
     before
-      .withFile(packageJsonPath, updatedPackageJson)
+      .withNewFile(
+        packageJsonPath,
+        updatedPackageJson,
+      )
       .changes(before)
   }
 
