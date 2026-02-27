@@ -79,6 +79,13 @@ Tuple shape:
 3. `inputs` (ordered JSON array)
 4. `result` (JSON object)
 
+Ordering invariant (normative):
+- ALL STRUCTURES IN LOCKFILE MUST BE ORDERED.
+- Lock entry ordering is deterministic by `(namespace, operation, inputs-json)`.
+- `inputs` must always be encoded as ordered arrays (or ordered arrays of ordered tuples).
+- Unordered object/map/dict encodings are forbidden for lock keys and lookup arguments.
+- If a lookup argument is key-value shaped, encode it as an ordered list of pairs, not a JSON object.
+
 Result envelope:
 - `value`: concrete lookup result.
 - `policy`: `pin` or `float`.
@@ -280,6 +287,7 @@ Current constraints:
    - Require version header `[["version","1"]]` on non-empty files.
    - Preserve unknown entries (do not drop tuples outside workspace usage).
    - Stable output ordering by `(namespace, operation, inputs-json)`.
+   - Reject unordered key material (object/map/dict) in lock key inputs; require ordered encoding.
    - Support structured result envelope `{value, policy}`.
 
 2. Add generic lockfile tests.
