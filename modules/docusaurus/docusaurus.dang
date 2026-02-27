@@ -280,6 +280,8 @@ type Site {
   }
 
   let workspaceRootPath: String! = "/workspace"
+  let docusaurusToolsPath: String! = "/docusaurus-tools"
+  let packageJSONEditHelperPath: String! = docusaurusToolsPath + "/package-json-edit.cjs"
   let docusaurusBuildCmd: [String!]! = ["./node_modules/.bin/docusaurus", "build"]
 
   let workspaceSitePath: String! {
@@ -290,17 +292,21 @@ type Site {
     }
   }
 
+  let siteCacheVolumeKey(ws: Workspace!): String! {
+    "docusaurus-cache-" + ws.root + "-" + path
+  }
+
   """
   Site-specific build sandbox.
   """
-  pub sandbox: Sandbox! {
+  pub sandbox(ws: Workspace!): Sandbox! {
     let initialCtr = base
       .withDirectory(workspaceRootPath, directory)
       .withWorkdir(workspaceSitePath)
       .withMountedCache(
         "./node_modules/.cache",
-        cacheVolume("docusaurus-cache-" + path),
-        sharing: CacheSharingMode.PRIVATE,
+        cacheVolume(siteCacheVolumeKey(ws)),
+        sharing: CacheSharingMode.LOCKED,
       )
 
     Sandbox(
@@ -321,7 +327,7 @@ type Site {
     if (path == ".") {
       [] :: [String!]!
     } else {
-      let traced = sandbox
+      let traced = sandbox(ws)
         .withWorkspaceExcludes(sourceExcludes)
         .withWorkspaceFiles(
           ws,
@@ -349,7 +355,7 @@ type Site {
   Build the static site.
   """
   pub build(ws: Workspace!): Directory! {
-    sandbox
+    sandbox(ws)
       .withWorkspaceExcludes(sourceExcludes)
       .withWorkspaceFiles(
         ws,
@@ -370,31 +376,47 @@ type Site {
       .directory("build")
   }
 
-  let inferredIncludes(ws: Workspace!): JSONValue! {
-    json.withContents(toJSON(runtimeExternalPaths(ws)) :: JSON!)
+  let optimizeConfigContainer: Container! {
+    base
+      .withDirectory(
+        docusaurusToolsPath,
+        currentModule.source.directory("tools"),
+      )
+      .withWorkdir(docusaurusToolsPath)
+      .withExec(
+        ["npm", "ci"],
+        expect: ReturnType.SUCCESS,
+      )
   }
 
   """
   Make sure the site is configured optimally for use with Dagger
   """
   pub optimizeConfig(ws: Workspace!): Changeset! {
-    let packageJsonPath = path + "/package.json"
+    let packageJsonPath = if (path == ".") {
+      "package.json"
+    } else {
+      path + "/package.json"
+    }
     let before = ws.directory("/", include: [packageJsonPath])
-    let updatedPackageJson = json
-      .withContents(toJSON(
-        before
-          .file(packageJsonPath)
-          .asJSON
-          .withField(["docusaurus", "include"], inferredIncludes(ws))
-          .contents(pretty: true),
-      ) :: JSON!)
-      .asString
-    before
-      .withNewFile(
-        packageJsonPath,
-        updatedPackageJson,
+    let includesJSON = toJSON(runtimeExternalPaths(ws))
+    let after = optimizeConfigContainer
+      .withDirectory(
+        workspaceRootPath,
+        before,
       )
-      .changes(before)
+      .withExec(
+        [
+          "node",
+          packageJSONEditHelperPath,
+          workspaceRootPath + "/" + packageJsonPath,
+          includesJSON,
+        ],
+        expect: ReturnType.SUCCESS,
+      )
+      .directory(workspaceRootPath)
+
+    after.changes(before)
   }
 
   """
