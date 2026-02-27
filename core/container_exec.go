@@ -447,6 +447,8 @@ func (container *Container) WithExec(
 	// Carrying prior meta into the next exec causes output accumulation.
 	inputMeta := (*Directory)(nil)
 	inputMounts := slices.Clone(container.Mounts)
+	// withExec mutates container filesystem state, so imageRef is no longer valid.
+	container.ImageRef = ""
 
 	rootfsOutput := &Directory{
 		Dir:       "/",
