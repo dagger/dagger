@@ -50,7 +50,7 @@ dagger [options] [subcommand | file...]
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
 * [dagger run](#dagger-run)	 - Run a command in a Dagger session
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a dependency
-* [dagger update](#dagger-update)	 - Update a module's dependencies
+* [dagger update](#dagger-update)	 - Update workspace module lock entries
 * [dagger version](#dagger-version)	 - Print dagger version
 * [dagger workspace](#dagger-workspace)	 - Manage the current workspace
 
@@ -724,34 +724,18 @@ dagger uninstall hello
 
 ## dagger update
 
-Update a module's dependencies
+Update workspace module lock entries
 
 ### Synopsis
 
-Update the dependencies of a local module.
+Update git module lock entries in .dagger/lock.
 
-To update only specific dependencies, specify their short names or a complete address.
+With no module names, updates all git modules in the workspace config.
+To update module dependencies in a local module's dagger.json, use `dagger module update`.
 
-If no dependency is specified, all dependencies are updated.
-
-
-```
-dagger update [options] [<DEPENDENCY>...]
-```
-
-### Examples
 
 ```
-"dagger update" or "dagger update hello" "dagger update github.com/shykes/daggerverse/hello@v0.3.0"
-```
-
-### Options
-
-```
-      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
-  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+dagger update [module...]
 ```
 
 ### Options inherited from parent commands
