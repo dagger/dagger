@@ -175,7 +175,7 @@ Current constraints:
 
 - Resolve module source.
 - If source is git, write/update:
-  - `["modules","resolve",[source],{"value":<commit>,"policy":...}]`
+  - `["","modules.resolve",[source],{"value":<commit>,"policy":...}]`
 - If source is local, no lock entry.
 - Optional prune (v1.1): remove orphaned `modules.resolve` entries not present in config sources.
 
@@ -200,6 +200,15 @@ Current constraints:
 - Output per change: `<name> <oldPin> -> <newPin>`.
 
 `dagger module update [DEPENDENCY...]` remains the module-dependency update command.
+
+### CLI command mapping
+
+| Command | Scope |
+| --- | --- |
+| `dagger install <module>` | Install a module in the current workspace (`workspace.install`). |
+| `dagger module install <module>` | Install a dependency in the current module (`dagger.json`). |
+| `dagger update [MODULE...]` | Update workspace git module lock entries (`workspace.update`). |
+| `dagger module update [DEPENDENCY...]` | Update dependencies in the current module (`dagger.json`). |
 
 ### Compat and migration
 
