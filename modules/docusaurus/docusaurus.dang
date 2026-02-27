@@ -322,10 +322,11 @@ type Site {
       [] :: [String!]!
     } else {
       let traced = sandbox
+        .withWorkspaceExcludes(sourceExcludes)
         .withWorkspaceFiles(
           ws,
           siteOnlyIncludes,
-          sourceExcludes,
+          [] :: [String!]!,
         )
         .withJustInTimeWorkspace(true)
         .withNesting(true)
@@ -349,10 +350,11 @@ type Site {
   """
   pub build(ws: Workspace!): Directory! {
     sandbox
+      .withWorkspaceExcludes(sourceExcludes)
       .withWorkspaceFiles(
         ws,
         sourceIncludes,
-        sourceExcludes,
+        [] :: [String!]!,
       )
       .withExec(
         ws,
