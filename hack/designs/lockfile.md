@@ -192,12 +192,14 @@ Current constraints:
 
 ### Workspace update UX
 
-`dagger workspace update [MODULE...]`:
+`dagger update [MODULE...]`:
 - No args: update all workspace git module lock entries.
 - Args: update selected modules.
 - Leaves `config.toml` unchanged.
 - Rewrites corresponding lock entries.
 - Output per change: `<name> <oldPin> -> <newPin>`.
+
+`dagger module update [DEPENDENCY...]` remains the module-dependency update command.
 
 ### Compat and migration
 
@@ -325,7 +327,7 @@ Current constraints:
   Use parsed legacy `Pin` when loading toolchains/blueprints from `dagger.json`.
 
 - [x] **#6: Add workspace update API + CLI (`core/schema/workspace.go`, `cmd/dagger/workspace.go`)**  
-  Implement `workspace.update` and wire `dagger workspace update`.
+  Implement `workspace.update` and wire top-level `dagger update` for workspace lock updates.
 
 - [x] **#7: Migration lock output (`core/workspace/migrate.go`)**  
   Emit lock entries when legacy `pin` fields exist.
@@ -343,5 +345,4 @@ Current constraints:
 ## Open questions
 
 1. Default policies when `pin` annotation is omitted for each lookup API (`git`, `http`, `container`, `module`).
-2. Should `dagger update` dispatch between dependency update and workspace lock update based on context, or stay separate?
-3. Should policy flips (`pin` <-> `float`) require explicit user command even under `lock=update`?
+2. Should policy flips (`pin` <-> `float`) require explicit user command even under `lock=update`?
