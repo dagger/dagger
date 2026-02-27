@@ -452,10 +452,17 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 // RestoreErrPath will restore the path of an error, which is useful for both removing buildkit mount root paths and referencing uncleaned paths
 // Note: TrimErrPathPrefix should be used instead when a root prefix is known
 func RestoreErrPath(err error, path string) error {
-	if pe, ok := err.(*os.PathError); ok {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
 		pe.Path = path
-	} else if err != nil {
-		slog.Warn("RestorePathErr: unhandled type", "type", fmt.Sprintf("%T", err))
+	} else {
+		var le *os.LinkError
+		if errors.As(err, &le) {
+			le.Old = path
+			le.New = path
+		} else if err != nil {
+			slog.Warn("RestorePathErr: unhandled type", "type", fmt.Sprintf("%T", err))
+		}
 	}
 	return err
 }
