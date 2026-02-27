@@ -771,7 +771,7 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 	}
 
 	dir := core.NewDirectoryChild(parent)
-	dir.LazyInit, err = dir.Without(ctx, srv, args.Path)
+	dir.LazyInit, err = dir.Without(ctx, dagql.CurrentID(ctx), args.Path)
 	if err != nil {
 		return inst, err
 	}
@@ -789,7 +789,7 @@ func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 	}
 
 	dir := core.NewDirectoryChild(parent)
-	dir.LazyInit, err = dir.Without(ctx, srv, args.Path)
+	dir.LazyInit, err = dir.Without(ctx, dagql.CurrentID(ctx), args.Path)
 	if err != nil {
 		return inst, err
 	}
@@ -807,7 +807,7 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 	}
 
 	dir := core.NewDirectoryChild(parent)
-	dir.LazyInit, err = dir.Without(ctx, srv, args.Paths...)
+	dir.LazyInit, err = dir.Without(ctx, dagql.CurrentID(ctx), args.Paths...)
 	if err != nil {
 		return inst, err
 	}

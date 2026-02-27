@@ -1248,7 +1248,7 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (Lazy
 	}, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (LazyInitFunc, error) {
+func (dir *Directory) Without(ctx context.Context, opID *call.ID, paths ...string) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
 		query, err := CurrentQuery(ctx)
 		if err != nil {
@@ -1268,6 +1268,8 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 		if err != nil {
 			return err
 		}
+
+		var anyPathsRemoved bool
 		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 			for _, p := range paths {
 				p = path.Join(dir.Dir, p)
@@ -1294,6 +1296,7 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 						return statErr
 					}
 
+					anyPathsRemoved = true
 					err = os.RemoveAll(fullPath)
 					if err != nil {
 						return err
@@ -1310,6 +1313,26 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 			return err
 		}
 		dir.Snapshot = snapshot
+
+		if !anyPathsRemoved && opID.Receiver() != nil {
+			dag, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get dagql server: %w", err)
+			}
+			// trigger an equivalence union between this ID and its parent, which makes
+			// sense when we don't actually remove any paths (i.e. this is a no-op)
+			// TODO: this id load works but could be more aesthetic looking by adding a dedicated
+			// method to the dagql cache for just adding a newly discovered digest to an existing op
+			opID := opID.With(call.WithExtraDigest(call.ExtraDigest{
+				Digest: opID.Receiver().Digest(),
+				Label:  "Directory.Without no-op equivalence union",
+			}))
+			_, err = dag.Load(ctx, opID)
+			if err != nil {
+				return fmt.Errorf("failed to load op ID for equivalence union: %w", err)
+			}
+		}
+
 		return nil
 	}, nil
 }
