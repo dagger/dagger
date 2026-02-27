@@ -633,7 +633,7 @@ type Counter {
 }
 `))
 
-	out, err := ctr.With(daggerExec("workspace", "update")).Stdout(ctx)
+	out, err := ctr.With(daggerExec("update")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "No updates", strings.TrimSpace(out))
 }
@@ -650,7 +650,7 @@ type Counter {
 }
 `))
 
-	_, err := ctr.With(daggerExec("workspace", "update", "counter")).Stdout(ctx)
+	_, err := ctr.With(daggerExec("update", "counter")).Stdout(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "is not a git module")
 }
@@ -667,7 +667,7 @@ type Counter {
 }
 `))
 
-	_, err := ctr.With(daggerExec("workspace", "update", "missing")).Stdout(ctx)
+	_, err := ctr.With(daggerExec("update", "missing")).Stdout(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "workspace module(s) not found")
 }
