@@ -27,21 +27,6 @@ func TestModuleResolveSetGetDelete(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestModuleResolveTupleInputCompatibility(t *testing.T) {
-	input := strings.Join([]string{
-		`[["version","1"]]`,
-		`["","modules.resolve",[["source","github.com/acme/mod@main"]],{"value":"111","policy":"pin"}]`,
-	}, "\n")
-
-	lock, err := ParseLock([]byte(input))
-	require.NoError(t, err)
-
-	pin, policy, ok := lock.GetModuleResolve("github.com/acme/mod@main")
-	require.True(t, ok)
-	require.Equal(t, "111", pin)
-	require.Equal(t, PolicyPin, policy)
-}
-
 func TestSetModuleResolvePolicyValidation(t *testing.T) {
 	lock := NewLock()
 
@@ -71,6 +56,17 @@ func TestParseLockValidation(t *testing.T) {
 		_, err := ParseLock([]byte(input))
 		require.Error(t, err)
 		require.ErrorContains(t, err, "value is required")
+	})
+
+	t.Run("tuple-style module input is rejected", func(t *testing.T) {
+		input := strings.Join([]string{
+			`[["version","1"]]`,
+			`["","modules.resolve",[["source","github.com/acme/mod@main"]],{"value":"111","policy":"pin"}]`,
+		}, "\n")
+
+		_, err := ParseLock([]byte(input))
+		require.Error(t, err)
+		require.ErrorContains(t, err, "invalid modules.resolve entry inputs")
 	})
 }
 

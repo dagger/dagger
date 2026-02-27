@@ -85,6 +85,7 @@ Ordering invariant (normative):
 - `inputs` must always be encoded as ordered arrays of positional argument values.
 - Argument names are implicit by function signature and must not be serialized.
 - Unordered object/map/dict encodings are forbidden in serialized lock key inputs.
+- Hard cutover: named argument tuple encodings (for example `[["source", "..."]]`) are invalid.
 
 Result envelope:
 - `value`: concrete lookup result.
