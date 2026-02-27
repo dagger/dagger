@@ -3610,6 +3610,9 @@ type GitRef {
 
     """The depth of the tree to fetch."""
     depth: Int = 1
+
+    """Set to true to populate tag refs in the local checkout .git."""
+    includeTags: Boolean = false
   ): Directory!
 }
 

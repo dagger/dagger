@@ -9720,6 +9720,9 @@ pub struct GitRefTreeOpts {
     /// Set to true to discard .git directory.
     #[builder(setter(into, strip_option), default)]
     pub discard_git_dir: Option<bool>,
+    /// Set to true to populate tag refs in the local checkout .git.
+    #[builder(setter(into, strip_option), default)]
+    pub include_tags: Option<bool>,
 }
 impl GitRef {
     /// The resolved commit id at this ref.
@@ -9782,6 +9785,9 @@ impl GitRef {
         }
         if let Some(depth) = opts.depth {
             query = query.arg("depth", depth);
+        }
+        if let Some(include_tags) = opts.include_tags {
+            query = query.arg("includeTags", include_tags);
         }
         Directory {
             proc: self.proc.clone(),
