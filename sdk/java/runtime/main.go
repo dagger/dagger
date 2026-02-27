@@ -457,7 +457,7 @@ func (m *JavaSdk) mavenCommand(args ...string) []string {
 	if m.MavenDebugLogging {
 		args = append(args, "-X")
 	}
-	args = append(args, "--no-transfer-progress")
+	args = append(args, "--threads", "1C", "--no-transfer-progress")
 	return args
 }
 
