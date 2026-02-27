@@ -80,6 +80,11 @@ const (
 	enableChecksScaleOutEnvName = "_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT"
 	// shutdown timeout, default is 10s
 	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
+
+	// Session transport tuning for high-latency links.
+	sessionGRPCInitialStreamWindowSize int32 = 16 * 1024 * 1024
+	sessionGRPCInitialConnWindowSize   int32 = 32 * 1024 * 1024
+	sessionGRPCReadWriteBufferSize           = 256 * 1024
 )
 
 type Params struct {
@@ -703,6 +708,10 @@ func ConnectBuildkitSession(
 
 func NewBuildkitSessionServer(ctx context.Context, conn net.Conn, attachables ...bksession.Attachable) *BuildkitSessionServer {
 	sessionSrvOpts := []grpc.ServerOption{
+		grpc.InitialWindowSize(sessionGRPCInitialStreamWindowSize),
+		grpc.InitialConnWindowSize(sessionGRPCInitialConnWindowSize),
+		grpc.ReadBufferSize(sessionGRPCReadWriteBufferSize),
+		grpc.WriteBufferSize(sessionGRPCReadWriteBufferSize),
 		grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor),
 		grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor),
 	}
@@ -742,7 +751,10 @@ func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
-		(&http2.Server{}).ServeConn(srv.Conn, &http2.ServeConnOpts{
+		(&http2.Server{
+			MaxUploadBufferPerStream:     sessionGRPCInitialStreamWindowSize,
+			MaxUploadBufferPerConnection: sessionGRPCInitialConnWindowSize,
+		}).ServeConn(srv.Conn, &http2.ServeConnOpts{
 			Context: ctx,
 			Handler: srv.Server,
 		})

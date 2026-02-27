@@ -21,13 +21,25 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+const (
+	// Tune per-stream/connection flow-control windows for higher BDP links.
+	sessionGRPCInitialStreamWindowSize int32 = 16 * 1024 * 1024
+	sessionGRPCInitialConnWindowSize   int32 = 32 * 1024 * 1024
+
+	// Tune transport buffering to reduce small write/read overhead on streams.
+	sessionGRPCReadWriteBufferSize = 256 * 1024
+)
+
 func serve(ctx context.Context, grpcServer *grpc.Server, conn net.Conn) {
 	go func() {
 		<-ctx.Done()
 		conn.Close()
 	}()
 	bklog.G(ctx).Tracef("serving grpc connection")
-	(&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{Handler: grpcServer})
+	(&http2.Server{
+		MaxUploadBufferPerStream:     sessionGRPCInitialStreamWindowSize,
+		MaxUploadBufferPerConnection: sessionGRPCInitialConnWindowSize,
+	}).ServeConn(conn, &http2.ServeConnOpts{Handler: grpcServer})
 }
 
 func grpcClientConn(ctx context.Context, conn net.Conn) (context.Context, *grpc.ClientConn, error) {
@@ -42,6 +54,10 @@ func grpcClientConn(ctx context.Context, conn net.Conn) (context.Context, *grpc.
 	dialOpts := []grpc.DialOption{
 		dialer,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithInitialWindowSize(sessionGRPCInitialStreamWindowSize),
+		grpc.WithInitialConnWindowSize(sessionGRPCInitialConnWindowSize),
+		grpc.WithReadBufferSize(sessionGRPCReadWriteBufferSize),
+		grpc.WithWriteBufferSize(sessionGRPCReadWriteBufferSize),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
 		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
 		grpc.WithUnaryInterceptor(grpcerrors.UnaryClientInterceptor),
