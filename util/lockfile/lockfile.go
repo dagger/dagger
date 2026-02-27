@@ -274,6 +274,9 @@ func canonicalizeInputs(inputs []any) ([]any, string, error) {
 	if err := decodeJSON(data, &canonical); err != nil {
 		return nil, "", err
 	}
+	if err := validateOrderedInputs(canonical); err != nil {
+		return nil, "", err
+	}
 	return canonical, string(data), nil
 }
 
@@ -287,6 +290,29 @@ func canonicalizeAny(value any) (any, error) {
 		return nil, err
 	}
 	return canonical, nil
+}
+
+func validateOrderedInputs(inputs []any) error {
+	for i, value := range inputs {
+		if err := validateOrderedInputValue(value); err != nil {
+			return fmt.Errorf("input %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func validateOrderedInputValue(value any) error {
+	switch typed := value.(type) {
+	case []any:
+		for i, nested := range typed {
+			if err := validateOrderedInputValue(nested); err != nil {
+				return fmt.Errorf("nested input %d: %w", i, err)
+			}
+		}
+	case map[string]any:
+		return fmt.Errorf("unordered object/map/dict in lock inputs")
+	}
+	return nil
 }
 
 func decodeJSON(data []byte, out any) error {

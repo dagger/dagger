@@ -112,4 +112,20 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorContains(t, err, "invalid tuple JSON")
 	})
+
+	t.Run("unordered object input", func(t *testing.T) {
+		_, err := Parse([]byte(strings.Join([]string{
+			`[["version","1"]]`,
+			`["","git.resolveRef",[{"ref":"main"}],{"value":"abc","policy":"pin"}]`,
+		}, "\n")))
+		require.Error(t, err)
+		require.ErrorContains(t, err, "unordered object/map/dict in lock inputs")
+	})
+}
+
+func TestSetRejectsUnorderedInputObjects(t *testing.T) {
+	lock := New()
+	err := lock.Set("", "git.resolveRef", []any{map[string]any{"ref": "main"}}, "abc")
+	require.Error(t, err)
+	require.ErrorContains(t, err, "unordered object/map/dict in lock inputs")
 }
