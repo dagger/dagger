@@ -403,6 +403,7 @@ func (c *cache) removeTermOutputDigestsLocked(term *egraphTerm) {
 func (c *cache) lookupCacheForID(
 	_ context.Context,
 	id *call.ID,
+	persistable bool,
 ) (AnyResult, bool, error) {
 	// (self digest, input eqSet IDs) are digested to create the "real" cache key we do a lookup on.
 	// Figure those out first.
@@ -459,6 +460,15 @@ func (c *cache) lookupCacheForID(
 	// We have a cache hit, make sure that the requested ID digest is in the same eq class as the
 	// cached result's output digest, and if not, merge them since we know them now to be equivalent
 	res := hitTerm.result
+	if persistable {
+		// NOTE: this is an intentional experiment behavior. If a persistable field
+		// hits a result originally produced by a non-persistable field, we
+		// "upgrade" the shared result to persisted-dependency liveness so future
+		// releases do not drop it or its dependency chain. This avoids surprising
+		// misses for persistable callsites, but should be revisited when real
+		// persistence policy is finalized.
+		c.markResultAsDepOfPersistedLocked(res)
+	}
 	atomic.AddInt64(&res.refCount, 1)
 
 	requestEqID := c.ensureEqClassForDigestLocked(id.Digest().String())
@@ -623,6 +633,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 
 	for _, term := range termsToIndex {
 		inputEqIDs := c.ensureTermInputEqIDsLocked(term.inputDigests)
+		c.indexResultDependenciesLocked(res, inputEqIDs)
 		termDigest := calcEgraphTermDigest(term.selfDigest, inputEqIDs)
 
 		if existingTerm := c.resultTermByDigestLocked(res, termDigest); existingTerm != nil {
@@ -667,6 +678,75 @@ func (c *cache) indexWaitResultInEgraphLocked(
 			c.egraphResultTerms[res] = resultTerms
 		}
 		resultTerms[termID] = struct{}{}
+	}
+	if res.depOfPersistedResult {
+		c.markResultAsDepOfPersistedLocked(res)
+	}
+}
+
+func (c *cache) firstLiveResultForOutputEqClassLocked(outputEqID eqClassID) *sharedResult {
+	outputEqID = c.findEqClassLocked(outputEqID)
+	if outputEqID == 0 {
+		return nil
+	}
+	var best *egraphTerm
+	for _, term := range c.egraphTerms {
+		if term == nil || term.result == nil {
+			continue
+		}
+		if c.findEqClassLocked(term.outputEqID) != outputEqID {
+			continue
+		}
+		if best == nil || term.id < best.id {
+			best = term
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	return best.result
+}
+
+func (c *cache) indexResultDependenciesLocked(res *sharedResult, inputEqIDs []eqClassID) {
+	if res == nil {
+		return
+	}
+	if res.deps == nil {
+		res.deps = make(map[*sharedResult]struct{})
+	}
+	for _, inputEqID := range inputEqIDs {
+		if inputEqID == 0 {
+			continue
+		}
+		dep := c.firstLiveResultForOutputEqClassLocked(inputEqID)
+		if dep == nil || dep == res {
+			continue
+		}
+		res.deps[dep] = struct{}{}
+	}
+}
+
+func (c *cache) markResultAsDepOfPersistedLocked(root *sharedResult) {
+	if root == nil {
+		return
+	}
+	stack := []*sharedResult{root}
+	seen := make(map[*sharedResult]struct{})
+	for len(stack) > 0 {
+		n := len(stack) - 1
+		cur := stack[n]
+		stack = stack[:n]
+		if cur == nil {
+			continue
+		}
+		if _, ok := seen[cur]; ok {
+			continue
+		}
+		seen[cur] = struct{}{}
+		cur.depOfPersistedResult = true
+		for dep := range cur.deps {
+			stack = append(stack, dep)
+		}
 	}
 }
 

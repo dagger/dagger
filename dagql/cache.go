@@ -77,14 +77,14 @@ type CacheKey struct {
 	DoNotCache bool
 
 	// IsPersistable indicates whether this field call is eligible for persistent
-	// cache storage. This is currently plumbed through call execution but not yet
-	// used by cache behavior.
+	// cache storage.
 	IsPersistable bool
 }
 
 type CacheEntryStats struct {
 	OngoingCalls            int
 	CompletedCalls          int
+	RetainedCalls           int
 	CompletedCallsByContent int
 	OngoingArbitrary        int
 	CompletedArbitrary      int
@@ -217,6 +217,12 @@ type sharedResult struct {
 
 	safeToPersistCache bool
 	onRelease          OnReleaseFunc
+	// depOfPersistedResult marks results that must remain live because they are
+	// dependencies of a persisted/retained result.
+	depOfPersistedResult bool
+	// deps tracks direct result dependencies used for transitive dependency
+	// liveness propagation in persistence experiments.
+	deps map[*sharedResult]struct{}
 
 	// Digest facts learned from the returned result ID, consumed by cache/egraph
 	// indexing at wait time. Kept as digest facts instead of retaining an ID.
@@ -234,6 +240,7 @@ type sharedResult struct {
 // shared result payload that will be returned to waiters.
 type ongoingCall struct {
 	callConcurrencyKeys     callConcurrencyKeys
+	isPersistable           bool
 	persistToDB             func(context.Context) error
 	persistToDBOnce         sync.Once
 	initCompletedResultOnce sync.Once
@@ -267,12 +274,14 @@ func (res *sharedResult) release(ctx context.Context) error {
 
 	var onRelease OnReleaseFunc
 	if atomic.AddInt64(&res.refCount, -1) == 0 {
-		// Always release in-memory dagql/egraph state when refs drain. The
-		// safe-to-persist flag only governs persistence metadata behavior.
 		res.cache.egraphMu.Lock()
-		res.cache.removeResultFromEgraphLocked(res)
+		if !res.depOfPersistedResult {
+			// Non-retained entries keep current behavior: once refs drain, drop the
+			// result from the in-memory e-graph and release associated resources.
+			res.cache.removeResultFromEgraphLocked(res)
+			onRelease = res.onRelease
+		}
 		res.cache.egraphMu.Unlock()
-		onRelease = res.onRelease
 	}
 
 	if onRelease != nil {
@@ -560,8 +569,14 @@ func (c *cache) EntryStats() CacheEntryStats {
 	var stats CacheEntryStats
 	stats.OngoingCalls = len(c.ongoingCalls)
 	stats.CompletedCalls = len(c.egraphResultTerms)
+	for res := range c.egraphResultTerms {
+		if res != nil && res.depOfPersistedResult {
+			stats.RetainedCalls++
+		}
+	}
 	stats.OngoingArbitrary = len(c.ongoingArbitraryCalls)
 	stats.CompletedArbitrary = len(c.completedArbitraryCalls)
+
 	return stats
 }
 
@@ -699,7 +714,7 @@ func (c *cache) GetOrInitCall(
 	ctx = ctxWithStorageKey(ctx, storageKey)
 
 	c.egraphMu.Lock()
-	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID)
+	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID, key.IsPersistable)
 	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, err
@@ -715,6 +730,9 @@ func (c *cache) GetOrInitCall(
 
 	if key.ConcurrencyKey != "" {
 		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
+			if key.IsPersistable {
+				oc.isPersistable = true
+			}
 			// already an ongoing call
 			oc.waiters++
 			c.callsMu.Unlock()
@@ -733,6 +751,7 @@ func (c *cache) GetOrInitCall(
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
 	oc := &ongoingCall{
 		callConcurrencyKeys: callConcKeys,
+		isPersistable:       key.IsPersistable,
 		persistToDB:         persistToDB,
 		waitCh:              make(chan struct{}),
 		cancel:              cancel,
@@ -882,7 +901,6 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 			}
 		}
 	}
-
 	requestIDForIndex := requestID
 	// fix function calls that have side-effectful setSecret calls to be per session
 	if oc.persistToDB != nil && !oc.res.safeToPersistCache {
@@ -900,6 +918,9 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 
 	c.egraphMu.Lock()
 	c.indexWaitResultInEgraphLocked(requestIDForIndex, requestSelf, requestInputs, oc.res, resWasCacheBacked)
+	if oc.isPersistable {
+		c.markResultAsDepOfPersistedLocked(oc.res)
+	}
 	c.egraphMu.Unlock()
 	return nil
 }
