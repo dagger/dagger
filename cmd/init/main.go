@@ -296,7 +296,5 @@ func mainSession() error {
 	if err := pipeW.Close(); err != nil {
 		return err
 	}
-	sessionSrv.Run(ctx)
-
-	return nil
+	return sessionSrv.Run(ctx)
 }
