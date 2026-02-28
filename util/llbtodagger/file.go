@@ -1,0 +1,380 @@
+package llbtodagger
+
+import (
+	"fmt"
+	"path"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
+)
+
+func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
+	if op == nil {
+		return nil, unsupported(opDigest(op.OpDAG), "merge", "missing merge op")
+	}
+	if len(op.OpDAG.Inputs) == 0 {
+		return scratchDirectoryID(), nil
+	}
+
+	id, err := c.convertOp(op.OpDAG.Inputs[0])
+	if err != nil {
+		return nil, err
+	}
+	if id.Type().NamedType() != directoryType().NamedType {
+		return nil, unsupported(opDigest(op.OpDAG), "merge", fmt.Sprintf("input type %q is not Directory", id.Type().NamedType()))
+	}
+
+	for i := 1; i < len(op.OpDAG.Inputs); i++ {
+		nextID, err := c.convertOp(op.OpDAG.Inputs[i])
+		if err != nil {
+			return nil, err
+		}
+		if nextID.Type().NamedType() != directoryType().NamedType {
+			return nil, unsupported(opDigest(op.OpDAG), "merge", fmt.Sprintf("input type %q is not Directory", nextID.Type().NamedType()))
+		}
+		id = appendCall(
+			id,
+			directoryType(),
+			"withDirectory",
+			argString("path", "/"),
+			argID("source", nextID),
+		)
+	}
+
+	return id, nil
+}
+
+func (c *converter) convertDiff(op *buildkit.DiffOp) (*call.ID, error) {
+	if op == nil || op.DiffOp == nil {
+		return nil, unsupported(opDigest(op.OpDAG), "diff", "missing diff op")
+	}
+
+	lowerID, err := c.resolveDiffInput(op.OpDAG, op.Lower.Input)
+	if err != nil {
+		return nil, err
+	}
+	upperID, err := c.resolveDiffInput(op.OpDAG, op.Upper.Input)
+	if err != nil {
+		return nil, err
+	}
+
+	if lowerID.Type().NamedType() != directoryType().NamedType || upperID.Type().NamedType() != directoryType().NamedType {
+		return nil, unsupported(opDigest(op.OpDAG), "diff", "lower/upper inputs must be Directory")
+	}
+
+	return appendCall(upperID, directoryType(), "diff", argID("other", lowerID)), nil
+}
+
+func (c *converter) resolveDiffInput(dag *buildkit.OpDAG, idx pb.InputIndex) (*call.ID, error) {
+	if idx == pb.Empty {
+		return scratchDirectoryID(), nil
+	}
+	i := int(idx)
+	if i < 0 || i >= len(dag.Inputs) {
+		return nil, unsupported(opDigest(dag), "diff", fmt.Sprintf("input index %d out of range", idx))
+	}
+	return c.convertOp(dag.Inputs[i])
+}
+
+func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
+	if op == nil || op.FileOp == nil {
+		return nil, unsupported(opDigest(op.OpDAG), "file", "missing file op")
+	}
+
+	inputIDs := make([]*call.ID, len(op.OpDAG.Inputs))
+	for i, in := range op.OpDAG.Inputs {
+		id, err := c.convertOp(in)
+		if err != nil {
+			return nil, err
+		}
+		if id.Type().NamedType() != directoryType().NamedType {
+			return nil, unsupported(opDigest(op.OpDAG), "file", fmt.Sprintf("input type %q is not Directory", id.Type().NamedType()))
+		}
+		inputIDs[i] = id
+	}
+
+	actionOutputs := make([]*call.ID, len(op.Actions))
+	outputIDs := map[pb.OutputIndex]*call.ID{}
+
+	for i, action := range op.Actions {
+		baseID, err := resolveFileActionInput(op.OpDAG, action.Input, inputIDs, actionOutputs)
+		if err != nil {
+			return nil, err
+		}
+
+		nextID, err := c.applyFileAction(op.OpDAG, baseID, action, inputIDs, actionOutputs)
+		if err != nil {
+			return nil, err
+		}
+		actionOutputs[i] = nextID
+
+		if action.Output != pb.SkipOutput {
+			outputIDs[action.Output] = nextID
+		}
+	}
+
+	outID, ok := outputIDs[op.OutputIndex()]
+	if !ok {
+		return nil, unsupported(opDigest(op.OpDAG), "file", fmt.Sprintf("no output for index %d", op.OutputIndex()))
+	}
+	return outID, nil
+}
+
+func resolveFileActionInput(
+	dag *buildkit.OpDAG,
+	idx pb.InputIndex,
+	opInputIDs []*call.ID,
+	actionOutputs []*call.ID,
+) (*call.ID, error) {
+	if idx == pb.Empty {
+		return scratchDirectoryID(), nil
+	}
+
+	i := int(idx)
+	if i >= 0 && i < len(opInputIDs) {
+		return opInputIDs[i], nil
+	}
+
+	rel := i - len(opInputIDs)
+	if rel < 0 || rel >= len(actionOutputs) {
+		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input index %d out of range", idx))
+	}
+	if actionOutputs[rel] == nil {
+		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input %d references unresolved action output", idx))
+	}
+	return actionOutputs[rel], nil
+}
+
+func (c *converter) applyFileAction(
+	dag *buildkit.OpDAG,
+	baseID *call.ID,
+	action *pb.FileAction,
+	opInputIDs []*call.ID,
+	actionOutputs []*call.ID,
+) (*call.ID, error) {
+	if baseID.Type().NamedType() != directoryType().NamedType {
+		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("primary input type %q is not Directory", baseID.Type().NamedType()))
+	}
+
+	switch x := action.Action.(type) {
+	case *pb.FileAction_Mkdir:
+		return applyMkdir(opDigest(dag), baseID, x.Mkdir)
+	case *pb.FileAction_Mkfile:
+		return applyMkfile(opDigest(dag), baseID, x.Mkfile)
+	case *pb.FileAction_Rm:
+		return applyRm(opDigest(dag), baseID, x.Rm)
+	case *pb.FileAction_Copy:
+		srcID, err := resolveFileActionInput(dag, action.SecondaryInput, opInputIDs, actionOutputs)
+		if err != nil {
+			return nil, err
+		}
+		if srcID.Type().NamedType() != directoryType().NamedType {
+			return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("copy source type %q is not Directory", srcID.Type().NamedType()))
+		}
+		return applyCopy(opDigest(dag), baseID, srcID, x.Copy)
+	default:
+		return nil, unsupported(opDigest(dag), "file", "unsupported file action")
+	}
+}
+
+func applyMkdir(opDgst digest.Digest, baseID *call.ID, mkdir *pb.FileActionMkDir) (*call.ID, error) {
+	if mkdir == nil {
+		return nil, unsupported(opDgst, "file.mkdir", "missing mkdir action")
+	}
+	if !mkdir.MakeParents {
+		return nil, unsupported(opDgst, "file.mkdir", "mkdir without makeParents is unsupported")
+	}
+	if mkdir.Timestamp >= 0 {
+		return nil, unsupported(opDgst, "file.mkdir", "mkdir timestamp override is unsupported")
+	}
+
+	id := appendCall(
+		baseID,
+		directoryType(),
+		"withNewDirectory",
+		argString("path", cleanPath(mkdir.Path)),
+		argInt("permissions", int64(mkdir.Mode)),
+	)
+
+	owner, err := chownOwnerString(mkdir.Owner)
+	if err != nil {
+		return nil, unsupported(opDgst, "file.mkdir", err.Error())
+	}
+	if owner != "" {
+		id = appendCall(
+			id,
+			directoryType(),
+			"chown",
+			argString("path", cleanPath(mkdir.Path)),
+			argString("owner", owner),
+		)
+	}
+
+	return id, nil
+}
+
+func applyMkfile(opDgst digest.Digest, baseID *call.ID, mkfile *pb.FileActionMkFile) (*call.ID, error) {
+	if mkfile == nil {
+		return nil, unsupported(opDgst, "file.mkfile", "missing mkfile action")
+	}
+	if mkfile.Timestamp >= 0 {
+		return nil, unsupported(opDgst, "file.mkfile", "mkfile timestamp override is unsupported")
+	}
+	if !utf8.Valid(mkfile.Data) {
+		return nil, unsupported(opDgst, "file.mkfile", "mkfile binary data is unsupported")
+	}
+
+	filePath := cleanPath(mkfile.Path)
+	id := appendCall(
+		baseID,
+		directoryType(),
+		"withNewFile",
+		argString("path", filePath),
+		argString("contents", string(mkfile.Data)),
+		argInt("permissions", int64(mkfile.Mode)),
+	)
+
+	owner, err := chownOwnerString(mkfile.Owner)
+	if err != nil {
+		return nil, unsupported(opDgst, "file.mkfile", err.Error())
+	}
+	if owner != "" {
+		id = appendCall(
+			id,
+			directoryType(),
+			"chown",
+			argString("path", filePath),
+			argString("owner", owner),
+		)
+	}
+
+	return id, nil
+}
+
+func applyRm(opDgst digest.Digest, baseID *call.ID, rm *pb.FileActionRm) (*call.ID, error) {
+	if rm == nil {
+		return nil, unsupported(opDgst, "file.rm", "missing rm action")
+	}
+	return appendCall(baseID, directoryType(), "withoutFile", argString("path", cleanPath(rm.Path))), nil
+}
+
+func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActionCopy) (*call.ID, error) {
+	if cp == nil {
+		return nil, unsupported(opDgst, "file.copy", "missing copy action")
+	}
+	if cp.Mode >= 0 {
+		return nil, unsupported(opDgst, "file.copy", "copy mode override is unsupported")
+	}
+	if cp.AttemptUnpackDockerCompatibility {
+		return nil, unsupported(opDgst, "file.copy", "archive auto-unpack is unsupported")
+	}
+	if cp.AlwaysReplaceExistingDestPaths {
+		return nil, unsupported(opDgst, "file.copy", "alwaysReplaceExistingDestPaths is unsupported")
+	}
+	if !cp.CreateDestPath {
+		return nil, unsupported(opDgst, "file.copy", "copy without createDestPath is unsupported")
+	}
+
+	sourceSubdir, include := deriveCopySelection(cp)
+	sourceDirID := sourceID
+	if sourceSubdir != "/" {
+		sourceDirID = appendCall(sourceID, directoryType(), "directory", argString("path", sourceSubdir))
+	}
+
+	args := []*call.Argument{
+		argString("path", cleanPath(cp.Dest)),
+		argID("source", sourceDirID),
+	}
+	if len(include) > 0 {
+		args = append(args, argStringList("include", include))
+	}
+	if len(cp.ExcludePatterns) > 0 {
+		args = append(args, argStringList("exclude", cp.ExcludePatterns))
+	}
+
+	owner, err := chownOwnerString(cp.Owner)
+	if err != nil {
+		return nil, unsupported(opDgst, "file.copy", err.Error())
+	}
+	if owner != "" {
+		args = append(args, argString("owner", owner))
+	}
+
+	return appendCall(baseID, directoryType(), "withDirectory", args...), nil
+}
+
+func deriveCopySelection(cp *pb.FileActionCopy) (sourceSubdir string, include []string) {
+	src := cleanPath(cp.Src)
+	include = append([]string{}, cp.IncludePatterns...)
+
+	switch {
+	case cp.AllowWildcard:
+		sourceSubdir = cleanPath(path.Dir(src))
+		pattern := path.Base(src)
+		if pattern != "." && pattern != "/" {
+			include = append([]string{pattern}, include...)
+		}
+	case cp.DirCopyContents:
+		sourceSubdir = src
+	case src == "/" || src == ".":
+		sourceSubdir = "/"
+	default:
+		sourceSubdir = cleanPath(path.Dir(src))
+		item := path.Base(src)
+		if item != "." && item != "/" {
+			include = append([]string{item}, include...)
+		}
+	}
+
+	if sourceSubdir == "" {
+		sourceSubdir = "/"
+	}
+	return sourceSubdir, include
+}
+
+func chownOwnerString(chown *pb.ChownOpt) (string, error) {
+	if chown == nil {
+		return "", nil
+	}
+	user, err := userOptToString(chown.User)
+	if err != nil {
+		return "", err
+	}
+	group, err := userOptToString(chown.Group)
+	if err != nil {
+		return "", err
+	}
+
+	switch {
+	case user == "" && group == "":
+		return "", nil
+	case user == "" && group != "":
+		return "", fmt.Errorf("group-only chown is unsupported")
+	case group == "":
+		return user, nil
+	default:
+		return user + ":" + group, nil
+	}
+}
+
+func userOptToString(user *pb.UserOpt) (string, error) {
+	if user == nil {
+		return "", nil
+	}
+	switch v := user.User.(type) {
+	case *pb.UserOpt_ByID:
+		return strconv.FormatUint(uint64(v.ByID), 10), nil
+	case *pb.UserOpt_ByName:
+		if strings.TrimSpace(v.ByName.Name) == "" {
+			return "", fmt.Errorf("empty named user is unsupported")
+		}
+		return "", fmt.Errorf("named user/group chown is unsupported")
+	default:
+		return "", fmt.Errorf("unknown user option type")
+	}
+}

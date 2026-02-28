@@ -1,0 +1,215 @@
+package llbtodagger
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
+)
+
+func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
+	if exec == nil || exec.ExecOp == nil {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec op")
+	}
+
+	if exec.Network != pb.NetMode_UNSET {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "non-default network mode is unsupported")
+	}
+	if exec.Security != pb.SecurityMode_SANDBOX {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "non-default security mode is unsupported")
+	}
+	if len(exec.Secretenv) > 0 {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "secret environment variables are unsupported")
+	}
+	if exec.Meta == nil {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec meta")
+	}
+	if exec.Meta.ProxyEnv != nil {
+		if exec.Meta.ProxyEnv.HttpProxy != "" || exec.Meta.ProxyEnv.HttpsProxy != "" || exec.Meta.ProxyEnv.FtpProxy != "" || exec.Meta.ProxyEnv.NoProxy != "" || exec.Meta.ProxyEnv.AllProxy != "" {
+			return nil, unsupported(opDigest(exec.OpDAG), "exec", "proxy environment is unsupported")
+		}
+	}
+	if exec.Meta.Hostname != "" {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "hostname override is unsupported")
+	}
+	if len(exec.Meta.ExtraHosts) > 0 {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "extra hosts are unsupported")
+	}
+	if len(exec.Meta.Ulimit) > 0 {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "ulimit is unsupported")
+	}
+	if exec.Meta.CgroupParent != "" {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "cgroup parent is unsupported")
+	}
+	if len(exec.Meta.ValidExitCodes) > 0 {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", "valid exit code overrides are unsupported")
+	}
+
+	inputIDs := make([]*call.ID, len(exec.Inputs))
+	for i, in := range exec.Inputs {
+		id, err := c.convertOp(in)
+		if err != nil {
+			return nil, err
+		}
+		inputIDs[i] = id
+	}
+
+	rootMount, err := findRootExecMount(exec.Mounts)
+	if err != nil {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", err.Error())
+	}
+
+	rootDirID, err := c.resolveExecMountInputDir(opDigest(exec.OpDAG), rootMount, inputIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	ctrID, err := queryContainerID(exec.Platform)
+	if err != nil {
+		return nil, fmt.Errorf("llbtodagger: exec %s: %w", opDigest(exec.OpDAG), err)
+	}
+	ctrID = appendCall(ctrID, containerType(), "withRootfs", argID("directory", rootDirID))
+
+	for _, m := range exec.Mounts {
+		if m == rootMount {
+			continue
+		}
+		if m.ResultID != "" {
+			return nil, unsupported(opDigest(exec.OpDAG), "exec", "mount resultID is unsupported")
+		}
+		if m.ContentCache != pb.MountContentCache_DEFAULT {
+			return nil, unsupported(opDigest(exec.OpDAG), "exec", "non-default mount content cache is unsupported")
+		}
+
+		switch m.MountType {
+		case pb.MountType_BIND:
+			if m.Readonly {
+				return nil, unsupported(opDigest(exec.OpDAG), "exec", "readonly bind mounts are unsupported")
+			}
+			dirID, err := c.resolveExecMountInputDir(opDigest(exec.OpDAG), m, inputIDs)
+			if err != nil {
+				return nil, err
+			}
+			ctrID = appendCall(
+				ctrID,
+				containerType(),
+				"withMountedDirectory",
+				argString("path", m.Dest),
+				argID("source", dirID),
+			)
+
+		case pb.MountType_CACHE:
+			if m.CacheOpt == nil || m.CacheOpt.ID == "" {
+				return nil, unsupported(opDigest(exec.OpDAG), "exec", "cache mount is missing cache ID")
+			}
+			sharing, err := mountSharingEnum(m.CacheOpt.Sharing)
+			if err != nil {
+				return nil, unsupported(opDigest(exec.OpDAG), "exec", err.Error())
+			}
+			cacheID := appendCall(call.New(), cacheVolumeType(), "cacheVolume", argString("key", m.CacheOpt.ID))
+			args := []*call.Argument{
+				argString("path", m.Dest),
+				argID("cache", cacheID),
+				argEnum("sharing", sharing),
+			}
+			if m.Input != pb.Empty {
+				sourceDirID, err := c.resolveExecMountInputDir(opDigest(exec.OpDAG), m, inputIDs)
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, argID("source", sourceDirID))
+			}
+			ctrID = appendCall(ctrID, containerType(), "withMountedCache", args...)
+
+		case pb.MountType_TMPFS:
+			args := []*call.Argument{argString("path", m.Dest)}
+			if m.TmpfsOpt != nil && m.TmpfsOpt.Size_ > 0 {
+				args = append(args, argInt("size", m.TmpfsOpt.Size_))
+			}
+			ctrID = appendCall(ctrID, containerType(), "withMountedTemp", args...)
+
+		case pb.MountType_SECRET:
+			return nil, unsupported(opDigest(exec.OpDAG), "exec", "secret mounts are unsupported")
+		case pb.MountType_SSH:
+			return nil, unsupported(opDigest(exec.OpDAG), "exec", "ssh mounts are unsupported")
+		default:
+			return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("unsupported mount type %v", m.MountType))
+		}
+	}
+
+	for _, envKV := range exec.Meta.Env {
+		name, val, ok := strings.Cut(envKV, "=")
+		if !ok {
+			return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("invalid env entry %q", envKV))
+		}
+		ctrID = appendCall(
+			ctrID,
+			containerType(),
+			"withEnvVariable",
+			argString("name", name),
+			argString("value", val),
+		)
+	}
+
+	if exec.Meta.User != "" {
+		ctrID = appendCall(ctrID, containerType(), "withUser", argString("name", exec.Meta.User))
+	}
+	if exec.Meta.Cwd != "" {
+		ctrID = appendCall(ctrID, containerType(), "withWorkdir", argString("path", exec.Meta.Cwd))
+	}
+
+	withExecID := appendCall(ctrID, containerType(), "withExec", argStringList("args", exec.Meta.Args))
+
+	outMount, ok := findMountByOutput(exec.Mounts, exec.OutputIndex())
+	if !ok {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("no mount for output index %d", exec.OutputIndex()))
+	}
+	if outMount.Dest == "/" {
+		return appendCall(withExecID, directoryType(), "rootfs"), nil
+	}
+	return appendCall(withExecID, directoryType(), "directory", argString("path", outMount.Dest)), nil
+}
+
+func findRootExecMount(mounts []*pb.Mount) (*pb.Mount, error) {
+	for _, m := range mounts {
+		if m != nil && m.Dest == "/" && m.MountType == pb.MountType_BIND {
+			return m, nil
+		}
+	}
+	return nil, fmt.Errorf("root bind mount not found")
+}
+
+func findMountByOutput(mounts []*pb.Mount, out pb.OutputIndex) (*pb.Mount, bool) {
+	for _, m := range mounts {
+		if m != nil && m.Output == out {
+			return m, true
+		}
+	}
+	return nil, false
+}
+
+func (c *converter) resolveExecMountInputDir(opDgst digest.Digest, mount *pb.Mount, inputIDs []*call.ID) (*call.ID, error) {
+	var dirID *call.ID
+	if mount.Input == pb.Empty {
+		dirID = scratchDirectoryID()
+	} else {
+		idx := int(mount.Input)
+		if idx < 0 || idx >= len(inputIDs) {
+			return nil, unsupported(opDgst, "exec", fmt.Sprintf("mount input index %d out of range", mount.Input))
+		}
+		dirID = inputIDs[idx]
+	}
+
+	if dirID.Type().NamedType() != directoryType().NamedType {
+		return nil, unsupported(opDgst, "exec", fmt.Sprintf("mount input type %q is not Directory", dirID.Type().NamedType()))
+	}
+
+	selector := cleanPath(mount.Selector)
+	if selector == "/" {
+		return dirID, nil
+	}
+	return appendCall(dirID, directoryType(), "directory", argString("path", selector)), nil
+}
