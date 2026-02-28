@@ -647,9 +647,6 @@ func (container *Container) Build(
 ) (*Container, error) {
 	container = container.Clone()
 
-	if len(secrets) > 0 {
-		return nil, fmt.Errorf("dockerBuild secrets are not supported in hard-cutover path yet")
-	}
 	if sshSocket != nil {
 		return nil, fmt.Errorf("dockerBuild SSH mounts are not supported in hard-cutover path yet")
 	}
@@ -691,6 +688,24 @@ func (container *Container) Build(
 	for _, buildArg := range buildArgs {
 		buildArgMap[buildArg.Name] = buildArg.Value
 	}
+	secretIDsByLLBID := make(map[string]*call.ID, len(secrets))
+	for _, secret := range secrets {
+		secretDgst := SecretIDDigest(secret.ID())
+		secretName, ok := secretStore.GetSecretName(secretDgst)
+		if !ok {
+			return nil, fmt.Errorf("secret not found: %s", secretDgst)
+		}
+		if secretName == "" {
+			return nil, fmt.Errorf("secret %s has no name and cannot be referenced from Dockerfile secret id", secretDgst)
+		}
+		if existing, found := secretIDsByLLBID[secretName]; found {
+			if existing.Digest() != secret.ID().Digest() {
+				return nil, fmt.Errorf("multiple secrets provided for dockerBuild secret id %q", secretName)
+			}
+			continue
+		}
+		secretIDsByLLBID[secretName] = secret.ID()
+	}
 
 	convertOpt := dockerfile2llb.ConvertOpt{
 		Config: dockerui.Config{
@@ -712,6 +727,7 @@ func (container *Container) Build(
 	}
 	containerID, err := llbtodagger.DefinitionToIDWithOptions(def.ToPB(), img, llbtodagger.DefinitionToIDOptions{
 		MainContextDirectoryID: contextDirID,
+		SecretIDsByLLBID:       secretIDsByLLBID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
@@ -1479,6 +1495,20 @@ func (container *Container) WithoutMount(ctx context.Context, target string) (*C
 
 	if found {
 		container.Mounts = slices.Delete(container.Mounts, foundIdx, foundIdx+1)
+	}
+
+	var secretFound bool
+	var secretFoundIdx int
+	for i := len(container.Secrets) - 1; i >= 0; i-- {
+		if container.Secrets[i].MountPath == target {
+			secretFound = true
+			secretFoundIdx = i
+			break
+		}
+	}
+
+	if secretFound {
+		container.Secrets = slices.Delete(container.Secrets, secretFoundIdx, secretFoundIdx+1)
 	}
 
 	// set image ref to empty string
