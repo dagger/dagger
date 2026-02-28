@@ -8,6 +8,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/core/containersource"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -64,6 +65,10 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 		return nil, err
 	}
 	container := NewContainer(platform)
+	container.OpID = dagql.CurrentID(ctx)
+	if container.OpID == nil {
+		return nil, fmt.Errorf("missing operation ID for built-in container")
+	}
 	rootfsDir := &Directory{
 		Dir:       "/",
 		Platform:  platform,
