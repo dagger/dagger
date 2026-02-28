@@ -159,6 +159,7 @@ func ShouldSkipFunction(obj, field string) bool {
 			"generatedCode",
 			"currentFunctionCall",
 			"currentModule",
+			"currentWorkspace",
 			"typeDef",
 			"sourceMap",
 			"function",
@@ -173,6 +174,9 @@ func ShouldSkipFunction(obj, field string) bool {
 		// for SDKs only
 		"TypeDef":  nil,
 		"Function": nil,
+		"Workspace": {
+			"defaultModule",
+		},
 		"Module": {
 			"withDescription",
 			"withObject",

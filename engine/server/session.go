@@ -1982,7 +1982,7 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 
 	// Load gathered modules (workspace config + implicit CWD).
 	for _, mod := range client.pendingModules {
-		if err := srv.loadModule(ctx, client, client.dag, mod); err != nil {
+		if err := srv.loadModuleWithProgress(ctx, client, mod, false); err != nil {
 			client.modulesErr = fmt.Errorf("loading module %q: %w", mod.Ref, err)
 			client.modulesLoaded = true
 			return client.modulesErr
@@ -1991,11 +1991,11 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 
 	// Load extra modules (-m flag, may arrive late).
 	for _, extra := range client.pendingExtraModules {
-		if err := srv.loadModule(ctx, client, client.dag, pendingModule{
+		if err := srv.loadModuleWithProgress(ctx, client, pendingModule{
 			Ref:       extra.Ref,
 			Name:      extra.Name,
 			Blueprint: extra.Blueprint,
-		}); err != nil {
+		}, true); err != nil {
 			client.modulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
 			client.modulesLoaded = true
 			return client.modulesErr
@@ -2004,6 +2004,34 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 
 	client.modulesLoaded = true
 	return nil
+}
+
+func moduleProgressName(mod pendingModule) string {
+	if mod.Name != "" {
+		return mod.Name
+	}
+	if mod.Ref != "" {
+		return mod.Ref
+	}
+	return "<unknown>"
+}
+
+func (srv *Server) loadModuleWithProgress(
+	ctx context.Context,
+	client *daggerClient,
+	mod pendingModule,
+	extra bool,
+) (rerr error) {
+	progressName := moduleProgressName(mod)
+	spanName := "load module: " + progressName
+	if extra {
+		spanName = "load extra module: " + progressName
+	}
+
+	spanCtx, span := telemetry.Tracer(ctx, InstrumentationLibrary).Start(ctx, spanName, telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	return srv.loadModule(spanCtx, client, client.dag, mod)
 }
 
 // loadModule resolves a module through the dagql pipeline and serves it

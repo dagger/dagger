@@ -45,7 +45,10 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 //
 // FIXME(vito): this needs to be cleaned up or renamed, since it also handles
 // support for standalone modules and implicit `-m .`
-func initializeWorkspace(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
+func initializeWorkspace(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
+	ctx, span := Tracer().Start(ctx, "load workspace")
+	defer telemetry.EndWithCause(span, &rerr)
+
 	def := &moduleDef{}
 
 	// If a specific module was requested via -m, resolve its name so that
