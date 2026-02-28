@@ -363,6 +363,50 @@ Last updated: 2026-02-28
     - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestLLBToDagger'` -> pass
     - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild'` -> fail (expected for known unsupported areas); `createDestPath=false unsupported` error is gone.
       - Remaining failures include syntax pragma, secret/ssh, and several context-copy cases now failing with missing-path errors (for example `stat /src: no such file or directory`, `stat /subcontext: no such file or directory`).
+      - Empirical debug (`TestDockerfile/TestDockerBuild/default_Dockerfile_location`):
+        - failure now occurs while loading converted ID at `directory(path: "/src")` inside source resolution (`stat /src: no such file or directory`).
+        - this `directory(path: "/src")` comes from `Directory.StateWithSourcePath()` copy-shim (`llb.Copy(dirSt, dir.Dir, ".", CopyDirContentsOnly:true)` with `dir.Dir=/src`).
+        - indicates current local/context conversion path is still mismatched for these dockerBuild contexts; after removing prior `createDestPath=false` blocker, this is the next concrete failure to address.
+
+### Phase 17: Sentinel `MainContext` + Structural Context Rebinding (No `Directory.State*` Dependency)
+- Goal:
+  - Remove `dockerBuild` reliance on `Directory.State()` / `Directory.StateWithSourcePath()` for Dockerfile context injection.
+  - Preserve Dockerfile2LLB's path/selector semantics while binding context reads to the real Dagger directory ID.
+  - Fix current `stat /src` / `stat /subcontext` class failures without text-based ID hacks.
+- Approach:
+  - Feed `dockerfile2llb` a synthetic, deterministic sentinel `MainContext` local source state.
+  - Extend `llbtodagger` conversion so sentinel local-source ops are rebound to the actual Dagger context directory ID provided by caller.
+  - Perform replacement structurally in ID construction/conversion logic; never do string replacement on encoded/display IDs.
+
+- Checklist:
+  - [x] Define sentinel local-source identity constants (name/shared-key marker) in the dockerBuild conversion path.
+  - [x] Build sentinel `llb.State` for `ConvertOpt.MainContext` (valid non-nil output graph; deterministic marker).
+  - [x] Update `core.Container.Build` to stop calling `contextDir.State*` for Dockerfile2LLB `MainContext`.
+  - [x] Extend llbtodagger API to accept context-rebinding input (actual Dagger context `Directory` ID/call ID) alongside `def + img`.
+  - [x] Add strict validation: if sentinel local source appears in LLB and no context rebinding value is provided, return fail-fast error.
+  - [x] Implement sentinel detection in local-source conversion (identifier + attrs match), and map it to provided context directory ID.
+  - [x] Keep non-sentinel local-source behavior unchanged.
+  - [x] Ensure selector/include/exclude/copy semantics emitted by Dockerfile2LLB still apply on top of rebound context directory.
+  - [x] Add llbtodagger unit tests:
+    - [x] sentinel local source maps to provided directory ID.
+    - [x] missing rebinding input for sentinel returns explicit error.
+    - [x] sentinel marker does not leak into final emitted ID display/encoding.
+  - [x] Add/adjust dockerBuild integration coverage:
+    - [x] `TestDockerfile/TestDockerBuild/default_Dockerfile_location` passes.
+    - [x] `subdirectory_with_default_Dockerfile_location` passes.
+    - [x] custom Dockerfile location variants pass.
+  - [x] Re-run focused integration suite using debugging.md command shape and log outcomes in this whiteboard.
+
+- 2026-02-28 validation runs:
+  - `go test ./util/llbtodagger ./core ./core/schema` -> pass.
+  - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild/default_Dockerfile_location'` -> pass.
+  - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild/(custom_Dockerfile_location|subdirectory_with_default_Dockerfile_location|subdirectory_with_custom_Dockerfile_location)'` -> pass.
+  - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild'` -> fail (expected+known unsupported plus one newly surfaced metadata issue):
+    - expected unsupported: ssh mounts, secret mounts, remote syntax pragma, builtin secret-mount exec path.
+    - newly surfaced non-context issue: `onbuild_command_is_published` currently fails with missing required argument `shell` in internal `__withImageConfigMetadata` call.
+
+- Follow-up tie-in (future branch):
+  - This phase is the prerequisite for removing `Directory.State()` usage from dockerBuild path in the branch where LLB is no longer a general Dagger runtime dependency.
 
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
@@ -395,6 +439,9 @@ Last updated: 2026-02-28
 - Image config nuance:
   - `Config.ArgsEscaped` is ignored on non-Windows images (no Dagger API equivalent needed for Linux behavior).
   - `Config.ArgsEscaped` on Windows images is still unsupported and returns error.
+- Internal image-config metadata call nuance:
+  - `TestDockerfile/TestDockerBuild/onbuild_command_is_published` currently fails due missing required `shell` argument in `__withImageConfigMetadata` path.
+  - This is separate from the Phase 17 context-rebinding problem and should be handled as a metadata API/mapper follow-up.
 
 ## Current Explicit Unsupported Cases (Implemented)
 - All `BuildOp` vertices.

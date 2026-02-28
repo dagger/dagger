@@ -145,6 +145,38 @@ func TestDefinitionToIDLocalFollowPathsUnsupported(t *testing.T) {
 	require.Contains(t, unsupportedErr.Reason, "follow paths")
 }
 
+func TestDefinitionToIDLocalMainContextSentinelRebinding(t *testing.T) {
+	t.Parallel()
+
+	st := DockerfileMainContextSentinelState()
+	contextDirID := appendCall(call.New(), directoryType(), "directory", argString("path", "/rebased-context"))
+
+	id, err := DefinitionToIDWithOptions(
+		marshalStateToPB(t, st),
+		nil,
+		DefinitionToIDOptions{MainContextDirectoryID: contextDirID},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"container", "withRootfs"}, fieldsFromRoot(id))
+
+	rootfsID := rootfsArgFromContainer(t, id)
+	require.Equal(t, contextDirID.Display(), rootfsID.Display())
+	require.Equal(t, []string{"directory"}, fieldsFromRoot(rootfsID))
+	require.Equal(t, "/rebased-context", rootfsID.Arg("path").Value().ToInput())
+	require.NotContains(t, rootfsID.Display(), DockerfileMainContextSentinelLocalName)
+	require.NotContains(t, rootfsID.Display(), DockerfileMainContextSentinelSharedKeyHint)
+}
+
+func TestDefinitionToIDLocalMainContextSentinelMissingRebindingUnsupported(t *testing.T) {
+	t.Parallel()
+
+	st := DockerfileMainContextSentinelState()
+	_, err := DefinitionToIDWithOptions(marshalStateToPB(t, st), nil, DefinitionToIDOptions{})
+	unsupportedErr := requireUnsupported(t, err, "source(local)")
+	require.Contains(t, unsupportedErr.Reason, "main-context sentinel")
+	require.Contains(t, unsupportedErr.Reason, "rebinding")
+}
+
 func TestDefinitionToIDHTTPSource(t *testing.T) {
 	t.Parallel()
 

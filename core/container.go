@@ -635,8 +635,8 @@ const defaultDockerfileName = "Dockerfile"
 func (container *Container) Build(
 	ctx context.Context,
 	dockerfileDir *Directory,
-	// contextDir is dockerfileDir with files excluded as per dockerignore file
-	contextDir *Directory,
+	// contextDirID is dockerfileDir with files excluded as per dockerignore file.
+	contextDirID *call.ID,
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
@@ -672,11 +672,7 @@ func (container *Container) Build(
 	if syntaxRef, _, _, ok := dockerfileparser.DetectSyntax(dockerfileBytes); ok {
 		return nil, fmt.Errorf("dockerBuild remote syntax frontend %q is not supported in hard-cutover path yet", syntaxRef)
 	}
-
-	contextState, err := contextDir.StateWithSourcePath()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load build context state: %w", err)
-	}
+	mainContext := llbtodagger.DockerfileMainContextSentinelState()
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -701,7 +697,7 @@ func (container *Container) Build(
 			BuildArgs: buildArgMap,
 			Target:    target,
 		},
-		MainContext:    &contextState,
+		MainContext:    &mainContext,
 		TargetPlatform: ptr(container.Platform.Spec()),
 		MetaResolver:   bk,
 	}
@@ -714,7 +710,9 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal Dockerfile LLB: %w", err)
 	}
-	containerID, err := llbtodagger.DefinitionToID(def.ToPB(), img)
+	containerID, err := llbtodagger.DefinitionToIDWithOptions(def.ToPB(), img, llbtodagger.DefinitionToIDOptions{
+		MainContextDirectoryID: contextDirID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
