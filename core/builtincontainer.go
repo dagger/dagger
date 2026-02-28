@@ -58,12 +58,7 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 		return nil, err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group found")
-	}
-
-	ref, err := src.Snapshot(ctx, bkSessionGroup)
+	ref, err := src.Snapshot(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
