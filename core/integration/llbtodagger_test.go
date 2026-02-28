@@ -72,6 +72,27 @@ COPY --chmod=751 . /app/
 	require.Contains(t, stdout, "751 /app/nested/file.txt")
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyChmodExplicitFileDest(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, map[string]string{
+		"input.txt": "explicit-file-dest",
+	})
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+COPY --chmod=751 input.txt /app/out.txt
+`)
+
+	contents, err := ctr.File("/app/out.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "explicit-file-dest", strings.TrimSpace(contents))
+
+	permOut, err := ctr.WithExec([]string{"stat", "-c", "%a", "/app/out.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "751", strings.TrimSpace(permOut))
+}
+
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAddHTTP(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

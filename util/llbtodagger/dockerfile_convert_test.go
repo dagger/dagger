@@ -80,6 +80,30 @@ COPY --chmod=751 . /app/
 	require.EqualValues(t, 0o751, withDir.Arg("permissions").Value().ToInput())
 }
 
+func TestDefinitionToIDDockerfileCopyToExplicitFileDestWithChmod(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM scratch
+COPY --chmod=751 input.txt /app/out.txt
+`)
+
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+
+	withFile := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
+	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
+
+	srcFile := argIDFromCall(t, withFile, "source")
+	fileCall := findFieldInChain(srcFile, "file")
+	require.NotNil(t, fileCall)
+	require.Equal(t, "input.txt", fileCall.Arg("path").Value().ToInput())
+}
+
 func TestDefinitionToIDDockerfileAddHTTP(t *testing.T) {
 	t.Parallel()
 

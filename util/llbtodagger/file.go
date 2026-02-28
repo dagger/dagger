@@ -344,6 +344,26 @@ func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActio
 		sourceDirID = appendCall(sourceID, directoryType(), "directory", argString("path", sourceSubdir))
 	}
 
+	owner, err := chownOwnerString(cp.Owner)
+	if err != nil {
+		return nil, unsupported(opDgst, "file.copy", err.Error())
+	}
+
+	if filePath, ok := explicitFileCopyPath(cp, include); ok {
+		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
+		args := []*call.Argument{
+			argString("path", cleanPath(cp.Dest)),
+			argID("source", fileID),
+		}
+		if owner != "" {
+			args = append(args, argString("owner", owner))
+		}
+		if cp.Mode >= 0 {
+			args = append(args, argInt("permissions", int64(cp.Mode)))
+		}
+		return appendCall(baseID, directoryType(), "withFile", args...), nil
+	}
+
 	args := []*call.Argument{
 		argString("path", cleanPath(cp.Dest)),
 		argID("source", sourceDirID),
@@ -355,10 +375,6 @@ func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActio
 		args = append(args, argStringList("exclude", cp.ExcludePatterns))
 	}
 
-	owner, err := chownOwnerString(cp.Owner)
-	if err != nil {
-		return nil, unsupported(opDgst, "file.copy", err.Error())
-	}
 	if owner != "" {
 		args = append(args, argString("owner", owner))
 	}
@@ -396,6 +412,37 @@ func deriveCopySelection(cp *pb.FileActionCopy) (sourceSubdir string, include []
 		sourceSubdir = "/"
 	}
 	return sourceSubdir, include
+}
+
+func explicitFileCopyPath(cp *pb.FileActionCopy, include []string) (string, bool) {
+	if cp == nil {
+		return "", false
+	}
+	if strings.HasSuffix(cp.Dest, "/") || strings.HasSuffix(cp.Dest, "/.") {
+		return "", false
+	}
+	if len(cp.IncludePatterns) > 0 || len(cp.ExcludePatterns) > 0 {
+		return "", false
+	}
+	if len(include) != 1 {
+		return "", false
+	}
+	inc := path.Clean(include[0])
+	if inc == "." || inc == "/" || strings.HasPrefix(inc, "../") {
+		return "", false
+	}
+	if hasPathWildcard(inc) {
+		return "", false
+	}
+	srcBase := path.Base(cleanPath(cp.Src))
+	if srcBase == "." || srcBase == "/" || hasPathWildcard(srcBase) {
+		return "", false
+	}
+	return strings.TrimPrefix(inc, "/"), true
+}
+
+func hasPathWildcard(p string) bool {
+	return strings.ContainsAny(p, "*?[")
 }
 
 func chownOwnerString(chown *pb.ChownOpt) (string, error) {
