@@ -317,7 +317,7 @@ func TestDefinitionToIDExecNetworkUnsupported(t *testing.T) {
 	require.Contains(t, unsupportedErr.Reason, "network mode")
 }
 
-func TestDefinitionToIDExecSecretUnsupported(t *testing.T) {
+func TestDefinitionToIDExecSecretRequiredMissingMappingUnsupported(t *testing.T) {
 	t.Parallel()
 
 	st := llb.Image("alpine").Run(
@@ -327,7 +327,80 @@ func TestDefinitionToIDExecSecretUnsupported(t *testing.T) {
 
 	_, err := DefinitionToID(marshalStateToPB(t, st), nil)
 	unsupportedErr := requireUnsupported(t, err, "exec")
-	require.Contains(t, unsupportedErr.Reason, "secret")
+	require.Contains(t, unsupportedErr.Reason, "required")
+	require.Contains(t, unsupportedErr.Reason, "no secret mappings")
+}
+
+func TestDefinitionToIDExecSecretMountAndEnv(t *testing.T) {
+	t.Parallel()
+
+	mountPath := "/run/secrets/token"
+	st := llb.Image("alpine").Run(
+		llb.Shlex("echo hello"),
+		llb.AddSecretWithDest("mount-secret", &mountPath, llb.SecretFileOpt(123, 456, 0o440)),
+		llb.AddSecretWithDest("env-secret", nil, llb.SecretAsEnvName("TOKEN")),
+	).Root()
+
+	mountSecretID := fakeSecretID("mount-secret")
+	envSecretID := fakeSecretID("env-secret")
+	id, err := DefinitionToIDWithOptions(
+		marshalStateToPB(t, st),
+		nil,
+		DefinitionToIDOptions{
+			SecretIDsByLLBID: map[string]*call.ID{
+				"mount-secret": mountSecretID,
+				"env-secret":   envSecretID,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	withSecretVariable := findFieldInChain(id, "withSecretVariable")
+	require.NotNil(t, withSecretVariable)
+	require.Equal(t, "TOKEN", withSecretVariable.Arg("name").Value().ToInput())
+	gotEnvSecretID, ok := withSecretVariable.Arg("secret").Value().ToInput().(*call.ID)
+	require.True(t, ok)
+	require.Equal(t, envSecretID.Display(), gotEnvSecretID.Display())
+
+	withMountedSecret := findFieldInChain(id, "withMountedSecret")
+	require.NotNil(t, withMountedSecret)
+	require.Equal(t, mountPath, withMountedSecret.Arg("path").Value().ToInput())
+	require.Equal(t, "123:456", withMountedSecret.Arg("owner").Value().ToInput())
+	require.EqualValues(t, 0o440, withMountedSecret.Arg("mode").Value().ToInput())
+	gotMountedSecretID, ok := withMountedSecret.Arg("source").Value().ToInput().(*call.ID)
+	require.True(t, ok)
+	require.Equal(t, mountSecretID.Display(), gotMountedSecretID.Display())
+
+	withoutMount := findFieldInChain(id, "withoutMount")
+	require.NotNil(t, withoutMount)
+	require.Equal(t, mountPath, withoutMount.Arg("path").Value().ToInput())
+
+	withoutSecretVariable := findFieldInChain(id, "withoutSecretVariable")
+	require.NotNil(t, withoutSecretVariable)
+	require.Equal(t, "TOKEN", withoutSecretVariable.Arg("name").Value().ToInput())
+}
+
+func TestDefinitionToIDExecOptionalSecretsAreSkippedWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	mountPath := "/run/secrets/optional-mount"
+	st := llb.Image("alpine").Run(
+		llb.Shlex("echo hello"),
+		llb.AddSecretWithDest("optional-mount", &mountPath, llb.SecretOptional),
+		llb.AddSecretWithDest("optional-env", nil, llb.SecretAsEnvName("OPTIONAL_SECRET"), llb.SecretOptional),
+	).Root()
+
+	id, err := DefinitionToIDWithOptions(
+		marshalStateToPB(t, st),
+		nil,
+		DefinitionToIDOptions{SecretIDsByLLBID: map[string]*call.ID{}},
+	)
+	require.NoError(t, err)
+
+	require.Nil(t, findFieldInChain(id, "withMountedSecret"))
+	require.Nil(t, findFieldInChain(id, "withSecretVariable"))
+	require.Nil(t, findFieldInChain(id, "withoutMount"))
+	require.Nil(t, findFieldInChain(id, "withoutSecretVariable"))
 }
 
 func TestDefinitionToIDFileCopy(t *testing.T) {
@@ -736,4 +809,8 @@ func rootfsArgFromContainer(t *testing.T, id *call.ID) *call.ID {
 	require.True(t, ok)
 	require.NotNil(t, rootfsID)
 	return rootfsID
+}
+
+func fakeSecretID(name string) *call.ID {
+	return appendCall(call.New(), secretType(), "secret", argString("name", name))
 }

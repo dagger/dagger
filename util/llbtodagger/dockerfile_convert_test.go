@@ -42,6 +42,83 @@ RUN echo hello
 	require.Equal(t, []any{"/bin/sh", "-c", "echo hello"}, withExec.Arg("args").Value().ToInput())
 }
 
+func TestDefinitionToIDDockerfileRunSecretMountAndEnv(t *testing.T) {
+	t.Parallel()
+
+	def, img := dockerfileToDefinition(t, `
+FROM alpine:3.19
+RUN --mount=type=secret,id=my-secret,env=MY_SECRET \
+    --mount=type=secret,id=file-secret,target=/run/secrets/file-secret,uid=123,gid=456,mode=0440 \
+    sh -c 'test -n "$MY_SECRET" && test -f /run/secrets/file-secret'
+`)
+
+	fileSecretID := fakeSecretID("file-secret")
+	envSecretID := fakeSecretID("my-secret")
+	id, err := DefinitionToIDWithOptions(def, img, DefinitionToIDOptions{
+		SecretIDsByLLBID: map[string]*call.ID{
+			"file-secret": fileSecretID,
+			"my-secret":   envSecretID,
+		},
+	})
+	require.NoError(t, err)
+
+	withSecretVariable := findFieldInChain(id, "withSecretVariable")
+	require.NotNil(t, withSecretVariable)
+	require.Equal(t, "MY_SECRET", withSecretVariable.Arg("name").Value().ToInput())
+
+	withMountedSecret := findFieldInChain(id, "withMountedSecret")
+	require.NotNil(t, withMountedSecret)
+	require.Equal(t, "/run/secrets/file-secret", withMountedSecret.Arg("path").Value().ToInput())
+	require.Equal(t, "123:456", withMountedSecret.Arg("owner").Value().ToInput())
+	require.EqualValues(t, 0o440, withMountedSecret.Arg("mode").Value().ToInput())
+
+	withoutSecretVariable := findFieldInChain(id, "withoutSecretVariable")
+	require.NotNil(t, withoutSecretVariable)
+	require.Equal(t, "MY_SECRET", withoutSecretVariable.Arg("name").Value().ToInput())
+
+	withoutMount := findFieldInChain(id, "withoutMount")
+	require.NotNil(t, withoutMount)
+	require.Equal(t, "/run/secrets/file-secret", withoutMount.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDDockerfileRunOptionalSecretsSkippedWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	def, img := dockerfileToDefinition(t, `
+FROM alpine:3.19
+RUN --mount=type=secret,id=missing-env,env=MISSING_ENV \
+    --mount=type=secret,id=missing-file,target=/run/secrets/missing \
+    sh -c 'echo ok'
+`)
+
+	id, err := DefinitionToIDWithOptions(def, img, DefinitionToIDOptions{
+		SecretIDsByLLBID: map[string]*call.ID{},
+	})
+	require.NoError(t, err)
+
+	require.Nil(t, findFieldInChain(id, "withSecretVariable"))
+	require.Nil(t, findFieldInChain(id, "withMountedSecret"))
+	require.Nil(t, findFieldInChain(id, "withoutSecretVariable"))
+	require.Nil(t, findFieldInChain(id, "withoutMount"))
+}
+
+func TestDefinitionToIDDockerfileRunRequiredSecretMissingUnsupported(t *testing.T) {
+	t.Parallel()
+
+	def, img := dockerfileToDefinition(t, `
+FROM alpine:3.19
+RUN --mount=type=secret,id=required-secret,required=true,target=/run/secrets/required \
+    sh -c 'cat /run/secrets/required'
+`)
+
+	_, err := DefinitionToIDWithOptions(def, img, DefinitionToIDOptions{
+		SecretIDsByLLBID: map[string]*call.ID{},
+	})
+	unsupportedErr := requireUnsupported(t, err, "exec")
+	require.Contains(t, unsupportedErr.Reason, "required-secret")
+	require.Contains(t, unsupportedErr.Reason, "required")
+}
+
 func TestDefinitionToIDDockerfileCopyFromContext(t *testing.T) {
 	t.Parallel()
 

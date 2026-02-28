@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -400,6 +401,41 @@ CMD ["cat", "/copied.txt"]
 	require.Equal(t, "non-sticky-bind", strings.TrimSpace(out))
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunSecretMountAndEnv(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	sec := c.SetSecret("my-secret", "barbar")
+	secSDKID, err := sec.ID(ctx)
+	require.NoError(t, err)
+	var secCallID call.ID
+	require.NoError(t, secCallID.Decode(string(secSDKID)))
+
+	contextDir := writeDockerContext(t, nil)
+
+	ctr, _, _ := convertDockerfileToLoadedContainerWithOptions(
+		ctx,
+		t,
+		c,
+		contextDir,
+		`
+FROM `+alpineImage+`
+RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret /mounted
+RUN --mount=type=secret,id=my-secret,required=true,env=MY_SECRET sh -c 'test "$MY_SECRET" = "barbar" && printf "%s" "$MY_SECRET" > /env'
+RUN test ! -e /run/secrets/my-secret
+CMD ["sh", "-c", "cat /mounted && echo && cat /env"]
+`,
+		llbtodagger.DefinitionToIDOptions{
+			SecretIDsByLLBID: map[string]*call.ID{
+				"my-secret": &secCallID,
+			},
+		},
+	)
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "barbar\nbarbar", strings.TrimSpace(out))
+}
+
 func (LLBToDaggerSuite) TestConversionDeterministicEncoding(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -454,7 +490,30 @@ func convertDockerfileToLoadedContainer(
 ) (*dagger.Container, dagger.ContainerID, string) {
 	t.Helper()
 
-	containerID, encoded := convertDockerfileToContainerID(ctx, t, c, contextDir, dockerfile, optFns...)
+	containerID, encoded := convertDockerfileToContainerIDWithOptions(
+		ctx,
+		t,
+		c,
+		contextDir,
+		dockerfile,
+		llbtodagger.DefinitionToIDOptions{},
+		optFns...,
+	)
+	return c.LoadContainerFromID(containerID), containerID, encoded
+}
+
+func convertDockerfileToLoadedContainerWithOptions(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	contextDir string,
+	dockerfile string,
+	idOpts llbtodagger.DefinitionToIDOptions,
+	optFns ...func(*dockerfile2llb.ConvertOpt),
+) (*dagger.Container, dagger.ContainerID, string) {
+	t.Helper()
+
+	containerID, encoded := convertDockerfileToContainerIDWithOptions(ctx, t, c, contextDir, dockerfile, idOpts, optFns...)
 	return c.LoadContainerFromID(containerID), containerID, encoded
 }
 
@@ -468,8 +527,30 @@ func convertDockerfileToContainerID(
 ) (dagger.ContainerID, string) {
 	t.Helper()
 
+	return convertDockerfileToContainerIDWithOptions(
+		ctx,
+		t,
+		c,
+		contextDir,
+		dockerfile,
+		llbtodagger.DefinitionToIDOptions{},
+		optFns...,
+	)
+}
+
+func convertDockerfileToContainerIDWithOptions(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	contextDir string,
+	dockerfile string,
+	idOpts llbtodagger.DefinitionToIDOptions,
+	optFns ...func(*dockerfile2llb.ConvertOpt),
+) (dagger.ContainerID, string) {
+	t.Helper()
+
 	def, img := dockerfileToDefinitionAndImage(ctx, t, contextDir, dockerfile, optFns...)
-	id, err := llbtodagger.DefinitionToID(def, img)
+	id, err := llbtodagger.DefinitionToIDWithOptions(def, img, idOpts)
 	require.NoError(t, err)
 
 	encoded, err := id.Encode()

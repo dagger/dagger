@@ -21,6 +21,11 @@ type DefinitionToIDOptions struct {
 	// MainContextDirectoryID rebinding target for dockerBuild sentinel local
 	// source vertices emitted by Dockerfile2LLB when MainContext is synthetic.
 	MainContextDirectoryID *call.ID
+
+	// SecretIDsByLLBID maps BuildKit LLB secret IDs (for example Dockerfile
+	// secret mount ids) to Dagger Secret IDs used by withSecretVariable /
+	// withMountedSecret conversion.
+	SecretIDsByLLBID map[string]*call.ID
 }
 
 // DefinitionToID converts an LLB definition and image config metadata to a
@@ -64,6 +69,7 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 	conv := converter{
 		memo:                 map[*buildkit.OpDAG]*call.ID{},
 		mainContextDirectory: opts.MainContextDirectoryID,
+		secretIDsByLLBID:     opts.SecretIDsByLLBID,
 	}
 	id, err := conv.convertOp(dag)
 	if err != nil {
@@ -80,6 +86,7 @@ type converter struct {
 	memo map[*buildkit.OpDAG]*call.ID
 
 	mainContextDirectory *call.ID
+	secretIDsByLLBID     map[string]*call.ID
 }
 
 func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {
@@ -373,6 +380,7 @@ func hostType() *ast.Type               { return nonNullType("Host") }
 func gitRepoType() *ast.Type            { return nonNullType("GitRepository") }
 func gitRefType() *ast.Type             { return nonNullType("GitRef") }
 func cacheVolumeType() *ast.Type        { return nonNullType("CacheVolume") }
+func secretType() *ast.Type             { return nonNullType("Secret") }
 
 func argString(name, val string) *call.Argument {
 	return call.NewArgument(name, call.NewLiteralString(val), false)

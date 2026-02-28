@@ -21,9 +21,6 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	if exec.Security != pb.SecurityMode_SANDBOX {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "non-default security mode is unsupported")
 	}
-	if len(exec.Secretenv) > 0 {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "secret environment variables are unsupported")
-	}
 	if exec.Meta == nil {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec meta")
 	}
@@ -89,6 +86,32 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 		ctrID = appendCall(ctrID, containerType(), "withRootfs", argID("directory", rootDirID))
 	}
 
+	addedMountPaths := make([]string, 0, len(exec.Mounts))
+	addedMountPathSet := map[string]struct{}{}
+	addedSecretEnvNames := make([]string, 0, len(exec.Secretenv))
+	addedSecretEnvSet := map[string]struct{}{}
+
+	for _, secretEnv := range exec.Secretenv {
+		secretID, include, err := c.resolveSecretID(opDigest(exec.OpDAG), secretEnv.ID, secretEnv.Optional)
+		if err != nil {
+			return nil, err
+		}
+		if !include {
+			continue
+		}
+		ctrID = appendCall(
+			ctrID,
+			containerType(),
+			"withSecretVariable",
+			argString("name", secretEnv.Name),
+			argID("secret", secretID),
+		)
+		if _, exists := addedSecretEnvSet[secretEnv.Name]; !exists {
+			addedSecretEnvSet[secretEnv.Name] = struct{}{}
+			addedSecretEnvNames = append(addedSecretEnvNames, secretEnv.Name)
+		}
+	}
+
 	for _, m := range exec.Mounts {
 		if m == rootMount {
 			continue
@@ -119,6 +142,11 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 				"withMountedDirectory",
 				args...,
 			)
+			path := cleanPath(m.Dest)
+			if _, exists := addedMountPathSet[path]; !exists {
+				addedMountPathSet[path] = struct{}{}
+				addedMountPaths = append(addedMountPaths, path)
+			}
 
 		case pb.MountType_CACHE:
 			if m.CacheOpt == nil || m.CacheOpt.ID == "" {
@@ -142,6 +170,11 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 				args = append(args, argID("source", sourceDirID))
 			}
 			ctrID = appendCall(ctrID, containerType(), "withMountedCache", args...)
+			path := cleanPath(m.Dest)
+			if _, exists := addedMountPathSet[path]; !exists {
+				addedMountPathSet[path] = struct{}{}
+				addedMountPaths = append(addedMountPaths, path)
+			}
 
 		case pb.MountType_TMPFS:
 			args := []*call.Argument{argString("path", m.Dest)}
@@ -149,9 +182,37 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 				args = append(args, argInt("size", m.TmpfsOpt.Size_))
 			}
 			ctrID = appendCall(ctrID, containerType(), "withMountedTemp", args...)
+			path := cleanPath(m.Dest)
+			if _, exists := addedMountPathSet[path]; !exists {
+				addedMountPathSet[path] = struct{}{}
+				addedMountPaths = append(addedMountPaths, path)
+			}
 
 		case pb.MountType_SECRET:
-			return nil, unsupported(opDigest(exec.OpDAG), "exec", "secret mounts are unsupported")
+			if m.SecretOpt == nil {
+				return nil, unsupported(opDigest(exec.OpDAG), "exec", "secret mount is missing secret options")
+			}
+			secretID, include, err := c.resolveSecretID(opDigest(exec.OpDAG), m.SecretOpt.ID, m.SecretOpt.Optional)
+			if err != nil {
+				return nil, err
+			}
+			if !include {
+				continue
+			}
+			ctrID = appendCall(
+				ctrID,
+				containerType(),
+				"withMountedSecret",
+				argString("path", m.Dest),
+				argID("source", secretID),
+				argString("owner", fmt.Sprintf("%d:%d", m.SecretOpt.Uid, m.SecretOpt.Gid)),
+				argInt("mode", int64(m.SecretOpt.Mode)),
+			)
+			path := cleanPath(m.Dest)
+			if _, exists := addedMountPathSet[path]; !exists {
+				addedMountPathSet[path] = struct{}{}
+				addedMountPaths = append(addedMountPaths, path)
+			}
 		case pb.MountType_SSH:
 			return nil, unsupported(opDigest(exec.OpDAG), "exec", "ssh mounts are unsupported")
 		default:
@@ -188,24 +249,44 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	}
 	if outMount.Dest == "/" {
 		cleanedID := withExecID
-		seen := map[string]struct{}{}
-		for _, m := range exec.Mounts {
-			if m == nil || m == rootMount {
-				continue
-			}
-			path := cleanPath(m.Dest)
+		for _, path := range addedMountPaths {
 			if path == "/" {
 				continue
 			}
-			if _, exists := seen[path]; exists {
-				continue
-			}
-			seen[path] = struct{}{}
 			cleanedID = appendCall(cleanedID, containerType(), "withoutMount", argString("path", path))
+		}
+		for _, name := range addedSecretEnvNames {
+			cleanedID = appendCall(cleanedID, containerType(), "withoutSecretVariable", argString("name", name))
 		}
 		return cleanedID, nil
 	}
 	return appendCall(withExecID, directoryType(), "directory", argString("path", outMount.Dest)), nil
+}
+
+func (c *converter) resolveSecretID(opDgst digest.Digest, llbSecretID string, optional bool) (*call.ID, bool, error) {
+	if llbSecretID == "" {
+		if optional {
+			return nil, false, nil
+		}
+		return nil, false, unsupported(opDgst, "exec", "secret id is empty")
+	}
+
+	secretID, ok := c.secretIDsByLLBID[llbSecretID]
+	if ok && secretID != nil {
+		if secretID.Type().NamedType() != secretType().NamedType {
+			return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("mapped secret %q has non-Secret type %q", llbSecretID, secretID.Type().NamedType()))
+		}
+		return secretID, true, nil
+	}
+
+	if optional {
+		return nil, false, nil
+	}
+
+	if len(c.secretIDsByLLBID) == 0 {
+		return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("secret %q is required but no secret mappings were provided", llbSecretID))
+	}
+	return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("secret %q is required but was not provided", llbSecretID))
 }
 
 func findRootExecMount(mounts []*pb.Mount) (*pb.Mount, error) {
