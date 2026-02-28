@@ -482,42 +482,6 @@ Last updated: 2026-02-28
   - [x] Keep SSH unsupported entry in place until SSH phase lands.
   - [x] Update `Current Explicit Unsupported Cases` and nuanced catalogs accordingly.
 
-### Phase 20: Syntax Pragma Relaxation (Quick Win Before Phase 19)
-- Goal:
-  - Make dockerBuild cutover path laxer for Dockerfile syntax pragmas.
-  - Allow known Dockerfile syntax pragma values and ignore them (continue conversion/build normally).
-  - Fail fast only when pragma specifies an unknown/unsupported frontend reference.
-- Scope:
-  - In scope: `#syntax=...` handling in `core.Container.Build` preflight checks around Dockerfile bytes.
-  - Out of scope: actually delegating to remote frontends or supporting non-Dockerfile frontend behavior.
-
-- Design checklist:
-  - [ ] Replace current blanket hard-error on detected syntax pragma with allowlist behavior.
-  - [ ] Define "known Dockerfile syntax pragma" matcher.
-    - [ ] Accept canonical Dockerfile frontend references we explicitly recognize (for example Docker/Moby Dockerfile frontend refs).
-    - [ ] Treat pinned tag/digest variants of recognized Dockerfile frontends as allowed.
-  - [ ] On allowed syntax pragma, do not alter conversion flow:
-    - [ ] Continue using local `dockerfile2llb` + llbtodagger conversion path.
-    - [ ] Do not fetch or dispatch remote frontend.
-  - [ ] On unknown syntax pragma:
-    - [ ] Return explicit error that includes the pragma value and states it's unsupported in cutover mode.
-  - [ ] Keep behavior deterministic and obvious in logs/errors (no silent fallback beyond allowed-ignore path).
-
-- Test checklist:
-  - [ ] Unit/functional coverage around syntax detection helper:
-    - [ ] known Dockerfile syntax pragma -> allowed
-    - [ ] unknown syntax pragma -> explicit error
-  - [ ] Integration coverage (`core/integration/dockerfile_test.go`):
-    - [ ] `with_syntax_pragma` passes on cutover path.
-    - [ ] `with_old_syntax_pragma` passes on cutover path.
-    - [ ] Add/keep a negative case for unknown syntax pragma that still errors clearly.
-  - [ ] Validation command shape:
-    - [ ] Follow `skills/cache-expert/references/debugging.md` command conventions.
-
-- Post-landing bookkeeping:
-  - [ ] Remove syntax-pragma item from current unsupported catalog.
-  - [ ] Update related historical notes in this whiteboard to reflect the new allowed-ignore policy.
-
 ### Phase 19: SSH Socket Mount Support (dockerBuild Cutover)
 - Goal:
   - Support Dockerfile/LLB SSH socket mount semantics (`RUN --mount=type=ssh`) in hard-cutover `dockerBuild` through llbtodagger conversion.
@@ -571,7 +535,48 @@ Last updated: 2026-02-28
   - Converter now supports `MountType_SSH` via `withUnixSocket` + `withoutUnixSocket` cleanup.
   - dockerBuild hard-cutover path now passes SSH socket mappings into llbtodagger and supports Dockerfile `RUN --mount=type=ssh`.
   - Empty-key SSH mapping fallback allows one provided dockerBuild SSH socket to satisfy default or named SSH IDs (matching legacy translator behavior).
-  - Remote syntax frontend behavior remains pending Phase 20 (known/allowed pragmas still to be relaxed there).
+  - Remote syntax frontend behavior for known Dockerfile pragmas is now handled in Phase 20.
+
+### Phase 20: Syntax Pragma Relaxation
+- Goal:
+  - Make dockerBuild cutover path laxer for Dockerfile syntax pragmas.
+  - Allow known Dockerfile syntax pragma values and ignore them (continue conversion/build normally).
+  - Fail fast only when pragma specifies an unknown/unsupported frontend reference.
+- Scope:
+  - In scope: `#syntax=...` handling in `core.Container.Build` preflight checks around Dockerfile bytes.
+  - Out of scope: actually delegating to remote frontends or supporting non-Dockerfile frontend behavior.
+
+- Design checklist:
+  - [x] Replace current blanket hard-error on detected syntax pragma with allowlist behavior.
+  - [x] Define "known Dockerfile syntax pragma" matcher.
+    - [x] Accept canonical Dockerfile frontend references we explicitly recognize (Docker/Moby Dockerfile frontend refs).
+    - [x] Treat pinned tag/digest variants of recognized Dockerfile frontends as allowed.
+  - [x] On allowed syntax pragma, do not alter conversion flow:
+    - [x] Continue using local `dockerfile2llb` + llbtodagger conversion path.
+    - [x] Do not fetch or dispatch remote frontend.
+  - [x] On unknown syntax pragma:
+    - [x] Return explicit error that includes the pragma value and states it's unsupported in cutover mode.
+  - [x] Keep behavior deterministic and obvious in logs/errors (no silent fallback beyond allowed-ignore path).
+
+- Test checklist:
+  - [x] Unit/functional coverage around syntax detection helper:
+    - [x] known Dockerfile syntax pragma -> allowed
+    - [x] unknown syntax pragma -> explicit error
+  - [x] Integration coverage (`core/integration/dockerfile_test.go`):
+    - [x] `with_syntax_pragma` passes on cutover path.
+    - [x] `with_old_syntax_pragma` passes on cutover path.
+    - [x] Add/keep a negative case for unknown syntax pragma that still errors clearly.
+  - [x] Validation command shape:
+    - [x] Follow `skills/cache-expert/references/debugging.md` command conventions.
+
+- Completion notes:
+  - Known Dockerfile syntax pragmas (for example `docker/dockerfile:*`) are now accepted and ignored by the hard-cutover path.
+  - Unknown syntax pragmas now fail with explicit unsupported-frontend errors.
+  - Existing syntax pragma integration coverage is passing again, including SSH remote-frontend subtests that use Dockerfile syntax pragma.
+
+- Post-landing bookkeeping:
+  - [x] Remove syntax-pragma item from current unsupported catalog.
+  - [x] Update related historical notes in this whiteboard to reflect the new allowed-ignore policy.
 
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
@@ -665,8 +670,6 @@ Last updated: 2026-02-28
 - Platform `OSVersion` and `OSFeatures` are unsupported.
 
 - `ArgsEscaped` on Windows images is unsupported.
-
-- Dockerfile remote frontend syntax pragma behavior (`#syntax=...`) is not supported in current cutover path (planned to relax in Phase 20).
 
 ### Unsupported but outside Dockerfile instruction support (or malformed/non-canonical LLB)
 - Synthetic root op with more than one input is rejected.

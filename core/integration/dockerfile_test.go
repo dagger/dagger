@@ -88,6 +88,22 @@ CMD goenv
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
+	t.Run("with unknown syntax pragma", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.
+			WithNewFile("Dockerfile",
+				`# syntax = example.com/custom/dockerfile:1
+FROM `+golangImage+`
+WORKDIR /src
+COPY main.go .
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`)
+		_, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, `syntax frontend "example.com/custom/dockerfile:1" is unsupported`)
+	})
+
 	t.Run("custom Dockerfile location", func(ctx context.Context, t *testctx.T) {
 		dir := baseDir.
 			WithNewFile("subdir/Dockerfile.whee",
@@ -512,9 +528,8 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 				"sock": sockID,
 			},
 		})
-		require.Error(t, err)
-		requireErrOut(t, err, "remote syntax frontend")
-		require.Zero(t, res)
+		require.NoError(t, err)
+		require.Equal(t, "hello", res.LoadDirectoryFromID.DockerBuild.File.Contents)
 	})
 
 	t.Run("without ssh socket fails", func(ctx context.Context, t *testctx.T) {
