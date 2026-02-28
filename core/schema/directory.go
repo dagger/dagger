@@ -435,6 +435,9 @@ type WithDirectoryArgs struct {
 	Permissions dagql.Optional[dagql.Int]
 	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
 	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, withDirectory errors
+	// if the requested source path does not exist.
+	RequiredSourcePath string `internal:"true" default:""`
 
 	Source    core.DirectoryID
 	Directory core.DirectoryID // legacy, use Source instead
@@ -482,7 +485,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner, perms, args.DoNotCreateDestPath)
+	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner, perms, args.DoNotCreateDestPath, args.RequiredSourcePath)
 	if err != nil {
 		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
 	}
@@ -507,7 +510,7 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 		Dir:      parent.Self().Dir,
 	}
 
-	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil, false)
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil, false, "")
 	if err != nil {
 		return inst, fmt.Errorf("failed to filter: %w", err)
 	}

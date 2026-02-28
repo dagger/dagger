@@ -401,9 +401,10 @@ Last updated: 2026-02-28
   - `go test ./util/llbtodagger ./core ./core/schema` -> pass.
   - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild/default_Dockerfile_location'` -> pass.
   - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild/(custom_Dockerfile_location|subdirectory_with_default_Dockerfile_location|subdirectory_with_custom_Dockerfile_location)'` -> pass.
-  - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild'` -> fail (expected+known unsupported plus one newly surfaced metadata issue):
+  - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild'` -> fail (expected+known unsupported plus one newly surfaced copy-semantics issue):
     - expected unsupported: ssh mounts, secret mounts, remote syntax pragma, builtin secret-mount exec path.
-    - newly surfaced non-context issue: `onbuild_command_is_published` currently fails with missing required argument `shell` in internal `__withImageConfigMetadata` call.
+    - newly surfaced non-context issue (resolved): `onbuild_command_is_published` exposed COPY source-missing behavior mismatch (include-filter no-op vs BuildKit error).
+  - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild/onbuild_command_is_published'` -> pass after strict source-path existence wiring (`requiredSourcePath` internal arg on `withDirectory` path).
 
 - Follow-up tie-in (future branch):
   - This phase is the prerequisite for removing `Directory.State()` usage from dockerBuild path in the branch where LLB is no longer a general Dagger runtime dependency.
@@ -439,9 +440,9 @@ Last updated: 2026-02-28
 - Image config nuance:
   - `Config.ArgsEscaped` is ignored on non-Windows images (no Dagger API equivalent needed for Linux behavior).
   - `Config.ArgsEscaped` on Windows images is still unsupported and returns error.
-- Internal image-config metadata call nuance:
-  - `TestDockerfile/TestDockerBuild/onbuild_command_is_published` currently fails due missing required `shell` argument in `__withImageConfigMetadata` path.
-  - This is separate from the Phase 17 context-rebinding problem and should be handled as a metadata API/mapper follow-up.
+- COPY semantics nuance (resolved):
+  - `TestDockerfile/TestDockerBuild/onbuild_command_is_published` failed because file-op COPY lowered to `withDirectory(include: [...])` silently no-oped when source was missing.
+  - Added internal `requiredSourcePath` propagation to enforce BuildKit-like missing-source error for literal single-path COPY cases.
 
 ## Current Explicit Unsupported Cases (Implemented)
 - All `BuildOp` vertices.

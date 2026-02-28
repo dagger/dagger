@@ -690,6 +690,7 @@ func (dir *Directory) WithDirectory(
 	owner string,
 	permissions *int,
 	doNotCreateDestPath bool,
+	requiredSourcePath string,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -722,6 +723,11 @@ func (dir *Directory) WithDirectory(
 	srcRef, err := getRefOrEvaluate(ctx, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
+	}
+	if requiredSourcePath != "" {
+		if err := ensureRequiredCopySourcePathExists(ctx, srcRef, src.Dir, requiredSourcePath); err != nil {
+			return nil, err
+		}
 	}
 
 	canDoDirectMerge :=
@@ -980,6 +986,34 @@ func isDir(path string) (bool, error) {
 		return false, err
 	}
 	return fi.Mode().IsDir(), nil
+}
+
+func ensureRequiredCopySourcePathExists(ctx context.Context, srcRef bkcache.ImmutableRef, srcDir string, requiredSourcePath string) error {
+	requiredSourcePath = strings.TrimPrefix(path.Clean(requiredSourcePath), "/")
+	requiredDisplayPath := "/" + requiredSourcePath
+	if requiredSourcePath == "" || requiredSourcePath == "." {
+		requiredSourcePath = ""
+		requiredDisplayPath = "/"
+	}
+	if srcRef == nil {
+		return fmt.Errorf("%q: not found", requiredDisplayPath)
+	}
+
+	return MountRef(ctx, srcRef, nil, func(root string, _ *mount.Mount) error {
+		resolvedSrcDir, err := containerdfs.RootPath(root, path.Clean(srcDir))
+		if err != nil {
+			return err
+		}
+		resolvedRequiredPath, err := containerdfs.RootPath(resolvedSrcDir, requiredSourcePath)
+		if err != nil {
+			return err
+		}
+		_, err = os.Lstat(resolvedRequiredPath)
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%q: not found", requiredDisplayPath)
+		}
+		return TrimErrPathPrefix(err, root)
+	})
 }
 
 func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRef, destPath string) error {

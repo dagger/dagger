@@ -1464,9 +1464,9 @@ func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent *cor
 
 type containerWithImageConfigMetadataArgs struct {
 	Healthcheck string `default:""`
-	OnBuild     []string
-	Shell       []string
-	Volumes     []string
+	OnBuild     dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Shell       dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Volumes     dagql.Optional[dagql.ArrayInput[dagql.String]]
 	StopSignal  string `default:""`
 }
 
@@ -1483,16 +1483,24 @@ func (s *containerSchema) withImageConfigMetadata(ctx context.Context, parent *c
 		if args.Healthcheck != "" {
 			cfg.Healthcheck = healthcheck
 		}
-		if args.OnBuild != nil {
-			cfg.OnBuild = slices.Clone(args.OnBuild)
+		if args.OnBuild.Valid {
+			onBuild := make([]string, 0, len(args.OnBuild.Value))
+			for _, trigger := range args.OnBuild.Value {
+				onBuild = append(onBuild, trigger.String())
+			}
+			cfg.OnBuild = onBuild
 		}
-		if args.Shell != nil {
-			cfg.Shell = slices.Clone(args.Shell)
+		if args.Shell.Valid {
+			shellArgs := make([]string, 0, len(args.Shell.Value))
+			for _, shellArg := range args.Shell.Value {
+				shellArgs = append(shellArgs, shellArg.String())
+			}
+			cfg.Shell = shellArgs
 		}
-		if args.Volumes != nil {
-			volumes := make(map[string]struct{}, len(args.Volumes))
-			for _, volumePath := range args.Volumes {
-				volumes[volumePath] = struct{}{}
+		if args.Volumes.Valid {
+			volumes := make(map[string]struct{}, len(args.Volumes.Value))
+			for _, volumePath := range args.Volumes.Value {
+				volumes[volumePath.String()] = struct{}{}
 			}
 			cfg.Volumes = volumes
 		}
@@ -1994,7 +2002,7 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		perms = &p
 	}
 
-	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner, perms, args.DoNotCreateDestPath)
+	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner, perms, args.DoNotCreateDestPath, args.RequiredSourcePath)
 }
 
 type containerWithFileArgs struct {
