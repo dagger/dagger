@@ -3115,6 +3115,26 @@ func extractToolchainModules(mod *core.Module) []*core.Module {
 	return toolchainMods
 }
 
+// nameMatches checks if a pattern matches any of the given names.
+// Names are normalized by lowercasing and stripping hyphens and underscores,
+// so camelCase, kebab-case, and snake_case all match each other.
+// The pattern supports glob syntax (e.g. "*", "greet*").
+func nameMatches(pattern string, names ...string) bool {
+	norm := func(s string) string {
+		s = strings.ToLower(s)
+		s = strings.ReplaceAll(s, "-", "")
+		s = strings.ReplaceAll(s, "_", "")
+		return s
+	}
+	p := norm(pattern)
+	for _, name := range names {
+		if matched, err := filepath.Match(p, norm(name)); err == nil && matched {
+			return true
+		}
+	}
+	return false
+}
+
 // applyArgumentConfigToFunction applies argument configuration overrides to a function
 func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.ModuleConfigArgument, functionChain []string) *core.Function {
 	fn = fn.Clone()
@@ -3126,13 +3146,13 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 		if len(argCfg.Function) == 0 && len(functionChain) == 0 {
 			// This is for the constructor
 		} else if len(argCfg.Function) > 0 && len(functionChain) > 0 {
-			// Check if function chains match
+			// Check if function chains match (supports glob patterns)
 			if len(argCfg.Function) != len(functionChain) {
 				continue
 			}
 			match := true
-			for i, fnName := range argCfg.Function {
-				if !strings.EqualFold(fnName, functionChain[i]) {
+			for i, pattern := range argCfg.Function {
+				if !nameMatches(pattern, functionChain[i]) {
 					match = false
 					break
 				}
@@ -3147,7 +3167,7 @@ func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.Modu
 
 		// Find the matching argument and apply overrides
 		for _, arg := range fn.Args {
-			if strings.EqualFold(arg.Name, argCfg.Argument) || strings.EqualFold(arg.OriginalName, argCfg.Argument) {
+			if nameMatches(argCfg.Argument, arg.Name, arg.OriginalName) {
 				// Apply default value if specified
 				if argCfg.Default != "" {
 					// Parse the default value as JSON to determine its type
