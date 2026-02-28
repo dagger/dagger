@@ -13,9 +13,10 @@ import (
 )
 
 type PackageInfo struct {
-	PackageName      string // Go package name, typically "main"
-	PackageImport    string // import path of package in which this file appears
-	UtilityPkgImport string // import path of the utility package "telemetry" and "querybuilder"
+	PackageName       string // Go package name, typically "main"
+	PackageImport     string // import path of package in which this file appears
+	UtilityPkgImport  string // import path of the utility package "telemetry" and "querybuilder"
+	DaggerPkgReplaced bool   // True `dagger.io/dagger` is replaced.
 }
 
 func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.Package, _ *token.FileSet, rerr error) {
