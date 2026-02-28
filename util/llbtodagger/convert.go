@@ -15,16 +15,29 @@ import (
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 )
 
+// DefinitionToIDOptions controls optional conversion behavior for specific
+// callsites (for example dockerBuild context rebinding).
+type DefinitionToIDOptions struct {
+	// MainContextDirectoryID rebinding target for dockerBuild sentinel local
+	// source vertices emitted by Dockerfile2LLB when MainContext is synthetic.
+	MainContextDirectoryID *call.ID
+}
+
 // DefinitionToID converts an LLB definition and image config metadata to a
 // Dagger Container ID.
 //
 // The conversion is strict and fail-fast: if any part of the definition cannot
 // be represented faithfully as Dagger API calls, an error is returned.
 func DefinitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage) (*call.ID, error) {
-	return definitionToID(def, img)
+	return definitionToID(def, img, DefinitionToIDOptions{})
 }
 
-func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage) (*call.ID, error) {
+// DefinitionToIDWithOptions is DefinitionToID with optional conversion controls.
+func DefinitionToIDWithOptions(def *pb.Definition, img *dockerspec.DockerOCIImage, opts DefinitionToIDOptions) (*call.ID, error) {
+	return definitionToID(def, img, opts)
+}
+
+func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts DefinitionToIDOptions) (*call.ID, error) {
 	if def == nil || len(def.Def) == 0 {
 		return applyDockerImageConfig(scratchContainerID(), img)
 	}
@@ -48,7 +61,10 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage) (*call.I
 		}
 	}
 
-	conv := converter{memo: map[*buildkit.OpDAG]*call.ID{}}
+	conv := converter{
+		memo:                 map[*buildkit.OpDAG]*call.ID{},
+		mainContextDirectory: opts.MainContextDirectoryID,
+	}
 	id, err := conv.convertOp(dag)
 	if err != nil {
 		return nil, err
@@ -62,6 +78,8 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage) (*call.I
 
 type converter struct {
 	memo map[*buildkit.OpDAG]*call.ID
+
+	mainContextDirectory *call.ID
 }
 
 func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {

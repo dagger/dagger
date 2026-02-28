@@ -987,7 +987,7 @@ func (s *containerSchema) build(ctx context.Context, parent dagql.ObjectResult[*
 	return parent.Self().Build(
 		ctx,
 		dir.Self(),
-		buildctxDir.Self(),
+		buildctxDir.ID(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,

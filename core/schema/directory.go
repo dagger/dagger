@@ -1418,7 +1418,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 	return ctr.Build(
 		ctx,
 		parent.Self(),
-		buildctxDir.Self(),
+		buildctxDir.ID(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,

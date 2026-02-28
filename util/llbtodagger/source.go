@@ -15,6 +15,24 @@ import (
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 )
 
+const (
+	// DockerfileMainContextSentinelLocalName is the deterministic local source
+	// name used when dockerBuild injects a synthetic Dockerfile2LLB MainContext.
+	DockerfileMainContextSentinelLocalName = "__dagger_dockerbuild_main_context_sentinel__"
+	// DockerfileMainContextSentinelSharedKeyHint pairs with
+	// DockerfileMainContextSentinelLocalName to avoid accidental matches.
+	DockerfileMainContextSentinelSharedKeyHint = "__dagger_dockerbuild_main_context_sentinel__"
+)
+
+// DockerfileMainContextSentinelState returns the synthetic MainContext state
+// used by dockerBuild before llbtodagger rebinding.
+func DockerfileMainContextSentinelState() llb.State {
+	return llb.Local(
+		DockerfileMainContextSentinelLocalName,
+		llb.SharedKeyHint(DockerfileMainContextSentinelSharedKeyHint),
+	)
+}
+
 func (c *converter) convertImageSource(op *buildkit.ImageOp) (*call.ID, error) {
 	ref, err := sourceIdentifierWithoutScheme(op.SourceOp.Identifier, srctypes.DockerImageScheme)
 	if err != nil {
@@ -101,6 +119,16 @@ func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
 	}
 
 	attrs := op.SourceOp.Attrs
+	if isDockerfileMainContextSentinel(name, attrs) {
+		if c.mainContextDirectory == nil {
+			return nil, unsupported(opDigest(op.OpDAG), "source(local)", "dockerBuild main-context sentinel requires a context directory rebinding input")
+		}
+		if c.mainContextDirectory.Type().NamedType() != directoryType().NamedType {
+			return nil, unsupported(opDigest(op.OpDAG), "source(local)", fmt.Sprintf("dockerBuild main-context rebinding type %q is not Directory", c.mainContextDirectory.Type().NamedType()))
+		}
+		return c.mainContextDirectory, nil
+	}
+
 	sourcePath := attrs[pb.AttrSharedKeyHint]
 	if sourcePath == "" {
 		sourcePath = name
@@ -148,6 +176,13 @@ func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
 		args = append(args, argStringList("exclude", excludePatterns))
 	}
 	return appendCall(hostID, directoryType(), "directory", args...), nil
+}
+
+func isDockerfileMainContextSentinel(name string, attrs map[string]string) bool {
+	if name != DockerfileMainContextSentinelLocalName {
+		return false
+	}
+	return attrs[pb.AttrSharedKeyHint] == DockerfileMainContextSentinelSharedKeyHint
 }
 
 func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
