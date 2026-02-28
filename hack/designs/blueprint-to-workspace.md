@@ -259,3 +259,8 @@ helpers for parsing legacy configs are in `core/workspace/legacy.go`. Follow the
   blueprint/toolchain modules that rely on `+defaultPath` resolving from the project context
   get `legacy-default-path = true` set during migration. New modules use the workspace API.
   `ContextSource` is removed entirely.
+- **Duplicate module-name conflict between workspace and implicit CWD load paths:** Solved
+  by canonical module identity comparison in `engine/server/session.go`, based on resolved
+  source code location (`contextDirectoryPath + sourceSubpath`) instead of only source-root
+  reference strings. This avoids false conflicts when the same module is reached via both
+  workspace root and `.dagger/modules/<name>` paths.

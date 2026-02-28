@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
@@ -111,5 +112,41 @@ func TestResolveWorkspaceModuleLookup(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, pin)
 		require.Equal(t, workspace.PolicyFloat, policy)
+	})
+}
+
+func TestIsSameModuleReference(t *testing.T) {
+	t.Parallel()
+
+	local := func(contextPath, rootSubpath, sourceSubpath string) *core.ModuleSource {
+		return &core.ModuleSource{
+			Kind:              core.ModuleSourceKindLocal,
+			Local:             &core.LocalModuleSource{ContextDirectoryPath: contextPath},
+			SourceRootSubpath: rootSubpath,
+			SourceSubpath:     sourceSubpath,
+		}
+	}
+
+	t.Run("same local source root and pin", func(t *testing.T) {
+		t.Parallel()
+		a := local("/work/mod", ".", ".")
+		b := local("/work/mod", ".", ".")
+		require.True(t, isSameModuleReference(a, b))
+	})
+
+	t.Run("different local source", func(t *testing.T) {
+		t.Parallel()
+		a := local("/work/mod-a", ".", ".")
+		b := local("/work/mod-b", ".", ".")
+		require.False(t, isSameModuleReference(a, b))
+	})
+
+	t.Run("same module through different local refs", func(t *testing.T) {
+		t.Parallel()
+		// a points at the workspace root where dagger.json has sourceSubpath
+		// ".dagger/modules/dagger-dev". b points directly at that module dir.
+		a := local("/root/src/dagger", ".", ".dagger/modules/dagger-dev")
+		b := local("/root/src/dagger/.dagger/modules/dagger-dev", ".", ".")
+		require.True(t, isSameModuleReference(a, b))
 	})
 }

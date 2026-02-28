@@ -1451,12 +1451,31 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 		return true
 	}
 
-	// If they are do not have the same reference nor same pin, they cannot be the same.
-	if a.AsString() != b.AsString() || a.Pin() != b.Pin() {
+	// Match by canonical module identity:
+	// - local: absolute source-code path (context dir + sourceSubpath)
+	// - git: clone ref + sourceSubpath
+	// plus pin equality for immutable provenance.
+	if canonicalModuleReference(a) != canonicalModuleReference(b) {
 		return false
 	}
+	return a.Pin() == b.Pin()
+}
 
-	return true
+func canonicalModuleReference(src *core.ModuleSource) string {
+	sourceSubpath := src.SourceSubpath
+	if sourceSubpath == "" {
+		sourceSubpath = src.SourceRootSubpath
+	}
+
+	switch src.Kind {
+	case core.ModuleSourceKindLocal:
+		return filepath.Clean(filepath.Join(src.Local.ContextDirectoryPath, sourceSubpath))
+	case core.ModuleSourceKindGit:
+		return core.GitRefString(src.Git.CloneRef, sourceSubpath, "")
+	default:
+		// Fallback for non-local/non-git sources.
+		return src.AsString()
+	}
 }
 
 // ensureWorkspaceLoaded detects the workspace from the client's working directory
