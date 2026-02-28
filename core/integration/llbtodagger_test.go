@@ -192,6 +192,49 @@ CMD ["/final/out.txt"]
 	require.True(t, portSet["8090/TCP"])
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunMountReadonly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, map[string]string{
+		"mounted.txt": "readonly-bind-data",
+	})
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+# syntax=docker/dockerfile:1.7
+FROM `+alpineImage+`
+RUN --mount=type=bind,source=.,target=/mnt,readonly sh -lc 'if touch /mnt/should-fail 2>/dev/null; then echo writable > /mount-mode.txt; else echo readonly > /mount-mode.txt; fi; cat /mnt/mounted.txt > /copied.txt'
+CMD ["cat", "/copied.txt"]
+`)
+
+	mode, err := ctr.File("/mount-mode.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "readonly", strings.TrimSpace(mode))
+
+	copied, err := ctr.File("/copied.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "readonly-bind-data", strings.TrimSpace(copied))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunMountNonSticky(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, map[string]string{
+		"ctx.txt": "non-sticky-bind",
+	})
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+# syntax=docker/dockerfile:1.7
+FROM `+alpineImage+`
+RUN --mount=type=bind,source=.,target=/mnt,readonly sh -lc 'cat /mnt/ctx.txt > /copied.txt'
+RUN test ! -e /mnt/ctx.txt
+CMD ["cat", "/copied.txt"]
+`)
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "non-sticky-bind", strings.TrimSpace(out))
+}
+
 func (LLBToDaggerSuite) TestConversionDeterministicEncoding(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

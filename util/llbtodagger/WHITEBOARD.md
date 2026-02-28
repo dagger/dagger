@@ -50,6 +50,7 @@ Last updated: 2026-02-28
 - [x] Updated converter/tests so final IDs are container-typed for Docker-build-derived outputs.
 - [x] Updated converter/tests so Dockerfile metadata is applied via image-config input where representable.
 - [x] Added `core/integration` end-to-end suite validating Dockerfile -> dockerfile2llb -> DefinitionToID -> LoadContainerFromID execution path.
+- [x] Added readonly bind-mount support + non-sticky exec mount cleanup semantics for converted `ExecOp` mount handling.
 
 ## Proposed Library Shape (Planning Draft)
 - Public entrypoint (exact naming TBD):
@@ -185,6 +186,31 @@ Last updated: 2026-02-28
   - [x] Required command: `dagger -y call -m ./toolchains/go-sdk-dev generate`
 - [x] Update unsupported catalogs/checklists to remove `copy mode override` once implemented.
 
+### Phase 11: Read-Only Bind Mount Support + Non-Sticky Exec Mount Semantics
+- [x] Extend container API for read-only directory mounts.
+  - [x] Add optional `readOnly` (or `readonly`, schema-consistent naming) argument to `Container.withMountedDirectory`.
+  - [x] Thread arg through schema -> core `WithMountedDirectory(..., readonly bool)` call.
+  - [x] Regenerate Go SDK after schema change (`dagger -y call -m ./toolchains/go-sdk-dev generate`; use `--workspace=.` in this worktree if needed).
+- [x] Update llbtodagger `ExecOp` bind-mount conversion for read-only mounts.
+  - [x] Remove fail-fast rejection for `m.Readonly` bind mounts.
+  - [x] Map `pb.Mount{MountType=BIND, Readonly=true}` to `withMountedDirectory(..., readOnly: true)`.
+- [x] Enforce BuildKit-style mount lifetime semantics in converter output.
+  - [x] Ensure mounts introduced for an `ExecOp` do not leak/stick into subsequent execs.
+  - [x] Add `withoutMount(path: ...)` cleanup in the generated chain where needed so post-exec state matches BuildKit behavior.
+  - [x] Keep ordering deterministic (mount application, exec, cleanup, and output projection ordering).
+- [x] Add/adjust unit tests in `util/llbtodagger`.
+  - [x] Replace readonly-bind "unsupported" expectation with positive mapping assertions.
+  - [x] Add a multi-exec synthetic LLB test that fails if mount stickiness leaks across exec boundaries.
+  - [x] Assert generated ID chain contains expected `withMountedDirectory` + cleanup structure for sticky/non-sticky semantics.
+- [x] Add integration coverage.
+  - [x] Add llbtodagger Dockerfile-driven integration case for `RUN --mount=type=bind,readonly` conversion/runtime behavior.
+  - [x] Add llbtodagger Dockerfile-driven integration case with two RUN steps: mount used in first RUN, then explicitly absent in second RUN (non-sticky check).
+  - [x] Add direct container API integration coverage (outside llbtodagger) validating `withMountedDirectory(readOnly: true)` behavior.
+- [x] Validation + whiteboard bookkeeping.
+  - [x] Run focused unit tests: `go test ./util/llbtodagger`.
+  - [x] Run focused integration tests using the debugging.md-prescribed workflow.
+  - [x] Remove "readonly bind mounts unsupported" entries from unsupported catalogs after implementation lands.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -221,7 +247,7 @@ Last updated: 2026-02-28
 - All `BuildOp` vertices.
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
-- `ExecOp` with non-default network/security, secret env, secret/ssh mounts, readonly bind mounts, non-default mount content cache, or unsupported metadata fields.
+- `ExecOp` with non-default network/security, secret env, secret/ssh mounts, non-default mount content cache, or unsupported metadata fields.
 - `FileOp` copy actions with archive auto-unpack, `alwaysReplaceExistingDestPaths`, or `createDestPath=false`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
@@ -237,10 +263,13 @@ Last updated: 2026-02-28
 - Non-sandbox security mode is unsupported (`RUN --security=...` when enabled).
 - Secret environment variables are unsupported (`RUN --mount=type=secret,env=...`).
 - Proxy environment injection is unsupported (proxy build-arg path).
-- Read-only bind mounts are unsupported (`RUN --mount=type=bind,readonly`).
 - Secret mounts are unsupported (`RUN --mount=type=secret`).
 - SSH mounts are unsupported (`RUN --mount=type=ssh`).
 - `copy` archive auto-unpack compatibility mode is unsupported (`ADD` local archive path).
+  - BuildKit represents this with `FileActionCopy.attemptUnpackDockerCompatibility`.
+  - Dockerfile frontend sets it from `ADD` semantics (`ADD` defaults to unpack for local archives; `COPY` does not auto-unpack; `ADD --unpack` can override behavior).
+  - Upstream executor path: for each matched source, try archive-detection + untar into destination; if not an archive, fall back to normal copy.
+  - Current llbtodagger mapping errors on this flag because we do not yet model that conditional unpack-or-copy behavior in the Dagger ID translation.
 - `copy` to an explicit file destination path is unsupported in current mapping (converter uses directory-oriented wiring; e.g. `COPY --chmod=640 a.txt /dst/file.txt`).
 - Group-only `chown` is unsupported.
 - Named user/group `chown` (`byName`) is unsupported.

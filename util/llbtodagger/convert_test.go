@@ -189,9 +189,9 @@ func TestDefinitionToIDExecMounts(t *testing.T) {
 	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
 	require.NoError(t, err)
 	fields := fieldsFromRoot(id)
-	require.GreaterOrEqual(t, len(fields), 5)
+	require.GreaterOrEqual(t, len(fields), 8)
 	require.Equal(t, "container", fields[0])
-	require.Equal(t, "withExec", fields[len(fields)-1])
+	require.Equal(t, "withoutMount", fields[len(fields)-1])
 
 	withRootfs := findFieldInChain(id, "withRootfs")
 	require.Nil(t, withRootfs)
@@ -214,9 +214,19 @@ func TestDefinitionToIDExecMounts(t *testing.T) {
 	require.NotNil(t, withTemp)
 	require.Equal(t, "/tmp", withTemp.Arg("path").Value().ToInput())
 	require.Equal(t, int64(2048), withTemp.Arg("size").Value().ToInput())
+
+	withoutMounts := findFieldsInChain(id, "withoutMount")
+	require.Len(t, withoutMounts, 3)
+	gotPaths := map[any]bool{}
+	for _, withoutMount := range withoutMounts {
+		gotPaths[withoutMount.Arg("path").Value().ToInput()] = true
+	}
+	require.True(t, gotPaths["/work"])
+	require.True(t, gotPaths["/cache"])
+	require.True(t, gotPaths["/tmp"])
 }
 
-func TestDefinitionToIDExecReadonlyBindUnsupported(t *testing.T) {
+func TestDefinitionToIDExecReadonlyBindMount(t *testing.T) {
 	t.Parallel()
 
 	st := llb.Image("alpine").Run(
@@ -224,9 +234,46 @@ func TestDefinitionToIDExecReadonlyBindUnsupported(t *testing.T) {
 		llb.AddMount("/ro", llb.Scratch(), llb.Readonly),
 	).Root()
 
-	_, err := DefinitionToID(marshalStateToPB(t, st), nil)
-	unsupportedErr := requireUnsupported(t, err, "exec")
-	require.Contains(t, unsupportedErr.Reason, "readonly bind")
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+	withMountDir := findFieldInChain(id, "withMountedDirectory")
+	require.NotNil(t, withMountDir)
+	require.Equal(t, "/ro", withMountDir.Arg("path").Value().ToInput())
+	require.Equal(t, true, withMountDir.Arg("readOnly").Value().ToInput())
+
+	withoutMount := findFieldInChain(id, "withoutMount")
+	require.NotNil(t, withoutMount)
+	require.Equal(t, "/ro", withoutMount.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDExecMountsAreNonStickyBetweenExecs(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().File(llb.Mkfile("/input.txt", 0o644, []byte("hello")))
+	st := llb.Image("alpine").
+		Run(
+			llb.Shlex("cat /work/input.txt > /out.txt"),
+			llb.AddMount("/work", src),
+		).
+		Run(
+			llb.Shlex("test ! -e /work/input.txt"),
+		).
+		Root()
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	fields := fieldsFromRoot(id)
+	withExecIdx := fieldIndices(fields, "withExec")
+	require.Len(t, withExecIdx, 2)
+	withoutMountIdx := fieldIndices(fields, "withoutMount")
+	require.Len(t, withoutMountIdx, 1)
+	require.Greater(t, withoutMountIdx[0], withExecIdx[0])
+	require.Less(t, withoutMountIdx[0], withExecIdx[1])
+
+	withoutMount := findFieldInChain(id, "withoutMount")
+	require.NotNil(t, withoutMount)
+	require.Equal(t, "/work", withoutMount.Arg("path").Value().ToInput())
 }
 
 func TestDefinitionToIDExecNetworkUnsupported(t *testing.T) {
@@ -388,6 +435,26 @@ func findFieldInChain(id *call.ID, field string) *call.ID {
 		}
 	}
 	return nil
+}
+
+func findFieldsInChain(id *call.ID, field string) []*call.ID {
+	fields := []*call.ID{}
+	for cur := id; cur != nil; cur = cur.Receiver() {
+		if cur.Field() == field {
+			fields = append(fields, cur)
+		}
+	}
+	return fields
+}
+
+func fieldIndices(fields []string, field string) []int {
+	idxs := []int{}
+	for i, f := range fields {
+		if f == field {
+			idxs = append(idxs, i)
+		}
+	}
+	return idxs
 }
 
 func requireUnsupported(t *testing.T, err error, opType string) *UnsupportedOpError {
