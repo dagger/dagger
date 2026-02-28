@@ -26,6 +26,11 @@ type DefinitionToIDOptions struct {
 	// secret mount ids) to Dagger Secret IDs used by withSecretVariable /
 	// withMountedSecret conversion.
 	SecretIDsByLLBID map[string]*call.ID
+
+	// SSHSocketIDsByLLBID maps BuildKit LLB ssh IDs to Dagger Socket IDs used
+	// by withUnixSocket conversion. A mapping for the empty key ("") acts as a
+	// default fallback for any unmatched ssh ID.
+	SSHSocketIDsByLLBID map[string]*call.ID
 }
 
 // DefinitionToID converts an LLB definition and image config metadata to a
@@ -70,6 +75,7 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 		memo:                 map[*buildkit.OpDAG]*call.ID{},
 		mainContextDirectory: opts.MainContextDirectoryID,
 		secretIDsByLLBID:     opts.SecretIDsByLLBID,
+		sshSocketIDsByLLBID:  opts.SSHSocketIDsByLLBID,
 	}
 	id, err := conv.convertOp(dag)
 	if err != nil {
@@ -87,6 +93,7 @@ type converter struct {
 
 	mainContextDirectory *call.ID
 	secretIDsByLLBID     map[string]*call.ID
+	sshSocketIDsByLLBID  map[string]*call.ID
 }
 
 func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {
@@ -381,6 +388,7 @@ func gitRepoType() *ast.Type            { return nonNullType("GitRepository") }
 func gitRefType() *ast.Type             { return nonNullType("GitRef") }
 func cacheVolumeType() *ast.Type        { return nonNullType("CacheVolume") }
 func secretType() *ast.Type             { return nonNullType("Secret") }
+func socketType() *ast.Type             { return nonNullType("Socket") }
 
 func argString(name, val string) *call.Argument {
 	return call.NewArgument(name, call.NewLiteralString(val), false)

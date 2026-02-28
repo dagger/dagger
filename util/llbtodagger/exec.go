@@ -88,6 +88,8 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 
 	addedMountPaths := make([]string, 0, len(exec.Mounts))
 	addedMountPathSet := map[string]struct{}{}
+	addedUnixSocketPaths := make([]string, 0, len(exec.Mounts))
+	addedUnixSocketPathSet := map[string]struct{}{}
 	addedSecretEnvNames := make([]string, 0, len(exec.Secretenv))
 	addedSecretEnvSet := map[string]struct{}{}
 
@@ -214,7 +216,32 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 				addedMountPaths = append(addedMountPaths, path)
 			}
 		case pb.MountType_SSH:
-			return nil, unsupported(opDigest(exec.OpDAG), "exec", "ssh mounts are unsupported")
+			if m.SSHOpt == nil {
+				return nil, unsupported(opDigest(exec.OpDAG), "exec", "ssh mount is missing ssh options")
+			}
+			if m.SSHOpt.Mode != 0 && m.SSHOpt.Mode != 0o600 {
+				return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("ssh mount mode %04o is unsupported", m.SSHOpt.Mode))
+			}
+			socketID, include, err := c.resolveSSHSocketID(opDigest(exec.OpDAG), m.SSHOpt.ID, m.SSHOpt.Optional)
+			if err != nil {
+				return nil, err
+			}
+			if !include {
+				continue
+			}
+			ctrID = appendCall(
+				ctrID,
+				containerType(),
+				"withUnixSocket",
+				argString("path", m.Dest),
+				argID("source", socketID),
+				argString("owner", fmt.Sprintf("%d:%d", m.SSHOpt.Uid, m.SSHOpt.Gid)),
+			)
+			path := cleanPath(m.Dest)
+			if _, exists := addedUnixSocketPathSet[path]; !exists {
+				addedUnixSocketPathSet[path] = struct{}{}
+				addedUnixSocketPaths = append(addedUnixSocketPaths, path)
+			}
 		default:
 			return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("unsupported mount type %v", m.MountType))
 		}
@@ -255,6 +282,12 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 			}
 			cleanedID = appendCall(cleanedID, containerType(), "withoutMount", argString("path", path))
 		}
+		for _, path := range addedUnixSocketPaths {
+			if path == "/" {
+				continue
+			}
+			cleanedID = appendCall(cleanedID, containerType(), "withoutUnixSocket", argString("path", path))
+		}
 		for _, name := range addedSecretEnvNames {
 			cleanedID = appendCall(cleanedID, containerType(), "withoutSecretVariable", argString("name", name))
 		}
@@ -287,6 +320,30 @@ func (c *converter) resolveSecretID(opDgst digest.Digest, llbSecretID string, op
 		return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("secret %q is required but no secret mappings were provided", llbSecretID))
 	}
 	return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("secret %q is required but was not provided", llbSecretID))
+}
+
+func (c *converter) resolveSSHSocketID(opDgst digest.Digest, llbSSHID string, optional bool) (*call.ID, bool, error) {
+	socketID, ok := c.sshSocketIDsByLLBID[llbSSHID]
+	if (!ok || socketID == nil) && llbSSHID != "" {
+		// Dockerfile-based callers with a single ssh socket can provide a
+		// default mapping under the empty key to satisfy any ssh ID.
+		socketID, ok = c.sshSocketIDsByLLBID[""]
+	}
+	if ok && socketID != nil {
+		if socketID.Type().NamedType() != socketType().NamedType {
+			return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("mapped ssh socket %q has non-Socket type %q", llbSSHID, socketID.Type().NamedType()))
+		}
+		return socketID, true, nil
+	}
+
+	if optional {
+		return nil, false, nil
+	}
+
+	if len(c.sshSocketIDsByLLBID) == 0 {
+		return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("ssh mount %q is required but no ssh socket mappings were provided", llbSSHID))
+	}
+	return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("ssh mount %q is required but was not provided", llbSSHID))
 }
 
 func findRootExecMount(mounts []*pb.Mount) (*pb.Mount, error) {

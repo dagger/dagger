@@ -403,6 +403,140 @@ func TestDefinitionToIDExecOptionalSecretsAreSkippedWhenMissing(t *testing.T) {
 	require.Nil(t, findFieldInChain(id, "withoutSecretVariable"))
 }
 
+func TestDefinitionToIDExecSSHRequiredMissingMappingUnsupported(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Image("alpine").Run(
+		llb.Shlex("echo hello"),
+		llb.AddSSHSocket(
+			llb.SSHID("required-ssh"),
+			llb.SSHSocketTarget("/run/buildkit/ssh_agent.0"),
+		),
+	).Root()
+
+	_, err := DefinitionToIDWithOptions(
+		marshalStateToPB(t, st),
+		nil,
+		DefinitionToIDOptions{SSHSocketIDsByLLBID: map[string]*call.ID{}},
+	)
+	unsupportedErr := requireUnsupported(t, err, "exec")
+	require.Contains(t, unsupportedErr.Reason, "required-ssh")
+	require.Contains(t, unsupportedErr.Reason, "required")
+}
+
+func TestDefinitionToIDExecSSHMountAndCleanup(t *testing.T) {
+	t.Parallel()
+
+	sshPath := "/tmp/ssh-agent.sock"
+	st := llb.Image("alpine").Run(
+		llb.Shlex("echo hello"),
+		llb.AddSSHSocket(
+			llb.SSHID("build-ssh"),
+			llb.SSHSocketOpt(sshPath, 123, 456, 0o600),
+		),
+	).Root()
+
+	sshSocketID := fakeSocketID("build-ssh")
+	id, err := DefinitionToIDWithOptions(
+		marshalStateToPB(t, st),
+		nil,
+		DefinitionToIDOptions{
+			SSHSocketIDsByLLBID: map[string]*call.ID{
+				"build-ssh": sshSocketID,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	withUnixSocket := findFieldInChain(id, "withUnixSocket")
+	require.NotNil(t, withUnixSocket)
+	require.Equal(t, sshPath, withUnixSocket.Arg("path").Value().ToInput())
+	require.Equal(t, "123:456", withUnixSocket.Arg("owner").Value().ToInput())
+	gotSocketID, ok := withUnixSocket.Arg("source").Value().ToInput().(*call.ID)
+	require.True(t, ok)
+	require.Equal(t, sshSocketID.Display(), gotSocketID.Display())
+
+	withoutUnixSocket := findFieldInChain(id, "withoutUnixSocket")
+	require.NotNil(t, withoutUnixSocket)
+	require.Equal(t, sshPath, withoutUnixSocket.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDExecOptionalSSHIsSkippedWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Image("alpine").Run(
+		llb.Shlex("echo hello"),
+		llb.AddSSHSocket(
+			llb.SSHID("optional-ssh"),
+			llb.SSHSocketTarget("/run/buildkit/ssh_agent.0"),
+			llb.SSHOptional,
+		),
+	).Root()
+
+	id, err := DefinitionToIDWithOptions(
+		marshalStateToPB(t, st),
+		nil,
+		DefinitionToIDOptions{SSHSocketIDsByLLBID: map[string]*call.ID{}},
+	)
+	require.NoError(t, err)
+	require.Nil(t, findFieldInChain(id, "withUnixSocket"))
+	require.Nil(t, findFieldInChain(id, "withoutUnixSocket"))
+}
+
+func TestDefinitionToIDExecSSHUsesDefaultMapping(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Image("alpine").Run(
+		llb.Shlex("echo hello"),
+		llb.AddSSHSocket(
+			llb.SSHID("custom-id"),
+			llb.SSHSocketTarget("/run/buildkit/ssh_agent.0"),
+		),
+	).Root()
+
+	defaultSocketID := fakeSocketID("default-ssh")
+	id, err := DefinitionToIDWithOptions(
+		marshalStateToPB(t, st),
+		nil,
+		DefinitionToIDOptions{
+			SSHSocketIDsByLLBID: map[string]*call.ID{
+				"": defaultSocketID,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	withUnixSocket := findFieldInChain(id, "withUnixSocket")
+	require.NotNil(t, withUnixSocket)
+	gotSocketID, ok := withUnixSocket.Arg("source").Value().ToInput().(*call.ID)
+	require.True(t, ok)
+	require.Equal(t, defaultSocketID.Display(), gotSocketID.Display())
+}
+
+func TestDefinitionToIDExecSSHModeUnsupported(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Image("alpine").Run(
+		llb.Shlex("echo hello"),
+		llb.AddSSHSocket(
+			llb.SSHID("bad-mode"),
+			llb.SSHSocketOpt("/run/buildkit/ssh_agent.0", 0, 0, 0o644),
+		),
+	).Root()
+
+	_, err := DefinitionToIDWithOptions(
+		marshalStateToPB(t, st),
+		nil,
+		DefinitionToIDOptions{
+			SSHSocketIDsByLLBID: map[string]*call.ID{
+				"bad-mode": fakeSocketID("bad-mode"),
+			},
+		},
+	)
+	unsupportedErr := requireUnsupported(t, err, "exec")
+	require.Contains(t, unsupportedErr.Reason, "mode")
+}
+
 func TestDefinitionToIDFileCopy(t *testing.T) {
 	t.Parallel()
 
@@ -813,4 +947,9 @@ func rootfsArgFromContainer(t *testing.T, id *call.ID) *call.ID {
 
 func fakeSecretID(name string) *call.ID {
 	return appendCall(call.New(), secretType(), "secret", argString("name", name))
+}
+
+func fakeSocketID(path string) *call.ID {
+	host := appendCall(call.New(), hostType(), "host")
+	return appendCall(host, socketType(), "unixSocket", argString("path", path))
 }

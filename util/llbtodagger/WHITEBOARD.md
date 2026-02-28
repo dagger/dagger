@@ -418,61 +418,160 @@ Last updated: 2026-02-28
   - Out of scope for this phase: `MountType_SSH` (stays unsupported until a dedicated follow-up phase).
 
 - Design checklist:
-  - [ ] Extend llbtodagger conversion options with secret resolution input.
-    - [ ] Add `DefinitionToIDOptions` field for resolving/mapping LLB secret IDs -> Dagger `Secret` call IDs.
-    - [ ] Keep converter independent from `core` package types; use `*call.ID` mapping data only.
-  - [ ] Wire dockerBuild secret inputs into llbtodagger options in `core.Container.Build`.
-    - [ ] Build name->secret-ID mapping from `secrets []dagql.ObjectResult[*Secret]` + `secretStore.GetSecretName(...)`.
-    - [ ] Pass map into `DefinitionToIDWithOptions(...)`.
-  - [ ] Implement `ExecOp.Secretenv` conversion.
-    - [ ] Map to `container.withSecretVariable(name: ..., secret: ...)`.
-    - [ ] Required/optional behavior:
-      - [ ] If secret ID is mapped: emit `withSecretVariable`.
-      - [ ] If secret ID missing and `optional=true`: skip.
-      - [ ] If secret ID missing and `optional=false`: return explicit error.
-  - [ ] Implement `MountType_SECRET` conversion.
-    - [ ] Map to `container.withMountedSecret(path: ..., source: ..., owner: ..., mode: ...)`.
-    - [ ] Map owner from `uid/gid` to owner string (`<uid>:<gid>`).
-    - [ ] Preserve file mode semantics via `mode` arg.
-    - [ ] Required/optional behavior:
-      - [ ] If secret ID is mapped: emit `withMountedSecret`.
-      - [ ] If secret ID missing and `optional=true`: skip.
-      - [ ] If secret ID missing and `optional=false`: return explicit error.
-  - [ ] Preserve BuildKit per-RUN non-sticky behavior for secret features.
-    - [ ] Ensure secret envs do not persist past the converted `withExec` by appending cleanup (`withoutSecretVariable`) after exec.
-    - [ ] Use `withoutMount(path)` for secret mount cleanup in converted exec chains.
-    - [ ] Extend `core.Container.WithoutMount` semantics to also remove secret mounts with matching `MountPath` (in addition to regular `Mounts`).
-  - [ ] Keep deterministic cleanup ordering and dedupe cleanup entries.
-    - [ ] Stable order across runs for secret env and secret mount cleanup calls.
-    - [ ] Avoid duplicate cleanup calls for repeated references to same name/path.
+  - [x] Extend llbtodagger conversion options with secret resolution input.
+    - [x] Add `DefinitionToIDOptions` field for mapping LLB secret IDs -> Dagger `Secret` call IDs.
+    - [x] Keep converter independent from `core` package types; use `*call.ID` mapping data only.
+  - [x] Wire dockerBuild secret inputs into llbtodagger options in `core.Container.Build`.
+    - [x] Build name->secret-ID mapping from `secrets []dagql.ObjectResult[*Secret]` + `secretStore.GetSecretName(...)`.
+    - [x] Pass map into `DefinitionToIDWithOptions(...)`.
+  - [x] Implement `ExecOp.Secretenv` conversion.
+    - [x] Map to `container.withSecretVariable(name: ..., secret: ...)`.
+    - [x] Required/optional behavior:
+      - [x] If secret ID is mapped: emit `withSecretVariable`.
+      - [x] If secret ID missing and `optional=true`: skip.
+      - [x] If secret ID missing and `optional=false`: return explicit error.
+  - [x] Implement `MountType_SECRET` conversion.
+    - [x] Map to `container.withMountedSecret(path: ..., source: ..., owner: ..., mode: ...)`.
+    - [x] Map owner from `uid/gid` to owner string (`<uid>:<gid>`).
+    - [x] Preserve file mode semantics via `mode` arg.
+    - [x] Required/optional behavior:
+      - [x] If secret ID is mapped: emit `withMountedSecret`.
+      - [x] If secret ID missing and `optional=true`: skip.
+      - [x] If secret ID missing and `optional=false`: return explicit error.
+  - [x] Preserve BuildKit per-RUN non-sticky behavior inside converted exec chains.
+    - [x] Secret envs are cleaned with `withoutSecretVariable`.
+    - [x] Secret mounts are cleaned with `withoutMount(path)`.
+    - [x] `core.Container.WithoutMount` also removes secret mounts with matching `MountPath`.
+  - [x] Keep deterministic cleanup ordering and dedupe cleanup entries.
+    - [x] Stable order for secret env + mount cleanup calls.
+    - [x] Duplicate cleanup emission avoided.
+  - [x] Preserve legacy dockerBuild returned-container secret behavior.
+    - [x] After loading converted container ID, clone and append named secret mounts on `container.Secrets` (legacy-compatible persistence on returned container object).
+    - [x] Clone-before-mutate to avoid cache object corruption.
 
 - Test checklist:
-  - [ ] llbtodagger unit tests (`util/llbtodagger/convert_test.go`):
-    - [ ] Secret env mapping emits `withSecretVariable` + cleanup.
-    - [ ] Secret mount mapping emits `withMountedSecret` + cleanup.
-    - [ ] Missing required secret returns explicit error.
-    - [ ] Missing optional secret is skipped (no emitted secret calls).
-    - [ ] Multiple secrets in one exec preserve deterministic ordering.
-  - [ ] Dockerfile-driven converter tests (`util/llbtodagger/dockerfile_convert_test.go`):
-    - [ ] `RUN --mount=type=secret,id=...,env=...` converts as expected.
-    - [ ] `RUN --mount=type=secret,id=...` mount path/mode/owner mapping.
-    - [ ] Optional unknown secret does not fail conversion path.
-    - [ ] Required unknown secret yields explicit conversion error.
-  - [ ] Core integration tests (`core/integration`):
-    - [ ] Add/extend llbtodagger e2e test in `llbtodagger_test.go` for secret env + secret mount behavior.
-    - [ ] Re-run `TestDockerfile/TestDockerBuild` secret cases and make builtin frontend path pass:
-      - [ ] `with_build_secrets`
-      - [ ] `with_unknown_build_secrets`
-    - [ ] Add explicit non-sticky validation across two RUNs for secret mount/env.
-    - [ ] Keep `#syntax=...` remote frontend expectations unchanged for now (still unsupported by cutover path).
-  - [ ] Validation command shape:
-    - [ ] Follow `skills/cache-expert/references/debugging.md` exactly for integration test runs.
-    - [ ] Use sub-agents for longer integration test execution/log parsing when iterating.
+  - [x] llbtodagger unit tests (`util/llbtodagger/convert_test.go`):
+    - [x] Secret env mapping emits `withSecretVariable` + cleanup.
+    - [x] Secret mount mapping emits `withMountedSecret` + cleanup.
+    - [x] Missing required secret returns explicit error.
+    - [x] Missing optional secret is skipped (no emitted secret calls).
+    - [x] Multiple secrets in one exec preserve deterministic ordering.
+  - [x] Dockerfile-driven converter tests (`util/llbtodagger/dockerfile_convert_test.go`):
+    - [x] `RUN --mount=type=secret,id=...,env=...` converts as expected.
+    - [x] `RUN --mount=type=secret,id=...` mount path/mode/owner mapping.
+    - [x] Optional unknown secret does not fail conversion path.
+    - [x] Required unknown secret yields explicit conversion error.
+  - [x] Core integration tests (`core/integration`):
+    - [x] Add/extend llbtodagger e2e test in `llbtodagger_test.go` for secret env + secret mount behavior.
+    - [x] Re-run `TestDockerfile/TestDockerBuild` secret cases and make builtin frontend path pass:
+      - [x] `with_build_secrets`
+      - [x] `with_unknown_build_secrets`
+    - [x] Add explicit non-sticky validation across two RUNs for secret mount/env.
+    - [x] Keep `#syntax=...` remote frontend expectations unchanged for now (still unsupported by cutover path).
+  - [x] Validation command shape:
+    - [x] Follow `skills/cache-expert/references/debugging.md` for integration test runs.
+    - [x] Use sub-agents for longer integration test execution/log parsing when iterating.
+
+- Completion notes:
+  - `with_build_secrets` and `with_unknown_build_secrets` now pass on dockerBuild hard-cutover path.
+  - Converted `RUN --mount=type=secret`/`env=...` behavior is non-sticky per-run via cleanup calls.
+  - Returned container keeps legacy-compatible named secret entries for dockerBuild output behavior.
 
 - Post-landing bookkeeping:
-  - [ ] Remove secret-env/secret-mount entries from `Unsupported and relevant to Dockerfile-generated LLB`.
-  - [ ] Keep SSH unsupported entry in place until SSH phase lands.
-  - [ ] Update `Current Explicit Unsupported Cases` and nuanced catalogs accordingly.
+  - [x] Remove secret-env/secret-mount entries from `Unsupported and relevant to Dockerfile-generated LLB`.
+  - [x] Keep SSH unsupported entry in place until SSH phase lands.
+  - [x] Update `Current Explicit Unsupported Cases` and nuanced catalogs accordingly.
+
+### Phase 20: Syntax Pragma Relaxation (Quick Win Before Phase 19)
+- Goal:
+  - Make dockerBuild cutover path laxer for Dockerfile syntax pragmas.
+  - Allow known Dockerfile syntax pragma values and ignore them (continue conversion/build normally).
+  - Fail fast only when pragma specifies an unknown/unsupported frontend reference.
+- Scope:
+  - In scope: `#syntax=...` handling in `core.Container.Build` preflight checks around Dockerfile bytes.
+  - Out of scope: actually delegating to remote frontends or supporting non-Dockerfile frontend behavior.
+
+- Design checklist:
+  - [ ] Replace current blanket hard-error on detected syntax pragma with allowlist behavior.
+  - [ ] Define "known Dockerfile syntax pragma" matcher.
+    - [ ] Accept canonical Dockerfile frontend references we explicitly recognize (for example Docker/Moby Dockerfile frontend refs).
+    - [ ] Treat pinned tag/digest variants of recognized Dockerfile frontends as allowed.
+  - [ ] On allowed syntax pragma, do not alter conversion flow:
+    - [ ] Continue using local `dockerfile2llb` + llbtodagger conversion path.
+    - [ ] Do not fetch or dispatch remote frontend.
+  - [ ] On unknown syntax pragma:
+    - [ ] Return explicit error that includes the pragma value and states it's unsupported in cutover mode.
+  - [ ] Keep behavior deterministic and obvious in logs/errors (no silent fallback beyond allowed-ignore path).
+
+- Test checklist:
+  - [ ] Unit/functional coverage around syntax detection helper:
+    - [ ] known Dockerfile syntax pragma -> allowed
+    - [ ] unknown syntax pragma -> explicit error
+  - [ ] Integration coverage (`core/integration/dockerfile_test.go`):
+    - [ ] `with_syntax_pragma` passes on cutover path.
+    - [ ] `with_old_syntax_pragma` passes on cutover path.
+    - [ ] Add/keep a negative case for unknown syntax pragma that still errors clearly.
+  - [ ] Validation command shape:
+    - [ ] Follow `skills/cache-expert/references/debugging.md` command conventions.
+
+- Post-landing bookkeeping:
+  - [ ] Remove syntax-pragma item from current unsupported catalog.
+  - [ ] Update related historical notes in this whiteboard to reflect the new allowed-ignore policy.
+
+### Phase 19: SSH Socket Mount Support (dockerBuild Cutover)
+- Goal:
+  - Support Dockerfile/LLB SSH socket mount semantics (`RUN --mount=type=ssh`) in hard-cutover `dockerBuild` through llbtodagger conversion.
+  - Keep fail-fast behavior for unsupported/imperfect cases.
+- Scope:
+  - In scope: `ExecOp` mounts with `MountType_SSH`.
+  - Out of scope for this phase: git source custom SSH socket naming nuances beyond current Dockerfile path requirements.
+
+- Design checklist:
+  - [x] Extend llbtodagger conversion options with SSH socket resolution input.
+    - [x] Add `DefinitionToIDOptions` field mapping LLB SSH IDs -> Dagger `Socket` call IDs.
+    - [x] Keep converter independent from `core` package types; mapping stays `*call.ID`.
+  - [x] Wire dockerBuild SSH input into llbtodagger options in `core.Container.Build`.
+    - [x] Remove current hard error `dockerBuild SSH mounts are not supported...`.
+    - [x] Map dockerBuild SSH argument to LLB SSH IDs expected by Dockerfile frontend (including default/empty ID path via fallback mapping).
+    - [x] Define and implement mapping semantics for non-default SSH IDs with single SSH input: empty-key mapping acts as default for any unmatched SSH ID (legacy translator-compatible behavior).
+  - [x] Implement `MountType_SSH` conversion in `util/llbtodagger/exec.go`.
+    - [x] Map to `container.withUnixSocket(path: ..., source: ..., owner: ...)`.
+    - [x] Map owner from `uid/gid` to owner string (`<uid>:<gid>`).
+    - [x] Required/optional behavior:
+      - [x] If socket ID is mapped: emit `withUnixSocket`.
+      - [x] If socket ID missing and `optional=true`: skip.
+      - [x] If socket ID missing and `optional=false`: return explicit error.
+  - [x] Preserve BuildKit per-RUN non-sticky behavior for SSH mounts.
+    - [x] Cleanup converted exec chain with `withoutUnixSocket(path)` after `withExec`.
+    - [x] Keep cleanup deterministic and deduped.
+  - [x] Decide on SSH mount mode handling.
+    - [x] Current `withUnixSocket` API has no explicit mode control.
+    - [x] For now, fail fast on unsupported non-default mode combinations.
+  - [x] Preserve cache safety when mutating loaded container objects (clone before mutation where needed).
+
+- Test checklist:
+  - [x] llbtodagger unit tests (`util/llbtodagger/convert_test.go`):
+    - [x] SSH mount mapping emits `withUnixSocket` + cleanup.
+    - [x] Missing required SSH socket returns explicit error.
+    - [x] Missing optional SSH socket is skipped.
+    - [x] Deterministic ordering/dedupe for repeated SSH mounts.
+  - [x] Dockerfile-driven converter tests (`util/llbtodagger/dockerfile_convert_test.go`):
+    - [x] `RUN --mount=type=ssh` converts as expected.
+    - [x] Optional unknown SSH ID does not fail conversion path.
+    - [x] Required unknown SSH ID yields explicit conversion error.
+  - [x] Core integration tests (`core/integration`):
+    - [x] Re-enable/target `TestDockerBuildSSH/*` coverage on cutover path.
+    - [x] Add llbtodagger integration coverage in `llbtodagger_test.go` for SSH mount behavior + non-sticky cleanup.
+    - [x] Validate mounted SSH socket behavior functionally (socket available during mounted RUN, absent in next RUN).
+  - [x] Validation command shape:
+    - [x] Follow `skills/cache-expert/references/debugging.md` exactly.
+    - [x] Use sub-agents for longer integration test runs/log parsing.
+
+- Completion notes:
+  - Converter now supports `MountType_SSH` via `withUnixSocket` + `withoutUnixSocket` cleanup.
+  - dockerBuild hard-cutover path now passes SSH socket mappings into llbtodagger and supports Dockerfile `RUN --mount=type=ssh`.
+  - Empty-key SSH mapping fallback allows one provided dockerBuild SSH socket to satisfy default or named SSH IDs (matching legacy translator behavior).
+  - Remote syntax frontend behavior remains pending Phase 20 (known/allowed pragmas still to be relaxed there).
 
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
@@ -513,7 +612,7 @@ Last updated: 2026-02-28
 - All `BuildOp` vertices.
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
-- `ExecOp` with non-default network/security, secret env, secret/ssh mounts, non-default mount content cache, or unsupported metadata fields.
+- `ExecOp` with non-default network/security, non-default mount content cache, or unsupported metadata fields.
 - `FileOp` copy actions with archive auto-unpack or `alwaysReplaceExistingDestPaths`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
@@ -526,11 +625,6 @@ Last updated: 2026-02-28
 ### Unsupported and relevant to Dockerfile-generated LLB
 
 #### HIGH
-
-- Secret environment variables are unsupported (`RUN --mount=type=secret,env=...`).
-- Secret mounts are unsupported (`RUN --mount=type=secret`).
-
-- SSH mounts are unsupported (`RUN --mount=type=ssh`).
 
 - Proxy environment injection is unsupported (proxy build-arg path).
 
@@ -572,7 +666,7 @@ Last updated: 2026-02-28
 
 - `ArgsEscaped` on Windows images is unsupported.
 
-- Dockerfile remote frontend syntax pragma behavior (`#syntax=...`) is not supported in Phase 15 hard-cutover path.
+- Dockerfile remote frontend syntax pragma behavior (`#syntax=...`) is not supported in current cutover path (planned to relax in Phase 20).
 
 ### Unsupported but outside Dockerfile instruction support (or malformed/non-canonical LLB)
 - Synthetic root op with more than one input is rejected.
