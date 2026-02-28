@@ -689,6 +689,7 @@ func (dir *Directory) WithDirectory(
 	filter CopyFilter,
 	owner string,
 	permissions *int,
+	doNotCreateDestPath bool,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -712,6 +713,11 @@ func (dir *Directory) WithDirectory(
 	dirRef, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get directory ref: %w", err)
+	}
+	if doNotCreateDestPath {
+		if err := ensureCopyDestParentExists(ctx, dirRef, destDir); err != nil {
+			return nil, err
+		}
 	}
 	srcRef, err := getRefOrEvaluate(ctx, src)
 	if err != nil {
@@ -976,6 +982,29 @@ func isDir(path string) (bool, error) {
 	return fi.Mode().IsDir(), nil
 }
 
+func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRef, destPath string) error {
+	parentPath := filepath.Dir(path.Clean(destPath))
+	if parentPath == "." {
+		parentPath = "/"
+	}
+
+	if baseRef == nil {
+		if parentPath == "/" {
+			return nil
+		}
+		return &os.PathError{Op: "lstat", Path: parentPath, Err: syscall.ENOENT}
+	}
+
+	return MountRef(ctx, baseRef, nil, func(root string, _ *mount.Mount) error {
+		resolvedParentPath, err := containerdfs.RootPath(root, parentPath)
+		if err != nil {
+			return err
+		}
+		_, err = os.Lstat(resolvedParentPath)
+		return TrimErrPathPrefix(err, root)
+	})
+}
+
 func (dir *Directory) WithFile(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -983,6 +1012,7 @@ func (dir *Directory) WithFile(
 	src *File,
 	permissions *int,
 	owner string,
+	doNotCreateDestPath bool,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -1007,6 +1037,11 @@ func (dir *Directory) WithFile(
 	}
 
 	destPath = path.Join(dir.Dir, destPath)
+	if doNotCreateDestPath {
+		if err := ensureCopyDestParentExists(ctx, dirCacheRef, destPath); err != nil {
+			return nil, err
+		}
+	}
 	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(src.File))))
 	if err != nil {
@@ -1136,6 +1171,7 @@ func (dir *Directory) WithFiles(
 			file,
 			permissions,
 			"",
+			false,
 		)
 		if err != nil {
 			return nil, err
