@@ -157,6 +157,41 @@ func vaultConfigureClient(ctx context.Context) error {
 		if authInfo == nil {
 			return fmt.Errorf("no auth info was returned after Vault AppRole login")
 		}
+	} else if client.Token() == "" {
+		if os.Getenv("VAULT_ADDR") == "" {
+			return fmt.Errorf("VAULT_ADDR must be set when using Vault OIDC fallback auth")
+		}
+
+		cachedToken, err := loadCachedVaultToken()
+		if err != nil {
+			return fmt.Errorf("failed loading cached Vault token: %w", err)
+		}
+		if cachedToken != "" {
+			client.SetToken(cachedToken)
+
+			if err := validateVaultToken(ctx, client); err != nil {
+				if !isVaultInvalidTokenError(err) {
+					return fmt.Errorf("failed validating cached Vault token: %w", err)
+				}
+
+				fmt.Fprintln(os.Stderr, "Cached Vault token is invalid; starting OIDC login...")
+				if err := clearCachedVaultToken(); err != nil {
+					return fmt.Errorf("failed clearing cached Vault token: %w", err)
+				}
+				client.SetToken("")
+			}
+		}
+
+		if client.Token() == "" {
+			ttl, err := vaultOIDCLogin(ctx, client)
+			if err != nil {
+				return fmt.Errorf("Vault OIDC login failed: %w", err)
+			}
+
+			if err := saveCachedVaultToken(client.Token(), ttl); err != nil {
+				return fmt.Errorf("failed saving cached Vault token: %w", err)
+			}
+		}
 	}
 
 	// Set client
