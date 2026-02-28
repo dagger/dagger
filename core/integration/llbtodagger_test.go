@@ -51,6 +51,27 @@ CMD ["cat", "/work/msg.txt"]
 	require.Equal(t, "hello-from-llb", strings.TrimSpace(out))
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyChmod(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, map[string]string{
+		"root.txt":        "root",
+		"nested/file.txt": "nested",
+	})
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+COPY --chmod=751 . /app/
+`)
+
+	stdout, err := ctr.WithExec([]string{"sh", "-lc", "stat -c '%a %n' /app /app/root.txt /app/nested /app/nested/file.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "751 /app")
+	require.Contains(t, stdout, "751 /app/root.txt")
+	require.Contains(t, stdout, "751 /app/nested")
+	require.Contains(t, stdout, "751 /app/nested/file.txt")
+}
+
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAddHTTP(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -89,20 +110,23 @@ func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDComplex(ctx context.Cont
 	c := connect(ctx, t)
 
 	contextDir := writeDockerContext(t, map[string]string{
-		"input.txt": "llbtodagger-e2e",
+		"input.txt":  "llbtodagger-e2e",
+		"second.txt": "secondary",
 	})
 
 	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
 FROM `+alpineImage+` AS base
 WORKDIR /work
-COPY input.txt /work/
+COPY --chmod=751 input.txt /work/
+COPY --chmod=640 second.txt /work/
 ADD https://raw.githubusercontent.com/octocat/Hello-World/master/README /work/vendor/http-readme
 ADD https://github.com/octocat/Hello-World.git#master /work/vendor/hello
-RUN cat /work/input.txt > /work/out.txt && test -s /work/vendor/http-readme && test -f /work/vendor/hello/README
+RUN cat /work/input.txt > /work/out.txt && cat /work/second.txt > /work/out-second.txt && test -s /work/vendor/http-readme && test -f /work/vendor/hello/README
 
 FROM `+alpineImage+`
 WORKDIR /final
-COPY --from=base /work/out.txt /final/
+COPY --chmod=751 --from=base /work/out.txt /final/
+COPY --chmod=640 --from=base /work/out-second.txt /final/
 ENV RESULT=success
 USER root
 LABEL com.example.suite=llbtodagger
@@ -118,6 +142,18 @@ CMD ["/final/out.txt"]
 	out, err := ctr.WithExec([]string{"cat", "/final/out.txt"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "llbtodagger-e2e", strings.TrimSpace(out))
+
+	secondOut, err := ctr.WithExec([]string{"cat", "/final/out-second.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "secondary", strings.TrimSpace(secondOut))
+
+	permOut, err := ctr.WithExec([]string{"stat", "-c", "%a", "/final/out.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "751", strings.TrimSpace(permOut))
+
+	secondPermOut, err := ctr.WithExec([]string{"stat", "-c", "%a", "/final/out-second.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "640", strings.TrimSpace(secondPermOut))
 
 	workdir, err := ctr.Workdir(ctx)
 	require.NoError(t, err)
