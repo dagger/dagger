@@ -689,6 +689,7 @@ func (container *Container) Build(
 		buildArgMap[buildArg.Name] = buildArg.Value
 	}
 	secretIDsByLLBID := make(map[string]*call.ID, len(secrets))
+	returnedSecretMounts := make([]ContainerSecret, 0, len(secrets))
 	for _, secret := range secrets {
 		secretDgst := SecretIDDigest(secret.ID())
 		secretName, ok := secretStore.GetSecretName(secretDgst)
@@ -705,6 +706,10 @@ func (container *Container) Build(
 			continue
 		}
 		secretIDsByLLBID[secretName] = secret.ID()
+		returnedSecretMounts = append(returnedSecretMounts, ContainerSecret{
+			Secret:    secret,
+			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
+		})
 	}
 
 	convertOpt := dockerfile2llb.ConvertOpt{
@@ -732,40 +737,19 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
-	loadedContainer, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
+	loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
 	}
+	loadedContainer := loadedContainerRes.Self()
+	if loadedContainer == nil {
+		return nil, fmt.Errorf("failed to load container from converted ID: nil container")
+	}
+	loadedContainer = loadedContainer.Clone()
+	loadedContainer.Secrets = append(loadedContainer.Secrets, returnedSecretMounts...)
 
 	// TODO: remove commented code once fully replaced, just a reference on how it used to work for now
 	/*
-		secretNameToLLBID := make(map[string]string)
-		for _, secret := range secrets {
-			secretDgst := SecretIDDigest(secret.ID())
-			secretName, ok := secretStore.GetSecretName(secretDgst)
-			if !ok {
-				return nil, fmt.Errorf("secret not found: %s", secretDgst)
-			}
-			container.Secrets = append(container.Secrets, ContainerSecret{
-				Secret:    secret,
-				MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
-			})
-			secretNameToLLBID[secretName] = secretDgst.String()
-		}
-
-		// FIXME: this is a terrible way to pass this around
-		solveCtx := buildkit.WithSecretTranslator(ctx, func(name string, optional bool) (string, error) {
-			llbID, ok := secretNameToLLBID[name]
-			if !ok {
-				if optional {
-					// set to a purposely invalid name, so we don't get something else
-					return "notfound:" + identity.NewID(), nil
-				}
-				return "", fmt.Errorf("secret not found: %s", name)
-			}
-			return llbID, nil
-		})
-
 		if sshSocket != nil {
 			solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
 				return sshSocket.LLBID(), nil
@@ -897,7 +881,7 @@ func (container *Container) Build(
 		}
 	*/
 
-	return loadedContainer.Self(), nil
+	return loadedContainer, nil
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
