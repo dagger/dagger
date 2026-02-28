@@ -33,7 +33,9 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
 
-		dagql.NodeFunc("_builtinContainer", s.builtinContainer).Doc("Retrieves a container builtin to the engine."),
+		dagql.NodeFunc("_builtinContainer", s.builtinContainer).
+			IsPersistable().
+			Doc("Retrieves a container builtin to the engine."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{

@@ -20,9 +20,11 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 			Doc("Execute all selected generators"),
 
 		dagql.NodeFunc("isEmpty", s.groupIsEmpty).
+			IsPersistable().
 			Doc("Whether the generated changeset is empty or not"),
 
 		dagql.NodeFunc("changes", s.groupChanges).
+			IsPersistable().
 			Doc(`The combined changes from the generators execution`,
 				`If any conflict occurs, for instance if the same file is modified by multiple generators,
 				or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.`,
