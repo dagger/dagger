@@ -35,6 +35,21 @@ function mustEnv(name) {
   return value;
 }
 
+function parseWorkspaceID(raw) {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed == 'string' && parsed != '') {
+        return parsed;
+      }
+    } catch (_err) {
+      // Fall back to the raw value.
+    }
+  }
+  return raw;
+}
+
 function within(parent, child) {
   return child == parent || child.startsWith(parent + path.sep);
 }
@@ -149,7 +164,7 @@ async function main() {
 
   const workspaceRoot = normalizePath(mustEnv('DAGGER_JIT_WORKSPACE_ROOT'));
   const siteRoot = normalizePath(mustEnv('DAGGER_JIT_WORKSPACE_SITE_ROOT'));
-  const workspaceID = mustEnv('DAGGER_JIT_WORKSPACE_ID');
+  const workspaceID = parseWorkspaceID(mustEnv('DAGGER_JIT_WORKSPACE_ID'));
   const absTargetPath = normalizePath(targetArg);
 
   if (isEligiblePath(absTargetPath, workspaceRoot, siteRoot) == false) {

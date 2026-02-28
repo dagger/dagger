@@ -386,7 +386,15 @@ type Site {
       path + "/package.json"
     }
     let before = ws.directory("/", include: [packageJsonPath])
-    let includesJSON = toJSON(runtimeExternalPaths(ws))
+    let inferredIncludes = runtimeExternalPaths(ws)
+    let effectiveIncludes = if (
+      inferredIncludes.length == 0 and packageJson.include.length > 0
+    ) {
+      packageJson.include
+    } else {
+      inferredIncludes
+    }
+    let includesJSON = toJSON(effectiveIncludes)
     let after = optimizeConfigContainer
       .withDirectory(workspaceRootPath, before)
       .withExec(
@@ -596,7 +604,7 @@ type Sandbox {
   }
 
   """
-  Paths hydrated on-demand from the workspace so far.
+  Paths traced outside the site root from the workspace so far.
   """
   pub justInTimeWorkspaceLog: [String!]! {
     if (justInTimeWorkspace == false) {
@@ -610,7 +618,7 @@ type Sandbox {
         .withEnvVariable("DAGGER_JIT_WORKSPACE_LOG_DIR", jitWorkspaceLogDir)
         .withEnvVariable("DAGGER_JIT_WORKSPACE_ROOT", workspaceRootPath)
         .withEnvVariable("DAGGER_JIT_WORKSPACE_SITE_ROOT", siteWorkspacePath)
-        .withEnvVariable("DAGGER_JIT_WORKSPACE_COLLECT_MODE", "hydrated")
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_COLLECT_MODE", "all")
         .withEnvVariable("NODE_OPTIONS", "")
         .withEnvVariable("DAGGER_JIT_WORKSPACE_DISABLE_HYDRATE", "1")
         .withExec(["node", "/jit-workspace-log.cjs"])

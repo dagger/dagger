@@ -3,6 +3,8 @@ type Tests {
   let fixturePackageJSONPath: String! = fixtureSitePath + "/package.json"
   let fixtureFormatSitePath: String! = "modules/docusaurus/tests/testdata/runtime/site-format"
   let fixtureFormatPackageJSONPath: String! = fixtureFormatSitePath + "/package.json"
+  let fixturePreserveSitePath: String! = "modules/docusaurus/tests/testdata/runtime/site-preserve"
+  let fixturePreservePackageJSONPath: String! = fixturePreserveSitePath + "/package.json"
 
   let runtimePaths(ws: Workspace!): [String!]! {
     docusaurus
@@ -118,6 +120,48 @@ type Tests {
   }
 
   """
+  Ensures optimizeConfig does not wipe existing include values when inference is empty.
+  """
+  pub optimizeConfigPreservesExistingIncludeOnEmptyInference(ws: Workspace!): Void @check {
+    let site = docusaurus.site(ws, fixturePreserveSitePath)
+    let inferred = site.runtimeExternalPaths(ws)
+    if (inferred.length != 0) {
+      raise "fixture expected no inferred external dependencies"
+    }
+
+    let existingInclude = ws
+      .file(fixturePreservePackageJSONPath)
+      .asJSON
+      .field(["docusaurus", "include"])
+      .asArray
+      .{asString}
+      .map { item => item.asString }
+
+    let optimizedInclude = site
+      .optimizeConfig(ws)
+      .layer
+      .file(fixturePreservePackageJSONPath)
+      .asJSON
+      .field(["docusaurus", "include"])
+      .asArray
+      .{asString}
+      .map { item => item.asString }
+
+    if (optimizedInclude.length != existingInclude.length) {
+      raise "optimizeConfig unexpectedly rewrote existing include values"
+    }
+
+    for (dep in existingInclude) {
+      let present = optimizedInclude.filter { path => path == dep }.length > 0
+      if (present == false) {
+        raise "optimizeConfig dropped include dependency: " + dep
+      }
+    }
+
+    null
+  }
+
+  """
   Runs all checks.
   """
   pub all(ws: Workspace!): Void @check {
@@ -125,6 +169,7 @@ type Tests {
     excludesSiteLocalPaths(ws)
     optimizeConfigUsesRuntimePaths(ws)
     optimizeConfigPreservesFormatting(ws)
+    optimizeConfigPreservesExistingIncludeOnEmptyInference(ws)
     null
   }
 }
