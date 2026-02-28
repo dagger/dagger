@@ -3,22 +3,22 @@
 import importlib
 import importlib.metadata
 import importlib.util
+import json
 import logging
-import os
 import typing
 
 import anyio
 
 import dagger
 from dagger import telemetry
+from dagger.mod._discovery import IMPORT_PKG, ast_register
 from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
-from dagger.mod._module import MAIN_OBJECT, Module
+from dagger.mod._module import MAIN_OBJECT, MODULE_NAME, TYPE_DEF_FILE, Module
 
 logger = logging.getLogger(__package__)
 
 ENTRY_POINT_NAME: typing.Final[str] = "main_object"
 ENTRY_POINT_GROUP: typing.Final[str] = typing.cast(str, __package__)
-IMPORT_PKG: typing.Final[str] = os.getenv("DAGGER_DEFAULT_PYTHON_PACKAGE", "main")
 
 
 def app(mod: Module | None = None, register: bool = False) -> int | None:
@@ -37,10 +37,13 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
     # should be logged and the traceback shown on the function's stderr output.
     async with await dagger.connect():
         try:
+            if register:
+                # Use AST-based registration (doesn't require importing module)
+                return await register_with_ast()
+
+            # For invocation, we need to load the module
             if mod is None:
                 mod = load_module()
-            if register:
-                return await mod.register()
             return await mod.serve()
         except (ModuleError, dagger.QueryError) as e:
             await record_exception(e)
@@ -49,6 +52,32 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
             logger.exception("Unhandled exception")
             await record_exception(e)
             return 1
+
+
+async def register_with_ast() -> None:
+    """Register module types using AST analysis.
+
+    This analyzes Python source files without importing them,
+    allowing registration when dependencies are not available.
+    """
+    from dagger.mod._analyzer.errors import AnalysisError
+
+    try:
+        module_id = await ast_register(
+            main_object_name=MAIN_OBJECT,
+            module_name=MODULE_NAME,
+        )
+    except AnalysisError as e:
+        logger.exception("AST analysis failed")
+        raise ModuleLoadError(str(e)) from e
+    except RuntimeError as e:
+        raise ModuleLoadError(str(e)) from e
+
+    # Write result to file
+    output = json.dumps(module_id)
+    await anyio.Path(TYPE_DEF_FILE).write_text(output)
+
+    logger.debug("Registration complete: %s", TYPE_DEF_FILE)
 
 
 def load_module() -> Module:
