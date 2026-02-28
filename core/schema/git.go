@@ -115,6 +115,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("__cleaned", s.cleaned).
+			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
 		dagql.NodeFunc("uncommitted", s.uncommitted).
 			Doc("Returns the changeset of uncommitted changes in the git repository."),
@@ -137,6 +138,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.GitRef]{
 		dagql.NodeFunc("tree", s.tree).
+			IsPersistable().
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			Args(
@@ -152,8 +154,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					Doc("This option should be passed to `git` instead.").Deprecated(),
 			),
 		dagql.NodeFunc("commit", s.fetchCommit).
+			IsPersistable().
 			Doc(`The resolved commit id at this ref.`),
 		dagql.NodeFunc("ref", s.fetchRef).
+			IsPersistable().
 			Doc(`The resolved ref name at this ref.`),
 		dagql.NodeFunc("commonAncestor", s.commonAncestor).
 			Doc(`Find the best common ancestor between this ref and another ref.`).

@@ -49,11 +49,13 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("excludeMetadata").Doc(`If true, exclude metadata from the digest.`),
 			),
 		dagql.NodeFunc("withName", s.withName).
+			IsPersistable().
 			Doc(`Retrieves this file with its name set to the given name.`).
 			Args(
 				dagql.Arg("name").Doc(`Name to set file to.`),
 			),
 		dagql.NodeFunc("search", s.search).
+			IsPersistable().
 			Doc(
 				// NOTE: sync with Directory.search
 				`Searches for content matching the given regular expression or literal string.`,
@@ -61,6 +63,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			).
 			Args((core.SearchOpts{}).Args()...),
 		dagql.NodeFunc("withReplaced", s.withReplaced).
+			IsPersistable().
 			Doc(
 				`Retrieves the file with content replaced with the given text.`,
 				`If 'all' is true, all occurrences of the pattern will be replaced.`,
@@ -90,12 +93,14 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("withTimestamps", s.withTimestamps).
+			IsPersistable().
 			Doc(`Retrieves this file with its created/modified timestamps set to the given time.`).
 			Args(
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
 		dagql.NodeFunc("chown", s.chown).
+			IsPersistable().
 			Doc(`Change the owner of the file recursively.`).
 			Args(
 				dagql.Arg("owner").Doc(`A user:group to set for the file.`,

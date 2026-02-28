@@ -440,9 +440,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 
 func newCacheKey(ctx context.Context, id *call.ID, fieldSpec *FieldSpec) CacheKey {
 	cacheKey := CacheKey{
-		ID:         id,
-		TTL:        fieldSpec.TTL,
-		DoNotCache: fieldSpec.DoNotCache != "",
+		ID:            id,
+		TTL:           fieldSpec.TTL,
+		DoNotCache:    fieldSpec.DoNotCache != "",
+		IsPersistable: fieldSpec.IsPersistable,
 	}
 
 	// dedupe concurrent calls only if the ID digest is the same and if the two calls are from the same client
@@ -765,6 +766,9 @@ type FieldSpec struct {
 
 	// If set, the result of this field will be cached for the given TTL (in seconds).
 	TTL int64
+
+	// If set, the result of this field is eligible for persistent cache storage.
+	IsPersistable bool
 
 	// If set, this GetDynamicInput will be called before ID evaluation to make
 	// any dynamic adjustments to the cache key or args
@@ -1219,6 +1223,14 @@ func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
+	return field
+}
+
+func (field Field[T]) IsPersistable() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.IsPersistable = true
 	return field
 }
 

@@ -66,6 +66,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("from", s.from).
+			IsPersistable().
 			WithInput(fromSessionScopeInput).
 			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
 			Args(
@@ -462,6 +463,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withExec", s.withExec).
+			IsPersistable().
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -639,6 +641,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("asTarball", s.asTarball).
+			IsPersistable().
 			Doc(`Package the container state as an OCI image, and return it as a tar archive`).
 			Args(
 				dagql.Arg("platformVariants").Doc(

@@ -75,6 +75,11 @@ type CacheKey struct {
 
 	// DoNotCache indicates that this call should not be cached at all, simply ran.
 	DoNotCache bool
+
+	// IsPersistable indicates whether this field call is eligible for persistent
+	// cache storage. This is currently plumbed through call execution but not yet
+	// used by cache behavior.
+	IsPersistable bool
 }
 
 type CacheEntryStats struct {
