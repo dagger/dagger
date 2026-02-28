@@ -1994,7 +1994,7 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		perms = &p
 	}
 
-	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner, perms)
+	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner, perms, args.DoNotCreateDestPath)
 }
 
 type containerWithFileArgs struct {
@@ -2024,7 +2024,7 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	ctr, err := parent.Self().WithFile(ctx, srv, path, file, perms, args.Owner)
+	ctr, err := parent.Self().WithFile(ctx, srv, path, file, perms, args.Owner, args.DoNotCreateDestPath)
 	if err != nil {
 		return inst, err
 	}

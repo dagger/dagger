@@ -137,6 +137,54 @@ COPY --chown=auser:agroup input.txt /app/out.txt
 	require.Equal(t, "1234:4321 auser:agroup", strings.TrimSpace(ownerOut))
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyDoNotCreateDestPathParentExists(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcState := llb.Scratch().File(
+		llb.Mkfile("/src.txt", 0o644, []byte("create-dest-path-false")),
+	)
+	state := llb.Image(alpineImage).
+		File(llb.Mkdir("/existing", 0o755, llb.WithParents(true))).
+		File(llb.Copy(srcState, "/src.txt", "/existing/out.txt", &llb.CopyInfo{CreateDestPath: false}))
+
+	def := llbStateToDefinition(ctx, t, state)
+	id, err := llbtodagger.DefinitionToID(def, nil)
+	require.NoError(t, err)
+
+	encoded, err := id.Encode()
+	require.NoError(t, err)
+
+	ctr := c.LoadContainerFromID(dagger.ContainerID(encoded))
+	_, err = ctr.Sync(ctx)
+	require.NoError(t, err)
+
+	contents, err := ctr.File("/existing/out.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "create-dest-path-false", strings.TrimSpace(contents))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyDoNotCreateDestPathMissingParent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcState := llb.Scratch().File(
+		llb.Mkfile("/src.txt", 0o644, []byte("create-dest-path-false")),
+	)
+	state := llb.Image(alpineImage).
+		File(llb.Copy(srcState, "/src.txt", "/missing/out.txt", &llb.CopyInfo{CreateDestPath: false}))
+
+	def := llbStateToDefinition(ctx, t, state)
+	id, err := llbtodagger.DefinitionToID(def, nil)
+	require.NoError(t, err)
+
+	encoded, err := id.Encode()
+	require.NoError(t, err)
+
+	_, err = c.LoadContainerFromID(dagger.ContainerID(encoded)).Sync(ctx)
+	require.Error(t, err)
+	require.Contains(t, strings.ToLower(err.Error()), "no such file or directory")
+	require.Contains(t, err.Error(), "/missing")
+}
+
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAddHTTP(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -463,4 +511,16 @@ func dockerfileToDefinitionAndImage(
 	def, err := st.Marshal(ctx)
 	require.NoError(t, err)
 	return def.ToPB(), img
+}
+
+func llbStateToDefinition(
+	ctx context.Context,
+	t *testctx.T,
+	st llb.State,
+) *pb.Definition {
+	t.Helper()
+
+	def, err := st.Marshal(ctx)
+	require.NoError(t, err)
+	return def.ToPB()
 }

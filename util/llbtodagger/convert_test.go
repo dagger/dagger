@@ -327,6 +327,52 @@ func TestDefinitionToIDFileCopy(t *testing.T) {
 	require.Equal(t, "/src", sourceID.Arg("path").Value().ToInput())
 }
 
+func TestDefinitionToIDFileCopyDoNotCreateDestPathWithDirectory(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).File(llb.Mkfile("/src/a.txt", 0o644, []byte("hello")))
+	st := llb.Scratch().File(
+		llb.Copy(
+			src,
+			"/src/a.txt",
+			"/dst/",
+			&llb.CopyInfo{CreateDestPath: false},
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	doNotCreateDestPath := withDir.Arg("doNotCreateDestPath")
+	require.NotNil(t, doNotCreateDestPath)
+	require.Equal(t, true, doNotCreateDestPath.Value().ToInput())
+}
+
+func TestDefinitionToIDFileCopyDoNotCreateDestPathWithFile(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).File(llb.Mkfile("/src/a.txt", 0o644, []byte("hello")))
+	st := llb.Scratch().File(
+		llb.Copy(
+			src,
+			"/src/a.txt",
+			"/dst/renamed.txt",
+			&llb.CopyInfo{CreateDestPath: false},
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	withFile := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	doNotCreateDestPath := withFile.Arg("doNotCreateDestPath")
+	require.NotNil(t, doNotCreateDestPath)
+	require.Equal(t, true, doNotCreateDestPath.Value().ToInput())
+}
+
 func TestDefinitionToIDFileCopyModeOverride(t *testing.T) {
 	t.Parallel()
 

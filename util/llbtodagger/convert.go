@@ -9,7 +9,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -201,11 +200,11 @@ func platformToLiteral(platform *pb.Platform) (string, error) {
 func mountSharingEnum(sh pb.CacheSharingOpt) (string, error) {
 	switch sh {
 	case pb.CacheSharingOpt_SHARED:
-		return string(core.CacheSharingModeShared), nil
+		return "SHARED", nil
 	case pb.CacheSharingOpt_PRIVATE:
-		return string(core.CacheSharingModePrivate), nil
+		return "PRIVATE", nil
 	case pb.CacheSharingOpt_LOCKED:
-		return string(core.CacheSharingModeLocked), nil
+		return "LOCKED", nil
 	default:
 		return "", fmt.Errorf("llbtodagger: unsupported cache sharing mode %v", sh)
 	}
@@ -348,13 +347,14 @@ func nilBlob() *buildkit.BlobOp {
 	return nil
 }
 
-func containerType() *ast.Type   { return (&core.Container{}).Type() }
-func directoryType() *ast.Type   { return (&core.Directory{}).Type() }
-func fileType() *ast.Type        { return (&core.File{}).Type() }
-func hostType() *ast.Type        { return (&core.Host{}).Type() }
-func gitRepoType() *ast.Type     { return (&core.GitRepository{}).Type() }
-func gitRefType() *ast.Type      { return (&core.GitRef{}).Type() }
-func cacheVolumeType() *ast.Type { return (&core.CacheVolume{}).Type() }
+func nonNullType(name string) *ast.Type { return &ast.Type{NamedType: name, NonNull: true} }
+func containerType() *ast.Type          { return nonNullType("Container") }
+func directoryType() *ast.Type          { return nonNullType("Directory") }
+func fileType() *ast.Type               { return nonNullType("File") }
+func hostType() *ast.Type               { return nonNullType("Host") }
+func gitRepoType() *ast.Type            { return nonNullType("GitRepository") }
+func gitRefType() *ast.Type             { return nonNullType("GitRef") }
+func cacheVolumeType() *ast.Type        { return nonNullType("CacheVolume") }
 
 func argString(name, val string) *call.Argument {
 	return call.NewArgument(name, call.NewLiteralString(val), false)

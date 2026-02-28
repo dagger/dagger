@@ -433,6 +433,8 @@ type WithDirectoryArgs struct {
 	Path        string
 	Owner       string `default:""`
 	Permissions dagql.Optional[dagql.Int]
+	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
 
 	Source    core.DirectoryID
 	Directory core.DirectoryID // legacy, use Source instead
@@ -480,7 +482,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner, perms)
+	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner, perms, args.DoNotCreateDestPath)
 	if err != nil {
 		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
 	}
@@ -505,7 +507,7 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 		Dir:      parent.Self().Dir,
 	}
 
-	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil)
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil, false)
 	if err != nil {
 		return inst, fmt.Errorf("failed to filter: %w", err)
 	}
@@ -705,6 +707,8 @@ type WithFileArgs struct {
 	Source      core.FileID
 	Permissions dagql.Optional[dagql.Int]
 	Owner       string `default:""`
+	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
 
 	FSDagOpInternalArgs
 }
@@ -753,7 +757,7 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	dir, err := parent.Self().WithFile(ctx, srv, args.Path, file.Self(), perms, args.Owner)
+	dir, err := parent.Self().WithFile(ctx, srv, args.Path, file.Self(), perms, args.Owner, args.DoNotCreateDestPath)
 	if err != nil {
 		return inst, err
 	}

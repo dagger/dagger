@@ -353,9 +353,6 @@ func applyCopy(
 	if cp.AlwaysReplaceExistingDestPaths {
 		return nil, nil, unsupported(opDgst, "file.copy", "alwaysReplaceExistingDestPaths is unsupported")
 	}
-	if !cp.CreateDestPath {
-		return nil, nil, unsupported(opDgst, "file.copy", "copy without createDestPath is unsupported")
-	}
 
 	sourceSubdir, include := deriveCopySelection(cp)
 	sourceDirID := sourceID
@@ -381,6 +378,9 @@ func applyCopy(
 			argString("path", cleanPath(cp.Dest)),
 			argID("source", fileID),
 		}
+		if !cp.CreateDestPath {
+			args = append(args, argBool("doNotCreateDestPath", true))
+		}
 		if owner != "" {
 			args = append(args, argString("owner", owner))
 		}
@@ -393,6 +393,9 @@ func applyCopy(
 	args := []*call.Argument{
 		argString("path", cleanPath(cp.Dest)),
 		argID("source", sourceDirID),
+	}
+	if !cp.CreateDestPath {
+		args = append(args, argBool("doNotCreateDestPath", true))
 	}
 	if len(include) > 0 {
 		args = append(args, argStringList("include", include))
@@ -436,6 +439,9 @@ func applyCopyViaContainer(
 			argID("source", fileID),
 			argString("owner", owner),
 		}
+		if !cp.CreateDestPath {
+			args = append(args, argBool("doNotCreateDestPath", true))
+		}
 		if cp.Mode >= 0 {
 			args = append(args, argInt("permissions", int64(cp.Mode)))
 		}
@@ -445,6 +451,9 @@ func applyCopyViaContainer(
 			argString("path", cleanPath(cp.Dest)),
 			argID("source", sourceDirID),
 			argString("owner", owner),
+		}
+		if !cp.CreateDestPath {
+			args = append(args, argBool("doNotCreateDestPath", true))
 		}
 		if len(include) > 0 {
 			args = append(args, argStringList("include", include))

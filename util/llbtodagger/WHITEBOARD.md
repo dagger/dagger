@@ -280,6 +280,90 @@ Last updated: 2026-02-28
   - [x] include export-and-inspect assertions for OCI config fields (healthcheck/onbuild/shell/volumes/stopSignal) so metadata is validated directly, not only via runtime behavior.
 - [x] Update unsupported catalogs after implementation lands, removing items no longer unsupported.
 
+### Phase 15: Hard-Cutover `dockerBuild` Integration
+- [x] Scope and entrypoints.
+  - [x] Cut over `directory.dockerBuild` to the new LLB->ID pipeline while keeping API shape unchanged.
+  - [x] Cut over deprecated `container.build` via the same `Container.Build` implementation path.
+- [x] Replace `Container.Build` internals with llbtodagger pipeline.
+  - [x] Read Dockerfile bytes from `dockerfileDir`.
+  - [x] Convert `contextDir.LLB` to `llb.State` and call `dockerfile2llb.Dockerfile2LLB`.
+  - [x] Marshal returned state to `*pb.Definition`.
+  - [x] Convert definition+image metadata to `*call.ID` via `llbtodagger.DefinitionToID`.
+  - [x] Load resulting `ContainerID` through DAGQL/server load path and return resulting `*core.Container`.
+- [x] Preserve old implementation as commented reference blocks in `Container.Build` for this transition only.
+  - [x] Comment out legacy `bk.Solve` path.
+  - [x] Comment out legacy `WithSecretTranslator` / `WithSSHTranslator` setup.
+  - [x] Comment out legacy local `DefToDAG` walk/marshal mutation path.
+  - [x] Put this exact TODO above each commented block:
+    - [x] `TODO: remove commented code once fully replaced, just a reference on how it used to work for now`
+- [x] Deliberate first-iteration behavior (accepted regressions for now).
+  - [x] Secret/SSH dockerBuild tests are expected to fail in this phase; do not block cutover on them.
+  - [x] Do not implement secret handling in this phase.
+  - [x] Do not implement SSH handling in this phase.
+  - [x] Do not support remote frontend syntax pragma behavior (`#syntax=...`) in this phase.
+- [ ] Follow-up TODOs to keep visible for next iteration.
+  - [ ] TODO: restore/port `noInit` behavior in cutover path.
+  - [ ] TODO: implement secret mount/env support in llbtodagger exec conversion.
+  - [ ] TODO: implement SSH mount support in llbtodagger exec conversion.
+  - [ ] TODO: decide and implement SSH ID mapping semantics.
+- [x] Validation and bookkeeping.
+  - [x] Run focused dockerBuild integration tests (expect secret/ssh failures in this phase).
+  - [x] Keep `WHITEBOARD.md` updated with exactly which dockerBuild tests fail post-cutover.
+  - 2026-02-28 focused runs:
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild'` -> fail
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestBuildMergesWithParent'` -> pass
+  - Failures observed in `TestDockerfile/TestDockerBuild`:
+    - `with_syntax_pragma`, `with_old_syntax_pragma`: expected for Phase 15 (`#syntax=...` unsupported in cutover path).
+    - secret/ssh cases (`with_build_secrets*`, `with_unknown_build_secrets*`, `TestDockerBuildSSH/*`): expected for Phase 15 (secret/ssh unsupported).
+    - many baseline copy-path cases (`default_Dockerfile_location`, custom/subdirectory Dockerfile location, `.dockerignore` compatibility, `with_build_args`, `prevent_duplicate_secret_transform`) failed due:
+      - `llbtodagger: unsupported op "file.copy": copy without createDestPath is unsupported`.
+    - This `file.copy createDestPath=false` gap was the major non-secret/non-ssh blocker for broad dockerBuild cutover coverage (resolved in Phase 16).
+
+### Phase 16: `file.copy createDestPath=false` Support
+- Goal:
+  - Support BuildKit `FileActionCopy.CreateDestPath=false` semantics in llbtodagger conversion.
+  - Unblock dockerBuild cutover tests currently failing on this unsupported copy variant.
+- Semantics to preserve (BuildKit reference behavior):
+  - When `createDestPath=false`, copy should fail if destination parent path does not exist.
+  - BuildKit checks destination parent existence before copy (`internal/buildkit/solver/llbsolver/file/backend.go`, `docopy`).
+- Initial gap (before this phase):
+  - llbtodagger errored on all `createDestPath=false`.
+  - Existing Dagger `Directory.withDirectory` / `Directory.withFile` implementations always created parent directories (`MkdirAll` path), so they could not express `createDestPath=false` faithfully.
+
+- Decision:
+  - Selected approach: Option B (full-fidelity, internal hidden args).
+
+- Option B (selected):
+  - Add hidden internal args (`internal:"true"`) to existing copy schema args using inverted naming: `doNotCreateDestPath`.
+  - Keep default `doNotCreateDestPath=false` so current Dagger behavior (create destination parent paths) remains unchanged.
+  - Wire llbtodagger to set `doNotCreateDestPath=true` via raw ID construction when LLB has `createDestPath=false`.
+  - Keep public SDK surface unchanged (internal APIs callable via raw ID only).
+  - Rationale: faithful semantics and broad dockerBuild compatibility without changing public SDK behavior.
+
+- Option B execution plan:
+  - [x] 16.1 Add hidden internal args (`internal:"true"`) to existing directory/container copy schema args:
+    - [x] `doNotCreateDestPath bool` with default `false`.
+  - [x] 16.2 Implement core behavior:
+    - [x] when `doNotCreateDestPath=false`, keep current behavior (create destination parent path as today).
+    - [x] when `doNotCreateDestPath=true`, verify destination parent exists and return error if missing.
+  - [x] 16.3 Update llbtodagger `applyCopy`:
+    - [x] map `CreateDestPath=true` as today.
+    - [x] map `CreateDestPath=false` by setting hidden internal arg `doNotCreateDestPath=true` in call IDs.
+  - [x] 16.4 Tests:
+    - [x] unit: ID construction for `createDestPath=false` copy path.
+    - [x] integration: successful copy when parent exists.
+    - [x] integration: expected error when parent missing.
+    - [x] rerun focused dockerBuild integration tests from debugging.md command shape.
+  - [x] 16.5 Bookkeeping:
+    - [x] update unsupported catalog entry for `createDestPath=false` after landing.
+  - 2026-02-28 validation runs:
+    - `dagger -y call -m ./toolchains/go-sdk-dev generate` -> pass (`no changes to apply`)
+    - `go test ./util/llbtodagger ./core ./core/schema` -> pass
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestLLBToDagger/TestLoadContainerFromConvertedIDCopyDoNotCreateDestPath'` -> pass
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestLLBToDagger'` -> pass
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild'` -> fail (expected for known unsupported areas); `createDestPath=false unsupported` error is gone.
+      - Remaining failures include syntax pragma, secret/ssh, and several context-copy cases now failing with missing-path errors (for example `stat /src: no such file or directory`, `stat /subcontext: no such file or directory`).
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -317,7 +401,7 @@ Last updated: 2026-02-28
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
 - `ExecOp` with non-default network/security, secret env, secret/ssh mounts, non-default mount content cache, or unsupported metadata fields.
-- `FileOp` copy actions with archive auto-unpack, `alwaysReplaceExistingDestPaths`, or `createDestPath=false`.
+- `FileOp` copy actions with archive auto-unpack or `alwaysReplaceExistingDestPaths`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
 - Named ownership on `mkdir` file actions (Dockerfile `WORKDIR` path when `USER` is named).
@@ -375,6 +459,8 @@ Last updated: 2026-02-28
 
 - `ArgsEscaped` on Windows images is unsupported.
 
+- Dockerfile remote frontend syntax pragma behavior (`#syntax=...`) is not supported in Phase 15 hard-cutover path.
+
 ### Unsupported but outside Dockerfile instruction support (or malformed/non-canonical LLB)
 - Synthetic root op with more than one input is rejected.
 - Unknown/non-classified op types are rejected.
@@ -430,7 +516,6 @@ Last updated: 2026-02-28
 - `mkfile` timestamp override is unsupported.
 - `mkfile` non-UTF8/binary payload is unsupported.
 - `copy` `alwaysReplaceExistingDestPaths=true` is unsupported.
-- `copy` with `createDestPath=false` is unsupported.
 - Unknown `UserOpt` discriminator in `chown` is unsupported.
 - Invalid env entries (without `name=value`) are rejected.
 - Exposed ports with invalid format are rejected.
@@ -443,6 +528,7 @@ Last updated: 2026-02-28
 - In `core/schema`, APIs prefixed with `_` are internal-only:
   - they can be called via raw ID construction,
   - they are intentionally not codegen'd into SDK clients.
+  - Also: args/fields tagged with ``internal:"true"`` are hidden from callers/codegen even without an `_` prefix on the field/function name.
 - After any engine schema API change, regenerate the Go SDK used by integration tests.
   - Required command: `dagger -y call -m ./toolchains/go-sdk-dev generate`
   - Worktree gotcha: if module resolution fails, pass `--workspace=.` explicitly:
