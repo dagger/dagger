@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -321,6 +323,59 @@ CMD ["echo","hi"]
 	require.True(t, foundPorts["9090/UDP"])
 }
 
+func TestDefinitionToIDDockerfileInternalImageMetadataFields(t *testing.T) {
+	t.Parallel()
+
+	dockerfile := `
+FROM alpine:3.19
+RUN echo hi > /out.txt
+HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --retries=5 CMD ["sh","-c","test -f /out.txt"]
+ONBUILD RUN echo child-build
+SHELL ["/bin/ash","-eo","pipefail","-c"]
+VOLUME ["/cache","/data"]
+STOPSIGNAL SIGQUIT
+`
+	def, img := dockerfileToDefinition(t, dockerfile)
+	id, err := DefinitionToID(def, img)
+	require.NoError(t, err)
+
+	metaCall := findFieldInChain(id, "__withImageConfigMetadata")
+	require.NotNil(t, metaCall)
+
+	healthcheckArg := metaCall.Arg("healthcheck")
+	require.NotNil(t, healthcheckArg)
+	healthcheckJSON, ok := healthcheckArg.Value().ToInput().(string)
+	require.True(t, ok)
+
+	var healthcheck dockerspec.HealthcheckConfig
+	require.NoError(t, json.Unmarshal([]byte(healthcheckJSON), &healthcheck))
+	require.NotNil(t, img.Config.Healthcheck)
+	require.Equal(t, *img.Config.Healthcheck, healthcheck)
+
+	onBuildArg := metaCall.Arg("onBuild")
+	require.NotNil(t, onBuildArg)
+	require.Equal(t, stringSlice(onBuildArg.Value().ToInput()), img.Config.OnBuild)
+
+	shellArg := metaCall.Arg("shell")
+	require.NotNil(t, shellArg)
+	require.Equal(t, stringSlice(shellArg.Value().ToInput()), img.Config.Shell)
+
+	volumesArg := metaCall.Arg("volumes")
+	require.NotNil(t, volumesArg)
+	require.Equal(t, sortedStringKeys(img.Config.Volumes), stringSlice(volumesArg.Value().ToInput()))
+
+	stopSignalArg := metaCall.Arg("stopSignal")
+	require.NotNil(t, stopSignalArg)
+	require.Equal(t, img.Config.StopSignal, stopSignalArg.Value().ToInput())
+
+	// Sanity check: parsed healthcheck still has the expected timing payload.
+	require.Equal(t, 21*time.Second, healthcheck.Interval)
+	require.Equal(t, 4*time.Second, healthcheck.Timeout)
+	require.Equal(t, 9*time.Second, healthcheck.StartPeriod)
+	require.Equal(t, 2*time.Second, healthcheck.StartInterval)
+	require.Equal(t, 5, healthcheck.Retries)
+}
+
 func TestDefinitionToIDDockerfileDeterministicEncoding(t *testing.T) {
 	t.Parallel()
 
@@ -499,4 +554,27 @@ func findCallByStringArg(id *call.ID, field, argName, argValue string) *call.ID 
 		}
 	}
 	return nil
+}
+
+func stringSlice(val any) []string {
+	list, ok := val.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	for _, entry := range list {
+		if s, ok := entry.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func sortedStringKeys[T any](m map[string]T) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

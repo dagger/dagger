@@ -174,6 +174,19 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("__withSystemEnvVariable", s.withSystemEnvVariable).
 			Doc(`(Internal-only) Inherit this environment variable from the engine container if set there with a special prefix.`),
 
+		// NOTE: this is internal-only (hidden from codegen via the __ prefix). It exists so
+		// llbtodagger can faithfully apply Docker image config metadata fields that do not yet
+		// have public SDK methods.
+		dagql.Func("__withImageConfigMetadata", s.withImageConfigMetadata).
+			Doc(`(Internal-only) Set Docker image config metadata fields not yet exposed as public container APIs.`).
+			Args(
+				dagql.Arg("healthcheck").Doc(`JSON-encoded Docker HealthcheckConfig.`),
+				dagql.Arg("onBuild").Doc(`Docker ONBUILD trigger list.`),
+				dagql.Arg("shell").Doc(`Docker shell override for shell-form instructions.`),
+				dagql.Arg("volumes").Doc(`Docker image config volume mountpoints.`),
+				dagql.Arg("stopSignal").Doc(`Docker image config stop signal.`),
+			),
+
 		dagql.Func("withSecretVariable", s.withSecretVariable).
 			Doc(`Set a new environment variable, using a secret value`).
 			Args(
@@ -1447,6 +1460,47 @@ func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent *cor
 	ctr := parent.Clone()
 	ctr.SystemEnvNames = append(ctr.SystemEnvNames, args.Name)
 	return ctr, nil
+}
+
+type containerWithImageConfigMetadataArgs struct {
+	Healthcheck string `default:""`
+	OnBuild     []string
+	Shell       []string
+	Volumes     []string
+	StopSignal  string `default:""`
+}
+
+func (s *containerSchema) withImageConfigMetadata(ctx context.Context, parent *core.Container, args containerWithImageConfigMetadataArgs) (*core.Container, error) {
+	var healthcheck *dockerspec.HealthcheckConfig
+	if args.Healthcheck != "" {
+		healthcheck = new(dockerspec.HealthcheckConfig)
+		if err := json.Unmarshal([]byte(args.Healthcheck), healthcheck); err != nil {
+			return nil, fmt.Errorf("failed to decode healthcheck metadata: %w", err)
+		}
+	}
+
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+		if args.Healthcheck != "" {
+			cfg.Healthcheck = healthcheck
+		}
+		if args.OnBuild != nil {
+			cfg.OnBuild = slices.Clone(args.OnBuild)
+		}
+		if args.Shell != nil {
+			cfg.Shell = slices.Clone(args.Shell)
+		}
+		if args.Volumes != nil {
+			volumes := make(map[string]struct{}, len(args.Volumes))
+			for _, volumePath := range args.Volumes {
+				volumes[volumePath] = struct{}{}
+			}
+			cfg.Volumes = volumes
+		}
+		if args.StopSignal != "" {
+			cfg.StopSignal = args.StopSignal
+		}
+		return cfg
+	})
 }
 
 type containerWithoutVariableArgs struct {

@@ -1,6 +1,7 @@
 package llbtodagger
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -16,21 +17,6 @@ func applyDockerImageConfig(id *call.ID, img *dockerspec.DockerOCIImage) (*call.
 	}
 
 	cfg := img.Config
-	if cfg.Healthcheck != nil {
-		return nil, fmt.Errorf("llbtodagger: unsupported image config healthcheck")
-	}
-	if len(cfg.OnBuild) > 0 {
-		return nil, fmt.Errorf("llbtodagger: unsupported image config onBuild")
-	}
-	if len(cfg.Shell) > 0 {
-		return nil, fmt.Errorf("llbtodagger: unsupported image config shell")
-	}
-	if len(cfg.Volumes) > 0 {
-		return nil, fmt.Errorf("llbtodagger: unsupported image config volumes")
-	}
-	if cfg.StopSignal != "" {
-		return nil, fmt.Errorf("llbtodagger: unsupported image config stopSignal")
-	}
 	if cfg.ArgsEscaped && strings.EqualFold(img.OS, "windows") {
 		return nil, fmt.Errorf("llbtodagger: unsupported image config argsEscaped on Windows image")
 	}
@@ -110,6 +96,30 @@ func applyDockerImageConfig(id *call.ID, img *dockerspec.DockerOCIImage) (*call.
 			"withDefaultArgs",
 			argStringList("args", cfg.Cmd),
 		)
+	}
+
+	metadataArgs := []*call.Argument{}
+	if cfg.Healthcheck != nil {
+		healthcheckJSON, err := json.Marshal(cfg.Healthcheck)
+		if err != nil {
+			return nil, fmt.Errorf("llbtodagger: marshal image config healthcheck: %w", err)
+		}
+		metadataArgs = append(metadataArgs, argString("healthcheck", string(healthcheckJSON)))
+	}
+	if len(cfg.OnBuild) > 0 {
+		metadataArgs = append(metadataArgs, argStringList("onBuild", cfg.OnBuild))
+	}
+	if len(cfg.Shell) > 0 {
+		metadataArgs = append(metadataArgs, argStringList("shell", cfg.Shell))
+	}
+	if len(cfg.Volumes) > 0 {
+		metadataArgs = append(metadataArgs, argStringList("volumes", sortedMapKeys(cfg.Volumes)))
+	}
+	if cfg.StopSignal != "" {
+		metadataArgs = append(metadataArgs, argString("stopSignal", cfg.StopSignal))
+	}
+	if len(metadataArgs) > 0 {
+		ctrID = appendCall(ctrID, containerType(), "__withImageConfigMetadata", metadataArgs...)
 	}
 
 	return ctrID, nil
