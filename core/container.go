@@ -434,7 +434,8 @@ func (container *Container) FromCanonicalRef(
 			return err
 		}
 
-		ref, err := src.Snapshot(ctx, nil)
+		bkSessionGroup := buildkit.NewSessionGroup(bk.ID())
+		ref, err := src.Snapshot(ctx, bkSessionGroup)
 		if err != nil {
 			return err
 		}
@@ -2071,7 +2072,8 @@ func (container *Container) FromInternal(
 		return nil, fmt.Errorf("updated rootfs: %w", err)
 	}
 	rootfsDir.LazyInit = func(ctx context.Context) error {
-		ref, err := src.Snapshot(ctx, nil)
+		bkSessionGroup := buildkit.NewSessionGroup(bk.ID())
+		ref, err := src.Snapshot(ctx, bkSessionGroup)
 		if err != nil {
 			return err
 		}
