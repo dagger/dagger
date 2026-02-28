@@ -345,9 +345,43 @@ func TestDefinitionToIDFileCopyModeOverride(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"container", "withRootfs"}, fieldsFromRoot(id))
 
-	withDir := rootfsArgFromContainer(t, id)
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
-	require.EqualValues(t, 0o751, withDir.Arg("permissions").Value().ToInput())
+	withFile := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
+	require.Equal(t, "/dst/a.txt", withFile.Arg("path").Value().ToInput())
+
+	sourceID, ok := withFile.Arg("source").Value().ToInput().(*call.ID)
+	require.True(t, ok)
+	sourceFile := findFieldInChain(sourceID, "file")
+	require.NotNil(t, sourceFile)
+	require.Equal(t, "a.txt", sourceFile.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDFileCopyExplicitDestPathUsesWithFile(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).File(llb.Mkfile("/src/a.txt", 0o644, []byte("hello")))
+	st := llb.Scratch().File(
+		llb.Copy(
+			src,
+			"/src/a.txt",
+			"/dst/renamed.txt",
+			&llb.CopyInfo{CreateDestPath: true},
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	withFile := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, "/dst/renamed.txt", withFile.Arg("path").Value().ToInput())
+
+	sourceID, ok := withFile.Arg("source").Value().ToInput().(*call.ID)
+	require.True(t, ok)
+	sourceFile := findFieldInChain(sourceID, "file")
+	require.NotNil(t, sourceFile)
+	require.Equal(t, "a.txt", sourceFile.Arg("path").Value().ToInput())
 }
 
 func TestDefinitionToIDFileCopyAlwaysReplaceUnsupported(t *testing.T) {

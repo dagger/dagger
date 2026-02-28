@@ -51,6 +51,7 @@ Last updated: 2026-02-28
 - [x] Updated converter/tests so Dockerfile metadata is applied via image-config input where representable.
 - [x] Added `core/integration` end-to-end suite validating Dockerfile -> dockerfile2llb -> DefinitionToID -> LoadContainerFromID execution path.
 - [x] Added readonly bind-mount support + non-sticky exec mount cleanup semantics for converted `ExecOp` mount handling.
+- [x] Added support for `copy` to explicit file destination paths by mapping single-file copies to `withFile`.
 
 ## Proposed Library Shape (Planning Draft)
 - Public entrypoint (exact naming TBD):
@@ -270,7 +271,6 @@ Last updated: 2026-02-28
   - Dockerfile frontend sets it from `ADD` semantics (`ADD` defaults to unpack for local archives; `COPY` does not auto-unpack; `ADD --unpack` can override behavior).
   - Upstream executor path: for each matched source, try archive-detection + untar into destination; if not an archive, fall back to normal copy.
   - Current llbtodagger mapping errors on this flag because we do not yet model that conditional unpack-or-copy behavior in the Dagger ID translation.
-- `copy` to an explicit file destination path is unsupported in current mapping (converter uses directory-oriented wiring; e.g. `COPY --chmod=640 a.txt /dst/file.txt`).
 - Group-only `chown` is unsupported.
 - Named user/group `chown` (`byName`) is unsupported.
 - Empty named user in `chown` is unsupported.
