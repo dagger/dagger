@@ -254,6 +254,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -1559,10 +1560,11 @@ func (s *containerSchema) label(ctx context.Context, parent *core.Container, arg
 }
 
 type containerWithMountedDirectoryArgs struct {
-	Path   string
-	Source core.DirectoryID
-	Owner  string `default:""`
-	Expand bool   `default:"false"`
+	Path     string
+	Source   core.DirectoryID
+	Owner    string `default:""`
+	ReadOnly bool   `default:"false"`
+	Expand   bool   `default:"false"`
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
@@ -1581,7 +1583,7 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 		return nil, err
 	}
 
-	return parent.WithMountedDirectory(ctx, path, dir, args.Owner, false)
+	return parent.WithMountedDirectory(ctx, path, dir, args.Owner, args.ReadOnly)
 }
 
 type containerWithAnnotationArgs struct {

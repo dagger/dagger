@@ -1207,6 +1207,61 @@ func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T
 	require.Equal(t, "sub-content", execRes.Container.From.WithMountedDirectory.WithExec.WithExec.Stdout)
 }
 
+func (ContainerSuite) TestWithMountedDirectoryReadOnly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dirRes, err := testutil.QueryWithClient[struct {
+		Directory struct {
+			WithNewFile struct {
+				ID string
+			}
+		}
+	}](c, t,
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					id
+				}
+			}
+		}`, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.ID
+
+	execRes, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					WithExec struct {
+						Stdout   string
+						WithExec struct {
+							Stdout string
+						}
+					}
+				}
+			}
+		}
+	}](c, t,
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "`+alpineImage+`") {
+					withMountedDirectory(path: "/mnt", source: $id, readOnly: true) {
+						withExec(args: ["cat", "/mnt/some-file"]) {
+							stdout
+							withExec(args: ["sh", "-lc", "if touch /mnt/should-fail 2>/dev/null; then echo writable; else echo readonly; fi"]) {
+								stdout
+							}
+						}
+					}
+				}
+			}
+		}`, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, "some-content", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
+	require.Equal(t, "readonly\n", execRes.Container.From.WithMountedDirectory.WithExec.WithExec.Stdout)
+}
+
 func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	dirRes, err := testutil.QueryWithClient[struct {

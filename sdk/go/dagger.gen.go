@@ -2834,6 +2834,8 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Mount the directory read-only.
+	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -2846,6 +2848,10 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {

@@ -102,19 +102,22 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 
 		switch m.MountType {
 		case pb.MountType_BIND:
-			if m.Readonly {
-				return nil, unsupported(opDigest(exec.OpDAG), "exec", "readonly bind mounts are unsupported")
-			}
 			dirID, err := c.resolveExecMountInputDir(opDigest(exec.OpDAG), m, inputIDs)
 			if err != nil {
 				return nil, err
+			}
+			args := []*call.Argument{
+				argString("path", m.Dest),
+				argID("source", dirID),
+			}
+			if m.Readonly {
+				args = append(args, argBool("readOnly", true))
 			}
 			ctrID = appendCall(
 				ctrID,
 				containerType(),
 				"withMountedDirectory",
-				argString("path", m.Dest),
-				argID("source", dirID),
+				args...,
 			)
 
 		case pb.MountType_CACHE:
@@ -184,7 +187,23 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("no mount for output index %d", exec.OutputIndex()))
 	}
 	if outMount.Dest == "/" {
-		return withExecID, nil
+		cleanedID := withExecID
+		seen := map[string]struct{}{}
+		for _, m := range exec.Mounts {
+			if m == nil || m == rootMount {
+				continue
+			}
+			path := cleanPath(m.Dest)
+			if path == "/" {
+				continue
+			}
+			if _, exists := seen[path]; exists {
+				continue
+			}
+			seen[path] = struct{}{}
+			cleanedID = appendCall(cleanedID, containerType(), "withoutMount", argString("path", path))
+		}
+		return cleanedID, nil
 	}
 	return appendCall(withExecID, directoryType(), "directory", argString("path", outMount.Dest)), nil
 }
