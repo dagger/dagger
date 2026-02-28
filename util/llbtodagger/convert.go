@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -15,13 +16,18 @@ import (
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 )
 
-// DefinitionToID converts an LLB definition to a Dagger API ID.
+// DefinitionToID converts an LLB definition and image config metadata to a
+// Dagger Container ID.
 //
 // The conversion is strict and fail-fast: if any part of the definition cannot
 // be represented faithfully as Dagger API calls, an error is returned.
-func DefinitionToID(def *pb.Definition) (*call.ID, error) {
+func DefinitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage) (*call.ID, error) {
+	return definitionToID(def, img)
+}
+
+func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage) (*call.ID, error) {
 	if def == nil || len(def.Def) == 0 {
-		return scratchDirectoryID(), nil
+		return applyDockerImageConfig(scratchContainerID(), img)
 	}
 
 	dag, err := buildkit.DefToDAG(def)
@@ -29,13 +35,13 @@ func DefinitionToID(def *pb.Definition) (*call.ID, error) {
 		return nil, fmt.Errorf("llbtodagger: parse definition: %w", err)
 	}
 	if dag == nil {
-		return scratchDirectoryID(), nil
+		return applyDockerImageConfig(scratchContainerID(), img)
 	}
 
 	for dag != nil && dag.Op != nil && dag.Op.Op == nil {
 		switch len(dag.Inputs) {
 		case 0:
-			return scratchDirectoryID(), nil
+			return applyDockerImageConfig(scratchContainerID(), img)
 		case 1:
 			dag = dag.Inputs[0]
 		default:
@@ -44,7 +50,15 @@ func DefinitionToID(def *pb.Definition) (*call.ID, error) {
 	}
 
 	conv := converter{memo: map[*buildkit.OpDAG]*call.ID{}}
-	return conv.convertOp(dag)
+	id, err := conv.convertOp(dag)
+	if err != nil {
+		return nil, err
+	}
+	ctrID, err := ensureContainerResult(id)
+	if err != nil {
+		return nil, err
+	}
+	return applyDockerImageConfig(ctrID, img)
 }
 
 type converter struct {
@@ -118,6 +132,40 @@ func appendCall(base *call.ID, ret *ast.Type, field string, args ...*call.Argume
 
 func scratchDirectoryID() *call.ID {
 	return appendCall(call.New(), directoryType(), "directory")
+}
+
+func scratchContainerID() *call.ID {
+	return appendCall(call.New(), containerType(), "container")
+}
+
+func ensureContainerResult(id *call.ID) (*call.ID, error) {
+	if id == nil {
+		return scratchContainerID(), nil
+	}
+
+	switch id.Type().NamedType() {
+	case containerType().NamedType:
+		return id, nil
+	case directoryType().NamedType:
+		return appendCall(scratchContainerID(), containerType(), "withRootfs", argID("directory", id)), nil
+	default:
+		return nil, fmt.Errorf("llbtodagger: top-level result type %q cannot be converted to Container", id.Type().NamedType())
+	}
+}
+
+func asDirectoryID(opDigest digest.Digest, opType string, id *call.ID) (*call.ID, error) {
+	if id == nil {
+		return scratchDirectoryID(), nil
+	}
+
+	switch id.Type().NamedType() {
+	case directoryType().NamedType:
+		return id, nil
+	case containerType().NamedType:
+		return appendCall(id, directoryType(), "rootfs"), nil
+	default:
+		return nil, unsupported(opDigest, opType, fmt.Sprintf("input type %q is not Directory/Container", id.Type().NamedType()))
+	}
 }
 
 func queryContainerID(platform *pb.Platform) (*call.ID, error) {

@@ -67,11 +67,27 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 		return nil, err
 	}
 
-	ctrID, err := queryContainerID(exec.Platform)
-	if err != nil {
-		return nil, fmt.Errorf("llbtodagger: exec %s: %w", opDigest(exec.OpDAG), err)
+	var ctrID *call.ID
+	if rootMount.Input != pb.Empty {
+		rootInputIdx := int(rootMount.Input)
+		if rootInputIdx >= 0 && rootInputIdx < len(inputIDs) {
+			rootInputID := inputIDs[rootInputIdx]
+			if rootInputID != nil && rootInputID.Type().NamedType() == containerType().NamedType {
+				if cleanPath(rootMount.Selector) == "/" {
+					ctrID = rootInputID
+				} else {
+					ctrID = appendCall(rootInputID, containerType(), "withRootfs", argID("directory", rootDirID))
+				}
+			}
+		}
 	}
-	ctrID = appendCall(ctrID, containerType(), "withRootfs", argID("directory", rootDirID))
+	if ctrID == nil {
+		ctrID, err = queryContainerID(exec.Platform)
+		if err != nil {
+			return nil, fmt.Errorf("llbtodagger: exec %s: %w", opDigest(exec.OpDAG), err)
+		}
+		ctrID = appendCall(ctrID, containerType(), "withRootfs", argID("directory", rootDirID))
+	}
 
 	for _, m := range exec.Mounts {
 		if m == rootMount {
@@ -168,7 +184,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("no mount for output index %d", exec.OutputIndex()))
 	}
 	if outMount.Dest == "/" {
-		return appendCall(withExecID, directoryType(), "rootfs"), nil
+		return withExecID, nil
 	}
 	return appendCall(withExecID, directoryType(), "directory", argString("path", outMount.Dest)), nil
 }
@@ -200,11 +216,11 @@ func (c *converter) resolveExecMountInputDir(opDgst digest.Digest, mount *pb.Mou
 		if idx < 0 || idx >= len(inputIDs) {
 			return nil, unsupported(opDgst, "exec", fmt.Sprintf("mount input index %d out of range", mount.Input))
 		}
-		dirID = inputIDs[idx]
-	}
-
-	if dirID.Type().NamedType() != directoryType().NamedType {
-		return nil, unsupported(opDgst, "exec", fmt.Sprintf("mount input type %q is not Directory", dirID.Type().NamedType()))
+		var err error
+		dirID, err = asDirectoryID(opDgst, "exec", inputIDs[idx])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	selector := cleanPath(mount.Selector)

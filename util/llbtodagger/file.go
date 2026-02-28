@@ -21,21 +21,27 @@ func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 		return scratchDirectoryID(), nil
 	}
 
-	id, err := c.convertOp(op.OpDAG.Inputs[0])
+	firstInputID, err := c.convertOp(op.OpDAG.Inputs[0])
 	if err != nil {
 		return nil, err
 	}
-	if id.Type().NamedType() != directoryType().NamedType {
-		return nil, unsupported(opDigest(op.OpDAG), "merge", fmt.Sprintf("input type %q is not Directory", id.Type().NamedType()))
+	id, err := asDirectoryID(opDigest(op.OpDAG), "merge", firstInputID)
+	if err != nil {
+		return nil, err
+	}
+	var baseContainer *call.ID
+	if firstInputID != nil && firstInputID.Type().NamedType() == containerType().NamedType {
+		baseContainer = firstInputID
 	}
 
 	for i := 1; i < len(op.OpDAG.Inputs); i++ {
-		nextID, err := c.convertOp(op.OpDAG.Inputs[i])
+		nextInputID, err := c.convertOp(op.OpDAG.Inputs[i])
 		if err != nil {
 			return nil, err
 		}
-		if nextID.Type().NamedType() != directoryType().NamedType {
-			return nil, unsupported(opDigest(op.OpDAG), "merge", fmt.Sprintf("input type %q is not Directory", nextID.Type().NamedType()))
+		nextID, err := asDirectoryID(opDigest(op.OpDAG), "merge", nextInputID)
+		if err != nil {
+			return nil, err
 		}
 		id = appendCall(
 			id,
@@ -46,6 +52,9 @@ func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 		)
 	}
 
+	if baseContainer != nil {
+		return appendCall(baseContainer, containerType(), "withRootfs", argID("directory", id)), nil
+	}
 	return id, nil
 }
 
@@ -54,20 +63,28 @@ func (c *converter) convertDiff(op *buildkit.DiffOp) (*call.ID, error) {
 		return nil, unsupported(opDigest(op.OpDAG), "diff", "missing diff op")
 	}
 
-	lowerID, err := c.resolveDiffInput(op.OpDAG, op.Lower.Input)
+	lowerInputID, err := c.resolveDiffInput(op.OpDAG, op.Lower.Input)
 	if err != nil {
 		return nil, err
 	}
-	upperID, err := c.resolveDiffInput(op.OpDAG, op.Upper.Input)
+	upperInputID, err := c.resolveDiffInput(op.OpDAG, op.Upper.Input)
+	if err != nil {
+		return nil, err
+	}
+	lowerID, err := asDirectoryID(opDigest(op.OpDAG), "diff", lowerInputID)
+	if err != nil {
+		return nil, err
+	}
+	upperID, err := asDirectoryID(opDigest(op.OpDAG), "diff", upperInputID)
 	if err != nil {
 		return nil, err
 	}
 
-	if lowerID.Type().NamedType() != directoryType().NamedType || upperID.Type().NamedType() != directoryType().NamedType {
-		return nil, unsupported(opDigest(op.OpDAG), "diff", "lower/upper inputs must be Directory")
+	diffID := appendCall(upperID, directoryType(), "diff", argID("other", lowerID))
+	if upperInputID != nil && upperInputID.Type().NamedType() == containerType().NamedType {
+		return appendCall(upperInputID, containerType(), "withRootfs", argID("directory", diffID)), nil
 	}
-
-	return appendCall(upperID, directoryType(), "diff", argID("other", lowerID)), nil
+	return diffID, nil
 }
 
 func (c *converter) resolveDiffInput(dag *buildkit.OpDAG, idx pb.InputIndex) (*call.ID, error) {
@@ -87,22 +104,34 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 	}
 
 	inputIDs := make([]*call.ID, len(op.OpDAG.Inputs))
+	inputContainerIDs := make([]*call.ID, len(op.OpDAG.Inputs))
 	for i, in := range op.OpDAG.Inputs {
 		id, err := c.convertOp(in)
 		if err != nil {
 			return nil, err
 		}
-		if id.Type().NamedType() != directoryType().NamedType {
-			return nil, unsupported(opDigest(op.OpDAG), "file", fmt.Sprintf("input type %q is not Directory", id.Type().NamedType()))
+		dirID, err := asDirectoryID(opDigest(op.OpDAG), "file", id)
+		if err != nil {
+			return nil, err
 		}
-		inputIDs[i] = id
+		inputIDs[i] = dirID
+		if id != nil && id.Type().NamedType() == containerType().NamedType {
+			inputContainerIDs[i] = id
+		}
 	}
 
 	actionOutputs := make([]*call.ID, len(op.Actions))
+	actionOutputContainers := make([]*call.ID, len(op.Actions))
+	actionOutputResolved := make([]bool, len(op.Actions))
 	outputIDs := map[pb.OutputIndex]*call.ID{}
+	outputContainers := map[pb.OutputIndex]*call.ID{}
 
 	for i, action := range op.Actions {
 		baseID, err := resolveFileActionInput(op.OpDAG, action.Input, inputIDs, actionOutputs)
+		if err != nil {
+			return nil, err
+		}
+		baseContainerID, err := resolveFileActionInputContainer(op.OpDAG, action.Input, inputContainerIDs, actionOutputContainers, actionOutputResolved)
 		if err != nil {
 			return nil, err
 		}
@@ -112,15 +141,21 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 			return nil, err
 		}
 		actionOutputs[i] = nextID
+		actionOutputContainers[i] = baseContainerID
+		actionOutputResolved[i] = true
 
 		if action.Output != pb.SkipOutput {
 			outputIDs[action.Output] = nextID
+			outputContainers[action.Output] = baseContainerID
 		}
 	}
 
 	outID, ok := outputIDs[op.OutputIndex()]
 	if !ok {
 		return nil, unsupported(opDigest(op.OpDAG), "file", fmt.Sprintf("no output for index %d", op.OutputIndex()))
+	}
+	if baseContainer := outputContainers[op.OutputIndex()]; baseContainer != nil {
+		return appendCall(baseContainer, containerType(), "withRootfs", argID("directory", outID)), nil
 	}
 	return outID, nil
 }
@@ -148,6 +183,32 @@ func resolveFileActionInput(
 		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input %d references unresolved action output", idx))
 	}
 	return actionOutputs[rel], nil
+}
+
+func resolveFileActionInputContainer(
+	dag *buildkit.OpDAG,
+	idx pb.InputIndex,
+	opInputContainers []*call.ID,
+	actionOutputContainers []*call.ID,
+	actionOutputResolved []bool,
+) (*call.ID, error) {
+	if idx == pb.Empty {
+		return nil, nil
+	}
+
+	i := int(idx)
+	if i >= 0 && i < len(opInputContainers) {
+		return opInputContainers[i], nil
+	}
+
+	rel := i - len(opInputContainers)
+	if rel < 0 || rel >= len(actionOutputContainers) {
+		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input index %d out of range", idx))
+	}
+	if !actionOutputResolved[rel] {
+		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input %d references unresolved action output", idx))
+	}
+	return actionOutputContainers[rel], nil
 }
 
 func (c *converter) applyFileAction(
