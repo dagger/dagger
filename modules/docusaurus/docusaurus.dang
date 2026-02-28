@@ -18,10 +18,12 @@ type Docusaurus {
   """
   Scan all docusaurus sites, and ensure that they build.
   """
-  pub checkBuild(ws: Workspace!): Directory! @check {
-    sites(ws).reduce(directory) { builds, site =>
+  pub checkBuild(ws: Workspace!): Void @check {
+    let builds = sites(ws).reduce(directory) { builds, site =>
       builds.withDirectory(site.path, site.build(ws))
     }
+    builds.sync
+    null
   }
 
   pub sites(ws: Workspace!): [Site!]! {
