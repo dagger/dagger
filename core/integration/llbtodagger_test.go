@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -260,6 +261,52 @@ CMD ["/final/out.txt"]
 		portSet[fmt.Sprintf("%d/%s", n, proto)] = true
 	}
 	require.True(t, portSet["8090/TCP"])
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDMetadataExportConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, nil)
+
+	dockerfile := `
+FROM ` + alpineImage + `
+RUN echo hi > /out.txt
+HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --retries=5 CMD ["sh","-c","test -f /out.txt"]
+ONBUILD RUN echo child-build
+SHELL ["/bin/ash","-eo","pipefail","-c"]
+VOLUME ["/cache","/data"]
+STOPSIGNAL SIGQUIT
+CMD ["cat", "/out.txt"]
+`
+
+	_, expectedImage := dockerfileToDefinitionAndImage(ctx, t, contextDir, dockerfile)
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, dockerfile)
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hi", strings.TrimSpace(out))
+
+	imagePath := filepath.Join(t.TempDir(), "llbtodagger-metadata.tar")
+	actualPath, err := ctr.Export(ctx, imagePath)
+	require.NoError(t, err)
+	require.Equal(t, imagePath, actualPath)
+
+	dockerManifestBytes := readTarFile(t, imagePath, "manifest.json")
+	var dockerManifest []struct {
+		Config string
+	}
+	require.NoError(t, json.Unmarshal(dockerManifestBytes, &dockerManifest))
+	require.Len(t, dockerManifest, 1)
+
+	configBytes := readTarFile(t, imagePath, dockerManifest[0].Config)
+	var gotImage dockerspec.DockerOCIImage
+	require.NoError(t, json.Unmarshal(configBytes, &gotImage))
+
+	require.Equal(t, expectedImage.Config.Healthcheck, gotImage.Config.Healthcheck)
+	require.Equal(t, expectedImage.Config.OnBuild, gotImage.Config.OnBuild)
+	require.Equal(t, expectedImage.Config.Shell, gotImage.Config.Shell)
+	require.Equal(t, expectedImage.Config.Volumes, gotImage.Config.Volumes)
+	require.Equal(t, expectedImage.Config.StopSignal, gotImage.Config.StopSignal)
 }
 
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunMountReadonly(ctx context.Context, t *testctx.T) {

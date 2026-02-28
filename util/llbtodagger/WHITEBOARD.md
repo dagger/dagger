@@ -54,6 +54,7 @@ Last updated: 2026-02-28
 - [x] Added support for `copy` to explicit file destination paths by mapping single-file copies to `withFile`.
 - [x] Added support for group-only `chown` (`--chown=:gid`) in converted file ops.
 - [x] Added support for named user/group `chown` on copy actions when container context is available.
+- [x] Added internal container metadata mapping for Docker image config fields: healthcheck, onbuild, shell, volumes, stop signal.
 
 ## Proposed Library Shape (Planning Draft)
 - Public entrypoint (exact naming TBD):
@@ -170,6 +171,10 @@ Last updated: 2026-02-28
   - validate expected side effects from `RUN`, `COPY`, `ADD`, `WORKDIR`, `ENV`
 - [x] Add at least one complex multi-stage Dockerfile end-to-end case.
 - [x] Add deterministic checks for ID encoding in integration path where stable.
+- [x] Add export-based metadata verification in e2e coverage:
+  - [x] export resulting container image (local temp dir or test registry path),
+  - [x] inspect OCI image config (`config` JSON),
+  - [x] assert expected metadata fields are present/unchanged (especially metadata not directly observable via runtime exec behavior).
 - [x] Keep this whiteboard updated after each implementation chunk.
 
 ### Phase 10: `withDirectory` Permissions Support (`copy` mode override)
@@ -250,6 +255,31 @@ Last updated: 2026-02-28
   - [x] Run focused `core/integration` llbtodagger tests following `skills/cache-expert/references/debugging.md`.
   - [x] Update unsupported catalogs to remove named-chown entries that are now supported and keep any still-unsupported nuances explicit.
 
+### Phase 14: Internal Container API for OCI Metadata Fields
+- [x] Add internal-only container schema API (underscore-prefixed) for setting OCI config metadata not currently exposed in public SDK methods.
+  - [x] Confirm API naming/shape (`_...`) so it is callable from raw ID construction but intentionally not codegen'd for SDKs.
+  - [x] Keep scope limited to llbtodagger conversion needs; avoid broad public-surface changes.
+- [x] Add arguments covering the currently unsupported Dockerfile-relevant metadata:
+  - [x] `healthcheck`
+  - [x] `onBuild`
+  - [x] `shell`
+  - [x] `volumes`
+  - [x] `stopSignal`
+- [x] Define GraphQL-friendly argument encodings for non-scalar fields.
+  - [x] Representation for `healthcheck`: JSON-encoded `dockerspec.HealthcheckConfig`.
+  - [x] Representation for `volumes`: sorted `[]string` of volume paths (re-hydrated to map/set in schema resolver).
+- [x] Thread schema args into core container mutation logic and ensure `Container.Config` is updated deterministically.
+- [x] Keep existing behavior unchanged unless internal API is explicitly used.
+- [x] Regenerate Go SDK if schema generation is impacted (even though underscore APIs are internal-only).
+  - [x] Command: `dagger -y call -m ./toolchains/go-sdk-dev generate`
+- [x] Update llbtodagger metadata conversion to use the new internal API instead of fail-fast for these fields.
+- [x] Add/expand tests:
+  - [x] unit tests for the internal schema resolver path and config mutation behavior.
+  - [x] llbtodagger unit tests that verify IDs include internal metadata call when these fields are present.
+  - [x] integration test coverage (llbtodagger and/or container-focused) validating loaded container behavior/config where observable.
+  - [x] include export-and-inspect assertions for OCI config fields (healthcheck/onbuild/shell/volumes/stopSignal) so metadata is validated directly, not only via runtime behavior.
+- [x] Update unsupported catalogs after implementation lands, removing items no longer unsupported.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -290,34 +320,59 @@ Last updated: 2026-02-28
 - `FileOp` copy actions with archive auto-unpack, `alwaysReplaceExistingDestPaths`, or `createDestPath=false`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
-- Named ownership on `mkdir`/`mkfile` file actions (copy is supported with container context).
+- Named ownership on `mkdir` file actions (Dockerfile `WORKDIR` path when `USER` is named).
+- Named ownership on `mkfile` file actions.
 - Named ownership on copy actions when no container context is available.
 
 ## Detailed Unsupported Nuance Catalog (Exhaustive, Dockerfile-Classified)
 
 ### Unsupported and relevant to Dockerfile-generated LLB
-- Platform `OSVersion` and `OSFeatures` are unsupported.
-- Local source `followPaths` is unsupported.
-- HTTP checksum enforcement attr is unsupported (`ADD --checksum` path).
-- Non-default network mode is unsupported (`RUN --network=...`).
-- Non-sandbox security mode is unsupported (`RUN --security=...` when enabled).
+
+#### HIGH
+
 - Secret environment variables are unsupported (`RUN --mount=type=secret,env=...`).
-- Proxy environment injection is unsupported (proxy build-arg path).
 - Secret mounts are unsupported (`RUN --mount=type=secret`).
+
 - SSH mounts are unsupported (`RUN --mount=type=ssh`).
+
+- Proxy environment injection is unsupported (proxy build-arg path).
+
+- HTTP checksum enforcement attr is unsupported (`ADD --checksum` path).
+
+- Local source `followPaths` is unsupported.
+  - This commonly appears for Dockerfile context copies that reference specific paths (for example `COPY package.json /app/package.json`), where the frontend narrows context transfer to only used paths.
+  - It is not always present: broad context usage like `COPY . /app` typically marks `/` and does not emit a narrowed `followPaths` list.
+  - BuildKit uses `followPaths` to resolve symlinks in selected paths so link targets are also included in context transfer.
+  - Current llbtodagger behavior is strict fail-fast when `local.followpaths` is present.
+
+#### MEDIUM
+
+- Empty named user in `chown` is unsupported when it is not the Dockerfile group-only representation (`--chown=:...`).
+  - BuildKit/Dockerfile group-only form (`--chown=:gid`) can surface as empty named user + explicit group; we normalize this to `0:<gid>`.
+  - Other empty-name combinations are treated as malformed/ambiguous and remain fail-fast.
+  - Follow-up nuance: for user-only named ownership (`--chown=user`), BuildKit semantics use the user's primary GID from passwd; ensure container-side default-group behavior stays aligned before broadening empty-name acceptance.
+
 - `copy` archive auto-unpack compatibility mode is unsupported (`ADD` local archive path).
   - BuildKit represents this with `FileActionCopy.attemptUnpackDockerCompatibility`.
   - Dockerfile frontend sets it from `ADD` semantics (`ADD` defaults to unpack for local archives; `COPY` does not auto-unpack; `ADD --unpack` can override behavior).
   - Upstream executor path: for each matched source, try archive-detection + untar into destination; if not an archive, fall back to normal copy.
   - Current llbtodagger mapping errors on this flag because we do not yet model that conditional unpack-or-copy behavior in the Dagger ID translation.
-- Named ownership for `mkdir`/`mkfile` actions is unsupported.
+
+- Named ownership for `mkdir` actions is unsupported (Dockerfile `WORKDIR` path when `USER` is named).
+  - BuildKit encodes named ownership with an input index (`UserOpt_ByName.Input`) and resolves names against that input's filesystem.
+  - Resolution reads `/etc/passwd` and `/etc/group` from the mounted input used for the action (the stage rootfs context for `WORKDIR`-driven `mkdir`).
+  - Supporting this faithfully in llbtodagger `mkdir` mapping requires container-context name resolution at that action point (or equivalent API behavior), not plain directory-only `chown`.
+
 - Named ownership for copy actions without container context is unsupported.
-- Empty named user in `chown` is unsupported when it is not the Dockerfile group-only representation (`--chown=:...`).
-- Healthcheck metadata is unsupported.
-- ONBUILD metadata is unsupported.
-- Shell metadata is unsupported.
-- Volumes metadata is unsupported.
-- Stop signal metadata is unsupported.
+
+- Non-default network mode is unsupported (`RUN --network=...`).
+
+- Non-sandbox security mode is unsupported (`RUN --security=...` when enabled).
+
+#### LOW
+
+- Platform `OSVersion` and `OSFeatures` are unsupported.
+
 - `ArgsEscaped` on Windows images is unsupported.
 
 ### Unsupported but outside Dockerfile instruction support (or malformed/non-canonical LLB)
@@ -371,6 +426,7 @@ Last updated: 2026-02-28
 - File actions other than `mkdir`, `mkfile`, `rm`, `copy` are unsupported.
 - `mkdir` without `makeParents=true` is unsupported.
 - `mkdir` timestamp override is unsupported.
+- Named ownership for `mkfile` actions is unsupported.
 - `mkfile` timestamp override is unsupported.
 - `mkfile` non-UTF8/binary payload is unsupported.
 - `copy` `alwaysReplaceExistingDestPaths=true` is unsupported.
@@ -384,6 +440,9 @@ Last updated: 2026-02-28
 ## Crucial Notes To Not Forget
 - `skills/cache-expert/references/debugging.md` is the authoritative source for how to run integration tests; follow it exactly.
   - This applies to both primary agent commands and any subagent that runs/tests/parses integration output.
+- In `core/schema`, APIs prefixed with `_` are internal-only:
+  - they can be called via raw ID construction,
+  - they are intentionally not codegen'd into SDK clients.
 - After any engine schema API change, regenerate the Go SDK used by integration tests.
   - Required command: `dagger -y call -m ./toolchains/go-sdk-dev generate`
   - Worktree gotcha: if module resolution fails, pass `--workspace=.` explicitly:
@@ -396,6 +455,9 @@ Last updated: 2026-02-28
 
 ## Whiteboard Usage Rules (For This Task)
 - Every time scope, assumptions, or mapping behavior changes, update this file in the same change.
+- Keep section boundaries strict:
+  - `Unsupported and relevant to Dockerfile-generated LLB` must contain only Dockerfile-relevant items.
+  - Non-Dockerfile/non-canonical items must go in `Unsupported but outside Dockerfile instruction support (or malformed/non-canonical LLB)`.
 - For each implemented op mapper, update:
   - checklist box,
   - coverage matrix status,
