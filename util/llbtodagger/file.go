@@ -136,17 +136,17 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 			return nil, err
 		}
 
-		nextID, err := c.applyFileAction(op.OpDAG, baseID, action, inputIDs, actionOutputs)
+		nextID, nextContainerID, err := c.applyFileAction(op.OpDAG, baseID, baseContainerID, action, inputIDs, actionOutputs)
 		if err != nil {
 			return nil, err
 		}
 		actionOutputs[i] = nextID
-		actionOutputContainers[i] = baseContainerID
+		actionOutputContainers[i] = nextContainerID
 		actionOutputResolved[i] = true
 
 		if action.Output != pb.SkipOutput {
 			outputIDs[action.Output] = nextID
-			outputContainers[action.Output] = baseContainerID
+			outputContainers[action.Output] = nextContainerID
 		}
 	}
 
@@ -155,6 +155,9 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 		return nil, unsupported(opDigest(op.OpDAG), "file", fmt.Sprintf("no output for index %d", op.OutputIndex()))
 	}
 	if baseContainer := outputContainers[op.OutputIndex()]; baseContainer != nil {
+		if outID != nil && outID.Field() == "rootfs" && outID.Receiver() == baseContainer {
+			return baseContainer, nil
+		}
 		return appendCall(baseContainer, containerType(), "withRootfs", argID("directory", outID)), nil
 	}
 	return outID, nil
@@ -214,32 +217,36 @@ func resolveFileActionInputContainer(
 func (c *converter) applyFileAction(
 	dag *buildkit.OpDAG,
 	baseID *call.ID,
+	baseContainerID *call.ID,
 	action *pb.FileAction,
 	opInputIDs []*call.ID,
 	actionOutputs []*call.ID,
-) (*call.ID, error) {
+) (*call.ID, *call.ID, error) {
 	if baseID.Type().NamedType() != directoryType().NamedType {
-		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("primary input type %q is not Directory", baseID.Type().NamedType()))
+		return nil, nil, unsupported(opDigest(dag), "file", fmt.Sprintf("primary input type %q is not Directory", baseID.Type().NamedType()))
 	}
 
 	switch x := action.Action.(type) {
 	case *pb.FileAction_Mkdir:
-		return applyMkdir(opDigest(dag), baseID, x.Mkdir)
+		nextID, err := applyMkdir(opDigest(dag), baseID, x.Mkdir)
+		return nextID, baseContainerID, err
 	case *pb.FileAction_Mkfile:
-		return applyMkfile(opDigest(dag), baseID, x.Mkfile)
+		nextID, err := applyMkfile(opDigest(dag), baseID, x.Mkfile)
+		return nextID, baseContainerID, err
 	case *pb.FileAction_Rm:
-		return applyRm(opDigest(dag), baseID, x.Rm)
+		nextID, err := applyRm(opDigest(dag), baseID, x.Rm)
+		return nextID, baseContainerID, err
 	case *pb.FileAction_Copy:
 		srcID, err := resolveFileActionInput(dag, action.SecondaryInput, opInputIDs, actionOutputs)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if srcID.Type().NamedType() != directoryType().NamedType {
-			return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("copy source type %q is not Directory", srcID.Type().NamedType()))
+			return nil, nil, unsupported(opDigest(dag), "file", fmt.Sprintf("copy source type %q is not Directory", srcID.Type().NamedType()))
 		}
-		return applyCopy(opDigest(dag), baseID, srcID, x.Copy)
+		return applyCopy(opDigest(dag), baseID, baseContainerID, srcID, x.Copy)
 	default:
-		return nil, unsupported(opDigest(dag), "file", "unsupported file action")
+		return nil, nil, unsupported(opDigest(dag), "file", "unsupported file action")
 	}
 }
 
@@ -267,6 +274,9 @@ func applyMkdir(opDgst digest.Digest, baseID *call.ID, mkdir *pb.FileActionMkDir
 		return nil, unsupported(opDgst, "file.mkdir", err.Error())
 	}
 	if owner != "" {
+		if ownerRequiresContainerResolution(owner) {
+			return nil, unsupported(opDgst, "file.mkdir", "named user/group chown is unsupported for mkdir")
+		}
 		id = appendCall(
 			id,
 			directoryType(),
@@ -305,6 +315,9 @@ func applyMkfile(opDgst digest.Digest, baseID *call.ID, mkfile *pb.FileActionMkF
 		return nil, unsupported(opDgst, "file.mkfile", err.Error())
 	}
 	if owner != "" {
+		if ownerRequiresContainerResolution(owner) {
+			return nil, unsupported(opDgst, "file.mkfile", "named user/group chown is unsupported for mkfile")
+		}
 		id = appendCall(
 			id,
 			directoryType(),
@@ -324,18 +337,24 @@ func applyRm(opDgst digest.Digest, baseID *call.ID, rm *pb.FileActionRm) (*call.
 	return appendCall(baseID, directoryType(), "withoutFile", argString("path", cleanPath(rm.Path))), nil
 }
 
-func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActionCopy) (*call.ID, error) {
+func applyCopy(
+	opDgst digest.Digest,
+	baseID *call.ID,
+	baseContainerID *call.ID,
+	sourceID *call.ID,
+	cp *pb.FileActionCopy,
+) (*call.ID, *call.ID, error) {
 	if cp == nil {
-		return nil, unsupported(opDgst, "file.copy", "missing copy action")
+		return nil, nil, unsupported(opDgst, "file.copy", "missing copy action")
 	}
 	if cp.AttemptUnpackDockerCompatibility {
-		return nil, unsupported(opDgst, "file.copy", "archive auto-unpack is unsupported")
+		return nil, nil, unsupported(opDgst, "file.copy", "archive auto-unpack is unsupported")
 	}
 	if cp.AlwaysReplaceExistingDestPaths {
-		return nil, unsupported(opDgst, "file.copy", "alwaysReplaceExistingDestPaths is unsupported")
+		return nil, nil, unsupported(opDgst, "file.copy", "alwaysReplaceExistingDestPaths is unsupported")
 	}
 	if !cp.CreateDestPath {
-		return nil, unsupported(opDgst, "file.copy", "copy without createDestPath is unsupported")
+		return nil, nil, unsupported(opDgst, "file.copy", "copy without createDestPath is unsupported")
 	}
 
 	sourceSubdir, include := deriveCopySelection(cp)
@@ -346,7 +365,14 @@ func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActio
 
 	owner, err := chownOwnerString(cp.Owner)
 	if err != nil {
-		return nil, unsupported(opDgst, "file.copy", err.Error())
+		return nil, nil, unsupported(opDgst, "file.copy", err.Error())
+	}
+	if ownerRequiresContainerResolution(owner) {
+		if baseContainerID == nil {
+			return nil, nil, unsupported(opDgst, "file.copy", "named user/group chown requires container context")
+		}
+		id, ctrID := applyCopyViaContainer(baseID, baseContainerID, sourceDirID, cp, include, owner)
+		return id, ctrID, nil
 	}
 
 	if filePath, ok := explicitFileCopyPath(cp, include); ok {
@@ -361,7 +387,7 @@ func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActio
 		if cp.Mode >= 0 {
 			args = append(args, argInt("permissions", int64(cp.Mode)))
 		}
-		return appendCall(baseID, directoryType(), "withFile", args...), nil
+		return appendCall(baseID, directoryType(), "withFile", args...), baseContainerID, nil
 	}
 
 	args := []*call.Argument{
@@ -382,7 +408,57 @@ func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActio
 		args = append(args, argInt("permissions", int64(cp.Mode)))
 	}
 
-	return appendCall(baseID, directoryType(), "withDirectory", args...), nil
+	return appendCall(baseID, directoryType(), "withDirectory", args...), baseContainerID, nil
+}
+
+func applyCopyViaContainer(
+	baseID *call.ID,
+	baseContainerID *call.ID,
+	sourceDirID *call.ID,
+	cp *pb.FileActionCopy,
+	include []string,
+	owner string,
+) (*call.ID, *call.ID) {
+	// Ensure the container context used for owner name resolution matches the
+	// current directory view for this action input.
+	workingContainerID := appendCall(
+		baseContainerID,
+		containerType(),
+		"withRootfs",
+		argID("directory", baseID),
+	)
+
+	var nextContainerID *call.ID
+	if filePath, ok := explicitFileCopyPath(cp, include); ok {
+		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
+		args := []*call.Argument{
+			argString("path", cleanPath(cp.Dest)),
+			argID("source", fileID),
+			argString("owner", owner),
+		}
+		if cp.Mode >= 0 {
+			args = append(args, argInt("permissions", int64(cp.Mode)))
+		}
+		nextContainerID = appendCall(workingContainerID, containerType(), "withFile", args...)
+	} else {
+		args := []*call.Argument{
+			argString("path", cleanPath(cp.Dest)),
+			argID("source", sourceDirID),
+			argString("owner", owner),
+		}
+		if len(include) > 0 {
+			args = append(args, argStringList("include", include))
+		}
+		if len(cp.ExcludePatterns) > 0 {
+			args = append(args, argStringList("exclude", cp.ExcludePatterns))
+		}
+		if cp.Mode >= 0 {
+			args = append(args, argInt("permissions", int64(cp.Mode)))
+		}
+		nextContainerID = appendCall(workingContainerID, containerType(), "withDirectory", args...)
+	}
+
+	return appendCall(nextContainerID, directoryType(), "rootfs"), nextContainerID
 }
 
 func deriveCopySelection(cp *pb.FileActionCopy) (sourceSubdir string, include []string) {
@@ -449,10 +525,21 @@ func chownOwnerString(chown *pb.ChownOpt) (string, error) {
 	if chown == nil {
 		return "", nil
 	}
-	user, err := userOptToString(chown.User)
-	if err != nil {
-		return "", err
+	var (
+		user string
+		err  error
+	)
+	// BuildKit represents group-only chown from Dockerfile ("--chown=:gid")
+	// as an empty named user with group set. Normalize that user side to UID 0.
+	if isEmptyNamedUser(chown.User) && chown.Group != nil {
+		user = ""
+	} else {
+		user, err = userOptToString(chown.User)
+		if err != nil {
+			return "", err
+		}
 	}
+
 	group, err := userOptToString(chown.Group)
 	if err != nil {
 		return "", err
@@ -462,12 +549,26 @@ func chownOwnerString(chown *pb.ChownOpt) (string, error) {
 	case user == "" && group == "":
 		return "", nil
 	case user == "" && group != "":
-		return "", fmt.Errorf("group-only chown is unsupported")
+		return "0:" + group, nil
 	case group == "":
 		return user, nil
 	default:
 		return user + ":" + group, nil
 	}
+}
+
+func isEmptyNamedUser(user *pb.UserOpt) bool {
+	if user == nil {
+		return false
+	}
+	byName, ok := user.User.(*pb.UserOpt_ByName)
+	if !ok {
+		return false
+	}
+	if byName.ByName == nil {
+		return false
+	}
+	return strings.TrimSpace(byName.ByName.Name) == ""
 }
 
 func userOptToString(user *pb.UserOpt) (string, error) {
@@ -478,11 +579,33 @@ func userOptToString(user *pb.UserOpt) (string, error) {
 	case *pb.UserOpt_ByID:
 		return strconv.FormatUint(uint64(v.ByID), 10), nil
 	case *pb.UserOpt_ByName:
-		if strings.TrimSpace(v.ByName.Name) == "" {
+		if v.ByName == nil || strings.TrimSpace(v.ByName.Name) == "" {
 			return "", fmt.Errorf("empty named user is unsupported")
 		}
-		return "", fmt.Errorf("named user/group chown is unsupported")
+		return strings.TrimSpace(v.ByName.Name), nil
 	default:
 		return "", fmt.Errorf("unknown user option type")
 	}
+}
+
+func ownerRequiresContainerResolution(owner string) bool {
+	if owner == "" {
+		return false
+	}
+	user, group, hasGroup := strings.Cut(owner, ":")
+	if ownerComponentRequiresResolution(user) {
+		return true
+	}
+	if hasGroup && ownerComponentRequiresResolution(group) {
+		return true
+	}
+	return false
+}
+
+func ownerComponentRequiresResolution(component string) bool {
+	if component == "" {
+		return false
+	}
+	_, err := strconv.ParseUint(component, 10, 32)
+	return err != nil
 }

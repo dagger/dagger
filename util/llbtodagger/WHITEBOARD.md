@@ -52,6 +52,8 @@ Last updated: 2026-02-28
 - [x] Added `core/integration` end-to-end suite validating Dockerfile -> dockerfile2llb -> DefinitionToID -> LoadContainerFromID execution path.
 - [x] Added readonly bind-mount support + non-sticky exec mount cleanup semantics for converted `ExecOp` mount handling.
 - [x] Added support for `copy` to explicit file destination paths by mapping single-file copies to `withFile`.
+- [x] Added support for group-only `chown` (`--chown=:gid`) in converted file ops.
+- [x] Added support for named user/group `chown` on copy actions when container context is available.
 
 ## Proposed Library Shape (Planning Draft)
 - Public entrypoint (exact naming TBD):
@@ -212,6 +214,42 @@ Last updated: 2026-02-28
   - [x] Run focused integration tests using the debugging.md-prescribed workflow.
   - [x] Remove "readonly bind mounts unsupported" entries from unsupported catalogs after implementation lands.
 
+### Phase 12: Group-Only `chown` Support
+- [x] Support group-only ownership mapping in llbtodagger file actions.
+  - [x] Map group-only chown to Dagger owner string using explicit UID (`0:<gid>` baseline) instead of erroring.
+  - [x] Preserve current fail-fast behavior for unsupported named-user/group variants that still cannot be represented.
+- [x] Add unit coverage.
+  - [x] Add focused tests for chown-owner normalization helper behavior for group-only inputs.
+  - [x] Add FileOp conversion unit assertions for group-only chown on supported copy paths.
+- [x] Add Dockerfile-driven conversion unit coverage.
+  - [x] Add `COPY --chown=:<gid>` conversion test and assert owner field in emitted ID chain.
+- [x] Add integration coverage.
+  - [x] Add llbtodagger integration test using Dockerfile with group-only chown and assert resulting uid:gid on copied artifact.
+- [x] Validation + catalog updates.
+  - [x] Run `go test ./util/llbtodagger`.
+  - [x] Run focused `core/integration` llbtodagger tests via debugging.md command shape.
+  - [x] Remove/update "group-only chown unsupported" entries after implementation lands.
+
+### Phase 13: Named User/Group `chown` via Container-Aware FileOp Mapping
+- [x] Planning + guardrails.
+  - [x] Keep fail-fast behavior for any named-ownership case that cannot be represented faithfully.
+  - [x] Scope to Dockerfile-relevant `COPY/ADD --chown=<name>` path first; do not broaden with fallback heuristics.
+- [x] Converter support.
+  - [x] Accept non-empty `UserOpt_ByName` values in `chownOwnerString` normalization.
+  - [x] Detect owner strings that require name resolution (`user/group` names vs numeric ids).
+  - [x] For copy actions with named ownership, emit container-level `withFile` / `withDirectory` calls (with rootfs sync) so Dagger resolves names through container `/etc/passwd` and `/etc/group`.
+  - [x] Keep numeric/group-only paths on the existing directory-level fast path.
+  - [x] Return explicit unsupported errors when named ownership is requested but no container context is available.
+- [x] Tests.
+  - [x] Add unit tests for owner normalization that include named-user and named-group cases.
+  - [x] Add FileOp conversion tests asserting named-chown copy emits container-level calls.
+  - [x] Add Dockerfile-driven conversion tests for `COPY --chown=<name>`.
+  - [x] Add integration tests that create users/groups in image and assert final file ownership after `LoadContainerFromID`.
+- [x] Validation + bookkeeping.
+  - [x] Run `go test ./util/llbtodagger`.
+  - [x] Run focused `core/integration` llbtodagger tests following `skills/cache-expert/references/debugging.md`.
+  - [x] Update unsupported catalogs to remove named-chown entries that are now supported and keep any still-unsupported nuances explicit.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -252,7 +290,8 @@ Last updated: 2026-02-28
 - `FileOp` copy actions with archive auto-unpack, `alwaysReplaceExistingDestPaths`, or `createDestPath=false`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
-- Named user/group ownership (`byName`) in file actions.
+- Named ownership on `mkdir`/`mkfile` file actions (copy is supported with container context).
+- Named ownership on copy actions when no container context is available.
 
 ## Detailed Unsupported Nuance Catalog (Exhaustive, Dockerfile-Classified)
 
@@ -271,9 +310,9 @@ Last updated: 2026-02-28
   - Dockerfile frontend sets it from `ADD` semantics (`ADD` defaults to unpack for local archives; `COPY` does not auto-unpack; `ADD --unpack` can override behavior).
   - Upstream executor path: for each matched source, try archive-detection + untar into destination; if not an archive, fall back to normal copy.
   - Current llbtodagger mapping errors on this flag because we do not yet model that conditional unpack-or-copy behavior in the Dagger ID translation.
-- Group-only `chown` is unsupported.
-- Named user/group `chown` (`byName`) is unsupported.
-- Empty named user in `chown` is unsupported.
+- Named ownership for `mkdir`/`mkfile` actions is unsupported.
+- Named ownership for copy actions without container context is unsupported.
+- Empty named user in `chown` is unsupported when it is not the Dockerfile group-only representation (`--chown=:...`).
 - Healthcheck metadata is unsupported.
 - ONBUILD metadata is unsupported.
 - Shell metadata is unsupported.

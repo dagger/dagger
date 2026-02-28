@@ -384,6 +384,133 @@ func TestDefinitionToIDFileCopyExplicitDestPathUsesWithFile(t *testing.T) {
 	require.Equal(t, "a.txt", sourceFile.Arg("path").Value().ToInput())
 }
 
+func TestChownOwnerStringGroupOnlyByID(t *testing.T) {
+	t.Parallel()
+
+	owner, err := chownOwnerString(&pb.ChownOpt{
+		Group: &pb.UserOpt{
+			User: &pb.UserOpt_ByID{ByID: 123},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0:123", owner)
+}
+
+func TestChownOwnerStringGroupOnlyWithEmptyUserName(t *testing.T) {
+	t.Parallel()
+
+	owner, err := chownOwnerString(&pb.ChownOpt{
+		User: &pb.UserOpt{
+			User: &pb.UserOpt_ByName{
+				ByName: &pb.NamedUserOpt{Name: ""},
+			},
+		},
+		Group: &pb.UserOpt{
+			User: &pb.UserOpt_ByID{ByID: 456},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0:456", owner)
+}
+
+func TestChownOwnerStringNamedUserGroup(t *testing.T) {
+	t.Parallel()
+
+	owner, err := chownOwnerString(&pb.ChownOpt{
+		User: &pb.UserOpt{
+			User: &pb.UserOpt_ByName{
+				ByName: &pb.NamedUserOpt{Name: "builder"},
+			},
+		},
+		Group: &pb.UserOpt{
+			User: &pb.UserOpt_ByName{
+				ByName: &pb.NamedUserOpt{Name: "staff"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "builder:staff", owner)
+}
+
+func TestDefinitionToIDFileCopyNamedChownWithoutContainerContextUnsupported(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().
+		File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).
+		File(llb.Mkfile("/src/a.txt", 0o644, []byte("hello")))
+	st := llb.Scratch().File(
+		llb.Copy(
+			src,
+			"/src/a.txt",
+			"/dst/a.txt",
+			&llb.CopyInfo{CreateDestPath: true},
+			llb.WithUser("builder:staff"),
+		),
+	)
+
+	_, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	unsupportedErr := requireUnsupported(t, err, "file.copy")
+	require.Contains(t, unsupportedErr.Reason, "requires container context")
+}
+
+func TestDefinitionToIDFileCopyNamedChownWithContainerContext(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().
+		File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).
+		File(llb.Mkfile("/src/a.txt", 0o644, []byte("hello")))
+	st := llb.Image("alpine").File(
+		llb.Copy(
+			src,
+			"/src/a.txt",
+			"/dst/a.txt",
+			&llb.CopyInfo{CreateDestPath: true},
+			llb.WithUser("builder:staff"),
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+	require.Equal(t, "container", fieldsFromRoot(id)[0])
+
+	withFile := findFieldInChain(id, "withFile")
+	require.NotNil(t, withFile)
+	require.Equal(t, "/dst/a.txt", withFile.Arg("path").Value().ToInput())
+	require.Equal(t, "builder:staff", withFile.Arg("owner").Value().ToInput())
+
+	sourceID, ok := withFile.Arg("source").Value().ToInput().(*call.ID)
+	require.True(t, ok)
+	sourceFile := findFieldInChain(sourceID, "file")
+	require.NotNil(t, sourceFile)
+	require.Equal(t, "a.txt", sourceFile.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDFileCopyGroupOnlyChown(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).File(llb.Mkfile("/src/a.txt", 0o644, []byte("hello")))
+	st := llb.Scratch().File(
+		llb.Copy(
+			src,
+			"/src/a.txt",
+			"/dst/a.txt",
+			&llb.CopyInfo{
+				CreateDestPath: true,
+				ChownOpt: &llb.ChownOpt{
+					Group: &llb.UserOpt{UID: 789},
+				},
+			},
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	withFile := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, "0:789", withFile.Arg("owner").Value().ToInput())
+}
+
 func TestDefinitionToIDFileCopyAlwaysReplaceUnsupported(t *testing.T) {
 	t.Parallel()
 

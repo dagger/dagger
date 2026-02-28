@@ -93,6 +93,49 @@ COPY --chmod=751 input.txt /app/out.txt
 	require.Equal(t, "751", strings.TrimSpace(permOut))
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyGroupOnlyChown(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, map[string]string{
+		"input.txt": "group-only-chown",
+	})
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+COPY --chown=:123 input.txt /app/out.txt
+`)
+
+	contents, err := ctr.File("/app/out.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "group-only-chown", strings.TrimSpace(contents))
+
+	ownerOut, err := ctr.WithExec([]string{"stat", "-c", "%u:%g", "/app/out.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0:123", strings.TrimSpace(ownerOut))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyNamedChown(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, map[string]string{
+		"input.txt": "named-chown",
+	})
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+RUN addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser
+COPY --chown=auser:agroup input.txt /app/out.txt
+`)
+
+	contents, err := ctr.File("/app/out.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "named-chown", strings.TrimSpace(contents))
+
+	ownerOut, err := ctr.WithExec([]string{"stat", "-c", "%u:%g %U:%G", "/app/out.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1234:4321 auser:agroup", strings.TrimSpace(ownerOut))
+}
+
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAddHTTP(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -146,8 +189,10 @@ RUN cat /work/input.txt > /work/out.txt && cat /work/second.txt > /work/out-seco
 
 FROM `+alpineImage+`
 WORKDIR /final
+RUN addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser
 COPY --chmod=751 --from=base /work/out.txt /final/
 COPY --chmod=640 --from=base /work/out-second.txt /final/
+COPY --chown=auser:agroup --from=base /work/out-second.txt /final/out-named.txt
 ENV RESULT=success
 USER root
 LABEL com.example.suite=llbtodagger
@@ -175,6 +220,10 @@ CMD ["/final/out.txt"]
 	secondPermOut, err := ctr.WithExec([]string{"stat", "-c", "%a", "/final/out-second.txt"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "640", strings.TrimSpace(secondPermOut))
+
+	namedOwnerOut, err := ctr.WithExec([]string{"stat", "-c", "%u:%g %U:%G", "/final/out-named.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1234:4321 auser:agroup", strings.TrimSpace(namedOwnerOut))
 
 	workdir, err := ctr.Workdir(ctx)
 	require.NoError(t, err)
