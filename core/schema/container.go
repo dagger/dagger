@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/v2/core/images"
@@ -32,6 +33,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type containerSchema struct{}
@@ -655,16 +657,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					OCI support.`),
 			),
 
-		/*
-			TODO: re-implement import/fromInternal.
-
-			dagql.NodeFunc("import", s.import_).
-				Doc(`Reads the container from an OCI tarball.`).
-				Args(
-					dagql.Arg("source").Doc(`File to read the container from.`),
-					dagql.Arg("tag").Doc(`Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
-				),
-		*/
+		dagql.NodeFunc("import", s.import_).
+			Doc(`Reads the container from an OCI tarball.`).
+			Args(
+				dagql.Arg("source").Doc(`File to read the container from.`),
+				dagql.Arg("tag").Doc(`Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
+			),
 
 		dagql.Func("withRegistryAuth", s.withRegistryAuth).
 			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
@@ -2565,18 +2563,42 @@ func (s *containerSchema) exportImage(
 	return core.Void{}, errors.New("invalid load config")
 }
 
-/*
-TODO: re-implement import/fromInternal.
-
 type containerImportArgs struct {
 	Source core.FileID
 	Tag    string `default:""`
 }
 
 func (s *containerSchema) import_(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerImportArgs) (*core.Container, error) {
-	...
+	start := time.Now()
+	slog.ExtraDebug("importing container", "source", args.Source.Display(), "tag", args.Tag)
+	defer func() {
+		slog.ExtraDebug("done importing container", "source", args.Source.Display(), "tag", args.Tag, "took", start)
+	}()
+	opID := dagql.CurrentID(ctx)
+	if opID == nil {
+		return nil, fmt.Errorf("missing operation ID for import")
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	source, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := source.Self().Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	ctr := core.NewContainerChild(parent)
+	ctr.OpID = opID
+	return ctr.Import(ctx, r, args.Tag)
 }
-*/
 
 type containerWithRegistryAuthArgs struct {
 	Address  string

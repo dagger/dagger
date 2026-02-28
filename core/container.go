@@ -18,12 +18,14 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/core/transfer/archive"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/containersource"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/containerutil"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
@@ -1957,15 +1959,57 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 	return &desc, nil
 }
 
-/*
-TODO: re-implement import/fromInternal.
-
 func (container *Container) Import(
 	ctx context.Context,
 	tarball io.Reader,
 	tag string,
 ) (*Container, error) {
-	...
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	store := query.OCIStore()
+	lm := query.LeaseManager()
+
+	var release func(context.Context) error
+	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
+		// override outer ctx with release ctx and set release
+		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
+		if err != nil {
+			return nil, err
+		}
+
+		stream := archive.NewImageImportStream(tarball, "")
+
+		desc, err := stream.Import(ctx, store)
+		if err != nil {
+			return nil, fmt.Errorf("image archive import: %w", err)
+		}
+
+		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
+	}
+	defer func() {
+		if release != nil {
+			release(ctx)
+		}
+	}()
+
+	manifestDesc, err := loadManifest(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("recover: %w", err)
+	}
+
+	ctr, err := container.FromInternal(ctx, *manifestDesc)
+	if err != nil {
+		return nil, err
+	}
+	if ctr.FS == nil || ctr.FS.Self() == nil {
+		return nil, fmt.Errorf("missing rootfs directory for import")
+	}
+	if err := ctr.FS.Self().Evaluate(ctx); err != nil {
+		return nil, fmt.Errorf("evaluate imported rootfs: %w", err)
+	}
+	return ctr, nil
 }
 
 // FromInternal creates a Container from an OCI image descriptor, loading the
@@ -1974,9 +2018,89 @@ func (container *Container) FromInternal(
 	ctx context.Context,
 	desc specs.Descriptor,
 ) (*Container, error) {
-	...
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	hsm, err := containersource.NewSource(containersource.SourceOpt{
+		Snapshotter:   bk.Worker.Snapshotter,
+		ContentStore:  bk.Worker.ContentStore(),
+		ImageStore:    bk.Worker.ImageStore,
+		CacheAccessor: query.BuildkitCache(),
+		RegistryHosts: bk.Worker.RegistryHosts,
+		ResolverType:  containersource.ResolverTypeOCILayout,
+		LeaseManager:  bk.Worker.LeaseManager(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	refStr := fmt.Sprintf("dagger/import@%s", desc.Digest)
+	attrs := map[string]string{
+		pb.AttrOCILayoutStoreID:   buildkit.OCIStoreName,
+		pb.AttrOCILayoutSessionID: bk.ID(),
+	}
+	id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
+		Architecture: container.Platform.Architecture,
+		OS:           container.Platform.OS,
+		Variant:      container.Platform.Variant,
+		OSVersion:    container.Platform.OSVersion,
+		OSFeatures:   container.Platform.OSFeatures,
+	})
+	if err != nil {
+		return nil, err
+	}
+	src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
+	if err != nil {
+		return nil, err
+	}
+
+	rootfsDir := &Directory{
+		Dir:       "/",
+		Platform:  container.Platform,
+		Services:  container.Services,
+		LazyState: NewLazyState(),
+	}
+	container.FS, err = UpdatedRootFS(ctx, container, rootfsDir)
+	if err != nil {
+		return nil, fmt.Errorf("updated rootfs: %w", err)
+	}
+	rootfsDir.LazyInit = func(ctx context.Context) error {
+		ref, err := src.Snapshot(ctx, nil)
+		if err != nil {
+			return err
+		}
+		rootfsDir.setSnapshot(ref)
+		return nil
+	}
+
+	manifestBlob, err := content.ReadBlob(ctx, query.OCIStore(), desc)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
+	}
+	var man specs.Manifest
+	err = json.Unmarshal(manifestBlob, &man)
+	if err != nil {
+		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
+	}
+	configBlob, err := content.ReadBlob(ctx, query.OCIStore(), man.Config)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
+	}
+	var imgSpec dockerspec.DockerOCIImage
+	err = json.Unmarshal(configBlob, &imgSpec)
+	if err != nil {
+		return nil, fmt.Errorf("load image config: %w", err)
+	}
+	container.Config = imgSpec.Config
+
+	return container, nil
 }
-*/
 
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExposedPort(port Port) (*Container, error) {
