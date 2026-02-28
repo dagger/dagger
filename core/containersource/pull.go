@@ -163,8 +163,14 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 	setWindowsLayerType := p.Platform.OS == "windows" && runtime.GOOS != "windows"
 	for _, layerDesc := range p.manifest.Descriptors {
 		parent = current
-		current, err = p.CacheAccessor.GetByBlob(ctx, layerDesc, parent,
-			p.descHandlers, cache.WithImageRef(p.manifest.Ref))
+		opts := []cache.RefOption{
+			p.descHandlers,
+			cache.WithImageRef(p.manifest.Ref),
+		}
+		if g != nil {
+			opts = append(opts, cache.Unlazy(g))
+		}
+		current, err = p.CacheAccessor.GetByBlob(ctx, layerDesc, parent, opts...)
 		if parent != nil {
 			parent.Release(context.WithoutCancel(ctx))
 		}
