@@ -688,6 +688,7 @@ func (dir *Directory) WithDirectory(
 	srcID *call.ID,
 	filter CopyFilter,
 	owner string,
+	permissions *int,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -721,7 +722,8 @@ func (dir *Directory) WithDirectory(
 		filter.IsEmpty() &&
 			destDir == "/" &&
 			src.Dir == "/" &&
-			owner == ""
+			owner == "" &&
+			permissions == nil
 
 	cache := query.BuildkitCache()
 
@@ -750,6 +752,11 @@ func (dir *Directory) WithDirectory(
 				err = os.MkdirAll(resolvedCopyDest, 0755)
 				if err != nil {
 					return err
+				}
+				if permissions != nil {
+					if err := os.Chmod(resolvedCopyDest, os.FileMode(*permissions)); err != nil {
+						return fmt.Errorf("failed to chmod %s: %w", resolvedCopyDest, err)
+					}
 				}
 				if owner != "" {
 					ownership, err := parseDirectoryOwner(owner)
@@ -800,6 +807,7 @@ func (dir *Directory) WithDirectory(
 				EnableHardlinkOptimization:     true,
 				SourcePathResolver:             srcResolver,
 				DestPathResolver:               destResolver,
+				Mode:                           permissions,
 			}))
 			for _, pattern := range filter.Include {
 				opts = append(opts, fscopy.WithIncludePattern(pattern))
@@ -852,17 +860,22 @@ func (dir *Directory) WithDirectory(
 		// copy but preserves the other caching benefits of MergeOp. This is the same
 		// behavior as "COPY --link" in Dockerfiles.
 
+		rebasedArgs := []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(destDir)},
+			{Name: "source", Value: dagql.NewID[*Directory](srcID)},
+			{Name: "exclude", Value: asArrayInput(filter.Exclude, dagql.NewString)},
+			{Name: "include", Value: asArrayInput(filter.Include, dagql.NewString)},
+			{Name: "gitignore", Value: dagql.Boolean(filter.Gitignore)},
+			{Name: "owner", Value: dagql.String(owner)},
+		}
+		if permissions != nil {
+			rebasedArgs = append(rebasedArgs, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
+		}
+
 		var rebasedDir dagql.ObjectResult[*Directory]
 		err = srv.Select(ctx, srv.Root(), &rebasedDir,
 			dagql.Selector{Field: "directory"}, // scratch
-			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(destDir)},
-				{Name: "source", Value: dagql.NewID[*Directory](srcID)},
-				{Name: "exclude", Value: asArrayInput(filter.Exclude, dagql.NewString)},
-				{Name: "include", Value: asArrayInput(filter.Include, dagql.NewString)},
-				{Name: "gitignore", Value: dagql.Boolean(filter.Gitignore)},
-				{Name: "owner", Value: dagql.String(owner)},
-			}},
+			dagql.Selector{Field: "withDirectory", Args: rebasedArgs},
 		)
 		if err != nil {
 			return nil, err

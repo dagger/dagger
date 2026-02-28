@@ -62,6 +62,24 @@ COPY . /app/
 	require.Equal(t, "/workspace", hostDir.Arg("path").Value().ToInput())
 }
 
+func TestDefinitionToIDDockerfileCopyWithChmod(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM scratch
+COPY --chmod=751 . /app/
+`)
+
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/app", withDir.Arg("path").Value().ToInput())
+	require.EqualValues(t, 0o751, withDir.Arg("permissions").Value().ToInput())
+}
+
 func TestDefinitionToIDDockerfileAddHTTP(t *testing.T) {
 	t.Parallel()
 

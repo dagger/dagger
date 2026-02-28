@@ -2,6 +2,7 @@ package llbtodagger
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -277,6 +278,29 @@ func TestDefinitionToIDFileCopy(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "directory", sourceID.Field())
 	require.Equal(t, "/src", sourceID.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDFileCopyModeOverride(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).File(llb.Mkfile("/src/a.txt", 0o644, []byte("hello")))
+	mode := os.FileMode(0o751)
+	st := llb.Scratch().File(
+		llb.Copy(
+			src,
+			"/src/a.txt",
+			"/dst/a.txt",
+			&llb.CopyInfo{CreateDestPath: true, Mode: &mode},
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"container", "withRootfs"}, fieldsFromRoot(id))
+
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	require.EqualValues(t, 0o751, withDir.Arg("permissions").Value().ToInput())
 }
 
 func TestDefinitionToIDFileCopyAlwaysReplaceUnsupported(t *testing.T) {

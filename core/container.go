@@ -834,6 +834,7 @@ func (container *Container) WithDirectory(
 	src dagql.ObjectResult[*Directory],
 	filter CopyFilter,
 	owner string,
+	permissions *int,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -854,7 +855,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithDirectory(ctx, subdir, src, filter, owner)
+		return container.WithDirectory(ctx, subdir, src, filter, owner, permissions)
 	}
 
 	args := []dagql.NamedInput{
@@ -878,6 +879,9 @@ func (container *Container) WithDirectory(
 		}
 		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	}
+	if permissions != nil {
+		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
 	}
 
 	//nolint:dupl

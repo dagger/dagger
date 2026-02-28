@@ -154,6 +154,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 			),
 		dagql.NodeFunc("filter", DagOpDirectoryWrapper(srv, s.filter, WithPathFn(keepParentDir[FilterArgs]))).
 			Doc(`Return a snapshot with some paths included or excluded`).
@@ -429,8 +430,9 @@ func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.Obj
 }
 
 type WithDirectoryArgs struct {
-	Path  string
-	Owner string `default:""`
+	Path        string
+	Owner       string `default:""`
+	Permissions dagql.Optional[dagql.Int]
 
 	Source    core.DirectoryID
 	Directory core.DirectoryID // legacy, use Source instead
@@ -473,7 +475,12 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		return res, err
 	}
 	src := cmp.Or(args.Source, args.Directory)
-	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner)
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
+	}
+	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner, perms)
 	if err != nil {
 		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
 	}
@@ -498,7 +505,7 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 		Dir:      parent.Self().Dir,
 	}
 
-	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "")
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil)
 	if err != nil {
 		return inst, fmt.Errorf("failed to filter: %w", err)
 	}

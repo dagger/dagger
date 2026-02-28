@@ -168,6 +168,23 @@ Last updated: 2026-02-28
 - [x] Add deterministic checks for ID encoding in integration path where stable.
 - [x] Keep this whiteboard updated after each implementation chunk.
 
+### Phase 10: `withDirectory` Permissions Support (`copy` mode override)
+- [x] Extend engine API to support explicit permissions on directory copy operations.
+  - [x] Add `permissions` argument to `Directory.withDirectory`.
+  - [x] Add `permissions` argument to `Container.withDirectory` for API parity.
+  - [x] Thread the new argument through schema args -> core methods -> copy implementation.
+- [x] Add dedicated integration coverage in `core/integration/directory_test.go`:
+  - [x] Verify `Directory.withDirectory(..., permissions: ...)` applies mode recursively to copied tree.
+  - [x] Keep coverage separate from `LLBToDaggerSuite`.
+- [x] Add `LLBToDaggerSuite` integration coverage for `COPY --chmod`:
+  - [x] dedicated `COPY --chmod` case.
+  - [x] complex multi-op Dockerfile case also validates chmod-preserved output permissions.
+- [x] Update `util/llbtodagger` copy mapping:
+  - [x] Map `pb.FileActionCopy.Mode` to the new `withDirectory(permissions: ...)` API instead of erroring.
+- [x] Regenerate Go SDK after schema API changes.
+  - [x] Required command: `dagger -y call -m ./toolchains/go-sdk-dev generate`
+- [x] Update unsupported catalogs/checklists to remove `copy mode override` once implemented.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -205,7 +222,7 @@ Last updated: 2026-02-28
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
 - `ExecOp` with non-default network/security, secret env, secret/ssh mounts, readonly bind mounts, non-default mount content cache, or unsupported metadata fields.
-- `FileOp` copy actions with mode override, archive auto-unpack, `alwaysReplaceExistingDestPaths`, or `createDestPath=false`.
+- `FileOp` copy actions with archive auto-unpack, `alwaysReplaceExistingDestPaths`, or `createDestPath=false`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
 - Named user/group ownership (`byName`) in file actions.
@@ -223,8 +240,8 @@ Last updated: 2026-02-28
 - Read-only bind mounts are unsupported (`RUN --mount=type=bind,readonly`).
 - Secret mounts are unsupported (`RUN --mount=type=secret`).
 - SSH mounts are unsupported (`RUN --mount=type=ssh`).
-- `copy` mode override is unsupported (`COPY/ADD --chmod` path).
 - `copy` archive auto-unpack compatibility mode is unsupported (`ADD` local archive path).
+- `copy` to an explicit file destination path is unsupported in current mapping (converter uses directory-oriented wiring; e.g. `COPY --chmod=640 a.txt /dst/file.txt`).
 - Group-only `chown` is unsupported.
 - Named user/group `chown` (`byName`) is unsupported.
 - Empty named user in `chown` is unsupported.
@@ -299,6 +316,10 @@ Last updated: 2026-02-28
 ## Crucial Notes To Not Forget
 - `skills/cache-expert/references/debugging.md` is the authoritative source for how to run integration tests; follow it exactly.
   - This applies to both primary agent commands and any subagent that runs/tests/parses integration output.
+- After any engine schema API change, regenerate the Go SDK used by integration tests.
+  - Required command: `dagger -y call -m ./toolchains/go-sdk-dev generate`
+  - Worktree gotcha: if module resolution fails, pass `--workspace=.` explicitly:
+    - `dagger -y call -m ./toolchains/go-sdk-dev --workspace=. generate`
 - No custom-op handling in this package.
   - Ignore `dagger.customOp`.
   - Do not decode/convert `dagop.fs`, `dagop.raw`, `dagop.ctr`.

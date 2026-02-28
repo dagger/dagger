@@ -328,9 +328,6 @@ func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActio
 	if cp == nil {
 		return nil, unsupported(opDgst, "file.copy", "missing copy action")
 	}
-	if cp.Mode >= 0 {
-		return nil, unsupported(opDgst, "file.copy", "copy mode override is unsupported")
-	}
 	if cp.AttemptUnpackDockerCompatibility {
 		return nil, unsupported(opDgst, "file.copy", "archive auto-unpack is unsupported")
 	}
@@ -364,6 +361,9 @@ func applyCopy(opDgst digest.Digest, baseID, sourceID *call.ID, cp *pb.FileActio
 	}
 	if owner != "" {
 		args = append(args, argString("owner", owner))
+	}
+	if cp.Mode >= 0 {
+		args = append(args, argInt("permissions", int64(cp.Mode)))
 	}
 
 	return appendCall(baseID, directoryType(), "withDirectory", args...), nil
