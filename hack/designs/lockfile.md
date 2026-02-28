@@ -1,6 +1,6 @@
 # Lockfile: Lookup Resolution
 
-## Status: Draft
+## Status: In Progress
 
 Builds on:
 - [Part 1: Workspaces and Modules](https://gist.github.com/shykes/e4778dc5ec17c9a8bbd3120f5c21ce73)
@@ -373,16 +373,21 @@ Notes:
 - [x] **#8: Tests (`core/integration/workspace_test.go` + unit tests)**  
   Cover lock read/write, `pin|float` policy semantics, lock mode behavior (`strict|auto|update`), stale entry pruning, update flow, compat pin behavior, and remote read behavior.
 
-- [ ] **#9: Restore core lookup lock hooks (`core/schema/git.go`, `core/schema/http.go`, `core/schema/container.go`, `core/lockfile.go`)**  
+- [ ] **#9: Restore core lookup lock hooks (`core/schema/git.go`, `core/schema/http.go`, `core/schema/container.go`, `core/schema/lockfile.go`)**  
   Add lock get/set integration for `git.resolve|head|ref|refs|symrefs|isPublic`, `http.get`, and `container.from`.
   Progress:
+  - [x] shared schema lock helpers (`core/schema/lockfile.go`)
   - [ ] `git.resolve|head|ref|refs|symrefs|isPublic`
   - [ ] `http.get`
   - [x] `container.from`
 
 - [ ] **#10: Apply lock mode enforcement across non-workspace lookup paths**  
   Make `strict|auto|update` behavior consistent for core lookup operations, not just workspace module loading.
-  Progress: CLI global `--lock` flag is wired to session params; remaining work is operation-level enforcement across core lookup paths.
+  Progress:
+  - [x] CLI global `--lock` flag wired and threaded to session params
+  - [ ] enforce mode semantics in `git` lookup hooks
+  - [ ] enforce mode semantics in `http` lookup hooks
+  - [ ] enforce mode semantics in `container` lookup hooks
 
 ### Phase 2+ tasks (after v1 modules.resolve)
 
