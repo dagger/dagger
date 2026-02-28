@@ -403,6 +403,9 @@ func applyCopy(
 	if len(cp.ExcludePatterns) > 0 {
 		args = append(args, argStringList("exclude", cp.ExcludePatterns))
 	}
+	if requiredSourcePath, ok := requiredSourcePathForCopy(cp, include); ok {
+		args = append(args, argString("requiredSourcePath", requiredSourcePath))
+	}
 
 	if owner != "" {
 		args = append(args, argString("owner", owner))
@@ -460,6 +463,9 @@ func applyCopyViaContainer(
 		}
 		if len(cp.ExcludePatterns) > 0 {
 			args = append(args, argStringList("exclude", cp.ExcludePatterns))
+		}
+		if requiredSourcePath, ok := requiredSourcePathForCopy(cp, include); ok {
+			args = append(args, argString("requiredSourcePath", requiredSourcePath))
 		}
 		if cp.Mode >= 0 {
 			args = append(args, argInt("permissions", int64(cp.Mode)))
@@ -524,6 +530,26 @@ func explicitFileCopyPath(cp *pb.FileActionCopy, include []string) (string, bool
 		return "", false
 	}
 	return strings.TrimPrefix(inc, "/"), true
+}
+
+func requiredSourcePathForCopy(cp *pb.FileActionCopy, include []string) (string, bool) {
+	if cp == nil {
+		return "", false
+	}
+	if len(cp.ExcludePatterns) > 0 {
+		return "", false
+	}
+	if len(include) != 1 {
+		return "", false
+	}
+	req := path.Clean(include[0])
+	if req == "." || req == "/" || strings.HasPrefix(req, "../") {
+		return "", false
+	}
+	if hasPathWildcard(req) {
+		return "", false
+	}
+	return strings.TrimPrefix(req, "/"), true
 }
 
 func hasPathWildcard(p string) bool {

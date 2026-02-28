@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
@@ -43,10 +44,27 @@ func TestWithImageConfigMetadataMutatesContainerConfig(t *testing.T) {
 
 	updated, err := s.withImageConfigMetadata(ctx, parent, containerWithImageConfigMetadataArgs{
 		Healthcheck: string(healthcheckJSON),
-		OnBuild:     []string{"RUN child-build"},
-		Shell:       []string{"/bin/ash", "-eo", "pipefail", "-c"},
-		Volumes:     []string{"/cache", "/data", "/cache"},
-		StopSignal:  "SIGQUIT",
+		OnBuild: dagql.Opt(
+			dagql.ArrayInput[dagql.String]{
+				dagql.NewString("RUN child-build"),
+			},
+		),
+		Shell: dagql.Opt(
+			dagql.ArrayInput[dagql.String]{
+				dagql.NewString("/bin/ash"),
+				dagql.NewString("-eo"),
+				dagql.NewString("pipefail"),
+				dagql.NewString("-c"),
+			},
+		),
+		Volumes: dagql.Opt(
+			dagql.ArrayInput[dagql.String]{
+				dagql.NewString("/cache"),
+				dagql.NewString("/data"),
+				dagql.NewString("/cache"),
+			},
+		),
+		StopSignal: "SIGQUIT",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, updated)

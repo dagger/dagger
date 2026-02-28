@@ -380,6 +380,9 @@ func TestDefinitionToIDFileCopyDoNotCreateDestPathWithDirectory(t *testing.T) {
 	doNotCreateDestPath := withDir.Arg("doNotCreateDestPath")
 	require.NotNil(t, doNotCreateDestPath)
 	require.Equal(t, true, doNotCreateDestPath.Value().ToInput())
+	requiredSourcePath := withDir.Arg("requiredSourcePath")
+	require.NotNil(t, requiredSourcePath)
+	require.Equal(t, "a.txt", requiredSourcePath.Value().ToInput())
 }
 
 func TestDefinitionToIDFileCopyDoNotCreateDestPathWithFile(t *testing.T) {

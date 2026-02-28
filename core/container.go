@@ -909,6 +909,7 @@ func (container *Container) WithDirectory(
 	owner string,
 	permissions *int,
 	doNotCreateDestPath bool,
+	requiredSourcePath string,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -929,7 +930,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithDirectory(ctx, subdir, src, filter, owner, permissions, doNotCreateDestPath)
+		return container.WithDirectory(ctx, subdir, src, filter, owner, permissions, doNotCreateDestPath, requiredSourcePath)
 	}
 
 	args := []dagql.NamedInput{
@@ -959,6 +960,9 @@ func (container *Container) WithDirectory(
 	}
 	if doNotCreateDestPath {
 		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
+	}
+	if requiredSourcePath != "" {
+		args = append(args, dagql.NamedInput{Name: "requiredSourcePath", Value: dagql.String(requiredSourcePath)})
 	}
 
 	//nolint:dupl
