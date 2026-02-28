@@ -28,6 +28,8 @@ type Class[T Typed] struct {
 	fieldsL *sync.Mutex
 
 	invalidateSchemaCache func()
+
+	origin string
 }
 
 var _ ObjectType = Class[Typed]{}
@@ -41,18 +43,34 @@ type ClassOpts[T Typed] struct {
 	// In the simple case, we can just use a zero-value, but it is also allowed
 	// to use a dynamic Typed value.
 	Typed T
+
+	// The module this class is originating from.
+	Origin string
 }
 
 // NewClass returns a new empty class for a given type.
 func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	var opts ClassOpts[T]
-	if len(opts_) > 0 {
-		opts = opts_[0]
+
+	for _, o := range opts_ {
+		if o.NoIDs {
+			opts.NoIDs = true
+		}
+
+		if any(o.Typed) != nil {
+			opts.Typed = o.Typed
+		}
+
+		if o.Origin != "" {
+			opts.Origin = o.Origin
+		}
 	}
+
 	class := Class[T]{
 		inner:   opts.Typed,
 		fields:  map[string][]*Field[T]{},
 		fieldsL: new(sync.Mutex),
+		origin:  opts.Origin,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
@@ -79,9 +97,13 @@ func (class Class[T]) Typed() Typed {
 	return class.inner
 }
 
+func (class Class[T]) Origin() string {
+	return class.origin
+}
+
 func (class Class[T]) IDType() (IDType, bool) {
 	if class.idable {
-		return ID[T]{inner: class.inner}, true
+		return ID[T]{inner: class.inner, origin: class.origin}, true
 	} else {
 		return nil, false
 	}

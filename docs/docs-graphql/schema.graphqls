@@ -24,6 +24,9 @@ directive @generate on FIELD_DEFINITION
 """Filter directory contents using .gitignore-style glob patterns."""
 directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 
+"""Indicates the origin of the typedef"""
+directive @origin(module: String!) on OBJECT | INTERFACE | ENUM | SCALAR
+
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
