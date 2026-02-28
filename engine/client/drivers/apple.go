@@ -185,6 +185,18 @@ func (apple) ContainerLs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+func (apple) ContainerLogs(ctx context.Context, name string) (string, error) {
+	cmd := exec.CommandContext(ctx, "container", "logs", name)
+	stdout, stderr, err := traceexec.ExecOutput(ctx, cmd, telemetry.Encapsulated())
+	if err != nil {
+		return "", err
+	}
+	if stdout != "" {
+		return stdout, nil
+	}
+	return stderr, nil
+}
+
 func isAppleContainerAlreadyInUseOutput(output string) bool {
 	return strings.Contains(output, "already exists")
 }
