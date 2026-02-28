@@ -2545,6 +2545,138 @@ func TestCacheTTLNonPersistableEquivalentIDsCanCrossRecipeLookup(t *testing.T) {
 	assert.NilError(t, resCrossSession.Release(ctxSessionB))
 }
 
+func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
+	t.Parallel()
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+
+	key := cacheTestID("persistable-across-session-close")
+	ctxSessionA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "persistable-client-a",
+		SessionID: "persistable-session-a",
+	})
+	ctxSessionB := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "persistable-client-b",
+		SessionID: "persistable-session-b",
+	})
+
+	sc1 := NewSessionCache(base)
+	initCallsA := 0
+	resA, err := sc1.GetOrInitCall(ctxSessionA, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCallsA++
+		return cacheTestIntResult(key, 41), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCallsA)
+	assert.Assert(t, !resA.HitCache())
+	assert.Equal(t, 1, base.EntryStats().RetainedCalls)
+
+	assert.NilError(t, sc1.ReleaseAndClose(ctxSessionA))
+	assert.Equal(t, 1, base.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, base.Size())
+
+	sc2 := NewSessionCache(base)
+	initCallsB := 0
+	resB, err := sc2.GetOrInitCall(ctxSessionB, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCallsB++
+		return cacheTestIntResult(key, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, initCallsB)
+	assert.Assert(t, resB.HitCache())
+	assert.Equal(t, 41, cacheTestUnwrapInt(t, resB))
+
+	assert.NilError(t, sc2.ReleaseAndClose(ctxSessionB))
+	assert.Equal(t, 1, base.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, base.Size())
+}
+
+func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("non-persistable-drops")
+	res, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: false,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 7), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, len(c.egraphResultTerms))
+
+	assert.NilError(t, res.Release(ctx))
+	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
+	assert.Equal(t, 0, len(c.egraphResultTerms))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("persistable-hit-upgrade")
+	initCalls := 0
+
+	resA, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: false,
+	}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return cacheTestIntResult(key, 17), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCalls)
+	assert.Assert(t, !resA.HitCache())
+	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
+
+	resB, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return cacheTestIntResult(key, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCalls)
+	assert.Assert(t, resB.HitCache())
+	assert.Equal(t, 17, cacheTestUnwrapInt(t, resB))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, len(c.egraphResultTerms))
+
+	initCallsAfter := 0
+	resC, err := c.GetOrInitCall(ctx, CacheKey{
+		ID: key,
+	}, func(context.Context) (AnyResult, error) {
+		initCallsAfter++
+		return cacheTestIntResult(key, 123), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, initCallsAfter)
+	assert.Assert(t, resC.HitCache())
+	assert.Equal(t, 17, cacheTestUnwrapInt(t, resC))
+	assert.NilError(t, resC.Release(ctx))
+}
+
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
