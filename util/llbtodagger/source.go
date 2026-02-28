@@ -26,8 +26,7 @@ func (c *converter) convertImageSource(op *buildkit.ImageOp) (*call.ID, error) {
 		return nil, fmt.Errorf("llbtodagger: image source %s: %w", opDigest(op.OpDAG), err)
 	}
 
-	fromID := appendCall(ctrID, containerType(), "from", argString("address", ref))
-	return appendCall(fromID, directoryType(), "rootfs"), nil
+	return appendCall(ctrID, containerType(), "from", argString("address", ref)), nil
 }
 
 func (c *converter) convertGitSource(op *buildkit.GitOp) (*call.ID, error) {

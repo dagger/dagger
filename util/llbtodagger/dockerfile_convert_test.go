@@ -3,6 +3,7 @@ package llbtodagger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
@@ -25,16 +27,11 @@ RUN echo hello
 `)
 
 	fields := fieldsFromRoot(id)
-	require.GreaterOrEqual(t, len(fields), 4)
+	require.GreaterOrEqual(t, len(fields), 3)
 	require.Equal(t, "container", fields[0])
-	require.Equal(t, "withExec", fields[len(fields)-2])
-	require.Equal(t, "rootfs", fields[len(fields)-1])
+	require.NotNil(t, findFieldInChain(id, "withExec"))
 
-	withRootfs := findFieldInChain(id, "withRootfs")
-	require.NotNil(t, withRootfs)
-	rootfsID := argIDFromCall(t, withRootfs, "directory")
-	require.Equal(t, "rootfs", rootfsID.Field())
-	fromID := findFieldInChain(rootfsID, "from")
+	fromID := findFieldAnywhere(id, "from")
 	require.NotNil(t, fromID)
 	require.Contains(t, fromID.Arg("address").Value().ToInput(), "docker.io/library/alpine:3.19")
 
@@ -51,8 +48,12 @@ FROM scratch
 COPY . /app/
 `)
 
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(id))
-	withDir := id
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
 	require.Equal(t, "/app", withDir.Arg("path").Value().ToInput())
 
 	sourceID := argIDFromCall(t, withDir, "source")
@@ -69,8 +70,12 @@ FROM scratch
 ADD https://example.com/pkg.tar.gz /downloads/
 `)
 
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(id))
-	withDir := id
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
 	require.Equal(t, "/downloads", withDir.Arg("path").Value().ToInput())
 
 	sourceID := argIDFromCall(t, withDir, "source")
@@ -88,8 +93,12 @@ FROM scratch
 ADD https://github.com/dagger/dagger.git#main /vendor/dagger/
 `)
 
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(id))
-	withDir := id
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
 	require.Equal(t, "/vendor/dagger", withDir.Arg("path").Value().ToInput())
 
 	sourceID := argIDFromCall(t, withDir, "source")
@@ -113,8 +122,12 @@ COPY --link . /linked/
 		opt.LLBCaps = &caps
 	})
 
-	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(id))
-	copyCall := id
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+	copyCall := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(copyCall))
 	require.Equal(t, "/linked", copyCall.Arg("path").Value().ToInput())
 	require.NotNil(t, findHostDirectoryCall(argIDFromCall(t, copyCall, "source")))
 }
@@ -137,10 +150,9 @@ RUN echo done
 `)
 
 	fields := fieldsFromRoot(id)
-	require.GreaterOrEqual(t, len(fields), 4)
+	require.GreaterOrEqual(t, len(fields), 3)
 	require.Equal(t, "container", fields[0])
-	require.Equal(t, "withExec", fields[len(fields)-2])
-	require.Equal(t, "rootfs", fields[len(fields)-1])
+	require.NotNil(t, findFieldInChain(id, "withExec"))
 
 	finalExec := findFieldInChain(id, "withExec")
 	require.NotNil(t, finalExec)
@@ -150,6 +162,60 @@ RUN echo done
 	require.NotNil(t, findFieldAnywhere(id, "http"))
 	require.NotNil(t, findFieldAnywhere(id, "git"))
 	require.NotNil(t, findFieldAnywhere(id, "withNewDirectory"))
+	finalWorkdir := findFieldInChain(id, "withWorkdir")
+	require.NotNil(t, finalWorkdir)
+	require.Equal(t, "/final", finalWorkdir.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDDockerfileImageMetadata(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM alpine:3.19
+ENV FOO=bar
+USER 1234
+WORKDIR /workspace
+LABEL com.example.name=demo
+EXPOSE 8080
+EXPOSE 9090/udp
+ENTRYPOINT ["sh","-c"]
+CMD ["echo","hi"]
+`)
+
+	require.Equal(t, "container", fieldsFromRoot(id)[0])
+
+	userCall := findCallByStringArg(id, "withUser", "name", "1234")
+	require.NotNil(t, userCall)
+
+	workdirCall := findCallByStringArg(id, "withWorkdir", "path", "/workspace")
+	require.NotNil(t, workdirCall)
+
+	envCall := findCallByStringArg(id, "withEnvVariable", "name", "FOO")
+	require.NotNil(t, envCall)
+	require.Equal(t, "bar", envCall.Arg("value").Value().ToInput())
+
+	labelCall := findCallByStringArg(id, "withLabel", "name", "com.example.name")
+	require.NotNil(t, labelCall)
+	require.Equal(t, "demo", labelCall.Arg("value").Value().ToInput())
+
+	entrypointCall := findFieldInChain(id, "withEntrypoint")
+	require.NotNil(t, entrypointCall)
+	require.Equal(t, []any{"sh", "-c"}, entrypointCall.Arg("args").Value().ToInput())
+	require.Equal(t, true, entrypointCall.Arg("keepDefaultArgs").Value().ToInput())
+
+	cmdCall := findFieldInChain(id, "withDefaultArgs")
+	require.NotNil(t, cmdCall)
+	require.Equal(t, []any{"echo", "hi"}, cmdCall.Arg("args").Value().ToInput())
+
+	exposedPorts := findCallsInChain(id, "withExposedPort")
+	require.Len(t, exposedPorts, 2)
+	foundPorts := map[string]bool{}
+	for _, portCall := range exposedPorts {
+		key := fmt.Sprintf("%v/%v", portCall.Arg("port").Value().ToInput(), portCall.Arg("protocol").Value().ToInput())
+		foundPorts[key] = true
+	}
+	require.True(t, foundPorts["8080/TCP"])
+	require.True(t, foundPorts["9090/UDP"])
 }
 
 func TestDefinitionToIDDockerfileDeterministicEncoding(t *testing.T) {
@@ -185,8 +251,8 @@ func convertDockerfileToIDWithOpt(
 ) *call.ID {
 	t.Helper()
 
-	def := dockerfileToDefinition(t, dockerfile, optFns...)
-	id, err := DefinitionToID(def)
+	def, img := dockerfileToDefinition(t, dockerfile, optFns...)
+	id, err := DefinitionToID(def, img)
 	require.NoError(t, err)
 	return id
 }
@@ -195,7 +261,7 @@ func dockerfileToDefinition(
 	t *testing.T,
 	dockerfile string,
 	optFns ...func(*dockerfile2llb.ConvertOpt),
-) *pb.Definition {
+) (*pb.Definition, *dockerspec.DockerOCIImage) {
 	t.Helper()
 
 	mainContext := llb.Local("context", llb.SharedKeyHint("/workspace"))
@@ -208,13 +274,14 @@ func dockerfileToDefinition(
 		fn(&opt)
 	}
 
-	st, _, _, _, err := dockerfile2llb.Dockerfile2LLB(context.Background(), []byte(strings.TrimSpace(dockerfile)), opt)
+	st, img, _, _, err := dockerfile2llb.Dockerfile2LLB(context.Background(), []byte(strings.TrimSpace(dockerfile)), opt)
 	require.NoError(t, err)
 	require.NotNil(t, st)
+	require.NotNil(t, img)
 
 	def, err := st.Marshal(context.Background())
 	require.NoError(t, err)
-	return def.ToPB()
+	return def.ToPB(), img
 }
 
 type staticImageMetaResolver struct{}
@@ -306,4 +373,27 @@ func findFieldAnywhere(root *call.ID, field string) *call.ID {
 	}
 
 	return visitID(root)
+}
+
+func findCallsInChain(id *call.ID, field string) []*call.ID {
+	var ids []*call.ID
+	for cur := id; cur != nil; cur = cur.Receiver() {
+		if cur.Field() == field {
+			ids = append(ids, cur)
+		}
+	}
+	return ids
+}
+
+func findCallByStringArg(id *call.ID, field, argName, argValue string) *call.ID {
+	for _, match := range findCallsInChain(id, field) {
+		arg := match.Arg(argName)
+		if arg == nil {
+			continue
+		}
+		if val, ok := arg.Value().ToInput().(string); ok && val == argValue {
+			return match
+		}
+	}
+	return nil
 }
