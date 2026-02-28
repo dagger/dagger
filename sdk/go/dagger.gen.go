@@ -226,6 +226,9 @@ type GitRefID string
 // The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
 type GitRepositoryID string
 
+// The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
+type HealthcheckConfigID string
+
 // The `HostID` scalar type represents an identifier for an object of type Host.
 type HostID string
 
@@ -2001,6 +2004,15 @@ func (r *Container) From(address string) *Container {
 	}
 }
 
+// Retrieves this container's configured healthcheck.
+func (r *Container) Healthcheck() *HealthcheckConfig {
+	q := r.query.Select("healthcheck")
+
+	return &HealthcheckConfig{
+		query: q,
+	}
+}
+
 // A unique identifier for this Container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	if r.id != nil {
@@ -2759,6 +2771,52 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 	}
 }
 
+// ContainerWithHealthcheckOpts contains options for Container.WithHealthcheck
+type ContainerWithHealthcheckOpts struct {
+	// Interval between running healthcheck. Example: "30s"
+	Interval string
+	// Healthcheck timeout. Example: "3s"
+	Timeout string
+	// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+	StartPeriod string
+	// StartInterval configures the duration between checks during the startup phase. Example: "5s"
+	StartInterval string
+	// The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+	Retries int
+}
+
+// Retrieves this container with the specificed healtcheck command set.
+func (r *Container) WithHealthcheck(args []string, opts ...ContainerWithHealthcheckOpts) *Container {
+	q := r.query.Select("withHealthcheck")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `interval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interval) {
+			q = q.Arg("interval", opts[i].Interval)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `startPeriod` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StartPeriod) {
+			q = q.Arg("startPeriod", opts[i].StartPeriod)
+		}
+		// `startInterval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StartInterval) {
+			q = q.Arg("startInterval", opts[i].StartInterval)
+		}
+		// `retries` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Retries) {
+			q = q.Arg("retries", opts[i].Retries)
+		}
+	}
+	q = q.Arg("args", args)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // Retrieves this container plus the given label.
 func (r *Container) WithLabel(name string, value string) *Container {
 	q := r.query.Select("withLabel")
@@ -3278,6 +3336,15 @@ func (r *Container) WithoutFiles(paths []string, opts ...ContainerWithoutFilesOp
 		}
 	}
 	q = q.Arg("paths", paths)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieves this container without a configured healtcheck command.
+func (r *Container) WithoutHealthcheck() *Container {
+	q := r.query.Select("withoutHealthcheck")
 
 	return &Container{
 		query: q,
@@ -8503,6 +8570,139 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Image healthcheck configuration.
+type HealthcheckConfig struct {
+	query *querybuilder.Selection
+
+	id            *HealthcheckConfigID
+	interval      *string
+	retries       *int
+	startInterval *string
+	startPeriod   *string
+	timeout       *string
+}
+
+func (r *HealthcheckConfig) WithGraphQLQuery(q *querybuilder.Selection) *HealthcheckConfig {
+	return &HealthcheckConfig{
+		query: q,
+	}
+}
+
+// Healthcheck command arguments.
+func (r *HealthcheckConfig) Args(ctx context.Context) ([]string, error) {
+	q := r.query.Select("args")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this HealthcheckConfig.
+func (r *HealthcheckConfig) ID(ctx context.Context) (HealthcheckConfigID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response HealthcheckConfigID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *HealthcheckConfig) XXX_GraphQLType() string {
+	return "HealthcheckConfig"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *HealthcheckConfig) XXX_GraphQLIDType() string {
+	return "HealthcheckConfigID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *HealthcheckConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *HealthcheckConfig) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Interval between running healthcheck. Example:30s
+func (r *HealthcheckConfig) Interval(ctx context.Context) (string, error) {
+	if r.interval != nil {
+		return *r.interval, nil
+	}
+	q := r.query.Select("interval")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+func (r *HealthcheckConfig) Retries(ctx context.Context) (int, error) {
+	if r.retries != nil {
+		return *r.retries, nil
+	}
+	q := r.query.Select("retries")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// StartInterval configures the duration between checks during the startup phase. Example:5s
+func (r *HealthcheckConfig) StartInterval(ctx context.Context) (string, error) {
+	if r.startInterval != nil {
+		return *r.startInterval, nil
+	}
+	q := r.query.Select("startInterval")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
+func (r *HealthcheckConfig) StartPeriod(ctx context.Context) (string, error) {
+	if r.startPeriod != nil {
+		return *r.startPeriod, nil
+	}
+	q := r.query.Select("startPeriod")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Healthcheck timeout. Example:3s
+func (r *HealthcheckConfig) Timeout(ctx context.Context) (string, error) {
+	if r.timeout != nil {
+		return *r.timeout, nil
+	}
+	q := r.query.Select("timeout")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Information about the host environment.
 type Host struct {
 	query *querybuilder.Selection
@@ -12064,6 +12264,16 @@ func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	q = q.Arg("id", id)
 
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// Load a HealthcheckConfig from its ID.
+func (r *Client) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
+	q := r.query.Select("loadHealthcheckConfigFromID")
+	q = q.Arg("id", id)
+
+	return &HealthcheckConfig{
 		query: q,
 	}
 }

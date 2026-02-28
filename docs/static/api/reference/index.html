@@ -83,6 +83,7 @@
               <li><a href="#query-loadGeneratorGroupFromID">loadGeneratorGroupFromID</a></li>
               <li><a href="#query-loadGitRefFromID">loadGitRefFromID</a></li>
               <li><a href="#query-loadGitRepositoryFromID">loadGitRepositoryFromID</a></li>
+              <li><a href="#query-loadHealthcheckConfigFromID">loadHealthcheckConfigFromID</a></li>
               <li><a href="#query-loadHostFromID">loadHostFromID</a></li>
               <li><a href="#query-loadInputTypeDefFromID">loadInputTypeDefFromID</a></li>
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
@@ -192,6 +193,8 @@
               <li><a href="#definition-GitRefID">GitRefID</a></li>
               <li><a href="#definition-GitRepository">GitRepository</a></li>
               <li><a href="#definition-GitRepositoryID">GitRepositoryID</a></li>
+              <li><a href="#definition-HealthcheckConfig">HealthcheckConfig</a></li>
+              <li><a href="#definition-HealthcheckConfigID">HealthcheckConfigID</a></li>
               <li><a href="#definition-Host">Host</a></li>
               <li><a href="#definition-HostID">HostID</a></li>
               <li><a href="#definition-ImageLayerCompression">ImageLayerCompression</a></li>
@@ -3163,6 +3166,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadHealthcheckConfigFromID" class="operation operation-query" data-traverse-target="query-loadHealthcheckConfigFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadHealthcheckConfigFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a HealthcheckConfig from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-HealthcheckConfig"><code>HealthcheckConfig!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-HealthcheckConfigID"><code>HealthcheckConfigID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadHostFromID" class="operation operation-query" data-traverse-target="query-loadHostFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -6069,6 +6125,10 @@
                         </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Container-healthcheck" href="#Container-healthcheck"><code>healthcheck</code></a> - <span class="property-type"><a href="#definition-HealthcheckConfig"><code>HealthcheckConfig</code></a></span> </td>
+                        <td> Retrieves this container's configured healthcheck. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Container-id" href="#Container-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID!</code></a></span> </td>
                         <td> A unique identifier for this Container. </td>
                       </tr>
@@ -6646,6 +6706,43 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withHealthcheck" href="#Container-withHealthcheck"><code>withHealthcheck</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container with the specificed healtcheck command set. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>Healthcheck command to execute. Example: [&quot;go&quot;, &quot;run&quot;, &quot;main.go&quot;].</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>interval</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Interval between running healthcheck. Example: &quot;30s&quot;</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>timeout</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Healthcheck timeout. Example: &quot;3s&quot;</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>startPeriod</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: &quot;0s&quot;</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>startInterval</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>StartInterval configures the duration between checks during the startup phase. Example: &quot;5s&quot;</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>retries</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                                <p>The maximum number of consecutive failures before the container is marked as unhealthy. Example: &quot;3&quot;</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withLabel" href="#Container-withLabel"><code>withLabel</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td> Retrieves this container plus the given label. </td>
                       </tr>
@@ -7185,6 +7282,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Container-withoutHealthcheck" href="#Container-withoutHealthcheck"><code>withoutHealthcheck</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container without a configured healtcheck command. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withoutLabel" href="#Container-withoutLabel"><code>withoutLabel</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
@@ -11853,6 +11954,75 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>GitRepositoryID</code> scalar type represents an identifier for an object of type GitRepository.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-HealthcheckConfig" class="definition definition-object" data-traverse-target="definition-HealthcheckConfig">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">HealthcheckConfig</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Image healthcheck configuration.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HealthcheckConfig-args" href="#HealthcheckConfig-args"><code>args</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Healthcheck command arguments. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HealthcheckConfig-id" href="#HealthcheckConfig-id"><code>id</code></a> - <span class="property-type"><a href="#definition-HealthcheckConfigID"><code>HealthcheckConfigID!</code></a></span> </td>
+                        <td> A unique identifier for this HealthcheckConfig. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HealthcheckConfig-interval" href="#HealthcheckConfig-interval"><code>interval</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Interval between running healthcheck. Example:30s </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HealthcheckConfig-retries" href="#HealthcheckConfig-retries"><code>retries</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The maximum number of consecutive failures before the container is marked as unhealthy. Example:3 </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HealthcheckConfig-startInterval" href="#HealthcheckConfig-startInterval"><code>startInterval</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> StartInterval configures the duration between checks during the startup phase. Example:5s </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HealthcheckConfig-startPeriod" href="#HealthcheckConfig-startPeriod"><code>startPeriod</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HealthcheckConfig-timeout" href="#HealthcheckConfig-timeout"><code>timeout</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Healthcheck timeout. Example:3s </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-HealthcheckConfigID" class="definition definition-scalar" data-traverse-target="definition-HealthcheckConfigID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">HealthcheckConfigID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>HealthcheckConfigID</code> scalar type represents an identifier for an object of type HealthcheckConfig.</p>
                 </div>
               </div>
             </div>

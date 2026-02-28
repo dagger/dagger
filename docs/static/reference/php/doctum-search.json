@@ -828,6 +828,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\HealthcheckConfig",
+			"p": "Dagger/HealthcheckConfig.html",
+			"d": "<p>Image healthcheck configuration.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\HealthcheckConfigId",
+			"p": "Dagger/HealthcheckConfigId.html",
+			"d": "<p>The <code>HealthcheckConfigID</code> scalar type represents an identifier for an object of type HealthcheckConfig.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Host",
 			"p": "Dagger/Host.html",
 			"d": "<p>Information about the host environment.</p>",
@@ -2163,6 +2183,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadHealthcheckConfigFromID",
+			"p": "Dagger/Client.html#method_loadHealthcheckConfigFromID",
+			"d": "<p>Load a HealthcheckConfig from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadHostFromID",
 			"p": "Dagger/Client.html#method_loadHostFromID",
 			"d": "<p>Load a Host from its ID.</p>"
@@ -2577,6 +2603,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::healthcheck",
+			"p": "Dagger/Container.html#method_healthcheck",
+			"d": "<p>Retrieves this container's configured healthcheck.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::id",
 			"p": "Dagger/Container.html#method_id",
 			"d": "<p>A unique identifier for this Container.</p>"
@@ -2745,6 +2777,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withHealthcheck",
+			"p": "Dagger/Container.html#method_withHealthcheck",
+			"d": "<p>Retrieves this container with the specificed healtcheck command set.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withLabel",
 			"p": "Dagger/Container.html#method_withLabel",
 			"d": "<p>Retrieves this container plus the given label.</p>"
@@ -2880,6 +2918,12 @@
 			"n": "Dagger\\Container::withoutFiles",
 			"p": "Dagger/Container.html#method_withoutFiles",
 			"d": "<p>Return a new container spanshot with specified files removed</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::withoutHealthcheck",
+			"p": "Dagger/Container.html#method_withoutHealthcheck",
+			"d": "<p>Retrieves this container without a configured healtcheck command.</p>"
 		},
 		{
 			"t": "M",
@@ -4470,6 +4514,48 @@
 			"n": "Dagger\\GitRepository::url",
 			"p": "Dagger/GitRepository.html#method_url",
 			"d": "<p>The URL of the git repository.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HealthcheckConfig::args",
+			"p": "Dagger/HealthcheckConfig.html#method_args",
+			"d": "<p>Healthcheck command arguments.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HealthcheckConfig::id",
+			"p": "Dagger/HealthcheckConfig.html#method_id",
+			"d": "<p>A unique identifier for this HealthcheckConfig.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HealthcheckConfig::interval",
+			"p": "Dagger/HealthcheckConfig.html#method_interval",
+			"d": "<p>Interval between running healthcheck. Example:30s</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HealthcheckConfig::retries",
+			"p": "Dagger/HealthcheckConfig.html#method_retries",
+			"d": "<p>The maximum number of consecutive failures before the container is marked as unhealthy. Example:3</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HealthcheckConfig::startInterval",
+			"p": "Dagger/HealthcheckConfig.html#method_startInterval",
+			"d": "<p>StartInterval configures the duration between checks during the startup phase. Example:5s</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HealthcheckConfig::startPeriod",
+			"p": "Dagger/HealthcheckConfig.html#method_startPeriod",
+			"d": "<p>StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HealthcheckConfig::timeout",
+			"p": "Dagger/HealthcheckConfig.html#method_timeout",
+			"d": "<p>Healthcheck timeout. Example:3s</p>"
 		},
 		{
 			"t": "M",

@@ -275,6 +275,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container's configured healthcheck.
+     */
+    public function healthcheck(): HealthcheckConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('healthcheck');
+        return new \Dagger\HealthcheckConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Container.
      */
     public function id(): ContainerId
@@ -746,6 +755,37 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container with the specificed healtcheck command set.
+     */
+    public function withHealthcheck(
+        array $args,
+        ?string $interval = null,
+        ?string $timeout = null,
+        ?string $startPeriod = null,
+        ?string $startInterval = null,
+        ?int $retries = null,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withHealthcheck');
+        $innerQueryBuilder->setArgument('args', $args);
+        if (null !== $interval) {
+        $innerQueryBuilder->setArgument('interval', $interval);
+        }
+        if (null !== $timeout) {
+        $innerQueryBuilder->setArgument('timeout', $timeout);
+        }
+        if (null !== $startPeriod) {
+        $innerQueryBuilder->setArgument('startPeriod', $startPeriod);
+        }
+        if (null !== $startInterval) {
+        $innerQueryBuilder->setArgument('startInterval', $startInterval);
+        }
+        if (null !== $retries) {
+        $innerQueryBuilder->setArgument('retries', $retries);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this container plus the given label.
      */
     public function withLabel(string $name, string $value): Container
@@ -1091,6 +1131,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
         }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container without a configured healtcheck command.
+     */
+    public function withoutHealthcheck(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutHealthcheck');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

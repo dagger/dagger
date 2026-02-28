@@ -392,6 +392,12 @@ func LoadGitRepositoryFromID(id dagger.GitRepositoryID) *dagger.GitRepository {
 	return client.LoadGitRepositoryFromID(id)
 }
 
+// Load a HealthcheckConfig from its ID.
+func LoadHealthcheckConfigFromID(id dagger.HealthcheckConfigID) *dagger.HealthcheckConfig {
+	client := initClient()
+	return client.LoadHealthcheckConfigFromID(id)
+}
+
 // Load a Host from its ID.
 func LoadHostFromID(id dagger.HostID) *dagger.Host {
 	client := initClient()

@@ -630,6 +630,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a HealthcheckConfig from its ID.
+     */
+    public function loadHealthcheckConfigFromID(HealthcheckConfigId|HealthcheckConfig $id): HealthcheckConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHealthcheckConfigFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\HealthcheckConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Host from its ID.
      */
     public function loadHostFromID(HostId|Host $id): Host

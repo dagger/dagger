@@ -5499,3 +5499,99 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	}
 	require.Positive(t, int(numConnections.Load()), "the socket was never connected to")
 }
+
+func (ContainerSuite) TestHealthcheckIsPublished(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithHealthcheck([]string{"sh", "-c", "date --iso-8601=seconds > /tmp/healthcheck.log"}, dagger.ContainerWithHealthcheckOpts{
+			Interval:      "25s",
+			Timeout:       "31s",
+			StartPeriod:   "1m",
+			StartInterval: "4s",
+			Retries:       8,
+		})
+
+	testRef := registryRef("healthcheck-publish")
+	pushedRef, err := ctr.Publish(ctx, testRef)
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
+
+	pulledCtr := c.Container().From(pushedRef)
+	configuredHealthcheck := pulledCtr.Healthcheck()
+
+	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sh", "-c", "date --iso-8601=seconds > /tmp/healthcheck.log"}, healthcheckArgs)
+
+	healthcheckInterval, err := configuredHealthcheck.Interval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "25s", healthcheckInterval)
+
+	healthcheckTimeout, err := configuredHealthcheck.Timeout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "31s", healthcheckTimeout)
+
+	healthcheckStartPeriod, err := configuredHealthcheck.StartPeriod(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1m0s", healthcheckStartPeriod)
+
+	healthcheckStartInterval, err := configuredHealthcheck.StartInterval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "4s", healthcheckStartInterval)
+
+	healthcheckRetries, err := configuredHealthcheck.Retries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 8, healthcheckRetries)
+}
+
+func (ContainerSuite) TestHealthcheckDefaults(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithHealthcheck([]string{"/this-will-fail-and-thats-ok"})
+
+	configuredHealthcheck := ctr.Healthcheck()
+
+	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/this-will-fail-and-thats-ok"}, healthcheckArgs)
+
+	healthcheckInterval, err := configuredHealthcheck.Interval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0s", healthcheckInterval)
+
+	healthcheckTimeout, err := configuredHealthcheck.Timeout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0s", healthcheckTimeout)
+
+	healthcheckStartPeriod, err := configuredHealthcheck.StartPeriod(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0s", healthcheckStartPeriod)
+
+	healthcheckStartInterval, err := configuredHealthcheck.StartInterval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0s", healthcheckStartInterval)
+
+	healthcheckRetries, err := configuredHealthcheck.Retries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, healthcheckRetries)
+}
+
+func (ContainerSuite) TestWithoutHealthcheck(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithHealthcheck([]string{"/waiter-check-please"}).
+		WithoutHealthcheck()
+
+	configuredHealthcheck := ctr.Healthcheck()
+
+	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
+	require.NoError(t, err)
+	require.Empty(t, healthcheckArgs)
+}

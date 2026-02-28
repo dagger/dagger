@@ -678,6 +678,33 @@ export type ContainerWithFilesOpts = {
   expand?: boolean
 }
 
+export type ContainerWithHealthcheckOpts = {
+  /**
+   * Interval between running healthcheck. Example: "30s"
+   */
+  interval?: string
+
+  /**
+   * Healthcheck timeout. Example: "3s"
+   */
+  timeout?: string
+
+  /**
+   * StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+   */
+  startPeriod?: string
+
+  /**
+   * StartInterval configures the duration between checks during the startup phase. Example: "5s"
+   */
+  startInterval?: string
+
+  /**
+   * The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+   */
+  retries?: number
+}
+
 export type ContainerWithMountedCacheOpts = {
   /**
    * Identifier of the directory to use as the cache volume's root.
@@ -1673,6 +1700,11 @@ export type GitRepositoryTagsOpts = {
  * The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
  */
 export type GitRepositoryID = string & { __GitRepositoryID: never }
+
+/**
+ * The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
+ */
+export type HealthcheckConfigID = string & { __HealthcheckConfigID: never }
 
 export type HostDirectoryOpts = {
   /**
@@ -4084,6 +4116,14 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container's configured healthcheck.
+   */
+  healthcheck = (): HealthcheckConfig => {
+    const ctx = this._ctx.select("healthcheck")
+    return new HealthcheckConfig(ctx)
+  }
+
+  /**
    * The unique image reference which can only be retrieved immediately after the 'Container.From' call.
    */
   imageRef = async (): Promise<string> => {
@@ -4538,6 +4578,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container with the specificed healtcheck command set.
+   * @param args Healthcheck command to execute. Example: ["go", "run", "main.go"].
+   * @param opts.interval Interval between running healthcheck. Example: "30s"
+   * @param opts.timeout Healthcheck timeout. Example: "3s"
+   * @param opts.startPeriod StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+   * @param opts.startInterval StartInterval configures the duration between checks during the startup phase. Example: "5s"
+   * @param opts.retries The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+   */
+  withHealthcheck = (
+    args: string[],
+    opts?: ContainerWithHealthcheckOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withHealthcheck", { args, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * Retrieves this container plus the given label.
    * @param name The name of the label (e.g., "org.opencontainers.artifact.created").
    * @param value The value of the label (e.g., "2023-01-01T00:00:00Z").
@@ -4879,6 +4936,14 @@ export class Container extends BaseClient {
     opts?: ContainerWithoutFilesOpts,
   ): Container => {
     const ctx = this._ctx.select("withoutFiles", { paths, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieves this container without a configured healtcheck command.
+   */
+  withoutHealthcheck = (): Container => {
+    const ctx = this._ctx.select("withoutHealthcheck")
     return new Container(ctx)
   }
 
@@ -9083,6 +9148,141 @@ export class GitRepository extends BaseClient {
 }
 
 /**
+ * Image healthcheck configuration.
+ */
+export class HealthcheckConfig extends BaseClient {
+  private readonly _id?: HealthcheckConfigID = undefined
+  private readonly _interval?: string = undefined
+  private readonly _retries?: number = undefined
+  private readonly _startInterval?: string = undefined
+  private readonly _startPeriod?: string = undefined
+  private readonly _timeout?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: HealthcheckConfigID,
+    _interval?: string,
+    _retries?: number,
+    _startInterval?: string,
+    _startPeriod?: string,
+    _timeout?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._interval = _interval
+    this._retries = _retries
+    this._startInterval = _startInterval
+    this._startPeriod = _startPeriod
+    this._timeout = _timeout
+  }
+
+  /**
+   * A unique identifier for this HealthcheckConfig.
+   */
+  id = async (): Promise<HealthcheckConfigID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<HealthcheckConfigID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Healthcheck command arguments.
+   */
+  args = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("args")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Interval between running healthcheck. Example:30s
+   */
+  interval = async (): Promise<string> => {
+    if (this._interval) {
+      return this._interval
+    }
+
+    const ctx = this._ctx.select("interval")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+   */
+  retries = async (): Promise<number> => {
+    if (this._retries) {
+      return this._retries
+    }
+
+    const ctx = this._ctx.select("retries")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * StartInterval configures the duration between checks during the startup phase. Example:5s
+   */
+  startInterval = async (): Promise<string> => {
+    if (this._startInterval) {
+      return this._startInterval
+    }
+
+    const ctx = this._ctx.select("startInterval")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
+   */
+  startPeriod = async (): Promise<string> => {
+    if (this._startPeriod) {
+      return this._startPeriod
+    }
+
+    const ctx = this._ctx.select("startPeriod")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Healthcheck timeout. Example:3s
+   */
+  timeout = async (): Promise<string> => {
+    if (this._timeout) {
+      return this._timeout
+    }
+
+    const ctx = this._ctx.select("timeout")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * Information about the host environment.
  */
 export class Host extends BaseClient {
@@ -11937,6 +12137,16 @@ export class Client extends BaseClient {
   loadGitRepositoryFromID = (id: GitRepositoryID): GitRepository => {
     const ctx = this._ctx.select("loadGitRepositoryFromID", { id })
     return new GitRepository(ctx)
+  }
+
+  /**
+   * Load a HealthcheckConfig from its ID.
+   */
+  loadHealthcheckConfigFromID = (
+    id: HealthcheckConfigID,
+  ): HealthcheckConfig => {
+    const ctx = this._ctx.select("loadHealthcheckConfigFromID", { id })
+    return new HealthcheckConfig(ctx)
   }
 
   /**
