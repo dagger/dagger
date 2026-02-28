@@ -18,6 +18,7 @@ func init() {
 	register("unix", &dialDriver{})
 	register("ssh", &dialDriver{connhSSH.Helper, nil})
 	register("kube-pod", &dialDriver{connhKube.Helper, nil})
+	register("tls", &dialDriver{TLSConnect, nil})
 }
 
 // dialDriver uses the buildkit connhelpers to directly connect
