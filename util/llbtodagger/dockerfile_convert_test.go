@@ -104,6 +104,55 @@ COPY --chmod=751 input.txt /app/out.txt
 	require.Equal(t, "input.txt", fileCall.Arg("path").Value().ToInput())
 }
 
+func TestDefinitionToIDDockerfileCopyGroupOnlyChown(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM scratch
+COPY --chown=:123 input.txt /app/out.txt
+`)
+
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+
+	withFile := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
+	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
+	require.Equal(t, "0:123", withFile.Arg("owner").Value().ToInput())
+
+	srcFile := argIDFromCall(t, withFile, "source")
+	fileCall := findFieldInChain(srcFile, "file")
+	require.NotNil(t, fileCall)
+	require.Equal(t, "input.txt", fileCall.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDDockerfileCopyNamedChown(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM alpine:3.19
+RUN addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser
+COPY --chown=auser:agroup input.txt /app/out.txt
+`)
+
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withExec"))
+
+	withFile := findFieldInChain(id, "withFile")
+	require.NotNil(t, withFile)
+	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
+	require.Equal(t, "auser:agroup", withFile.Arg("owner").Value().ToInput())
+
+	srcFile := argIDFromCall(t, withFile, "source")
+	fileCall := findFieldInChain(srcFile, "file")
+	require.NotNil(t, fileCall)
+	require.Equal(t, "input.txt", fileCall.Arg("path").Value().ToInput())
+}
+
 func TestDefinitionToIDDockerfileAddHTTP(t *testing.T) {
 	t.Parallel()
 
@@ -187,7 +236,9 @@ RUN echo base
 
 FROM alpine:3.19
 WORKDIR /final
+RUN addgroup -g 4321 agroup && adduser -D -u 1234 -G agroup auser
 COPY --from=base /work /out/work
+COPY --chown=auser:agroup --from=base /work /out/owned
 RUN echo done
 `)
 
@@ -204,6 +255,16 @@ RUN echo done
 	require.NotNil(t, findFieldAnywhere(id, "http"))
 	require.NotNil(t, findFieldAnywhere(id, "git"))
 	require.NotNil(t, findFieldAnywhere(id, "withNewDirectory"))
+
+	namedOwnerCopy := findCallByStringArg(id, "withDirectory", "owner", "auser:agroup")
+	if namedOwnerCopy == nil {
+		namedOwnerCopy = findCallByStringArg(id, "withFile", "owner", "auser:agroup")
+	}
+	require.NotNil(t, namedOwnerCopy)
+	pathArg := namedOwnerCopy.Arg("path")
+	require.NotNil(t, pathArg)
+	require.Contains(t, fmt.Sprint(pathArg.Value().ToInput()), "/out/owned")
+
 	finalWorkdir := findFieldInChain(id, "withWorkdir")
 	require.NotNil(t, finalWorkdir)
 	require.Equal(t, "/final", finalWorkdir.Arg("path").Value().ToInput())
