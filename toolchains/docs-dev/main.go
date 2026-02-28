@@ -24,23 +24,16 @@ func New(
 	// "!CONTRIBUTING.md"
 	// ]
 	source *dagger.Directory,
-	// +defaultPath="/docs/nginx.conf"
-	nginxConfig *dagger.File,
+
 ) DocsDev {
 	return DocsDev{
-		Source:      source,
-		NginxConfig: nginxConfig,
+		Source: source,
 	}
 }
 
 type DocsDev struct {
-	Source      *dagger.Directory
-	NginxConfig *dagger.File // +private
+	Source *dagger.Directory
 }
-
-const (
-	markdownlintVersion = "0.31.1"
-)
 
 const cliZenFrontmatter = `---
 title: "CLI Reference"
@@ -49,50 +42,6 @@ slug: "/reference/cli"
 ---
 
 `
-
-// Build the docs website
-func (d DocsDev) Site() *dagger.Directory {
-	opts := dagger.DocusaurusOpts{
-		Dir:  "./docs",
-		Yarn: true,
-	}
-	return dag.Docusaurus(d.Source, opts).Build()
-}
-
-// Build the docs server
-func (d DocsDev) Server() *dagger.Container {
-	return dag.
-		Container().
-		From("nginx").
-		WithoutEntrypoint().
-		WithFile("/etc/nginx/conf.d/default.conf", d.NginxConfig).
-		WithDefaultArgs([]string{"nginx", "-g", "daemon off;"}).
-		WithDirectory("/var/www", d.Site()).
-		WithExposedPort(8000)
-}
-
-// +check
-// Lint documentation files
-func (d DocsDev) LintMarkdown(
-	ctx context.Context,
-	// +defaultPath="/"
-	// +ignore=[
-	// "**/*",
-	// "!**/README.md",
-	// "!docs/**/*.md",
-	// "!**/.markdownlint.*",
-	// "!**/.markdownlintignore.*"
-	// ]
-	markdownFiles *dagger.Directory,
-) error {
-	_, err := dag.Container().
-		From("tmknom/markdownlint:"+markdownlintVersion).
-		WithWorkdir("/src").
-		WithMountedDirectory(".", markdownFiles).
-		WithExec([]string{"markdownlint"}).
-		Sync(ctx)
-	return err
-}
 
 // Regenerate the API schema and CLI reference docs
 // +generate

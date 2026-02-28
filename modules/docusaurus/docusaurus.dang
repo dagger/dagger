@@ -1,0 +1,626 @@
+"""
+A Dagger module for docusaurus, a documentation website builder. https://docusaurus.io
+"""
+type Docusaurus {
+  """
+  Scan all docusaurus sites, and ensure they are configured to build properly in Dagger.
+  """
+  pub optimizeConfig(ws: Workspace!): Changeset! @generate {
+    # TODO: a bit awkward, need a better way to merge 0-n changesets ("empty changeset"?)
+    let root = ws.directory(".")
+    root.changes(root).withChangesets(
+      sites(ws).map { site =>
+        site.optimizeConfig(ws)
+      },
+    )
+  }
+
+  """
+  Scan all docusaurus sites, and ensure that they build.
+  """
+  pub checkBuild(ws: Workspace!): Void @check {
+    let builds = sites(ws).reduce(directory) { builds, site =>
+      builds.withDirectory(site.path, site.build(ws))
+    }
+    builds.sync
+    null
+  }
+
+  pub sites(ws: Workspace!): [Site!]! {
+    ws
+      .directory(".", include: [
+        "**/docusaurus.config.ts",
+        "**/docusaurus.config.js",
+      ])
+      .glob("**/docusaurus.config.*")
+      .map { configPath =>
+        let path = configPath
+          .trimSuffix("docusaurus.config.ts")
+          .trimSuffix("docusaurus.config.js")
+          .trimSuffix("/")
+        let path = if (path == "") { "." } else { path }
+        let pkgDir = ws.directory(path, include: ["package.json"])
+        let pkgJson = if (pkgDir.stat("package.json") != null) {
+          pkgDir.file("package.json").asJSON
+        } else {
+          null
+        }
+        Site(path: path, packageJson: PackageJson(json: pkgJson))
+      }
+  }
+
+  """
+  Return one docusaurus site by its workspace-relative path.
+  """
+  pub site(ws: Workspace!, path: String!): Site! {
+    let match = sites(ws).filter { site => site.path == path }[0]
+    if (match != null) {
+      match
+    } else {
+      raise "docusaurus site not found: " + path
+    }
+  }
+}
+
+"""
+A Docusaurus site.
+"""
+
+"""
+Package.json helpers.
+"""
+type PackageJson {
+  let json: JSONValue
+
+  # TODO: remove when JSONValue.field becomes nullable
+  let tryField(path: [String!]!): JSONValue {
+    try {
+      let field = json.field(path)
+      field.id # force querying
+      field
+    } catch {
+      _ => null
+    }
+  }
+
+  let hasPrefix(value: String!, prefix: String!): Boolean! {
+    value.trimPrefix(prefix) != value
+  }
+
+  let isLocalDependencySpec(spec: String!): Boolean! {
+    if (hasPrefix(spec, "file:")) {
+      true
+    } else if (hasPrefix(spec, "link:")) {
+      true
+    } else if (hasPrefix(spec, "workspace:")) {
+      true
+    } else {
+      false
+    }
+  }
+
+  let sectionHasLocalDependencyRefs(section: String!): Boolean! {
+    let sectionValue = tryField([section])
+    if (sectionValue == null) {
+      false
+    } else {
+      let found = false
+      for (name in sectionValue.fields) {
+        let spec = sectionValue.field([name]).asString ?? ""
+        if (isLocalDependencySpec(spec)) {
+          found = true
+        }
+      }
+      found
+    }
+  }
+
+  """
+  The package manager command (read from package.json "packageManager" field).
+  """
+  pub packageManager: String! {
+    tryField(["packageManager"]).asString.split("@")[0] ?? "npm"
+  }
+
+  """
+  Whether package.json uses local dependency protocols (file/link/workspace).
+  """
+  pub hasLocalDependencyRefs: Boolean! {
+    if (sectionHasLocalDependencyRefs("dependencies")) {
+      true
+    } else if (sectionHasLocalDependencyRefs("devDependencies")) {
+      true
+    } else if (sectionHasLocalDependencyRefs("optionalDependencies")) {
+      true
+    } else {
+      sectionHasLocalDependencyRefs("peerDependencies")
+    }
+  }
+
+  """
+  Optional source include paths from package.json "docusaurus.include".
+  """
+  pub include: [String!]! {
+    tryField(["docusaurus", "include"]).asArray.{asString}.map { item => item.asString } ?? []
+  }
+
+  """
+  Source exclude paths from package.json "docusaurus.exclude".
+  """
+  pub exclude: [String!]! {
+    tryField(["docusaurus", "exclude"]).asArray.{asString}.map { item => item.asString } ?? []
+  }
+
+  """
+  Whether package.json "docusaurus.nginxConfig" is explicitly set.
+  """
+  pub hasNginxConfig: Boolean! {
+    tryField(["docusaurus", "nginxConfig"]) != null
+  }
+
+  """
+  Path to nginx config from package.json "docusaurus.nginxConfig".
+  Defaults to "./nginx.conf" when the field is not set.
+  """
+  pub nginxConfig: String! {
+    tryField(["docusaurus", "nginxConfig"]).asString ?? "./nginx.conf"
+  }
+}
+
+type Site {
+  """
+  Path of the site directory in the workspace
+  """
+  pub path: String!
+
+  """
+  Parsed package.json helpers for the site.
+  """
+  let packageJson: PackageJson!
+
+  """
+  The package manager command.
+  """
+  let pm: String! {
+    packageJson.packageManager
+  }
+
+  """
+  Path to the nginx config file in the workspace.
+  """
+  let nginxConfigPath: String! {
+    let cfgPath = packageJson.nginxConfig.trimPrefix("./")
+    if (path == ".") {
+      cfgPath
+    } else {
+      path + "/" + cfgPath
+    }
+  }
+
+  """
+  The install command for the package manager.
+  """
+  let installCmd(ws: Workspace!): [String!]! {
+    case (pm) {
+      "yarn" => ["yarn", "install", "--frozen-lockfile"]
+      "pnpm" => ["pnpm", "install", "--frozen-lockfile"]
+      else => ["npm", "install"]
+    }
+  }
+
+  let traceInstallForRuntimeExternalPaths: Boolean! {
+    packageJson.hasLocalDependencyRefs
+  }
+
+  """
+  Include globs for files under the site path.
+  """
+  let siteOnlyIncludes: [String!]! {
+    if (path == ".") {
+      ["**"]
+    } else {
+      [path + "/**"]
+    }
+  }
+
+  """
+  Include globs for source and known local dependencies.
+  """
+  let sourceIncludes: [String!]! {
+    siteOnlyIncludes + packageJson.include.map { inc =>
+      if (path == ".") { inc } else { path + "/" + inc }
+    }
+  }
+
+  """
+  Exclude globs for source selection.
+  """
+  let sourceExcludes: [String!]! {
+    [
+      "node_modules/",
+      ".docusaurus/",
+      "build/",
+      ".git/",
+    ] + packageJson.exclude.map { exc =>
+      if (path == ".") { exc } else { path + "/" + exc }
+    }
+  }
+
+  """
+  The Docusaurus site source files.
+  """
+  pub source(ws: Workspace!): Directory! {
+    ws.directory(
+      ".",
+      include: sourceIncludes,
+      exclude: sourceExcludes,
+    )
+  }
+
+  """
+  Base container for docusaurus.
+  """
+  let base: Container! {
+    container
+      .from("node:lts-alpine")
+      .withoutEntrypoint
+      .withWorkdir("/app")
+      .withExec(["corepack", "enable"])
+      .withMountedCache(
+        "/root/.npm/_cacache",
+        cacheVolume("npm-cache"),
+      )
+      .withMountedCache(
+        "/usr/local/share/.cache/yarn",
+        cacheVolume("yarn-cache"),
+      )
+      .withMountedCache(
+        "/root/.local/share/pnpm/store",
+        cacheVolume("pnpm-cache"),
+      )
+  }
+
+  let workspaceRootPath: String! = "/workspace"
+  let docusaurusToolsPath: String! = "/docusaurus-tools"
+  let packageJSONEditHelperPath: String! = docusaurusToolsPath + "/package-json-edit.cjs"
+  let docusaurusBuildCmd: [String!]! = ["./node_modules/.bin/docusaurus", "build"]
+
+  let workspaceSitePath: String! {
+    if (path == ".") {
+      workspaceRootPath
+    } else {
+      workspaceRootPath + "/" + path
+    }
+  }
+
+  let siteCacheVolumeKey(ws: Workspace!): String! {
+    "docusaurus-cache-" + ws.root + "-" + path
+  }
+
+  """
+  Site-specific build sandbox.
+  """
+  pub sandbox(ws: Workspace!): Sandbox! {
+    let initialCtr = base
+      .withDirectory(workspaceRootPath, directory)
+      .withWorkdir(workspaceSitePath)
+      .withMountedCache(
+        "./node_modules/.cache",
+        cacheVolume(siteCacheVolumeKey(ws)),
+        sharing: CacheSharingMode.LOCKED,
+      )
+
+    Sandbox(
+      site: Site(path: path, packageJson: packageJson),
+      ctr: initialCtr,
+      nesting: false,
+      workspaceExcludes: [],
+      justInTimeWorkspace: false,
+    )
+  }
+
+  """
+  Deterministically discover local paths outside of the site dir that are
+  accessed by a docusaurus build run.
+  Returned paths are relative to the site path, sorted, and deduplicated.
+  """
+  pub runtimeExternalPaths(ws: Workspace!): [String!]! {
+    if (path == ".") {
+      []
+    } else {
+      let prepared = sandbox(ws)
+        .withWorkspaceExcludes(sourceExcludes)
+        .withWorkspaceFiles(ws, siteOnlyIncludes, [])
+
+      let afterInstall = if (traceInstallForRuntimeExternalPaths) {
+        prepared
+          .withJustInTimeWorkspace(true)
+          .withNesting(true)
+          .withExec(ws, installCmd(ws), ReturnType.SUCCESS)
+      } else {
+        prepared
+          .withJustInTimeWorkspace(false)
+          .withNesting(false)
+          .withExec(ws, installCmd(ws), ReturnType.SUCCESS)
+      }
+
+      let traced = afterInstall
+        .withJustInTimeWorkspace(true)
+        .withNesting(true)
+        .withExec(ws, docusaurusBuildCmd, ReturnType.ANY)
+
+      traced.justInTimeWorkspaceLog
+    }
+  }
+
+  """
+  Build the static site.
+  """
+  pub build(ws: Workspace!): Directory! {
+    sandbox(ws)
+      .withWorkspaceExcludes(sourceExcludes)
+      .withWorkspaceFiles(ws, sourceIncludes, [])
+      .withExec(ws, installCmd(ws), ReturnType.SUCCESS)
+      .withExec(ws, docusaurusBuildCmd, ReturnType.SUCCESS)
+      .container
+      .directory("build")
+  }
+
+  let optimizeConfigContainer: Container! {
+    base
+      .withDirectory(
+        docusaurusToolsPath,
+        currentModule.source.directory("tools"),
+      )
+      .withWorkdir(docusaurusToolsPath)
+      .withExec(["npm", "ci"], expect: ReturnType.SUCCESS)
+  }
+
+  """
+  Make sure the site is configured optimally for use with Dagger
+  """
+  pub optimizeConfig(ws: Workspace!): Changeset! {
+    let packageJsonPath = if (path == ".") {
+      "package.json"
+    } else {
+      path + "/package.json"
+    }
+    let before = ws.directory("/", include: [packageJsonPath])
+    let includesJSON = toJSON(runtimeExternalPaths(ws))
+    let after = optimizeConfigContainer
+      .withDirectory(workspaceRootPath, before)
+      .withExec(
+        [
+          "node",
+          packageJSONEditHelperPath,
+          workspaceRootPath + "/" + packageJsonPath,
+          includesJSON,
+        ],
+        expect: ReturnType.SUCCESS,
+      )
+      .directory(workspaceRootPath)
+
+    after.changes(before)
+  }
+
+  """
+  Serve the static site with nginx.
+  """
+  pub server(ws: Workspace!): Service! {
+    let ctr = container
+      .from("nginx:alpine")
+      .withDirectory("/usr/share/nginx/html", build(ws))
+
+    if (packageJson.hasNginxConfig) {
+      ctr = ctr.withFile(
+        "/etc/nginx/conf.d/default.conf",
+        ws.file(nginxConfigPath),
+      )
+    } else {
+      let defaultConfig = ws
+        .directory(path, include: ["nginx.conf"])
+        .stat("nginx.conf")
+      if (defaultConfig != null) {
+        ctr = ctr.withFile(
+          "/etc/nginx/conf.d/default.conf",
+          ws.file(nginxConfigPath),
+        )
+      }
+    }
+
+    ctr.withExposedPort(80).asService
+  }
+}
+
+type Sandbox {
+  let site: Site!
+  let ctr: Container!
+  let nesting: Boolean!
+  let workspaceExcludes: [String!]!
+  let justInTimeWorkspace: Boolean!
+
+  let workspaceRootPath: String! = "/workspace"
+  let jitWorkspaceLogDir: String! = "/tmp/docusaurus-jit-workspace"
+
+  let siteWorkspacePath: String! {
+    if (site.path == ".") {
+      workspaceRootPath
+    } else {
+      workspaceRootPath + "/" + site.path
+    }
+  }
+
+  let withContainer(nextCtr: Container!): Sandbox! {
+    Sandbox(
+      site: site,
+      ctr: nextCtr,
+      nesting: nesting,
+      workspaceExcludes: workspaceExcludes,
+      justInTimeWorkspace: justInTimeWorkspace,
+    )
+  }
+
+  let withState(
+    nextCtr: Container!,
+    nextNesting: Boolean!,
+    nextExcludes: [String!]!,
+    nextJustInTimeWorkspace: Boolean!,
+  ): Sandbox! {
+    Sandbox(
+      site: site,
+      ctr: nextCtr,
+      nesting: nextNesting,
+      workspaceExcludes: nextExcludes,
+      justInTimeWorkspace: nextJustInTimeWorkspace,
+    )
+  }
+
+  let workspaceExcludesJSON: String! {
+    toJSON(workspaceExcludes)
+  }
+
+  let withRuntimeTrace(ws: Workspace!): Container! {
+    ctr
+      .withFile(
+        "/jit-workspace-hook.cjs",
+        currentModule.source.file("jit-workspace-hook.cjs"),
+      )
+      .withFile(
+        "/jit-workspace-hydrate.cjs",
+        currentModule.source.file("jit-workspace-hydrate.cjs"),
+      )
+      .withFile(
+        "/jit-workspace-log.cjs",
+        currentModule.source.file("jit-workspace-log.cjs"),
+      )
+      .withEnvVariable("CI", "1")
+      .withEnvVariable("TZ", "UTC")
+      .withEnvVariable("LANG", "C")
+      .withEnvVariable("LC_ALL", "C")
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_LOG_DIR", jitWorkspaceLogDir)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_ROOT", workspaceRootPath)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_SITE_ROOT", siteWorkspacePath)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_ID", toJSON(ws.id))
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_EXCLUDES_JSON", workspaceExcludesJSON)
+      .withEnvVariable("DAGGER_JIT_WORKSPACE_HYDRATE_HELPER", "/jit-workspace-hydrate.cjs")
+      .withEnvVariable("NODE_OPTIONS", "--require=/jit-workspace-hook.cjs")
+  }
+
+  """
+  Return the underlying container.
+  """
+  pub container: Container! {
+    ctr
+  }
+
+  """
+  Toggle nested Dagger access in future exec steps.
+  """
+  pub withNesting(enabled: Boolean!): Sandbox! {
+    withState(
+      ctr,
+      enabled,
+      workspaceExcludes,
+      justInTimeWorkspace,
+    )
+  }
+
+  """
+  Add sticky workspace exclude paths.
+  """
+  pub withWorkspaceExcludes(exclude: [String!]!): Sandbox! {
+    withState(
+      ctr,
+      nesting,
+      workspaceExcludes + exclude,
+      justInTimeWorkspace,
+    )
+  }
+
+  """
+  Copy workspace files into /workspace.
+  """
+  pub withWorkspaceFiles(
+    ws: Workspace!,
+    include: [String!]!,
+    exclude: [String!]!,
+  ): Sandbox! {
+    let copied = ws.directory(
+      ".",
+      include: include,
+      exclude: workspaceExcludes + exclude,
+    )
+    let merged = ctr
+      .directory(workspaceRootPath)
+      .withDirectory("/", copied)
+    withContainer(ctr.withDirectory(workspaceRootPath, merged))
+  }
+
+  """
+  Toggle JIT workspace hydration for future exec steps.
+  """
+  pub withJustInTimeWorkspace(enabled: Boolean!): Sandbox! {
+    withState(
+      ctr,
+      nesting,
+      workspaceExcludes,
+      enabled,
+    )
+  }
+
+  """
+  Execute a command in the sandbox container.
+  """
+  pub withExec(
+    ws: Workspace!,
+    cmd: [String!]!,
+    expect: ReturnType!,
+  ): Sandbox! {
+    let execBase = if (justInTimeWorkspace) {
+      withRuntimeTrace(ws)
+    } else {
+      ctr.withEnvVariable("NODE_OPTIONS", "")
+    }
+
+    let nextCtr = if (nesting) {
+      execBase.withExec(
+        cmd,
+        expect: expect,
+        experimentalPrivilegedNesting: true,
+      )
+    } else {
+      execBase.withExec(cmd, expect: expect)
+    }
+
+    withContainer(nextCtr)
+  }
+
+  """
+  Paths hydrated on-demand from the workspace so far.
+  """
+  pub justInTimeWorkspaceLog: [String!]! {
+    if (justInTimeWorkspace == false) {
+      []
+    } else {
+      let pathsRaw = ctr
+        .withFile(
+          "/jit-workspace-log.cjs",
+          currentModule.source.file("jit-workspace-log.cjs"),
+        )
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_LOG_DIR", jitWorkspaceLogDir)
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_ROOT", workspaceRootPath)
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_SITE_ROOT", siteWorkspacePath)
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_COLLECT_MODE", "hydrated")
+        .withEnvVariable("NODE_OPTIONS", "")
+        .withEnvVariable("DAGGER_JIT_WORKSPACE_DISABLE_HYDRATE", "1")
+        .withExec(["node", "/jit-workspace-log.cjs"])
+        .stdout
+
+      Dagger
+        .json
+        .withContents(pathsRaw :: JSON!)
+        .asArray.{asString}
+        .map { item => item.asString }
+    }
+  }
+}

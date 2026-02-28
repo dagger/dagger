@@ -1,0 +1,48 @@
+"""
+A Dagger module for markdownlint, a markdown linter. https://github.com/DavidAnson/markdownlint-cli2
+"""
+type MarkdownLint {
+  """
+  The version of markdownlint to use.
+  """
+  pub version: String! = "latest"
+
+  """
+  Filter the current workspace for use by markdownlint.
+  """
+  pub inputs(ws: Workspace!): Directory! {
+    ws.directory("/", include: ["**/*.md", "**/.markdownlint*"])
+  }
+
+  """
+  Build a sandbox with markdownlint installed and input files mounted.
+  """
+  pub sandbox(ws: Workspace!): Container! {
+    container
+      .from("tmknom/markdownlint:" + version)
+      .withWorkdir("/app")
+      .withMountedDirectory(".", inputs(ws), owner: "nonroot")
+  }
+
+  """
+  Lint markdown files in the current workspace.
+  """
+  pub lint(ws: Workspace!): Void @check {
+    sandbox(ws)
+      .withExec(["markdownlint", "."])
+      .sync
+    null
+  }
+
+  """
+  Fix markdown files in the current workspace.
+  """
+  pub fix(ws: Workspace!): Changeset! @generate {
+    let ctr = sandbox(ws)
+    let before = ctr.directory(".")
+    let after = ctr
+      .withExec(["markdownlint", "--fix", "."], expect: ReturnType.ANY)
+      .directory(".")
+    after.changes(before)
+  }
+}
