@@ -643,13 +643,10 @@ func (container *Container) Build(
 	secrets []dagql.ObjectResult[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
-	sshSocket *Socket,
+	sshSocketID *call.ID,
 ) (*Container, error) {
 	container = container.Clone()
 
-	if sshSocket != nil {
-		return nil, fmt.Errorf("dockerBuild SSH mounts are not supported in hard-cutover path yet")
-	}
 	if noInit {
 		return nil, fmt.Errorf("dockerBuild noInit is not supported in hard-cutover path yet")
 	}
@@ -711,6 +708,10 @@ func (container *Container) Build(
 			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
 		})
 	}
+	sshSocketIDsByLLBID := map[string]*call.ID{}
+	if sshSocketID != nil {
+		sshSocketIDsByLLBID[""] = sshSocketID
+	}
 
 	convertOpt := dockerfile2llb.ConvertOpt{
 		Config: dockerui.Config{
@@ -733,6 +734,7 @@ func (container *Container) Build(
 	containerID, err := llbtodagger.DefinitionToIDWithOptions(def.ToPB(), img, llbtodagger.DefinitionToIDOptions{
 		MainContextDirectoryID: contextDirID,
 		SecretIDsByLLBID:       secretIDsByLLBID,
+		SSHSocketIDsByLLBID:    sshSocketIDsByLLBID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)

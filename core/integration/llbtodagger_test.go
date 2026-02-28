@@ -3,7 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -434,6 +437,66 @@ CMD ["sh", "-c", "cat /mounted && echo && cat /env"]
 	out, err := ctr.WithExec(nil).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "barbar\nbarbar", strings.TrimSpace(out))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunSSHMount(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	tmp := t.TempDir()
+	sockPath := filepath.Join(tmp, "ssh-agent.sock")
+
+	listener, err := net.Listen("unix", sockPath)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = listener.Close()
+	})
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					panic(err)
+				}
+				return
+			}
+			_, err = io.Copy(conn, conn)
+			if err != nil {
+				panic(err)
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	sock := c.Host().UnixSocket(sockPath)
+	sockSDKID, err := sock.ID(ctx)
+	require.NoError(t, err)
+	var sockCallID call.ID
+	require.NoError(t, sockCallID.Decode(string(sockSDKID)))
+
+	contextDir := writeDockerContext(t, nil)
+	ctr, _, _ := convertDockerfileToLoadedContainerWithOptions(
+		ctx,
+		t,
+		c,
+		contextDir,
+		`
+FROM `+alpineImage+`
+RUN apk add --no-cache netcat-openbsd
+RUN --mount=type=ssh,id=my-ssh,required=true,target=/tmp/ssh-agent.sock sh -c 'echo -n hello | nc -w1 -N -U /tmp/ssh-agent.sock > /result'
+RUN test ! -S /tmp/ssh-agent.sock
+CMD ["cat", "/result"]
+`,
+		llbtodagger.DefinitionToIDOptions{
+			SSHSocketIDsByLLBID: map[string]*call.ID{
+				"my-ssh": &sockCallID,
+			},
+		},
+	)
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello", strings.TrimSpace(out))
 }
 
 func (LLBToDaggerSuite) TestConversionDeterministicEncoding(ctx context.Context, t *testctx.T) {

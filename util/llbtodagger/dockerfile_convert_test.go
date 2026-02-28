@@ -119,6 +119,68 @@ RUN --mount=type=secret,id=required-secret,required=true,target=/run/secrets/req
 	require.Contains(t, unsupportedErr.Reason, "required")
 }
 
+func TestDefinitionToIDDockerfileRunSSHMount(t *testing.T) {
+	t.Parallel()
+
+	def, img := dockerfileToDefinition(t, `
+FROM alpine:3.19
+RUN --mount=type=ssh,id=my-ssh,required=true,target=/tmp/agent.sock \
+    sh -c 'test -S /tmp/agent.sock'
+`)
+
+	socketID := fakeSocketID("/tmp/source.sock")
+	id, err := DefinitionToIDWithOptions(def, img, DefinitionToIDOptions{
+		SSHSocketIDsByLLBID: map[string]*call.ID{
+			"my-ssh": socketID,
+		},
+	})
+	require.NoError(t, err)
+
+	withUnixSocket := findFieldInChain(id, "withUnixSocket")
+	require.NotNil(t, withUnixSocket)
+	require.Equal(t, "/tmp/agent.sock", withUnixSocket.Arg("path").Value().ToInput())
+	require.Equal(t, "0:0", withUnixSocket.Arg("owner").Value().ToInput())
+
+	withoutUnixSocket := findFieldInChain(id, "withoutUnixSocket")
+	require.NotNil(t, withoutUnixSocket)
+	require.Equal(t, "/tmp/agent.sock", withoutUnixSocket.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDDockerfileRunOptionalSSHSkippedWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	def, img := dockerfileToDefinition(t, `
+FROM alpine:3.19
+RUN --mount=type=ssh,id=missing,target=/tmp/agent.sock \
+    sh -c 'echo ok'
+`)
+
+	id, err := DefinitionToIDWithOptions(def, img, DefinitionToIDOptions{
+		SSHSocketIDsByLLBID: map[string]*call.ID{},
+	})
+	require.NoError(t, err)
+
+	require.Nil(t, findFieldInChain(id, "withUnixSocket"))
+	require.Nil(t, findFieldInChain(id, "withoutUnixSocket"))
+}
+
+func TestDefinitionToIDDockerfileRunRequiredSSHMissingUnsupported(t *testing.T) {
+	t.Parallel()
+
+	def, img := dockerfileToDefinition(t, `
+FROM alpine:3.19
+RUN --mount=type=ssh,id=required-ssh,required=true,target=/tmp/agent.sock \
+    sh -c 'test -S /tmp/agent.sock'
+`)
+
+	_, err := DefinitionToIDWithOptions(def, img, DefinitionToIDOptions{
+		SSHSocketIDsByLLBID: map[string]*call.ID{},
+	})
+	unsupportedErr := requireUnsupported(t, err, "exec")
+	require.Contains(t, unsupportedErr.Reason, "required-ssh")
+	require.Contains(t, unsupportedErr.Reason, "required")
+}
+
 func TestDefinitionToIDDockerfileCopyFromContext(t *testing.T) {
 	t.Parallel()
 

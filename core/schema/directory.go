@@ -1417,13 +1417,16 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 
-	var sshSocket *core.Socket
+	var sshSocketID *call.ID
 	if args.SSH.Valid {
 		sshSocketResult, err := args.SSH.Value.Load(ctx, srv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load SSH socket: %w", err)
 		}
-		sshSocket = sshSocketResult.Self()
+		if sshSocketResult.Self() == nil {
+			return nil, fmt.Errorf("failed to load SSH socket: nil socket")
+		}
+		sshSocketID = sshSocketResult.ID()
 	}
 
 	return ctr.Build(
@@ -1436,7 +1439,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		secrets,
 		secretStore,
 		args.NoInit,
-		sshSocket,
+		sshSocketID,
 	)
 }
 

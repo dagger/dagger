@@ -512,8 +512,9 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 				"sock": sockID,
 			},
 		})
-		require.NoError(t, err)
-		require.Equal(t, "hello", res.LoadDirectoryFromID.DockerBuild.File.Contents)
+		require.Error(t, err)
+		requireErrOut(t, err, "remote syntax frontend")
+		require.Zero(t, res)
 	})
 
 	t.Run("without ssh socket fails", func(ctx context.Context, t *testctx.T) {
