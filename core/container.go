@@ -632,6 +632,34 @@ func (container *Container) FromCanonicalRefUpdateConfig(
 
 const defaultDockerfileName = "Dockerfile"
 
+func isKnownDockerfileSyntaxFrontend(syntaxRef string) bool {
+	ref := strings.TrimSpace(strings.ToLower(syntaxRef))
+	if ref == "" {
+		return false
+	}
+
+	known := []string{
+		"docker/dockerfile",
+		"docker/dockerfile-upstream",
+		"docker.io/docker/dockerfile",
+		"docker.io/docker/dockerfile-upstream",
+		"index.docker.io/docker/dockerfile",
+		"index.docker.io/docker/dockerfile-upstream",
+		"moby/dockerfile",
+		"moby/dockerfile-upstream",
+		"docker.io/moby/dockerfile",
+		"docker.io/moby/dockerfile-upstream",
+		"index.docker.io/moby/dockerfile",
+		"index.docker.io/moby/dockerfile-upstream",
+	}
+	for _, prefix := range known {
+		if ref == prefix || strings.HasPrefix(ref, prefix+":") || strings.HasPrefix(ref, prefix+"@") {
+			return true
+		}
+	}
+	return false
+}
+
 func (container *Container) Build(
 	ctx context.Context,
 	dockerfileDir *Directory,
@@ -663,8 +691,8 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read Dockerfile %q: %w", dockerfilePath, err)
 	}
-	if syntaxRef, _, _, ok := dockerfileparser.DetectSyntax(dockerfileBytes); ok {
-		return nil, fmt.Errorf("dockerBuild remote syntax frontend %q is not supported in hard-cutover path yet", syntaxRef)
+	if syntaxRef, _, _, ok := dockerfileparser.DetectSyntax(dockerfileBytes); ok && !isKnownDockerfileSyntaxFrontend(syntaxRef) {
+		return nil, fmt.Errorf("dockerBuild syntax frontend %q is unsupported in hard-cutover path", syntaxRef)
 	}
 	mainContext := llbtodagger.DockerfileMainContextSentinelState()
 
