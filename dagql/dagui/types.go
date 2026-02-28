@@ -78,7 +78,9 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	}
 	var spans iter.Seq[*Span]
 	if view.Zoomed != nil {
-		if len(view.Zoomed.RevealedSpans.Order) > 0 &&
+		if len(view.Zoomed.UserSpans.Order) > 0 && opts.Verbosity < ShowFullTraceVerbosity {
+			spans = view.Zoomed.UserSpans.Iter()
+		} else if len(view.Zoomed.RevealedSpans.Order) > 0 &&
 			// Revealed spans bubble up all the way to the root span. By default, we
 			// want to preserve the top-level context (i.e. spans immediately beneath
 			// root). So, we only prioritize revealed spans if the zoomed span is also
@@ -257,30 +259,16 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		if row.Expanded {
 			var lastChild *TraceRow
 
-			if tree.shouldShowRevealedSpans(opts) {
-				// Show revealed spans directly, finding their TraceTrees
-				for _, revealedSpan := range tree.Span.RevealedSpans.Order {
-					if revealedTree, ok := lv.BySpan[revealedSpan.ID]; ok {
-						childRow := walk(revealedTree, row, depth+1)
-						if lastChild != nil {
-							childRow.Previous = lastChild
-							lastChild.Next = childRow
-						}
-						lastChild = childRow
-					}
+			for child := range lv.VisibleChildren(tree, opts) {
+				childRow := walk(child, row, depth+1)
+				if lastChild != nil {
+					childRow.Previous = lastChild
+					lastChild.Next = childRow
 				}
-			} else {
-				// Show direct children
-				for _, child := range tree.Children {
-					childRow := walk(child, row, depth+1)
-					if lastChild != nil {
-						childRow.Previous = lastChild
-						lastChild.Next = childRow
-					}
-					lastChild = childRow
-				}
+				lastChild = childRow
 			}
-			row.ShowingChildren = row.HasChildren
+
+			row.ShowingChildren = lastChild != nil
 		}
 		return row
 	}
@@ -296,12 +284,39 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 	return rows
 }
 
-func (row *TraceTree) shouldShowRevealedSpans(opts FrontendOpts) bool {
-	verbosity := opts.Verbosity
-	if v, ok := opts.SpanVerbosity[row.Span.ID]; ok {
-		verbosity = v
+func (lv *RowsView) VisibleChildren(tree *TraceTree, opts FrontendOpts) iter.Seq[*TraceTree] {
+	return func(yield func(*TraceTree) bool) {
+		if tree.shouldShowRevealedSpans(opts) {
+			for _, revealedSpan := range tree.Span.RevealedSpans.Order {
+				if child, ok := lv.BySpan[revealedSpan.ID]; ok {
+					if !yield(child) {
+						break
+					}
+				}
+			}
+		} else if len(tree.Span.UserSpans.Order) > 0 &&
+			tree.Span.Verbosity(opts) < ShowFullTraceVerbosity {
+			for _, revealedSpan := range tree.Span.UserSpans.Order {
+				if child, ok := lv.BySpan[revealedSpan.ID]; ok {
+					if !yield(child) {
+						break
+					}
+				}
+			}
+		} else {
+			for _, child := range tree.Children {
+				if !yield(child) {
+					break
+				}
+			}
+		}
 	}
-	return row.RevealedChildren && !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity
+}
+
+func (row *TraceTree) shouldShowRevealedSpans(opts FrontendOpts) bool {
+	return row.RevealedChildren &&
+		!opts.RevealNoisySpans &&
+		row.Span.Verbosity(opts) < ShowSpammyVerbosity
 }
 
 func (row *TraceTree) hasVisibleChildren(opts FrontendOpts) bool {
