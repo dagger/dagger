@@ -110,7 +110,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	module := phpModule(t, c, "scalar-kind")
 
-	t.Run("bool", func(ctx context.Context, t *testctx.T) {
+	t.Run("bool func", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
 			With(daggerCall("opposite-bool", "--arg=true")).
 			Stdout(ctx)
@@ -118,7 +118,23 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "false", out)
 	})
 
-	t.Run("float", func(ctx context.Context, t *testctx.T) {
+	t.Run("bool field", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("bool-field")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "true", out)
+	})
+
+	t.Run("set fields then get bool field", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("set-fields", "bool-field")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "false", out)
+	})
+
+	t.Run("float func", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
 			With(daggerCall("half-float", "--arg=3.14")).
 			Stdout(ctx)
@@ -126,7 +142,23 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "1.57", out)
 	})
 
-	t.Run("integer", func(ctx context.Context, t *testctx.T) {
+	t.Run("float field", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("float-field")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "3.14", out)
+	})
+
+	t.Run("set fields, then get float field", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("set-fields", "float-field")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1.618", out)
+	})
+
+	t.Run("int func", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
 			With(daggerCall("double-int", "--arg=418")).
 			Stdout(ctx)
@@ -134,12 +166,44 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "836", out)
 	})
 
-	t.Run("string", func(ctx context.Context, t *testctx.T) {
+	t.Run("int field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("capitalize-string", "--arg=hello, world!")).
+			With(daggerCall("int-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "Hello, World!", out)
+		require.Equal(t, "1", out)
+	})
+
+	t.Run("set fields then get int field", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("set-fields", "int-field")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "2", out)
+	})
+
+	t.Run("string func", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("capitalize-string", "--arg=hello, func!")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, Func!", out)
+	})
+
+	t.Run("string field", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("string-field")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, field!", out)
+	})
+
+	t.Run("set fields then get string field", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("set-fields", "string-field")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "HOWDY, FIELD!", out)
 	})
 }
 
