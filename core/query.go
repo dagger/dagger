@@ -8,7 +8,6 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
@@ -123,7 +122,7 @@ type Server interface {
 	PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.
-	EngineLocalCachePolicy() *bkclient.PruneInfo
+	EngineLocalCachePolicy() *EngineCachePolicy
 
 	// Gets the buildkit cache manager
 	BuildkitCache() bkcache.Manager

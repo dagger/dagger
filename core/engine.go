@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -34,6 +35,20 @@ type EngineCachePruneOptions struct {
 	ReservedSpace    string
 	MinFreeSpace     string
 	TargetSpace      string
+}
+
+// EngineCachePolicy is the engine's default local-cache pruning policy.
+//
+// It is core-owned so the query/core API surface does not leak buildkit types.
+type EngineCachePolicy struct {
+	All          bool
+	Filters      []string
+	KeepDuration time.Duration
+
+	MaxUsedSpace  int64
+	TargetSpace   int64
+	ReservedSpace int64
+	MinFreeSpace  int64
 }
 
 func (*EngineCache) Type() *ast.Type {

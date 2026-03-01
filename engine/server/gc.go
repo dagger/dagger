@@ -18,8 +18,19 @@ import (
 
 type dagqlCachePrunePolicy = dagql.CachePrunePolicy
 
-func (srv *Server) EngineLocalCachePolicy() *bkclient.PruneInfo {
-	return srv.workerDefaultGCPolicy
+func (srv *Server) EngineLocalCachePolicy() *core.EngineCachePolicy {
+	if srv.workerDefaultGCPolicy == nil {
+		return nil
+	}
+	return &core.EngineCachePolicy{
+		All:           srv.workerDefaultGCPolicy.All,
+		Filters:       slices.Clone(srv.workerDefaultGCPolicy.Filters),
+		KeepDuration:  srv.workerDefaultGCPolicy.KeepDuration,
+		ReservedSpace: srv.workerDefaultGCPolicy.ReservedSpace,
+		MaxUsedSpace:  srv.workerDefaultGCPolicy.MaxUsedSpace,
+		MinFreeSpace:  srv.workerDefaultGCPolicy.MinFreeSpace,
+		TargetSpace:   srv.workerDefaultGCPolicy.TargetSpace,
+	}
 }
 
 // Return all the cache entries in the local cache. No support for filtering yet.
@@ -300,15 +311,6 @@ func getDagqlGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) [
 		out = append(out, info)
 	}
 	return out
-}
-
-func getDefaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) *bkclient.PruneInfo {
-	policy := getDefaultDagqlGCPolicy(cfg, bkcfg, root)
-	if policy == nil {
-		return nil
-	}
-	out := buildkitPruneInfosFromDagqlPolicies([]dagqlCachePrunePolicy{*policy})
-	return &out[0]
 }
 
 func getDefaultDagqlGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) *dagqlCachePrunePolicy {
