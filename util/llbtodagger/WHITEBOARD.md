@@ -578,6 +578,49 @@ Last updated: 2026-02-28
   - [x] Remove syntax-pragma item from current unsupported catalog.
   - [x] Update related historical notes in this whiteboard to reflect the new allowed-ignore policy.
 
+### Phase 21: Public `query.http` Checksum Enforcement
+- Goal:
+  - Add checksum enforcement support to Dagger's public `query.http` API.
+  - Allow callers to provide an expected digest and fail if downloaded content does not match.
+- Scope:
+  - In scope: `query.http` schema/API and HTTP download execution path in `core`.
+  - Out of scope: llbtodagger `ADD --checksum` support (separate track).
+
+- Design checklist:
+  - [x] Add a new public optional string arg `checksum` to `query.http`.
+    - [x] Add it in `core/schema/http.go` argument docs + `httpArgs`.
+    - [x] Keep it public (not internal-only).
+  - [x] Parse and validate checksum input.
+    - [x] Parse with `digest.Parse(...)`.
+    - [x] Return explicit error for invalid checksum format.
+  - [x] Enforce checksum match in download path.
+    - [x] Compare expected checksum vs actual downloaded content digest.
+    - [x] Return explicit mismatch error containing expected + actual digest values.
+    - [x] Ensure enforcement applies for both fresh download and cache-hit/304 paths.
+  - [x] Include checksum in `query.http` resolver identity digest.
+    - [x] Add checksum argument into DagQL digest mixin / cache-key hash composition in `core/schema/http.go` (`hashutil.HashStrings(...)` path).
+  - [x] Regenerate Go SDK after schema API change.
+    - [x] Run: `dagger -y call -m ./toolchains/go-sdk-dev generate`
+    - [x] Worktree override required here: `dagger -y call -m ./toolchains/go-sdk-dev --workspace=. generate`
+
+- Test checklist:
+  - [x] Core unit/functional coverage:
+    - [x] valid matching checksum succeeds.
+    - [x] valid mismatched checksum fails with explicit mismatch error.
+    - [x] invalid checksum string fails early with parse/validation error.
+  - [x] Integration coverage (`core/integration/http_test.go`):
+    - [x] add happy-path checksum test with deterministic content.
+    - [x] add mismatch test.
+    - [x] add invalid-checksum input test.
+  - [x] Validation command shape:
+    - [x] follow `skills/cache-expert/references/debugging.md` format for integration runs.
+
+- Completion notes:
+  - `query.http` now supports an optional public `checksum` argument and enforces digest match against downloaded content.
+  - Resolver identity digest now mixes in the expected checksum value.
+  - Go SDK regen required the whiteboard-documented worktree override (`--workspace=.`) to pick up local schema changes.
+  - Focused integration coverage is passing with command shape from `skills/cache-expert/references/debugging.md`.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -630,10 +673,6 @@ Last updated: 2026-02-28
 ### Unsupported and relevant to Dockerfile-generated LLB
 
 #### HIGH
-
-- Proxy environment injection is unsupported (proxy build-arg path).
-
-- HTTP checksum enforcement attr is unsupported (`ADD --checksum` path).
 
 - Local source `followPaths` is unsupported.
   - This commonly appears for Dockerfile context copies that reference specific paths (for example `COPY package.json /app/package.json`), where the frontend narrows context transfer to only used paths.
