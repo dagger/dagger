@@ -821,10 +821,6 @@ func (container *Container) ExitCode(ctx context.Context) (int, error) {
 	return int(code), nil
 }
 
-func (container *Container) usedClientID(ctx context.Context) (string, error) {
-	return container.metaFileContents(ctx, buildkit.MetaMountClientIDPath)
-}
-
 func (container *Container) metaFileContents(ctx context.Context, filePath string) (string, error) {
 	if err := container.Evaluate(ctx); err != nil {
 		return "", err

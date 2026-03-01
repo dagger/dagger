@@ -2713,8 +2713,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			result, err := getModDefFn.Call(ctx, &core.CallOpts{
 				SkipSelfSchema: true,
 				Server:         dag,
-				// Cache the underlying withExec with the scope mixed in
-				OverrideStorageKey: scopedMod.ID().ExtraDigestByLabel(opScope).Digest.String(),
 			})
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)

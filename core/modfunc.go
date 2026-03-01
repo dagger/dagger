@@ -92,16 +92,6 @@ type CallOpts struct {
 	ParentFields   map[string]any
 	SkipSelfSchema bool
 	Server         *dagql.Server
-
-	// If set, persistently cache the result of the function call using this
-	// key rather than the one provided to use through CurrentStorageKey(ctx)
-	// from the cache.
-	//
-	// This is currently only used for the special function call made directly
-	// that retrieves module typedefs.
-	// TODO:(sipsma) remove this nonsense once all SDKs have migrated to the new
-	// way of obtaining module typedefs that doesn't involve a function call.
-	OverrideStorageKey string
 }
 
 type CallInput struct {
@@ -690,12 +680,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 
-	storageKey := opts.OverrideStorageKey
-	if storageKey == "" {
-		storageKey = dagql.CurrentStorageKey(ctx)
-	}
-	execMD.OverrideBuildkitCacheKey = digest.Digest(storageKey)
-
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("set call inputs: %w", err)
@@ -800,17 +784,19 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
-	err = srv.Select(hideCtx, ctr, &ctr,
-		dagql.Selector{
-			Field: "withExec",
-			Args: []dagql.NamedInput{
-				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
-				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
-				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
-				{Name: "execMD", Value: dagql.NewDigestedSerializedString(&execMD, digest.Digest(storageKey))},
-			},
-		},
-	)
+	// Intentionally bypass the GraphQL withExec selector here. Module function
+	// execution is an internal flow with bespoke metadata plumbing; using the
+	// schema-level selector adds indirection and identity machinery we don't need.
+	execCtr := NewContainerChild(ctr)
+	execCtr.OpID = dagql.CurrentID(hideCtx)
+	if execCtr.OpID == nil {
+		return nil, fmt.Errorf("missing operation ID for module function exec")
+	}
+	err = execCtr.WithExec(hideCtx, ContainerExecOpts{
+		Args:                          []string{},
+		UseEntrypoint:                 true,
+		ExperimentalPrivilegedNesting: true,
+	}, &execMD)
 	if err != nil {
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
@@ -824,7 +810,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("get buildkit client: %w", err)
 	}
 
-	err = ctr.Self().Sync(ctx)
+	err = execCtr.Sync(ctx)
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
 		if extractErr != nil {
@@ -846,30 +832,18 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}
 
-	var ctrOutputDir dagql.ObjectResult[*Directory]
-	err = opts.Server.Select(ctx, ctr, &ctrOutputDir, dagql.Selector{
-		Field: "directory",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(modMetaDirPath)},
-		},
-	})
+	ctrOutputDir, err := execCtr.Directory(ctx, modMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("get function output directory: %w", err)
 	}
 
-	var modMetaFile dagql.ObjectResult[*File]
-	err = opts.Server.Select(ctx, ctrOutputDir, &modMetaFile, dagql.Selector{
-		Field: "file",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(modMetaOutputPath)},
-		},
-	})
+	modMetaFile, err := ctrOutputDir.Self().Subfile(ctx, ctrOutputDir, modMetaOutputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mod meta file: %w", err)
 	}
 
 	// Read the output of the function
-	outputBytes, err := modMetaFile.Self().Contents(ctx, nil, nil)
+	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read function output file: %w", err)
 	}
@@ -888,14 +862,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	safeToPersistCache := true
 	if returnValue != nil {
-		// Get the client ID actually used during the function call - this might not
-		// be the same as execMD.ClientID if the function call was cached at the
-		// buildkit level
-		clientID, err := ctr.Self().usedClientID(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("could not get used client id")
-		}
-
 		// If the function returned anything that's isolated per-client, this caller client should
 		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
 		returnedContent := NewCollectedContent()
@@ -909,7 +875,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		for _, id := range returnedContent.IDs {
 			returnedIDsList = append(returnedIDsList, id)
 		}
-		resourceTransferPostCall, hasNamedSecretsOrSockets, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
+		resourceTransferPostCall, hasNamedSecretsOrSockets, err := ResourceTransferPostCall(ctx, query, execMD.ClientID, returnedIDsList...)
 		if err != nil {
 			return nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
