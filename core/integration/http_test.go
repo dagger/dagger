@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -80,6 +81,44 @@ func (HTTPSuite) TestHTTPPermissions(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	stat = strings.TrimSpace(stat)
 	require.Equal(t, "764", stat)
+}
+
+func (HTTPSuite) TestHTTPChecksum(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := "Hello, checksum world!"
+	svc, url := httpService(ctx, t, c, content)
+	expected := digest.FromString(content).String()
+
+	contents, err := c.HTTP(url, dagger.HTTPOpts{
+		ExperimentalServiceHost: svc,
+		Checksum:                expected,
+	}).Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, contents)
+}
+
+func (HTTPSuite) TestHTTPChecksumMismatch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := "Hello, checksum world!"
+	svc, url := httpService(ctx, t, c, content)
+	wrong := digest.FromString("something-else").String()
+
+	_, err := c.HTTP(url, dagger.HTTPOpts{
+		ExperimentalServiceHost: svc,
+		Checksum:                wrong,
+	}).Contents(ctx)
+	require.ErrorContains(t, err, "http checksum mismatch")
+	require.ErrorContains(t, err, "expected "+wrong)
+}
+
+func (HTTPSuite) TestHTTPChecksumInvalid(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	_, err := c.HTTP("https://example.com", dagger.HTTPOpts{
+		Checksum: "not-a-digest",
+	}).Contents(ctx)
+	require.ErrorContains(t, err, `invalid checksum "not-a-digest"`)
 }
 
 func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {

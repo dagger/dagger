@@ -11694,6 +11694,8 @@ type HTTPOpts struct {
 	Name string
 	// Permissions to set on the file.
 	Permissions int
+	// Expected digest of the downloaded content (e.g., "sha256:...").
+	Checksum string
 	// Secret used to populate the Authorization HTTP header
 	AuthHeader *Secret
 	// A service which must be started before the URL is fetched.
@@ -11711,6 +11713,10 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `checksum` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Checksum) {
+			q = q.Arg("checksum", opts[i].Checksum)
 		}
 		// `authHeader` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AuthHeader) {
