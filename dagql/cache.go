@@ -2,10 +2,8 @@ package dagql
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -20,7 +18,6 @@ import (
 	cachedb "github.com/dagger/dagger/dagql/db"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -89,24 +86,6 @@ type CacheEntryStats struct {
 	CompletedCallsByContent int
 	OngoingArbitrary        int
 	CompletedArbitrary      int
-}
-
-type ctxStorageKey struct{}
-
-// Get the key that should be used (or mixed into) persistent cache storage
-// We smuggle this around in the context for now since we have to incorporate
-// it with buildkit's persistent cache for now.
-func CurrentStorageKey(ctx context.Context) string {
-	if v := ctx.Value(ctxStorageKey{}); v != nil {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
-}
-
-func ctxWithStorageKey(ctx context.Context, key string) context.Context {
-	return context.WithValue(ctx, ctxStorageKey{}, key)
 }
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
@@ -606,10 +585,6 @@ func (c *cache) GetOrInitCall(
 	if key.DoNotCache {
 		// don't cache, don't dedupe calls, just call it
 
-		// we currently still have to appease the buildkit cache key machinery underlying function calls,
-		// so make sure it gets a random storage key
-		ctx = ctxWithStorageKey(ctx, rand.Text())
-
 		val, err := fn(ctx)
 		if err != nil {
 			return nil, err
@@ -657,77 +632,7 @@ func (c *cache) GetOrInitCall(
 		concurrencyKey: key.ConcurrencyKey,
 	}
 
-	// The storage key is the key for what's actually stored on disk.
-	// By default it's just the call key, but if we have a TTL then there
-	// can be different results stored on disk for a single call key, necessitating
-	// this separate storage key.
-	stableKey := key.ID.ContentPreferredDigest().String()
-	storageKey := stableKey
-
 	var persistToDB func(context.Context) error
-	if key.TTL != 0 && c.db != nil {
-		var cachedCall *cachedb.Call
-		candidateCall, err := c.db.SelectCall(ctx, stableKey)
-		if err == nil {
-			cachedCall = candidateCall
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			slog.Error("failed to select call from cache", "stableKey", stableKey, "err", err)
-		}
-
-		now := time.Now().Unix()
-		expiration := now + key.TTL
-
-		switch {
-		case cachedCall == nil:
-			md, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("get client metadata: %w", err)
-			}
-			storageKey = hashutil.NewHasher().
-				WithString(storageKey).
-				WithString(md.SessionID).
-				DigestAndClose()
-
-			// Nothing saved in the cache yet, use a new expiration. Don't save yet, that only happens
-			// once a call completes successfully and has been determined to be safe to cache.
-			persistToDB = func(ctx context.Context) error {
-				return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
-					CallKey:        stableKey,
-					StorageKey:     storageKey,
-					Expiration:     expiration,
-					PrevStorageKey: "",
-				})
-			}
-
-		case cachedCall.Expiration < now:
-			md, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("get client metadata: %w", err)
-			}
-			storageKey = hashutil.NewHasher().
-				WithString(storageKey).
-				WithString(md.SessionID).
-				DigestAndClose()
-
-			// We do have a cached entry, but it expired, so don't use it. Use a new expiration, but again
-			// don't store it yet until the call completes successfully and is determined to be safe
-			// to cache.
-			persistToDB = func(ctx context.Context) error {
-				return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
-					CallKey:        stableKey,
-					StorageKey:     storageKey,
-					Expiration:     expiration,
-					PrevStorageKey: cachedCall.StorageKey,
-				})
-			}
-
-		default:
-			// We have a cached entry and it hasn't expired yet, use it
-			storageKey = cachedCall.StorageKey
-		}
-	}
-
-	ctx = ctxWithStorageKey(ctx, storageKey)
 
 	c.egraphMu.Lock()
 	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID, key.IsPersistable)

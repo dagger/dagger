@@ -52,7 +52,6 @@ const (
 	MetaMountStdoutPath         = "stdout"
 	MetaMountStderrPath         = "stderr"
 	MetaMountCombinedOutputPath = "combinedOutput"
-	MetaMountClientIDPath       = "clientID"
 )
 
 type Result = solverresult.Result[*ref]
