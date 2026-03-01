@@ -621,6 +621,111 @@ Last updated: 2026-02-28
   - Go SDK regen required the whiteboard-documented worktree override (`--workspace=.`) to pick up local schema changes.
   - Focused integration coverage is passing with command shape from `skills/cache-expert/references/debugging.md`.
 
+### Phase 22: Local Source `followPaths` Support (Internal-Only Path)
+- Goal:
+  - Support BuildKit `local.followpaths` emitted by Dockerfile->LLB conversion, without exposing this knob in public Dagger APIs.
+  - Preserve current fail-fast posture for malformed attrs while adding faithful behavior for supported followPaths inputs.
+- Design principles:
+  - Keep filesync core behavior simple and unchanged for all existing call sites.
+  - Add an explicit, narrow, internal-only path that is only used when IDs include followPaths (llbtodagger conversion path).
+  - No fallback behavior; malformed/invalid followPaths still return explicit conversion/runtime errors.
+
+- Implementation checklist:
+  - [x] llbtodagger mapping:
+    - [x] Parse `pb.AttrFollowPaths` JSON in local source conversion.
+    - [x] Remove current hard-error on non-empty followPaths.
+    - [x] Emit internal-only `followPaths` arg on `host.directory(...)` when present.
+    - [x] Keep strict errors for invalid JSON / unknown attrs.
+  - [x] Schema/internal API surface:
+    - [x] Add internal-only `followPaths: [String!]` arg to `host.directory` args struct (`internal:"true"`).
+    - [x] Keep it hidden from generated SDK/public callers.
+  - [x] Host/filesync threading (explicit side path):
+    - [x] Thread followPaths through `core.Host.Directory` into `filesync.SnapshotOpts`.
+    - [x] Thread `SnapshotOpts.FollowPaths` through filesync `snapshot/sync` into:
+      - [x] remote import opts (`engine.LocalImportOpts.FollowPaths`)
+      - [x] local mirror filter construction (`fsutil.FilterOpt.FollowPaths`)
+    - [x] Keep existing include/exclude/gitignore behavior unchanged when followPaths is empty.
+  - [x] Cache identity parity:
+    - [x] Ensure followPaths participates in identity where relevant (import metadata + dagql call args) so cache correctness matches semantics.
+  - [x] Testing:
+    - [x] Update llbtodagger unit tests:
+      - [x] positive local source followPaths conversion case (ID contains internal arg)
+      - [x] malformed followPaths JSON fails fast
+    - [x] Add focused integration coverage for behavior:
+      - [x] symlink target inclusion case that requires followPaths expansion
+      - [x] command shape per `skills/cache-expert/references/debugging.md`
+    - [x] Keep existing non-followPaths imports unchanged (regression check).
+
+- Non-goals for this phase:
+  - Do not expose followPaths in public SDK APIs.
+  - Do not redesign filesync transport/protocol.
+  - Do not broaden to unrelated local source attrs beyond current scope.
+
+- Completion notes:
+  - `local.followpaths` now converts to hidden `host.directory(followPaths: [...])` in llbtodagger IDs.
+  - Host import path now threads followPaths explicitly through `SnapshotOpts` into remote and local filesync filters.
+  - Filesync transport/protocol stayed unchanged; this is a narrow additive side path.
+  - Focused coverage:
+    - `go test ./util/llbtodagger -run 'TestDefinitionToIDLocal(Source|FollowPaths|FollowPathsInvalidUnsupported)$' -count=1`
+    - `go test ./engine/filesync -count=1`
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestLLBToDagger/TestLoadContainerFromConvertedIDLocalFollowPaths' --parallel=1`
+
+- Expected touchpoints (planning index):
+  - `util/llbtodagger/source.go`
+  - `core/schema/host.go`
+  - `core/host.go`
+  - `engine/filesync/filesyncer.go`
+  - `engine/filesync/remotefs.go`
+  - `engine/filesync/localfs.go`
+  - tests in `util/llbtodagger/*` and `core/integration/*`
+
+### Phase 23: Hidden Archive Auto-Unpack Compatibility for File Copy
+- Goal:
+  - Support BuildKit `FileActionCopy.attemptUnpackDockerCompatibility` semantics (Dockerfile `ADD` local archive behavior) without exposing new public SDK surface.
+  - Preserve current user-facing API while enabling llbtodagger fidelity for Dockerfile-generated LLB.
+- Design principles:
+  - Keep this as a narrow, explicit compatibility path behind internal-only args.
+  - Match BuildKit behavior: attempt unpack first; if input is not an archive, fall back to normal copy.
+  - No fallback to other unrelated behavior; malformed inputs still error.
+
+- Implementation checklist:
+  - [x] Schema/internal args:
+    - [x] Add hidden `attemptUnpackDockerCompatibility bool` arg to `WithDirectoryArgs` (`internal:"true" default:"false"`).
+    - [x] Add hidden `attemptUnpackDockerCompatibility bool` arg to `WithFileArgs` (`internal:"true" default:"false"`).
+    - [x] Keep these args hidden from public SDK callers (internal-only pattern).
+  - [x] Core directory/file copy implementation:
+    - [x] Thread internal arg through `directorySchema.withDirectory` -> `core.Directory.WithDirectory`.
+    - [x] Thread internal arg through `directorySchema.withFile` -> `core.Directory.WithFile`.
+    - [x] Implement unpack-attempt helper in `core/directory.go` copy path:
+      - [x] detect archive stream (gzip/bzip/xz/etc via decompressor + tar first header probe).
+      - [x] if archive: untar into destination with existing owner/permissions handling semantics.
+      - [x] if not archive: fall back to existing copy behavior.
+    - [x] Preserve existing semantics for `doNotCreateDestPath` and `requiredSourcePath`.
+  - [x] llbtodagger mapping:
+    - [x] Remove current hard-error on `cp.AttemptUnpackDockerCompatibility`.
+    - [x] Emit hidden `attemptUnpackDockerCompatibility: true` on generated `withDirectory`/`withFile` call IDs when LLB copy action sets it.
+    - [x] Keep strict errors for unrelated unsupported copy attrs.
+  - [x] Behavior and safety notes:
+    - [x] Ensure unpack path cannot escape destination root (path traversal hardening).
+    - [x] Ensure archive extraction path follows same ownership/chmod intent used by copy path where applicable.
+    - [x] Keep the feature Linux-first if platform nuances require; fail clearly where unsupported.
+  - [x] Tests:
+    - [x] Unit tests in `util/llbtodagger/convert_test.go`:
+      - [x] verify `AttemptUnpackDockerCompatibility` maps to hidden arg (instead of unsupported error).
+      - [x] keep non-attempt copy behavior unchanged.
+    - [x] Unit/integration tests in core:
+      - [x] positive: local tar archive is unpacked when hidden arg true.
+      - [x] fallback: non-archive file is copied as-is when hidden arg true.
+      - [x] regression: hidden arg false keeps current copy semantics.
+    - [x] Integration coverage in `core/integration/llbtodagger_test.go`:
+      - [x] Dockerfile case using local `ADD` archive produces expected extracted tree via converted ID.
+      - [x] command shape per `skills/cache-expert/references/debugging.md`.
+
+- Non-goals for this phase:
+  - Do not expose a public API flag for unpack behavior.
+  - Do not rework all copy semantics; only compatibility path for `AttemptUnpackDockerCompatibility`.
+  - Do not add Dockerfile parsing logic in llbtodagger (LLB-driven only).
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -661,7 +766,7 @@ Last updated: 2026-02-28
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
 - `ExecOp` with non-default network/security, non-default mount content cache, or unsupported metadata fields.
-- `FileOp` copy actions with archive auto-unpack or `alwaysReplaceExistingDestPaths`.
+- `FileOp` copy actions with `alwaysReplaceExistingDestPaths`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
 - Named ownership on `mkdir` file actions (Dockerfile `WORKDIR` path when `USER` is named).
@@ -674,24 +779,7 @@ Last updated: 2026-02-28
 
 #### HIGH
 
-- Local source `followPaths` is unsupported.
-  - This commonly appears for Dockerfile context copies that reference specific paths (for example `COPY package.json /app/package.json`), where the frontend narrows context transfer to only used paths.
-  - It is not always present: broad context usage like `COPY . /app` typically marks `/` and does not emit a narrowed `followPaths` list.
-  - BuildKit uses `followPaths` to resolve symlinks in selected paths so link targets are also included in context transfer.
-  - Current llbtodagger behavior is strict fail-fast when `local.followpaths` is present.
-
 #### MEDIUM
-
-- Empty named user in `chown` is unsupported when it is not the Dockerfile group-only representation (`--chown=:...`).
-  - BuildKit/Dockerfile group-only form (`--chown=:gid`) can surface as empty named user + explicit group; we normalize this to `0:<gid>`.
-  - Other empty-name combinations are treated as malformed/ambiguous and remain fail-fast.
-  - Follow-up nuance: for user-only named ownership (`--chown=user`), BuildKit semantics use the user's primary GID from passwd; ensure container-side default-group behavior stays aligned before broadening empty-name acceptance.
-
-- `copy` archive auto-unpack compatibility mode is unsupported (`ADD` local archive path).
-  - BuildKit represents this with `FileActionCopy.attemptUnpackDockerCompatibility`.
-  - Dockerfile frontend sets it from `ADD` semantics (`ADD` defaults to unpack for local archives; `COPY` does not auto-unpack; `ADD --unpack` can override behavior).
-  - Upstream executor path: for each matched source, try archive-detection + untar into destination; if not an archive, fall back to normal copy.
-  - Current llbtodagger mapping errors on this flag because we do not yet model that conditional unpack-or-copy behavior in the Dagger ID translation.
 
 - Named ownership for `mkdir` actions is unsupported (Dockerfile `WORKDIR` path when `USER` is named).
   - BuildKit encodes named ownership with an input index (`UserOpt_ByName.Input`) and resolves names against that input's filesystem.

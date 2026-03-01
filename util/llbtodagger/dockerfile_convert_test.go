@@ -317,6 +317,31 @@ ADD https://example.com/pkg.tar.gz /downloads/
 	require.Equal(t, "pkg.tar.gz", httpID.Arg("name").Value().ToInput())
 }
 
+func TestDefinitionToIDDockerfileAddLocalArchiveUsesAttemptUnpackCompat(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM scratch
+ADD archive.tar /downloads/
+`)
+
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/downloads", withDir.Arg("path").Value().ToInput())
+
+	attemptUnpack := withDir.Arg("attemptUnpackDockerCompatibility")
+	require.NotNil(t, attemptUnpack)
+	require.Equal(t, true, attemptUnpack.Value().ToInput())
+
+	requiredSourcePath := withDir.Arg("requiredSourcePath")
+	require.NotNil(t, requiredSourcePath)
+	require.Equal(t, "archive.tar", requiredSourcePath.Value().ToInput())
+}
+
 func TestDefinitionToIDDockerfileAddGit(t *testing.T) {
 	t.Parallel()
 

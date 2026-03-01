@@ -1,6 +1,8 @@
 package core
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -204,6 +206,49 @@ CMD ["sh", "-c", "test -s /downloads/README && echo ok"]
 	out, err := ctr.WithExec(nil).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "ok", strings.TrimSpace(out))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAddLocalArchive(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, nil)
+	writeTarArchiveWithSingleFile(t, filepath.Join(contextDir, "archive.tar"), "inner/hello.txt", "hello-from-archive")
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+ADD archive.tar /out/
+CMD ["cat", "/out/inner/hello.txt"]
+`)
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello-from-archive", strings.TrimSpace(out))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAttemptUnpackNonArchiveFallback(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcState := llb.Scratch().File(
+		llb.Mkfile("/plain.txt", 0o644, []byte("plain-copy-fallback")),
+	)
+	state := llb.Image(alpineImage).File(
+		llb.Copy(srcState, "/plain.txt", "/out/plain.txt", &llb.CopyInfo{
+			CreateDestPath: true,
+			AttemptUnpack:  true,
+		}),
+	)
+
+	def := llbStateToDefinition(ctx, t, state)
+	id, err := llbtodagger.DefinitionToID(def, nil)
+	require.NoError(t, err)
+
+	encoded, err := id.Encode()
+	require.NoError(t, err)
+	ctr := c.LoadContainerFromID(dagger.ContainerID(encoded))
+
+	contents, err := ctr.File("/out/plain.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "plain-copy-fallback", strings.TrimSpace(contents))
 }
 
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAddGit(ctx context.Context, t *testctx.T) {
@@ -499,6 +544,42 @@ CMD ["cat", "/result"]
 	require.Equal(t, "hello", strings.TrimSpace(out))
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDLocalFollowPaths(ctx context.Context, t *testctx.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink followPaths coverage is unstable on windows hosts")
+	}
+
+	c := connect(ctx, t)
+
+	contextDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(contextDir, "data"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(contextDir, "data", "target.txt"), []byte("followpaths-ok"), 0o600))
+	require.NoError(t, os.Symlink(filepath.Join("data", "target.txt"), filepath.Join(contextDir, "link.txt")))
+
+	st := llb.Local(
+		"ctx",
+		llb.SharedKeyHint(contextDir),
+		llb.IncludePatterns([]string{"link.txt"}),
+		llb.FollowPaths([]string{"link.txt"}),
+	)
+	def := llbStateToDefinition(ctx, t, st)
+
+	id, err := llbtodagger.DefinitionToID(def, nil)
+	require.NoError(t, err)
+	encoded, err := id.Encode()
+	require.NoError(t, err)
+
+	ctr := c.LoadContainerFromID(dagger.ContainerID(encoded))
+
+	linkContents, err := ctr.File("/link.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "followpaths-ok", strings.TrimSpace(linkContents))
+
+	targetContents, err := ctr.File("/data/target.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "followpaths-ok", strings.TrimSpace(targetContents))
+}
+
 func (LLBToDaggerSuite) TestConversionDeterministicEncoding(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -541,6 +622,25 @@ func writeDockerContext(t *testctx.T, files map[string]string) string {
 		require.NoError(t, os.WriteFile(abs, []byte(files[rel]), 0o600))
 	}
 	return dir
+}
+
+func writeTarArchiveWithSingleFile(t *testctx.T, archivePath string, filePath string, fileContents string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	body := []byte(fileContents)
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name: filePath,
+		Mode: 0o644,
+		Size: int64(len(body)),
+	}))
+	_, err := tw.Write(body)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	require.NoError(t, os.WriteFile(archivePath, buf.Bytes(), 0o600))
 }
 
 func convertDockerfileToLoadedContainer(

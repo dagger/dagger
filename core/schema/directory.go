@@ -439,6 +439,9 @@ type WithDirectoryArgs struct {
 	Permissions dagql.Optional[dagql.Int]
 	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
 	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
+	// BuildKit ADD archive auto-unpack compatibility semantics.
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
 	// Hidden internal arg used for LLB fidelity; when set, withDirectory errors
 	// if the requested source path does not exist.
 	RequiredSourcePath string `internal:"true" default:""`
@@ -489,7 +492,17 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner, perms, args.DoNotCreateDestPath, args.RequiredSourcePath)
+	with, err := parent.Self().WithDirectory(
+		ctx,
+		args.Path,
+		src.ID(),
+		args.CopyFilter,
+		args.Owner,
+		perms,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+		args.RequiredSourcePath,
+	)
 	if err != nil {
 		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
 	}
@@ -514,7 +527,7 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 		Dir:      parent.Self().Dir,
 	}
 
-	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil, false, "")
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil, false, false, "")
 	if err != nil {
 		return inst, fmt.Errorf("failed to filter: %w", err)
 	}
@@ -716,6 +729,9 @@ type WithFileArgs struct {
 	Owner       string `default:""`
 	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
 	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
+	// BuildKit ADD archive auto-unpack compatibility semantics.
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
 
 	FSDagOpInternalArgs
 }
@@ -764,7 +780,16 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	dir, err := parent.Self().WithFile(ctx, srv, args.Path, file.Self(), perms, args.Owner, args.DoNotCreateDestPath)
+	dir, err := parent.Self().WithFile(
+		ctx,
+		srv,
+		args.Path,
+		file.Self(),
+		perms,
+		args.Owner,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+	)
 	if err != nil {
 		return inst, err
 	}
