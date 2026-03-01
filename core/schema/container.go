@@ -1757,7 +1757,7 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.Obj
 	return ctr.WithMountedCache(
 		ctx,
 		path,
-		cache.Self(),
+		cache,
 		dir,
 		args.Sharing,
 		args.Owner,

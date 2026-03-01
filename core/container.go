@@ -286,6 +286,9 @@ type ContainerMount struct {
 }
 
 type CacheMountSource struct {
+	// The cache volume backing this mount.
+	Volume dagql.ObjectResult[*CacheVolume]
+
 	// The base layers underneath the cache mount, if any
 	Base *dagql.ObjectResult[*Directory]
 
@@ -1101,13 +1104,11 @@ func (container *Container) WithMountedFile(
 	return container, nil
 }
 
-var SeenCacheKeys = new(sync.Map)
-
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedCache(
 	ctx context.Context,
 	target string,
-	cache *CacheVolume,
+	cache dagql.ObjectResult[*CacheVolume],
 	source dagql.ObjectResult[*Directory],
 	sharingMode CacheSharingMode,
 	owner string,
@@ -1123,12 +1124,9 @@ func (container *Container) WithMountedCache(
 		sharingMode = CacheSharingModeShared
 	}
 
-	mount := ContainerMount{
-		Target: target,
-		CacheSource: &CacheMountSource{
-			ID:          cache.Sum(),
-			SharingMode: sharingMode,
-		},
+	cacheSelf := cache.Self()
+	if cacheSelf == nil {
+		return nil, errors.New("cache volume is nil")
 	}
 
 	if owner != "" {
@@ -1143,19 +1141,36 @@ func (container *Container) WithMountedCache(
 				return nil, err
 			}
 		}
-		var err error
+	}
+	if owner != "" && source.Self() != nil {
 		source, err = container.chownDir(ctx, source, owner)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	cacheMountID := cacheSelf.Sum()
+	if source.Self() != nil {
+		sourceDigest, err := source.Self().Digest(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cache source digest: %w", err)
+		}
+		cacheMountID += ":" + sourceDigest
+	}
+
+	mount := ContainerMount{
+		Target: target,
+		CacheSource: &CacheMountSource{
+			Volume:      cache,
+			ID:          cacheMountID,
+			SharingMode: sharingMode,
+		},
 	}
 	mount.CacheSource.Base = &source
 	container.Mounts = container.Mounts.With(mount)
 
 	// set image ref to empty string
 	container.ImageRef = ""
-
-	SeenCacheKeys.Store(cache.Keys[0], struct{}{})
 
 	return container, nil
 }

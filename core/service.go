@@ -420,6 +420,13 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
+	cleanup.Add("release owned mount input refs", func() error {
+		var errs error
+		for _, ref := range mountData.OwnedInputs {
+			errs = errors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
+		}
+		return errs
+	})
 
 	workerRefs := make([]*worker.WorkerRef, 0, len(mountData.Inputs))
 	for _, ref := range mountData.Inputs {
@@ -439,13 +446,44 @@ func (svc *Service) startContainer(
 		return nil, fmt.Errorf("prepare mounts: %w", err)
 	}
 
+	cacheMountsByOutputIdx := map[int]*CacheMountSource{}
+	for i, mnt := range ctr.Mounts {
+		if mnt.Readonly || mnt.CacheSource == nil {
+			continue
+		}
+		cacheMountsByOutputIdx[i+2] = mnt.CacheSource
+	}
+
 	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
+		active := active
 		cleanup.Add("release active ref", func() error {
 			return active.Ref.Release(context.WithoutCancel(ctx))
 		})
 	}
 	for _, o := range p.OutputRefs {
+		o := o
 		cleanup.Add("release output ref", func() error {
+			if cacheSrc, ok := cacheMountsByOutputIdx[o.MountIndex]; ok {
+				if cacheSrc.Volume.Self() == nil {
+					return fmt.Errorf("cache mount %q has nil cache volume source", cacheSrc.ID)
+				}
+				switch outputRef := o.Ref.(type) {
+				case bkcache.MutableRef:
+					iref, err := outputRef.Commit(context.WithoutCancel(ctx))
+					if err != nil {
+						return fmt.Errorf("commit cache mount %q: %w", cacheSrc.ID, err)
+					}
+					if err := cacheSrc.Volume.Self().setSnapshotForMount(context.WithoutCancel(ctx), cacheSrc.ID, iref); err != nil {
+						return fmt.Errorf("set cache mount %q snapshot: %w", cacheSrc.ID, err)
+					}
+				case bkcache.ImmutableRef:
+					if err := cacheSrc.Volume.Self().setSnapshotForMount(context.WithoutCancel(ctx), cacheSrc.ID, outputRef); err != nil {
+						return fmt.Errorf("set cache mount %q snapshot: %w", cacheSrc.ID, err)
+					}
+				default:
+					return fmt.Errorf("cache mount %q output has unexpected ref type %T", cacheSrc.ID, o.Ref)
+				}
+			}
 			return o.Ref.Release(context.WithoutCancel(ctx))
 		})
 	}

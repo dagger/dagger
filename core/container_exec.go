@@ -225,6 +225,16 @@ type ContainerMountData struct {
 
 	// One entry per mount index. Used for exec error context.
 	MountRefs []bkcache.ImmutableRef
+
+	// Snapshot refs cloned for mount execution ownership. Callers must release.
+	OwnedInputs []bkcache.ImmutableRef
+}
+
+func mountRefID(ref bkcache.ImmutableRef) string {
+	if ref == nil {
+		return "<nil>"
+	}
+	return ref.ID()
 }
 
 func (container *Container) GetMountData(ctx context.Context) (ContainerMountData, error) {
@@ -233,13 +243,17 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 	outputIdx := 0
 	inputIdxByRefID := map[string]pb.InputIndex{}
 
-	addMount := func(mount *pb.Mount, ref bkcache.ImmutableRef) {
+	addMount := func(mount *pb.Mount, ref bkcache.ImmutableRef, dedupeKey string, cloneRef bool) {
 		if ref != nil {
-			if idx, ok := inputIdxByRefID[ref.ID()]; ok {
+			if idx, ok := inputIdxByRefID[dedupeKey]; ok {
 				mount.Input = idx
 			} else {
+				if cloneRef {
+					ref = ref.Clone()
+					data.OwnedInputs = append(data.OwnedInputs, ref)
+				}
 				mount.Input = pb.InputIndex(len(data.Inputs))
-				inputIdxByRefID[ref.ID()] = mount.Input
+				inputIdxByRefID[dedupeKey] = mount.Input
 				data.Inputs = append(data.Inputs, ref)
 			}
 		} else {
@@ -271,7 +285,7 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 			return data, fmt.Errorf("failed to get rootfs snapshot: %w", err)
 		}
 	}
-	addMount(rootfsMount, rootfsRef)
+	addMount(rootfsMount, rootfsRef, "rootfs:"+mountRefID(rootfsRef), false)
 
 	metaMount := &pb.Mount{
 		Dest:         buildkit.MetaMountDestPath,
@@ -287,7 +301,7 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 			return data, fmt.Errorf("failed to get meta snapshot: %w", err)
 		}
 	}
-	addMount(metaMount, metaRef)
+	addMount(metaMount, metaRef, "meta:"+mountRefID(metaRef), false)
 
 	for i, ctrMount := range container.Mounts {
 		mount := &pb.Mount{
@@ -321,29 +335,35 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 			}
 
 		case ctrMount.CacheSource != nil:
-			mount.Output = pb.SkipOutput
-			mount.MountType = pb.MountType_CACHE
-			mount.CacheOpt = &pb.CacheOpt{
-				ID: ctrMount.CacheSource.ID,
+			cacheSrc := ctrMount.CacheSource
+			if cacheSrc.Volume.Self() == nil {
+				return data, fmt.Errorf("mount %d has nil cache volume source", i)
 			}
-			switch ctrMount.CacheSource.SharingMode {
-			case CacheSharingModeShared:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
-			case CacheSharingModePrivate:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
-			case CacheSharingModeLocked:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
-			default:
-				return data, fmt.Errorf("mount %d has unknown cache sharing mode %q", i, ctrMount.CacheSource.SharingMode)
+			snapshotRef, _ := cacheSrc.Volume.Self().snapshotForMount(cacheSrc.ID)
+			mountRef = snapshotRef
+			if mountRef != nil {
+				mount.Selector = "/"
+				if cacheSrc.Base != nil && cacheSrc.Base.Self() != nil {
+					if cacheSrc.Base.Self().Dir != "" && cacheSrc.Base.Self().Dir != "/" {
+						mount.Selector = cacheSrc.Base.Self().Dir
+					}
+				}
+				break
 			}
-			if ctrMount.CacheSource.Base != nil && ctrMount.CacheSource.Base.Self() != nil {
-				mount.Selector = ctrMount.CacheSource.Base.Self().Dir
+			if cacheSrc.Base != nil && cacheSrc.Base.Self() != nil {
+				baseDirObj := cacheSrc.Base.Self()
 				var err error
-				mountRef, err = ctrMount.CacheSource.Base.Self().getSnapshot(ctx)
+				mountRef, err = baseDirObj.getSnapshot(ctx)
 				if err != nil {
 					return data, fmt.Errorf("failed to get cache base snapshot for mount %d: %w", i, err)
 				}
+				mount.Selector = "/"
+				if baseDirObj.Dir != "" && baseDirObj.Dir != "/" {
+					mount.Selector = baseDirObj.Dir
+				}
+				break
 			}
+			mount.Selector = "/"
 
 		case ctrMount.TmpfsSource != nil:
 			mount.Output = pb.SkipOutput
@@ -361,7 +381,13 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 			mount.Readonly = true
 		}
 
-		addMount(mount, mountRef)
+		dedupeKey := mountRefID(mountRef)
+		cloneRef := false
+		if ctrMount.CacheSource != nil {
+			dedupeKey = "cache:" + ctrMount.CacheSource.ID + ":" + mountRefID(mountRef)
+			cloneRef = mountRef != nil
+		}
+		addMount(mount, mountRef, dedupeKey, cloneRef)
 	}
 
 	for _, secret := range container.Secrets {
@@ -382,7 +408,7 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 				Gid:  uint32(gid),
 				Mode: uint32(secret.Mode),
 			},
-		}, nil)
+		}, nil, "", false)
 	}
 
 	for i, socket := range container.Sockets {
@@ -403,7 +429,7 @@ func (container *Container) GetMountData(ctx context.Context) (ContainerMountDat
 				Gid:  uint32(gid),
 				Mode: 0o600,
 			},
-		}, nil)
+		}, nil, "", false)
 	}
 
 	return data, nil
@@ -437,8 +463,9 @@ func (container *Container) WithExec(
 	execMD *buildkit.ExecutionMetadata,
 ) error {
 	type mountOutput struct {
-		dir  *Directory
-		file *File
+		dir   *Directory
+		file  *File
+		cache *CacheMountSource
 	}
 	mountOutputs := make(map[int]mountOutput)
 
@@ -518,6 +545,12 @@ func (container *Container) WithExec(
 			ctrMount.FileSource = updatedMnt
 			container.Mounts[i] = ctrMount
 			mountOutputs[i] = mountOutput{file: outputFile}
+
+		case ctrMount.CacheSource != nil:
+			if ctrMount.CacheSource.Volume.Self() == nil {
+				return fmt.Errorf("mount %d has nil cache volume source", i)
+			}
+			mountOutputs[i] = mountOutput{cache: ctrMount.CacheSource}
 		}
 	}
 
@@ -549,6 +582,11 @@ func (container *Container) WithExec(
 		if err != nil {
 			return fmt.Errorf("failed to get mount data: %w", err)
 		}
+		defer func() {
+			for _, owned := range mountData.OwnedInputs {
+				owned.Release(context.WithoutCancel(ctx))
+			}
+		}()
 
 		workerRefs := make([]*worker.WorkerRef, 0, len(mountData.Inputs))
 		for _, ref := range mountData.Inputs {
@@ -640,6 +678,9 @@ func (container *Container) WithExec(
 						setExecMountFromRef(mountIndex+2, output.dir.Snapshot)
 					case output.file != nil:
 						setExecMountFromRef(mountIndex+2, output.file.Snapshot)
+					case output.cache != nil:
+						cacheSnapshot, _ := output.cache.Volume.Self().snapshotForMount(output.cache.ID)
+						setExecMountFromRef(mountIndex+2, cacheSnapshot)
 					}
 				}
 
@@ -752,6 +793,10 @@ func (container *Container) WithExec(
 					output.dir.setSnapshot(iref)
 				case output.file != nil:
 					output.file.setSnapshot(iref)
+				case output.cache != nil:
+					if err := output.cache.Volume.Self().setSnapshotForMount(ctx, output.cache.ID, iref); err != nil {
+						return errors.Join(rerr, fmt.Errorf("failed to set cache mount snapshot for output mount index %d: %w", ref.MountIndex, err))
+					}
 				default:
 					return errors.Join(rerr, fmt.Errorf("output mount index %d has malformed mount output", ref.MountIndex))
 				}
