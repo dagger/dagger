@@ -390,6 +390,7 @@ func (id *ID) Modules() []*Module {
 	return mods
 }
 
+// NOTE: Path can be very expensive, do not use in hot paths
 func (id *ID) Path() string {
 	buf := new(strings.Builder)
 	if id.receiver != nil {
@@ -399,6 +400,7 @@ func (id *ID) Path() string {
 	return buf.String()
 }
 
+// NOTE: DisplaySelf can be very expensive, do not use in hot paths
 func (id *ID) DisplaySelf() string {
 	buf := new(strings.Builder)
 	fmt.Fprintf(buf, "%s", id.pb.Field)

@@ -48,6 +48,13 @@ type eqMergePair struct {
 	b eqClassID
 }
 
+func touchSharedResultLastUsed(res *sharedResult, nowUnixNano int64) {
+	if res == nil || nowUnixNano <= res.lastUsedAtUnixNano {
+		return
+	}
+	res.lastUsedAtUnixNano = nowUnixNano
+}
+
 func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) string {
 	h := hashutil.NewHasher().WithString(selfDigest.String())
 	for _, in := range inputEqIDs {
@@ -475,7 +482,8 @@ func (c *cache) lookupCacheForID(
 		primaryLookupPossible = true
 		hitTerm               *egraphTerm
 		hitRes                *sharedResult
-		nowUnix               = time.Now().Unix()
+		now                   = time.Now()
+		nowUnix               = now.Unix()
 	)
 	inputEqIDs = make([]eqClassID, len(inputDigests))
 	for i, inDig := range inputDigests {
@@ -528,6 +536,7 @@ func (c *cache) lookupCacheForID(
 		res.expiresAtUnix,
 		candidateSharedResultExpiryUnix(nowUnix, ttlSeconds),
 	)
+	touchSharedResultLastUsed(res, now.UnixNano())
 	if persistable {
 		// NOTE: this is an intentional experiment behavior. If a persistable field
 		// hits a result originally produced by a non-persistable field, we
