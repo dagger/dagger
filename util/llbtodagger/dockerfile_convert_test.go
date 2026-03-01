@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
@@ -285,6 +286,9 @@ COPY --chmod=751 input.txt /app/out.txt
 	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
+	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
+	require.NotNil(t, allowDirFallback)
+	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	srcFile := argIDFromCall(t, withFile, "source")
 	fileCall := findFieldInChain(srcFile, "file")
@@ -309,6 +313,9 @@ COPY --chown=:123 input.txt /app/out.txt
 	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.Equal(t, "0:123", withFile.Arg("owner").Value().ToInput())
+	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
+	require.NotNil(t, allowDirFallback)
+	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	srcFile := argIDFromCall(t, withFile, "source")
 	fileCall := findFieldInChain(srcFile, "file")
@@ -334,6 +341,9 @@ COPY --chown=auser:agroup input.txt /app/out.txt
 	require.NotNil(t, withFile)
 	require.Equal(t, "/app/out.txt", withFile.Arg("path").Value().ToInput())
 	require.Equal(t, "auser:agroup", withFile.Arg("owner").Value().ToInput())
+	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
+	require.NotNil(t, allowDirFallback)
+	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	srcFile := argIDFromCall(t, withFile, "source")
 	fileCall := findFieldInChain(srcFile, "file")
@@ -412,6 +422,10 @@ ADD archive.tar /downloads/
 	requiredSourcePath := withDir.Arg("requiredSourcePath")
 	require.NotNil(t, requiredSourcePath)
 	require.Equal(t, "archive.tar", requiredSourcePath.Value().ToInput())
+
+	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
+	require.NotNil(t, destPathHintIsDirectory)
+	require.Equal(t, true, destPathHintIsDirectory.Value().ToInput())
 }
 
 func TestDefinitionToIDDockerfileAddGit(t *testing.T) {
@@ -438,6 +452,109 @@ ADD https://github.com/dagger/dagger.git#main /vendor/dagger/
 	refID := findFieldAnywhere(sourceID, "ref")
 	require.NotNil(t, refID)
 	require.Equal(t, "main", refID.Arg("name").Value().ToInput())
+}
+
+func TestDefinitionToIDDockerfileCopyDirContentsToRootUsesSourceSubdir(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM alpine:3.19 AS buildfull
+RUN mkdir -p /out/lib/systemd/system && echo svc >/out/lib/systemd/system/containerd.service
+FROM alpine:3.19 AS outfull
+COPY --from=buildfull /out /
+`)
+
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, "withDirectory", withDir.Field())
+	require.Equal(t, "/", withDir.Arg("path").Value().ToInput())
+	require.Equal(t, []any{"out"}, withDir.Arg("include").Value().ToInput())
+	copySourcePathContentsWhenDir := withDir.Arg("copySourcePathContentsWhenDir")
+	require.NotNil(t, copySourcePathContentsWhenDir)
+	require.Equal(t, true, copySourcePathContentsWhenDir.Value().ToInput())
+
+	sourceID := argIDFromCall(t, withDir, "source")
+	require.Equal(t, "rootfs", sourceID.Field())
+}
+
+func TestDockerfile2LLBCopyOutToRootFlags(t *testing.T) {
+	t.Parallel()
+
+	def, _ := dockerfileToDefinition(t, `
+FROM alpine:3.19 AS buildfull
+RUN mkdir -p /out/lib/systemd/system && echo svc >/out/lib/systemd/system/containerd.service
+FROM alpine:3.19 AS outfull
+COPY --from=buildfull /out /
+`)
+
+	dag, err := buildkit.DefToDAG(def)
+	require.NoError(t, err)
+	require.NotNil(t, dag)
+
+	var found *pb.FileActionCopy
+	err = dag.Walk(func(op *buildkit.OpDAG) error {
+		fileOp, ok := op.AsFile()
+		if !ok {
+			return nil
+		}
+		for _, action := range fileOp.Actions {
+			cp := action.GetCopy()
+			if cp == nil {
+				continue
+			}
+			if cp.Dest == "/" {
+				found = cp
+				return buildkit.SkipInputs
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	require.Equal(t, "/out", found.Src)
+	require.True(t, found.AllowWildcard)
+	require.True(t, found.DirCopyContents)
+}
+
+func TestDockerfile2LLBCopyFileToExplicitDestFlags(t *testing.T) {
+	t.Parallel()
+
+	def, _ := dockerfileToDefinition(t, `
+FROM alpine:3.19
+COPY input.txt /app/out.txt
+`)
+
+	dag, err := buildkit.DefToDAG(def)
+	require.NoError(t, err)
+	require.NotNil(t, dag)
+
+	var found *pb.FileActionCopy
+	err = dag.Walk(func(op *buildkit.OpDAG) error {
+		fileOp, ok := op.AsFile()
+		if !ok {
+			return nil
+		}
+		for _, action := range fileOp.Actions {
+			cp := action.GetCopy()
+			if cp == nil {
+				continue
+			}
+			if cp.Dest == "/app/out.txt" {
+				found = cp
+				return buildkit.SkipInputs
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	require.Equal(t, "/input.txt", found.Src)
+	require.True(t, found.AllowWildcard)
+	require.True(t, found.DirCopyContents)
 }
 
 func TestDefinitionToIDDockerfileCopyLink(t *testing.T) {

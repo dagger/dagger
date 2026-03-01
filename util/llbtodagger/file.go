@@ -412,6 +412,7 @@ func applyCopy(
 		args := []*call.Argument{
 			argString("path", cleanPath(cp.Dest)),
 			argID("source", fileID),
+			argBool("allowDirectorySourceFallback", true),
 		}
 		if !cp.CreateDestPath {
 			args = append(args, argBool("doNotCreateDestPath", true))
@@ -428,6 +429,12 @@ func applyCopy(
 	args := []*call.Argument{
 		argString("path", cleanPath(cp.Dest)),
 		argID("source", sourceDirID),
+	}
+	if copyDestPathHintIsDirectory(cp.Dest) {
+		args = append(args, argBool("destPathHintIsDirectory", true))
+	}
+	if copySourcePathContentsWhenDir(cp) {
+		args = append(args, argBool("copySourcePathContentsWhenDir", true))
 	}
 	if !cp.CreateDestPath {
 		args = append(args, argBool("doNotCreateDestPath", true))
@@ -479,6 +486,7 @@ func applyCopyViaContainer(
 			argString("path", cleanPath(cp.Dest)),
 			argID("source", fileID),
 			argString("owner", owner),
+			argBool("allowDirectorySourceFallback", true),
 		}
 		if !cp.CreateDestPath {
 			args = append(args, argBool("doNotCreateDestPath", true))
@@ -492,6 +500,12 @@ func applyCopyViaContainer(
 			argString("path", cleanPath(cp.Dest)),
 			argID("source", sourceDirID),
 			argString("owner", owner),
+		}
+		if copyDestPathHintIsDirectory(cp.Dest) {
+			args = append(args, argBool("destPathHintIsDirectory", true))
+		}
+		if copySourcePathContentsWhenDir(cp) {
+			args = append(args, argBool("copySourcePathContentsWhenDir", true))
 		}
 		if !cp.CreateDestPath {
 			args = append(args, argBool("doNotCreateDestPath", true))
@@ -571,6 +585,21 @@ func explicitFileCopyPath(cp *pb.FileActionCopy, include []string) (string, bool
 		return "", false
 	}
 	return strings.TrimPrefix(inc, "/"), true
+}
+
+func copyDestPathHintIsDirectory(dest string) bool {
+	return strings.HasSuffix(dest, "/") || strings.HasSuffix(dest, "/.")
+}
+
+func copySourcePathContentsWhenDir(cp *pb.FileActionCopy) bool {
+	if cp == nil {
+		return false
+	}
+	if !cp.AllowWildcard {
+		return false
+	}
+	src := cleanPath(cp.Src)
+	return !hasPathWildcard(src)
 }
 
 func requiredSourcePathForCopy(cp *pb.FileActionCopy, include []string) (string, bool) {

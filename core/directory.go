@@ -696,6 +696,8 @@ func (dir *Directory) WithDirectory(
 	doNotCreateDestPath bool,
 	attemptUnpackDockerCompatibility bool,
 	requiredSourcePath string,
+	destPathHintIsDirectory bool,
+	copySourcePathContentsWhenDir bool,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -836,7 +838,12 @@ func (dir *Directory) WithDirectory(
 				DestPathResolver:               destResolver,
 				Mode:                           permissions,
 			}))
-			for _, pattern := range filter.Include {
+			effectiveSrcPath, effectiveInclude, err := maybeUseSourcePathContentsWhenDir(resolvedSrcPath, filter.Include, copySourcePathContentsWhenDir)
+			if err != nil {
+				return err
+			}
+
+			for _, pattern := range effectiveInclude {
 				opts = append(opts, fscopy.WithIncludePattern(pattern))
 			}
 			for _, pattern := range filter.Exclude {
@@ -852,14 +859,15 @@ func (dir *Directory) WithDirectory(
 			if attemptUnpackDockerCompatibility {
 				didUnpack, err := attemptCopyArchiveUnpack(
 					ctx,
-					resolvedSrcPath,
+					effectiveSrcPath,
 					resolvedCopyDest,
-					filter.Include,
+					effectiveInclude,
 					filter.Exclude,
 					filter.Gitignore,
 					ownership,
 					permissions,
 					newRef.IdentityMapping(),
+					destPathHintIsDirectory,
 				)
 				if err != nil {
 					return fmt.Errorf("failed to unpack source archive: %w", err)
@@ -869,7 +877,7 @@ func (dir *Directory) WithDirectory(
 				}
 			}
 
-			if err := fscopy.Copy(ctx, resolvedSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
+			if err := fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
 				return fmt.Errorf("failed to copy source directory: %w", err)
 			}
 			return nil
@@ -917,6 +925,12 @@ func (dir *Directory) WithDirectory(
 		}
 		if attemptUnpackDockerCompatibility {
 			rebasedArgs = append(rebasedArgs, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
+		}
+		if destPathHintIsDirectory {
+			rebasedArgs = append(rebasedArgs, dagql.NamedInput{Name: "destPathHintIsDirectory", Value: dagql.Boolean(true)})
+		}
+		if copySourcePathContentsWhenDir {
+			rebasedArgs = append(rebasedArgs, dagql.NamedInput{Name: "copySourcePathContentsWhenDir", Value: dagql.Boolean(true)})
 		}
 
 		var rebasedDir dagql.ObjectResult[*Directory]
@@ -1022,6 +1036,7 @@ func attemptCopyArchiveUnpack(
 	ownership *Ownership,
 	permissions *int,
 	idmap *idtools.IdentityMapping,
+	destPathHintIsDirectory bool,
 ) (bool, error) {
 	// Keep default path untouched for anything non-canonical to this compatibility mode.
 	if useGitignore || len(excludePatterns) > 0 || len(includePatterns) == 0 {
@@ -1066,7 +1081,7 @@ func attemptCopyArchiveUnpack(
 		}
 
 		if len(matches) == 1 {
-			copiedAsSingleFile, err := copyAttemptUnpackNonArchiveSingleFile(resolvedSrcPath, src, destPath, permissions, ownership)
+			copiedAsSingleFile, err := copyAttemptUnpackNonArchiveSingleFile(resolvedSrcPath, src, destPath, permissions, ownership, destPathHintIsDirectory)
 			if err != nil {
 				return false, err
 			}
@@ -1083,12 +1098,45 @@ func attemptCopyArchiveUnpack(
 	return true, nil
 }
 
+func maybeUseSourcePathContentsWhenDir(
+	resolvedSrcPath string,
+	includePatterns []string,
+	copySourcePathContentsWhenDir bool,
+) (string, []string, error) {
+	if !copySourcePathContentsWhenDir || len(includePatterns) != 1 {
+		return resolvedSrcPath, includePatterns, nil
+	}
+	inc := includePatterns[0]
+	if inc == "" || strings.HasPrefix(inc, "!") || strings.ContainsAny(inc, "*?[") {
+		return resolvedSrcPath, includePatterns, nil
+	}
+
+	candidate, err := containerdfs.RootPath(resolvedSrcPath, inc)
+	if err != nil {
+		return "", nil, err
+	}
+
+	info, err := os.Stat(candidate)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return resolvedSrcPath, includePatterns, nil
+		}
+		return "", nil, err
+	}
+	if !info.IsDir() {
+		return resolvedSrcPath, includePatterns, nil
+	}
+
+	return candidate, nil, nil
+}
+
 func copyAttemptUnpackNonArchiveSingleFile(
 	resolvedSrcPath string,
 	srcPatternPath string,
 	destPath string,
 	permissions *int,
 	ownership *Ownership,
+	destPathHintIsDirectory bool,
 ) (bool, error) {
 	srcInfo, err := os.Stat(resolvedSrcPath)
 	if err != nil {
@@ -1099,7 +1147,17 @@ func copyAttemptUnpackNonArchiveSingleFile(
 	}
 
 	destFilePath := destPath
-	if destInfo, err := os.Stat(destPath); err == nil && destInfo.IsDir() {
+	if destPathHintIsDirectory {
+		destInfo, err := os.Stat(destPath)
+		if err == nil {
+			if !destInfo.IsDir() {
+				return false, fmt.Errorf("destination path %q exists and is not a directory", destPath)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		destFilePath = filepath.Join(destPath, filepath.Base(srcPatternPath))
+	} else if destInfo, err := os.Stat(destPath); err == nil && destInfo.IsDir() {
 		destFilePath = filepath.Join(destPath, filepath.Base(srcPatternPath))
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, err

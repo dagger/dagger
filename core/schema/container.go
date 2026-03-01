@@ -2012,6 +2012,8 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		args.DoNotCreateDestPath,
 		args.AttemptUnpackDockerCompatibility,
 		args.RequiredSourcePath,
+		args.DestPathHintIsDirectory,
+		args.CopySourcePathContentsWhenDir,
 	)
 }
 
@@ -2027,9 +2029,10 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	file, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		return inst, err
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
 	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
@@ -2037,11 +2040,34 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	var perms *int
-	if args.Permissions.Valid {
-		p := int(args.Permissions.Value)
-		perms = &p
+	file, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+				dirSource, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
+				if dirErr == nil {
+					ctr, fallbackErr := parent.Self().WithDirectory(
+						ctx,
+						path,
+						dirSource,
+						core.CopyFilter{},
+						args.Owner,
+						perms,
+						args.DoNotCreateDestPath,
+						args.AttemptUnpackDockerCompatibility,
+						"",
+						false,
+						false,
+					)
+					if fallbackErr == nil {
+						return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+					}
+				}
+			}
+		}
+		return inst, err
 	}
+
 	ctr, err := parent.Self().WithFile(
 		ctx,
 		srv,

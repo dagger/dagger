@@ -119,6 +119,23 @@ COPY --chmod=751 input.txt /app/out.txt
 	require.Equal(t, "751", strings.TrimSpace(permOut))
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyDirectoryToExplicitDestinationPath(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, map[string]string{
+		"SHA256SUMS.d/buildkit-v0.1": "sha256-checksum-line",
+	})
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+COPY ./SHA256SUMS.d/ /SHA256SUMS.d
+`)
+
+	contents, err := ctr.File("/SHA256SUMS.d/buildkit-v0.1").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "sha256-checksum-line", strings.TrimSpace(contents))
+}
+
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyGroupOnlyChown(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -268,6 +285,48 @@ func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAttemptUnpackNonArchiveF
 	contents, err := ctr.File("/out/plain.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "plain-copy-fallback", strings.TrimSpace(contents))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyStageRootToSubdir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, nil)
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+` AS outfull
+RUN mkdir -p /lib/systemd/system && echo ok >/lib/systemd/system/containerd.service
+
+FROM `+alpineImage+`
+COPY --from=outfull / /usr/local/
+`)
+
+	_, err := ctr.WithExec([]string{"sh", "-lc", "test -f /usr/local/lib/systemd/system/containerd.service"}).Sync(ctx)
+	require.NoError(t, err)
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDNerdctlServiceCopyChain(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, nil)
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+` AS build-containerd
+RUN mkdir -p /out/amd64 && echo bin >/out/amd64/containerd && echo svc >/out/containerd.service
+
+FROM `+alpineImage+` AS build-full
+COPY --from=build-containerd /out/amd64/* /out/bin/
+COPY --from=build-containerd /out/containerd.service /out/lib/systemd/system/containerd.service
+
+FROM `+alpineImage+` AS out-full
+COPY --from=build-full /out /
+
+FROM `+alpineImage+`
+COPY --from=out-full / /usr/local/
+`)
+
+	listing, err := ctr.WithExec([]string{"sh", "-lc", "find /usr/local -maxdepth 6 -type f | sort"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, listing, "/usr/local/lib/systemd/system/containerd.service")
 }
 
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDAddGit(ctx context.Context, t *testctx.T) {

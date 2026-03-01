@@ -746,6 +746,9 @@ func TestDefinitionToIDFileCopyModeOverride(t *testing.T) {
 	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
 	require.EqualValues(t, 0o751, withFile.Arg("permissions").Value().ToInput())
 	require.Equal(t, "/dst/a.txt", withFile.Arg("path").Value().ToInput())
+	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
+	require.NotNil(t, allowDirFallback)
+	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	sourceID, ok := withFile.Arg("source").Value().ToInput().(*call.ID)
 	require.True(t, ok)
@@ -773,6 +776,9 @@ func TestDefinitionToIDFileCopyExplicitDestPathUsesWithFile(t *testing.T) {
 	withFile := rootfsArgFromContainer(t, id)
 	require.Equal(t, []string{"directory", "withFile"}, fieldsFromRoot(withFile))
 	require.Equal(t, "/dst/renamed.txt", withFile.Arg("path").Value().ToInput())
+	allowDirFallback := withFile.Arg("allowDirectorySourceFallback")
+	require.NotNil(t, allowDirFallback)
+	require.Equal(t, true, allowDirFallback.Value().ToInput())
 
 	sourceID, ok := withFile.Arg("source").Value().ToInput().(*call.ID)
 	require.True(t, ok)
@@ -808,6 +814,34 @@ func TestDefinitionToIDFileCopyAttemptUnpackUsesWithDirectoryHiddenArg(t *testin
 	requiredSourcePath := withDir.Arg("requiredSourcePath")
 	require.NotNil(t, requiredSourcePath)
 	require.Equal(t, "archive.tar", requiredSourcePath.Value().ToInput())
+
+	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
+	require.Nil(t, destPathHintIsDirectory)
+}
+
+func TestDefinitionToIDFileCopyAttemptUnpackDestDirHintUsesWithDirectoryHiddenArg(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).File(llb.Mkfile("/src/archive.tar", 0o644, []byte("archive-data")))
+	st := llb.Scratch().File(
+		llb.Copy(
+			src,
+			"/src/archive.tar",
+			"/dst/",
+			&llb.CopyInfo{CreateDestPath: true, AttemptUnpack: true},
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/dst", withDir.Arg("path").Value().ToInput())
+
+	destPathHintIsDirectory := withDir.Arg("destPathHintIsDirectory")
+	require.NotNil(t, destPathHintIsDirectory)
+	require.Equal(t, true, destPathHintIsDirectory.Value().ToInput())
 }
 
 func TestChownOwnerStringGroupOnlyByID(t *testing.T) {

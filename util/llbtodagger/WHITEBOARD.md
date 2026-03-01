@@ -901,6 +901,48 @@ Last updated: 2026-02-28
   - Do not change default init behavior for plain `withExec` unless `noInit` is explicitly requested.
   - Do not change Dockerfile frontend lowering behavior; this phase is conversion/plumbing only.
 
+### Phase 29: Explicit-File COPY Fallback for Directory Sources (`SHA256SUMS.d` regression)
+- Goal:
+  - Fix Dockerfile/LLB conversion bug where an explicit-destination COPY can be lowered to `withFile(...)` even when source is actually a directory, causing runtime error: `path ... is a directory, not a file`.
+  - Keep existing fast path for real file sources.
+  - Avoid widening public API surface.
+
+- Design:
+  - Add hidden/internal `withFile` arg to allow directory-source fallback when file load fails.
+  - In llbtodagger explicit-file copy mapping, set that hidden arg so runtime can recover when source is directory.
+  - Resolver fallback rewrites source from `<dir>.file(path: X)` to `<dir>.directory(path: X)` and performs `withDirectory(...)` with equivalent options.
+  - Keep fallback disabled by default so non-llbtodagger callers keep existing behavior.
+
+- Implementation checklist:
+  - [x] Schema/API plumbing:
+    - [x] Add hidden `allowDirectorySourceFallback` bool arg to `WithFileArgs` (`internal:"true"`, default false).
+    - [x] Implement fallback in `directorySchema.withFile`: on source-file load failure and hidden flag set, try directory-source rewrite and call `Directory.WithDirectory(...)`.
+    - [x] Extend `WithFileArgs.Inputs` to apply the same fallback during dependency loading (pre-resolver path), otherwise fallback never triggers.
+    - [x] Implement the same fallback in `containerSchema.withFile` (for named-owner/container-path copy mapping).
+  - [x] Converter wiring:
+    - [x] In llbtodagger explicit-file copy emission (`withFile` path), include hidden arg `allowDirectorySourceFallback: true`.
+    - [x] Apply for both plain and container-owner copy paths.
+  - [x] Tests:
+    - [x] Unit: explicit-file copy conversion includes hidden fallback arg.
+    - [x] Integration repro passes:
+      - [x] `TestLLBToDagger/TestLoadContainerFromConvertedIDCopyDirectoryToExplicitDestinationPath`
+      - [x] `TestDockerfile/TestDockerBuild/copy-directory-to-explicit-destination-path`
+  - [x] Keep behavior constraints:
+    - [x] Do not change public SDK-visible API.
+    - [x] Do not remove explicit-file fast path for real file sources.
+
+- Status note:
+  - Repro regression fixed for both llbtodagger and dockerBuild integration paths.
+  - Hidden fallback arg is now emitted for explicit-file copy fast path and consumed by schema fallback logic.
+  - Focused validation passed:
+    - `go test ./util/llbtodagger -run 'TestDefinitionToIDFileCopyExplicitDestPathUsesWithFile|TestDefinitionToIDFileCopyModeOverride|TestDefinitionToIDDockerfileCopyToExplicitFileDestWithChmod|TestDefinitionToIDDockerfileCopyGroupOnlyChown|TestDefinitionToIDDockerfileCopyNamedChown' -count=1`
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestLLBToDagger/TestLoadContainerFromConvertedIDCopyDirectoryToExplicitDestinationPath'`
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDockerfile/TestDockerBuild/copy-directory-to-explicit-destination-path'`
+
+- Non-goals:
+  - Do not redesign `deriveCopySelection` semantics in this phase.
+  - Do not add source-type probing to converter at conversion-time.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
