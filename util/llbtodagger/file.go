@@ -228,8 +228,7 @@ func (c *converter) applyFileAction(
 
 	switch x := action.Action.(type) {
 	case *pb.FileAction_Mkdir:
-		nextID, err := applyMkdir(opDigest(dag), baseID, x.Mkdir)
-		return nextID, baseContainerID, err
+		return applyMkdir(opDigest(dag), baseID, baseContainerID, x.Mkdir)
 	case *pb.FileAction_Mkfile:
 		nextID, err := applyMkfile(opDigest(dag), baseID, x.Mkfile)
 		return nextID, baseContainerID, err
@@ -250,43 +249,82 @@ func (c *converter) applyFileAction(
 	}
 }
 
-func applyMkdir(opDgst digest.Digest, baseID *call.ID, mkdir *pb.FileActionMkDir) (*call.ID, error) {
+const mkdirCompatSyntheticSourcePath = "/.__llbtodagger_mkdir__"
+
+func applyMkdir(opDgst digest.Digest, baseID *call.ID, baseContainerID *call.ID, mkdir *pb.FileActionMkDir) (*call.ID, *call.ID, error) {
 	if mkdir == nil {
-		return nil, unsupported(opDgst, "file.mkdir", "missing mkdir action")
+		return nil, nil, unsupported(opDgst, "file.mkdir", "missing mkdir action")
 	}
 	if !mkdir.MakeParents {
-		return nil, unsupported(opDgst, "file.mkdir", "mkdir without makeParents is unsupported")
+		return nil, nil, unsupported(opDgst, "file.mkdir", "mkdir without makeParents is unsupported")
 	}
 	if mkdir.Timestamp >= 0 {
-		return nil, unsupported(opDgst, "file.mkdir", "mkdir timestamp override is unsupported")
+		return nil, nil, unsupported(opDgst, "file.mkdir", "mkdir timestamp override is unsupported")
+	}
+
+	mkdirPath := cleanPath(mkdir.Path)
+
+	owner, err := chownOwnerString(mkdir.Owner)
+	if err != nil {
+		return nil, nil, unsupported(opDgst, "file.mkdir", err.Error())
+	}
+
+	if owner != "" && ownerRequiresContainerResolution(owner) {
+		if baseContainerID == nil {
+			return nil, nil, unsupported(opDgst, "file.mkdir", "named user/group chown requires container context")
+		}
+
+		workingContainerID := appendCall(
+			baseContainerID,
+			containerType(),
+			"withRootfs",
+			argID("directory", baseID),
+		)
+
+		mkdirSource := appendCall(
+			appendCall(
+				scratchDirectoryID(),
+				directoryType(),
+				"withNewDirectory",
+				argString("path", mkdirCompatSyntheticSourcePath),
+				argInt("permissions", int64(mkdir.Mode)),
+			),
+			directoryType(),
+			"directory",
+			argString("path", mkdirCompatSyntheticSourcePath),
+		)
+
+		nextContainerID := appendCall(
+			workingContainerID,
+			containerType(),
+			"withDirectory",
+			argString("path", mkdirPath),
+			argID("source", mkdirSource),
+			argString("owner", owner),
+			argInt("permissions", int64(mkdir.Mode)),
+		)
+		return appendCall(nextContainerID, directoryType(), "rootfs"), nextContainerID, nil
 	}
 
 	id := appendCall(
 		baseID,
 		directoryType(),
 		"withNewDirectory",
-		argString("path", cleanPath(mkdir.Path)),
+		argString("path", mkdirPath),
 		argInt("permissions", int64(mkdir.Mode)),
 	)
 
-	owner, err := chownOwnerString(mkdir.Owner)
-	if err != nil {
-		return nil, unsupported(opDgst, "file.mkdir", err.Error())
-	}
 	if owner != "" {
-		if ownerRequiresContainerResolution(owner) {
-			return nil, unsupported(opDgst, "file.mkdir", "named user/group chown is unsupported for mkdir")
-		}
 		id = appendCall(
 			id,
 			directoryType(),
 			"chown",
-			argString("path", cleanPath(mkdir.Path)),
+			argString("path", mkdirPath),
 			argString("owner", owner),
 		)
 	}
 
-	return id, nil
+	return id, baseContainerID, nil
 }
 
 func applyMkfile(opDgst digest.Digest, baseID *call.ID, mkfile *pb.FileActionMkFile) (*call.ID, error) {

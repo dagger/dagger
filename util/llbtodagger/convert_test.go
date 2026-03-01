@@ -799,6 +799,54 @@ func TestDefinitionToIDFileCopyNamedChownWithoutContainerContextUnsupported(t *t
 	require.Contains(t, unsupportedErr.Reason, "requires container context")
 }
 
+func TestDefinitionToIDFileMkdirNamedChownWithoutContainerContextUnsupported(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Scratch().File(
+		llb.Mkdir(
+			"/dst",
+			0o755,
+			llb.WithParents(true),
+			llb.WithUser("builder:staff"),
+		),
+	)
+
+	_, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	unsupportedErr := requireUnsupported(t, err, "file.mkdir")
+	require.Contains(t, unsupportedErr.Reason, "requires container context")
+}
+
+func TestDefinitionToIDFileMkdirNamedChownWithContainerContext(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Image("alpine").File(
+		llb.Mkdir(
+			"/dst",
+			0o755,
+			llb.WithParents(true),
+			llb.WithUser("builder:staff"),
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+	require.Equal(t, "container", fieldsFromRoot(id)[0])
+
+	require.NotNil(t, findFieldInChain(id, "withRootfs"))
+
+	withDir := findFieldInChain(id, "withDirectory")
+	require.NotNil(t, withDir)
+	require.Equal(t, "/dst", withDir.Arg("path").Value().ToInput())
+	require.Equal(t, "builder:staff", withDir.Arg("owner").Value().ToInput())
+	require.EqualValues(t, 0o755, withDir.Arg("permissions").Value().ToInput())
+
+	sourceID, ok := withDir.Arg("source").Value().ToInput().(*call.ID)
+	require.True(t, ok)
+	sourceDir := findFieldInChain(sourceID, "directory")
+	require.NotNil(t, sourceDir)
+	require.Equal(t, mkdirCompatSyntheticSourcePath, sourceDir.Arg("path").Value().ToInput())
+}
+
 func TestDefinitionToIDFileCopyNamedChownWithContainerContext(t *testing.T) {
 	t.Parallel()
 
