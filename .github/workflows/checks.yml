@@ -42,6 +42,7 @@ jobs:
           - "php-sdk/**"
           - "java-sdk/**"
           - "dotnet-sdk/**"
+          - "csharp-sdk/**"
           - "rust-sdk/**"
           # - "elixir-sdk/**"
           - "cli/**"

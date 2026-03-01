@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    IMPORTANT: Project File Naming Convention
+
+    When you run 'dagger init ––sdk=csharp ––name=my-awesome-module', this file will be
+    automatically renamed to match your module name in PascalCase (MyAwesomeModule.csproj).
+
+    The file name MUST be {ModuleName}.csproj (where ModuleName is the PascalCase version
+    of the module name in dagger.json). For example:
+      - Module name: "my-awesome-module" → File name: MyAwesomeModule.csproj
+      - Module name: "api-gateway" → File name: ApiGateway.csproj
+
+    The Dagger engine uses this naming pattern to locate your module's entrypoint.
+    Renaming this file to something else (e.g., "RandomName.csproj") will break your module!
+
+    ––
+
+    SDK Source Vendoring:
+
+    The sdk/ folder contains the Dagger SDK source code and build configuration, which is
+    automatically generated during 'dagger develop' and should NOT be manually edited.
+
+    SDK configuration is isolated in sdk/Dagger.SDK.props and sdk/Dagger.SDK.targets,
+    allowing you to customize this .csproj file without conflicts during updates.
+  -->
+
+  <!-- Import SDK defaults BEFORE user settings -->
+  <Import Project="sdk/Dagger.SDK.props" Condition="Exists('sdk/Dagger.SDK.props')" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>HelloWithChecksCs</RootNamespace>
+    <EnableDaggerAnalyzers>true</EnableDaggerAnalyzers>
+    <!-- Add your custom properties here -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Add your custom NuGet packages here -->
+  </ItemGroup>
+
+  <!-- Import SDK build logic AFTER user settings -->
+  <Import Project="sdk/Dagger.SDK.targets" Condition="Exists('sdk/Dagger.SDK.targets')" />
+
+</Project>
