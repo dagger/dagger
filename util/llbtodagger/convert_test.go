@@ -337,11 +337,31 @@ func TestDefinitionToIDExecMountsAreNonStickyBetweenExecs(t *testing.T) {
 	require.Equal(t, "/work", withoutMount.Arg("path").Value().ToInput())
 }
 
-func TestDefinitionToIDExecNetworkUnsupported(t *testing.T) {
+func TestDefinitionToIDExecNetworkHostMapsToWithExecHostNetwork(t *testing.T) {
 	t.Parallel()
 
 	st := llb.Image("alpine").Network(llb.NetModeHost).Run(llb.Shlex("echo hello")).Root()
-	_, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	withExec := findFieldInChain(id, "withExec")
+	require.NotNil(t, withExec)
+	hostNetwork := withExec.Arg("hostNetwork")
+	require.NotNil(t, hostNetwork)
+	require.Equal(t, true, hostNetwork.Value().ToInput())
+}
+
+func TestDefinitionToIDExecUnknownNetworkUnsupported(t *testing.T) {
+	t.Parallel()
+
+	op := &pb.Op{
+		Op: &pb.Op_Exec{
+			Exec: &pb.ExecOp{
+				Network: pb.NetMode(999),
+			},
+		},
+	}
+	_, err := DefinitionToID(singleOpDefinition(t, op), nil)
 	unsupportedErr := requireUnsupported(t, err, "exec")
 	require.Contains(t, unsupportedErr.Reason, "network mode")
 }

@@ -18,6 +18,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -468,6 +469,70 @@ CMD ["cat", "/status"]
 	out, err := ctr.WithExec(nil).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "network-none", strings.TrimSpace(out))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunNetworkHost(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, nil)
+
+	ctr, _, encoded := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+RUN --network=host sh -c 'echo network-host > /status'
+CMD ["cat", "/status"]
+`)
+
+	id := decodeCallID(t, encoded)
+	withExec := findFieldInCallChain(id, "withExec")
+	require.NotNil(t, withExec)
+	hostNetwork := withExec.Arg("hostNetwork")
+	require.NotNil(t, hostNetwork)
+	require.Equal(t, true, hostNetwork.Value().ToInput())
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "network-host", strings.TrimSpace(out))
+}
+
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunNetworkHostDeniedWhenInsecureRootCapabilitiesDisabled(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	f := false
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
+		cfg.Security = &config.Security{
+			InsecureRootCapabilities: &f,
+		}
+		return cfg
+	}))
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = engineSvc.Stop(ctx)
+	})
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(io.Discard))
+	require.NoError(t, err)
+	t.Cleanup(func() { c2.Close() })
+
+	contextDir := writeDockerContext(t, nil)
+	def, img := dockerfileToDefinitionAndImage(ctx, t, contextDir, `
+FROM `+alpineImage+`
+RUN --network=host sh -c 'echo denied > /status'
+CMD ["cat", "/status"]
+`)
+
+	id, err := llbtodagger.DefinitionToIDWithOptions(def, img, llbtodagger.DefinitionToIDOptions{})
+	require.NoError(t, err)
+
+	encoded, err := id.Encode()
+	require.NoError(t, err)
+
+	_, err = c2.LoadContainerFromID(dagger.ContainerID(encoded)).Sync(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "network.host is not allowed")
 }
 
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunMountNonSticky(ctx context.Context, t *testctx.T) {

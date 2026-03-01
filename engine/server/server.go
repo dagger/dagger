@@ -342,6 +342,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		// prioritize out config first if it's set
 		if cfg.Security.InsecureRootCapabilities == nil || *cfg.Security.InsecureRootCapabilities {
 			srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
+			srv.entitlements[entitlements.EntitlementNetworkHost] = struct{}{}
 		}
 	} else if bkcfg.Entitlements != nil {
 		// fallback to the dagger config
@@ -355,6 +356,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	} else {
 		// no config? apply dagger-specific defaults
 		srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
+		srv.entitlements[entitlements.EntitlementNetworkHost] = struct{}{}
 	}
 
 	srv.defaultPlatform = platforms.Normalize(platforms.DefaultSpec())

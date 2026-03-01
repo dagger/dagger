@@ -71,6 +71,10 @@ type ContainerExecOpts struct {
 	// BuildKit NetMode_NONE / Dockerfile RUN --network=none.
 	NoNetwork bool `internal:"true" default:"false"`
 
+	// (Internal-only) execute with host networking, equivalent to
+	// BuildKit NetMode_HOST / Dockerfile RUN --network=host.
+	HostNetwork bool `internal:"true" default:"false"`
+
 	// Expand the environment variables in args
 	Expand bool `default:"false"`
 
@@ -192,8 +196,12 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	if opts.InsecureRootCapabilities {
 		metaSpec.SecurityMode = pb.SecurityMode_INSECURE
 	}
-	if opts.NoNetwork {
-		metaSpec.NetMode = pb.NetMode_NONE
+	netMode, err := execNetMode(opts)
+	if err != nil {
+		return nil, err
+	}
+	if netMode != pb.NetMode_UNSET {
+		metaSpec.NetMode = netMode
 	}
 
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
@@ -203,6 +211,19 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	return &metaSpec, nil
+}
+
+func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
+	if opts.NoNetwork && opts.HostNetwork {
+		return pb.NetMode_UNSET, fmt.Errorf("cannot set both noNetwork and hostNetwork")
+	}
+	if opts.NoNetwork {
+		return pb.NetMode_NONE, nil
+	}
+	if opts.HostNetwork {
+		return pb.NetMode_HOST, nil
+	}
+	return pb.NetMode_UNSET, nil
 }
 
 func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv) {

@@ -15,7 +15,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec op")
 	}
 
-	if exec.Network != pb.NetMode_UNSET && exec.Network != pb.NetMode_NONE {
+	if exec.Network != pb.NetMode_UNSET && exec.Network != pb.NetMode_NONE && exec.Network != pb.NetMode_HOST {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("unsupported network mode %v", exec.Network))
 	}
 	if exec.Security != pb.SecurityMode_SANDBOX && exec.Security != pb.SecurityMode_INSECURE {
@@ -268,6 +268,9 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	}
 	if exec.Network == pb.NetMode_NONE {
 		withExecArgs = append(withExecArgs, argBool("noNetwork", true))
+	}
+	if exec.Network == pb.NetMode_HOST {
+		withExecArgs = append(withExecArgs, argBool("hostNetwork", true))
 	}
 	if exec.Security == pb.SecurityMode_INSECURE {
 		withExecArgs = append(withExecArgs, argBool("insecureRootCapabilities", true))

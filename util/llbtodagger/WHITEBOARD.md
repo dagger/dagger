@@ -811,6 +811,54 @@ Last updated: 2026-02-28
   - Do not implement `RUN --network=host` in this phase (tracked as medium-priority follow-up).
   - Do not expose network-mode knobs in public SDK `withExec` options.
 
+### Phase 27: Internal-Only Exec Network `host` Mapping (`RUN --network=host`) With Security-Setting Gate
+- Goal:
+  - Support Dockerfile/LLB exec network mode `HOST` by mapping to a hidden/internal-only `withExec` argument.
+  - Gate successful execution behind the same engine security setting used for `insecureRootCapabilities` (`security.insecureRootCapabilities`), via entitlement enforcement.
+  - Keep public SDK/API surface unchanged.
+
+- Design:
+  - Add a second internal-only exec arg (proposed: `hostNetwork`) in the `withExec`/`ContainerExecOpts` path.
+  - Map `hostNetwork: true` to `pb.NetMode_HOST` in exec metadata.
+  - Keep entitlement checks authoritative: host network only works when the engine grants the network-host entitlement, and entitlement grant is derived from the same security setting as insecure root capabilities.
+  - Preserve `noNetwork` support from Phase 26 and reject contradictory combinations (`hostNetwork && noNetwork`).
+
+- Implementation checklist:
+  - [x] Schema + opts plumbing:
+    - [x] Add internal-only `hostNetwork bool` to `ContainerExecOpts`/`withExec` arg path (`internal:"true"`).
+    - [x] Keep it hidden from generated SDK/public callers.
+    - [x] Validate `hostNetwork` and `noNetwork` are not both true (fail fast with clear error).
+  - [x] Core exec behavior:
+    - [x] In `core/container_exec.go` `metaSpec`, map `hostNetwork: true` -> `metaSpec.NetMode = pb.NetMode_HOST`.
+    - [x] Preserve existing insecure-root-capabilities mapping and `noNetwork` mapping behavior.
+  - [x] Entitlement/config gating:
+    - [x] Update engine entitlement setup to derive both `security.insecure` and `network.host` from `security.insecureRootCapabilities` policy.
+    - [x] Ensure `security.insecureRootCapabilities=false` denies host-network execs with entitlement error.
+    - [x] Keep existing execution-time entitlement check path (`validateEntitlements`) as enforcement point.
+  - [x] llbtodagger mapping:
+    - [x] In `util/llbtodagger/exec.go`, accept `pb.NetMode_HOST` in addition to `UNSET`/`NONE`.
+    - [x] Emit `withExec(hostNetwork: true)` for `pb.NetMode_HOST`.
+    - [x] Keep unknown network modes unsupported.
+  - [x] Tests:
+    - [x] Unit: exec conversion `NetMode_HOST` maps to hidden `hostNetwork: true`.
+    - [x] Unit: conflicting `hostNetwork && noNetwork` fails.
+    - [x] Dockerfile conversion unit: `RUN --network=host ...` includes hidden `hostNetwork`.
+    - [x] Integration: converted Dockerfile with `RUN --network=host` succeeds when security setting allows.
+    - [x] Integration: same Dockerfile fails with entitlement error when `security.insecureRootCapabilities=false` (use `engineWithConfig` in core integration suite).
+    - [x] Run integration command(s) using `skills/cache-expert/references/debugging.md` shape.
+  - [x] Whiteboard updates:
+    - [x] Remove/adjust medium-priority unsupported entry for `RUN --network=host` once implemented and gated.
+    - [x] Record explicit behavior: host-network support is policy-gated by `security.insecureRootCapabilities`.
+
+- Status note:
+  - `RUN --network=host` now converts to hidden `withExec(hostNetwork: true)` and executes when policy allows.
+  - Host network execution is policy-gated by `security.insecureRootCapabilities` through `network.host` entitlement setup.
+  - Focused integration validation passed with expected deny-path error text when disabled (`network.host is not allowed`).
+
+- Non-goals:
+  - Do not expose `hostNetwork` publicly in SDK-generated APIs.
+  - Do not broaden support for other Dockerfile network modes in this phase.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -850,7 +898,7 @@ Last updated: 2026-02-28
 - All `BuildOp` vertices.
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
-- `ExecOp` with unsupported network modes (e.g. `host`), non-default mount content cache, or unsupported metadata fields.
+- `ExecOp` with unsupported network modes (unknown/invalid enum values), non-default mount content cache, or unsupported metadata fields.
 - `FileOp` copy actions with `alwaysReplaceExistingDestPaths`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
@@ -865,8 +913,6 @@ Last updated: 2026-02-28
 #### HIGH
 
 #### MEDIUM
-
-- `RUN --network=host` is unsupported today (medium-priority follow-up to implement).
 
 #### LOW
 

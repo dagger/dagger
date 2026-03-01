@@ -196,6 +196,21 @@ RUN --network=none sh -c 'echo hello'
 	require.Equal(t, true, noNetwork.Value().ToInput())
 }
 
+func TestDefinitionToIDDockerfileRunNetworkHostMapsToWithExecHostNetwork(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM alpine:3.19
+RUN --network=host sh -c 'echo hello'
+`)
+
+	withExec := findFieldInChain(id, "withExec")
+	require.NotNil(t, withExec)
+	hostNetwork := withExec.Arg("hostNetwork")
+	require.NotNil(t, hostNetwork)
+	require.Equal(t, true, hostNetwork.Value().ToInput())
+}
+
 func TestDefinitionToIDDockerfileCopyFromContext(t *testing.T) {
 	t.Parallel()
 
