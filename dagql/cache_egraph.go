@@ -544,7 +544,7 @@ func (c *cache) lookupCacheForID(
 		// releases do not drop it or its dependency chain. This avoids surprising
 		// misses for persistable callsites, but should be revisited when real
 		// persistence policy is finalized.
-		c.markResultAsDepOfPersistedLocked(res)
+		c.markResultAsPersistedRootLocked(res)
 	}
 	atomic.AddInt64(&res.refCount, 1)
 
@@ -787,7 +787,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		associateResultWithTerm(termID)
 	}
 	if res.depOfPersistedResult {
-		c.markResultAsDepOfPersistedLocked(res)
+		c.markResultDependencyClosureLocked(res)
 	}
 }
 
@@ -835,7 +835,15 @@ func (c *cache) indexResultDependenciesLocked(res *sharedResult, inputEqIDs []eq
 	}
 }
 
-func (c *cache) markResultAsDepOfPersistedLocked(root *sharedResult) {
+func (c *cache) markResultAsPersistedRootLocked(root *sharedResult) {
+	if root == nil {
+		return
+	}
+	root.persistedRoot = true
+	c.markResultDependencyClosureLocked(root)
+}
+
+func (c *cache) markResultDependencyClosureLocked(root *sharedResult) {
 	if root == nil {
 		return
 	}
@@ -861,6 +869,21 @@ func (c *cache) markResultAsDepOfPersistedLocked(root *sharedResult) {
 		for depID := range cur.deps {
 			stack = append(stack, depID)
 		}
+	}
+}
+
+func (c *cache) recomputePersistedDependencyStateLocked() {
+	for _, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		res.depOfPersistedResult = false
+	}
+	for _, res := range c.resultsByID {
+		if res == nil || !res.persistedRoot {
+			continue
+		}
+		c.markResultDependencyClosureLocked(res)
 	}
 }
 

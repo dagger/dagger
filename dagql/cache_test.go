@@ -2804,6 +2804,201 @@ func TestCacheUsageEntriesDeterministicOrdering(t *testing.T) {
 	assert.NilError(t, resB.Release(ctx))
 }
 
+func TestCachePruneKeepDuration(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	oldID := cacheTestID("prune-keep-old")
+	recentID := cacheTestID("prune-keep-recent")
+
+	oldRes, err := c.GetOrInitCall(ctx, CacheKey{ID: oldID, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(oldID, 1), nil
+	})
+	assert.NilError(t, err)
+	recentRes, err := c.GetOrInitCall(ctx, CacheKey{ID: recentID, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(recentID, 2), nil
+	})
+	assert.NilError(t, err)
+
+	oldRID := oldRes.cacheSharedResult().id
+	recentRID := recentRes.cacheSharedResult().id
+	assert.NilError(t, oldRes.Release(ctx))
+	assert.NilError(t, recentRes.Release(ctx))
+
+	now := time.Now()
+	c.egraphMu.Lock()
+	c.resultsByID[oldRID].sizeEstimateBytes = 100
+	c.resultsByID[oldRID].createdAtUnixNano = now.Add(-3 * time.Hour).UnixNano()
+	c.resultsByID[oldRID].lastUsedAtUnixNano = now.Add(-2 * time.Hour).UnixNano()
+	c.resultsByID[recentRID].sizeEstimateBytes = 100
+	c.resultsByID[recentRID].createdAtUnixNano = now.Add(-30 * time.Minute).UnixNano()
+	c.resultsByID[recentRID].lastUsedAtUnixNano = now.Add(-10 * time.Minute).UnixNano()
+	c.egraphMu.Unlock()
+
+	pruneResult, err := c.Prune(ctx, CachePruneOpts{
+		Policies: []CachePrunePolicy{
+			{
+				All:          true,
+				KeepDuration: time.Hour,
+				MaxUsedSpace: 150,
+			},
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, int64(100), pruneResult.PrunedBytes)
+	assert.Equal(t, 1, len(pruneResult.PrunedEntries))
+	assert.Equal(t, fmt.Sprintf("dagql.result.%d", oldRID), pruneResult.PrunedEntries[0].ID)
+
+	usage := c.UsageEntries()
+	assert.Equal(t, 1, len(usage))
+	assert.Equal(t, fmt.Sprintf("dagql.result.%d", recentRID), usage[0].ID)
+}
+
+func TestCachePruneThresholdMaxAndTargetSpace(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	newPersisted := func(name string, value int) (AnyResult, sharedResultID) {
+		id := cacheTestID(name)
+		res, err := c.GetOrInitCall(ctx, CacheKey{ID: id, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(id, value), nil
+		})
+		assert.NilError(t, err)
+		rid := res.cacheSharedResult().id
+		assert.NilError(t, res.Release(ctx))
+		return res, rid
+	}
+	_, rid1 := newPersisted("prune-threshold-1", 1)
+	_, rid2 := newPersisted("prune-threshold-2", 2)
+	_, rid3 := newPersisted("prune-threshold-3", 3)
+
+	now := time.Now()
+	c.egraphMu.Lock()
+	c.resultsByID[rid1].sizeEstimateBytes = 100
+	c.resultsByID[rid1].createdAtUnixNano = now.Add(-5 * time.Hour).UnixNano()
+	c.resultsByID[rid1].lastUsedAtUnixNano = now.Add(-5 * time.Hour).UnixNano()
+	c.resultsByID[rid2].sizeEstimateBytes = 100
+	c.resultsByID[rid2].createdAtUnixNano = now.Add(-4 * time.Hour).UnixNano()
+	c.resultsByID[rid2].lastUsedAtUnixNano = now.Add(-4 * time.Hour).UnixNano()
+	c.resultsByID[rid3].sizeEstimateBytes = 100
+	c.resultsByID[rid3].createdAtUnixNano = now.Add(-3 * time.Hour).UnixNano()
+	c.resultsByID[rid3].lastUsedAtUnixNano = now.Add(-3 * time.Hour).UnixNano()
+	c.egraphMu.Unlock()
+
+	pruneResult, err := c.Prune(ctx, CachePruneOpts{
+		Policies: []CachePrunePolicy{
+			{
+				All:           true,
+				MaxUsedSpace:  250,
+				TargetSpace:   150,
+				ReservedSpace: 0,
+			},
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, int64(200), pruneResult.PrunedBytes)
+	assert.Equal(t, 2, len(pruneResult.PrunedEntries))
+
+	usage := c.UsageEntries()
+	assert.Equal(t, 1, len(usage))
+	assert.Equal(t, fmt.Sprintf("dagql.result.%d", rid3), usage[0].ID)
+}
+
+func TestCachePruneInUseEntriesNeverPruned(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	id := cacheTestID("prune-in-use")
+	res, err := c.GetOrInitCall(ctx, CacheKey{ID: id, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(id, 7), nil
+	})
+	assert.NilError(t, err)
+	rid := res.cacheSharedResult().id
+
+	c.egraphMu.Lock()
+	c.resultsByID[rid].sizeEstimateBytes = 100
+	c.resultsByID[rid].createdAtUnixNano = time.Now().Add(-10 * time.Hour).UnixNano()
+	c.resultsByID[rid].lastUsedAtUnixNano = time.Now().Add(-10 * time.Hour).UnixNano()
+	c.egraphMu.Unlock()
+
+	pruneResult, err := c.Prune(ctx, CachePruneOpts{
+		Policies: []CachePrunePolicy{
+			{
+				All:          true,
+				MaxUsedSpace: 1,
+				TargetSpace:  1,
+			},
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, int64(0), pruneResult.PrunedBytes)
+	assert.Equal(t, 0, len(pruneResult.PrunedEntries))
+
+	usage := c.UsageEntries()
+	assert.Equal(t, 1, len(usage))
+	assert.Assert(t, usage[0].ActivelyUsed)
+
+	assert.NilError(t, res.Release(ctx))
+}
+
+func TestCachePruneDeterministicSelectionOrder(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	makePersisted := func(name string, val int) sharedResultID {
+		id := cacheTestID(name)
+		res, err := c.GetOrInitCall(ctx, CacheKey{ID: id, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(id, val), nil
+		})
+		assert.NilError(t, err)
+		rid := res.cacheSharedResult().id
+		assert.NilError(t, res.Release(ctx))
+		return rid
+	}
+
+	rid1 := makePersisted("prune-order-1", 1)
+	rid2 := makePersisted("prune-order-2", 2)
+	rid3 := makePersisted("prune-order-3", 3)
+	id1 := fmt.Sprintf("dagql.result.%d", rid1)
+	id2 := fmt.Sprintf("dagql.result.%d", rid2)
+
+	c.egraphMu.Lock()
+	for _, rid := range []sharedResultID{rid1, rid2, rid3} {
+		c.resultsByID[rid].sizeEstimateBytes = 100
+		c.resultsByID[rid].lastUsedAtUnixNano = 1000
+	}
+	c.resultsByID[rid1].createdAtUnixNano = 500
+	c.resultsByID[rid2].createdAtUnixNano = 500
+	c.resultsByID[rid3].createdAtUnixNano = 600
+	c.egraphMu.Unlock()
+
+	pruneResult, err := c.Prune(ctx, CachePruneOpts{
+		Policies: []CachePrunePolicy{
+			{
+				All:          true,
+				MaxUsedSpace: 200,
+				TargetSpace:  100,
+			},
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, len(pruneResult.PrunedEntries))
+	assert.Equal(t, id1, pruneResult.PrunedEntries[0].ID)
+	assert.Equal(t, id2, pruneResult.PrunedEntries[1].ID)
+}
+
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

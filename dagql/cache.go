@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +50,10 @@ type Cache interface {
 	// Returns a deterministic snapshot of cache usage entries used for pruning
 	// policy/accounting.
 	UsageEntries() []CacheUsageEntry
+
+	// Prune applies ordered prune policies against in-memory dagql cache
+	// results and returns a report of pruned entries.
+	Prune(context.Context, CachePruneOpts) (CachePruneResult, error)
 
 	// Run a blocking loop that periodically garbage collects expired entries from the cache db.
 	GCLoop(context.Context)
@@ -100,6 +106,26 @@ type CacheUsageEntry struct {
 	CreatedTimeUnixNano       int64
 	MostRecentUseTimeUnixNano int64
 	ActivelyUsed              bool
+}
+
+type CachePrunePolicy struct {
+	All           bool
+	Filters       []string
+	KeepDuration  time.Duration
+	ReservedSpace int64
+	MaxUsedSpace  int64
+	MinFreeSpace  int64
+	TargetSpace   int64
+}
+
+type CachePruneOpts struct {
+	Policies       []CachePrunePolicy
+	FreeSpaceBytes int64
+}
+
+type CachePruneResult struct {
+	PrunedEntries []CacheUsageEntry
+	PrunedBytes   int64
 }
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
@@ -223,6 +249,9 @@ type sharedResult struct {
 
 	safeToPersistCache bool
 	onRelease          OnReleaseFunc
+	// persistedRoot marks result IDs that were explicitly persisted by a
+	// persistable field. depOfPersistedResult is then recomputed as root closure.
+	persistedRoot bool
 	// depOfPersistedResult marks results that must remain live because they are
 	// dependencies of a persisted/retained result.
 	depOfPersistedResult bool
@@ -382,19 +411,21 @@ func (r Result[T]) NthValue(nth int) (AnyResult, error) {
 func (r Result[T]) withDetachedPayload() Result[T] {
 	if r.shared != nil {
 		r.shared = &sharedResult{
-			self:               r.shared.self,
-			objType:            r.shared.objType,
-			hasValue:           r.shared.hasValue,
-			postCall:           r.shared.postCall,
-			safeToPersistCache: r.shared.safeToPersistCache,
-			outputDigest:       r.shared.outputDigest,
-			outputExtraDigests: slices.Clone(r.shared.outputExtraDigests),
-			outputEffectIDs:    slices.Clone(r.shared.outputEffectIDs),
-			createdAtUnixNano:  r.shared.createdAtUnixNano,
-			lastUsedAtUnixNano: r.shared.lastUsedAtUnixNano,
-			sizeEstimateBytes:  r.shared.sizeEstimateBytes,
-			description:        r.shared.description,
-			recordType:         r.shared.recordType,
+			self:                 r.shared.self,
+			objType:              r.shared.objType,
+			hasValue:             r.shared.hasValue,
+			postCall:             r.shared.postCall,
+			safeToPersistCache:   r.shared.safeToPersistCache,
+			persistedRoot:        r.shared.persistedRoot,
+			depOfPersistedResult: r.shared.depOfPersistedResult,
+			outputDigest:         r.shared.outputDigest,
+			outputExtraDigests:   slices.Clone(r.shared.outputExtraDigests),
+			outputEffectIDs:      slices.Clone(r.shared.outputEffectIDs),
+			createdAtUnixNano:    r.shared.createdAtUnixNano,
+			lastUsedAtUnixNano:   r.shared.lastUsedAtUnixNano,
+			sizeEstimateBytes:    r.shared.sizeEstimateBytes,
+			description:          r.shared.description,
+			recordType:           r.shared.recordType,
 		}
 	} else {
 		r.shared = &sharedResult{}
@@ -612,41 +643,49 @@ func (c *cache) UsageEntries() []CacheUsageEntry {
 	return c.usageEntriesLocked()
 }
 
+func (c *cache) Prune(ctx context.Context, opts CachePruneOpts) (CachePruneResult, error) {
+	var (
+		result      CachePruneResult
+		callbacks   []OnReleaseFunc
+		currentFree = opts.FreeSpaceBytes
+	)
+
+	c.egraphMu.Lock()
+	for policyIndex, policy := range opts.Policies {
+		prunedEntries, prunedBytes, prunedCallbacks := c.applyPrunePolicyLocked(
+			policyIndex,
+			policy,
+			currentFree,
+		)
+		if prunedBytes > 0 {
+			currentFree += prunedBytes
+		}
+		result.PrunedBytes += prunedBytes
+		result.PrunedEntries = append(result.PrunedEntries, prunedEntries...)
+		callbacks = append(callbacks, prunedCallbacks...)
+	}
+	c.egraphMu.Unlock()
+
+	var pruneErr error
+	for _, cb := range callbacks {
+		if cb == nil {
+			continue
+		}
+		if err := cb(ctx); err != nil {
+			pruneErr = errors.Join(pruneErr, err)
+		}
+	}
+
+	return result, pruneErr
+}
+
 func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 	entries := make([]CacheUsageEntry, 0, len(c.resultsByID))
 	for resID, res := range c.resultsByID {
 		if res == nil {
 			continue
 		}
-		createdAt := res.createdAtUnixNano
-		lastUsedAt := res.lastUsedAtUnixNano
-		if createdAt == 0 {
-			createdAt = lastUsedAt
-		}
-		if lastUsedAt == 0 {
-			lastUsedAt = createdAt
-		}
-		recordType := res.recordType
-		if recordType == "" {
-			recordType = "dagql.unknown"
-		}
-		description := res.description
-		if description == "" {
-			description = fmt.Sprintf("dagql cache result %d", resID)
-		}
-		sizeBytes := res.sizeEstimateBytes
-		if sizeBytes < 0 {
-			sizeBytes = 0
-		}
-		entries = append(entries, CacheUsageEntry{
-			ID:                        fmt.Sprintf("dagql.result.%d", resID),
-			Description:               description,
-			RecordType:                recordType,
-			SizeBytes:                 sizeBytes,
-			CreatedTimeUnixNano:       createdAt,
-			MostRecentUseTimeUnixNano: lastUsedAt,
-			ActivelyUsed:              atomic.LoadInt64(&res.refCount) > 0,
-		})
+		entries = append(entries, c.usageEntryForResultLocked(resID, res))
 	}
 
 	slices.SortFunc(entries, func(a, b CacheUsageEntry) int {
@@ -660,6 +699,281 @@ func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 		}
 	})
 	return entries
+}
+
+type pruneCandidate struct {
+	resID sharedResultID
+	res   *sharedResult
+	entry CacheUsageEntry
+}
+
+func (c *cache) applyPrunePolicyLocked(
+	policyIndex int,
+	policy CachePrunePolicy,
+	currentFreeBytes int64,
+) ([]CacheUsageEntry, int64, []OnReleaseFunc) {
+	currentUsed := c.totalUsageBytesLocked()
+	reclaimTarget := pruneReclaimTargetBytes(policy, currentUsed, currentFreeBytes)
+	if reclaimTarget <= 0 {
+		return nil, 0, nil
+	}
+
+	candidates := c.pruneCandidatesLocked(policy, time.Now())
+	slog.Debug("dagql cache prune policy pass",
+		"policyIndex", policyIndex,
+		"currentUsedBytes", currentUsed,
+		"currentFreeBytes", currentFreeBytes,
+		"reclaimTargetBytes", reclaimTarget,
+		"candidateCount", len(candidates),
+		"all", policy.All,
+		"filterCount", len(policy.Filters),
+		"keepDuration", policy.KeepDuration,
+	)
+
+	var (
+		reclaimed int64
+		pruned    []CacheUsageEntry
+		callbacks []OnReleaseFunc
+	)
+	for _, candidate := range candidates {
+		if reclaimed >= reclaimTarget {
+			break
+		}
+		cb, ok := c.pruneResultLocked(candidate)
+		if !ok {
+			slog.Debug("dagql cache prune candidate skipped",
+				"policyIndex", policyIndex,
+				"cacheID", candidate.entry.ID,
+				"reason", "missing_or_in_use")
+			continue
+		}
+		slog.Debug("dagql cache pruned candidate",
+			"policyIndex", policyIndex,
+			"cacheID", candidate.entry.ID,
+			"sizeBytes", candidate.entry.SizeBytes)
+		pruned = append(pruned, candidate.entry)
+		reclaimed += candidate.entry.SizeBytes
+		callbacks = append(callbacks, cb)
+	}
+
+	if len(pruned) > 0 {
+		c.recomputePersistedDependencyStateLocked()
+	}
+	return pruned, reclaimed, callbacks
+}
+
+func pruneReclaimTargetBytes(policy CachePrunePolicy, currentUsed, currentFree int64) int64 {
+	var reclaimTarget int64
+
+	if policy.MaxUsedSpace > 0 && currentUsed > policy.MaxUsedSpace {
+		reclaimTarget = currentUsed - policy.MaxUsedSpace
+	}
+	if policy.MinFreeSpace > 0 && currentFree < policy.MinFreeSpace {
+		requiredForMinFree := policy.MinFreeSpace - currentFree
+		if requiredForMinFree > reclaimTarget {
+			reclaimTarget = requiredForMinFree
+		}
+	}
+
+	if policy.TargetSpace > 0 && currentUsed > policy.TargetSpace {
+		requiredForTarget := currentUsed - policy.TargetSpace
+		if requiredForTarget > reclaimTarget {
+			reclaimTarget = requiredForTarget
+		}
+	}
+
+	if policy.ReservedSpace > 0 {
+		maxPrunable := currentUsed - policy.ReservedSpace
+		if maxPrunable < 0 {
+			maxPrunable = 0
+		}
+		if reclaimTarget > maxPrunable {
+			reclaimTarget = maxPrunable
+		}
+	}
+	return reclaimTarget
+}
+
+func (c *cache) totalUsageBytesLocked() int64 {
+	var total int64
+	for _, res := range c.resultsByID {
+		if res == nil || res.sizeEstimateBytes <= 0 {
+			continue
+		}
+		total += res.sizeEstimateBytes
+	}
+	return total
+}
+
+func (c *cache) pruneCandidatesLocked(policy CachePrunePolicy, now time.Time) []pruneCandidate {
+	if !policy.All {
+		// We don't yet classify records by buildkit-style buckets, so treat All=false
+		// as the same candidate universe as All=true until richer categorization lands.
+		slog.Debug("dagql cache prune policy all=false currently treated as all=true")
+	}
+
+	nowUnixNano := now.UnixNano()
+	candidates := make([]pruneCandidate, 0, len(c.resultsByID))
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		entry := c.usageEntryForResultLocked(resID, res)
+		if entry.ActivelyUsed {
+			slog.Debug("dagql cache prune candidate skipped",
+				"cacheID", entry.ID,
+				"reason", "actively_used")
+			continue
+		}
+
+		if policy.KeepDuration > 0 {
+			lastUsed := entry.MostRecentUseTimeUnixNano
+			if lastUsed == 0 {
+				lastUsed = entry.CreatedTimeUnixNano
+			}
+			cutoff := nowUnixNano - policy.KeepDuration.Nanoseconds()
+			if lastUsed > cutoff {
+				slog.Debug("dagql cache prune candidate skipped",
+					"cacheID", entry.ID,
+					"reason", "keep_duration",
+					"lastUsedAtUnixNano", lastUsed,
+					"cutoffUnixNano", cutoff)
+				continue
+			}
+		}
+
+		matches, reason := matchesPruneFilters(entry, policy.Filters)
+		if !matches {
+			slog.Debug("dagql cache prune candidate skipped",
+				"cacheID", entry.ID,
+				"reason", reason)
+			continue
+		}
+
+		candidates = append(candidates, pruneCandidate{
+			resID: resID,
+			res:   res,
+			entry: entry,
+		})
+	}
+
+	slices.SortFunc(candidates, func(a, b pruneCandidate) int {
+		if a.entry.MostRecentUseTimeUnixNano != b.entry.MostRecentUseTimeUnixNano {
+			if a.entry.MostRecentUseTimeUnixNano < b.entry.MostRecentUseTimeUnixNano {
+				return -1
+			}
+			return 1
+		}
+		if a.entry.CreatedTimeUnixNano != b.entry.CreatedTimeUnixNano {
+			if a.entry.CreatedTimeUnixNano < b.entry.CreatedTimeUnixNano {
+				return -1
+			}
+			return 1
+		}
+		if a.entry.ID < b.entry.ID {
+			return -1
+		}
+		if a.entry.ID > b.entry.ID {
+			return 1
+		}
+		return 0
+	})
+	return candidates
+}
+
+func matchesPruneFilters(entry CacheUsageEntry, filters []string) (bool, string) {
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter == "" {
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(filter, "type=="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "type=="))
+			if entry.RecordType != want {
+				return false, "filter_mismatch:type"
+			}
+		case strings.HasPrefix(filter, "description=="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "description=="))
+			if entry.Description != want {
+				return false, "filter_mismatch:description"
+			}
+		case strings.HasPrefix(filter, "description~="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "description~="))
+			if !strings.Contains(entry.Description, want) {
+				return false, "filter_mismatch:description_contains"
+			}
+		case strings.HasPrefix(filter, "id=="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "id=="))
+			if entry.ID != want {
+				return false, "filter_mismatch:id"
+			}
+		case strings.HasPrefix(filter, "inuse=="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "inuse=="))
+			wantInUse := want == "1" || strings.EqualFold(want, "true")
+			if entry.ActivelyUsed != wantInUse {
+				return false, "filter_mismatch:inuse"
+			}
+		default:
+			return false, "unsupported_filter"
+		}
+	}
+	return true, ""
+}
+
+func (c *cache) usageEntryForResultLocked(resID sharedResultID, res *sharedResult) CacheUsageEntry {
+	createdAt := res.createdAtUnixNano
+	lastUsedAt := res.lastUsedAtUnixNano
+	if createdAt == 0 {
+		createdAt = lastUsedAt
+	}
+	if lastUsedAt == 0 {
+		lastUsedAt = createdAt
+	}
+	recordType := res.recordType
+	if recordType == "" {
+		recordType = "dagql.unknown"
+	}
+	description := res.description
+	if description == "" {
+		description = fmt.Sprintf("dagql cache result %d", resID)
+	}
+	sizeBytes := res.sizeEstimateBytes
+	if sizeBytes < 0 {
+		sizeBytes = 0
+	}
+	return CacheUsageEntry{
+		ID:                        fmt.Sprintf("dagql.result.%d", resID),
+		Description:               description,
+		RecordType:                recordType,
+		SizeBytes:                 sizeBytes,
+		CreatedTimeUnixNano:       createdAt,
+		MostRecentUseTimeUnixNano: lastUsedAt,
+		ActivelyUsed:              atomic.LoadInt64(&res.refCount) > 0,
+	}
+}
+
+func (c *cache) pruneResultLocked(candidate pruneCandidate) (OnReleaseFunc, bool) {
+	res := c.resultsByID[candidate.resID]
+	if res == nil {
+		return nil, false
+	}
+	if atomic.LoadInt64(&res.refCount) > 0 {
+		return nil, false
+	}
+	deleteResultDepLocked(c.resultsByID, candidate.resID)
+	c.removeResultFromEgraphLocked(res)
+	return res.onRelease, true
+}
+
+func deleteResultDepLocked(resultsByID map[sharedResultID]*sharedResult, depID sharedResultID) {
+	for _, res := range resultsByID {
+		if res == nil || len(res.deps) == 0 {
+			continue
+		}
+		delete(res.deps, depID)
+	}
 }
 
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
@@ -971,7 +1285,7 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 		oc.res,
 	)
 	if oc.isPersistable {
-		c.markResultAsDepOfPersistedLocked(oc.res)
+		c.markResultAsPersistedRootLocked(oc.res)
 	}
 	c.egraphMu.Unlock()
 	return nil
