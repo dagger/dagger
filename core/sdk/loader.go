@@ -138,6 +138,8 @@ func (l *Loader) namedSDK(
 		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	case sdkElixir:
 		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
+	case sdkCSharp:
+		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/pjmagee/dagger/sdk/csharp@csharp/experimental" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	}
 
 	return nil, errUnknownBuiltinSDK
