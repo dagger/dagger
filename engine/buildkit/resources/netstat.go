@@ -91,6 +91,7 @@ func newNetNSSampler(netNS BKNetworkSampler, meter metric.Meter, commonAttrs att
 	if err != nil {
 		return nil, fmt.Errorf("failed to baseline sample bk netNS: %w", err)
 	}
+	s.baselineSample = normalizeNetworkSample(s.baselineSample)
 
 	return s, nil
 }
@@ -109,6 +110,7 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to sample bk netNS: %w", err)
 	}
+	bkSample = normalizeNetworkSample(bkSample)
 
 	sample.rxBytes.add(bkSample.RxBytes - s.baselineSample.RxBytes)
 	sample.rxPackets.add(bkSample.RxPackets - s.baselineSample.RxPackets)
@@ -125,4 +127,12 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 	sample.txPackets.record(ctx)
 
 	return nil
+}
+
+// Some providers (e.g. none/host) report network stats as nil rather than zero values.
+func normalizeNetworkSample(sample *resourcestypes.NetworkSample) *resourcestypes.NetworkSample {
+	if sample == nil {
+		return &resourcestypes.NetworkSample{}
+	}
+	return sample
 }

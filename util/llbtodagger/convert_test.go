@@ -346,6 +346,20 @@ func TestDefinitionToIDExecNetworkUnsupported(t *testing.T) {
 	require.Contains(t, unsupportedErr.Reason, "network mode")
 }
 
+func TestDefinitionToIDExecNetworkNoneMapsToWithExecNoNetwork(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Image("alpine").Network(llb.NetModeNone).Run(llb.Shlex("echo hello")).Root()
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	withExec := findFieldInChain(id, "withExec")
+	require.NotNil(t, withExec)
+	noNetwork := withExec.Arg("noNetwork")
+	require.NotNil(t, noNetwork)
+	require.Equal(t, true, noNetwork.Value().ToInput())
+}
+
 func TestDefinitionToIDExecSecurityInsecureMapsToWithExecInsecureRootCapabilities(t *testing.T) {
 	t.Parallel()
 

@@ -769,6 +769,48 @@ Last updated: 2026-02-28
 - Notes:
   - This is a conversion-layer mapping only; entitlement/runtime enforcement remains the responsibility of the execution environment (same as normal `withExec(insecureRootCapabilities: true)`).
 
+### Phase 26: Internal-Only Exec Network `none` Mapping (`RUN --network=none`)
+- Goal:
+  - Support Dockerfile/LLB exec network mode `NONE` by mapping to a hidden/internal-only `withExec` argument.
+  - Keep public SDK/API surface unchanged while preserving Dockerfile fidelity for `RUN --network=none`.
+
+- Design:
+  - Add an internal-only boolean arg on `withExec` for this narrow behavior (proposed: `noNetwork`).
+  - Plumb it through schema -> core exec opts -> executor meta (`pb.NetMode_NONE`).
+  - Keep `HOST` network mode out of scope for this phase only; track as a medium-priority follow-up.
+
+- Implementation checklist:
+  - [x] Schema + opts plumbing:
+    - [x] Add internal-only `noNetwork bool` to `containerExecArgs` / `ContainerExecOpts` path.
+    - [x] Ensure it is hidden from generated SDK/public callers (`internal:"true"`).
+    - [x] Wire `withExec` resolver to pass this hidden arg into core exec opts.
+  - [x] Core exec behavior:
+    - [x] In `core/container_exec.go` `metaSpec`, set `metaSpec.NetMode = pb.NetMode_NONE` when `noNetwork` is true.
+    - [x] Preserve default behavior when `noNetwork` is false/unset.
+  - [x] llbtodagger mapping:
+    - [x] In `util/llbtodagger/exec.go`, accept `pb.NetMode_UNSET` and `pb.NetMode_NONE`.
+    - [x] Emit `withExec(noNetwork: true)` only for `pb.NetMode_NONE`.
+    - [x] Keep `pb.NetMode_HOST` unsupported (explicit error).
+  - [x] Tests:
+    - [x] Unit: `exec` with `NetMode_NONE` maps to `withExec` hidden `noNetwork: true`.
+    - [x] Unit: existing `NetMode_HOST` unsupported behavior remains.
+    - [x] Optional dockerfile conversion unit: `RUN --network=none ...` includes hidden arg.
+    - [x] Integration (focused): Dockerfile `RUN --network=none` behavior validates successfully through converted ID.
+    - [x] Run integration command using `skills/cache-expert/references/debugging.md` shape.
+  - [x] Whiteboard updates:
+    - [x] Remove/update `RUN --network` unsupported item once `none` is implemented.
+    - [x] Keep explicit note that `host` remains unsupported (and why, entitlement/runtime constraints).
+
+- Status note:
+  - Initial focused integration run hit an engine panic in `engine/buildkit/resources/netstat.go:113` due to nil network samples from `none`/`host` providers.
+  - Fixed by normalizing nil network samples to zero-value samples in `engine/buildkit/resources/netstat.go`.
+  - Re-ran focused integration command successfully:
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestLLBToDagger/TestLoadContainerFromConvertedIDRunNetworkNone'`
+
+- Non-goals:
+  - Do not implement `RUN --network=host` in this phase (tracked as medium-priority follow-up).
+  - Do not expose network-mode knobs in public SDK `withExec` options.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -808,7 +850,7 @@ Last updated: 2026-02-28
 - All `BuildOp` vertices.
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
-- `ExecOp` with non-default network, non-default mount content cache, or unsupported metadata fields.
+- `ExecOp` with unsupported network modes (e.g. `host`), non-default mount content cache, or unsupported metadata fields.
 - `FileOp` copy actions with `alwaysReplaceExistingDestPaths`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
@@ -824,7 +866,7 @@ Last updated: 2026-02-28
 
 #### MEDIUM
 
-- Non-default network mode is unsupported (`RUN --network=...`).
+- `RUN --network=host` is unsupported today (medium-priority follow-up to implement).
 
 #### LOW
 
