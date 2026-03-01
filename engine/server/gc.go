@@ -5,29 +5,18 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
-	"time"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/slog"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
-	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
 )
 
-type dagqlCachePrunePolicy struct {
-	All           bool
-	Filters       []string
-	KeepDuration  time.Duration
-	ReservedSpace int64
-	MaxUsedSpace  int64
-	MinFreeSpace  int64
-	TargetSpace   int64
-}
+type dagqlCachePrunePolicy = dagql.CachePrunePolicy
 
 func (srv *Server) EngineLocalCachePolicy() *bkclient.PruneInfo {
 	return srv.workerDefaultGCPolicy
@@ -35,29 +24,11 @@ func (srv *Server) EngineLocalCachePolicy() *bkclient.PruneInfo {
 
 // Return all the cache entries in the local cache. No support for filtering yet.
 func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
-	du, err := srv.baseWorker.DiskUsage(ctx, bkclient.DiskUsageInfo{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get disk usage from worker: %w", err)
+	if srv.baseDagqlCache == nil {
+		return &core.EngineCacheEntrySet{}, nil
 	}
-
-	set := &core.EngineCacheEntrySet{}
-	for _, r := range du {
-		cacheEnt := &core.EngineCacheEntry{
-			Description:         r.Description,
-			DiskSpaceBytes:      int(r.Size),
-			ActivelyUsed:        r.InUse,
-			CreatedTimeUnixNano: int(r.CreatedAt.UnixNano()),
-			RecordType:          string(r.RecordType),
-		}
-		if r.LastUsedAt != nil {
-			cacheEnt.MostRecentUseTimeUnixNano = int(r.LastUsedAt.UnixNano())
-		}
-		set.EntriesList = append(set.EntriesList, cacheEnt)
-		set.DiskSpaceBytes += int(r.Size)
-	}
-	set.EntryCount = len(set.EntriesList)
-
-	return set, nil
+	entries := srv.baseDagqlCache.UsageEntries()
+	return engineCacheEntrySetFromDagqlEntries(entries), nil
 }
 
 // Prune the local cache of releaseable entries. If UseDefaultPolicy is true,
@@ -66,71 +37,66 @@ func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCac
 func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.EngineCachePruneOptions) (*core.EngineCacheEntrySet, error) {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
-
-	srv.daggerSessionsMu.RLock()
-	cancelLeases := len(srv.daggerSessions) == 0
-	srv.daggerSessionsMu.RUnlock()
-	if cancelLeases {
-		imageutil.CancelCacheLeases()
+	if srv.baseDagqlCache == nil {
+		return &core.EngineCacheEntrySet{}, nil
 	}
 
-	wg := &sync.WaitGroup{}
-	ch := make(chan bkclient.UsageInfo, 32)
-	var pruned []bkclient.UsageInfo
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for r := range ch {
-			pruned = append(pruned, r)
-		}
-	}()
-
 	dstat, _ := disk.GetDiskStat(srv.rootDir)
+	var defaultPolicies []dagqlCachePrunePolicy
+	if srv.baseWorker != nil {
+		defaultPolicies = dagqlCachePrunePoliciesFromBuildkit(srv.baseWorker.GCPolicy())
+	}
 	prunePolicies, err := resolveEngineLocalCachePrunePolicies(
-		dagqlCachePrunePoliciesFromBuildkit(srv.baseWorker.GCPolicy()),
+		defaultPolicies,
 		opts,
 		dstat,
 	)
 	if err != nil {
 		return nil, err
 	}
-	err = srv.baseWorker.Prune(ctx, ch, buildkitPruneInfosFromDagqlPolicies(prunePolicies)...)
+
+	pruned, err := srv.baseDagqlCache.Prune(ctx, dagql.CachePruneOpts{
+		Policies:       prunePolicies,
+		FreeSpaceBytes: dstat.Available,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("worker failed to prune local cache: %w", err)
-	}
-	close(ch)
-	wg.Wait()
-
-	if len(pruned) == 0 {
-		return &core.EngineCacheEntrySet{}, nil
+		return nil, fmt.Errorf("dagql prune failed: %w", err)
 	}
 
-	if e, ok := srv.SolverCache.(interface {
-		ReleaseUnreferenced(context.Context) error
-	}); ok {
-		if err := e.ReleaseUnreferenced(ctx); err != nil {
-			bklog.G(ctx).Errorf("failed to release cache metadata: %+v", err)
-		}
+	set := &core.EngineCacheEntrySet{
+		EntriesList: make([]*core.EngineCacheEntry, 0, len(pruned.PrunedEntries)),
 	}
-
-	set := &core.EngineCacheEntrySet{}
-	for _, r := range pruned {
-		// buildkit's Prune doesn't set RecordType currently, so can't include kind here
-		ent := &core.EngineCacheEntry{
-			Description:         r.Description,
-			DiskSpaceBytes:      int(r.Size),
-			CreatedTimeUnixNano: int(r.CreatedAt.UnixNano()),
-			ActivelyUsed:        r.InUse,
-		}
-		if r.LastUsedAt != nil {
-			ent.MostRecentUseTimeUnixNano = int(r.LastUsedAt.UnixNano())
-		}
-		set.EntriesList = append(set.EntriesList, ent)
-		set.DiskSpaceBytes += int(r.Size)
+	for _, entry := range pruned.PrunedEntries {
+		coreEntry := engineCacheEntryFromDagqlEntry(entry)
+		set.EntriesList = append(set.EntriesList, coreEntry)
+		set.DiskSpaceBytes += coreEntry.DiskSpaceBytes
 	}
 	set.EntryCount = len(set.EntriesList)
-
 	return set, nil
+}
+
+func engineCacheEntrySetFromDagqlEntries(entries []dagql.CacheUsageEntry) *core.EngineCacheEntrySet {
+	set := &core.EngineCacheEntrySet{
+		EntriesList: make([]*core.EngineCacheEntry, 0, len(entries)),
+	}
+	for _, entry := range entries {
+		coreEntry := engineCacheEntryFromDagqlEntry(entry)
+		set.EntriesList = append(set.EntriesList, coreEntry)
+		set.DiskSpaceBytes += coreEntry.DiskSpaceBytes
+	}
+	set.EntryCount = len(set.EntriesList)
+	return set
+}
+
+func engineCacheEntryFromDagqlEntry(entry dagql.CacheUsageEntry) *core.EngineCacheEntry {
+	return &core.EngineCacheEntry{
+		Description:               entry.Description,
+		DiskSpaceBytes:            int(entry.SizeBytes),
+		CreatedTimeUnixNano:       int(entry.CreatedTimeUnixNano),
+		MostRecentUseTimeUnixNano: int(entry.MostRecentUseTimeUnixNano),
+		ActivelyUsed:              entry.ActivelyUsed,
+		RecordType:                entry.RecordType,
+	}
 }
 
 func trimmedPruneOpts(opts core.EngineCachePruneOptions) (maxUsedSpace, reservedSpace, minFreeSpace, targetSpace string) {
@@ -268,33 +234,28 @@ func parseEngineCacheDiskSpace(argName, argValue string, dstat disk.DiskStat) (i
 func (srv *Server) gc() {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
-
-	ch := make(chan bkclient.UsageInfo)
-	eg, ctx := errgroup.WithContext(context.TODO())
-
-	var size int64
-	eg.Go(func() error {
-		for ui := range ch {
-			size += ui.Size
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		defer close(ch)
-		if policy := srv.baseWorker.GCPolicy(); len(policy) > 0 {
-			return srv.baseWorker.Prune(ctx, ch, policy...)
-		}
-		return nil
-	})
-
-	err := eg.Wait()
-	if err != nil {
-		bklog.G(ctx).Errorf("gc error: %+v", err)
+	if srv.baseDagqlCache == nil {
+		return
 	}
-	if size > 0 {
-		bklog.G(ctx).Debugf("gc cleaned up %d bytes", size)
-		go srv.throttledReleaseUnreferenced()
+
+	if srv.baseWorker == nil {
+		return
+	}
+	policies := dagqlCachePrunePoliciesFromBuildkit(srv.baseWorker.GCPolicy())
+	if len(policies) == 0 {
+		return
+	}
+	dstat, _ := disk.GetDiskStat(srv.rootDir)
+	pruned, err := srv.baseDagqlCache.Prune(context.TODO(), dagql.CachePruneOpts{
+		Policies:       policies,
+		FreeSpaceBytes: dstat.Available,
+	})
+	if err != nil {
+		slog.Error("dagql cache gc error", "error", err)
+		return
+	}
+	if pruned.PrunedBytes > 0 {
+		slog.Debug("dagql cache gc cleaned up entries", "bytes", pruned.PrunedBytes, "count", len(pruned.PrunedEntries))
 	}
 }
 
