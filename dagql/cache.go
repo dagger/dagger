@@ -220,6 +220,9 @@ type sharedResult struct {
 	outputDigest       digest.Digest
 	outputExtraDigests []call.ExtraDigest
 	outputEffectIDs    []string
+	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
+	// 0 means "never expires".
+	expiresAtUnix int64
 
 	refCount int64
 }
@@ -229,8 +232,7 @@ type sharedResult struct {
 type ongoingCall struct {
 	callConcurrencyKeys     callConcurrencyKeys
 	isPersistable           bool
-	persistToDB             func(context.Context) error
-	persistToDBOnce         sync.Once
+	ttlSeconds              int64
 	initCompletedResultOnce sync.Once
 	initCompletedResultErr  error
 
@@ -519,7 +521,12 @@ type cacheContextKey struct {
 }
 
 func (c *cache) GCLoop(ctx context.Context) {
+	if c.db == nil {
+		<-ctx.Done()
+		return
+	}
 	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -632,10 +639,8 @@ func (c *cache) GetOrInitCall(
 		concurrencyKey: key.ConcurrencyKey,
 	}
 
-	var persistToDB func(context.Context) error
-
 	c.egraphMu.Lock()
-	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID, key.IsPersistable)
+	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID, key.IsPersistable, key.TTL)
 	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, err
@@ -673,7 +678,7 @@ func (c *cache) GetOrInitCall(
 	oc := &ongoingCall{
 		callConcurrencyKeys: callConcKeys,
 		isPersistable:       key.IsPersistable,
-		persistToDB:         persistToDB,
+		ttlSeconds:          key.TTL,
 		waitCh:              make(chan struct{}),
 		cancel:              cancel,
 		waiters:             1,
@@ -746,8 +751,8 @@ func (c *cache) wait(
 	}
 	retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
 
-	// fix function calls that have side-effectful setSecret calls to be per session
-	if oc.persistToDB != nil && !oc.res.safeToPersistCache {
+	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
+	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
 		retID = retID.With(call.WithAppendedImplicitInputs(call.NewArgument(
 			"sessionID",
 			call.NewLiteralString(sessionID),
@@ -759,18 +764,6 @@ func (c *cache) wait(
 		shared:   oc.res,
 		id:       retID,
 		hitCache: false,
-	}
-
-	if oc.persistToDB != nil {
-		if oc.res.safeToPersistCache {
-			oc.persistToDBOnce.Do(func() {
-				persistErr := oc.persistToDB(ctx)
-				if persistErr != nil {
-					slog.Error("failed to persist cache expiration", "err", persistErr)
-					return
-				}
-			})
-		}
 	}
 
 	if !retRes.shared.hasValue {
@@ -817,6 +810,14 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 			}
 		}
 	}
+	// TTL merge policy for shared results:
+	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
+	// - if any writer provides TTL, we keep the earliest non-zero expiry.
+	// - 0 only remains when all writers are 0.
+	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
+		oc.res.expiresAtUnix,
+		candidateSharedResultExpiryUnix(time.Now().Unix(), oc.ttlSeconds),
+	)
 	if oc.val != nil {
 		resultID = oc.val.ID()
 		if !resWasCacheBacked {
@@ -836,8 +837,8 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 	}
 
 	requestIDForIndex := requestID
-	// fix function calls that have side-effectful setSecret calls to be per session
-	if oc.persistToDB != nil && !oc.res.safeToPersistCache {
+	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
+	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
 		requestIDForIndex = requestID.With(call.WithAppendedImplicitInputs(call.NewArgument(
 			"sessionID",
 			call.NewLiteralString(sessionID),
@@ -865,4 +866,26 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 	}
 	c.egraphMu.Unlock()
 	return nil
+}
+
+func candidateSharedResultExpiryUnix(nowUnix, ttlSeconds int64) int64 {
+	if ttlSeconds <= 0 {
+		return 0
+	}
+	return nowUnix + ttlSeconds
+}
+
+func mergeSharedResultExpiryUnix(existingExpiresAtUnix, candidateExpiresAtUnix int64) int64 {
+	switch {
+	case existingExpiresAtUnix == 0 && candidateExpiresAtUnix == 0:
+		return 0
+	case existingExpiresAtUnix == 0:
+		return candidateExpiresAtUnix
+	case candidateExpiresAtUnix == 0:
+		return existingExpiresAtUnix
+	case candidateExpiresAtUnix < existingExpiresAtUnix:
+		return candidateExpiresAtUnix
+	default:
+		return existingExpiresAtUnix
+	}
 }
