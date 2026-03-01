@@ -18,8 +18,8 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	if exec.Network != pb.NetMode_UNSET {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "non-default network mode is unsupported")
 	}
-	if exec.Security != pb.SecurityMode_SANDBOX {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "non-default security mode is unsupported")
+	if exec.Security != pb.SecurityMode_SANDBOX && exec.Security != pb.SecurityMode_INSECURE {
+		return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("unsupported security mode %v", exec.Security))
 	}
 	if exec.Meta == nil {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec meta")
@@ -263,7 +263,13 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 		ctrID = appendCall(ctrID, containerType(), "withWorkdir", argString("path", exec.Meta.Cwd))
 	}
 
-	withExecID := appendCall(ctrID, containerType(), "withExec", argStringList("args", exec.Meta.Args))
+	withExecArgs := []*call.Argument{
+		argStringList("args", exec.Meta.Args),
+	}
+	if exec.Security == pb.SecurityMode_INSECURE {
+		withExecArgs = append(withExecArgs, argBool("insecureRootCapabilities", true))
+	}
+	withExecID := appendCall(ctrID, containerType(), "withExec", withExecArgs...)
 
 	outMount, ok := findMountByOutput(exec.Mounts, exec.OutputIndex())
 	if !ok {

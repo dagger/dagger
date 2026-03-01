@@ -758,6 +758,17 @@ Last updated: 2026-02-28
   - Do not add new public or internal schema APIs for this phase.
   - Do not attempt to support non-canonical malformed LLB variants beyond Dockerfile-relevant behavior.
 
+### Phase 25: Exec Security Mode Mapping (`RUN --security=insecure`)
+- Goal:
+  - Support Dockerfile/LLB exec security mode `INSECURE` by mapping it to Dagger `withExec(insecureRootCapabilities: true)`.
+- Checklist:
+  - [x] Update exec conversion guard to allow `pb.SecurityMode_INSECURE` in addition to sandbox/default.
+  - [x] Emit `withExec` arg `insecureRootCapabilities: true` when exec security mode is insecure.
+  - [x] Keep unsupported error for any unknown/unhandled security mode enum values.
+  - [x] Add unit test coverage for insecure security mapping in `util/llbtodagger/convert_test.go`.
+- Notes:
+  - This is a conversion-layer mapping only; entitlement/runtime enforcement remains the responsibility of the execution environment (same as normal `withExec(insecureRootCapabilities: true)`).
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -797,7 +808,7 @@ Last updated: 2026-02-28
 - All `BuildOp` vertices.
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
-- `ExecOp` with non-default network/security, non-default mount content cache, or unsupported metadata fields.
+- `ExecOp` with non-default network, non-default mount content cache, or unsupported metadata fields.
 - `FileOp` copy actions with `alwaysReplaceExistingDestPaths`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
@@ -813,11 +824,7 @@ Last updated: 2026-02-28
 
 #### MEDIUM
 
-- Named ownership for copy actions without container context is unsupported.
-
 - Non-default network mode is unsupported (`RUN --network=...`).
-
-- Non-sandbox security mode is unsupported (`RUN --security=...` when enabled).
 
 #### LOW
 
@@ -881,6 +888,7 @@ Last updated: 2026-02-28
 - `mkfile` timestamp override is unsupported.
 - `mkfile` non-UTF8/binary payload is unsupported.
 - `copy` `alwaysReplaceExistingDestPaths=true` is unsupported.
+- Named ownership for `copy` actions without container context is unsupported (non-Dockerfile/non-canonical LLB path).
 - Unknown `UserOpt` discriminator in `chown` is unsupported.
 - Invalid env entries (without `name=value`) are rejected.
 - Exposed ports with invalid format are rejected.
