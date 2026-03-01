@@ -108,6 +108,19 @@ type CacheUsageEntry struct {
 	ActivelyUsed              bool
 }
 
+// CacheValueUsage is usage metadata for a cached value payload.
+type CacheValueUsage struct {
+	RecordType  string
+	Description string
+	SizeBytes   int64
+}
+
+// CacheValueUsageProvider can provide concrete usage information for a cached
+// value, e.g. when the value wraps snapshot-backed data.
+type CacheValueUsageProvider interface {
+	DagqlCacheUsage(context.Context) (CacheValueUsage, bool, error)
+}
+
 type CachePrunePolicy struct {
 	All           bool
 	Filters       []string
@@ -765,6 +778,16 @@ func (c *cache) applyPrunePolicyLocked(
 func pruneReclaimTargetBytes(policy CachePrunePolicy, currentUsed, currentFree int64) int64 {
 	var reclaimTarget int64
 
+	// Buildkit-style "all" prune semantics: when All is requested without any
+	// space thresholds, prune all releasable cache entries.
+	if policy.All &&
+		policy.MaxUsedSpace <= 0 &&
+		policy.MinFreeSpace <= 0 &&
+		policy.TargetSpace <= 0 &&
+		policy.ReservedSpace <= 0 {
+		reclaimTarget = currentUsed
+	}
+
 	if policy.MaxUsedSpace > 0 && currentUsed > policy.MaxUsedSpace {
 		reclaimTarget = currentUsed - policy.MaxUsedSpace
 	}
@@ -780,6 +803,11 @@ func pruneReclaimTargetBytes(policy CachePrunePolicy, currentUsed, currentFree i
 		if requiredForTarget > reclaimTarget {
 			reclaimTarget = requiredForTarget
 		}
+	}
+	if reclaimTarget == 0 && policy.ReservedSpace > 0 && currentUsed > policy.ReservedSpace {
+		// Keep-storage semantics: when only reserved space is configured, prune
+		// down to that reserved amount.
+		reclaimTarget = currentUsed - policy.ReservedSpace
 	}
 
 	if policy.ReservedSpace > 0 {
@@ -1128,7 +1156,7 @@ func (c *cache) wait(
 	}
 
 	oc.initCompletedResultOnce.Do(func() {
-		oc.initCompletedResultErr = c.initCompletedResult(oc, requestID, sessionID)
+		oc.initCompletedResultErr = c.initCompletedResult(ctx, oc, requestID, sessionID)
 	})
 	if oc.initCompletedResultErr != nil {
 		return nil, oc.initCompletedResultErr
@@ -1179,7 +1207,7 @@ func (c *cache) wait(
 	return retObjRes, nil
 }
 
-func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, sessionID string) error {
+func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, requestID *call.ID, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
 	var (
@@ -1236,6 +1264,27 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 	}
 	if oc.res.description == "" {
 		oc.res.description = requestIDForIndex.DisplaySelf()
+	}
+	if oc.res.hasValue {
+		if usageProvider, ok := oc.res.self.(CacheValueUsageProvider); ok {
+			usage, hasUsage, usageErr := usageProvider.DagqlCacheUsage(ctx)
+			if usageErr != nil {
+				slog.Debug("failed to resolve dagql cached value usage",
+					"requestID", requestIDForIndex.DisplaySelf(),
+					"err", usageErr,
+				)
+			} else if hasUsage {
+				if usage.RecordType != "" {
+					oc.res.recordType = usage.RecordType
+				}
+				if usage.Description != "" {
+					oc.res.description = usage.Description
+				}
+				if usage.SizeBytes > 0 {
+					oc.res.sizeEstimateBytes = usage.SizeBytes
+				}
+			}
+		}
 	}
 	estimatedSize := estimateSharedResultSizeBytes(requestIDForIndex, oc.res)
 	if estimatedSize > oc.res.sizeEstimateBytes {
