@@ -181,6 +181,21 @@ RUN --mount=type=ssh,id=required-ssh,required=true,target=/tmp/agent.sock \
 	require.Contains(t, unsupportedErr.Reason, "required")
 }
 
+func TestDefinitionToIDDockerfileRunNetworkNoneMapsToWithExecNoNetwork(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM alpine:3.19
+RUN --network=none sh -c 'echo hello'
+`)
+
+	withExec := findFieldInChain(id, "withExec")
+	require.NotNil(t, withExec)
+	noNetwork := withExec.Arg("noNetwork")
+	require.NotNil(t, noNetwork)
+	require.Equal(t, true, noNetwork.Value().ToInput())
+}
+
 func TestDefinitionToIDDockerfileCopyFromContext(t *testing.T) {
 	t.Parallel()
 

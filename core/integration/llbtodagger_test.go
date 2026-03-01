@@ -447,6 +447,29 @@ CMD ["cat", "/copied.txt"]
 	require.Equal(t, "readonly-bind-data", strings.TrimSpace(copied))
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunNetworkNone(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, nil)
+
+	ctr, _, encoded := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+RUN --network=none sh -c 'echo network-none > /status'
+CMD ["cat", "/status"]
+`)
+
+	id := decodeCallID(t, encoded)
+	withExec := findFieldInCallChain(id, "withExec")
+	require.NotNil(t, withExec)
+	noNetwork := withExec.Arg("noNetwork")
+	require.NotNil(t, noNetwork)
+	require.Equal(t, true, noNetwork.Value().ToInput())
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "network-none", strings.TrimSpace(out))
+}
+
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunMountNonSticky(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -785,4 +808,20 @@ func llbStateToDefinition(
 	def, err := st.Marshal(ctx)
 	require.NoError(t, err)
 	return def.ToPB()
+}
+
+func decodeCallID(t *testctx.T, encoded string) *call.ID {
+	t.Helper()
+	var id call.ID
+	require.NoError(t, id.Decode(encoded))
+	return &id
+}
+
+func findFieldInCallChain(id *call.ID, field string) *call.ID {
+	for cur := id; cur != nil; cur = cur.Receiver() {
+		if cur.Field() == field {
+			return cur
+		}
+	}
+	return nil
 }

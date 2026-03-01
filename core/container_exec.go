@@ -67,6 +67,10 @@ type ContainerExecOpts struct {
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
+	// (Internal-only) execute with no network connectivity, equivalent to
+	// BuildKit NetMode_NONE / Dockerfile RUN --network=none.
+	NoNetwork bool `internal:"true" default:"false"`
+
 	// Expand the environment variables in args
 	Expand bool `default:"false"`
 
@@ -187,6 +191,9 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 	if opts.InsecureRootCapabilities {
 		metaSpec.SecurityMode = pb.SecurityMode_INSECURE
+	}
+	if opts.NoNetwork {
+		metaSpec.NetMode = pb.NetMode_NONE
 	}
 
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
