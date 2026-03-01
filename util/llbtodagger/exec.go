@@ -272,6 +272,9 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	if exec.Network == pb.NetMode_HOST {
 		withExecArgs = append(withExecArgs, argBool("hostNetwork", true))
 	}
+	if c.noInit {
+		withExecArgs = append(withExecArgs, argBool("noInit", true))
+	}
 	if exec.Security == pb.SecurityMode_INSECURE {
 		withExecArgs = append(withExecArgs, argBool("insecureRootCapabilities", true))
 	}

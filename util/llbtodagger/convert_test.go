@@ -380,6 +380,34 @@ func TestDefinitionToIDExecNetworkNoneMapsToWithExecNoNetwork(t *testing.T) {
 	require.Equal(t, true, noNetwork.Value().ToInput())
 }
 
+func TestDefinitionToIDExecNoInitOptionMapsToWithExecNoInit(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Image("alpine").Run(llb.Shlex("echo hello")).Root()
+	id, err := DefinitionToIDWithOptions(marshalStateToPB(t, st), nil, DefinitionToIDOptions{
+		NoInit: true,
+	})
+	require.NoError(t, err)
+
+	withExec := findFieldInChain(id, "withExec")
+	require.NotNil(t, withExec)
+	noInit := withExec.Arg("noInit")
+	require.NotNil(t, noInit)
+	require.Equal(t, true, noInit.Value().ToInput())
+}
+
+func TestDefinitionToIDExecNoInitOptionUnsetOmitsWithExecNoInit(t *testing.T) {
+	t.Parallel()
+
+	st := llb.Image("alpine").Run(llb.Shlex("echo hello")).Root()
+	id, err := DefinitionToIDWithOptions(marshalStateToPB(t, st), nil, DefinitionToIDOptions{})
+	require.NoError(t, err)
+
+	withExec := findFieldInChain(id, "withExec")
+	require.NotNil(t, withExec)
+	require.Nil(t, withExec.Arg("noInit"))
+}
+
 func TestDefinitionToIDExecSecurityInsecureMapsToWithExecInsecureRootCapabilities(t *testing.T) {
 	t.Parallel()
 

@@ -535,6 +535,38 @@ CMD ["cat", "/status"]
 	require.Contains(t, err.Error(), "network.host is not allowed")
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunNoInitOption(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, nil)
+
+	ctr, _, encoded := convertDockerfileToLoadedContainerWithOptions(
+		ctx,
+		t,
+		c,
+		contextDir,
+		`
+FROM `+alpineImage+`
+RUN sh -c 'ps -o pid,comm > /status'
+CMD ["cat", "/status"]
+`,
+		llbtodagger.DefinitionToIDOptions{
+			NoInit: true,
+		},
+	)
+
+	id := decodeCallID(t, encoded)
+	withExec := findFieldInCallChain(id, "withExec")
+	require.NotNil(t, withExec)
+	noInit := withExec.Arg("noInit")
+	require.NotNil(t, noInit)
+	require.Equal(t, true, noInit.Value().ToInput())
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "1 ps")
+}
+
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDRunMountNonSticky(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

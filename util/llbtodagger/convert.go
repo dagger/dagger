@@ -31,6 +31,10 @@ type DefinitionToIDOptions struct {
 	// by withUnixSocket conversion. A mapping for the empty key ("") acts as a
 	// default fallback for any unmatched ssh ID.
 	SSHSocketIDsByLLBID map[string]*call.ID
+
+	// NoInit applies `withExec(noInit: true)` to converted ExecOps. This is
+	// used by dockerBuild(noInit=true) cutover wiring.
+	NoInit bool
 }
 
 // DefinitionToID converts an LLB definition and image config metadata to a
@@ -76,6 +80,7 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 		mainContextDirectory: opts.MainContextDirectoryID,
 		secretIDsByLLBID:     opts.SecretIDsByLLBID,
 		sshSocketIDsByLLBID:  opts.SSHSocketIDsByLLBID,
+		noInit:               opts.NoInit,
 	}
 	id, err := conv.convertOp(dag)
 	if err != nil {
@@ -94,6 +99,7 @@ type converter struct {
 	mainContextDirectory *call.ID
 	secretIDsByLLBID     map[string]*call.ID
 	sshSocketIDsByLLBID  map[string]*call.ID
+	noInit               bool
 }
 
 func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {
