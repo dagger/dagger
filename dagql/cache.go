@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -176,14 +177,21 @@ type cache struct {
 	egraphParents       []eqClassID
 	egraphRanks         []uint8
 
-	egraphClassTerms          map[eqClassID]map[egraphTermID]struct{}
-	egraphTerms               map[egraphTermID]*egraphTerm
-	egraphTermsByDigest       map[string]map[egraphTermID]struct{}
-	egraphTermsByOutputDigest map[string]map[egraphTermID]struct{}
-	egraphResultTerms         map[*sharedResult]map[egraphTermID]struct{}
+	egraphClassTerms    map[eqClassID]map[egraphTermID]struct{}
+	egraphTerms         map[egraphTermID]*egraphTerm
+	egraphTermsByDigest map[string]map[egraphTermID]struct{}
+	// Reverse index for fallback lookup by any output digest (primary output
+	// digest or extra digest).
+	egraphResultsByOutputDigest map[string]map[sharedResultID]struct{}
+	// Bidirectional term<->result association maps. A term may map to multiple
+	// materialized results; a result may map to multiple terms.
+	egraphResultsByTermID map[egraphTermID]map[sharedResultID]struct{}
+	egraphTermIDsByResult map[sharedResultID]map[egraphTermID]struct{}
+	resultsByID           map[sharedResultID]*sharedResult
 
-	nextEgraphClassID eqClassID
-	nextEgraphTermID  egraphTermID
+	nextEgraphClassID  eqClassID
+	nextEgraphTermID   egraphTermID
+	nextSharedResultID sharedResultID
 
 	// in-progress and completed opaque in-memory calls, keyed by call key
 	ongoingArbitraryCalls   map[string]*sharedArbitraryResult
@@ -204,9 +212,14 @@ type PostCallFunc = func(context.Context) error
 
 type OnReleaseFunc = func(context.Context) error
 
+type sharedResultID uint64
+
 // sharedResult holds cache-entry state and immutable payload shared by per-call Result values.
 type sharedResult struct {
 	cache *cache
+
+	// id is the stable cache-local identity for this materialized result.
+	id sharedResultID
 
 	// Immutable payload shared by all per-call Result values.
 	self    Typed
@@ -222,16 +235,12 @@ type sharedResult struct {
 	depOfPersistedResult bool
 	// deps tracks direct result dependencies used for transitive dependency
 	// liveness propagation in persistence experiments.
-	deps map[*sharedResult]struct{}
+	deps map[sharedResultID]struct{}
 
-	// Digest facts learned from the returned result ID, consumed by cache/egraph
-	// indexing at wait time. Kept as digest facts instead of retaining an ID.
+	// Output digests learned from the materialized result ID.
 	outputDigest       digest.Digest
 	outputExtraDigests []call.ExtraDigest
 	outputEffectIDs    []string
-	resultTermSelf     digest.Digest
-	resultTermInputs   []digest.Digest
-	hasResultTerm      bool
 
 	refCount int64
 }
@@ -376,6 +385,9 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 			hasValue:           r.shared.hasValue,
 			postCall:           r.shared.postCall,
 			safeToPersistCache: r.shared.safeToPersistCache,
+			outputDigest:       r.shared.outputDigest,
+			outputExtraDigests: slices.Clone(r.shared.outputExtraDigests),
+			outputEffectIDs:    slices.Clone(r.shared.outputEffectIDs),
 		}
 	} else {
 		r.shared = &sharedResult{}
@@ -554,7 +566,7 @@ func (c *cache) Size() int {
 	// TODO: Re-implement size accounting directly from egraph state instead of
 	// relying on mixed index-oriented counters.
 	total := len(c.ongoingCalls)
-	total += len(c.egraphResultTerms)
+	total += len(c.egraphTermIDsByResult)
 	total += len(c.ongoingArbitraryCalls)
 	total += len(c.completedArbitraryCalls)
 	return total
@@ -568,8 +580,9 @@ func (c *cache) EntryStats() CacheEntryStats {
 
 	var stats CacheEntryStats
 	stats.OngoingCalls = len(c.ongoingCalls)
-	stats.CompletedCalls = len(c.egraphResultTerms)
-	for res := range c.egraphResultTerms {
+	stats.CompletedCalls = len(c.egraphTermIDsByResult)
+	for resID := range c.egraphTermIDsByResult {
+		res := c.resultsByID[resID]
 		if res != nil && res.depOfPersistedResult {
 			stats.RetainedCalls++
 		}
@@ -610,6 +623,9 @@ func (c *cache) GetOrInitCall(
 			hasValue:           true,
 			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
+			outputDigest:       val.ID().Digest(),
+			outputExtraDigests: val.ID().ExtraDigests(),
+			outputEffectIDs:    val.ID().AllEffectIDs(),
 		}
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			detached.onRelease = onReleaser.OnRelease
@@ -631,7 +647,7 @@ func (c *cache) GetOrInitCall(
 		return perCall, nil
 	}
 
-	// Call identity is recipe-based; extra digests are output-equivalence facts.
+	// Call identity is recipe-based; extra digests are output-equivalence digests.
 	callKey := key.ID.Digest().String()
 	if ctx.Value(cacheContextKey{callKey, c}) != nil {
 		return nil, ErrCacheRecursiveCall
@@ -867,6 +883,12 @@ func (c *cache) wait(
 
 func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, sessionID string) error {
 	resWasCacheBacked := false
+	var (
+		resultID         *call.ID
+		resultTermSelf   digest.Digest
+		resultTermInputs []digest.Digest
+		hasResultTerm    bool
+	)
 
 	// Materialize shared result for this completed call.
 	oc.res = &sharedResult{
@@ -881,17 +903,6 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 			oc.res.hasValue = true
 			oc.res.postCall = oc.val.PostCall
 			oc.res.safeToPersistCache = oc.val.IsSafeToPersistCache()
-			oc.res.outputDigest = oc.val.ID().Digest()
-			oc.res.outputExtraDigests = oc.val.ID().ExtraDigests()
-			oc.res.outputEffectIDs = oc.val.ID().AllEffectIDs()
-
-			selfDigest, inputDigests, deriveErr := oc.val.ID().SelfDigestAndInputs()
-			if deriveErr != nil {
-				return fmt.Errorf("derive result term digests: %w", deriveErr)
-			}
-			oc.res.resultTermSelf = selfDigest
-			oc.res.resultTermInputs = inputDigests
-			oc.res.hasResultTerm = true
 
 			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
 				oc.res.onRelease = onReleaser.OnRelease
@@ -901,6 +912,24 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 			}
 		}
 	}
+	if oc.val != nil {
+		resultID = oc.val.ID()
+		if !resWasCacheBacked {
+			oc.res.outputDigest = resultID.Digest()
+			oc.res.outputExtraDigests = resultID.ExtraDigests()
+			oc.res.outputEffectIDs = resultID.AllEffectIDs()
+		}
+	}
+	if resultID != nil && !resWasCacheBacked {
+		selfDigest, inputDigests, deriveErr := resultID.SelfDigestAndInputs()
+		if deriveErr != nil {
+			return fmt.Errorf("derive result term digests: %w", deriveErr)
+		}
+		resultTermSelf = selfDigest
+		resultTermInputs = inputDigests
+		hasResultTerm = true
+	}
+
 	requestIDForIndex := requestID
 	// fix function calls that have side-effectful setSecret calls to be per session
 	if oc.persistToDB != nil && !oc.res.safeToPersistCache {
@@ -917,7 +946,15 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 	}
 
 	c.egraphMu.Lock()
-	c.indexWaitResultInEgraphLocked(requestIDForIndex, requestSelf, requestInputs, oc.res, resWasCacheBacked)
+	c.indexWaitResultInEgraphLocked(
+		requestIDForIndex,
+		requestSelf,
+		requestInputs,
+		resultTermSelf,
+		resultTermInputs,
+		hasResultTerm,
+		oc.res,
+	)
 	if oc.isPersistable {
 		c.markResultAsDepOfPersistedLocked(oc.res)
 	}
