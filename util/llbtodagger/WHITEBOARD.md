@@ -302,7 +302,7 @@ Last updated: 2026-02-28
   - [x] Do not implement SSH handling in this phase.
   - [x] Do not support remote frontend syntax pragma behavior (`#syntax=...`) in this phase.
 - [ ] Follow-up TODOs to keep visible for next iteration.
-  - [ ] TODO: restore/port `noInit` behavior in cutover path.
+  - [x] TODO: restore/port `noInit` behavior in cutover path.
   - [ ] TODO: implement secret mount/env support in llbtodagger exec conversion.
   - [ ] TODO: implement SSH mount support in llbtodagger exec conversion.
   - [ ] TODO: decide and implement SSH ID mapping semantics.
@@ -858,6 +858,48 @@ Last updated: 2026-02-28
 - Non-goals:
   - Do not expose `hostNetwork` publicly in SDK-generated APIs.
   - Do not broaden support for other Dockerfile network modes in this phase.
+
+### Phase 28: `dockerBuild(noInit)` Support in Hard-Cutover Path
+- Goal:
+  - Restore `dockerBuild(noInit: true)` behavior in the hard-cutover path (currently hard-erroring).
+  - Preserve prior semantics: Dockerfile `RUN` execs run without injected init when `noInit` is set.
+  - Keep default behavior unchanged when `noInit` is unset/false.
+
+- Design:
+  - Thread a conversion option through `llbtodagger.DefinitionToIDWithOptions` that means: set `withExec(noInit: true)` on converted ExecOps.
+  - Use that option only from `Container.Build(..., noInit bool, ...)` when caller requested `noInit`.
+  - Do not add new public schema fields; reuse existing `directory.dockerBuild` / `container.build` `noInit` arg.
+
+- Implementation checklist:
+  - [x] llbtodagger options + mapping:
+    - [x] Add `NoInit bool` (or equivalently named) to `DefinitionToIDOptions`.
+    - [x] Thread option into converter state.
+    - [x] In `convertExec`, append `withExec(noInit: true)` when option is enabled.
+    - [x] Keep all existing exec mappings (`insecureRootCapabilities`, `noNetwork`, `hostNetwork`) intact and composable.
+  - [x] hard-cutover Build wiring:
+    - [x] Remove the current early hard-error: `dockerBuild noInit is not supported in hard-cutover path yet`.
+    - [x] Pass `noInit` from `Container.Build` into `llbtodagger.DefinitionToIDWithOptions`.
+  - [x] Tests:
+    - [x] Unit: llbtodagger exec conversion includes `withExec(noInit: true)` when option is set.
+    - [x] Unit: same conversion omits `noInit` when option is unset.
+    - [x] Dockerfile conversion unit: with option enabled, converted ID includes `withExec(noInit: true)` for `RUN`.
+    - [x] Integration: `ContainerSuite/TestExecInit/disable automatic init in dockerfile build` passes in hard-cutover mode.
+    - [x] Optional integration: llbtodagger E2E test asserts encoded ID includes `withExec.noInit == true` when converter option is enabled.
+    - [x] Run focused integration command(s) using `skills/cache-expert/references/debugging.md` command shape.
+  - [x] Whiteboard bookkeeping:
+    - [x] Mark Phase 15 follow-up TODO (`restore/port noInit behavior in cutover path`) done after landing.
+    - [x] Record any behavior differences vs legacy path if discovered.
+
+- Status note:
+  - `dockerBuild(noInit: true)` is now supported in hard-cutover by passing conversion option `NoInit`.
+  - Converted ExecOps now include `withExec(noInit: true)` when requested.
+  - Focused validation passed:
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestContainer/TestExecInit'`
+    - `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestLLBToDagger/TestLoadContainerFromConvertedIDRunNoInitOption'`
+
+- Non-goals:
+  - Do not change default init behavior for plain `withExec` unless `noInit` is explicitly requested.
+  - Do not change Dockerfile frontend lowering behavior; this phase is conversion/plumbing only.
 
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |

@@ -675,10 +675,6 @@ func (container *Container) Build(
 ) (*Container, error) {
 	container = container.Clone()
 
-	if noInit {
-		return nil, fmt.Errorf("dockerBuild noInit is not supported in hard-cutover path yet")
-	}
-
 	dockerfilePath := dockerfile
 	if dockerfilePath == "" {
 		dockerfilePath = defaultDockerfileName
@@ -763,6 +759,7 @@ func (container *Container) Build(
 		MainContextDirectoryID: contextDirID,
 		SecretIDsByLLBID:       secretIDsByLLBID,
 		SSHSocketIDsByLLBID:    sshSocketIDsByLLBID,
+		NoInit:                 noInit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)

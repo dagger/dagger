@@ -211,6 +211,23 @@ RUN --network=host sh -c 'echo hello'
 	require.Equal(t, true, hostNetwork.Value().ToInput())
 }
 
+func TestDefinitionToIDDockerfileRunNoInitOptionMapsToWithExecNoInit(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToIDWithDefinitionOptions(t, `
+FROM alpine:3.19
+RUN sh -c 'echo hello'
+`, DefinitionToIDOptions{
+		NoInit: true,
+	})
+
+	withExec := findFieldInChain(id, "withExec")
+	require.NotNil(t, withExec)
+	noInit := withExec.Arg("noInit")
+	require.NotNil(t, noInit)
+	require.Equal(t, true, noInit.Value().ToInput())
+}
+
 func TestDefinitionToIDDockerfileCopyFromContext(t *testing.T) {
 	t.Parallel()
 
@@ -630,6 +647,20 @@ func convertDockerfileToIDWithOpt(
 
 	def, img := dockerfileToDefinition(t, dockerfile, optFns...)
 	id, err := DefinitionToID(def, img)
+	require.NoError(t, err)
+	return id
+}
+
+func convertDockerfileToIDWithDefinitionOptions(
+	t *testing.T,
+	dockerfile string,
+	idOpts DefinitionToIDOptions,
+	optFns ...func(*dockerfile2llb.ConvertOpt),
+) *call.ID {
+	t.Helper()
+
+	def, img := dockerfileToDefinition(t, dockerfile, optFns...)
+	id, err := DefinitionToIDWithOptions(def, img, idOpts)
 	require.NoError(t, err)
 	return id
 }
