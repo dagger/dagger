@@ -153,6 +153,21 @@ CMD goenv
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
+	t.Run("copy-directory-to-explicit-destination-path", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.
+			WithNewFile("SHA256SUMS.d/buildkit-v0.1", "sha256-checksum-line").
+			WithNewFile("Dockerfile",
+				`FROM `+alpineImage+`
+COPY ./SHA256SUMS.d/ /SHA256SUMS.d
+RUN test -f /SHA256SUMS.d/buildkit-v0.1
+CMD ["cat", "/SHA256SUMS.d/buildkit-v0.1"]
+`)
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "sha256-checksum-line", out)
+	})
+
 	t.Run("with build args", func(ctx context.Context, t *testctx.T) {
 		dir := baseDir.
 			WithNewFile("Dockerfile",

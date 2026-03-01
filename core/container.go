@@ -938,6 +938,8 @@ func (container *Container) WithDirectory(
 	doNotCreateDestPath bool,
 	attemptUnpackDockerCompatibility bool,
 	requiredSourcePath string,
+	destPathHintIsDirectory bool,
+	copySourcePathContentsWhenDir bool,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -958,7 +960,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithDirectory(ctx, subdir, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath)
+		return container.WithDirectory(ctx, subdir, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
 	}
 
 	args := []dagql.NamedInput{
@@ -994,6 +996,12 @@ func (container *Container) WithDirectory(
 	}
 	if requiredSourcePath != "" {
 		args = append(args, dagql.NamedInput{Name: "requiredSourcePath", Value: dagql.String(requiredSourcePath)})
+	}
+	if destPathHintIsDirectory {
+		args = append(args, dagql.NamedInput{Name: "destPathHintIsDirectory", Value: dagql.Boolean(true)})
+	}
+	if copySourcePathContentsWhenDir {
+		args = append(args, dagql.NamedInput{Name: "copySourcePathContentsWhenDir", Value: dagql.Boolean(true)})
 	}
 
 	//nolint:dupl
