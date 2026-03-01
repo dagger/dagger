@@ -572,22 +572,22 @@ func TestCacheResultRelease(t *testing.T) {
 		assert.NilError(t, err)
 
 		assert.Equal(t, 0, len(c.ongoingCalls))
-		assert.Equal(t, 2, len(c.egraphResultTerms))
+		assert.Equal(t, 2, len(c.egraphTermIDsByResult))
 
 		err = res2.Release(ctx)
 		assert.NilError(t, err)
 		assert.Equal(t, 0, len(c.ongoingCalls))
-		assert.Equal(t, 1, len(c.egraphResultTerms))
+		assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 		err = res1A.Release(ctx)
 		assert.NilError(t, err)
 		assert.Equal(t, 0, len(c.ongoingCalls))
-		assert.Equal(t, 1, len(c.egraphResultTerms))
+		assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 		err = res1B.Release(ctx)
 		assert.NilError(t, err)
 		assert.Equal(t, 0, len(c.ongoingCalls))
-		assert.Equal(t, 0, len(c.egraphResultTerms))
+		assert.Equal(t, 0, len(c.egraphTermIDsByResult))
 	})
 
 	t.Run("onRelease", func(t *testing.T) {
@@ -1513,7 +1513,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 	//       \-> right2
 	//     join2(left2,right2)
 	//
-	//   equivalence fact introduced later:
+	//   equivalence digest introduced later:
 	//     f1 ~ f2   (shared extra digest)
 	//
 	// Expected repair/propagation:
@@ -1951,36 +1951,36 @@ func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 
 	// Five unique shared results are alive: f1, f2, g, h, j.
 	assert.Equal(t, 5, c.Size())
-	assert.Equal(t, 5, len(c.egraphResultTerms))
+	assert.Equal(t, 5, len(c.egraphTermIDsByResult))
 
 	// Release in intentionally mixed order to verify ref-count/e-graph cleanup.
 	assert.NilError(t, g2Res.Release(ctx))
 	assert.Equal(t, 5, c.Size())
-	assert.Equal(t, 5, len(c.egraphResultTerms))
+	assert.Equal(t, 5, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, h1Res.Release(ctx))
 	assert.Equal(t, 5, c.Size())
-	assert.Equal(t, 5, len(c.egraphResultTerms))
+	assert.Equal(t, 5, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, f1Res.Release(ctx))
 	assert.Equal(t, 4, c.Size())
-	assert.Equal(t, 4, len(c.egraphResultTerms))
+	assert.Equal(t, 4, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, j2Res.Release(ctx))
 	assert.Equal(t, 4, c.Size())
-	assert.Equal(t, 4, len(c.egraphResultTerms))
+	assert.Equal(t, 4, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, g1Res.Release(ctx))
 	assert.Equal(t, 3, c.Size())
-	assert.Equal(t, 3, len(c.egraphResultTerms))
+	assert.Equal(t, 3, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, h2Res.Release(ctx))
 	assert.Equal(t, 2, c.Size())
-	assert.Equal(t, 2, len(c.egraphResultTerms))
+	assert.Equal(t, 2, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, f2Res.Release(ctx))
 	assert.Equal(t, 1, c.Size())
-	assert.Equal(t, 1, len(c.egraphResultTerms))
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, j1Res.Release(ctx))
 	assert.Equal(t, 0, c.Size())
@@ -1991,7 +1991,7 @@ func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 	assert.Assert(t, c.egraphClassTerms == nil)
 	assert.Assert(t, c.egraphTerms == nil)
 	assert.Assert(t, c.egraphTermsByDigest == nil)
-	assert.Assert(t, c.egraphResultTerms == nil)
+	assert.Assert(t, c.egraphTermIDsByResult == nil)
 	assert.Equal(t, eqClassID(0), c.nextEgraphClassID)
 	assert.Equal(t, egraphTermID(0), c.nextEgraphTermID)
 }
@@ -2352,15 +2352,15 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	resultOutputEq := resultID.ContentPreferredDigest().String()
 
 	assert.Assert(t, storageKey != resultOutputEq)
-	assert.Equal(t, 1, len(c.egraphResultTerms))
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 	assert.Assert(t, len(c.egraphTerms) > 0)
 	assert.Assert(t, c.Size() > 0)
 
 	assert.NilError(t, res.Release(ctx))
 	assert.Equal(t, 0, len(c.ongoingCalls))
-	assert.Equal(t, 0, len(c.egraphResultTerms))
+	assert.Equal(t, 0, len(c.egraphTermIDsByResult))
 	assert.Equal(t, 0, len(c.egraphTerms))
-	assert.Equal(t, 0, len(c.egraphResultTerms))
+	assert.Equal(t, 0, len(c.egraphTermIDsByResult))
 }
 
 func TestCacheArrayResultRoundTrip(t *testing.T) {
@@ -2472,13 +2472,13 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 1, initCalls)
 	assert.Assert(t, res2.HitCache())
-	assert.Equal(t, 1, len(c.egraphResultTerms))
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, res1.Release(ctx))
 	assert.NilError(t, res2.Release(ctx))
 	// Persist-safe only affects DB metadata persistence; in-memory cache entries are
 	// released when refs drain.
-	assert.Equal(t, 0, len(c.egraphResultTerms))
+	assert.Equal(t, 0, len(c.egraphTermIDsByResult))
 	assert.Equal(t, 0, c.Size())
 }
 
@@ -2615,11 +2615,11 @@ func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 1, len(c.egraphResultTerms))
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, res.Release(ctx))
 	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 0, len(c.egraphResultTerms))
+	assert.Equal(t, 0, len(c.egraphTermIDsByResult))
 	assert.Equal(t, 0, c.Size())
 }
 
@@ -2661,7 +2661,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.NilError(t, resA.Release(ctx))
 	assert.NilError(t, resB.Release(ctx))
 	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 1, len(c.egraphResultTerms))
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 	initCallsAfter := 0
 	resC, err := c.GetOrInitCall(ctx, CacheKey{

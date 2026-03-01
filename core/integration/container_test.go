@@ -5497,13 +5497,7 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	require.NoError(t, err)
 	require.NoError(t, c2.Close())
 
-	// TODO: once https://github.com/dagger/dagger/issues/8955 is fixed, enable this test, and delete the tests below
-	// require.Equal(t, 1, int(numConnections.Load()), "socket should be accessed exactly once")
-
-	if int(numConnections.Load()) == 1 {
-		t.Errorf("Congrats you fixed the bug; please enable the above test and delete this line")
-	}
-	require.Positive(t, int(numConnections.Load()), "the socket was never connected to")
+	require.Equal(t, 1, int(numConnections.Load()), "socket should be accessed exactly once")
 }
 
 func (ContainerSuite) TestHealthcheckIsPublished(ctx context.Context, t *testctx.T) {
