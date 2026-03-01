@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dagger/dagger/engine/config"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -16,6 +18,16 @@ import (
 
 	"github.com/dagger/dagger/core"
 )
+
+type dagqlCachePrunePolicy struct {
+	All           bool
+	Filters       []string
+	KeepDuration  time.Duration
+	ReservedSpace int64
+	MaxUsedSpace  int64
+	MinFreeSpace  int64
+	TargetSpace   int64
+}
 
 func (srv *Server) EngineLocalCachePolicy() *bkclient.PruneInfo {
 	return srv.workerDefaultGCPolicy
@@ -74,11 +86,15 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 	}()
 
 	dstat, _ := disk.GetDiskStat(srv.rootDir)
-	pruneOpts, err := resolveEngineLocalCachePruneOptions(srv.baseWorker.GCPolicy(), opts, dstat)
+	prunePolicies, err := resolveEngineLocalCachePrunePolicies(
+		dagqlCachePrunePoliciesFromBuildkit(srv.baseWorker.GCPolicy()),
+		opts,
+		dstat,
+	)
 	if err != nil {
 		return nil, err
 	}
-	err = srv.baseWorker.Prune(ctx, ch, pruneOpts...)
+	err = srv.baseWorker.Prune(ctx, ch, buildkitPruneInfosFromDagqlPolicies(prunePolicies)...)
 	if err != nil {
 		return nil, fmt.Errorf("worker failed to prune local cache: %w", err)
 	}
@@ -124,23 +140,64 @@ func trimmedPruneOpts(opts core.EngineCachePruneOptions) (maxUsedSpace, reserved
 		strings.TrimSpace(opts.TargetSpace)
 }
 
-func resolveEngineLocalCachePruneOptions(defaultPolicy []bkclient.PruneInfo, opts core.EngineCachePruneOptions, dstat disk.DiskStat) ([]bkclient.PruneInfo, error) {
-	pruneOpts := []bkclient.PruneInfo{{All: true}}
+func dagqlCachePrunePoliciesFromBuildkit(pruneOpts []bkclient.PruneInfo) []dagqlCachePrunePolicy {
+	policies := make([]dagqlCachePrunePolicy, 0, len(pruneOpts))
+	for _, policy := range pruneOpts {
+		policies = append(policies, dagqlCachePrunePolicy{
+			All:           policy.All,
+			Filters:       slices.Clone(policy.Filter),
+			KeepDuration:  policy.KeepDuration,
+			ReservedSpace: policy.ReservedSpace,
+			MaxUsedSpace:  policy.MaxUsedSpace,
+			MinFreeSpace:  policy.MinFreeSpace,
+			TargetSpace:   policy.TargetSpace,
+		})
+	}
+	return policies
+}
+
+func buildkitPruneInfosFromDagqlPolicies(policies []dagqlCachePrunePolicy) []bkclient.PruneInfo {
+	pruneOpts := make([]bkclient.PruneInfo, 0, len(policies))
+	for _, policy := range policies {
+		pruneOpts = append(pruneOpts, bkclient.PruneInfo{
+			All:           policy.All,
+			Filter:        slices.Clone(policy.Filters),
+			KeepDuration:  policy.KeepDuration,
+			ReservedSpace: policy.ReservedSpace,
+			MaxUsedSpace:  policy.MaxUsedSpace,
+			MinFreeSpace:  policy.MinFreeSpace,
+			TargetSpace:   policy.TargetSpace,
+		})
+	}
+	return pruneOpts
+}
+
+func cloneDagqlCachePrunePolicies(in []dagqlCachePrunePolicy) []dagqlCachePrunePolicy {
+	out := make([]dagqlCachePrunePolicy, 0, len(in))
+	for _, policy := range in {
+		policy.Filters = slices.Clone(policy.Filters)
+		out = append(out, policy)
+	}
+	return out
+}
+
+func resolveEngineLocalCachePrunePolicies(defaultPolicy []dagqlCachePrunePolicy, opts core.EngineCachePruneOptions, dstat disk.DiskStat) ([]dagqlCachePrunePolicy, error) {
+	prunePolicies := []dagqlCachePrunePolicy{{All: true}}
 	if opts.UseDefaultPolicy && len(defaultPolicy) > 0 {
-		// Copy to avoid mutating the worker policy if per-call overrides are set.
-		pruneOpts = append([]bkclient.PruneInfo(nil), defaultPolicy...)
+		// Copy to avoid mutating the default policy if per-call overrides are set.
+		prunePolicies = cloneDagqlCachePrunePolicies(defaultPolicy)
 	}
 
 	maxUsedSpace, reservedSpace, minFreeSpace, targetSpace := trimmedPruneOpts(opts)
 	if maxUsedSpace != "" || reservedSpace != "" || minFreeSpace != "" || targetSpace != "" {
-		if err := applyEngineCachePruneSpaceOverrides(pruneOpts, dstat, maxUsedSpace, reservedSpace, minFreeSpace, targetSpace); err != nil {
+		if err := applyEngineCachePruneSpaceOverrides(prunePolicies, dstat, maxUsedSpace, reservedSpace, minFreeSpace, targetSpace); err != nil {
 			return nil, err
 		}
 	}
-	return pruneOpts, nil
+	return prunePolicies, nil
 }
 
-func applyEngineCachePruneSpaceOverrides(pruneOpts []bkclient.PruneInfo, dstat disk.DiskStat, maxUsedSpace, reservedSpace, minFreeSpace, targetSpace string) error {
+func applyEngineCachePruneSpaceOverrides(prunePolicies []dagqlCachePrunePolicy, dstat disk.DiskStat, maxUsedSpace, reservedSpace, minFreeSpace, targetSpace string) error {
 	var (
 		maxUsedSpaceBytes  int64
 		hasMaxUsedSpace    bool
@@ -182,18 +239,18 @@ func applyEngineCachePruneSpaceOverrides(pruneOpts []bkclient.PruneInfo, dstat d
 		hasTargetSpace = true
 	}
 
-	for i := range pruneOpts {
+	for i := range prunePolicies {
 		if hasMaxUsedSpace {
-			pruneOpts[i].MaxUsedSpace = maxUsedSpaceBytes
+			prunePolicies[i].MaxUsedSpace = maxUsedSpaceBytes
 		}
 		if hasReservedSpace {
-			pruneOpts[i].ReservedSpace = reservedSpaceBytes
+			prunePolicies[i].ReservedSpace = reservedSpaceBytes
 		}
 		if hasMinFreeSpace {
-			pruneOpts[i].MinFreeSpace = minFreeSpaceBytes
+			prunePolicies[i].MinFreeSpace = minFreeSpaceBytes
 		}
 		if hasTargetSpace {
-			pruneOpts[i].TargetSpace = targetSpaceBytes
+			prunePolicies[i].TargetSpace = targetSpaceBytes
 		}
 	}
 
@@ -242,6 +299,10 @@ func (srv *Server) gc() {
 }
 
 func getGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []bkclient.PruneInfo {
+	return buildkitPruneInfosFromDagqlPolicies(getDagqlGCPolicy(cfg, bkcfg, root))
+}
+
+func getDagqlGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []dagqlCachePrunePolicy {
 	if cfg.GC.Enabled != nil && !*cfg.GC.Enabled {
 		return nil
 	}
@@ -259,10 +320,10 @@ func getGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []bkcl
 		policies = defaultGCPolicy(cfg, bkcfg, dstat)
 	}
 
-	out := make([]bkclient.PruneInfo, 0, len(bkcfg.GCPolicy))
+	out := make([]dagqlCachePrunePolicy, 0, len(policies))
 	for _, policy := range policies {
-		info := bkclient.PruneInfo{
-			Filter:        policy.Filters,
+		info := dagqlCachePrunePolicy{
+			Filters:       slices.Clone(policy.Filters),
 			All:           policy.All,
 			KeepDuration:  policy.KeepDuration.Duration,
 			ReservedSpace: policy.ReservedSpace.AsBytes(dstat),
@@ -281,12 +342,22 @@ func getGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []bkcl
 }
 
 func getDefaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) *bkclient.PruneInfo {
+	policy := getDefaultDagqlGCPolicy(cfg, bkcfg, root)
+	if policy == nil {
+		return nil
+	}
+	out := buildkitPruneInfosFromDagqlPolicies([]dagqlCachePrunePolicy{*policy})
+	return &out[0]
+}
+
+func getDefaultDagqlGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) *dagqlCachePrunePolicy {
 	// the last policy is the default one
-	policies := getGCPolicy(cfg, bkcfg, root)
+	policies := getDagqlGCPolicy(cfg, bkcfg, root)
 	if len(policies) == 0 {
 		return nil
 	}
-	return &policies[len(policies)-1]
+	policy := policies[len(policies)-1]
+	return &policy
 }
 
 func defaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, dstat disk.DiskStat) []config.GCPolicy {
