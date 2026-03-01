@@ -58,6 +58,24 @@ CMD ["cat", "/work/msg.txt"]
 	require.Equal(t, "hello-from-llb", strings.TrimSpace(out))
 }
 
+func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDWorkdirNamedUserOwnership(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	contextDir := writeDockerContext(t, nil)
+
+	ctr, _, _ := convertDockerfileToLoadedContainer(ctx, t, c, contextDir, `
+FROM `+alpineImage+`
+RUN addgroup -g 4321 appgrp && adduser -D -u 1234 -G appgrp app
+USER app:appgrp
+WORKDIR /work
+CMD ["sh", "-lc", "stat -c '%u:%g' /work"]
+`)
+
+	out, err := ctr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1234:4321", strings.TrimSpace(out))
+}
+
 func (LLBToDaggerSuite) TestLoadContainerFromConvertedIDCopyChmod(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

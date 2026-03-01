@@ -726,6 +726,38 @@ Last updated: 2026-02-28
   - Do not rework all copy semantics; only compatibility path for `AttemptUnpackDockerCompatibility`.
   - Do not add Dockerfile parsing logic in llbtodagger (LLB-driven only).
 
+### Phase 24: Conversion-Only Named Ownership for `mkdir` (Dockerfile `WORKDIR` path)
+- Goal:
+  - Support named-owner `FileActionMkDir` in llbtodagger without adding new Dagger schema APIs.
+  - Unblock Dockerfile cases where `USER <name>` precedes `WORKDIR` and BuildKit emits named-owner mkdir actions.
+
+- Approach (conversion-only):
+  - Keep existing direct directory path for numeric/no-owner mkdir.
+  - For named owner mkdir, route through container `withDirectory` so name resolution uses existing container `/etc/passwd` and `/etc/group` behavior.
+
+- Implementation checklist:
+  - [x] Converter mkdir path update:
+    - [x] Update `applyMkdir` to accept/return container context like copy path.
+    - [x] If owner is named and container context exists:
+      - [x] rebind container to current directory (`withRootfs(directory: baseID)`).
+      - [x] create synthetic single-empty-directory source (`directory().withNewDirectory(...).directory(...)`).
+      - [x] call container `withDirectory(path, source, owner, permissions)`.
+      - [x] return updated container rootfs as next directory output and updated container context.
+    - [x] If owner is named and no container context exists, keep strict unsupported error.
+  - [x] Keep semantics for:
+    - [x] `makeParents=true` required (no behavior change for unsupported `makeParents=false`).
+    - [x] timestamp override remains unsupported.
+  - [x] Tests:
+    - [x] unit: named-owner mkdir without container context -> unsupported.
+    - [x] unit: named-owner mkdir with container context -> emits container `withDirectory` (not unsupported).
+    - [x] dockerfile unit: `USER <name>` + `WORKDIR` converts successfully via container-level path.
+    - [x] integration: Dockerfile with named user + WORKDIR yields expected directory ownership after load/sync.
+    - [x] integration command shape follows `skills/cache-expert/references/debugging.md`.
+
+- Non-goals:
+  - Do not add new public or internal schema APIs for this phase.
+  - Do not attempt to support non-canonical malformed LLB variants beyond Dockerfile-relevant behavior.
+
 ## Initial Op Coverage Matrix (Planning Draft)
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
@@ -769,7 +801,7 @@ Last updated: 2026-02-28
 - `FileOp` copy actions with `alwaysReplaceExistingDestPaths`.
 - `FileOp` mkdir without `makeParents=true`.
 - `FileOp` mkfile with non-UTF8 content.
-- Named ownership on `mkdir` file actions (Dockerfile `WORKDIR` path when `USER` is named).
+- Named ownership on `mkdir` actions when no container context is available.
 - Named ownership on `mkfile` file actions.
 - Named ownership on copy actions when no container context is available.
 
@@ -780,11 +812,6 @@ Last updated: 2026-02-28
 #### HIGH
 
 #### MEDIUM
-
-- Named ownership for `mkdir` actions is unsupported (Dockerfile `WORKDIR` path when `USER` is named).
-  - BuildKit encodes named ownership with an input index (`UserOpt_ByName.Input`) and resolves names against that input's filesystem.
-  - Resolution reads `/etc/passwd` and `/etc/group` from the mounted input used for the action (the stage rootfs context for `WORKDIR`-driven `mkdir`).
-  - Supporting this faithfully in llbtodagger `mkdir` mapping requires container-context name resolution at that action point (or equivalent API behavior), not plain directory-only `chown`.
 
 - Named ownership for copy actions without container context is unsupported.
 
@@ -849,6 +876,7 @@ Last updated: 2026-02-28
 - File actions other than `mkdir`, `mkfile`, `rm`, `copy` are unsupported.
 - `mkdir` without `makeParents=true` is unsupported.
 - `mkdir` timestamp override is unsupported.
+- Named ownership for `mkdir` actions without container context is unsupported.
 - Named ownership for `mkfile` actions is unsupported.
 - `mkfile` timestamp override is unsupported.
 - `mkfile` non-UTF8/binary payload is unsupported.

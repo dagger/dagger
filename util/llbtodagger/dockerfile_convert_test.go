@@ -294,6 +294,31 @@ COPY --chown=auser:agroup input.txt /app/out.txt
 	require.Equal(t, "input.txt", fileCall.Arg("path").Value().ToInput())
 }
 
+func TestDefinitionToIDDockerfileWorkdirNamedUserUsesContainerMkdirCompatibilityPath(t *testing.T) {
+	t.Parallel()
+
+	id := convertDockerfileToID(t, `
+FROM alpine:3.19
+RUN addgroup -g 4321 appgrp && adduser -D -u 1234 -G appgrp app
+USER app:appgrp
+WORKDIR /work
+`)
+
+	fields := fieldsFromRoot(id)
+	require.NotEmpty(t, fields)
+	require.Equal(t, "container", fields[0])
+
+	mkdirCompat := findCallByStringArg(id, "withDirectory", "owner", "app:appgrp")
+	require.NotNil(t, mkdirCompat)
+	require.Equal(t, "/work", mkdirCompat.Arg("path").Value().ToInput())
+	require.EqualValues(t, 0o755, mkdirCompat.Arg("permissions").Value().ToInput())
+
+	sourceID := argIDFromCall(t, mkdirCompat, "source")
+	sourceDir := findFieldInChain(sourceID, "directory")
+	require.NotNil(t, sourceDir)
+	require.Equal(t, mkdirCompatSyntheticSourcePath, sourceDir.Arg("path").Value().ToInput())
+}
+
 func TestDefinitionToIDDockerfileAddHTTP(t *testing.T) {
 	t.Parallel()
 
