@@ -45,6 +45,10 @@ type Cache interface {
 	// Returns a breakdown of cache entries by internal index.
 	EntryStats() CacheEntryStats
 
+	// Returns a deterministic snapshot of cache usage entries used for pruning
+	// policy/accounting.
+	UsageEntries() []CacheUsageEntry
+
 	// Run a blocking loop that periodically garbage collects expired entries from the cache db.
 	GCLoop(context.Context)
 }
@@ -86,6 +90,16 @@ type CacheEntryStats struct {
 	CompletedCallsByContent int
 	OngoingArbitrary        int
 	CompletedArbitrary      int
+}
+
+type CacheUsageEntry struct {
+	ID                        string
+	Description               string
+	RecordType                string
+	SizeBytes                 int64
+	CreatedTimeUnixNano       int64
+	MostRecentUseTimeUnixNano int64
+	ActivelyUsed              bool
 }
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
@@ -223,6 +237,13 @@ type sharedResult struct {
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
 	expiresAtUnix int64
+
+	// Prune-accounting metadata. Size is currently a temporary approximation.
+	createdAtUnixNano  int64
+	lastUsedAtUnixNano int64
+	sizeEstimateBytes  int64
+	description        string
+	recordType         string
 
 	refCount int64
 }
@@ -369,6 +390,11 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 			outputDigest:       r.shared.outputDigest,
 			outputExtraDigests: slices.Clone(r.shared.outputExtraDigests),
 			outputEffectIDs:    slices.Clone(r.shared.outputEffectIDs),
+			createdAtUnixNano:  r.shared.createdAtUnixNano,
+			lastUsedAtUnixNano: r.shared.lastUsedAtUnixNano,
+			sizeEstimateBytes:  r.shared.sizeEstimateBytes,
+			description:        r.shared.description,
+			recordType:         r.shared.recordType,
 		}
 	} else {
 		r.shared = &sharedResult{}
@@ -579,6 +605,63 @@ func (c *cache) EntryStats() CacheEntryStats {
 	return stats
 }
 
+func (c *cache) UsageEntries() []CacheUsageEntry {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+
+	return c.usageEntriesLocked()
+}
+
+func (c *cache) usageEntriesLocked() []CacheUsageEntry {
+	entries := make([]CacheUsageEntry, 0, len(c.resultsByID))
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		createdAt := res.createdAtUnixNano
+		lastUsedAt := res.lastUsedAtUnixNano
+		if createdAt == 0 {
+			createdAt = lastUsedAt
+		}
+		if lastUsedAt == 0 {
+			lastUsedAt = createdAt
+		}
+		recordType := res.recordType
+		if recordType == "" {
+			recordType = "dagql.unknown"
+		}
+		description := res.description
+		if description == "" {
+			description = fmt.Sprintf("dagql cache result %d", resID)
+		}
+		sizeBytes := res.sizeEstimateBytes
+		if sizeBytes < 0 {
+			sizeBytes = 0
+		}
+		entries = append(entries, CacheUsageEntry{
+			ID:                        fmt.Sprintf("dagql.result.%d", resID),
+			Description:               description,
+			RecordType:                recordType,
+			SizeBytes:                 sizeBytes,
+			CreatedTimeUnixNano:       createdAt,
+			MostRecentUseTimeUnixNano: lastUsedAt,
+			ActivelyUsed:              atomic.LoadInt64(&res.refCount) > 0,
+		})
+	}
+
+	slices.SortFunc(entries, func(a, b CacheUsageEntry) int {
+		switch {
+		case a.ID < b.ID:
+			return -1
+		case a.ID > b.ID:
+			return 1
+		default:
+			return 0
+		}
+	})
+	return entries
+}
+
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
 func (c *cache) GetOrInitCall(
 	ctx context.Context,
@@ -741,6 +824,9 @@ func (c *cache) wait(
 	}
 
 	atomic.AddInt64(&oc.res.refCount, 1)
+	c.egraphMu.Lock()
+	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
+	c.egraphMu.Unlock()
 
 	retID := requestID
 	for _, extra := range oc.res.outputExtraDigests {
@@ -781,6 +867,7 @@ func (c *cache) wait(
 
 func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, sessionID string) error {
 	resWasCacheBacked := false
+	now := time.Now()
 	var (
 		resultID         *call.ID
 		resultTermSelf   digest.Digest
@@ -810,13 +897,45 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 			}
 		}
 	}
+	requestIDForIndex := requestID
+	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
+	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
+		requestIDForIndex = requestID.With(call.WithAppendedImplicitInputs(call.NewArgument(
+			"sessionID",
+			call.NewLiteralString(sessionID),
+			false,
+		)))
+	}
+
+	if oc.res.createdAtUnixNano == 0 {
+		oc.res.createdAtUnixNano = now.UnixNano()
+	}
+	touchSharedResultLastUsed(oc.res, now.UnixNano())
+	if oc.res.recordType == "" {
+		oc.res.recordType = requestIDForIndex.Name()
+	}
+	if oc.res.recordType == "" {
+		oc.res.recordType = "dagql.unknown"
+	}
+	if oc.res.description == "" {
+		oc.res.description = requestIDForIndex.Path()
+	}
+	if oc.res.description == "" {
+		oc.res.description = requestIDForIndex.DisplaySelf()
+	}
+	estimatedSize := estimateSharedResultSizeBytes(requestIDForIndex, oc.res)
+	if estimatedSize > oc.res.sizeEstimateBytes {
+		// TODO: replace this approximation with concrete snapshot/object accounting.
+		oc.res.sizeEstimateBytes = estimatedSize
+	}
+
 	// TTL merge policy for shared results:
 	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
 	// - if any writer provides TTL, we keep the earliest non-zero expiry.
 	// - 0 only remains when all writers are 0.
 	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		oc.res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(time.Now().Unix(), oc.ttlSeconds),
+		candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds),
 	)
 	if oc.val != nil {
 		resultID = oc.val.ID()
@@ -834,16 +953,6 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 		resultTermSelf = selfDigest
 		resultTermInputs = inputDigests
 		hasResultTerm = true
-	}
-
-	requestIDForIndex := requestID
-	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
-	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
-		requestIDForIndex = requestID.With(call.WithAppendedImplicitInputs(call.NewArgument(
-			"sessionID",
-			call.NewLiteralString(sessionID),
-			false,
-		)))
 	}
 
 	requestSelf, requestInputs, err := requestIDForIndex.SelfDigestAndInputs()
@@ -888,4 +997,24 @@ func mergeSharedResultExpiryUnix(existingExpiresAtUnix, candidateExpiresAtUnix i
 	default:
 		return existingExpiresAtUnix
 	}
+}
+
+func estimateSharedResultSizeBytes(requestID *call.ID, res *sharedResult) int64 {
+	var size int64 = 1
+	if requestID != nil {
+		size += int64(len(requestID.Path()))
+		size += int64(len(requestID.Name()))
+	}
+	if res == nil {
+		return size
+	}
+	size += int64(len(res.outputDigest))
+	for _, extra := range res.outputExtraDigests {
+		size += int64(len(extra.Label))
+		size += int64(len(extra.Digest))
+	}
+	for _, effectID := range res.outputEffectIDs {
+		size += int64(len(effectID))
+	}
+	return size
 }

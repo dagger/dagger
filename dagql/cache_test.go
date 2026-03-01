@@ -2677,6 +2677,133 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.NilError(t, resC.Release(ctx))
 }
 
+func TestCacheUsageEntriesIncludeRetainedPersistedResults(t *testing.T) {
+	t.Parallel()
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("usage-retained-persisted")
+	ctxSession := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "usage-retained-client",
+		SessionID: "usage-retained-session",
+	})
+
+	sc := NewSessionCache(c)
+	res, err := sc.GetOrInitCall(ctxSession, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 123), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !res.HitCache())
+
+	entries := c.UsageEntries()
+	assert.Equal(t, 1, len(entries))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+	assert.Assert(t, entries[0].ActivelyUsed)
+	assert.Assert(t, entries[0].CreatedTimeUnixNano > 0)
+	assert.Assert(t, entries[0].MostRecentUseTimeUnixNano > 0)
+	assert.Assert(t, entries[0].SizeBytes > 0)
+	assert.Assert(t, entries[0].Description != "")
+	assert.Assert(t, entries[0].RecordType != "")
+
+	assert.NilError(t, sc.ReleaseAndClose(ctxSession))
+	entries = c.UsageEntries()
+	assert.Equal(t, 1, len(entries))
+	assert.Assert(t, !entries[0].ActivelyUsed)
+	assert.Assert(t, entries[0].MostRecentUseTimeUnixNano >= entries[0].CreatedTimeUnixNano)
+}
+
+func TestCacheUsageEntriesTracksMostRecentUseAndInUse(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("usage-most-recent-use")
+	res1, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 17), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !res1.HitCache())
+
+	entriesBefore := c.UsageEntries()
+	assert.Equal(t, 1, len(entriesBefore))
+	entryBefore := entriesBefore[0]
+	assert.Assert(t, entryBefore.ActivelyUsed)
+
+	time.Sleep(2 * time.Millisecond)
+
+	res2, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res2.HitCache())
+	assert.Equal(t, 17, cacheTestUnwrapInt(t, res2))
+
+	entriesAfterHit := c.UsageEntries()
+	assert.Equal(t, 1, len(entriesAfterHit))
+	entryAfterHit := entriesAfterHit[0]
+	assert.Equal(t, entryBefore.ID, entryAfterHit.ID)
+	assert.Assert(t, entryAfterHit.ActivelyUsed)
+	assert.Assert(t, entryAfterHit.MostRecentUseTimeUnixNano >= entryBefore.MostRecentUseTimeUnixNano)
+	assert.Assert(t, entryAfterHit.CreatedTimeUnixNano <= entryAfterHit.MostRecentUseTimeUnixNano)
+
+	assert.NilError(t, res1.Release(ctx))
+	assert.NilError(t, res2.Release(ctx))
+
+	entriesAfterRelease := c.UsageEntries()
+	assert.Equal(t, 1, len(entriesAfterRelease))
+	entryAfterRelease := entriesAfterRelease[0]
+	assert.Assert(t, !entryAfterRelease.ActivelyUsed)
+	assert.Assert(t, entryAfterRelease.MostRecentUseTimeUnixNano >= entryAfterHit.MostRecentUseTimeUnixNano)
+}
+
+func TestCacheUsageEntriesDeterministicOrdering(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	keyA := cacheTestID("usage-order-a")
+	keyB := cacheTestID("usage-order-b")
+
+	resB, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyB,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(keyB, 2), nil
+	})
+	assert.NilError(t, err)
+	resA, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyA,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(keyA, 1), nil
+	})
+	assert.NilError(t, err)
+
+	entries1 := c.UsageEntries()
+	entries2 := c.UsageEntries()
+	assert.DeepEqual(t, entries1, entries2)
+	assert.Equal(t, 2, len(entries1))
+	assert.Assert(t, entries1[0].ID < entries1[1].ID)
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+}
+
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
