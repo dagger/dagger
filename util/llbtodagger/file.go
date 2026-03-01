@@ -347,9 +347,6 @@ func applyCopy(
 	if cp == nil {
 		return nil, nil, unsupported(opDgst, "file.copy", "missing copy action")
 	}
-	if cp.AttemptUnpackDockerCompatibility {
-		return nil, nil, unsupported(opDgst, "file.copy", "archive auto-unpack is unsupported")
-	}
 	if cp.AlwaysReplaceExistingDestPaths {
 		return nil, nil, unsupported(opDgst, "file.copy", "alwaysReplaceExistingDestPaths is unsupported")
 	}
@@ -372,7 +369,7 @@ func applyCopy(
 		return id, ctrID, nil
 	}
 
-	if filePath, ok := explicitFileCopyPath(cp, include); ok {
+	if filePath, ok := explicitFileCopyPath(cp, include); ok && !cp.AttemptUnpackDockerCompatibility {
 		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
 		args := []*call.Argument{
 			argString("path", cleanPath(cp.Dest)),
@@ -402,6 +399,9 @@ func applyCopy(
 	}
 	if len(cp.ExcludePatterns) > 0 {
 		args = append(args, argStringList("exclude", cp.ExcludePatterns))
+	}
+	if cp.AttemptUnpackDockerCompatibility {
+		args = append(args, argBool("attemptUnpackDockerCompatibility", true))
 	}
 	if requiredSourcePath, ok := requiredSourcePathForCopy(cp, include); ok {
 		args = append(args, argString("requiredSourcePath", requiredSourcePath))
@@ -435,7 +435,7 @@ func applyCopyViaContainer(
 	)
 
 	var nextContainerID *call.ID
-	if filePath, ok := explicitFileCopyPath(cp, include); ok {
+	if filePath, ok := explicitFileCopyPath(cp, include); ok && !cp.AttemptUnpackDockerCompatibility {
 		fileID := appendCall(sourceDirID, fileType(), "file", argString("path", filePath))
 		args := []*call.Argument{
 			argString("path", cleanPath(cp.Dest)),
@@ -463,6 +463,9 @@ func applyCopyViaContainer(
 		}
 		if len(cp.ExcludePatterns) > 0 {
 			args = append(args, argStringList("exclude", cp.ExcludePatterns))
+		}
+		if cp.AttemptUnpackDockerCompatibility {
+			args = append(args, argBool("attemptUnpackDockerCompatibility", true))
 		}
 		if requiredSourcePath, ok := requiredSourcePathForCopy(cp, include); ok {
 			args = append(args, argString("requiredSourcePath", requiredSourcePath))

@@ -24,11 +24,6 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	if exec.Meta == nil {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec meta")
 	}
-	if exec.Meta.ProxyEnv != nil {
-		if exec.Meta.ProxyEnv.HttpProxy != "" || exec.Meta.ProxyEnv.HttpsProxy != "" || exec.Meta.ProxyEnv.FtpProxy != "" || exec.Meta.ProxyEnv.NoProxy != "" || exec.Meta.ProxyEnv.AllProxy != "" {
-			return nil, unsupported(opDigest(exec.OpDAG), "exec", "proxy environment is unsupported")
-		}
-	}
 	if exec.Meta.Hostname != "" {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "hostname override is unsupported")
 	}

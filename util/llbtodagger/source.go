@@ -145,8 +145,9 @@ func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
 	if err != nil {
 		return nil, unsupported(opDigest(op.OpDAG), "source(local)", fmt.Sprintf("invalid exclude patterns: %v", err))
 	}
-	if attrs[pb.AttrFollowPaths] != "" {
-		return nil, unsupported(opDigest(op.OpDAG), "source(local)", "follow paths is unsupported")
+	followPaths, err := parseJSONPatternList(attrs[pb.AttrFollowPaths])
+	if err != nil {
+		return nil, unsupported(opDigest(op.OpDAG), "source(local)", fmt.Sprintf("invalid follow paths: %v", err))
 	}
 	if differ := attrs[pb.AttrLocalDiffer]; differ != "" && differ != pb.AttrLocalDifferMetadata {
 		return nil, unsupported(opDigest(op.OpDAG), "source(local)", "unsupported local differ mode")
@@ -174,6 +175,9 @@ func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
 	}
 	if len(excludePatterns) > 0 {
 		args = append(args, argStringList("exclude", excludePatterns))
+	}
+	if len(followPaths) > 0 {
+		args = append(args, argStringList("followPaths", followPaths))
 	}
 	return appendCall(hostID, directoryType(), "directory", args...), nil
 }

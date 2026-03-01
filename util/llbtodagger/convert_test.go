@@ -136,13 +136,42 @@ func TestDefinitionToIDLocalSource(t *testing.T) {
 	require.Equal(t, []any{"*_test.go"}, dirCall.Arg("exclude").Value().ToInput())
 }
 
-func TestDefinitionToIDLocalFollowPathsUnsupported(t *testing.T) {
+func TestDefinitionToIDLocalFollowPaths(t *testing.T) {
 	t.Parallel()
 
-	st := llb.Local("ctx", llb.FollowPaths([]string{"foo"}))
-	_, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	st := llb.Local(
+		"ctx",
+		llb.SharedKeyHint("/workspace"),
+		llb.FollowPaths([]string{"foo"}),
+	)
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"container", "withRootfs"}, fieldsFromRoot(id))
+
+	rootfsID := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"host", "directory"}, fieldsFromRoot(rootfsID))
+	require.Equal(t, "/workspace", rootfsID.Arg("path").Value().ToInput())
+	require.Equal(t, []any{"foo"}, rootfsID.Arg("followPaths").Value().ToInput())
+}
+
+func TestDefinitionToIDLocalFollowPathsInvalidUnsupported(t *testing.T) {
+	t.Parallel()
+
+	op := &pb.Op{
+		Op: &pb.Op_Source{
+			Source: &pb.SourceOp{
+				Identifier: "local://ctx",
+				Attrs: map[string]string{
+					pb.AttrSharedKeyHint: "/workspace",
+					pb.AttrFollowPaths:   "{not-json",
+				},
+			},
+		},
+	}
+
+	_, err := DefinitionToID(singleOpDefinition(t, op), nil)
 	unsupportedErr := requireUnsupported(t, err, "source(local)")
-	require.Contains(t, unsupportedErr.Reason, "follow paths")
+	require.Contains(t, unsupportedErr.Reason, "invalid follow paths")
 }
 
 func TestDefinitionToIDLocalMainContextSentinelRebinding(t *testing.T) {
@@ -670,6 +699,35 @@ func TestDefinitionToIDFileCopyExplicitDestPathUsesWithFile(t *testing.T) {
 	sourceFile := findFieldInChain(sourceID, "file")
 	require.NotNil(t, sourceFile)
 	require.Equal(t, "a.txt", sourceFile.Arg("path").Value().ToInput())
+}
+
+func TestDefinitionToIDFileCopyAttemptUnpackUsesWithDirectoryHiddenArg(t *testing.T) {
+	t.Parallel()
+
+	src := llb.Scratch().File(llb.Mkdir("/src", 0o755, llb.WithParents(true))).File(llb.Mkfile("/src/archive.tar", 0o644, []byte("archive-data")))
+	st := llb.Scratch().File(
+		llb.Copy(
+			src,
+			"/src/archive.tar",
+			"/dst/out.txt",
+			&llb.CopyInfo{CreateDestPath: true, AttemptUnpack: true},
+		),
+	)
+
+	id, err := DefinitionToID(marshalStateToPB(t, st), nil)
+	require.NoError(t, err)
+
+	withDir := rootfsArgFromContainer(t, id)
+	require.Equal(t, []string{"directory", "withDirectory"}, fieldsFromRoot(withDir))
+	require.Equal(t, "/dst/out.txt", withDir.Arg("path").Value().ToInput())
+
+	attemptUnpack := withDir.Arg("attemptUnpackDockerCompatibility")
+	require.NotNil(t, attemptUnpack)
+	require.Equal(t, true, attemptUnpack.Value().ToInput())
+
+	requiredSourcePath := withDir.Arg("requiredSourcePath")
+	require.NotNil(t, requiredSourcePath)
+	require.Equal(t, "archive.tar", requiredSourcePath.Value().ToInput())
 }
 
 func TestChownOwnerStringGroupOnlyByID(t *testing.T) {
