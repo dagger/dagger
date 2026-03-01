@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
@@ -342,10 +343,20 @@ func (c *cache) firstLiveTermInSetLocked(termSet map[egraphTermID]struct{}) *egr
 }
 
 func (c *cache) firstResultDeterministicallyLocked(resultSet map[sharedResultID]struct{}) *sharedResult {
+	return c.firstResultDeterministicallyAtLocked(resultSet, time.Now().Unix())
+}
+
+func (c *cache) firstResultDeterministicallyAtLocked(
+	resultSet map[sharedResultID]struct{},
+	nowUnix int64,
+) *sharedResult {
 	var bestID sharedResultID
 	for resID := range resultSet {
 		res := c.resultsByID[resID]
 		if res == nil {
+			continue
+		}
+		if c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
 		if bestID == 0 || resID < bestID {
@@ -356,10 +367,17 @@ func (c *cache) firstResultDeterministicallyLocked(resultSet map[sharedResultID]
 }
 
 func (c *cache) firstResultForTermSetDeterministicallyLocked(termSet map[egraphTermID]struct{}) *sharedResult {
+	return c.firstResultForTermSetDeterministicallyAtLocked(termSet, time.Now().Unix())
+}
+
+func (c *cache) firstResultForTermSetDeterministicallyAtLocked(
+	termSet map[egraphTermID]struct{},
+	nowUnix int64,
+) *sharedResult {
 	var bestID sharedResultID
 	for termID := range termSet {
 		resultSet := c.egraphResultsByTermID[termID]
-		res := c.firstResultDeterministicallyLocked(resultSet)
+		res := c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
 		if res == nil {
 			continue
 		}
@@ -368,6 +386,13 @@ func (c *cache) firstResultForTermSetDeterministicallyLocked(termSet map[egraphT
 		}
 	}
 	return c.resultsByID[bestID]
+}
+
+func (c *cache) resultExpiredAtLocked(res *sharedResult, nowUnix int64) bool {
+	if res == nil || res.expiresAtUnix == 0 {
+		return false
+	}
+	return nowUnix >= res.expiresAtUnix
 }
 
 func (c *cache) firstTermForResultLocked(resID sharedResultID) *egraphTerm {
@@ -433,6 +458,7 @@ func (c *cache) lookupCacheForID(
 	_ context.Context,
 	id *call.ID,
 	persistable bool,
+	ttlSeconds int64,
 ) (AnyResult, bool, error) {
 	// (self digest, input eqSet IDs) are digested to create the "real" cache key we do a lookup on.
 	// Figure those out first.
@@ -449,6 +475,7 @@ func (c *cache) lookupCacheForID(
 		primaryLookupPossible = true
 		hitTerm               *egraphTerm
 		hitRes                *sharedResult
+		nowUnix               = time.Now().Unix()
 	)
 	inputEqIDs = make([]eqClassID, len(inputDigests))
 	for i, inDig := range inputDigests {
@@ -468,7 +495,7 @@ func (c *cache) lookupCacheForID(
 		termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
 		termSet := c.egraphTermsByDigest[termDigest]
 		hitTerm = c.firstLiveTermInSetLocked(termSet)
-		hitRes = c.firstResultForTermSetDeterministicallyLocked(termSet)
+		hitRes = c.firstResultForTermSetDeterministicallyAtLocked(termSet, nowUnix)
 	}
 
 	if hitRes == nil {
@@ -480,7 +507,7 @@ func (c *cache) lookupCacheForID(
 				continue
 			}
 			resultSet := c.egraphResultsByOutputDigest[extra.Digest.String()]
-			hitRes = c.firstResultDeterministicallyLocked(resultSet)
+			hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
 			if hitRes != nil {
 				hitTerm = c.firstTermForResultLocked(hitRes.id)
 				break
@@ -495,6 +522,12 @@ func (c *cache) lookupCacheForID(
 	// We have a cache hit, make sure that the requested ID digest is in the same eq class as the
 	// cached result's output digest, and if not, merge them since we know them now to be equivalent
 	res := hitRes
+	// A TTL-bearing call can alias an existing result on lookup; apply the same
+	// conservative expiry merge policy here so TTL remains effective on hits.
+	res.expiresAtUnix = mergeSharedResultExpiryUnix(
+		res.expiresAtUnix,
+		candidateSharedResultExpiryUnix(nowUnix, ttlSeconds),
+	)
 	if persistable {
 		// NOTE: this is an intentional experiment behavior. If a persistable field
 		// hits a result originally produced by a non-persistable field, we
@@ -749,7 +782,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 	}
 }
 
-func (c *cache) firstLiveResultForOutputEqClassLocked(outputEqID eqClassID) *sharedResult {
+func (c *cache) firstLiveResultForOutputEqClassLocked(outputEqID eqClassID, nowUnix int64) *sharedResult {
 	outputEqID = c.findEqClassLocked(outputEqID)
 	if outputEqID == 0 {
 		return nil
@@ -762,7 +795,7 @@ func (c *cache) firstLiveResultForOutputEqClassLocked(outputEqID eqClassID) *sha
 		if c.findEqClassLocked(term.outputEqID) != outputEqID {
 			continue
 		}
-		res := c.firstResultDeterministicallyLocked(c.egraphResultsByTermID[term.id])
+		res := c.firstResultDeterministicallyAtLocked(c.egraphResultsByTermID[term.id], nowUnix)
 		if res == nil {
 			continue
 		}
@@ -780,11 +813,12 @@ func (c *cache) indexResultDependenciesLocked(res *sharedResult, inputEqIDs []eq
 	if res.deps == nil {
 		res.deps = make(map[sharedResultID]struct{})
 	}
+	nowUnix := time.Now().Unix()
 	for _, inputEqID := range inputEqIDs {
 		if inputEqID == 0 {
 			continue
 		}
-		dep := c.firstLiveResultForOutputEqClassLocked(inputEqID)
+		dep := c.firstLiveResultForOutputEqClassLocked(inputEqID, nowUnix)
 		if dep == nil || dep.id == res.id {
 			continue
 		}
