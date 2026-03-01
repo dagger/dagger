@@ -154,21 +154,31 @@ func (s *querySchema) schemaJSONFile(
 	if err != nil {
 		return inst, err
 	}
-	err = dag.Select(ctx, parent, &inst,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(schemaJSONFilename)},
-			{Name: "contents", Value: dagql.String(string(moduleSchemaJSON))},
-			{Name: "permissions", Value: dagql.Int(int(perm))},
-		}},
-		dagql.Selector{Field: "file", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(schemaJSONFilename)},
-		}},
-	)
+
+	dirInst, err := (&directorySchema{}).directory(ctx, parent, struct{}{})
 	if err != nil {
 		return inst, err
 	}
-	return inst, nil
+
+	file := &core.File{
+		File:      schemaJSONFilename,
+		Platform:  parent.Self().Platform(),
+		Parent:    dirInst,
+		LazyState: core.NewLazyState(),
+	}
+
+	initFn, err := file.WithContents(ctx, moduleSchemaJSON, perm, nil)
+	if err != nil {
+		return inst, err
+	}
+	if initFn != nil {
+		if err := initFn(ctx); err != nil {
+			return inst, err
+		}
+	}
+	file.LazyInitComplete = true
+
+	return dagql.NewObjectResultForCurrentID(ctx, dag, file)
 }
 
 func dagqlToCodegenType(dagqlType *introspection.Type) (*codegenintrospection.Type, error) {
