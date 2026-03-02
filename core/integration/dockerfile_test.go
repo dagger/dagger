@@ -7,12 +7,15 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -166,6 +169,204 @@ CMD ["cat", "/SHA256SUMS.d/buildkit-v0.1"]
 		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "sha256-checksum-line", out)
+	})
+
+	t.Run("add-http-with-checksum-success", func(ctx context.Context, t *testctx.T) {
+		t.Skip("TODO: enable once llbtodagger supports HTTP checksum enforcement in source(http) conversion")
+
+		const sourceURL = "https://raw.githubusercontent.com/octocat/Hello-World/master/README"
+
+		sourceContents, err := c.HTTP(sourceURL).Contents(ctx)
+		require.NoError(t, err)
+		expected := digest.FromString(sourceContents).String()
+
+		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+ADD --checksum=%s %s /downloads/README
+CMD ["cat", "/downloads/README"]
+`, alpineImage, expected, sourceURL))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, sourceContents, out)
+	})
+
+	t.Run("add-http-with-checksum-mismatch", func(ctx context.Context, t *testctx.T) {
+		t.Skip("TODO: enable once llbtodagger supports HTTP checksum enforcement in source(http) conversion")
+
+		const sourceURL = "https://raw.githubusercontent.com/octocat/Hello-World/master/README"
+
+		wrong := digest.FromString("wrong-checksum").String()
+		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+ADD --checksum=%s %s /downloads/README
+`, alpineImage, wrong, sourceURL))
+
+		_, err := dir.DockerBuild().Sync(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "checksum mismatch")
+	})
+
+	t.Run("add-git-query-string-variants", func(ctx context.Context, t *testctx.T) {
+		const branchURL = "https://github.com/octocat/Hello-World.git?branch=master"
+		const refURL = "https://github.com/octocat/Hello-World.git?ref=master"
+
+		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+ADD %s /repo-branch
+ADD %s /repo-ref
+RUN test -f /repo-branch/README
+RUN test -f /repo-ref/README
+CMD ["sh", "-c", "cat /repo-branch/README && echo --- && cat /repo-ref/README"]
+`, alpineImage, branchURL, refURL))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Hello World!")
+	})
+
+	t.Run("copy-wildcards", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.
+			WithNewFile("wild/a.txt", "A").
+			WithNewFile("wild/b.txt", "B").
+			WithNewFile("wild/c.md", "C").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+COPY wild/*.txt /out/
+RUN test -f /out/a.txt && test -f /out/b.txt && test ! -e /out/c.md
+CMD ["sh", "-c", "cat /out/a.txt && cat /out/b.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "AB", strings.TrimSpace(out))
+	})
+
+	t.Run("copy-variable-substitution", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.
+			WithNewFile("alt.go", "package alt\n").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+ARG SRC=main.go
+COPY ${SRC} /tmp/out.go
+CMD ["cat", "/tmp/out.go"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "package main")
+
+		opts := dagger.DirectoryDockerBuildOpts{
+			BuildArgs: []dagger.BuildArg{
+				{Name: "SRC", Value: "alt.go"},
+			},
+		}
+		out, err = dir.DockerBuild(opts).WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "package alt\n", out)
+	})
+
+	t.Run("copy-through-symlink-context", func(ctx context.Context, t *testctx.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink context behavior is unstable on windows hosts")
+		}
+
+		dir := c.Directory().
+			WithNewFile("real/file.txt", "symlink-copy-ok\n").
+			WithSymlink("real", "linkdir").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+COPY linkdir/file.txt /copied.txt
+CMD ["cat", "/copied.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "symlink-copy-ok", strings.TrimSpace(out))
+	})
+
+	t.Run("copy-through-symlink-multi-stage", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s AS src
+RUN mkdir -p /real && echo symlink-multistage-ok > /real/file.txt && ln -s /real /link
+FROM %s
+COPY --from=src /link/file.txt /final.txt
+CMD ["cat", "/final.txt"]
+`, alpineImage, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "symlink-multistage-ok", strings.TrimSpace(out))
+	})
+
+	t.Run("copy-relative-with-workdir", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.
+			WithNewFile("rel.txt", "relative-copy-ok\n").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+WORKDIR /a/b
+COPY rel.txt .
+COPY rel.txt rel2.txt
+RUN test -f /a/b/rel.txt && test -f /a/b/rel2.txt
+CMD ["sh", "-c", "cat /a/b/rel.txt && cat /a/b/rel2.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "relative-copy-ok\nrelative-copy-ok", strings.TrimSpace(out))
+	})
+
+	t.Run("copy-destination-dot-and-trailing-slash-semantics", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.
+			WithNewFile("src.txt", "dest-semantics-ok\n").
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+COPY src.txt /abs/
+COPY src.txt /absdot/.
+WORKDIR /work
+COPY src.txt .
+RUN test -f /abs/src.txt && test -f /absdot/src.txt && test -f /work/src.txt
+CMD ["sh", "-c", "cat /abs/src.txt && cat /absdot/src.txt && cat /work/src.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dest-semantics-ok\ndest-semantics-ok\ndest-semantics-ok", strings.TrimSpace(out))
+	})
+
+	t.Run("invalid-dockerfile-negative-paths", func(ctx context.Context, t *testctx.T) {
+		t.Run("invalid instruction", func(ctx context.Context, t *testctx.T) {
+			dir := baseDir.WithNewFile("Dockerfile", `FRO alpine`)
+			_, err := dir.DockerBuild().Sync(ctx)
+			require.Error(t, err)
+			requireErrOut(t, err, "unknown instruction")
+		})
+
+		t.Run("invalid command arity", func(ctx context.Context, t *testctx.T) {
+			dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+COPY
+`, alpineImage))
+			_, err := dir.DockerBuild().Sync(ctx)
+			require.Error(t, err)
+		})
+
+		t.Run("invalid JSON command", func(ctx context.Context, t *testctx.T) {
+			t.Skip("TODO: add stable invalid-JSON Dockerfile command case; parser currently accepts attempted malformed forms in this path")
+		})
+	})
+
+	t.Run("run-mount-cache-basic", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN --mount=type=cache,target=/cache sh -c 'echo cache-ok > /cache/value && cp /cache/value /tmp/first'
+RUN --mount=type=cache,target=/cache sh -c 'cp /cache/value /tmp/second'
+CMD ["sh", "-c", "cat /tmp/first && cat /tmp/second"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "cache-ok\ncache-ok", strings.TrimSpace(out))
+	})
+
+	t.Run("run-mount-tmpfs-basic", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN --mount=type=tmpfs,target=/mnt sh -c 'echo tmpfs-ok > /mnt/value && cp /mnt/value /tmp/out'
+CMD ["cat", "/tmp/out"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "tmpfs-ok", strings.TrimSpace(out))
 	})
 
 	t.Run("with build args", func(ctx context.Context, t *testctx.T) {
