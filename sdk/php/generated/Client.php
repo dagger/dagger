@@ -34,6 +34,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Creates an empty changeset
+     */
+    public function changeset(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changeset');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Dagger Cloud configuration and state
      */
     public function cloud(): Cloud

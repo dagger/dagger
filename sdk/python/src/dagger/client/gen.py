@@ -11543,6 +11543,12 @@ class Client(Root):
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)
 
+    def changeset(self) -> Changeset:
+        """Creates an empty changeset"""
+        _args: list[Arg] = []
+        _ctx = self._select("changeset", _args)
+        return Changeset(_ctx)
+
     def cloud(self) -> Cloud:
         """Dagger Cloud configuration and state"""
         _args: list[Arg] = []

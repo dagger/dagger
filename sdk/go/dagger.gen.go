@@ -11340,6 +11340,15 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	}
 }
 
+// Creates an empty changeset
+func (r *Client) Changeset() *Changeset {
+	q := r.query.Select("changeset")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Dagger Cloud configuration and state
 func (r *Client) Cloud() *Cloud {
 	q := r.query.Select("cloud")

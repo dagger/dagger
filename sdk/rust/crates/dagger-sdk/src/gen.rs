@@ -11921,6 +11921,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Creates an empty changeset
+    pub fn changeset(&self) -> Changeset {
+        let query = self.selection.select("changeset");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Dagger Cloud configuration and state
     pub fn cloud(&self) -> Cloud {
         let query = self.selection.select("cloud");
