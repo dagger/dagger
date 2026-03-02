@@ -26,19 +26,20 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
+	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
+	dockerfileparser "github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/parser"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/containerutil"
+	"github.com/dagger/dagger/util/llbtodagger"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -631,37 +632,65 @@ func (container *Container) FromCanonicalRefUpdateConfig(
 
 const defaultDockerfileName = "Dockerfile"
 
+func isKnownDockerfileSyntaxFrontend(syntaxRef string) bool {
+	ref := strings.TrimSpace(strings.ToLower(syntaxRef))
+	if ref == "" {
+		return false
+	}
+
+	known := []string{
+		"docker/dockerfile",
+		"docker/dockerfile-upstream",
+		"docker.io/docker/dockerfile",
+		"docker.io/docker/dockerfile-upstream",
+		"index.docker.io/docker/dockerfile",
+		"index.docker.io/docker/dockerfile-upstream",
+		"moby/dockerfile",
+		"moby/dockerfile-upstream",
+		"docker.io/moby/dockerfile",
+		"docker.io/moby/dockerfile-upstream",
+		"index.docker.io/moby/dockerfile",
+		"index.docker.io/moby/dockerfile-upstream",
+	}
+	for _, prefix := range known {
+		if ref == prefix || strings.HasPrefix(ref, prefix+":") || strings.HasPrefix(ref, prefix+"@") {
+			return true
+		}
+	}
+	return false
+}
+
 func (container *Container) Build(
 	ctx context.Context,
 	dockerfileDir *Directory,
-	// contextDir is dockerfileDir with files excluded as per dockerignore file
-	contextDir *Directory,
+	// contextDirID is dockerfileDir with files excluded as per dockerignore file.
+	contextDirID *call.ID,
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
 	secrets []dagql.ObjectResult[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
-	sshSocket *Socket,
+	sshSocketID *call.ID,
 ) (*Container, error) {
 	container = container.Clone()
 
-	secretNameToLLBID := make(map[string]string)
-	for _, secret := range secrets {
-		secretDgst := SecretIDDigest(secret.ID())
-		secretName, ok := secretStore.GetSecretName(secretDgst)
-		if !ok {
-			return nil, fmt.Errorf("secret not found: %s", secretDgst)
-		}
-		container.Secrets = append(container.Secrets, ContainerSecret{
-			Secret:    secret,
-			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
-		})
-		secretNameToLLBID[secretName] = secretDgst.String()
+	dockerfilePath := dockerfile
+	if dockerfilePath == "" {
+		dockerfilePath = defaultDockerfileName
 	}
-
-	// set image ref to empty string
-	container.ImageRef = ""
+	dockerfileFile, err := dockerfileDir.File(ctx, dockerfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load Dockerfile %q: %w", dockerfilePath, err)
+	}
+	dockerfileBytes, err := dockerfileFile.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Dockerfile %q: %w", dockerfilePath, err)
+	}
+	if syntaxRef, _, _, ok := dockerfileparser.DetectSyntax(dockerfileBytes); ok && !isKnownDockerfileSyntaxFrontend(syntaxRef) {
+		return nil, fmt.Errorf("dockerBuild syntax frontend %q is unsupported in hard-cutover path", syntaxRef)
+	}
+	mainContext := llbtodagger.DockerfileMainContextSentinelState()
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -671,144 +700,215 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	platform := container.Platform
-
-	opts := map[string]string{
-		"platform":      platform.Format(),
-		"contextsubdir": contextDir.Dir,
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	if dockerfile != "" {
-		opts["filename"] = filepath.Join(dockerfileDir.Dir, dockerfile)
-	} else {
-		opts["filename"] = filepath.Join(dockerfileDir.Dir, defaultDockerfileName)
-	}
-
-	if target != "" {
-		opts["target"] = target
-	}
-
+	buildArgMap := make(map[string]string, len(buildArgs))
 	for _, buildArg := range buildArgs {
-		opts["build-arg:"+buildArg.Name] = buildArg.Value
+		buildArgMap[buildArg.Name] = buildArg.Value
 	}
-
-	inputs := map[string]*pb.Definition{
-		dockerui.DefaultLocalNameContext:    contextDir.LLB,
-		dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
-	}
-
-	// FIXME: this is a terrible way to pass this around
-	solveCtx := buildkit.WithSecretTranslator(ctx, func(name string, optional bool) (string, error) {
-		llbID, ok := secretNameToLLBID[name]
+	secretIDsByLLBID := make(map[string]*call.ID, len(secrets))
+	returnedSecretMounts := make([]ContainerSecret, 0, len(secrets))
+	for _, secret := range secrets {
+		secretDgst := SecretIDDigest(secret.ID())
+		secretName, ok := secretStore.GetSecretName(secretDgst)
 		if !ok {
-			if optional {
-				// set to a purposely invalid name, so we don't get something else
-				return "notfound:" + identity.NewID(), nil
-			}
-			return "", fmt.Errorf("secret not found: %s", name)
+			return nil, fmt.Errorf("secret not found: %s", secretDgst)
 		}
-		return llbID, nil
-	})
-
-	if sshSocket != nil {
-		solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
-			return sshSocket.LLBID(), nil
+		if secretName == "" {
+			return nil, fmt.Errorf("secret %s has no name and cannot be referenced from Dockerfile secret id", secretDgst)
+		}
+		if existing, found := secretIDsByLLBID[secretName]; found {
+			if existing.Digest() != secret.ID().Digest() {
+				return nil, fmt.Errorf("multiple secrets provided for dockerBuild secret id %q", secretName)
+			}
+			continue
+		}
+		secretIDsByLLBID[secretName] = secret.ID()
+		returnedSecretMounts = append(returnedSecretMounts, ContainerSecret{
+			Secret:    secret,
+			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
 		})
 	}
+	sshSocketIDsByLLBID := map[string]*call.ID{}
+	if sshSocketID != nil {
+		sshSocketIDsByLLBID[""] = sshSocketID
+	}
 
-	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
+	convertOpt := dockerfile2llb.ConvertOpt{
+		Config: dockerui.Config{
+			BuildArgs: buildArgMap,
+			Target:    target,
+		},
+		MainContext:    &mainContext,
+		TargetPlatform: ptr(container.Platform.Spec()),
+		MetaResolver:   bk,
+	}
+
+	st, img, _, _, err := dockerfile2llb.Dockerfile2LLB(ctx, dockerfileBytes, convertOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert Dockerfile to LLB: %w", err)
+	}
+	def, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Dockerfile LLB: %w", err)
+	}
+	containerID, err := llbtodagger.DefinitionToIDWithOptions(def.ToPB(), img, llbtodagger.DefinitionToIDOptions{
+		MainContextDirectoryID: contextDirID,
+		SecretIDsByLLBID:       secretIDsByLLBID,
+		SSHSocketIDsByLLBID:    sshSocketIDsByLLBID,
+		NoInit:                 noInit,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
-
-	bkref, err := res.SingleRef()
+	loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
 	}
+	loadedContainer := loadedContainerRes.Self()
+	if loadedContainer == nil {
+		return nil, fmt.Errorf("failed to load container from converted ID: nil container")
+	}
+	loadedContainer = loadedContainer.Clone()
+	loadedContainer.Secrets = append(loadedContainer.Secrets, returnedSecretMounts...)
 
-	var st llb.State
-	if bkref == nil {
-		st = llb.Scratch()
-	} else {
-		st, err = bkref.ToState()
+	// TODO: remove commented code once fully replaced, just a reference on how it used to work for now
+	/*
+		if sshSocket != nil {
+			solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
+				return sshSocket.LLBID(), nil
+			})
+		}
+	*/
+
+	// TODO: remove commented code once fully replaced, just a reference on how it used to work for now
+	/*
+		// set image ref to empty string
+		container.ImageRef = ""
+
+		opts := map[string]string{
+			"platform":      platform.Format(),
+			"contextsubdir": contextDir.Dir,
+		}
+
+		if dockerfile != "" {
+			opts["filename"] = filepath.Join(dockerfileDir.Dir, dockerfile)
+		} else {
+			opts["filename"] = filepath.Join(dockerfileDir.Dir, defaultDockerfileName)
+		}
+
+		if target != "" {
+			opts["target"] = target
+		}
+
+		for _, buildArg := range buildArgs {
+			opts["build-arg:"+buildArg.Name] = buildArg.Value
+		}
+
+		inputs := map[string]*pb.Definition{
+			dockerui.DefaultLocalNameContext:    contextDir.LLB,
+			dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
+		}
+
+		res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
+			Frontend:       "dockerfile.v0",
+			FrontendOpt:    opts,
+			FrontendInputs: inputs,
+		})
 		if err != nil {
 			return nil, err
 		}
-	}
+	*/
 
-	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-
-	dag, err := buildkit.DefToDAG(def.ToPB())
-	if err != nil {
-		return nil, err
-	}
-	if err := dag.Walk(func(dag *buildkit.OpDAG) error {
-		// forcibly inject our trace context into each op, since st.Marshal
-		// isn't strong enough to do so
-		desc := dag.Metadata.Description
-		if desc == nil {
-			desc = map[string]string{}
-		}
-		if desc["traceparent"] == "" {
-			telemetry.Propagator.Inject(ctx,
-				propagation.MapCarrier(desc))
-		}
-
-		execOp, isExecOp := dag.AsExec()
-		if noInit && isExecOp {
-			execMD, ok, err := buildkit.ExecutionMetadataFromDescription(desc)
-			if err != nil {
-				return fmt.Errorf("failed to get execution metadata: %w", err)
-			}
-			if !ok {
-				execMD = &buildkit.ExecutionMetadata{}
-			}
-			execMD.NoInit = true
-			if err := buildkit.AddExecutionMetadataToDescription(desc, execMD); err != nil {
-				return fmt.Errorf("failed to add execution metadata: %w", err)
-			}
-			execOp.Meta.Env = append(execOp.Meta.Env,
-				buildkit.DaggerNoInitEnv+"=true",
-			)
-		}
-		dag.Metadata.Description = desc
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("walk DAG: %w", err)
-	}
-	newDef, err := dag.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	if newDef != nil {
-		newDef.Source = nil
-	}
-
-	rootfsDir := NewDirectory(newDef, "/", container.Platform, container.Services)
-	container.FS, err = UpdatedRootFS(ctx, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
-	}
-
-	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
-	if found {
-		var imgSpec dockerspec.DockerOCIImage
-		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+	// TODO: remove commented code once fully replaced, just a reference on how it used to work for now
+	/*
+		bkref, err := res.SingleRef()
+		if err != nil {
 			return nil, err
 		}
 
-		container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	}
+		var st llb.State
+		if bkref == nil {
+			st = llb.Scratch()
+		} else {
+			st, err = bkref.ToState()
+			if err != nil {
+				return nil, err
+			}
+		}
 
-	return container, nil
+		def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
+		if err != nil {
+			return nil, err
+		}
+
+		dag, err := buildkit.DefToDAG(def.ToPB())
+		if err != nil {
+			return nil, err
+		}
+		if err := dag.Walk(func(dag *buildkit.OpDAG) error {
+			// forcibly inject our trace context into each op, since st.Marshal
+			// isn't strong enough to do so
+			desc := dag.Metadata.Description
+			if desc == nil {
+				desc = map[string]string{}
+			}
+			if desc["traceparent"] == "" {
+				telemetry.Propagator.Inject(ctx,
+					propagation.MapCarrier(desc))
+			}
+
+			execOp, isExecOp := dag.AsExec()
+			if noInit && isExecOp {
+				execMD, ok, err := buildkit.ExecutionMetadataFromDescription(desc)
+				if err != nil {
+					return fmt.Errorf("failed to get execution metadata: %w", err)
+				}
+				if !ok {
+					execMD = &buildkit.ExecutionMetadata{}
+				}
+				execMD.NoInit = true
+				if err := buildkit.AddExecutionMetadataToDescription(desc, execMD); err != nil {
+					return fmt.Errorf("failed to add execution metadata: %w", err)
+				}
+				execOp.Meta.Env = append(execOp.Meta.Env,
+					buildkit.DaggerNoInitEnv+"=true",
+				)
+			}
+			dag.Metadata.Description = desc
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("walk DAG: %w", err)
+		}
+		newDef, err := dag.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		if newDef != nil {
+			newDef.Source = nil
+		}
+
+		rootfsDir := NewDirectory(newDef, "/", container.Platform, container.Services)
+		container.FS, err = UpdatedRootFS(ctx, rootfsDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
+		}
+
+		cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
+		if found {
+			var imgSpec dockerspec.DockerOCIImage
+			if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+				return nil, err
+			}
+
+			container.Config = mergeImageConfig(container.Config, imgSpec.Config)
+		}
+	*/
+
+	return loadedContainer, nil
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
@@ -834,6 +934,12 @@ func (container *Container) WithDirectory(
 	src dagql.ObjectResult[*Directory],
 	filter CopyFilter,
 	owner string,
+	permissions *int,
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
+	requiredSourcePath string,
+	destPathHintIsDirectory bool,
+	copySourcePathContentsWhenDir bool,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -854,7 +960,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithDirectory(ctx, subdir, src, filter, owner)
+		return container.WithDirectory(ctx, subdir, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
 	}
 
 	args := []dagql.NamedInput{
@@ -878,6 +984,24 @@ func (container *Container) WithDirectory(
 		}
 		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	}
+	if permissions != nil {
+		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
+	}
+	if doNotCreateDestPath {
+		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
+	}
+	if attemptUnpackDockerCompatibility {
+		args = append(args, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
+	}
+	if requiredSourcePath != "" {
+		args = append(args, dagql.NamedInput{Name: "requiredSourcePath", Value: dagql.String(requiredSourcePath)})
+	}
+	if destPathHintIsDirectory {
+		args = append(args, dagql.NamedInput{Name: "destPathHintIsDirectory", Value: dagql.Boolean(true)})
+	}
+	if copySourcePathContentsWhenDir {
+		args = append(args, dagql.NamedInput{Name: "copySourcePathContentsWhenDir", Value: dagql.Boolean(true)})
 	}
 
 	//nolint:dupl
@@ -931,6 +1055,8 @@ func (container *Container) WithFile(
 	src dagql.ObjectResult[*File],
 	permissions *int,
 	owner string,
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -946,7 +1072,7 @@ func (container *Container) WithFile(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithFile(ctx, srv, destPath, src, permissions, owner)
+		return container.WithFile(ctx, srv, destPath, src, permissions, owner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
 	}
 
 	args := []dagql.NamedInput{
@@ -964,6 +1090,12 @@ func (container *Container) WithFile(
 		}
 		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	}
+	if doNotCreateDestPath {
+		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
+	}
+	if attemptUnpackDockerCompatibility {
+		args = append(args, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
 	}
 
 	//nolint:dupl
@@ -1096,7 +1228,7 @@ func (container *Container) WithFiles(
 	for _, file := range src {
 		destPath := filepath.Join(destDir, filepath.Base(file.Self().File))
 		var err error
-		container, err = container.WithFile(ctx, srv, destPath, file, permissions, owner)
+		container, err = container.WithFile(ctx, srv, destPath, file, permissions, owner, false, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add file %s: %w", destPath, err)
 		}
@@ -1137,7 +1269,7 @@ func (container *Container) WithNewFile(
 		return nil, fmt.Errorf("failed to create new file %s: %w", dest, err)
 	}
 
-	return container.WithFile(ctx, srv, dest, newFile, nil, owner)
+	return container.WithFile(ctx, srv, dest, newFile, nil, owner, false, false)
 }
 
 func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkPath string) (*Container, error) {
@@ -1390,6 +1522,20 @@ func (container *Container) WithoutMount(ctx context.Context, target string) (*C
 
 	if found {
 		container.Mounts = slices.Delete(container.Mounts, foundIdx, foundIdx+1)
+	}
+
+	var secretFound bool
+	var secretFoundIdx int
+	for i := len(container.Secrets) - 1; i >= 0; i-- {
+		if container.Secrets[i].MountPath == target {
+			secretFound = true
+			secretFoundIdx = i
+			break
+		}
+	}
+
+	if secretFound {
+		container.Secrets = slices.Delete(container.Secrets, secretFoundIdx, secretFoundIdx+1)
 	}
 
 	// set image ref to empty string

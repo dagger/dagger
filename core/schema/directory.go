@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -154,6 +155,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 			),
 		dagql.NodeFunc("filter", DagOpDirectoryWrapper(srv, s.filter, WithPathFn(keepParentDir[FilterArgs]))).
 			Doc(`Return a snapshot with some paths included or excluded`).
@@ -429,8 +431,24 @@ func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.Obj
 }
 
 type WithDirectoryArgs struct {
-	Path  string
-	Owner string `default:""`
+	Path        string
+	Owner       string `default:""`
+	Permissions dagql.Optional[dagql.Int]
+	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
+	// BuildKit ADD archive auto-unpack compatibility semantics.
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, withDirectory errors
+	// if the requested source path does not exist.
+	RequiredSourcePath string `internal:"true" default:""`
+	// Hidden internal arg used for LLB fidelity; indicates destination should be
+	// treated as a directory path even if it does not yet exist.
+	DestPathHintIsDirectory bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity: when include points at a source
+	// directory path segment, copy that directory's contents (not the segment
+	// itself), while preserving file semantics when include points at a file.
+	CopySourcePathContentsWhenDir bool `internal:"true" default:"false"`
 
 	Source    core.DirectoryID
 	Directory core.DirectoryID // legacy, use Source instead
@@ -473,7 +491,24 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		return res, err
 	}
 	src := cmp.Or(args.Source, args.Directory)
-	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner)
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
+	}
+	with, err := parent.Self().WithDirectory(
+		ctx,
+		args.Path,
+		src.ID(),
+		args.CopyFilter,
+		args.Owner,
+		perms,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+		args.RequiredSourcePath,
+		args.DestPathHintIsDirectory,
+		args.CopySourcePathContentsWhenDir,
+	)
 	if err != nil {
 		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
 	}
@@ -498,7 +533,7 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 		Dir:      parent.Self().Dir,
 	}
 
-	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "")
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "", nil, false, false, "", false, false)
 	if err != nil {
 		return inst, fmt.Errorf("failed to filter: %w", err)
 	}
@@ -698,6 +733,15 @@ type WithFileArgs struct {
 	Source      core.FileID
 	Permissions dagql.Optional[dagql.Int]
 	Owner       string `default:""`
+	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
+	// BuildKit ADD archive auto-unpack compatibility semantics.
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; if true and source file loading
+	// fails, attempt directory-source fallback for ambiguous Dockerfile COPY
+	// lowerings where the source can be a directory.
+	AllowDirectorySourceFallback bool `internal:"true" default:"false"`
 
 	FSDagOpInternalArgs
 }
@@ -715,16 +759,34 @@ func (args WithFileArgs) Inputs(ctx context.Context) ([]llb.State, error) {
 		return nil, nil
 	}
 
+	appendDep := func(def *pb.Definition) error {
+		sourceOp, err := llb.NewDefinitionOp(def)
+		if err != nil {
+			return fmt.Errorf("source op: %w", err)
+		}
+		if sourceOp.Output() != nil {
+			deps = append(deps, llb.NewState(sourceOp))
+		}
+		return nil
+	}
+
 	sourceRes, err := args.Source.Load(ctx, srv)
 	if err != nil {
+		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+				dirSourceRes, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
+				if dirErr == nil {
+					if err := appendDep(dirSourceRes.Self().LLB); err != nil {
+						return nil, err
+					}
+					return deps, nil
+				}
+			}
+		}
 		return nil, fmt.Errorf("load source: %w", err)
 	}
-	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
-	if err != nil {
-		return nil, fmt.Errorf("source op: %w", err)
-	}
-	if sourceOp.Output() != nil {
-		deps = append(deps, llb.NewState(sourceOp))
+	if err := appendDep(sourceRes.Self().LLB); err != nil {
+		return nil, err
 	}
 
 	return deps, nil
@@ -736,21 +798,86 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	file, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		return inst, err
-	}
-
 	var perms *int
 	if args.Permissions.Valid {
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	dir, err := parent.Self().WithFile(ctx, srv, args.Path, file.Self(), perms, args.Owner)
+
+	file, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+				dir, fallbackErr := parent.Self().WithDirectory(
+					ctx,
+					args.Path,
+					dirSourceID,
+					core.CopyFilter{},
+					args.Owner,
+					perms,
+					args.DoNotCreateDestPath,
+					args.AttemptUnpackDockerCompatibility,
+					"",
+					false,
+					false,
+				)
+				if fallbackErr == nil {
+					return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+				}
+			}
+		}
+		return inst, err
+	}
+
+	dir, err := parent.Self().WithFile(
+		ctx,
+		srv,
+		args.Path,
+		file.Self(),
+		perms,
+		args.Owner,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+	)
 	if err != nil {
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func directorySourceIDFromFileSourceID(fileSourceID *call.ID) (*call.ID, bool) {
+	if fileSourceID == nil || fileSourceID.Field() != "file" {
+		return nil, false
+	}
+
+	receiver := fileSourceID.Receiver()
+	if receiver == nil {
+		return nil, false
+	}
+
+	pathArg := fileSourceID.Arg("path")
+	if pathArg == nil {
+		return nil, false
+	}
+	pathVal, ok := pathArg.Value().ToInput().(string)
+	if !ok {
+		return nil, false
+	}
+
+	return receiver.Append(
+		(&core.Directory{}).Type(),
+		"directory",
+		call.WithArgs(call.NewArgument("path", call.NewLiteralString(pathVal), false)),
+	), true
+}
+
+func shouldAttemptDirectorySourceFallback(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Only fallback for the specific "path is a directory" case. Missing files
+	// or other load failures should remain hard errors.
+	return strings.Contains(err.Error(), "is a directory, not a file")
 }
 
 func keepParentDir[A any](_ context.Context, val *core.Directory, _ A) (string, error) {
@@ -1395,26 +1522,29 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 
-	var sshSocket *core.Socket
+	var sshSocketID *call.ID
 	if args.SSH.Valid {
 		sshSocketResult, err := args.SSH.Value.Load(ctx, srv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load SSH socket: %w", err)
 		}
-		sshSocket = sshSocketResult.Self()
+		if sshSocketResult.Self() == nil {
+			return nil, fmt.Errorf("failed to load SSH socket: nil socket")
+		}
+		sshSocketID = sshSocketResult.ID()
 	}
 
 	return ctr.Build(
 		ctx,
 		parent.Self(),
-		buildctxDir.Self(),
+		buildctxDir.ID(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
 		secrets,
 		secretStore,
 		args.NoInit,
-		sshSocket,
+		sshSocketID,
 	)
 }
 

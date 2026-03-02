@@ -174,6 +174,19 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("__withSystemEnvVariable", s.withSystemEnvVariable).
 			Doc(`(Internal-only) Inherit this environment variable from the engine container if set there with a special prefix.`),
 
+		// NOTE: this is internal-only (hidden from codegen via the __ prefix). It exists so
+		// llbtodagger can faithfully apply Docker image config metadata fields that do not yet
+		// have public SDK methods.
+		dagql.Func("__withImageConfigMetadata", s.withImageConfigMetadata).
+			Doc(`(Internal-only) Set Docker image config metadata fields not yet exposed as public container APIs.`).
+			Args(
+				dagql.Arg("healthcheck").Doc(`JSON-encoded Docker HealthcheckConfig.`),
+				dagql.Arg("onBuild").Doc(`Docker ONBUILD trigger list.`),
+				dagql.Arg("shell").Doc(`Docker shell override for shell-form instructions.`),
+				dagql.Arg("volumes").Doc(`Docker image config volume mountpoints.`),
+				dagql.Arg("stopSignal").Doc(`Docker image config stop signal.`),
+			),
+
 		dagql.Func("withSecretVariable", s.withSecretVariable).
 			Doc(`Set a new environment variable, using a secret value`).
 			Args(
@@ -254,6 +267,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -420,6 +434,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -972,7 +987,7 @@ func (s *containerSchema) build(ctx context.Context, parent dagql.ObjectResult[*
 	return parent.Self().Build(
 		ctx,
 		dir.Self(),
-		buildctxDir.Self(),
+		buildctxDir.ID(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
@@ -1447,6 +1462,55 @@ func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent *cor
 	return ctr, nil
 }
 
+type containerWithImageConfigMetadataArgs struct {
+	Healthcheck string `default:""`
+	OnBuild     dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Shell       dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Volumes     dagql.Optional[dagql.ArrayInput[dagql.String]]
+	StopSignal  string `default:""`
+}
+
+func (s *containerSchema) withImageConfigMetadata(ctx context.Context, parent *core.Container, args containerWithImageConfigMetadataArgs) (*core.Container, error) {
+	var healthcheck *dockerspec.HealthcheckConfig
+	if args.Healthcheck != "" {
+		healthcheck = new(dockerspec.HealthcheckConfig)
+		if err := json.Unmarshal([]byte(args.Healthcheck), healthcheck); err != nil {
+			return nil, fmt.Errorf("failed to decode healthcheck metadata: %w", err)
+		}
+	}
+
+	return parent.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+		if args.Healthcheck != "" {
+			cfg.Healthcheck = healthcheck
+		}
+		if args.OnBuild.Valid {
+			onBuild := make([]string, 0, len(args.OnBuild.Value))
+			for _, trigger := range args.OnBuild.Value {
+				onBuild = append(onBuild, trigger.String())
+			}
+			cfg.OnBuild = onBuild
+		}
+		if args.Shell.Valid {
+			shellArgs := make([]string, 0, len(args.Shell.Value))
+			for _, shellArg := range args.Shell.Value {
+				shellArgs = append(shellArgs, shellArg.String())
+			}
+			cfg.Shell = shellArgs
+		}
+		if args.Volumes.Valid {
+			volumes := make(map[string]struct{}, len(args.Volumes.Value))
+			for _, volumePath := range args.Volumes.Value {
+				volumes[volumePath.String()] = struct{}{}
+			}
+			cfg.Volumes = volumes
+		}
+		if args.StopSignal != "" {
+			cfg.StopSignal = args.StopSignal
+		}
+		return cfg
+	})
+}
+
 type containerWithoutVariableArgs struct {
 	Name string
 }
@@ -1558,10 +1622,11 @@ func (s *containerSchema) label(ctx context.Context, parent *core.Container, arg
 }
 
 type containerWithMountedDirectoryArgs struct {
-	Path   string
-	Source core.DirectoryID
-	Owner  string `default:""`
-	Expand bool   `default:"false"`
+	Path     string
+	Source   core.DirectoryID
+	Owner    string `default:""`
+	ReadOnly bool   `default:"false"`
+	Expand   bool   `default:"false"`
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
@@ -1580,7 +1645,7 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 		return nil, err
 	}
 
-	return parent.WithMountedDirectory(ctx, path, dir, args.Owner, false)
+	return parent.WithMountedDirectory(ctx, path, dir, args.Owner, args.ReadOnly)
 }
 
 type containerWithAnnotationArgs struct {
@@ -1931,7 +1996,25 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		return nil, err
 	}
 
-	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner)
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
+	}
+
+	return parent.WithDirectory(
+		ctx,
+		path,
+		dir,
+		args.CopyFilter,
+		args.Owner,
+		perms,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+		args.RequiredSourcePath,
+		args.DestPathHintIsDirectory,
+		args.CopySourcePathContentsWhenDir,
+	)
 }
 
 type containerWithFileArgs struct {
@@ -1946,9 +2029,10 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	file, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		return inst, err
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
 	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
@@ -1956,12 +2040,44 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	var perms *int
-	if args.Permissions.Valid {
-		p := int(args.Permissions.Value)
-		perms = &p
+	file, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+				dirSource, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
+				if dirErr == nil {
+					ctr, fallbackErr := parent.Self().WithDirectory(
+						ctx,
+						path,
+						dirSource,
+						core.CopyFilter{},
+						args.Owner,
+						perms,
+						args.DoNotCreateDestPath,
+						args.AttemptUnpackDockerCompatibility,
+						"",
+						false,
+						false,
+					)
+					if fallbackErr == nil {
+						return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+					}
+				}
+			}
+		}
+		return inst, err
 	}
-	ctr, err := parent.Self().WithFile(ctx, srv, path, file, perms, args.Owner)
+
+	ctr, err := parent.Self().WithFile(
+		ctx,
+		srv,
+		path,
+		file,
+		perms,
+		args.Owner,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+	)
 	if err != nil {
 		return inst, err
 	}
