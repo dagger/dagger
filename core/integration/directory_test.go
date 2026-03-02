@@ -294,6 +294,27 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	src := c.Directory().
+		WithNewDirectory("nested", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700}).
+		WithNewFile("nested/file.txt", "nested", dagger.DirectoryWithNewFileOpts{Permissions: 0o600}).
+		WithNewFile("root.txt", "root", dagger.DirectoryWithNewFileOpts{Permissions: 0o640})
+
+	dir := c.Directory().WithDirectory("out", src, dagger.DirectoryWithDirectoryOpts{
+		Permissions: 0o751,
+	})
+
+	ctr := c.Container().From(alpineImage).WithDirectory("/", dir)
+	stdout, err := ctr.WithExec([]string{"sh", "-lc", "stat -c '%a %n' /out /out/nested /out/nested/file.txt /out/root.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "751 /out")
+	require.Contains(t, stdout, "751 /out/nested")
+	require.Contains(t, stdout, "751 /out/nested/file.txt")
+	require.Contains(t, stdout, "751 /out/root.txt")
+}
+
 func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

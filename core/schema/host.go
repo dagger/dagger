@@ -147,8 +147,9 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
 
-	GitIgnoreRoot string `internal:"true" default:""`
-	Gitignore     bool   `default:"false"`
+	GitIgnoreRoot string   `internal:"true" default:""`
+	FollowPaths   []string `internal:"true" default:"[]"`
+	Gitignore     bool     `default:"false"`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -251,9 +252,18 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		excludePatterns = append(excludePatterns, exclude)
 	}
 
+	followPaths := make([]string, 0, len(args.FollowPaths))
+	for _, followPath := range args.FollowPaths {
+		if !filepath.IsLocal(followPath) {
+			continue
+		}
+		followPaths = append(followPaths, filepath.Join(relPathFromRoot, followPath))
+	}
+
 	snapshotOpts := filesync.SnapshotOpts{
 		IncludePatterns: includePatterns,
 		ExcludePatterns: excludePatterns,
+		FollowPaths:     followPaths,
 		GitIgnore:       args.Gitignore,
 		RelativePath:    relPathFromRoot,
 	}
