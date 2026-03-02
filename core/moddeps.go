@@ -85,15 +85,10 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // It is meant for consumption from modules, which have some APIs hidden from their codegen.
 func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Result[*File], _ error) {
-	schema, err := d.lazilyLoadSchema(ctx)
+	dag, err := d.Schema(ctx)
 	if err != nil {
 		return inst, err
 	}
-	dagqlCache, err := d.root.Cache(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get cache: %w", err)
-	}
-	dag := schema.WithCache(dagqlCache)
 
 	// Generate the JSON file using the cached server. The dagql Select cache
 	// (CachePerSchema) handles caching per-args, so different hiddenTypes
