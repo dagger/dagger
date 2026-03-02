@@ -151,7 +151,13 @@ func vaultOIDCCallbackServer(callbackCh chan<- vaultOIDCCallback) *http.Server {
 		}
 	})
 
-	return &http.Server{Handler: mux}
+	return &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
 }
 
 func parseVaultOIDCCallback(r *http.Request) (string, string, error) {
@@ -181,8 +187,12 @@ func vaultOIDCCallbackPort() (string, error) {
 	if port == "" {
 		port = defaultVaultOIDCCallbackPort
 	}
-	if _, err := strconv.Atoi(port); err != nil {
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
 		return "", fmt.Errorf("invalid VAULT_OIDC_CALLBACK_PORT %q: %w", port, err)
+	}
+	if portNum < 1 || portNum > 65535 {
+		return "", fmt.Errorf("invalid VAULT_OIDC_CALLBACK_PORT %q: must be between 1 and 65535", port)
 	}
 	return port, nil
 }

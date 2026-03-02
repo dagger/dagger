@@ -185,7 +185,7 @@ func vaultConfigureClient(ctx context.Context) error {
 		if client.Token() == "" {
 			ttl, err := vaultOIDCLogin(ctx, client)
 			if err != nil {
-				return fmt.Errorf("Vault OIDC login failed: %w", err)
+				return fmt.Errorf("vault OIDC login failed: %w", err)
 			}
 
 			if err := saveCachedVaultToken(client.Token(), ttl); err != nil {
