@@ -183,10 +183,11 @@ type ModuleSource struct {
 
 	Digest string `field:"true" name:"digest" doc:"A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."`
 
-	Kind   ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
-	Local  *LocalModuleSource
-	Git    *GitModuleSource
-	DirSrc *DirModuleSource
+	Kind                ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
+	Local               *LocalModuleSource
+	Git                 *GitModuleSource
+	DirSrc              *DirModuleSource
+	PendingExperimental []string
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -242,6 +243,11 @@ func (src ModuleSource) Clone() *ModuleSource {
 	src.ConfigClients = make([]*modules.ModuleConfigClient, len(oriConfigClients))
 	copy(src.ConfigClients, oriConfigClients)
 
+	if src.PendingExperimental != nil {
+		origPendingExperimental := src.PendingExperimental
+		src.PendingExperimental = make([]string, len(origPendingExperimental))
+		copy(src.PendingExperimental, origPendingExperimental)
+	}
 	return &src
 }
 
@@ -1340,7 +1346,8 @@ func (f ModuleSourceExperimentalFeature) String() string { return string(f) }
 var ModuleSourceExperimentalFeatures = dagql.NewEnum[ModuleSourceExperimentalFeature]()
 
 var (
-	ModuleSourceExperimentalFeatureSelfCalls = ModuleSourceExperimentalFeatures.Register("SELF_CALLS", "Self calls")
+	ModuleSourceExperimentalFeatureSelfCalls   = ModuleSourceExperimentalFeatures.Register("SELF_CALLS", "Self calls")
+	ModuleSourceExperimentalFeaturePortableAPI = ModuleSourceExperimentalFeatures.Register("PORTABLE_API", "Portable API")
 )
 
 func (f ModuleSourceExperimentalFeature) Type() *ast.Type {

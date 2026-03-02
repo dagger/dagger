@@ -16,12 +16,12 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-{{ if IsModuleCode }}
+{{ if and IsModuleCode (not IsPortableDaggerAPI) }}
 	"{{.UtilityPkgImport}}/querybuilder"
 	"{{.UtilityPkgImport}}/telemetry"
 {{ end }}
 
-{{- if IsStandaloneClient }}
+{{- if or IsStandaloneClient IsPortableDaggerAPI}}
 	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger"
 {{ end }}

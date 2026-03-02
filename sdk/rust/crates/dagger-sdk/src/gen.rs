@@ -14618,6 +14618,8 @@ pub enum ImageMediaTypes {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceExperimentalFeature {
+    #[serde(rename = "PORTABLE_API")]
+    PortableApi,
     #[serde(rename = "SELF_CALLS")]
     SelfCalls,
 }

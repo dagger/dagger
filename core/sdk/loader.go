@@ -127,7 +127,7 @@ func (l *Loader) namedSDK(
 
 	switch sdkNamedParsed {
 	case sdkGo:
-		return &goSDK{root: root, rawConfig: sdk.Config}, nil
+		return &goSDK{root: root, rawConfig: sdk.Config, experimental: sdk.Experimental}, nil
 	case sdkPython:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case sdkTypescript:

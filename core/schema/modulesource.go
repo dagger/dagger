@@ -1175,6 +1175,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 			Config:       modCfg.SDK.Config,
 			Experimental: modCfg.SDK.Experimental,
 		}
+		src.PendingExperimental = flushPendingExperimental(src.SDK, src.PendingExperimental)
 	}
 
 	// figure out source subpath
@@ -1442,6 +1443,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 
 	if src.SDK == nil {
 		src.SDK = &core.SDKConfig{}
+		src.PendingExperimental = flushPendingExperimental(src.SDK, src.PendingExperimental)
 	}
 	src.SDK.Source = args.Source
 
@@ -2264,10 +2266,13 @@ func (s *moduleSourceSchema) moduleSourceWithExperimentalFeatures(
 		Features []core.ModuleSourceExperimentalFeature
 	},
 ) (*core.ModuleSource, error) {
-	if parentSrc.SDK == nil {
-		return nil, fmt.Errorf("module source has no SDK")
-	}
 	tmpSrc := parentSrc.Clone()
+	if parentSrc.SDK == nil {
+		for _, feature := range args.Features {
+			tmpSrc.PendingExperimental = append(tmpSrc.PendingExperimental, feature.String())
+		}
+		return tmpSrc, nil
+	}
 	if len(args.Features) > 0 {
 		if tmpSrc.SDK.Experimental == nil {
 			tmpSrc.SDK.Experimental = make(map[string]bool)
@@ -2286,10 +2291,21 @@ func (s *moduleSourceSchema) moduleSourceWithoutExperimentalFeatures(
 		Features []core.ModuleSourceExperimentalFeature
 	},
 ) (*core.ModuleSource, error) {
-	if parentSrc.SDK == nil {
-		return nil, fmt.Errorf("module source has no SDK")
-	}
 	tmpSrc := parentSrc.Clone()
+	if parentSrc.SDK == nil {
+		var newPending []string
+	ploop:
+		for _, pending := range tmpSrc.PendingExperimental {
+			for _, feature := range args.Features {
+				if pending == feature.String() {
+					continue ploop
+				}
+			}
+			newPending = append(newPending, pending)
+		}
+		tmpSrc.PendingExperimental = newPending
+		return tmpSrc, nil
+	}
 	if len(args.Features) > 0 {
 		if tmpSrc.SDK.Experimental == nil {
 			tmpSrc.SDK.Experimental = make(map[string]bool)
@@ -3309,6 +3325,20 @@ func findObjectInModule(mod *core.Module, originalName string) *core.ObjectTypeD
 		}
 	}
 	return nil
+}
+
+// flushPendingExperimental applies experimental features added prior to SDK loading
+func flushPendingExperimental(sdk *core.SDKConfig, pendingExperimental []string) []string {
+	if pendingExperimental != nil && sdk != nil {
+		if sdk.Experimental == nil {
+			sdk.Experimental = make(map[string]bool)
+		}
+		for _, feature := range pendingExperimental {
+			sdk.Experimental[feature] = true
+		}
+		pendingExperimental = nil
+	}
+	return pendingExperimental
 }
 
 // followFunctionChain traverses a chain of functions through return types

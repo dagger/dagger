@@ -30,7 +30,8 @@ func GenerateTypeDefs(cmd *cobra.Command, args []string) error {
 	defer cfg.Close()
 
 	moduleConfig := &generator.ModuleGeneratorConfig{
-		ModuleName: moduleName,
+		ModuleName:        moduleName,
+		PortableDaggerAPI: portableAPI,
 	}
 
 	modPath, err := relativeTo(outputDir, modulePath)
@@ -64,5 +65,6 @@ func init() {
 	generateTypeDefsCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 	_ = generateTypeDefsCmd.MarkFlagRequired("module-name")
 	_ = generateTypeDefsCmd.MarkFlagRequired("module-source-path")
+	generateTypeDefsCmd.Flags().BoolVar(&portableAPI, "portable-api", false, "generate portable go code with dagger.io/dagger imports")
 	generateTypeDefsCmd.Flags().StringVar(&outputFile, "output", "", "path to output file")
 }

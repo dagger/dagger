@@ -60,6 +60,8 @@ var (
 	selfCalls   bool
 	noSelfCalls bool
 
+	portableAPI bool
+
 	force bool
 
 	autoApply    bool
@@ -152,6 +154,7 @@ func init() {
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
 	moduleInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
+	moduleInitCmd.Flags().BoolVar(&portableAPI, "portable-api", false, "Use portable dagger API (experimental)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
@@ -175,6 +178,7 @@ func init() {
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
 	moduleDevelopCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 	moduleDevelopCmd.Flags().BoolVar(&noSelfCalls, "without-self-calls", false, "Disable self-calls capability for the module")
+	moduleDevelopCmd.Flags().BoolVar(&portableAPI, "portable-api", false, "Use portable dagger API (experimental)")
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
 
 	toolchainInstallCmd.Flags().StringVarP(&toolchainInstallName, "name", "n", "", "Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.")
@@ -301,6 +305,12 @@ dagger init --sdk=go
 			}
 
 			modSrc = modSrc.WithName(moduleName)
+			if portableAPI {
+				if sdk == "" {
+					return fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
+				}
+				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeaturePortableApi})
+			}
 			if sdk != "" {
 				modSrc = modSrc.WithSDK(sdk)
 			}
@@ -636,6 +646,9 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
 			} else if noSelfCalls {
 				modSrc = modSrc.WithoutExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
+			}
+			if portableAPI {
+				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeaturePortableApi})
 			}
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
