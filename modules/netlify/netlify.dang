@@ -1,0 +1,174 @@
+"""
+A Dagger module for deploying Netlify sites.
+"""
+type Netlify {
+  let token: Secret
+  let cliVersion: String!
+
+  new(
+    # Netlify auth token used by CLI calls.
+    token: Secret = null,
+    # Netlify CLI version to install in helper containers.
+    cliVersion: String! = "latest",
+  ) {
+    self.token = token
+    self.cliVersion = cliVersion
+    self
+  }
+
+  """
+  Discover Netlify sites by locating netlify.toml files in the workspace.
+  """
+  pub sites(ws: Workspace!): [Site!]! {
+    ws
+      .directory(".", include: ["**/netlify.toml"])
+      .glob("**/netlify.toml")
+      .map { configPath =>
+        let path = configPath
+          .trimSuffix("netlify.toml")
+          .trimSuffix("/")
+        let path = if (path == "") { "." } else { path }
+        Site(
+          path: path,
+          token: token,
+          cliVersion: cliVersion,
+          linkedSite: linkedSiteID(ws, path),
+        )
+      }
+  }
+
+  """
+  Return one discovered site by its workspace-relative path.
+  """
+  pub site(ws: Workspace!, path: String!): Site! {
+    let match = sites(ws).filter { s => s.path == path }[0]
+    if (match != null) {
+      match
+    } else {
+      raise "netlify site not found: " + path
+    }
+  }
+
+  let linkedSiteID(ws: Workspace!, path: String!): String {
+    let statePath = if (path == ".") {
+      ".netlify/state.json"
+    } else {
+      path + "/.netlify/state.json"
+    }
+
+    let stateFile = ws
+      .directory(".", include: [statePath])
+      .stat(statePath)
+
+    if (stateFile == null) {
+      null
+    } else {
+      let stateJSON = ws.file(statePath).asJSON
+      let hasSiteID = stateJSON
+        .fields
+        .filter { field => field == "siteId" }
+        .length > 0
+      let hasSnakeSiteID = stateJSON
+        .fields
+        .filter { field => field == "site_id" }
+        .length > 0
+
+      if (hasSiteID) {
+        stateJSON.field(["siteId"]).asString :: String
+      } else if (hasSnakeSiteID) {
+        stateJSON.field(["site_id"]).asString :: String
+      } else {
+        null
+      }
+    }
+  }
+}
+
+type Site {
+  """
+  Path to the site root, relative to workspace root.
+  """
+  pub path: String!
+
+  let token: Secret
+  let cliVersion: String!
+  let linkedSite: String
+
+  let requireToken: Secret! {
+    if (token == null) {
+      raise "no netlify token configured; pass token to netlify.new(...)"
+    } else {
+      token
+    }
+  }
+
+  let cli: Container! {
+    container
+      .from("node:18")
+      .withExec(["npm", "install", "netlify-cli@" + cliVersion, "-g"])
+      .withSecretVariable("NETLIFY_AUTH_TOKEN", requireToken)
+  }
+
+  let requireSite(site: String): String! {
+    if (site != null) {
+      if (site == "") {
+        raise "site is empty"
+      } else {
+        site
+      }
+    } else if (linkedSite == null) {
+      raise "no linked site found; pass deploy(site: ...) or run netlify link"
+    } else if (linkedSite == "") {
+      raise "linked site is empty"
+    } else {
+      linkedSite
+    }
+  }
+
+  """
+  Deploy static assets to Netlify and return the deployment ID.
+  `context` maps directly to `netlify deploy --context` values such as
+  `production`, `deploy-preview`, `branch-deploy`, `dev`, or `branch:<name>`.
+  If not set, no `--context` flag is passed and Netlify CLI defaults apply.
+  `site` maps directly to `netlify deploy --site`.
+  """
+  pub deploy(
+    build: Directory!,
+    message: String!,
+    context: String,
+    site: String,
+  ): String! {
+    let deployCmd = [
+      "netlify",
+      "deploy",
+      "--dir=/build",
+      "--site",
+      requireSite(site),
+      "--message",
+      message,
+      "--json",
+    ]
+    if (context != null) {
+      if (context != "") {
+        deployCmd = deployCmd + ["--context", context]
+      }
+    }
+
+    let out = cli
+      .withMountedDirectory("/build", build)
+      .withExec(deployCmd)
+      .stdout
+
+    let deployID = Dagger
+      .json
+      .withContents(out :: JSON!)
+      .field(["deploy_id"])
+      .asString
+
+    if (deployID != null) {
+      deployID
+    } else {
+      raise "deployment response did not include deploy_id"
+    }
+  }
+}
