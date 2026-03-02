@@ -23,4 +23,9 @@ Expected stderr:
   ┃ ./main.go:6:6: undefined: ctx
   ! exit code: 1
 
+Error: call function "Broken": exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+Stderr:
+# dagger/broken
+./main.go:6:6: undefined: ctx
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -20,4 +20,6 @@ Expected stderr:
 ╰╴✘ .failingFunction: Void X.Xs ERROR
   ! this function always fails
 
+Error: this function always fails [traceparent:00000000000000000000000000000000-0000000000000000]
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -24,4 +24,6 @@ Expected stderr:
 │ ! exit code: 1
 ╰╴○ withExec sleep 1 X.Xs
 
+Error: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

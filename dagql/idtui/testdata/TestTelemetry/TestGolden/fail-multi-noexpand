@@ -17,4 +17,7 @@ this is a failing effect
 this is another failing effect
 ! exit code: 1
 
+Error: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

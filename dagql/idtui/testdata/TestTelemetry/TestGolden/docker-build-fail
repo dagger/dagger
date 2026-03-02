@@ -31,4 +31,6 @@ $ withExec echo hey X.Xs CACHED
 ✘ .stdout: String! X.Xs ERROR
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
 
+Error: process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

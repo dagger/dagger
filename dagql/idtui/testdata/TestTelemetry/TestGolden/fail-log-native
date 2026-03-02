@@ -20,4 +20,6 @@ Expected stderr:
 ┃ and then failing
 ! i failed
 
+Error: i failed [traceparent:00000000000000000000000000000000-0000000000000000]
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

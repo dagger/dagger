@@ -23,4 +23,8 @@ Expected stderr:
   ┃ this is a failing effect
   ! exit code: 1
 
+Error: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+Stdout:
+this is a failing effect
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

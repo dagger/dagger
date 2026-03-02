@@ -24,4 +24,9 @@ Expected stderr:
   ┃ and then failing
   ! exit code: 1
 
+Error: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+Stdout:
+im doing a lot of work
+and then failing
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

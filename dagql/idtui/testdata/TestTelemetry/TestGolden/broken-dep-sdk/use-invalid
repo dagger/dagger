@@ -32,4 +32,6 @@ Expected stderr:
     │    
     ╰╴✔ load SDK: go X.Xs
 
+Error: failed to get configured module: failed to resolve dep to source: failed to load sdk for local module source: invalid SDK: "unknown" [traceparent:00000000000000000000000000000000-0000000000000000]
+
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
