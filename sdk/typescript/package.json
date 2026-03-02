@@ -56,7 +56,7 @@
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/adm-zip": "^0.5.7",
     "@types/mocha": "^10.0.10",
-    "@types/node": "~25.3.1",
+    "@types/node": "~25.3.3",
     "@types/tar": "^7.0.87",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
