@@ -730,7 +730,14 @@ func configureVaultOIDC(ctx context.Context, t *testctx.T, vaultImage *dagger.Co
 		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
 		WithServiceBinding("vault", vaultServer).
 		WithServiceBinding("dex", dex).
-		WithExec([]string{"sleep", "5"}).
+		WithExec([]string{"sh", "-c", `for i in $(seq 1 30); do
+  if vault status >/dev/null 2>&1; then
+    exit 0
+  fi
+  sleep 1
+done
+echo "Vault did not become ready in time" >&2
+exit 1`}).
 		WithExec([]string{"vault", "auth", "enable", "oidc"}).
 		WithExec([]string{"sh", "-c", `cat >/tmp/oidc-read.hcl <<'EOF'
 path "secret/data/oidctest" {
