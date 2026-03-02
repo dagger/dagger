@@ -1845,6 +1845,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::changeset",
+			"p": "Dagger/Client.html#method_changeset",
+			"d": "<p>Creates an empty changeset</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::cloud",
 			"p": "Dagger/Client.html#method_cloud",
 			"d": "<p>Dagger Cloud configuration and state</p>"
