@@ -723,11 +723,7 @@ func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 	case *dagger.Changeset:
 		return v, nil
 	case []interface{}:
-		l := len(v)
-		if l == 0 {
-			return nil, nil
-		}
-		css := make([]*dagger.Changeset, l)
+		css := make([]*dagger.Changeset, len(v))
 		for i, el := range v {
 			if cs, err := toChangeset(dag, el); err != nil {
 				return nil, err
@@ -735,7 +731,7 @@ func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 				css[i] = cs
 			}
 		}
-		return css[0].WithChangesets(css[1:]), nil
+		return dag.Changeset().WithChangesets(css), nil
 	default:
 		return nil, fmt.Errorf("unexpected response type for changeset: %T", v)
 	}
