@@ -38,7 +38,7 @@ func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCac
 	if srv.baseDagqlCache == nil {
 		return &core.EngineCacheEntrySet{}, nil
 	}
-	entries := srv.baseDagqlCache.UsageEntries()
+	entries := srv.baseDagqlCache.UsageEntries(ctx)
 	return engineCacheEntrySetFromDagqlEntries(entries), nil
 }
 

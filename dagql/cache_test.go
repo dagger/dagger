@@ -2700,7 +2700,7 @@ func TestCacheUsageEntriesIncludeRetainedPersistedResults(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !res.HitCache())
 
-	entries := c.UsageEntries()
+	entries := c.UsageEntries(context.Background())
 	assert.Equal(t, 1, len(entries))
 	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
 	assert.Assert(t, entries[0].ActivelyUsed)
@@ -2711,7 +2711,7 @@ func TestCacheUsageEntriesIncludeRetainedPersistedResults(t *testing.T) {
 	assert.Assert(t, entries[0].RecordType != "")
 
 	assert.NilError(t, sc.ReleaseAndClose(ctxSession))
-	entries = c.UsageEntries()
+	entries = c.UsageEntries(context.Background())
 	assert.Equal(t, 1, len(entries))
 	assert.Assert(t, !entries[0].ActivelyUsed)
 	assert.Assert(t, entries[0].MostRecentUseTimeUnixNano >= entries[0].CreatedTimeUnixNano)
@@ -2734,7 +2734,7 @@ func TestCacheUsageEntriesTracksMostRecentUseAndInUse(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !res1.HitCache())
 
-	entriesBefore := c.UsageEntries()
+	entriesBefore := c.UsageEntries(context.Background())
 	assert.Equal(t, 1, len(entriesBefore))
 	entryBefore := entriesBefore[0]
 	assert.Assert(t, entryBefore.ActivelyUsed)
@@ -2751,7 +2751,7 @@ func TestCacheUsageEntriesTracksMostRecentUseAndInUse(t *testing.T) {
 	assert.Assert(t, res2.HitCache())
 	assert.Equal(t, 17, cacheTestUnwrapInt(t, res2))
 
-	entriesAfterHit := c.UsageEntries()
+	entriesAfterHit := c.UsageEntries(context.Background())
 	assert.Equal(t, 1, len(entriesAfterHit))
 	entryAfterHit := entriesAfterHit[0]
 	assert.Equal(t, entryBefore.ID, entryAfterHit.ID)
@@ -2762,7 +2762,7 @@ func TestCacheUsageEntriesTracksMostRecentUseAndInUse(t *testing.T) {
 	assert.NilError(t, res1.Release(ctx))
 	assert.NilError(t, res2.Release(ctx))
 
-	entriesAfterRelease := c.UsageEntries()
+	entriesAfterRelease := c.UsageEntries(context.Background())
 	assert.Equal(t, 1, len(entriesAfterRelease))
 	entryAfterRelease := entriesAfterRelease[0]
 	assert.Assert(t, !entryAfterRelease.ActivelyUsed)
@@ -2794,8 +2794,8 @@ func TestCacheUsageEntriesDeterministicOrdering(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	entries1 := c.UsageEntries()
-	entries2 := c.UsageEntries()
+	entries1 := c.UsageEntries(context.Background())
+	entries2 := c.UsageEntries(context.Background())
 	assert.DeepEqual(t, entries1, entries2)
 	assert.Equal(t, 2, len(entries1))
 	assert.Assert(t, entries1[0].ID < entries1[1].ID)
@@ -2852,7 +2852,7 @@ func TestCachePruneKeepDuration(t *testing.T) {
 	assert.Equal(t, 1, len(pruneResult.PrunedEntries))
 	assert.Equal(t, fmt.Sprintf("dagql.result.%d", oldRID), pruneResult.PrunedEntries[0].ID)
 
-	usage := c.UsageEntries()
+	usage := c.UsageEntries(context.Background())
 	assert.Equal(t, 1, len(usage))
 	assert.Equal(t, fmt.Sprintf("dagql.result.%d", recentRID), usage[0].ID)
 }
@@ -2905,7 +2905,7 @@ func TestCachePruneThresholdMaxAndTargetSpace(t *testing.T) {
 	assert.Equal(t, int64(200), pruneResult.PrunedBytes)
 	assert.Equal(t, 2, len(pruneResult.PrunedEntries))
 
-	usage := c.UsageEntries()
+	usage := c.UsageEntries(context.Background())
 	assert.Equal(t, 1, len(usage))
 	assert.Equal(t, fmt.Sprintf("dagql.result.%d", rid3), usage[0].ID)
 }
@@ -2943,7 +2943,7 @@ func TestCachePruneInUseEntriesNeverPruned(t *testing.T) {
 	assert.Equal(t, int64(0), pruneResult.PrunedBytes)
 	assert.Equal(t, 0, len(pruneResult.PrunedEntries))
 
-	usage := c.UsageEntries()
+	usage := c.UsageEntries(context.Background())
 	assert.Equal(t, 1, len(usage))
 	assert.Assert(t, usage[0].ActivelyUsed)
 

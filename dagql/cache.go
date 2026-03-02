@@ -49,7 +49,7 @@ type Cache interface {
 
 	// Returns a deterministic snapshot of cache usage entries used for pruning
 	// policy/accounting.
-	UsageEntries() []CacheUsageEntry
+	UsageEntries(context.Context) []CacheUsageEntry
 
 	// Prune applies ordered prune policies against in-memory dagql cache
 	// results and returns a report of pruned entries.
@@ -649,9 +649,11 @@ func (c *cache) EntryStats() CacheEntryStats {
 	return stats
 }
 
-func (c *cache) UsageEntries() []CacheUsageEntry {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+func (c *cache) UsageEntries(ctx context.Context) []CacheUsageEntry {
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+
+	c.refreshResultUsageLocked(ctx)
 
 	return c.usageEntriesLocked()
 }
@@ -664,6 +666,7 @@ func (c *cache) Prune(ctx context.Context, opts CachePruneOpts) (CachePruneResul
 	)
 
 	c.egraphMu.Lock()
+	c.refreshResultUsageLocked(ctx)
 	for policyIndex, policy := range opts.Policies {
 		prunedEntries, prunedBytes, prunedCallbacks := c.applyPrunePolicyLocked(
 			policyIndex,
@@ -690,6 +693,39 @@ func (c *cache) Prune(ctx context.Context, opts CachePruneOpts) (CachePruneResul
 	}
 
 	return result, pruneErr
+}
+
+func (c *cache) refreshResultUsageLocked(ctx context.Context) {
+	for _, res := range c.resultsByID {
+		c.refreshResultUsage(ctx, res)
+	}
+}
+
+func (c *cache) refreshResultUsage(ctx context.Context, res *sharedResult) {
+	if res == nil || !res.hasValue || res.self == nil {
+		return
+	}
+	usageProvider, ok := res.self.(CacheValueUsageProvider)
+	if !ok {
+		return
+	}
+	usage, hasUsage, err := usageProvider.DagqlCacheUsage(ctx)
+	if err != nil {
+		slog.Debug("failed to refresh dagql cached value usage", "err", err)
+		return
+	}
+	if !hasUsage {
+		return
+	}
+	if usage.RecordType != "" {
+		res.recordType = usage.RecordType
+	}
+	if usage.Description != "" {
+		res.description = usage.Description
+	}
+	if usage.SizeBytes > res.sizeEstimateBytes {
+		res.sizeEstimateBytes = usage.SizeBytes
+	}
 }
 
 func (c *cache) usageEntriesLocked() []CacheUsageEntry {
@@ -1265,27 +1301,7 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 	if oc.res.description == "" {
 		oc.res.description = requestIDForIndex.DisplaySelf()
 	}
-	if oc.res.hasValue {
-		if usageProvider, ok := oc.res.self.(CacheValueUsageProvider); ok {
-			usage, hasUsage, usageErr := usageProvider.DagqlCacheUsage(ctx)
-			if usageErr != nil {
-				slog.Debug("failed to resolve dagql cached value usage",
-					"requestID", requestIDForIndex.DisplaySelf(),
-					"err", usageErr,
-				)
-			} else if hasUsage {
-				if usage.RecordType != "" {
-					oc.res.recordType = usage.RecordType
-				}
-				if usage.Description != "" {
-					oc.res.description = usage.Description
-				}
-				if usage.SizeBytes > 0 {
-					oc.res.sizeEstimateBytes = usage.SizeBytes
-				}
-			}
-		}
-	}
+	c.refreshResultUsage(ctx, oc.res)
 	estimatedSize := estimateSharedResultSizeBytes(requestIDForIndex, oc.res)
 	if estimatedSize > oc.res.sizeEstimateBytes {
 		// TODO: replace this approximation with concrete snapshot/object accounting.
