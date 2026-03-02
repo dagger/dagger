@@ -51,7 +51,7 @@ func (r *ReleaseTest) NewModule(ctx context.Context) error {
 func (r *ReleaseTest) ExistingModule(
 	ctx context.Context,
 
-	//+defaultPath="./testdata/module"
+	//+defaultPath="/toolchains/release/testdata/module"
 	testdata *dagger.Directory,
 ) error {
 	ctr := r.Container.
