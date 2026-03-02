@@ -1,6 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.25.3
+go 1.25.6
 
 require (
 	dagger.io/dagger v0.20.1
@@ -13,6 +13,7 @@ replace (
 )
 
 require (
+	codeberg.org/vito/tuist v0.0.0-20260227010816-571b2a5a57a3
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
@@ -40,6 +41,7 @@ require (
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/huh v0.8.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
+	github.com/charmbracelet/ultraviolet v0.0.0-20260223171050-89c142e4aa73
 	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/cilium/ebpf v0.17.3
 	github.com/containerd/console v1.0.5
@@ -199,6 +201,7 @@ require (
 )
 
 require (
+	charm.land/lipgloss/v2 v2.0.0 // indirect
 	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/auth v0.16.2 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
@@ -238,6 +241,8 @@ require (
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
+	github.com/charmbracelet/x/termios v0.1.1 // indirect
+	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/checkpoint-restore/go-criu/v6 v6.3.0 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
