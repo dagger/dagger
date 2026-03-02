@@ -1,11 +1,13 @@
 package schema
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -221,29 +224,25 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			WithInput(dagql.PerClientInput).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		/*
-			TODO: re-implement Dockerfile.
-
-			dagql.NodeFunc("dockerBuild", s.dockerBuild).
-				Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
-				Args(
-					dagql.Arg("dockerfile").Doc(`Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`),
-					dagql.Arg("platform").Doc(`The platform to build.`),
-					dagql.Arg("buildArgs").Doc(`Build arguments to use in the build.`),
-					dagql.Arg("target").Doc(`Target build stage to build.`),
-					dagql.Arg("secrets").Doc(`Secrets to pass to the build.`,
-						`They will be mounted at /run/secrets/[secret-name].`),
-					dagql.Arg("noInit").Doc(
-						`If set, skip the automatic init process injected into containers created by RUN statements.`,
-						`This should only be used if the user requires that their exec processes be the
-					pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
-					),
-					dagql.Arg("ssh").Doc(
-						`A socket to use for SSH authentication during the build`,
-						`(e.g., for Dockerfile RUN --mount=type=ssh instructions).`,
-						`Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.`),
+		dagql.NodeFunc("dockerBuild", s.dockerBuild).
+			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
+			Args(
+				dagql.Arg("dockerfile").Doc(`Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`),
+				dagql.Arg("platform").Doc(`The platform to build.`),
+				dagql.Arg("buildArgs").Doc(`Build arguments to use in the build.`),
+				dagql.Arg("target").Doc(`Target build stage to build.`),
+				dagql.Arg("secrets").Doc(`Secrets to pass to the build.`,
+					`They will be mounted at /run/secrets/[secret-name].`),
+				dagql.Arg("noInit").Doc(
+					`If set, skip the automatic init process injected into containers created by RUN statements.`,
+					`This should only be used if the user requires that their exec processes be the
+				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 				),
-		*/
+				dagql.Arg("ssh").Doc(
+					`A socket to use for SSH authentication during the build`,
+					`(e.g., for Dockerfile RUN --mount=type=ssh instructions).`,
+					`Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.`),
+			),
 		dagql.NodeFunc("withTimestamps", s.withTimestamps).
 			IsPersistable().
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
@@ -491,8 +490,24 @@ func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.Obj
 }
 
 type WithDirectoryArgs struct {
-	Path  string
-	Owner string `default:""`
+	Path        string
+	Owner       string `default:""`
+	Permissions dagql.Optional[dagql.Int]
+	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
+	// BuildKit ADD archive auto-unpack compatibility semantics.
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, withDirectory errors
+	// if the requested source path does not exist.
+	RequiredSourcePath string `internal:"true" default:""`
+	// Hidden internal arg used for LLB fidelity; indicates destination should be
+	// treated as a directory path even if it does not yet exist.
+	DestPathHintIsDirectory bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity: when include points at a source
+	// directory path segment, copy that directory's contents (not the segment
+	// itself), while preserving file semantics when include points at a file.
+	CopySourcePathContentsWhenDir bool `internal:"true" default:"false"`
 
 	Source    core.DirectoryID
 	Directory core.DirectoryID // legacy, use Source instead
@@ -506,8 +521,25 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		return res, err
 	}
 	src := cmp.Or(args.Source, args.Directory)
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
+	}
 	dir := core.NewDirectoryChild(parent)
-	dir.LazyInit, err = dir.WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner)
+	dir.LazyInit, err = dir.WithDirectory(
+		ctx,
+		args.Path,
+		src.ID(),
+		args.CopyFilter,
+		args.Owner,
+		perms,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+		args.RequiredSourcePath,
+		args.DestPathHintIsDirectory,
+		args.CopySourcePathContentsWhenDir,
+	)
 	if err != nil {
 		return res, err
 	}
@@ -714,15 +746,19 @@ type WithFileArgs struct {
 	Source      core.FileID
 	Permissions dagql.Optional[dagql.Int]
 	Owner       string `default:""`
+	// Hidden internal arg used for LLB fidelity; default preserves existing behavior.
+	DoNotCreateDestPath bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; when set, copy behavior matches
+	// BuildKit ADD archive auto-unpack compatibility semantics.
+	AttemptUnpackDockerCompatibility bool `internal:"true" default:"false"`
+	// Hidden internal arg used for LLB fidelity; if true and source file loading
+	// fails, attempt directory-source fallback for ambiguous Dockerfile COPY
+	// lowerings where the source can be a directory.
+	AllowDirectorySourceFallback bool `internal:"true" default:"false"`
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-
-	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
 		return inst, err
 	}
@@ -732,12 +768,81 @@ func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
+
+	file, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
+			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
+				dir := core.NewDirectoryChild(parent)
+				dir.LazyInit, err = dir.WithDirectory(
+					ctx,
+					args.Path,
+					dirSourceID,
+					core.CopyFilter{},
+					args.Owner,
+					perms,
+					args.DoNotCreateDestPath,
+					args.AttemptUnpackDockerCompatibility,
+					"",
+					false,
+					false,
+				)
+				if err == nil {
+					return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+				}
+			}
+		}
+		return inst, err
+	}
 	dir := core.NewDirectoryChild(parent)
-	dir.LazyInit, err = dir.WithFile(ctx, args.Path, file.Self(), perms, args.Owner)
+	dir.LazyInit, err = dir.WithFile(
+		ctx,
+		args.Path,
+		file.Self(),
+		perms,
+		args.Owner,
+		args.DoNotCreateDestPath,
+		args.AttemptUnpackDockerCompatibility,
+	)
 	if err != nil {
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func directorySourceIDFromFileSourceID(fileSourceID *call.ID) (*call.ID, bool) {
+	if fileSourceID == nil || fileSourceID.Field() != "file" {
+		return nil, false
+	}
+
+	receiver := fileSourceID.Receiver()
+	if receiver == nil {
+		return nil, false
+	}
+
+	pathArg := fileSourceID.Arg("path")
+	if pathArg == nil {
+		return nil, false
+	}
+	pathVal, ok := pathArg.Value().ToInput().(string)
+	if !ok {
+		return nil, false
+	}
+
+	return receiver.Append(
+		(&core.Directory{}).Type(),
+		"directory",
+		call.WithArgs(call.NewArgument("path", call.NewLiteralString(pathVal), false)),
+	), true
+}
+
+func shouldAttemptDirectorySourceFallback(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Only fallback for the specific "path is a directory" case. Missing files
+	// or other load failures should remain hard errors.
+	return strings.Contains(err.Error(), "is a directory, not a file")
 }
 
 type WithFilesArgs struct {
@@ -1294,9 +1399,6 @@ func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent da
 	return parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
 }
 
-/*
-TODO: re-implement Dockerfile.
-
 type dirDockerBuildArgs struct {
 	Platform   dagql.Optional[core.Platform]
 	Dockerfile string                             `default:"Dockerfile"`
@@ -1308,7 +1410,7 @@ type dirDockerBuildArgs struct {
 }
 
 func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*core.Directory], filename string) ([]byte, error) {
-	file, err := parent.Self().FileLLB(ctx, parent, filename)
+	file, err := parent.Self().Subfile(ctx, parent, filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -1401,29 +1503,31 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 
-	var sshSocket *core.Socket
+	var sshSocketID *call.ID
 	if args.SSH.Valid {
 		sshSocketResult, err := args.SSH.Value.Load(ctx, srv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load SSH socket: %w", err)
 		}
-		sshSocket = sshSocketResult.Self()
+		if sshSocketResult.Self() == nil {
+			return nil, fmt.Errorf("failed to load SSH socket: nil socket")
+		}
+		sshSocketID = sshSocketResult.ID()
 	}
 
 	return ctr.Build(
 		ctx,
 		parent.Self(),
-		buildctxDir.Self(),
+		buildctxDir.ID(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
 		secrets,
 		secretStore,
 		args.NoInit,
-		sshSocket,
+		sshSocketID,
 	)
 }
-*/
 
 type directoryTerminalArgs struct {
 	core.TerminalArgs

@@ -48,6 +48,7 @@ func NewFileSyncer(opt FileSyncerOpt) *FileSyncer {
 type SnapshotOpts struct {
 	IncludePatterns []string
 	ExcludePatterns []string
+	FollowPaths     []string
 	GitIgnore       bool
 	CacheBuster     string
 
@@ -171,9 +172,9 @@ func (ls *FileSyncer) sync(
 	}()
 
 	// now sync in the clientPath dir
-	remote := newRemoteFS(caller, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.GitIgnore)
+	remote := newRemoteFS(caller, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.FollowPaths, opts.GitIgnore)
 	// local mirror should not apply gitignore; remote stats carry ignore metadata.
-	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.RelativePath)
+	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.FollowPaths, opts.RelativePath)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create local fs: %w", err)
 	}
@@ -210,8 +211,8 @@ func (ls *FileSyncer) syncParentDirs(
 		root = drive + "/"
 	}
 
-	remote := newRemoteFS(caller, root, includes, excludes, false)
-	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, opts.RelativePath)
+	remote := newRemoteFS(caller, root, includes, excludes, nil, false)
+	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, nil, opts.RelativePath)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/opencontainers/go-digest"
 )
 
 var _ SchemaResolvers = &httpSchema{}
@@ -27,6 +28,7 @@ func (s *httpSchema) Install(srv *dagql.Server) {
 				dagql.Arg("url").Doc(`HTTP url to get the content from (e.g., "https://docs.dagger.io").`),
 				dagql.Arg("name").Doc(`File name to use for the file. Defaults to the last part of the URL.`),
 				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
+				dagql.Arg("checksum").Doc(`Expected digest of the downloaded content (e.g., "sha256:...").`),
 				dagql.Arg("authHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the URL is fetched.`),
 			),
@@ -37,6 +39,7 @@ type httpArgs struct {
 	URL                     string
 	Name                    *string
 	Permissions             *int
+	Checksum                *string
 	AuthHeader              dagql.Optional[core.SecretID]
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 }
@@ -70,6 +73,10 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	permissions := 0600
 	if args.Permissions != nil {
 		permissions = *args.Permissions
+	}
+	expectedChecksum, err := parseChecksumArg(args.Checksum)
+	if err != nil {
+		return inst, err
 	}
 
 	var authHeader string
@@ -127,6 +134,9 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	}
 	defer resp.Body.Close()
 	defer snap.Release(context.WithoutCancel(ctx))
+	if expectedChecksum != "" && expectedChecksum != dgst {
+		return inst, fmt.Errorf("http checksum mismatch: expected %s, got %s", expectedChecksum, dgst)
+	}
 
 	// Keep recipe digest as the authoritative call identity.
 	// Attach HTTP output identity as content digest so equivalent outputs can
@@ -136,6 +146,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		fmt.Sprint(permissions),
 		dgst.String(),
 		resp.Header.Get("Last-Modified"),
+		expectedChecksum.String(),
 	)
 	resultID := dagql.CurrentID(ctx).With(call.WithContentDigest(outputDigest))
 	file := &core.File{
@@ -151,4 +162,15 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		return inst, err
 	}
 	return inst, nil
+}
+
+func parseChecksumArg(checksum *string) (digest.Digest, error) {
+	if checksum == nil || *checksum == "" {
+		return "", nil
+	}
+	parsed, err := digest.Parse(*checksum)
+	if err != nil {
+		return "", fmt.Errorf("invalid checksum %q: %w", *checksum, err)
+	}
+	return parsed, nil
 }
