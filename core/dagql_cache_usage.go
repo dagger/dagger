@@ -6,37 +6,32 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 )
 
 const buildkitSnapshotSizeMetadataKey = "snapshot.size"
 
 func (dir *Directory) DagqlCacheUsage(ctx context.Context) (dagql.CacheValueUsage, bool, error) {
-	snapshot, err := dir.getSnapshot(ctx)
-	if err != nil {
-		return dagql.CacheValueUsage{}, false, err
+	if dir == nil || dir.Snapshot == nil {
+		return dagql.CacheValueUsage{}, false, nil
 	}
-	return cacheRefUsage(ctx, snapshot)
+	return cacheRefUsage(dir.Snapshot), true, nil
 }
 
 func (file *File) DagqlCacheUsage(ctx context.Context) (dagql.CacheValueUsage, bool, error) {
-	snapshot, err := file.getSnapshot(ctx)
-	if err != nil {
-		return dagql.CacheValueUsage{}, false, err
+	if file == nil || file.Snapshot == nil {
+		return dagql.CacheValueUsage{}, false, nil
 	}
-	return cacheRefUsage(ctx, snapshot)
+	return cacheRefUsage(file.Snapshot), true, nil
 }
 
 func (container *Container) DagqlCacheUsage(ctx context.Context) (dagql.CacheValueUsage, bool, error) {
 	if container == nil || container.FS == nil || container.FS.Self() == nil {
 		return dagql.CacheValueUsage{}, false, nil
 	}
-
-	snapshot, err := container.FS.Self().getSnapshot(ctx)
-	if err != nil {
-		return dagql.CacheValueUsage{}, false, err
+	if container.FS.Self().Snapshot == nil {
+		return dagql.CacheValueUsage{}, false, nil
 	}
-	return cacheRefUsage(ctx, snapshot)
+	return cacheRefUsage(container.FS.Self().Snapshot), true, nil
 }
 
 func (cache *CacheVolume) DagqlCacheUsage(ctx context.Context) (dagql.CacheValueUsage, bool, error) {
@@ -60,14 +55,8 @@ func (cache *CacheVolume) DagqlCacheUsage(ctx context.Context) (dagql.CacheValue
 		description string
 	)
 	for _, ref := range refs {
-		usage, hasUsage, err := cacheRefUsage(ctx, ref)
+		usage := cacheRefUsage(ref)
 		_ = ref.Release(ctx)
-		if err != nil {
-			return dagql.CacheValueUsage{}, false, err
-		}
-		if !hasUsage {
-			continue
-		}
 		totalSize += usage.SizeBytes
 		if recordType == "" && usage.RecordType != "" {
 			recordType = usage.RecordType
@@ -84,48 +73,15 @@ func (cache *CacheVolume) DagqlCacheUsage(ctx context.Context) (dagql.CacheValue
 	}, true, nil
 }
 
-func cacheRefUsage(ctx context.Context, ref bkcache.ImmutableRef) (dagql.CacheValueUsage, bool, error) {
-	if ref == nil {
-		return dagql.CacheValueUsage{}, false, nil
-	}
-
+func cacheRefUsage(ref bkcache.ImmutableRef) dagql.CacheValueUsage {
 	usage := dagql.CacheValueUsage{
 		RecordType:  string(ref.GetRecordType()),
 		Description: ref.GetDescription(),
 	}
-
 	if metadataSize := ref.GetString(buildkitSnapshotSizeMetadataKey); metadataSize != "" {
 		if parsedSize, err := strconv.ParseInt(metadataSize, 10, 64); err == nil && parsedSize > 0 {
 			usage.SizeBytes = parsedSize
 		}
 	}
-
-	if usage.SizeBytes <= 0 {
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return usage, true, nil
-		}
-		diskUsage, err := query.BuildkitCache().DiskUsage(ctx, bkclient.DiskUsageInfo{
-			Filter: []string{"id==" + ref.ID()},
-		})
-		if err != nil {
-			return usage, true, err
-		}
-		for _, entry := range diskUsage {
-			if entry == nil {
-				continue
-			}
-			if entry.Size > usage.SizeBytes {
-				usage.SizeBytes = entry.Size
-			}
-			if usage.RecordType == "" && entry.RecordType != "" {
-				usage.RecordType = string(entry.RecordType)
-			}
-			if usage.Description == "" && entry.Description != "" {
-				usage.Description = entry.Description
-			}
-		}
-	}
-
-	return usage, true, nil
+	return usage
 }
