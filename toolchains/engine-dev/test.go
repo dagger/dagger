@@ -319,7 +319,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 		WithMountedCache("/run", engineRunVol).
 		WithServiceBinding("registry", registrySvc)
 
-	tests, err = dev.InstallClient(ctx, tests, devEngineSvc)
+	tests, err = dev.InstallClient(ctx, tests, devEngineSvc, "")
 	if err != nil {
 		return nil, "", err
 	}
