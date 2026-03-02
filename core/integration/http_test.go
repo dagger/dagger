@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -80,6 +81,44 @@ func (HTTPSuite) TestHTTPPermissions(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	stat = strings.TrimSpace(stat)
 	require.Equal(t, "764", stat)
+}
+
+func (HTTPSuite) TestHTTPChecksum(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := "Hello, checksum world!"
+	svc, url := httpService(ctx, t, c, content)
+	expected := digest.FromString(content).String()
+
+	contents, err := c.HTTP(url, dagger.HTTPOpts{
+		ExperimentalServiceHost: svc,
+		Checksum:                expected,
+	}).Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, contents)
+}
+
+func (HTTPSuite) TestHTTPChecksumMismatch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := "Hello, checksum world!"
+	svc, url := httpService(ctx, t, c, content)
+	wrong := digest.FromString("something-else").String()
+
+	_, err := c.HTTP(url, dagger.HTTPOpts{
+		ExperimentalServiceHost: svc,
+		Checksum:                wrong,
+	}).Contents(ctx)
+	require.ErrorContains(t, err, "http checksum mismatch")
+	require.ErrorContains(t, err, "expected "+wrong)
+}
+
+func (HTTPSuite) TestHTTPChecksumInvalid(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	_, err := c.HTTP("https://example.com", dagger.HTTPOpts{
+		Checksum: "not-a-digest",
+	}).Contents(ctx)
+	require.ErrorContains(t, err, `invalid checksum "not-a-digest"`)
 }
 
 func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {
@@ -170,9 +209,8 @@ func (HTTPSuite) TestHTTPCachePerSessions(ctx context.Context, t *testctx.T) {
 	hostname2, err := svc2.Hostname(ctx)
 	require.NoError(t, err)
 	url2 := fmt.Sprintf("http://%s:%d?add=true", hostname2, port)
-	require.Equal(t, url, url2)
 
-	f2 := c2.HTTP(url, dagger.HTTPOpts{ExperimentalServiceHost: svc2})
+	f2 := c2.HTTP(url2, dagger.HTTPOpts{ExperimentalServiceHost: svc2})
 	contents, err = f2.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "count: 2")
@@ -224,60 +262,56 @@ func (HTTPSuite) TestHTTPUsedInCache(ctx context.Context, t *testctx.T) {
 func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	const hostname = "testhttpetag"
+
 	// query in first session
 	port := counterService(ctx, t, true)
 	svc := c.Host().Service([]dagger.PortForward{{
 		Backend:  port,
 		Frontend: port,
-	}})
-	hostname, err := svc.Hostname(ctx)
-	require.NoError(t, err)
+	}}).WithHostname(hostname)
 	url := fmt.Sprintf("http://%s:%d", hostname, port)
 
 	f := c.HTTP(url+"?query=1", dagger.HTTPOpts{ExperimentalServiceHost: svc})
 	contents, err := f.Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "count: 0")
+	require.Equal(t, "count: 0", contents)
 
 	// query in second session, the http client should present If-None-Match using the etag
 	c2 := connect(ctx, t)
 	svc2 := c2.Host().Service([]dagger.PortForward{{
 		Backend:  port,
 		Frontend: port,
-	}})
-	hostname2, err := svc2.Hostname(ctx)
-	require.NoError(t, err)
-	url2 := fmt.Sprintf("http://%s:%d", hostname2, port)
-	require.Equal(t, url, url2)
+	}}).WithHostname(hostname)
 
 	f2 := c2.HTTP(url+"?query=1", dagger.HTTPOpts{ExperimentalServiceHost: svc2})
 	contents, err = f2.Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "count: 0")
+	require.Equal(t, "count: 0", contents)
 
 	// check that we did actually hit the cache!
-	cacheF := c.HTTP(url+"?cache=1", dagger.HTTPOpts{ExperimentalServiceHost: svc2})
+	cacheF := c.HTTP(url+"?cache=1", dagger.HTTPOpts{ExperimentalServiceHost: svc})
 	contents, err = cacheF.Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "cache: 1")
+	require.Equal(t, "cache: 1", contents)
 
 	// part2! we bump now
-	bumpF := c.HTTP(url+"?add=2", dagger.HTTPOpts{ExperimentalServiceHost: svc2})
+	bumpF := c.HTTP(url+"?add=2", dagger.HTTPOpts{ExperimentalServiceHost: svc})
 	contents, err = bumpF.Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "count: 1")
+	require.Equal(t, "count: 1", contents)
 
 	// query in second session, the http client should present, but there shouldn't be an ETag match
 	f2 = c2.HTTP(url+"?query=2", dagger.HTTPOpts{ExperimentalServiceHost: svc2})
 	contents, err = f2.Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "count: 1")
+	require.Equal(t, "count: 1", contents)
 
 	// check that the cache wasn't hit
-	cacheF = c.HTTP(url+"?cache=2", dagger.HTTPOpts{ExperimentalServiceHost: svc2})
+	cacheF = c.HTTP(url+"?cache=2", dagger.HTTPOpts{ExperimentalServiceHost: svc})
 	contents, err = cacheF.Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "cache: 1")
+	require.Equal(t, "cache: 1", contents)
 }
 
 func (HTTPSuite) TestHTTPServiceStableDigest(ctx context.Context, t *testctx.T) {

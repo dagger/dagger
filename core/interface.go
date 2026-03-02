@@ -195,6 +195,10 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 	ifaceTypeDef := iface.typeDef
 	ifaceName := gqlObjectName(ifaceTypeDef.Name)
+	moduleID, err := iface.mod.IDModule(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to resolve module identity for interface %q: %w", ifaceName, err)
+	}
 
 	fields := make([]dagql.Field[*InterfaceAnnotatedValue], 0, len(iface.typeDef.Functions))
 	for _, fnTypeDef := range iface.typeDef.Functions {
@@ -224,7 +228,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Name:             fnName,
 			Description:      formatGqlDescription(fnTypeDef.Description),
 			Type:             fnTypeDef.ReturnType.ToTyped(),
-			Module:           iface.mod.IDModule(),
+			Module:           moduleID,
 			DeprecatedReason: fnTypeDef.Deprecated,
 		}
 		if fnTypeDef.SourceMap.Valid {
@@ -265,13 +269,13 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			fieldDef.Args.Add(inputSpec)
 		}
 
-		fieldDef.GetCacheConfig = func(
+		fieldDef.GetDynamicInput = func(
 			ctx context.Context,
 			parentObj dagql.AnyResult,
 			args map[string]dagql.Input,
 			view call.View,
-			req dagql.GetCacheConfigRequest,
-		) (*dagql.GetCacheConfigResponse, error) {
+			req dagql.DynamicInputRequest,
+		) (*dagql.DynamicInputResponse, error) {
 			parent, ok := parentObj.(dagql.ObjectResult[*InterfaceAnnotatedValue])
 			if !ok {
 				return nil, fmt.Errorf("unexpected parent object type %T", parentObj)
@@ -289,7 +293,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
 			}
 
-			return callable.CacheConfigForCall(ctx, parentObj, args, view, req)
+			return callable.DynamicInputsForCall(ctx, parentObj, args, view, req)
 		}
 
 		fields = append(fields, dagql.Field[*InterfaceAnnotatedValue]{
@@ -376,7 +380,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					Type: idScalar,
 				},
 			),
-			Module:     iface.mod.IDModule(),
+			Module:     moduleID,
 			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {

@@ -63,7 +63,7 @@ func RegisterCustomOp(op CustomOp) {
 	customOps[op.Name()] = op
 }
 
-func NewCustomLLB(ctx context.Context, dagOpID *call.ID, op CustomOp, inputs []llb.State, opts ...llb.ConstraintsOpt) (llb.State, error) {
+func NewCustomLLB(ctx context.Context, dagOpID *call.ID, op CustomOp, opts ...llb.ConstraintsOpt) (llb.State, error) {
 	opWrapped := CustomOpWrapper{
 		Name:    op.Name(),
 		Backend: op.Backend(),
@@ -78,11 +78,12 @@ func NewCustomLLB(ctx context.Context, dagOpID *call.ID, op CustomOp, inputs []l
 
 	// pre-populate a reasonable underlying representation that has some inputs
 	a := llb.Rm("/" + bkID.Encoded())
-	for _, input := range inputs {
-		a = a.Copy(input, "/", "/")
-	}
 	st := llb.Scratch().File(a)
-	customOpOpt, err := opWrapped.AsConstraintsOpt(dagOpID.Digest().String())
+	effectID := ""
+	if dagOpID != nil {
+		effectID = dagOpID.ContentPreferredDigest().String()
+	}
+	customOpOpt, err := opWrapped.AsConstraintsOpt(effectID)
 	if err != nil {
 		return llb.State{}, fmt.Errorf("constraints opt: %w", err)
 	}

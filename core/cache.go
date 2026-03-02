@@ -1,12 +1,16 @@
 package core
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
+	"sync"
 
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -16,6 +20,9 @@ import (
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
 	Keys []string
+
+	mu        sync.Mutex
+	snapshots map[string]bkcache.ImmutableRef
 }
 
 func (*CacheVolume) Type() *ast.Type {
@@ -33,9 +40,25 @@ func NewCache(keys ...string) *CacheVolume {
 	return &CacheVolume{Keys: keys}
 }
 
+var _ dagql.OnReleaser = (*CacheVolume)(nil)
+
+func (cache *CacheVolume) OnRelease(ctx context.Context) error {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	var errs error
+	for _, ref := range cache.snapshots {
+		errs = errors.Join(errs, ref.Release(ctx))
+	}
+	clear(cache.snapshots)
+	return errs
+}
+
 func (cache *CacheVolume) Clone() *CacheVolume {
 	cp := *cache
 	cp.Keys = slices.Clone(cp.Keys)
+	cp.mu = sync.Mutex{}
+	cp.snapshots = nil
 	return &cp
 }
 
@@ -47,6 +70,34 @@ func (cache *CacheVolume) Sum() string {
 	}
 
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
+}
+
+func (cache *CacheVolume) snapshotForMount(mountID string) (bkcache.ImmutableRef, bool) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	if cache.snapshots == nil {
+		cache.snapshots = map[string]bkcache.ImmutableRef{}
+	}
+	snapshot, ok := cache.snapshots[mountID]
+	return snapshot, ok
+}
+
+func (cache *CacheVolume) setSnapshotForMount(ctx context.Context, mountID string, ref bkcache.ImmutableRef) error {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	if cache.snapshots == nil {
+		cache.snapshots = map[string]bkcache.ImmutableRef{}
+	}
+
+	prev := cache.snapshots[mountID]
+	cache.snapshots[mountID] = ref
+
+	if prev != nil {
+		return prev.Release(ctx)
+	}
+	return nil
 }
 
 type CacheSharingMode string

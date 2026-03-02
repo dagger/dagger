@@ -66,6 +66,18 @@ func cacheTestUnwrapInt(t *testing.T, res AnyResult) int {
 	return int(v)
 }
 
+func cacheTestIDHasExtraDigest(id *call.ID, dig digest.Digest, label string) bool {
+	if id == nil {
+		return false
+	}
+	for _, extra := range id.ExtraDigests() {
+		if extra.Digest == dig && extra.Label == label {
+			return true
+		}
+	}
+	return false
+}
+
 type cacheTestQuery struct{}
 
 func (cacheTestQuery) Type() *ast.Type {
@@ -190,12 +202,12 @@ func TestCacheConcurrent(t *testing.T) {
 	waiterPollDeadline := time.Now().Add(3 * time.Second)
 	lastObservedWaiters := -1
 	for time.Now().Before(waiterPollDeadline) {
-		c.mu.Lock()
+		c.callsMu.Lock()
 		oc := c.ongoingCalls[callConcKeys]
 		if oc != nil {
 			lastObservedWaiters = oc.waiters
 		}
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 
 		if oc != nil && lastObservedWaiters == totalCallers {
 			waiterCountReached = true
@@ -210,9 +222,9 @@ func TestCacheConcurrent(t *testing.T) {
 	ongoingCleared := false
 	clearPollDeadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(clearPollDeadline) {
-		c.mu.Lock()
+		c.callsMu.Lock()
 		_, exists := c.ongoingCalls[callConcKeys]
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 		if !exists {
 			ongoingCleared = true
 			break
@@ -475,6 +487,61 @@ func TestCacheContextCancel(t *testing.T) {
 			t.Fatal("timed out waiting for errCh1")
 		}
 	})
+
+	t.Run("last waiter canceled fn returns value still releases", func(t *testing.T) {
+		t.Parallel()
+		// TODO: Re-enable this test once we define and implement the intended
+		// last-waiter cleanup semantics for canceled waiters when fn later returns.
+		t.Skip("TODO: re-enable after last-waiter canceled cleanup semantics are decided")
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+
+		keyID := cacheTestID("cancel-last-waiter-release")
+		ctx1, cancel1 := context.WithCancel(ctx)
+		defer cancel1()
+
+		started := make(chan struct{})
+		allowReturn := make(chan struct{})
+		released := make(chan struct{})
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := cacheIface.GetOrInitCall(ctx1, CacheKey{
+				ID:             keyID,
+				ConcurrencyKey: "1",
+			}, func(context.Context) (AnyResult, error) {
+				close(started)
+				<-allowReturn
+				return cacheTestIntResultWithOnRelease(keyID, 1, func(context.Context) error {
+					close(released)
+					return nil
+				}), nil
+			})
+			errCh <- err
+		}()
+
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for call start")
+		}
+
+		cancel1()
+		select {
+		case err := <-errCh:
+			assert.Assert(t, is.ErrorIs(err, context.Canceled))
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for canceled wait return")
+		}
+
+		close(allowReturn)
+		select {
+		case <-released:
+		case <-time.After(5 * time.Second):
+			t.Fatal("expected release after call returns with no waiters")
+		}
+	})
 }
 
 func TestCacheResultRelease(t *testing.T) {
@@ -505,22 +572,22 @@ func TestCacheResultRelease(t *testing.T) {
 		assert.NilError(t, err)
 
 		assert.Equal(t, 0, len(c.ongoingCalls))
-		assert.Equal(t, 2, len(c.completedCalls))
+		assert.Equal(t, 2, len(c.egraphTermIDsByResult))
 
 		err = res2.Release(ctx)
 		assert.NilError(t, err)
 		assert.Equal(t, 0, len(c.ongoingCalls))
-		assert.Equal(t, 1, len(c.completedCalls))
+		assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 		err = res1A.Release(ctx)
 		assert.NilError(t, err)
 		assert.Equal(t, 0, len(c.ongoingCalls))
-		assert.Equal(t, 1, len(c.completedCalls))
+		assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 		err = res1B.Release(ctx)
 		assert.NilError(t, err)
 		assert.Equal(t, 0, len(c.ongoingCalls))
-		assert.Equal(t, 0, len(c.completedCalls))
+		assert.Equal(t, 0, len(c.egraphTermIDsByResult))
 	})
 
 	t.Run("onRelease", func(t *testing.T) {
@@ -734,87 +801,1383 @@ func TestCacheNilResultIsCached(t *testing.T) {
 		return nil, nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, res == nil)
+	assert.Assert(t, res != nil)
+	assert.Assert(t, res.Unwrap() == nil)
 
 	res, err = c.GetOrInitCall(ctx, CacheKey{ID: keyID}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return cacheTestIntResult(keyID, 42), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, res == nil)
+	assert.Assert(t, res != nil)
+	assert.Assert(t, res.Unwrap() == nil)
 	assert.Equal(t, 1, initCalls)
 	assert.Equal(t, 1, c.Size())
 }
 
-func TestCacheDoNotCacheSkipsStorage(t *testing.T) {
+func TestEquivalencySetCacheHits(t *testing.T) {
 	t.Parallel()
+
+	// Basic case: equivalent upstream outputs enable a single downstream cache hit
+	// even when the downstream recipes are distinct.
+	t.Run("basic", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		sharedEq := call.ExtraDigest{
+			Digest: digest.FromString("shared-eq-basic"),
+			Label:  "eq-shared",
+		}
+		noiseA := call.ExtraDigest{
+			Digest: digest.FromString("basic-noise-a"),
+			Label:  "noise-a",
+		}
+		noiseB := call.ExtraDigest{
+			Digest: digest.FromString("basic-noise-b"),
+			Label:  "noise-b",
+		}
+		f1Key := cacheTestID("content-f-1")
+		f2Key := cacheTestID("content-f-2")
+		f1Out := f1Key.With(call.WithExtraDigest(sharedEq)).With(call.WithExtraDigest(noiseA))
+		f2Out := f2Key.With(call.WithExtraDigest(sharedEq)).With(call.WithExtraDigest(noiseB))
+		assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+		assert.Assert(t, f1Out.Digest() != f2Out.Digest())
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, sharedEq.Digest, sharedEq.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, sharedEq.Digest, sharedEq.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, noiseA.Digest, noiseA.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, noiseB.Digest, noiseB.Label))
+
+		fInitCalls := 0
+		f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+			fInitCalls++
+			return newDetachedResult(f1Out, NewInt(11)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f1Res.HitCache())
+
+		f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+			fInitCalls++
+			return newDetachedResult(f2Out, NewInt(22)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f2Res.HitCache())
+		assert.Equal(t, 2, fInitCalls)
+		assert.Assert(t, f1Res.ID().Digest() != f2Res.ID().Digest())
+
+		g1Key := f1Key.Append(Int(0).Type(), "content-g")
+		g2Key := f2Key.Append(Int(0).Type(), "content-g")
+		assert.Assert(t, g1Key.Digest() != g2Key.Digest())
+
+		g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(g1Key, NewInt(111)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !g1Res.HitCache())
+
+		g2InitCalls := 0
+		g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+			g2InitCalls++
+			return newDetachedResult(g2Key, NewInt(222)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, g2InitCalls)
+		assert.Assert(t, g2Res.HitCache())
+		assert.Equal(t, 111, cacheTestUnwrapInt(t, g2Res))
+		assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
+
+		assert.NilError(t, f1Res.Release(ctx))
+		assert.NilError(t, f2Res.Release(ctx))
+		assert.NilError(t, g1Res.Release(ctx))
+		assert.NilError(t, g2Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Deeper chain: equivalence learned at f-level should enable hits at g-level,
+	// which then propagate to h-level and i-level for distinct downstream recipes.
+	t.Run("deep_chain", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		sharedEq := call.ExtraDigest{
+			Digest: digest.FromString("deep-shared-eq"),
+			Label:  "eq-shared",
+		}
+		noiseA := call.ExtraDigest{
+			Digest: digest.FromString("deep-noise-a"),
+			Label:  "noise-a",
+		}
+		noiseB := call.ExtraDigest{
+			Digest: digest.FromString("deep-noise-b"),
+			Label:  "noise-b",
+		}
+		f1Key := cacheTestID("deep-f-1")
+		f2Key := cacheTestID("deep-f-2")
+		f1Out := f1Key.With(call.WithExtraDigest(sharedEq)).With(call.WithExtraDigest(noiseA))
+		f2Out := f2Key.With(call.WithExtraDigest(sharedEq)).With(call.WithExtraDigest(noiseB))
+		assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+		assert.Assert(t, f1Out.Digest() != f2Out.Digest())
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, sharedEq.Digest, sharedEq.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, sharedEq.Digest, sharedEq.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, noiseA.Digest, noiseA.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, noiseB.Digest, noiseB.Label))
+
+		fInitCalls := 0
+		f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+			fInitCalls++
+			return newDetachedResult(f1Out, NewInt(21)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f1Res.HitCache())
+		f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+			fInitCalls++
+			return newDetachedResult(f2Out, NewInt(22)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f2Res.HitCache())
+		assert.Equal(t, 2, fInitCalls)
+
+		g1Key := f1Key.Append(Int(0).Type(), "deep-g")
+		g2Key := f2Key.Append(Int(0).Type(), "deep-g")
+		assert.Assert(t, g1Key.Digest() != g2Key.Digest())
+		h1Key := g1Key.Append(Int(0).Type(), "deep-h")
+		h2Key := g2Key.Append(Int(0).Type(), "deep-h")
+		assert.Assert(t, h1Key.Digest() != h2Key.Digest())
+		i1Key := h1Key.Append(Int(0).Type(), "deep-i")
+		i2Key := h2Key.Append(Int(0).Type(), "deep-i")
+		assert.Assert(t, i1Key.Digest() != i2Key.Digest())
+
+		g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(g1Key, NewInt(121)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !g1Res.HitCache())
+
+		h1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: h1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(h1Key, NewInt(221)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !h1Res.HitCache())
+
+		i1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: i1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(i1Key, NewInt(321)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !i1Res.HitCache())
+
+		g2InitCalls := 0
+		g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+			g2InitCalls++
+			return newDetachedResult(g2Key, NewInt(122)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, g2InitCalls)
+		assert.Assert(t, g2Res.HitCache())
+		assert.Equal(t, 121, cacheTestUnwrapInt(t, g2Res))
+		assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
+
+		h2InitCalls := 0
+		h2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: h2Key}, func(context.Context) (AnyResult, error) {
+			h2InitCalls++
+			return newDetachedResult(h2Key, NewInt(222)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, h2InitCalls)
+		assert.Assert(t, h2Res.HitCache())
+		assert.Equal(t, 221, cacheTestUnwrapInt(t, h2Res))
+		assert.Equal(t, h2Key.Digest().String(), h2Res.ID().Digest().String())
+
+		i2InitCalls := 0
+		i2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: i2Key}, func(context.Context) (AnyResult, error) {
+			i2InitCalls++
+			return newDetachedResult(i2Key, NewInt(322)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, i2InitCalls)
+		assert.Assert(t, i2Res.HitCache())
+		assert.Equal(t, 321, cacheTestUnwrapInt(t, i2Res))
+		assert.Equal(t, i2Key.Digest().String(), i2Res.ID().Digest().String())
+
+		assert.NilError(t, f1Res.Release(ctx))
+		assert.NilError(t, f2Res.Release(ctx))
+		assert.NilError(t, g1Res.Release(ctx))
+		assert.NilError(t, g2Res.Release(ctx))
+		assert.NilError(t, h1Res.Release(ctx))
+		assert.NilError(t, h2Res.Release(ctx))
+		assert.NilError(t, i1Res.Release(ctx))
+		assert.NilError(t, i2Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Late equivalence with noisy metadata: distinct recipes miss until h-level
+	// outputs publish overlapping extra digests; once learned, downstream
+	// i-level lookups should hit even with non-overlapping extras elsewhere.
+	t.Run("late_extra_digests_at_h", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		f1Only := call.ExtraDigest{Digest: digest.FromString("late-f1-only"), Label: "f1-only"}
+		f2Only := call.ExtraDigest{Digest: digest.FromString("late-f2-only"), Label: "f2-only"}
+		g1Only := call.ExtraDigest{Digest: digest.FromString("late-g1-only"), Label: "g1-only"}
+		g2Only := call.ExtraDigest{Digest: digest.FromString("late-g2-only"), Label: "g2-only"}
+		sharedA := call.ExtraDigest{Digest: digest.FromString("late-shared-a"), Label: "shared-a"}
+		sharedB := call.ExtraDigest{Digest: digest.FromString("late-shared-b"), Label: "shared-b"}
+		h1Only := call.ExtraDigest{Digest: digest.FromString("late-h1-only"), Label: "h1-only"}
+		h2Only := call.ExtraDigest{Digest: digest.FromString("late-h2-only"), Label: "h2-only"}
+
+		f1Key := cacheTestID("late-f-1")
+		f2Key := cacheTestID("late-f-2")
+		assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+		f1Out := f1Key.With(call.WithExtraDigest(f1Only))
+		f2Out := f2Key.With(call.WithExtraDigest(f2Only))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, f1Only.Digest, f1Only.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, f2Only.Digest, f2Only.Label))
+
+		g1Key := f1Key.Append(Int(0).Type(), "late-g")
+		g2Key := f2Key.Append(Int(0).Type(), "late-g")
+		assert.Assert(t, g1Key.Digest() != g2Key.Digest())
+		g1Out := g1Key.With(call.WithExtraDigest(g1Only))
+		g2Out := g2Key.With(call.WithExtraDigest(g2Only))
+		assert.Assert(t, cacheTestIDHasExtraDigest(g1Out, g1Only.Digest, g1Only.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(g2Out, g2Only.Digest, g2Only.Label))
+
+		h1Key := g1Key.Append(Int(0).Type(), "late-h")
+		h2Key := g2Key.Append(Int(0).Type(), "late-h")
+		assert.Assert(t, h1Key.Digest() != h2Key.Digest())
+
+		h1Out := h1Key.
+			With(call.WithExtraDigest(sharedA)).
+			With(call.WithExtraDigest(sharedB)).
+			With(call.WithExtraDigest(h1Only))
+		h2Out := h2Key.
+			With(call.WithExtraDigest(sharedA)).
+			With(call.WithExtraDigest(sharedB)).
+			With(call.WithExtraDigest(h2Only))
+		assert.Assert(t, h1Out.Digest() != h2Out.Digest())
+		assert.Assert(t, cacheTestIDHasExtraDigest(h1Out, sharedA.Digest, sharedA.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(h1Out, sharedB.Digest, sharedB.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(h2Out, sharedA.Digest, sharedA.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(h2Out, sharedB.Digest, sharedB.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(h1Out, h1Only.Digest, h1Only.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(h2Out, h2Only.Digest, h2Only.Label))
+
+		i1Key := h1Key.Append(Int(0).Type(), "late-i")
+		i2Key := h2Key.Append(Int(0).Type(), "late-i")
+		assert.Assert(t, i1Key.Digest() != i2Key.Digest())
+
+		f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f1Out, NewInt(41)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f1Res.HitCache())
+
+		g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(g1Out, NewInt(141)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !g1Res.HitCache())
+
+		h1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: h1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(h1Out, NewInt(241)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !h1Res.HitCache())
+
+		i1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: i1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(i1Key, NewInt(341)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !i1Res.HitCache())
+
+		f2InitCalls := 0
+		f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+			f2InitCalls++
+			return newDetachedResult(f2Out, NewInt(42)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, f2InitCalls)
+		assert.Assert(t, !f2Res.HitCache())
+
+		g2InitCalls := 0
+		g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+			g2InitCalls++
+			return newDetachedResult(g2Out, NewInt(142)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, g2InitCalls)
+		assert.Assert(t, !g2Res.HitCache())
+
+		h2InitCalls := 0
+		h2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: h2Key}, func(context.Context) (AnyResult, error) {
+			h2InitCalls++
+			return newDetachedResult(h2Out, NewInt(242)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, h2InitCalls)
+		assert.Assert(t, !h2Res.HitCache())
+
+		i2InitCalls := 0
+		i2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: i2Key}, func(context.Context) (AnyResult, error) {
+			i2InitCalls++
+			return newDetachedResult(i2Key, NewInt(342)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, i2InitCalls)
+		assert.Assert(t, i2Res.HitCache())
+		assert.Equal(t, 341, cacheTestUnwrapInt(t, i2Res))
+		assert.Equal(t, i2Key.Digest().String(), i2Res.ID().Digest().String())
+
+		assert.NilError(t, f1Res.Release(ctx))
+		assert.NilError(t, f2Res.Release(ctx))
+		assert.NilError(t, g1Res.Release(ctx))
+		assert.NilError(t, g2Res.Release(ctx))
+		assert.NilError(t, h1Res.Release(ctx))
+		assert.NilError(t, h2Res.Release(ctx))
+		assert.NilError(t, i1Res.Release(ctx))
+		assert.NilError(t, i2Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Multi-input case: downstream z(x,y) should hit across distinct recipes once
+	// both input lanes are equivalent (x1~x2 and y1~y2) via shared extra digests.
+	// Basically, same as earlier tests but with multiple inputs.
+	t.Run("multi_input_all_inputs_equivalent_hit", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		xShared := call.ExtraDigest{Digest: digest.FromString("multi-x-shared"), Label: "x-shared"}
+		xNoise1 := call.ExtraDigest{Digest: digest.FromString("multi-x-noise-1"), Label: "x-noise-1"}
+		xNoise2 := call.ExtraDigest{Digest: digest.FromString("multi-x-noise-2"), Label: "x-noise-2"}
+		yShared := call.ExtraDigest{Digest: digest.FromString("multi-y-shared"), Label: "y-shared"}
+		yNoise1 := call.ExtraDigest{Digest: digest.FromString("multi-y-noise-1"), Label: "y-noise-1"}
+		yNoise2 := call.ExtraDigest{Digest: digest.FromString("multi-y-noise-2"), Label: "y-noise-2"}
+
+		x1Key := cacheTestID("multi-x-1")
+		x2Key := cacheTestID("multi-x-2")
+		y1Key := cacheTestID("multi-y-1")
+		y2Key := cacheTestID("multi-y-2")
+		assert.Assert(t, x1Key.Digest() != x2Key.Digest())
+		assert.Assert(t, y1Key.Digest() != y2Key.Digest())
+
+		x1Out := x1Key.With(call.WithExtraDigest(xShared)).With(call.WithExtraDigest(xNoise1))
+		x2Out := x2Key.With(call.WithExtraDigest(xShared)).With(call.WithExtraDigest(xNoise2))
+		y1Out := y1Key.With(call.WithExtraDigest(yShared)).With(call.WithExtraDigest(yNoise1))
+		y2Out := y2Key.With(call.WithExtraDigest(yShared)).With(call.WithExtraDigest(yNoise2))
+		assert.Assert(t, cacheTestIDHasExtraDigest(x1Out, xShared.Digest, xShared.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(x2Out, xShared.Digest, xShared.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(y1Out, yShared.Digest, yShared.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(y2Out, yShared.Digest, yShared.Label))
+
+		x1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: x1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(x1Out, NewInt(11)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !x1Res.HitCache())
+		x2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: x2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(x2Out, NewInt(12)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !x2Res.HitCache())
+
+		y1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: y1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(y1Out, NewInt(21)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !y1Res.HitCache())
+		y2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: y2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(y2Out, NewInt(22)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !y2Res.HitCache())
+
+		zRoot := cacheTestID("multi-z-root")
+		z1Key := zRoot.Append(Int(0).Type(), "multi-z",
+			call.WithArgs(
+				call.NewArgument("x", call.NewLiteralID(x1Key), false),
+				call.NewArgument("y", call.NewLiteralID(y1Key), false),
+			),
+		)
+		z2Key := zRoot.Append(Int(0).Type(), "multi-z",
+			call.WithArgs(
+				call.NewArgument("x", call.NewLiteralID(x2Key), false),
+				call.NewArgument("y", call.NewLiteralID(y2Key), false),
+			),
+		)
+		assert.Assert(t, z1Key.Digest() != z2Key.Digest())
+
+		z1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: z1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(z1Key, NewInt(501)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !z1Res.HitCache())
+
+		z2InitCalls := 0
+		z2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: z2Key}, func(context.Context) (AnyResult, error) {
+			z2InitCalls++
+			return newDetachedResult(z2Key, NewInt(502)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, z2InitCalls)
+		assert.Assert(t, z2Res.HitCache())
+		assert.Equal(t, 501, cacheTestUnwrapInt(t, z2Res))
+		assert.Equal(t, z2Key.Digest().String(), z2Res.ID().Digest().String())
+
+		assert.NilError(t, x1Res.Release(ctx))
+		assert.NilError(t, x2Res.Release(ctx))
+		assert.NilError(t, y1Res.Release(ctx))
+		assert.NilError(t, y2Res.Release(ctx))
+		assert.NilError(t, z1Res.Release(ctx))
+		assert.NilError(t, z2Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Multi-input miss case: if only one input lane is equivalent (x1~x2) but
+	// the other lane is not (y1 !~ y2), z(x,y) must miss and execute.
+	t.Run("multi_input_partial_equivalence_miss", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		xShared := call.ExtraDigest{Digest: digest.FromString("multi-partial-x-shared"), Label: "x-shared"}
+		xNoise1 := call.ExtraDigest{Digest: digest.FromString("multi-partial-x-noise-1"), Label: "x-noise-1"}
+		xNoise2 := call.ExtraDigest{Digest: digest.FromString("multi-partial-x-noise-2"), Label: "x-noise-2"}
+		yOnly1 := call.ExtraDigest{Digest: digest.FromString("multi-partial-y-only-1"), Label: "y-only-1"}
+		yOnly2 := call.ExtraDigest{Digest: digest.FromString("multi-partial-y-only-2"), Label: "y-only-2"}
+
+		x1Key := cacheTestID("multi-partial-x-1")
+		x2Key := cacheTestID("multi-partial-x-2")
+		y1Key := cacheTestID("multi-partial-y-1")
+		y2Key := cacheTestID("multi-partial-y-2")
+		assert.Assert(t, x1Key.Digest() != x2Key.Digest())
+		assert.Assert(t, y1Key.Digest() != y2Key.Digest())
+
+		x1Out := x1Key.With(call.WithExtraDigest(xShared)).With(call.WithExtraDigest(xNoise1))
+		x2Out := x2Key.With(call.WithExtraDigest(xShared)).With(call.WithExtraDigest(xNoise2))
+		y1Out := y1Key.With(call.WithExtraDigest(yOnly1))
+		y2Out := y2Key.With(call.WithExtraDigest(yOnly2))
+		assert.Assert(t, cacheTestIDHasExtraDigest(x1Out, xShared.Digest, xShared.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(x2Out, xShared.Digest, xShared.Label))
+		assert.Assert(t, !cacheTestIDHasExtraDigest(y1Out, yOnly2.Digest, yOnly2.Label))
+		assert.Assert(t, !cacheTestIDHasExtraDigest(y2Out, yOnly1.Digest, yOnly1.Label))
+
+		x1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: x1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(x1Out, NewInt(31)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !x1Res.HitCache())
+		x2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: x2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(x2Out, NewInt(32)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !x2Res.HitCache())
+
+		y1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: y1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(y1Out, NewInt(41)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !y1Res.HitCache())
+		y2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: y2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(y2Out, NewInt(42)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !y2Res.HitCache())
+
+		zRoot := cacheTestID("multi-partial-z-root")
+		z1Key := zRoot.Append(Int(0).Type(), "multi-partial-z",
+			call.WithArgs(
+				call.NewArgument("x", call.NewLiteralID(x1Key), false),
+				call.NewArgument("y", call.NewLiteralID(y1Key), false),
+			),
+		)
+		z2Key := zRoot.Append(Int(0).Type(), "multi-partial-z",
+			call.WithArgs(
+				call.NewArgument("x", call.NewLiteralID(x2Key), false),
+				call.NewArgument("y", call.NewLiteralID(y2Key), false),
+			),
+		)
+		assert.Assert(t, z1Key.Digest() != z2Key.Digest())
+
+		z1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: z1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(z1Key, NewInt(701)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !z1Res.HitCache())
+
+		z2InitCalls := 0
+		z2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: z2Key}, func(context.Context) (AnyResult, error) {
+			z2InitCalls++
+			return newDetachedResult(z2Key, NewInt(702)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, z2InitCalls)
+		assert.Assert(t, !z2Res.HitCache())
+		assert.Equal(t, 702, cacheTestUnwrapInt(t, z2Res))
+		assert.Equal(t, z2Key.Digest().String(), z2Res.ID().Digest().String())
+
+		assert.NilError(t, x1Res.Release(ctx))
+		assert.NilError(t, x2Res.Release(ctx))
+		assert.NilError(t, y1Res.Release(ctx))
+		assert.NilError(t, y2Res.Release(ctx))
+		assert.NilError(t, z1Res.Release(ctx))
+		assert.NilError(t, z2Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Transitive bridge case: f1 and f3 do not share a direct digest, but f2
+	// links both sides (A on f1/f2 and B on f2/f3), so equivalence should merge
+	// transitively. After caching g(f1), a lookup of g(f3) should hit while still
+	// returning g3Key as the request-facing ID digest.
+	t.Run("transitive_extra_digest_merge_bridge_hit", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		bridgeA := call.ExtraDigest{Digest: digest.FromString("bridge-a"), Label: "bridge-a"}
+		bridgeB := call.ExtraDigest{Digest: digest.FromString("bridge-b"), Label: "bridge-b"}
+		noise1 := call.ExtraDigest{Digest: digest.FromString("bridge-noise-1"), Label: "noise-1"}
+		noise2 := call.ExtraDigest{Digest: digest.FromString("bridge-noise-2"), Label: "noise-2"}
+		noise3 := call.ExtraDigest{Digest: digest.FromString("bridge-noise-3"), Label: "noise-3"}
+
+		f1Key := cacheTestID("bridge-f-1")
+		f2Key := cacheTestID("bridge-f-2")
+		f3Key := cacheTestID("bridge-f-3")
+		assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+		assert.Assert(t, f2Key.Digest() != f3Key.Digest())
+		assert.Assert(t, f1Key.Digest() != f3Key.Digest())
+
+		f1Out := f1Key.With(call.WithExtraDigest(bridgeA)).With(call.WithExtraDigest(noise1))
+		f2Out := f2Key.With(call.WithExtraDigest(bridgeA)).With(call.WithExtraDigest(bridgeB)).With(call.WithExtraDigest(noise2))
+		f3Out := f3Key.With(call.WithExtraDigest(bridgeB)).With(call.WithExtraDigest(noise3))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, bridgeA.Digest, bridgeA.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, bridgeA.Digest, bridgeA.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, bridgeB.Digest, bridgeB.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f3Out, bridgeB.Digest, bridgeB.Label))
+		assert.Assert(t, !cacheTestIDHasExtraDigest(f1Out, bridgeB.Digest, bridgeB.Label))
+		assert.Assert(t, !cacheTestIDHasExtraDigest(f3Out, bridgeA.Digest, bridgeA.Label))
+
+		g1Key := f1Key.Append(Int(0).Type(), "bridge-g")
+		g3Key := f3Key.Append(Int(0).Type(), "bridge-g")
+		assert.Assert(t, g1Key.Digest() != g3Key.Digest())
+
+		g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(g1Key, NewInt(901)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !g1Res.HitCache())
+
+		f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f1Out, NewInt(101)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f1Res.HitCache())
+		f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f2Out, NewInt(102)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f2Res.HitCache())
+		f3Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f3Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f3Out, NewInt(103)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f3Res.HitCache())
+
+		g3InitCalls := 0
+		g3Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g3Key}, func(context.Context) (AnyResult, error) {
+			g3InitCalls++
+			return newDetachedResult(g3Key, NewInt(903)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, g3InitCalls)
+		assert.Assert(t, g3Res.HitCache())
+		assert.Equal(t, 901, cacheTestUnwrapInt(t, g3Res))
+		assert.Equal(t, g3Key.Digest().String(), g3Res.ID().Digest().String())
+
+		assert.NilError(t, g1Res.Release(ctx))
+		assert.NilError(t, g3Res.Release(ctx))
+		assert.NilError(t, f1Res.Release(ctx))
+		assert.NilError(t, f2Res.Release(ctx))
+		assert.NilError(t, f3Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Negative bridge case: f1 and f2 overlap on A, but f3 only overlaps with B
+	// and f2 does not carry B, so there is no bridge from f1 to f3.
+	// We still expect g(f2) to hit from g(f1), while g(f3) must remain a miss.
+	t.Run("transitive_bridge_no_bridge_no_hit", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		bridgeA := call.ExtraDigest{Digest: digest.FromString("nobridge-a"), Label: "bridge-a"}
+		bridgeB := call.ExtraDigest{Digest: digest.FromString("nobridge-b"), Label: "bridge-b"}
+		other := call.ExtraDigest{Digest: digest.FromString("nobridge-other"), Label: "other"}
+		noise1 := call.ExtraDigest{Digest: digest.FromString("nobridge-noise-1"), Label: "noise-1"}
+		noise2 := call.ExtraDigest{Digest: digest.FromString("nobridge-noise-2"), Label: "noise-2"}
+		noise3 := call.ExtraDigest{Digest: digest.FromString("nobridge-noise-3"), Label: "noise-3"}
+
+		f1Key := cacheTestID("nobridge-f-1")
+		f2Key := cacheTestID("nobridge-f-2")
+		f3Key := cacheTestID("nobridge-f-3")
+		assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+		assert.Assert(t, f2Key.Digest() != f3Key.Digest())
+		assert.Assert(t, f1Key.Digest() != f3Key.Digest())
+
+		f1Out := f1Key.With(call.WithExtraDigest(bridgeA)).With(call.WithExtraDigest(noise1))
+		f2Out := f2Key.With(call.WithExtraDigest(bridgeA)).With(call.WithExtraDigest(other)).With(call.WithExtraDigest(noise2))
+		f3Out := f3Key.With(call.WithExtraDigest(bridgeB)).With(call.WithExtraDigest(noise3))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, bridgeA.Digest, bridgeA.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, bridgeA.Digest, bridgeA.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f3Out, bridgeB.Digest, bridgeB.Label))
+		assert.Assert(t, !cacheTestIDHasExtraDigest(f2Out, bridgeB.Digest, bridgeB.Label))
+		assert.Assert(t, !cacheTestIDHasExtraDigest(f3Out, bridgeA.Digest, bridgeA.Label))
+
+		g1Key := f1Key.Append(Int(0).Type(), "nobridge-g")
+		g2Key := f2Key.Append(Int(0).Type(), "nobridge-g")
+		g3Key := f3Key.Append(Int(0).Type(), "nobridge-g")
+		assert.Assert(t, g1Key.Digest() != g2Key.Digest())
+		assert.Assert(t, g2Key.Digest() != g3Key.Digest())
+		assert.Assert(t, g1Key.Digest() != g3Key.Digest())
+
+		g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(g1Key, NewInt(911)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !g1Res.HitCache())
+
+		f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f1Out, NewInt(111)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f1Res.HitCache())
+		f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f2Out, NewInt(112)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f2Res.HitCache())
+		f3Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f3Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f3Out, NewInt(113)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f3Res.HitCache())
+
+		g2InitCalls := 0
+		g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+			g2InitCalls++
+			return newDetachedResult(g2Key, NewInt(912)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, g2InitCalls)
+		assert.Assert(t, g2Res.HitCache())
+		assert.Equal(t, 911, cacheTestUnwrapInt(t, g2Res))
+		assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
+
+		g3InitCalls := 0
+		g3Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g3Key}, func(context.Context) (AnyResult, error) {
+			g3InitCalls++
+			return newDetachedResult(g3Key, NewInt(913)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, g3InitCalls)
+		assert.Assert(t, !g3Res.HitCache())
+		assert.Equal(t, 913, cacheTestUnwrapInt(t, g3Res))
+		assert.Equal(t, g3Key.Digest().String(), g3Res.ID().Digest().String())
+
+		assert.NilError(t, g1Res.Release(ctx))
+		assert.NilError(t, g2Res.Release(ctx))
+		assert.NilError(t, g3Res.Release(ctx))
+		assert.NilError(t, f1Res.Release(ctx))
+		assert.NilError(t, f2Res.Release(ctx))
+		assert.NilError(t, f3Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Fanout/fanin repair case:
+	//
+	//   branch 1 (seeded first):
+	//     f1 -> left1
+	//       \-> right1
+	//     join1(left1,right1)
+	//
+	//   branch 2 (different recipe):
+	//     f2 -> left2
+	//       \-> right2
+	//     join2(left2,right2)
+	//
+	//   equivalence digest introduced later:
+	//     f1 ~ f2   (shared extra digest)
+	//
+	// Expected repair/propagation:
+	//   left1 ~ left2
+	//   right1 ~ right2
+	//   => join1(left1,right1) ~ join2(left2,right2)
+	//
+	// So join2 should hit from join1 once repair has propagated through both
+	// fanout branches into the fanin join inputs.
+	t.Run("fanout_fanin_join_hit_after_repair", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		shared := call.ExtraDigest{Digest: digest.FromString("fanout-shared"), Label: "fanout-shared"}
+		noise1 := call.ExtraDigest{Digest: digest.FromString("fanout-noise-1"), Label: "noise-1"}
+		noise2 := call.ExtraDigest{Digest: digest.FromString("fanout-noise-2"), Label: "noise-2"}
+
+		f1Key := cacheTestID("fanout-f-1")
+		f2Key := cacheTestID("fanout-f-2")
+		assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+
+		left1Key := f1Key.Append(Int(0).Type(), "fanout-left")
+		left2Key := f2Key.Append(Int(0).Type(), "fanout-left")
+		right1Key := f1Key.Append(Int(0).Type(), "fanout-right")
+		right2Key := f2Key.Append(Int(0).Type(), "fanout-right")
+		assert.Assert(t, left1Key.Digest() != left2Key.Digest())
+		assert.Assert(t, right1Key.Digest() != right2Key.Digest())
+
+		joinRoot := cacheTestID("fanout-join-root")
+		join1Key := joinRoot.Append(Int(0).Type(), "fanout-join",
+			call.WithArgs(
+				call.NewArgument("left", call.NewLiteralID(left1Key), false),
+				call.NewArgument("right", call.NewLiteralID(right1Key), false),
+			),
+		)
+		join2Key := joinRoot.Append(Int(0).Type(), "fanout-join",
+			call.WithArgs(
+				call.NewArgument("left", call.NewLiteralID(left2Key), false),
+				call.NewArgument("right", call.NewLiteralID(right2Key), false),
+			),
+		)
+		assert.Assert(t, join1Key.Digest() != join2Key.Digest())
+
+		left1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: left1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(left1Key, NewInt(1001)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !left1Res.HitCache())
+		right1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: right1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(right1Key, NewInt(1002)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !right1Res.HitCache())
+
+		join1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: join1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(join1Key, NewInt(1101)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !join1Res.HitCache())
+
+		f1Out := f1Key.With(call.WithExtraDigest(shared)).With(call.WithExtraDigest(noise1))
+		f2Out := f2Key.With(call.WithExtraDigest(shared)).With(call.WithExtraDigest(noise2))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, shared.Digest, shared.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, shared.Digest, shared.Label))
+		f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f1Out, NewInt(101)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f1Res.HitCache())
+		f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f2Out, NewInt(102)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f2Res.HitCache())
+
+		left2InitCalls := 0
+		left2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: left2Key}, func(context.Context) (AnyResult, error) {
+			left2InitCalls++
+			return newDetachedResult(left2Key, NewInt(2001)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, left2InitCalls)
+		assert.Assert(t, left2Res.HitCache())
+		assert.Equal(t, 1001, cacheTestUnwrapInt(t, left2Res))
+
+		right2InitCalls := 0
+		right2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: right2Key}, func(context.Context) (AnyResult, error) {
+			right2InitCalls++
+			return newDetachedResult(right2Key, NewInt(2002)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, right2InitCalls)
+		assert.Assert(t, right2Res.HitCache())
+		assert.Equal(t, 1002, cacheTestUnwrapInt(t, right2Res))
+
+		join2InitCalls := 0
+		join2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: join2Key}, func(context.Context) (AnyResult, error) {
+			join2InitCalls++
+			return newDetachedResult(join2Key, NewInt(2101)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, join2InitCalls)
+		assert.Assert(t, join2Res.HitCache())
+		assert.Equal(t, 1101, cacheTestUnwrapInt(t, join2Res))
+		assert.Equal(t, join2Key.Digest().String(), join2Res.ID().Digest().String())
+
+		assert.NilError(t, left1Res.Release(ctx))
+		assert.NilError(t, left2Res.Release(ctx))
+		assert.NilError(t, right1Res.Release(ctx))
+		assert.NilError(t, right2Res.Release(ctx))
+		assert.NilError(t, join1Res.Release(ctx))
+		assert.NilError(t, join2Res.Release(ctx))
+		assert.NilError(t, f1Res.Release(ctx))
+		assert.NilError(t, f2Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Late-merge variant: both join branches are fully evaluated first (all misses),
+	// then f-level equivalence is introduced, and only after that a downstream
+	// op that takes join IDs as input should hit across distinct recipes.
+	t.Run("fanout_fanin_late_merge_enables_downstream_join_input_hit", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		shared := call.ExtraDigest{Digest: digest.FromString("fanout-late-shared"), Label: "fanout-shared"}
+		noise1 := call.ExtraDigest{Digest: digest.FromString("fanout-late-noise-1"), Label: "noise-1"}
+		noise2 := call.ExtraDigest{Digest: digest.FromString("fanout-late-noise-2"), Label: "noise-2"}
+
+		f1Key := cacheTestID("fanout-late-f-1")
+		f2Key := cacheTestID("fanout-late-f-2")
+		assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+
+		left1Key := f1Key.Append(Int(0).Type(), "fanout-late-left")
+		left2Key := f2Key.Append(Int(0).Type(), "fanout-late-left")
+		right1Key := f1Key.Append(Int(0).Type(), "fanout-late-right")
+		right2Key := f2Key.Append(Int(0).Type(), "fanout-late-right")
+		assert.Assert(t, left1Key.Digest() != left2Key.Digest())
+		assert.Assert(t, right1Key.Digest() != right2Key.Digest())
+
+		joinRoot := cacheTestID("fanout-late-join-root")
+		join1Key := joinRoot.Append(Int(0).Type(), "fanout-late-join",
+			call.WithArgs(
+				call.NewArgument("left", call.NewLiteralID(left1Key), false),
+				call.NewArgument("right", call.NewLiteralID(right1Key), false),
+			),
+		)
+		join2Key := joinRoot.Append(Int(0).Type(), "fanout-late-join",
+			call.WithArgs(
+				call.NewArgument("left", call.NewLiteralID(left2Key), false),
+				call.NewArgument("right", call.NewLiteralID(right2Key), false),
+			),
+		)
+		assert.Assert(t, join1Key.Digest() != join2Key.Digest())
+
+		left1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: left1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(left1Key, NewInt(3001)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !left1Res.HitCache())
+		right1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: right1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(right1Key, NewInt(3002)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !right1Res.HitCache())
+		join1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: join1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(join1Key, NewInt(3101)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !join1Res.HitCache())
+
+		left2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: left2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(left2Key, NewInt(4001)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !left2Res.HitCache())
+		right2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: right2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(right2Key, NewInt(4002)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !right2Res.HitCache())
+		join2InitCalls := 0
+		join2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: join2Key}, func(context.Context) (AnyResult, error) {
+			join2InitCalls++
+			return newDetachedResult(join2Key, NewInt(4101)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, join2InitCalls)
+		assert.Assert(t, !join2Res.HitCache())
+		assert.Equal(t, 4101, cacheTestUnwrapInt(t, join2Res))
+
+		f1Out := f1Key.With(call.WithExtraDigest(shared)).With(call.WithExtraDigest(noise1))
+		f2Out := f2Key.With(call.WithExtraDigest(shared)).With(call.WithExtraDigest(noise2))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, shared.Digest, shared.Label))
+		assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, shared.Digest, shared.Label))
+		f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f1Out, NewInt(301)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f1Res.HitCache())
+		f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(f2Out, NewInt(302)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !f2Res.HitCache())
+
+		topRoot := cacheTestID("fanout-late-top-root")
+		top1Key := topRoot.Append(Int(0).Type(), "fanout-late-top",
+			call.WithArgs(call.NewArgument("join", call.NewLiteralID(join1Key), false)),
+		)
+		top2Key := topRoot.Append(Int(0).Type(), "fanout-late-top",
+			call.WithArgs(call.NewArgument("join", call.NewLiteralID(join2Key), false)),
+		)
+		assert.Assert(t, top1Key.Digest() != top2Key.Digest())
+
+		top1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: top1Key}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(top1Key, NewInt(5101)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !top1Res.HitCache())
+
+		top2InitCalls := 0
+		top2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: top2Key}, func(context.Context) (AnyResult, error) {
+			top2InitCalls++
+			return newDetachedResult(top2Key, NewInt(5201)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, top2InitCalls)
+		assert.Assert(t, top2Res.HitCache())
+		assert.Equal(t, 5101, cacheTestUnwrapInt(t, top2Res))
+		assert.Equal(t, top2Key.Digest().String(), top2Res.ID().Digest().String())
+
+		assert.NilError(t, left1Res.Release(ctx))
+		assert.NilError(t, left2Res.Release(ctx))
+		assert.NilError(t, right1Res.Release(ctx))
+		assert.NilError(t, right2Res.Release(ctx))
+		assert.NilError(t, join1Res.Release(ctx))
+		assert.NilError(t, join2Res.Release(ctx))
+		assert.NilError(t, f1Res.Release(ctx))
+		assert.NilError(t, f2Res.Release(ctx))
+		assert.NilError(t, top1Res.Release(ctx))
+		assert.NilError(t, top2Res.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+}
+
+func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
+	t.Parallel()
+
+	t.Run("hit_on_exact_output_digest_match", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		shared := call.ExtraDigest{
+			Digest: digest.FromString("fallback-extra-shared"),
+			Label:  "shared",
+		}
+
+		sourceKey := call.New().Append(Int(0).Type(), "_contextDirectory")
+		sourceOut := sourceKey.With(call.WithExtraDigest(shared))
+		sourceRes, err := c.GetOrInitCall(ctx, CacheKey{ID: sourceKey}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(sourceOut, NewInt(71)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !sourceRes.HitCache())
+
+		requestKey := sourceKey.
+			WithArgument(call.NewArgument("variant", call.NewLiteralInt(1), false)).
+			With(call.WithExtraDigest(shared))
+		assert.Assert(t, sourceKey.Digest() != requestKey.Digest())
+
+		requestInitCalls := 0
+		requestRes, err := c.GetOrInitCall(ctx, CacheKey{ID: requestKey}, func(context.Context) (AnyResult, error) {
+			requestInitCalls++
+			return newDetachedResult(requestKey, NewInt(999)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, requestInitCalls)
+		assert.Assert(t, requestRes.HitCache())
+		assert.Equal(t, 71, cacheTestUnwrapInt(t, requestRes))
+		assert.Equal(t, requestKey.Digest().String(), requestRes.ID().Digest().String())
+		assert.Assert(t, cacheTestIDHasExtraDigest(requestRes.ID(), shared.Digest, shared.Label))
+
+		assert.NilError(t, sourceRes.Release(ctx))
+		assert.NilError(t, requestRes.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+
+	t.Run("miss_without_exact_output_digest_match", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		c := cacheIface.(*cache)
+
+		sourceExtra := call.ExtraDigest{
+			Digest: digest.FromString("fallback-extra-source"),
+			Label:  "source",
+		}
+		requestExtra := call.ExtraDigest{
+			Digest: digest.FromString("fallback-extra-request"),
+			Label:  "request",
+		}
+
+		sourceKey := cacheTestID("fallback-miss-source")
+		sourceOut := sourceKey.With(call.WithExtraDigest(sourceExtra))
+		sourceRes, err := c.GetOrInitCall(ctx, CacheKey{ID: sourceKey}, func(context.Context) (AnyResult, error) {
+			return newDetachedResult(sourceOut, NewInt(81)), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !sourceRes.HitCache())
+
+		requestKey := cacheTestID("fallback-miss-request").With(call.WithExtraDigest(requestExtra))
+		requestInitCalls := 0
+		requestRes, err := c.GetOrInitCall(ctx, CacheKey{ID: requestKey}, func(context.Context) (AnyResult, error) {
+			requestInitCalls++
+			return newDetachedResult(requestKey, NewInt(82)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, requestInitCalls)
+		assert.Assert(t, !requestRes.HitCache())
+		assert.Equal(t, 82, cacheTestUnwrapInt(t, requestRes))
+
+		assert.NilError(t, sourceRes.Release(ctx))
+		assert.NilError(t, requestRes.Release(ctx))
+		assert.Equal(t, 0, c.Size())
+	})
+}
+
+func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	c := cacheIface.(*cache)
 
-	keyID := cacheTestID("do-not-cache")
-
-	for i := 1; i <= 2; i++ {
-		res, err := c.GetOrInitCall(ctx, CacheKey{
-			ID:         keyID,
-			DoNotCache: true,
-		}, func(context.Context) (AnyResult, error) {
-			return cacheTestIntResult(keyID, i), nil
-		})
-		assert.NilError(t, err)
-		assert.Assert(t, !res.HitCache())
-		assert.Assert(t, !res.HitContentDigestCache())
-		assert.Equal(t, i, cacheTestUnwrapInt(t, res))
+	sharedEq := call.ExtraDigest{
+		Digest: digest.FromString("release-shared-eq"),
+		Label:  "eq-shared",
+	}
+	noiseA := call.ExtraDigest{
+		Digest: digest.FromString("release-noise-a"),
+		Label:  "noise-a",
+	}
+	noiseB := call.ExtraDigest{
+		Digest: digest.FromString("release-noise-b"),
+		Label:  "noise-b",
 	}
 
+	f1Key := cacheTestID("release-f-1")
+	f2Key := cacheTestID("release-f-2")
+	f1Out := f1Key.With(call.WithExtraDigest(sharedEq)).With(call.WithExtraDigest(noiseA))
+	f2Out := f2Key.With(call.WithExtraDigest(sharedEq)).With(call.WithExtraDigest(noiseB))
+	assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f1Out, NewInt(101)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !f1Res.HitCache())
+
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f2Out, NewInt(102)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !f2Res.HitCache())
+
+	g1Key := f1Key.Append(Int(0).Type(), "release-g")
+	g2Key := f2Key.Append(Int(0).Type(), "release-g")
+	assert.Assert(t, g1Key.Digest() != g2Key.Digest())
+
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(g1Key, NewInt(201)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !g1Res.HitCache())
+
+	g2InitCalls := 0
+	g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		g2InitCalls++
+		return newDetachedResult(g2Key, NewInt(202)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, g2InitCalls)
+	assert.Assert(t, g2Res.HitCache())
+	assert.Equal(t, 201, cacheTestUnwrapInt(t, g2Res))
+	assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
+
+	h1Key := g1Key.Append(Int(0).Type(), "release-h")
+	h2Key := g2Key.Append(Int(0).Type(), "release-h")
+	assert.Assert(t, h1Key.Digest() != h2Key.Digest())
+
+	h1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: h1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(h1Key, NewInt(301)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !h1Res.HitCache())
+
+	h2InitCalls := 0
+	h2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: h2Key}, func(context.Context) (AnyResult, error) {
+		h2InitCalls++
+		return newDetachedResult(h2Key, NewInt(302)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, h2InitCalls)
+	assert.Assert(t, h2Res.HitCache())
+	assert.Equal(t, 301, cacheTestUnwrapInt(t, h2Res))
+	assert.Equal(t, h2Key.Digest().String(), h2Res.ID().Digest().String())
+
+	j1Key := g1Key.Append(Int(0).Type(), "release-j")
+	j2Key := g2Key.Append(Int(0).Type(), "release-j")
+	assert.Assert(t, j1Key.Digest() != j2Key.Digest())
+
+	j1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: j1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(j1Key, NewInt(401)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !j1Res.HitCache())
+
+	j2InitCalls := 0
+	j2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: j2Key}, func(context.Context) (AnyResult, error) {
+		j2InitCalls++
+		return newDetachedResult(j2Key, NewInt(402)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, j2InitCalls)
+	assert.Assert(t, j2Res.HitCache())
+	assert.Equal(t, 401, cacheTestUnwrapInt(t, j2Res))
+	assert.Equal(t, j2Key.Digest().String(), j2Res.ID().Digest().String())
+
+	// Five unique shared results are alive: f1, f2, g, h, j.
+	assert.Equal(t, 5, c.Size())
+	assert.Equal(t, 5, len(c.egraphTermIDsByResult))
+
+	// Release in intentionally mixed order to verify ref-count/e-graph cleanup.
+	assert.NilError(t, g2Res.Release(ctx))
+	assert.Equal(t, 5, c.Size())
+	assert.Equal(t, 5, len(c.egraphTermIDsByResult))
+
+	assert.NilError(t, h1Res.Release(ctx))
+	assert.Equal(t, 5, c.Size())
+	assert.Equal(t, 5, len(c.egraphTermIDsByResult))
+
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.Equal(t, 4, c.Size())
+	assert.Equal(t, 4, len(c.egraphTermIDsByResult))
+
+	assert.NilError(t, j2Res.Release(ctx))
+	assert.Equal(t, 4, c.Size())
+	assert.Equal(t, 4, len(c.egraphTermIDsByResult))
+
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.Equal(t, 3, c.Size())
+	assert.Equal(t, 3, len(c.egraphTermIDsByResult))
+
+	assert.NilError(t, h2Res.Release(ctx))
+	assert.Equal(t, 2, c.Size())
+	assert.Equal(t, 2, len(c.egraphTermIDsByResult))
+
+	assert.NilError(t, f2Res.Release(ctx))
+	assert.Equal(t, 1, c.Size())
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
+
+	assert.NilError(t, j1Res.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+	assert.Equal(t, 0, len(c.ongoingCalls))
+	assert.Assert(t, c.egraphDigestToClass == nil)
+	assert.Assert(t, c.egraphParents == nil)
+	assert.Assert(t, c.egraphRanks == nil)
+	assert.Assert(t, c.egraphClassTerms == nil)
+	assert.Assert(t, c.egraphTerms == nil)
+	assert.Assert(t, c.egraphTermsByDigest == nil)
+	assert.Assert(t, c.egraphTermIDsByResult == nil)
+	assert.Equal(t, eqClassID(0), c.nextEgraphClassID)
+	assert.Equal(t, egraphTermID(0), c.nextEgraphTermID)
+}
+
+func TestEquivalentCandidateSelectionIdentityInvariant(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	shared := call.ExtraDigest{
+		Digest: digest.FromString("identity-invariant-shared"),
+		Label:  "eq-shared",
+	}
+	noise1 := call.ExtraDigest{
+		Digest: digest.FromString("identity-invariant-noise-1"),
+		Label:  "noise-1",
+	}
+	noise2 := call.ExtraDigest{
+		Digest: digest.FromString("identity-invariant-noise-2"),
+		Label:  "noise-2",
+	}
+	noise3 := call.ExtraDigest{
+		Digest: digest.FromString("identity-invariant-noise-3"),
+		Label:  "noise-3",
+	}
+
+	f1Key := cacheTestID("identity-f-1")
+	f2Key := cacheTestID("identity-f-2")
+	f3Key := cacheTestID("identity-f-3")
+	assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+	assert.Assert(t, f2Key.Digest() != f3Key.Digest())
+	assert.Assert(t, f1Key.Digest() != f3Key.Digest())
+
+	g1Key := f1Key.Append(Int(0).Type(), "identity-g")
+	g2Key := f2Key.Append(Int(0).Type(), "identity-g")
+	g3Key := f3Key.Append(Int(0).Type(), "identity-g")
+	assert.Assert(t, g1Key.Digest() != g2Key.Digest())
+	assert.Assert(t, g2Key.Digest() != g3Key.Digest())
+	assert.Assert(t, g1Key.Digest() != g3Key.Digest())
+
+	// Seed two distinct cached candidates before any f-level equivalence is known.
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(g1Key, NewInt(1001)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !g1Res.HitCache())
+
+	g2InitCalls := 0
+	g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		g2InitCalls++
+		return newDetachedResult(g2Key, NewInt(1002)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, g2InitCalls)
+	assert.Assert(t, !g2Res.HitCache())
+	assert.Assert(t, g1Res.cacheSharedResult() != g2Res.cacheSharedResult())
+
+	// Learn equivalence after both candidates exist, creating an equivalent set.
+	f1Out := f1Key.With(call.WithExtraDigest(shared)).With(call.WithExtraDigest(noise1))
+	f2Out := f2Key.With(call.WithExtraDigest(shared)).With(call.WithExtraDigest(noise2))
+	f3Out := f3Key.With(call.WithExtraDigest(shared)).With(call.WithExtraDigest(noise3))
+	assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, shared.Digest, shared.Label))
+	assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, shared.Digest, shared.Label))
+	assert.Assert(t, cacheTestIDHasExtraDigest(f3Out, shared.Digest, shared.Label))
+
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f1Out, NewInt(101)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !f1Res.HitCache())
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f2Out, NewInt(102)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !f2Res.HitCache())
+	f3Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f3Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f3Out, NewInt(103)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !f3Res.HitCache())
+
+	// g3 should hit one of the equivalent cached candidates; selection may vary,
+	// but the returned result must keep the request-facing ID digest.
+	g3InitCalls := 0
+	g3Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g3Key}, func(context.Context) (AnyResult, error) {
+		g3InitCalls++
+		return newDetachedResult(g3Key, NewInt(1003)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, g3InitCalls)
+	assert.Assert(t, g3Res.HitCache())
+	got := cacheTestUnwrapInt(t, g3Res)
+	assert.Assert(t, got == 1001 || got == 1002, "expected hit value from an equivalent candidate, got %d", got)
+	assert.Equal(t, g3Key.Digest().String(), g3Res.ID().Digest().String())
+
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.NilError(t, g2Res.Release(ctx))
+	assert.NilError(t, g3Res.Release(ctx))
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.NilError(t, f2Res.Release(ctx))
+	assert.NilError(t, f3Res.Release(ctx))
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestCacheContentDigestHitOverridesIDPerCall(t *testing.T) {
+func TestExtraDigestLabelIsolation(t *testing.T) {
 	t.Parallel()
+
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	c := cacheIface.(*cache)
 
-	contentDigest := digest.FromString("shared-content-digest")
-	keyA := cacheTestID("content-a").
-		WithDigest(digest.FromString("call-a")).
-		With(call.WithContentDigest(contentDigest))
-	keyB := cacheTestID("content-b").
-		WithDigest(digest.FromString("call-b")).
-		With(call.WithContentDigest(contentDigest))
+	sharedBytes := digest.FromString("label-isolation-shared-bytes")
+	sharedA := call.ExtraDigest{Digest: sharedBytes, Label: "label-a"}
+	sharedB := call.ExtraDigest{Digest: sharedBytes, Label: "label-b"}
+	noiseA := call.ExtraDigest{Digest: digest.FromString("label-isolation-noise-a"), Label: "noise-a"}
+	noiseB := call.ExtraDigest{Digest: digest.FromString("label-isolation-noise-b"), Label: "noise-b"}
+	contentA := digest.FromString("label-isolation-content-a")
+	contentB := digest.FromString("label-isolation-content-b")
 
-	resA, err := c.GetOrInitCall(ctx, CacheKey{ID: keyA}, func(context.Context) (AnyResult, error) {
-		return newDetachedResult(keyA, NewInt(11)), nil
+	f1Key := cacheTestID("label-isolation-f-1")
+	f2Key := cacheTestID("label-isolation-f-2")
+	assert.Assert(t, f1Key.Digest() != f2Key.Digest())
+
+	// Labels differ for the shared digest bytes, while content digests are also
+	// present and intentionally different. This verifies label-only differences
+	// are informational and do not block equivalence/hits.
+	f1Out := f1Key.
+		With(call.WithContentDigest(contentA)).
+		With(call.WithExtraDigest(sharedA)).
+		With(call.WithExtraDigest(noiseA))
+	f2Out := f2Key.
+		With(call.WithContentDigest(contentB)).
+		With(call.WithExtraDigest(sharedB)).
+		With(call.WithExtraDigest(noiseB))
+	assert.Assert(t, contentA != contentB)
+	assert.Equal(t, contentA.String(), f1Out.ContentDigest().String())
+	assert.Equal(t, contentB.String(), f2Out.ContentDigest().String())
+	assert.Assert(t, cacheTestIDHasExtraDigest(f1Out, sharedBytes, sharedA.Label))
+	assert.Assert(t, cacheTestIDHasExtraDigest(f2Out, sharedBytes, sharedB.Label))
+	assert.Assert(t, !cacheTestIDHasExtraDigest(f1Out, sharedBytes, sharedB.Label))
+	assert.Assert(t, !cacheTestIDHasExtraDigest(f2Out, sharedBytes, sharedA.Label))
+
+	f1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f1Out, NewInt(501)), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, !resA.HitCache())
-	assert.Equal(t, keyA.Digest().String(), resA.ID().Digest().String())
+	assert.Assert(t, !f1Res.HitCache())
 
-	resB, err := c.GetOrInitCall(ctx, CacheKey{ID: keyB}, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("unexpected initializer call")
+	f2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: f2Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(f2Out, NewInt(502)), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, resB.HitCache())
-	assert.Assert(t, resB.HitContentDigestCache())
-	assert.Equal(t, keyB.Digest().String(), resB.ID().Digest().String())
-	assert.Equal(t, 11, cacheTestUnwrapInt(t, resB))
+	assert.Assert(t, !f2Res.HitCache())
 
-	resAHit, err := c.GetOrInitCall(ctx, CacheKey{ID: keyA}, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("unexpected initializer call")
+	g1Key := f1Key.Append(Int(0).Type(), "label-isolation-g")
+	g2Key := f2Key.Append(Int(0).Type(), "label-isolation-g")
+	assert.Assert(t, g1Key.Digest() != g2Key.Digest())
+
+	g1Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g1Key}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(g1Key, NewInt(601)), nil
 	})
 	assert.NilError(t, err)
-	assert.Assert(t, resAHit.HitCache())
-	assert.Assert(t, !resAHit.HitContentDigestCache())
-	assert.Equal(t, keyA.Digest().String(), resAHit.ID().Digest().String())
-	assert.Equal(t, keyA.Digest().String(), resA.ID().Digest().String())
+	assert.Assert(t, !g1Res.HitCache())
 
-	assert.NilError(t, resA.Release(ctx))
-	assert.NilError(t, resB.Release(ctx))
-	assert.NilError(t, resAHit.Release(ctx))
+	g2InitCalls := 0
+	g2Res, err := c.GetOrInitCall(ctx, CacheKey{ID: g2Key}, func(context.Context) (AnyResult, error) {
+		g2InitCalls++
+		return newDetachedResult(g2Key, NewInt(602)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, g2InitCalls)
+	assert.Assert(t, g2Res.HitCache())
+	assert.Equal(t, 601, cacheTestUnwrapInt(t, g2Res))
+	assert.Equal(t, g2Key.Digest().String(), g2Res.ID().Digest().String())
+
+	assert.NilError(t, f1Res.Release(ctx))
+	assert.NilError(t, f2Res.Release(ctx))
+	assert.NilError(t, g1Res.Release(ctx))
+	assert.NilError(t, g2Res.Release(ctx))
 	assert.Equal(t, 0, c.Size())
+	assert.Equal(t, 0, len(c.egraphTerms))
+	assert.Equal(t, 0, len(c.egraphDigestToClass))
 }
 
 func TestCachePostCallAndSafeToPersistMetadataPreserved(t *testing.T) {
@@ -925,7 +2288,6 @@ func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !outerRes.HitCache())
-	assert.Assert(t, !outerRes.HitContentDigestCache())
 	assert.Equal(t, 9, cacheTestUnwrapInt(t, outerRes))
 
 	assert.NilError(t, outerRes.Release(ctx))
@@ -978,7 +2340,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 
 	storageID := cacheTestID("storage-key")
 	resultID := storageID.
-		WithDigest(digest.FromString("result-digest")).
+		With(call.WithExtraDigest(call.ExtraDigest{Digest: digest.FromString("result-digest")})).
 		With(call.WithContentDigest(digest.FromString("result-content")))
 
 	res, err := c.GetOrInitCall(ctx, CacheKey{ID: storageID}, func(context.Context) (AnyResult, error) {
@@ -987,18 +2349,18 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	assert.NilError(t, err)
 
 	storageKey := storageID.Digest().String()
-	resultKey := resultID.Digest().String()
-	contentKey := resultID.ContentDigest().String()
+	resultOutputEq := resultID.ContentPreferredDigest().String()
 
-	assert.Assert(t, c.completedCalls[storageKey] != nil)
-	assert.Assert(t, c.completedCalls[resultKey] != nil)
-	assert.Assert(t, c.completedCallsByContent[contentKey] != nil)
-	assert.Equal(t, 3, c.Size())
+	assert.Assert(t, storageKey != resultOutputEq)
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
+	assert.Assert(t, len(c.egraphTerms) > 0)
+	assert.Assert(t, c.Size() > 0)
 
 	assert.NilError(t, res.Release(ctx))
 	assert.Equal(t, 0, len(c.ongoingCalls))
-	assert.Equal(t, 0, len(c.completedCalls))
-	assert.Equal(t, 0, len(c.completedCallsByContent))
+	assert.Equal(t, 0, len(c.egraphTermIDsByResult))
+	assert.Equal(t, 0, len(c.egraphTerms))
+	assert.Equal(t, 0, len(c.egraphTermIDsByResult))
 }
 
 func TestCacheArrayResultRoundTrip(t *testing.T) {
@@ -1088,7 +2450,6 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	keyID := cacheTestID("ttl-key")
-	callKey := keyID.Digest().String()
 	initCalls := 0
 
 	res1, err := c.GetOrInitCall(ctx, CacheKey{
@@ -1111,13 +2472,531 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 1, initCalls)
 	assert.Assert(t, res2.HitCache())
-	assert.Assert(t, c.completedCalls[callKey] != nil)
-	assert.Equal(t, 2, len(c.completedCalls))
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
 
 	assert.NilError(t, res1.Release(ctx))
 	assert.NilError(t, res2.Release(ctx))
-	assert.Equal(t, 0, len(c.completedCalls))
+	// Persist-safe only affects DB metadata persistence; in-memory cache entries are
+	// released when refs drain.
+	assert.Equal(t, 0, len(c.egraphTermIDsByResult))
 	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheTTLNonPersistableEquivalentIDsCanCrossRecipeLookup(t *testing.T) {
+	t.Parallel()
+	baseCtx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheIface, err := NewCache(baseCtx, dbPath)
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sharedOutputEq := digest.FromString("ttl-nonpersist-session-scoped")
+	keyA := cacheTestID("ttl-nonpersist-a").With(call.WithExtraDigest(call.ExtraDigest{Digest: sharedOutputEq}))
+	keyB := cacheTestID("ttl-nonpersist-b").With(call.WithExtraDigest(call.ExtraDigest{Digest: sharedOutputEq}))
+
+	ctxSessionA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "cache-test-client-a",
+		SessionID: "cache-test-session-a",
+	})
+	ctxSessionB := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "cache-test-client-b",
+		SessionID: "cache-test-session-b",
+	})
+
+	resA, err := c.GetOrInitCall(ctxSessionA, CacheKey{
+		ID:  keyA,
+		TTL: 60,
+	}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(keyA, NewInt(11)).WithSafeToPersistCache(false), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resA.HitCache())
+	assert.Equal(t, 11, cacheTestUnwrapInt(t, resA))
+
+	sameSessionInits := 0
+	resSameSession, err := c.GetOrInitCall(ctxSessionA, CacheKey{
+		ID:  keyB,
+		TTL: 60,
+	}, func(context.Context) (AnyResult, error) {
+		sameSessionInits++
+		return newDetachedResult(keyB, NewInt(22)).WithSafeToPersistCache(false), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, sameSessionInits)
+	assert.Assert(t, !resSameSession.HitCache())
+	assert.Equal(t, 22, cacheTestUnwrapInt(t, resSameSession))
+
+	crossSessionInits := 0
+	resCrossSession, err := c.GetOrInitCall(ctxSessionB, CacheKey{
+		ID:  keyB,
+		TTL: 60,
+	}, func(context.Context) (AnyResult, error) {
+		crossSessionInits++
+		return newDetachedResult(keyB, NewInt(33)).WithSafeToPersistCache(false), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, crossSessionInits)
+	assert.Assert(t, resCrossSession.HitCache())
+	assert.Equal(t, 22, cacheTestUnwrapInt(t, resCrossSession))
+
+	assert.NilError(t, resA.Release(ctxSessionA))
+	assert.NilError(t, resSameSession.Release(ctxSessionA))
+	assert.NilError(t, resCrossSession.Release(ctxSessionB))
+}
+
+func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
+	t.Parallel()
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+
+	key := cacheTestID("persistable-across-session-close")
+	ctxSessionA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "persistable-client-a",
+		SessionID: "persistable-session-a",
+	})
+	ctxSessionB := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "persistable-client-b",
+		SessionID: "persistable-session-b",
+	})
+
+	sc1 := NewSessionCache(base)
+	initCallsA := 0
+	resA, err := sc1.GetOrInitCall(ctxSessionA, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCallsA++
+		return cacheTestIntResult(key, 41), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCallsA)
+	assert.Assert(t, !resA.HitCache())
+	assert.Equal(t, 1, base.EntryStats().RetainedCalls)
+
+	assert.NilError(t, sc1.ReleaseAndClose(ctxSessionA))
+	assert.Equal(t, 1, base.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, base.Size())
+
+	sc2 := NewSessionCache(base)
+	initCallsB := 0
+	resB, err := sc2.GetOrInitCall(ctxSessionB, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCallsB++
+		return cacheTestIntResult(key, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, initCallsB)
+	assert.Assert(t, resB.HitCache())
+	assert.Equal(t, 41, cacheTestUnwrapInt(t, resB))
+
+	assert.NilError(t, sc2.ReleaseAndClose(ctxSessionB))
+	assert.Equal(t, 1, base.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, base.Size())
+}
+
+func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("non-persistable-drops")
+	res, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: false,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 7), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
+
+	assert.NilError(t, res.Release(ctx))
+	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
+	assert.Equal(t, 0, len(c.egraphTermIDsByResult))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("persistable-hit-upgrade")
+	initCalls := 0
+
+	resA, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: false,
+	}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return cacheTestIntResult(key, 17), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCalls)
+	assert.Assert(t, !resA.HitCache())
+	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
+
+	resB, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return cacheTestIntResult(key, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCalls)
+	assert.Assert(t, resB.HitCache())
+	assert.Equal(t, 17, cacheTestUnwrapInt(t, resB))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+	assert.Equal(t, 1, len(c.egraphTermIDsByResult))
+
+	initCallsAfter := 0
+	resC, err := c.GetOrInitCall(ctx, CacheKey{
+		ID: key,
+	}, func(context.Context) (AnyResult, error) {
+		initCallsAfter++
+		return cacheTestIntResult(key, 123), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, initCallsAfter)
+	assert.Assert(t, resC.HitCache())
+	assert.Equal(t, 17, cacheTestUnwrapInt(t, resC))
+	assert.NilError(t, resC.Release(ctx))
+}
+
+func TestCacheUsageEntriesIncludeRetainedPersistedResults(t *testing.T) {
+	t.Parallel()
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("usage-retained-persisted")
+	ctxSession := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "usage-retained-client",
+		SessionID: "usage-retained-session",
+	})
+
+	sc := NewSessionCache(c)
+	res, err := sc.GetOrInitCall(ctxSession, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 123), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !res.HitCache())
+
+	entries := c.UsageEntries(context.Background())
+	assert.Equal(t, 1, len(entries))
+	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+	assert.Assert(t, entries[0].ActivelyUsed)
+	assert.Assert(t, entries[0].CreatedTimeUnixNano > 0)
+	assert.Assert(t, entries[0].MostRecentUseTimeUnixNano > 0)
+	assert.Assert(t, entries[0].SizeBytes > 0)
+	assert.Assert(t, entries[0].Description != "")
+	assert.Assert(t, entries[0].RecordType != "")
+
+	assert.NilError(t, sc.ReleaseAndClose(ctxSession))
+	entries = c.UsageEntries(context.Background())
+	assert.Equal(t, 1, len(entries))
+	assert.Assert(t, !entries[0].ActivelyUsed)
+	assert.Assert(t, entries[0].MostRecentUseTimeUnixNano >= entries[0].CreatedTimeUnixNano)
+}
+
+func TestCacheUsageEntriesTracksMostRecentUseAndInUse(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("usage-most-recent-use")
+	res1, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 17), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !res1.HitCache())
+
+	entriesBefore := c.UsageEntries(context.Background())
+	assert.Equal(t, 1, len(entriesBefore))
+	entryBefore := entriesBefore[0]
+	assert.Assert(t, entryBefore.ActivelyUsed)
+
+	time.Sleep(2 * time.Millisecond)
+
+	res2, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res2.HitCache())
+	assert.Equal(t, 17, cacheTestUnwrapInt(t, res2))
+
+	entriesAfterHit := c.UsageEntries(context.Background())
+	assert.Equal(t, 1, len(entriesAfterHit))
+	entryAfterHit := entriesAfterHit[0]
+	assert.Equal(t, entryBefore.ID, entryAfterHit.ID)
+	assert.Assert(t, entryAfterHit.ActivelyUsed)
+	assert.Assert(t, entryAfterHit.MostRecentUseTimeUnixNano >= entryBefore.MostRecentUseTimeUnixNano)
+	assert.Assert(t, entryAfterHit.CreatedTimeUnixNano <= entryAfterHit.MostRecentUseTimeUnixNano)
+
+	assert.NilError(t, res1.Release(ctx))
+	assert.NilError(t, res2.Release(ctx))
+
+	entriesAfterRelease := c.UsageEntries(context.Background())
+	assert.Equal(t, 1, len(entriesAfterRelease))
+	entryAfterRelease := entriesAfterRelease[0]
+	assert.Assert(t, !entryAfterRelease.ActivelyUsed)
+	assert.Assert(t, entryAfterRelease.MostRecentUseTimeUnixNano >= entryAfterHit.MostRecentUseTimeUnixNano)
+}
+
+func TestCacheUsageEntriesDeterministicOrdering(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	keyA := cacheTestID("usage-order-a")
+	keyB := cacheTestID("usage-order-b")
+
+	resB, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyB,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(keyB, 2), nil
+	})
+	assert.NilError(t, err)
+	resA, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyA,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(keyA, 1), nil
+	})
+	assert.NilError(t, err)
+
+	entries1 := c.UsageEntries(context.Background())
+	entries2 := c.UsageEntries(context.Background())
+	assert.DeepEqual(t, entries1, entries2)
+	assert.Equal(t, 2, len(entries1))
+	assert.Assert(t, entries1[0].ID < entries1[1].ID)
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+}
+
+func TestCachePruneKeepDuration(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	oldID := cacheTestID("prune-keep-old")
+	recentID := cacheTestID("prune-keep-recent")
+
+	oldRes, err := c.GetOrInitCall(ctx, CacheKey{ID: oldID, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(oldID, 1), nil
+	})
+	assert.NilError(t, err)
+	recentRes, err := c.GetOrInitCall(ctx, CacheKey{ID: recentID, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(recentID, 2), nil
+	})
+	assert.NilError(t, err)
+
+	oldRID := oldRes.cacheSharedResult().id
+	recentRID := recentRes.cacheSharedResult().id
+	assert.NilError(t, oldRes.Release(ctx))
+	assert.NilError(t, recentRes.Release(ctx))
+
+	now := time.Now()
+	c.egraphMu.Lock()
+	c.resultsByID[oldRID].sizeEstimateBytes = 100
+	c.resultsByID[oldRID].createdAtUnixNano = now.Add(-3 * time.Hour).UnixNano()
+	c.resultsByID[oldRID].lastUsedAtUnixNano = now.Add(-2 * time.Hour).UnixNano()
+	c.resultsByID[recentRID].sizeEstimateBytes = 100
+	c.resultsByID[recentRID].createdAtUnixNano = now.Add(-30 * time.Minute).UnixNano()
+	c.resultsByID[recentRID].lastUsedAtUnixNano = now.Add(-10 * time.Minute).UnixNano()
+	c.egraphMu.Unlock()
+
+	pruneResult, err := c.Prune(ctx, CachePruneOpts{
+		Policies: []CachePrunePolicy{
+			{
+				All:          true,
+				KeepDuration: time.Hour,
+				MaxUsedSpace: 150,
+			},
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, int64(100), pruneResult.PrunedBytes)
+	assert.Equal(t, 1, len(pruneResult.PrunedEntries))
+	assert.Equal(t, fmt.Sprintf("dagql.result.%d", oldRID), pruneResult.PrunedEntries[0].ID)
+
+	usage := c.UsageEntries(context.Background())
+	assert.Equal(t, 1, len(usage))
+	assert.Equal(t, fmt.Sprintf("dagql.result.%d", recentRID), usage[0].ID)
+}
+
+func TestCachePruneThresholdMaxAndTargetSpace(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	newPersisted := func(name string, value int) (AnyResult, sharedResultID) {
+		id := cacheTestID(name)
+		res, err := c.GetOrInitCall(ctx, CacheKey{ID: id, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(id, value), nil
+		})
+		assert.NilError(t, err)
+		rid := res.cacheSharedResult().id
+		assert.NilError(t, res.Release(ctx))
+		return res, rid
+	}
+	_, rid1 := newPersisted("prune-threshold-1", 1)
+	_, rid2 := newPersisted("prune-threshold-2", 2)
+	_, rid3 := newPersisted("prune-threshold-3", 3)
+
+	now := time.Now()
+	c.egraphMu.Lock()
+	c.resultsByID[rid1].sizeEstimateBytes = 100
+	c.resultsByID[rid1].createdAtUnixNano = now.Add(-5 * time.Hour).UnixNano()
+	c.resultsByID[rid1].lastUsedAtUnixNano = now.Add(-5 * time.Hour).UnixNano()
+	c.resultsByID[rid2].sizeEstimateBytes = 100
+	c.resultsByID[rid2].createdAtUnixNano = now.Add(-4 * time.Hour).UnixNano()
+	c.resultsByID[rid2].lastUsedAtUnixNano = now.Add(-4 * time.Hour).UnixNano()
+	c.resultsByID[rid3].sizeEstimateBytes = 100
+	c.resultsByID[rid3].createdAtUnixNano = now.Add(-3 * time.Hour).UnixNano()
+	c.resultsByID[rid3].lastUsedAtUnixNano = now.Add(-3 * time.Hour).UnixNano()
+	c.egraphMu.Unlock()
+
+	pruneResult, err := c.Prune(ctx, CachePruneOpts{
+		Policies: []CachePrunePolicy{
+			{
+				All:           true,
+				MaxUsedSpace:  250,
+				TargetSpace:   150,
+				ReservedSpace: 0,
+			},
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, int64(200), pruneResult.PrunedBytes)
+	assert.Equal(t, 2, len(pruneResult.PrunedEntries))
+
+	usage := c.UsageEntries(context.Background())
+	assert.Equal(t, 1, len(usage))
+	assert.Equal(t, fmt.Sprintf("dagql.result.%d", rid3), usage[0].ID)
+}
+
+func TestCachePruneInUseEntriesNeverPruned(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	id := cacheTestID("prune-in-use")
+	res, err := c.GetOrInitCall(ctx, CacheKey{ID: id, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(id, 7), nil
+	})
+	assert.NilError(t, err)
+	rid := res.cacheSharedResult().id
+
+	c.egraphMu.Lock()
+	c.resultsByID[rid].sizeEstimateBytes = 100
+	c.resultsByID[rid].createdAtUnixNano = time.Now().Add(-10 * time.Hour).UnixNano()
+	c.resultsByID[rid].lastUsedAtUnixNano = time.Now().Add(-10 * time.Hour).UnixNano()
+	c.egraphMu.Unlock()
+
+	pruneResult, err := c.Prune(ctx, CachePruneOpts{
+		Policies: []CachePrunePolicy{
+			{
+				All:          true,
+				MaxUsedSpace: 1,
+				TargetSpace:  1,
+			},
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, int64(0), pruneResult.PrunedBytes)
+	assert.Equal(t, 0, len(pruneResult.PrunedEntries))
+
+	usage := c.UsageEntries(context.Background())
+	assert.Equal(t, 1, len(usage))
+	assert.Assert(t, usage[0].ActivelyUsed)
+
+	assert.NilError(t, res.Release(ctx))
+}
+
+func TestCachePruneDeterministicSelectionOrder(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	makePersisted := func(name string, val int) sharedResultID {
+		id := cacheTestID(name)
+		res, err := c.GetOrInitCall(ctx, CacheKey{ID: id, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(id, val), nil
+		})
+		assert.NilError(t, err)
+		rid := res.cacheSharedResult().id
+		assert.NilError(t, res.Release(ctx))
+		return rid
+	}
+
+	rid1 := makePersisted("prune-order-1", 1)
+	rid2 := makePersisted("prune-order-2", 2)
+	rid3 := makePersisted("prune-order-3", 3)
+	id1 := fmt.Sprintf("dagql.result.%d", rid1)
+	id2 := fmt.Sprintf("dagql.result.%d", rid2)
+
+	c.egraphMu.Lock()
+	for _, rid := range []sharedResultID{rid1, rid2, rid3} {
+		c.resultsByID[rid].sizeEstimateBytes = 100
+		c.resultsByID[rid].lastUsedAtUnixNano = 1000
+	}
+	c.resultsByID[rid1].createdAtUnixNano = 500
+	c.resultsByID[rid2].createdAtUnixNano = 500
+	c.resultsByID[rid3].createdAtUnixNano = 600
+	c.egraphMu.Unlock()
+
+	pruneResult, err := c.Prune(ctx, CachePruneOpts{
+		Policies: []CachePrunePolicy{
+			{
+				All:          true,
+				MaxUsedSpace: 200,
+				TargetSpace:  100,
+			},
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, len(pruneResult.PrunedEntries))
+	assert.Equal(t, id1, pruneResult.PrunedEntries[0].ID)
+	assert.Equal(t, id2, pruneResult.PrunedEntries[1].ID)
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
@@ -1229,12 +3108,12 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 	waiterPollDeadline := time.Now().Add(3 * time.Second)
 	lastObservedWaiters := -1
 	for time.Now().Before(waiterPollDeadline) {
-		c.mu.Lock()
+		c.callsMu.Lock()
 		oc := c.ongoingArbitraryCalls[key]
 		if oc != nil {
 			lastObservedWaiters = oc.waiters
 		}
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 
 		if oc != nil && lastObservedWaiters == totalCallers {
 			waiterCountReached = true
@@ -1249,9 +3128,9 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 	ongoingCleared := false
 	clearPollDeadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(clearPollDeadline) {
-		c.mu.Lock()
+		c.callsMu.Lock()
 		_, exists := c.ongoingArbitraryCalls[key]
-		c.mu.Unlock()
+		c.callsMu.Unlock()
 		if !exists {
 			ongoingCleared = true
 			break

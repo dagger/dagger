@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 type moduleSchema struct{}
@@ -43,25 +44,29 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("column").Doc("The column number within the line."),
 			),
 
-		dagql.FuncWithCacheKey("currentModule", s.currentModule, dagql.CachePerClient).
+		dagql.FuncWithDynamicInputs("currentModule", s.currentModule, s.currentModuleCacheKey).
 			Doc(`The module currently being served in the session, if any.`),
 
-		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
+		dagql.Func("currentTypeDefs", s.currentTypeDefs).
+			WithInput(dagql.PerCallInput).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
-		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
+		dagql.Func("currentFunctionCall", s.currentFunctionCall).
+			WithInput(dagql.PerClientInput).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.FunctionCall]{
-		dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, dagql.CachePerClient).
+		dagql.Func("returnValue", s.functionCallReturnValue).
+			WithInput(dagql.PerClientInput).
 			Doc(`Set the return value of the function call to the provided value.`).
 			Args(
 				dagql.Arg("value").Doc(`JSON serialization of the return value.`),
 			),
-		dagql.FuncWithCacheKey("returnError", s.functionCallReturnError, dagql.CachePerClient).
+		dagql.Func("returnError", s.functionCallReturnError).
+			WithInput(dagql.PerClientInput).
 			Doc(`Return an error from the function.`).
 			Args(
 				dagql.Arg("error").Doc(`The error to return.`),
@@ -140,6 +145,21 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
 			),
+
+		dagql.NodeFunc("_sourceContentScoped", s.moduleSourceContentScoped).
+			Doc(`The module object with a cache key scoped to just the parts of the module that impact SDKs and function calls, i.e. the source code and dependencies but not the specific git commit or local path the module was loaded from. Must be used with caution as providing it to any operation that depends on non-source aspects of the module specific to a given client could result in unexpected cache collisions.`),
+		dagql.NodeFunc("_contextDirectory", s.contextDirectory).
+			WithInput(dagql.PerCallInput).
+			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
+		dagql.NodeFunc("_contextFile", s.contextFile).
+			WithInput(dagql.PerCallInput).
+			Doc(`Obtain a contextual file argument for the given path and module.`),
+		dagql.NodeFunc("_contextGitRepository", s.contextGitRepository).
+			WithInput(dagql.PerCallInput).
+			Doc(`Obtain a contextual git repository argument for the given module.`),
+		dagql.NodeFunc("_contextGitRef", s.contextGitRef).
+			WithInput(dagql.PerCallInput).
+			Doc(`Obtain a contextual git ref argument for the given module.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -155,7 +175,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
-		dagql.NodeFuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
+		dagql.NodeFunc("workdir", s.currentModuleWorkdir).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -164,7 +185,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
-		dagql.NodeFuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
+		dagql.NodeFunc("workdirFile", s.currentModuleWorkdirFile).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
@@ -710,16 +732,59 @@ func (s *moduleSchema) functionWithCachePolicy(
 	return fn, nil
 }
 
-func (s *moduleSchema) currentModule(
+type currentModuleArgs struct {
+	SourceContentScopedMod dagql.Optional[core.ModuleID] `internal:"true"`
+}
+
+func (s *moduleSchema) currentModuleCacheKey(
 	ctx context.Context,
-	self *core.Query,
-	_ struct{},
-) (*core.CurrentModule, error) {
-	mod, err := self.CurrentModule(ctx)
+	parent dagql.ObjectResult[*core.Query],
+	args currentModuleArgs,
+	req dagql.DynamicInputRequest,
+) (*dagql.DynamicInputResponse, error) {
+	resp := &dagql.DynamicInputResponse{
+		CacheKey: req.CacheKey,
+	}
+	if resp.CacheKey.ID == nil {
+		return nil, errors.New("cache key ID is nil")
+	}
+	if args.SourceContentScopedMod.Valid {
+		return resp, nil
+	}
+
+	mod, err := parent.Self().CurrentModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	return &core.CurrentModule{Module: mod}, nil
+	contentScopedID, err := mod.SourceContentScopedID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source content scoped ID for current module: %w", err)
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+		"sourceContentScopedMod",
+		dagql.NewID[*core.Module](contentScopedID).ToLiteral(),
+		false,
+	))
+	return resp, nil
+}
+
+func (s *moduleSchema) currentModule(
+	ctx context.Context,
+	self *core.Query,
+	args currentModuleArgs,
+) (*core.CurrentModule, error) {
+	if !args.SourceContentScopedMod.Valid {
+		return nil, errors.New("missing source module argument")
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	mod, err := args.SourceContentScopedMod.Value.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load source content scoped module: %w", err)
+	}
+	return &core.CurrentModule{Module: mod.Self()}, nil
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
@@ -1144,4 +1209,87 @@ func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Option
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
 	return sourceMapI.Self(), nil
+}
+
+func (s *moduleSchema) moduleSourceContentScoped(
+	ctx context.Context,
+	parentMod dagql.ObjectResult[*core.Module],
+	args struct{},
+) (inst dagql.ObjectResult[*core.Module], err error) {
+	contentScopedID, err := parentMod.Self().SourceContentScopedID(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get source content scoped ID for module: %w", err)
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return dagql.NewObjectResultForID(parentMod.Self(), dag, contentScopedID)
+}
+
+func (s *moduleSchema) contextDirectory(
+	ctx context.Context,
+	modInst dagql.ObjectResult[*core.Module],
+	args struct {
+		Path string
+		core.CopyFilter
+	},
+) (inst dagql.ObjectResult[*core.Directory], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return modInst.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
+}
+
+func (s *moduleSchema) contextFile(
+	ctx context.Context,
+	modInst dagql.ObjectResult[*core.Module],
+	args struct {
+		Path string
+	},
+) (inst dagql.ObjectResult[*core.File], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return modInst.Self().ContextSource.Value.Self().LoadContextFile(ctx, dag, args.Path)
+}
+
+func (s *moduleSchema) contextGitRepository(
+	ctx context.Context,
+	modInst dagql.ObjectResult[*core.Module],
+	args struct{},
+) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return modInst.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
+}
+
+func (s *moduleSchema) contextGitRef(
+	ctx context.Context,
+	modInst dagql.ObjectResult[*core.Module],
+	args struct{},
+) (inst dagql.ObjectResult[*core.GitRef], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	repo, err := modInst.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git repo: %w", err)
+	}
+
+	var gitRef dagql.ObjectResult[*core.GitRef]
+	err = dag.Select(ctx, repo, &gitRef,
+		dagql.Selector{
+			Field: "head",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("load contextual git ref: %w", err)
+	}
+	return gitRef, nil
 }

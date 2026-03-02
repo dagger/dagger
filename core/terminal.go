@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	bkgwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/muesli/termenv"
@@ -19,6 +21,26 @@ import (
 const (
 	defaultTerminalImage = distconsts.AlpineImage
 )
+
+func cloneContainerForTerminal(ctr *Container) *Container {
+	if ctr == nil {
+		return nil
+	}
+	cp := *ctr
+	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
+	cp.Config.Env = slices.Clone(cp.Config.Env)
+	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
+	cp.Config.Cmd = slices.Clone(cp.Config.Cmd)
+	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
+	cp.Config.Labels = maps.Clone(cp.Config.Labels)
+	cp.Mounts = slices.Clone(cp.Mounts)
+	cp.Secrets = slices.Clone(cp.Secrets)
+	cp.Sockets = slices.Clone(cp.Sockets)
+	cp.Ports = slices.Clone(cp.Ports)
+	cp.Services = slices.Clone(cp.Services)
+	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
+	return &cp
+}
 
 type ExecTerminalArgs struct {
 	Cmd []string `default:"[]"`
@@ -56,11 +78,11 @@ func (container *Container) terminal(
 	args *TerminalArgs,
 	richErr *buildkit.RichError,
 ) error {
-	container = container.Clone()
+	container = cloneContainerForTerminal(container)
 
 	// HACK: ensure that container is entirely built before interrupting nice
 	// progress output with the terminal
-	_, err := container.Evaluate(ctx)
+	err := container.Evaluate(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
@@ -149,7 +171,7 @@ func (dir *Directory) Terminal(
 		}
 	}
 
-	ctr = ctr.Clone()
+	ctr = cloneContainerForTerminal(ctr)
 	ctr.Config.WorkingDir = "/src"
 	ctr, err = ctr.WithMountedDirectory(ctx, "/src", parent, "", true)
 	if err != nil {

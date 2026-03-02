@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/opencontainers/go-digest"
 )
 
 var _ SchemaResolvers = &httpSchema{}
@@ -19,12 +20,15 @@ type httpSchema struct{}
 
 func (s *httpSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("http", s.http, dagql.CachePerClient).
+		dagql.NodeFunc("http", s.http).
+			IsPersistable().
+			WithInput(dagql.PerClientInput).
 			Doc(`Returns a file containing an http remote url content.`).
 			Args(
 				dagql.Arg("url").Doc(`HTTP url to get the content from (e.g., "https://docs.dagger.io").`),
 				dagql.Arg("name").Doc(`File name to use for the file. Defaults to the last part of the URL.`),
 				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
+				dagql.Arg("checksum").Doc(`Expected digest of the downloaded content (e.g., "sha256:...").`),
 				dagql.Arg("authHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the URL is fetched.`),
 			),
@@ -35,11 +39,9 @@ type httpArgs struct {
 	URL                     string
 	Name                    *string
 	Permissions             *int
+	Checksum                *string
 	AuthHeader              dagql.Optional[core.SecretID]
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
-
-	FSDagOpInternalArgs
-	RefID string `internal:"true" default:"" name:"refID"`
 }
 
 func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args httpArgs) (string, error) {
@@ -64,19 +66,6 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	if args.InDagOp() {
-		cache := parent.Self().BuildkitCache()
-		snap, err := cache.Get(ctx, args.RefID, nil)
-		if err != nil {
-			return inst, err
-		}
-		snap = snap.Clone()
-
-		f := core.NewFile(nil, args.DagOpPath, parent.Self().Platform(), nil)
-		f.Result = snap
-		return dagql.NewObjectResultForCurrentID(ctx, srv, f)
-	}
-
 	filename, err := s.httpPath(ctx, parent.Self(), args)
 	if err != nil {
 		return inst, err
@@ -84,6 +73,10 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	permissions := 0600
 	if args.Permissions != nil {
 		permissions = *args.Permissions
+	}
+	expectedChecksum, err := parseChecksumArg(args.Checksum)
+	if err != nil {
+		return inst, err
 	}
 
 	var authHeader string
@@ -141,38 +134,43 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	}
 	defer resp.Body.Close()
 	defer snap.Release(context.WithoutCancel(ctx))
-
-	// also mixin the checksum
-	newID := dagql.CurrentID(ctx).
-		WithArgument(call.NewArgument(
-			"refID",
-			call.NewLiteralString(snap.ID()),
-			false,
-		)).
-		WithDigest(hashutil.HashStrings(
-			filename,
-			fmt.Sprint(permissions),
-			dgst.String(),
-			resp.Header.Get("Last-Modified"),
-		))
-	ctxDagOp := dagql.ContextWithID(ctx, newID)
-
-	file, effectID, err := DagOpFile(ctxDagOp, srv, parent.Self(), args, s.http, WithPathFn(s.httpPath))
-	if err != nil {
-		return inst, err
+	if expectedChecksum != "" && expectedChecksum != dgst {
+		return inst, fmt.Errorf("http checksum mismatch: expected %s, got %s", expectedChecksum, dgst)
 	}
 
-	// evaluate now! so that the snapshot definitely lives long enough
-	if _, err := file.Evaluate(ctx); err != nil {
-		return inst, err
+	// Keep recipe digest as the authoritative call identity.
+	// Attach HTTP output identity as content digest so equivalent outputs can
+	// still converge in cache/egraph flows.
+	outputDigest := hashutil.HashStrings(
+		filename,
+		fmt.Sprint(permissions),
+		dgst.String(),
+		resp.Header.Get("Last-Modified"),
+		expectedChecksum.String(),
+	)
+	resultID := dagql.CurrentID(ctx).With(call.WithContentDigest(outputDigest))
+	file := &core.File{
+		File:      filename,
+		Platform:  parent.Self().Platform(),
+		LazyState: core.NewLazyState(),
+		Snapshot:  snap.Clone(),
 	}
+	file.LazyInitComplete = true
 
-	if effectID != "" {
-		newID = newID.AppendEffectIDs(effectID)
-	}
-	inst, err = dagql.NewObjectResultForID(file, srv, newID)
+	inst, err = dagql.NewObjectResultForID(file, srv, resultID)
 	if err != nil {
 		return inst, err
 	}
 	return inst, nil
+}
+
+func parseChecksumArg(checksum *string) (digest.Digest, error) {
+	if checksum == nil || *checksum == "" {
+		return "", nil
+	}
+	parsed, err := digest.Parse(*checksum)
+	if err != nil {
+		return "", fmt.Errorf("invalid checksum %q: %w", *checksum, err)
+	}
+	return parsed, nil
 }

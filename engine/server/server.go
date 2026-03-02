@@ -115,7 +115,7 @@ type Server struct {
 	workerCacheMetaDB     *metadata.Store
 	workerCache           bkcache.Manager
 	workerSourceManager   *source.Manager
-	workerDefaultGCPolicy *bkclient.PruneInfo
+	workerDefaultGCPolicy *dagqlCachePrunePolicy
 
 	bkSessionManager *bksession.Manager
 
@@ -342,6 +342,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		// prioritize out config first if it's set
 		if cfg.Security.InsecureRootCapabilities == nil || *cfg.Security.InsecureRootCapabilities {
 			srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
+			srv.entitlements[entitlements.EntitlementNetworkHost] = struct{}{}
 		}
 	} else if bkcfg.Entitlements != nil {
 		// fallback to the dagger config
@@ -355,6 +356,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	} else {
 		// no config? apply dagger-specific defaults
 		srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
+		srv.entitlements[entitlements.EntitlementNetworkHost] = struct{}{}
 	}
 
 	srv.defaultPlatform = platforms.Normalize(platforms.DefaultSpec())
@@ -478,7 +480,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerCache = srv.baseWorker.CacheMgr
 	srv.workerSourceManager = srv.baseWorker.SourceManager
-	srv.workerDefaultGCPolicy = getDefaultGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
+	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
 
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)

@@ -2,14 +2,16 @@ package dagql
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
+	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -18,7 +20,6 @@ import (
 	cachedb "github.com/dagger/dagger/dagql/db"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -46,6 +47,14 @@ type Cache interface {
 	// Returns a breakdown of cache entries by internal index.
 	EntryStats() CacheEntryStats
 
+	// Returns a deterministic snapshot of cache usage entries used for pruning
+	// policy/accounting.
+	UsageEntries(context.Context) []CacheUsageEntry
+
+	// Prune applies ordered prune policies against in-memory dagql cache
+	// results and returns a report of pruned entries.
+	Prune(context.Context, CachePruneOpts) (CachePruneResult, error)
+
 	// Run a blocking loop that periodically garbage collects expired entries from the cache db.
 	GCLoop(context.Context)
 }
@@ -54,18 +63,6 @@ func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
 	return func(context.Context) (AnyResult, error) {
 		return v, nil
 	}
-}
-
-func ArbitraryValueFunc(v any) func(context.Context) (any, error) {
-	return func(context.Context) (any, error) {
-		return v, nil
-	}
-}
-
-type ArbitraryCachedResult interface {
-	Value() any
-	HitCache() bool
-	Release(context.Context) error
 }
 
 type CacheKey struct {
@@ -86,32 +83,62 @@ type CacheKey struct {
 
 	// DoNotCache indicates that this call should not be cached at all, simply ran.
 	DoNotCache bool
+
+	// IsPersistable indicates whether this field call is eligible for persistent
+	// cache storage.
+	IsPersistable bool
 }
 
 type CacheEntryStats struct {
 	OngoingCalls            int
 	CompletedCalls          int
+	RetainedCalls           int
 	CompletedCallsByContent int
 	OngoingArbitrary        int
 	CompletedArbitrary      int
 }
 
-type ctxStorageKey struct{}
-
-// Get the key that should be used (or mixed into) persistent cache storage
-// We smuggle this around in the context for now since we have to incorporate
-// it with buildkit's persistent cache for now.
-func CurrentStorageKey(ctx context.Context) string {
-	if v := ctx.Value(ctxStorageKey{}); v != nil {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
+type CacheUsageEntry struct {
+	ID                        string
+	Description               string
+	RecordType                string
+	SizeBytes                 int64
+	CreatedTimeUnixNano       int64
+	MostRecentUseTimeUnixNano int64
+	ActivelyUsed              bool
 }
 
-func ctxWithStorageKey(ctx context.Context, key string) context.Context {
-	return context.WithValue(ctx, ctxStorageKey{}, key)
+// CacheValueUsage is usage metadata for a cached value payload.
+type CacheValueUsage struct {
+	RecordType  string
+	Description string
+	SizeBytes   int64
+}
+
+// CacheValueUsageProvider can provide concrete usage information for a cached
+// value, e.g. when the value wraps snapshot-backed data.
+type CacheValueUsageProvider interface {
+	DagqlCacheUsage(context.Context) (CacheValueUsage, bool, error)
+}
+
+type CachePrunePolicy struct {
+	All           bool
+	Filters       []string
+	KeepDuration  time.Duration
+	ReservedSpace int64
+	MaxUsedSpace  int64
+	MinFreeSpace  int64
+	TargetSpace   int64
+}
+
+type CachePruneOpts struct {
+	Policies       []CachePrunePolicy
+	FreeSpaceBytes int64
+}
+
+type CachePruneResult struct {
+	PrunedEntries []CacheUsageEntry
+	PrunedBytes   int64
 }
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
@@ -168,17 +195,35 @@ func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 }
 
 type cache struct {
-	mu sync.Mutex
+	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
+	callsMu sync.Mutex
+	// egraphMu protects all e-graph state and indexes.
+	egraphMu sync.RWMutex
 
 	// calls that are in progress, keyed by a combination of the call key and the concurrency key
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
-	ongoingCalls map[callConcurrencyKeys]*sharedResult
+	ongoingCalls map[callConcurrencyKeys]*ongoingCall
 
-	// calls that have completed successfully and are cached, keyed by the storage key
-	completedCalls map[string]*resultList
+	// e-graph index for call-result equivalence.
+	egraphDigestToClass map[string]eqClassID
+	egraphParents       []eqClassID
+	egraphRanks         []uint8
 
-	// calls that have completed successfully and are cached, keyed by content digest key
-	completedCallsByContent map[string]*resultList
+	egraphClassTerms    map[eqClassID]map[egraphTermID]struct{}
+	egraphTerms         map[egraphTermID]*egraphTerm
+	egraphTermsByDigest map[string]map[egraphTermID]struct{}
+	// Reverse index for fallback lookup by any output digest (primary output
+	// digest or extra digest).
+	egraphResultsByOutputDigest map[string]map[sharedResultID]struct{}
+	// Bidirectional term<->result association maps. A term may map to multiple
+	// materialized results; a result may map to multiple terms.
+	egraphResultsByTermID map[egraphTermID]map[sharedResultID]struct{}
+	egraphTermIDsByResult map[sharedResultID]map[egraphTermID]struct{}
+	resultsByID           map[sharedResultID]*sharedResult
+
+	nextEgraphClassID  eqClassID
+	nextEgraphTermID   egraphTermID
+	nextSharedResultID sharedResultID
 
 	// in-progress and completed opaque in-memory calls, keyed by call key
 	ongoingArbitraryCalls   map[string]*sharedArbitraryResult
@@ -199,113 +244,78 @@ type PostCallFunc = func(context.Context) error
 
 type OnReleaseFunc = func(context.Context) error
 
+type sharedResultID uint64
+
 // sharedResult holds cache-entry state and immutable payload shared by per-call Result values.
 type sharedResult struct {
 	cache *cache
 
-	storageKey          string              // key to cache.completedCalls
-	callConcurrencyKeys callConcurrencyKeys // key to cache.ongoingCalls
+	// id is the stable cache-local identity for this materialized result.
+	id sharedResultID
 
 	// Immutable payload shared by all per-call Result values.
-	constructor *call.ID
-	self        Typed
-	objType     ObjectType
+	self    Typed
+	objType ObjectType
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
 	hasValue bool
 	postCall PostCallFunc
 
-	err error
-
 	safeToPersistCache bool
-	contentDigestKey   string
-	resultCallKey      string
 	onRelease          OnReleaseFunc
+	// persistedRoot marks result IDs that were explicitly persisted by a
+	// persistable field. depOfPersistedResult is then recomputed as root closure.
+	persistedRoot bool
+	// depOfPersistedResult marks results that must remain live because they are
+	// dependencies of a persisted/retained result.
+	depOfPersistedResult bool
+	// deps tracks direct result dependencies used for transitive dependency
+	// liveness propagation in persistence experiments.
+	deps map[sharedResultID]struct{}
 
-	persistToDB func(context.Context) error
+	// Output digests learned from the materialized result ID.
+	outputDigest       digest.Digest
+	outputExtraDigests []call.ExtraDigest
+	outputEffectIDs    []string
+	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
+	// 0 means "never expires".
+	expiresAtUnix int64
+
+	// Prune-accounting metadata. Size is currently a temporary approximation.
+	createdAtUnixNano  int64
+	lastUsedAtUnixNano int64
+	sizeEstimateBytes  int64
+	description        string
+	recordType         string
+
+	refCount int64
+}
+
+// ongoingCall tracks one in-flight GetOrInitCall execution and points at the
+// shared result payload that will be returned to waiters.
+type ongoingCall struct {
+	callConcurrencyKeys     callConcurrencyKeys
+	isPersistable           bool
+	ttlSeconds              int64
+	initCompletedResultOnce sync.Once
+	initCompletedResultErr  error
 
 	waitCh  chan struct{}
 	cancel  context.CancelCauseFunc
 	waiters int
+	err     error
+	val     AnyResult
 
-	refCount int
+	res *sharedResult
 }
 
-// sharedArbitraryResult is the in-memory-only cache entry for GetOrInitArbitrary values.
-type sharedArbitraryResult struct {
-	cache *cache
-
-	callKey string
-
-	value any
-	err   error
-
-	onRelease OnReleaseFunc
-
-	waitCh  chan struct{}
-	cancel  context.CancelCauseFunc
-	waiters int
-
-	refCount int
-}
-
-func (res *sharedArbitraryResult) release(ctx context.Context) error {
-	if res == nil || res.cache == nil {
-		return nil
-	}
-
-	res.cache.mu.Lock()
-	res.refCount--
-	var onRelease OnReleaseFunc
-	if res.refCount == 0 && res.waiters == 0 {
-		delete(res.cache.ongoingArbitraryCalls, res.callKey)
-		if existing := res.cache.completedArbitraryCalls[res.callKey]; existing == res {
-			delete(res.cache.completedArbitraryCalls, res.callKey)
-		}
-		onRelease = res.onRelease
-	}
-	res.cache.mu.Unlock()
-
-	if onRelease != nil {
-		return onRelease(ctx)
-	}
-	return nil
-}
-
-type arbitraryResult struct {
-	shared   *sharedArbitraryResult
-	hitCache bool
-}
-
-var _ ArbitraryCachedResult = arbitraryResult{}
-
-func (r arbitraryResult) Value() any {
-	if r.shared == nil {
-		return nil
-	}
-	return r.shared.value
-}
-
-func (r arbitraryResult) HitCache() bool {
-	return r.hitCache
-}
-
-func (r arbitraryResult) Release(ctx context.Context) error {
-	if r.shared == nil {
-		return nil
-	}
-	return r.shared.release(ctx)
-}
-
-// TODO: Drop detached-result cloning once the cache uses an equivalence graph.
-// At that point we should just attach newly discovered cache keys/IDs to the same result set.
 // newDetachedResult creates a non-cache-backed Result from an explicit call ID and value.
-func newDetachedResult[T Typed](constructor *call.ID, self T) Result[T] {
+func newDetachedResult[T Typed](resultID *call.ID, self T) Result[T] {
 	return Result[T]{
 		shared: &sharedResult{
-			constructor: constructor,
-			self:        self,
-			hasValue:    true,
+			self:     self,
+			hasValue: true,
 		},
+		id: resultID,
 	}
 }
 
@@ -315,39 +325,17 @@ func (res *sharedResult) release(ctx context.Context) error {
 		return nil
 	}
 
-	res.cache.mu.Lock()
-	res.refCount--
 	var onRelease OnReleaseFunc
-	if res.refCount == 0 && res.waiters == 0 {
-		// no refs left and no one waiting on it, delete from cache
-		delete(res.cache.ongoingCalls, res.callConcurrencyKeys)
-		if lst := res.cache.completedCalls[res.storageKey]; lst != nil {
-			lst.remove(res)
-			if lst.empty() {
-				delete(res.cache.completedCalls, res.storageKey)
-			}
+	if atomic.AddInt64(&res.refCount, -1) == 0 {
+		res.cache.egraphMu.Lock()
+		if !res.depOfPersistedResult {
+			// Non-retained entries keep current behavior: once refs drain, drop the
+			// result from the in-memory e-graph and release associated resources.
+			res.cache.removeResultFromEgraphLocked(res)
+			onRelease = res.onRelease
 		}
-		if res.resultCallKey != "" && res.resultCallKey != res.storageKey {
-			key := res.resultCallKey
-			if lst := res.cache.completedCalls[key]; lst != nil {
-				lst.remove(res)
-				if lst.empty() {
-					delete(res.cache.completedCalls, key)
-				}
-			}
-		}
-		if res.contentDigestKey != "" {
-			key := res.contentDigestKey
-			if lst := res.cache.completedCallsByContent[key]; lst != nil {
-				lst.remove(res)
-				if lst.empty() {
-					delete(res.cache.completedCallsByContent, key)
-				}
-			}
-		}
-		onRelease = res.onRelease
+		res.cache.egraphMu.Unlock()
 	}
-	res.cache.mu.Unlock()
 
 	if onRelease != nil {
 		return onRelease(ctx)
@@ -359,14 +347,11 @@ type Result[T Typed] struct {
 	// shared points at immutable payload + lifecycle state shared by all per-call Result values.
 	shared *sharedResult
 
-	// TODO: Remove idOverride once equivalence-graph cache identity lands.
-	// We should record equivalent IDs instead of per-result ID overrides.
-	// If set, overrides shared.constructor for this one call result.
-	idOverride *call.ID
+	// id is the caller-facing ID for this specific returned result.
+	id *call.ID
 
-	// per-call fields
-	hitCache              bool
-	hitContentDigestCache bool
+	// per-call cache-hit signal for callers/tests.
+	hitCache bool
 }
 
 var _ AnyResult = Result[Typed]{}
@@ -381,13 +366,7 @@ func (r Result[T]) Type() *ast.Type {
 
 // ID returns the ID of the instance.
 func (r Result[T]) ID() *call.ID {
-	if r.idOverride != nil {
-		return r.idOverride
-	}
-	if r.shared == nil {
-		return nil
-	}
-	return r.shared.constructor
+	return r.id
 }
 
 func (r Result[T]) Self() T {
@@ -443,23 +422,27 @@ func (r Result[T]) NthValue(nth int) (AnyResult, error) {
 
 // withDetachedPayload clones shared payload so per-call mutations do not affect other Results.
 func (r Result[T]) withDetachedPayload() Result[T] {
-	id := r.ID()
 	if r.shared != nil {
 		r.shared = &sharedResult{
-			constructor:        r.shared.constructor,
-			self:               r.shared.self,
-			objType:            r.shared.objType,
-			hasValue:           r.shared.hasValue,
-			postCall:           r.shared.postCall,
-			safeToPersistCache: r.shared.safeToPersistCache,
+			self:                 r.shared.self,
+			objType:              r.shared.objType,
+			hasValue:             r.shared.hasValue,
+			postCall:             r.shared.postCall,
+			safeToPersistCache:   r.shared.safeToPersistCache,
+			persistedRoot:        r.shared.persistedRoot,
+			depOfPersistedResult: r.shared.depOfPersistedResult,
+			outputDigest:         r.shared.outputDigest,
+			outputExtraDigests:   slices.Clone(r.shared.outputExtraDigests),
+			outputEffectIDs:      slices.Clone(r.shared.outputEffectIDs),
+			createdAtUnixNano:    r.shared.createdAtUnixNano,
+			lastUsedAtUnixNano:   r.shared.lastUsedAtUnixNano,
+			sizeEstimateBytes:    r.shared.sizeEstimateBytes,
+			description:          r.shared.description,
+			recordType:           r.shared.recordType,
 		}
 	} else {
 		r.shared = &sharedResult{}
 	}
-	if id != nil {
-		r.shared.constructor = id
-	}
-	r.idOverride = nil
 	return r
 }
 
@@ -483,29 +466,12 @@ func (r Result[T]) IsSafeToPersistCache() bool {
 	return r.shared != nil && r.shared.safeToPersistCache
 }
 
-// WithDigest returns an updated instance with the given metadata set.
-// customDigest overrides the default digest of the instance to the provided value.
-// NOTE: customDigest must be used with care as any instances with the same digest
-// will be considered equivalent and can thus replace each other in the cache.
-// Generally, customDigest should be used when there's a content-based digest available
-// that won't be caputured by the default, call-chain derived digest.
-func (r Result[T]) WithDigest(customDigest digest.Digest) Result[T] {
+func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
 	id := r.ID()
 	if id == nil {
 		return r
 	}
-	r = r.withDetachedPayload()
-	r.shared.constructor = id.WithDigest(customDigest)
-	return r
-}
-
-func (r Result[T]) WithContentDigest(customDigest digest.Digest) Result[T] {
-	id := r.ID()
-	if id == nil {
-		return r
-	}
-	r = r.withDetachedPayload()
-	r.shared.constructor = id.With(call.WithContentDigest(customDigest))
+	r.id = id.With(call.WithContentDigest(contentDigest))
 	return r
 }
 
@@ -541,10 +507,6 @@ func (r Result[T]) MarshalJSON() ([]byte, error) {
 
 func (r Result[T]) HitCache() bool {
 	return r.hitCache
-}
-
-func (r Result[T]) HitContentDigestCache() bool {
-	return r.hitContentDigestCache
 }
 
 func (r Result[T]) Release(ctx context.Context) error {
@@ -598,16 +560,9 @@ func (r ObjectResult[T]) ObjectType() ObjectType {
 	return r.class
 }
 
-func (r ObjectResult[T]) WithObjectDigest(customDigest digest.Digest) ObjectResult[T] {
+func (r ObjectResult[T]) WithContentDigest(contentDigest digest.Digest) ObjectResult[T] {
 	return ObjectResult[T]{
-		Result: r.Result.WithDigest(customDigest),
-		class:  r.class,
-	}
-}
-
-func (r ObjectResult[T]) WithContentDigest(customDigest digest.Digest) ObjectResult[T] {
-	return ObjectResult[T]{
-		Result: r.Result.WithContentDigest(customDigest),
+		Result: r.Result.WithContentDigest(contentDigest),
 		class:  r.class,
 	}
 }
@@ -630,44 +585,18 @@ func (r ObjectResult[T]) cacheSharedResult() *sharedResult {
 	return r.shared
 }
 
-type cacheBackedResult interface {
-	cacheSharedResult() *sharedResult
-}
-
-func (r Result[T]) cacheHasValue() bool {
-	return r.shared != nil && r.shared.hasValue
-}
-
-func (r ObjectResult[T]) cacheHasValue() bool {
-	return r.shared != nil && r.shared.hasValue
-}
-
-type cacheValueResult interface {
-	cacheHasValue() bool
-}
-
 type cacheContextKey struct {
 	key   string
 	cache *cache
 }
 
-type trackNilResultCtxKey struct{}
-
-func withTrackNilResult(ctx context.Context) context.Context {
-	return context.WithValue(ctx, trackNilResultCtxKey{}, struct{}{})
-}
-
-func shouldTrackNilResult(ctx context.Context) bool {
-	return ctx.Value(trackNilResultCtxKey{}) != nil
-}
-
-type arbitraryCacheContextKey struct {
-	callKey string
-	cache   *cache
-}
-
 func (c *cache) GCLoop(ctx context.Context) {
+	if c.db == nil {
+		<-ctx.Done()
+		return
+	}
 	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -685,101 +614,430 @@ func (c *cache) GCLoop(ctx context.Context) {
 }
 
 func (c *cache) Size() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.callsMu.Lock()
+	defer c.callsMu.Unlock()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
 
+	// TODO: Re-implement size accounting directly from egraph state instead of
+	// relying on mixed index-oriented counters.
 	total := len(c.ongoingCalls)
-	for _, lst := range c.completedCalls {
-		total += lst.len()
-	}
-	for _, lst := range c.completedCallsByContent {
-		total += lst.len()
-	}
+	total += len(c.egraphTermIDsByResult)
 	total += len(c.ongoingArbitraryCalls)
 	total += len(c.completedArbitraryCalls)
 	return total
 }
 
 func (c *cache) EntryStats() CacheEntryStats {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.callsMu.Lock()
+	defer c.callsMu.Unlock()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
 
 	var stats CacheEntryStats
 	stats.OngoingCalls = len(c.ongoingCalls)
-	for _, lst := range c.completedCalls {
-		stats.CompletedCalls += lst.len()
-	}
-	for _, lst := range c.completedCallsByContent {
-		stats.CompletedCallsByContent += lst.len()
+	stats.CompletedCalls = len(c.egraphTermIDsByResult)
+	for resID := range c.egraphTermIDsByResult {
+		res := c.resultsByID[resID]
+		if res != nil && res.depOfPersistedResult {
+			stats.RetainedCalls++
+		}
 	}
 	stats.OngoingArbitrary = len(c.ongoingArbitraryCalls)
 	stats.CompletedArbitrary = len(c.completedArbitraryCalls)
+
 	return stats
 }
 
-func (c *cache) GetOrInitArbitrary(
-	ctx context.Context,
-	callKey string,
-	fn func(context.Context) (any, error),
-) (ArbitraryCachedResult, error) {
-	if callKey == "" {
-		return nil, fmt.Errorf("cache call key is empty")
+func (c *cache) UsageEntries(ctx context.Context) []CacheUsageEntry {
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+
+	c.refreshResultUsageLocked(ctx)
+
+	return c.usageEntriesLocked()
+}
+
+func (c *cache) Prune(ctx context.Context, opts CachePruneOpts) (CachePruneResult, error) {
+	var (
+		result      CachePruneResult
+		callbacks   []OnReleaseFunc
+		currentFree = opts.FreeSpaceBytes
+	)
+
+	c.egraphMu.Lock()
+	c.refreshResultUsageLocked(ctx)
+	for policyIndex, policy := range opts.Policies {
+		prunedEntries, prunedBytes, prunedCallbacks := c.applyPrunePolicyLocked(
+			policyIndex,
+			policy,
+			currentFree,
+		)
+		if prunedBytes > 0 {
+			currentFree += prunedBytes
+		}
+		result.PrunedBytes += prunedBytes
+		result.PrunedEntries = append(result.PrunedEntries, prunedEntries...)
+		callbacks = append(callbacks, prunedCallbacks...)
+	}
+	c.egraphMu.Unlock()
+
+	var pruneErr error
+	for _, cb := range callbacks {
+		if cb == nil {
+			continue
+		}
+		if err := cb(ctx); err != nil {
+			pruneErr = errors.Join(pruneErr, err)
+		}
 	}
 
-	if ctx.Value(arbitraryCacheContextKey{callKey: callKey, cache: c}) != nil {
-		return nil, ErrCacheRecursiveCall
+	return result, pruneErr
+}
+
+func (c *cache) refreshResultUsageLocked(ctx context.Context) {
+	for _, res := range c.resultsByID {
+		c.refreshResultUsage(ctx, res)
+	}
+}
+
+func (c *cache) refreshResultUsage(ctx context.Context, res *sharedResult) {
+	if res == nil || !res.hasValue || res.self == nil {
+		return
+	}
+	usageProvider, ok := res.self.(CacheValueUsageProvider)
+	if !ok {
+		return
+	}
+	usage, hasUsage, err := usageProvider.DagqlCacheUsage(ctx)
+	if err != nil {
+		slog.Debug("failed to refresh dagql cached value usage", "err", err)
+		return
+	}
+	if !hasUsage {
+		return
+	}
+	if usage.RecordType != "" {
+		res.recordType = usage.RecordType
+	}
+	if usage.Description != "" {
+		res.description = usage.Description
+	}
+	if usage.SizeBytes > res.sizeEstimateBytes {
+		res.sizeEstimateBytes = usage.SizeBytes
+	}
+}
+
+func (c *cache) usageEntriesLocked() []CacheUsageEntry {
+	entries := make([]CacheUsageEntry, 0, len(c.resultsByID))
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		entries = append(entries, c.usageEntryForResultLocked(resID, res))
 	}
 
-	c.mu.Lock()
-	if c.ongoingArbitraryCalls == nil {
-		c.ongoingArbitraryCalls = make(map[string]*sharedArbitraryResult)
+	slices.SortFunc(entries, func(a, b CacheUsageEntry) int {
+		switch {
+		case a.ID < b.ID:
+			return -1
+		case a.ID > b.ID:
+			return 1
+		default:
+			return 0
+		}
+	})
+	return entries
+}
+
+type pruneCandidate struct {
+	resID sharedResultID
+	res   *sharedResult
+	entry CacheUsageEntry
+}
+
+func (c *cache) applyPrunePolicyLocked(
+	policyIndex int,
+	policy CachePrunePolicy,
+	currentFreeBytes int64,
+) ([]CacheUsageEntry, int64, []OnReleaseFunc) {
+	currentUsed := c.totalUsageBytesLocked()
+	reclaimTarget := pruneReclaimTargetBytes(policy, currentUsed, currentFreeBytes)
+	if reclaimTarget <= 0 {
+		return nil, 0, nil
 	}
-	if c.completedArbitraryCalls == nil {
-		c.completedArbitraryCalls = make(map[string]*sharedArbitraryResult)
+
+	candidates := c.pruneCandidatesLocked(policy, time.Now())
+	slog.Debug("dagql cache prune policy pass",
+		"policyIndex", policyIndex,
+		"currentUsedBytes", currentUsed,
+		"currentFreeBytes", currentFreeBytes,
+		"reclaimTargetBytes", reclaimTarget,
+		"candidateCount", len(candidates),
+		"all", policy.All,
+		"filterCount", len(policy.Filters),
+		"keepDuration", policy.KeepDuration,
+	)
+
+	var (
+		reclaimed int64
+		pruned    []CacheUsageEntry
+		callbacks []OnReleaseFunc
+	)
+	for _, candidate := range candidates {
+		if reclaimed >= reclaimTarget {
+			break
+		}
+		cb, ok := c.pruneResultLocked(candidate)
+		if !ok {
+			slog.Debug("dagql cache prune candidate skipped",
+				"policyIndex", policyIndex,
+				"cacheID", candidate.entry.ID,
+				"reason", "missing_or_in_use")
+			continue
+		}
+		slog.Debug("dagql cache pruned candidate",
+			"policyIndex", policyIndex,
+			"cacheID", candidate.entry.ID,
+			"sizeBytes", candidate.entry.SizeBytes)
+		pruned = append(pruned, candidate.entry)
+		reclaimed += candidate.entry.SizeBytes
+		callbacks = append(callbacks, cb)
 	}
 
-	if res := c.completedArbitraryCalls[callKey]; res != nil {
-		res.refCount++
-		c.mu.Unlock()
-		return arbitraryResult{
-			shared:   res,
-			hitCache: true,
-		}, nil
+	if len(pruned) > 0 {
+		c.recomputePersistedDependencyStateLocked()
+	}
+	return pruned, reclaimed, callbacks
+}
+
+func pruneReclaimTargetBytes(policy CachePrunePolicy, currentUsed, currentFree int64) int64 {
+	var reclaimTarget int64
+
+	// Buildkit-style "all" prune semantics: when All is requested without any
+	// space thresholds, prune all releasable cache entries.
+	if policy.All &&
+		policy.MaxUsedSpace <= 0 &&
+		policy.MinFreeSpace <= 0 &&
+		policy.TargetSpace <= 0 &&
+		policy.ReservedSpace <= 0 {
+		reclaimTarget = currentUsed
 	}
 
-	if res := c.ongoingArbitraryCalls[callKey]; res != nil {
-		res.waiters++
-		c.mu.Unlock()
-		return c.waitArbitrary(ctx, res, false)
+	if policy.MaxUsedSpace > 0 && currentUsed > policy.MaxUsedSpace {
+		reclaimTarget = currentUsed - policy.MaxUsedSpace
+	}
+	if policy.MinFreeSpace > 0 && currentFree < policy.MinFreeSpace {
+		requiredForMinFree := policy.MinFreeSpace - currentFree
+		if requiredForMinFree > reclaimTarget {
+			reclaimTarget = requiredForMinFree
+		}
 	}
 
-	callCtx := context.WithValue(ctx, arbitraryCacheContextKey{callKey: callKey, cache: c}, struct{}{})
-	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
-	res := &sharedArbitraryResult{
-		cache: c,
-
-		callKey: callKey,
-
-		waitCh:  make(chan struct{}),
-		cancel:  cancel,
-		waiters: 1,
+	if policy.TargetSpace > 0 && currentUsed > policy.TargetSpace {
+		requiredForTarget := currentUsed - policy.TargetSpace
+		if requiredForTarget > reclaimTarget {
+			reclaimTarget = requiredForTarget
+		}
 	}
-	c.ongoingArbitraryCalls[callKey] = res
+	if reclaimTarget == 0 && policy.ReservedSpace > 0 && currentUsed > policy.ReservedSpace {
+		// Keep-storage semantics: when only reserved space is configured, prune
+		// down to that reserved amount.
+		reclaimTarget = currentUsed - policy.ReservedSpace
+	}
 
-	go func() {
-		defer close(res.waitCh)
-		val, err := fn(callCtx)
-		res.err = err
-		if err == nil {
-			res.value = val
-			if onReleaser, ok := val.(OnReleaser); ok {
-				res.onRelease = onReleaser.OnRelease
+	if policy.ReservedSpace > 0 {
+		maxPrunable := currentUsed - policy.ReservedSpace
+		if maxPrunable < 0 {
+			maxPrunable = 0
+		}
+		if reclaimTarget > maxPrunable {
+			reclaimTarget = maxPrunable
+		}
+	}
+	return reclaimTarget
+}
+
+func (c *cache) totalUsageBytesLocked() int64 {
+	var total int64
+	for _, res := range c.resultsByID {
+		if res == nil || res.sizeEstimateBytes <= 0 {
+			continue
+		}
+		total += res.sizeEstimateBytes
+	}
+	return total
+}
+
+func (c *cache) pruneCandidatesLocked(policy CachePrunePolicy, now time.Time) []pruneCandidate {
+	if !policy.All {
+		// We don't yet classify records by buildkit-style buckets, so treat All=false
+		// as the same candidate universe as All=true until richer categorization lands.
+		slog.Debug("dagql cache prune policy all=false currently treated as all=true")
+	}
+
+	nowUnixNano := now.UnixNano()
+	candidates := make([]pruneCandidate, 0, len(c.resultsByID))
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		entry := c.usageEntryForResultLocked(resID, res)
+		if entry.ActivelyUsed {
+			slog.Debug("dagql cache prune candidate skipped",
+				"cacheID", entry.ID,
+				"reason", "actively_used")
+			continue
+		}
+
+		if policy.KeepDuration > 0 {
+			lastUsed := entry.MostRecentUseTimeUnixNano
+			if lastUsed == 0 {
+				lastUsed = entry.CreatedTimeUnixNano
+			}
+			cutoff := nowUnixNano - policy.KeepDuration.Nanoseconds()
+			if lastUsed > cutoff {
+				slog.Debug("dagql cache prune candidate skipped",
+					"cacheID", entry.ID,
+					"reason", "keep_duration",
+					"lastUsedAtUnixNano", lastUsed,
+					"cutoffUnixNano", cutoff)
+				continue
 			}
 		}
-	}()
 
-	c.mu.Unlock()
-	return c.waitArbitrary(ctx, res, true)
+		matches, reason := matchesPruneFilters(entry, policy.Filters)
+		if !matches {
+			slog.Debug("dagql cache prune candidate skipped",
+				"cacheID", entry.ID,
+				"reason", reason)
+			continue
+		}
+
+		candidates = append(candidates, pruneCandidate{
+			resID: resID,
+			res:   res,
+			entry: entry,
+		})
+	}
+
+	slices.SortFunc(candidates, func(a, b pruneCandidate) int {
+		if a.entry.MostRecentUseTimeUnixNano != b.entry.MostRecentUseTimeUnixNano {
+			if a.entry.MostRecentUseTimeUnixNano < b.entry.MostRecentUseTimeUnixNano {
+				return -1
+			}
+			return 1
+		}
+		if a.entry.CreatedTimeUnixNano != b.entry.CreatedTimeUnixNano {
+			if a.entry.CreatedTimeUnixNano < b.entry.CreatedTimeUnixNano {
+				return -1
+			}
+			return 1
+		}
+		if a.entry.ID < b.entry.ID {
+			return -1
+		}
+		if a.entry.ID > b.entry.ID {
+			return 1
+		}
+		return 0
+	})
+	return candidates
+}
+
+func matchesPruneFilters(entry CacheUsageEntry, filters []string) (bool, string) {
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter == "" {
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(filter, "type=="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "type=="))
+			if entry.RecordType != want {
+				return false, "filter_mismatch:type"
+			}
+		case strings.HasPrefix(filter, "description=="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "description=="))
+			if entry.Description != want {
+				return false, "filter_mismatch:description"
+			}
+		case strings.HasPrefix(filter, "description~="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "description~="))
+			if !strings.Contains(entry.Description, want) {
+				return false, "filter_mismatch:description_contains"
+			}
+		case strings.HasPrefix(filter, "id=="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "id=="))
+			if entry.ID != want {
+				return false, "filter_mismatch:id"
+			}
+		case strings.HasPrefix(filter, "inuse=="):
+			want := strings.TrimSpace(strings.TrimPrefix(filter, "inuse=="))
+			wantInUse := want == "1" || strings.EqualFold(want, "true")
+			if entry.ActivelyUsed != wantInUse {
+				return false, "filter_mismatch:inuse"
+			}
+		default:
+			return false, "unsupported_filter"
+		}
+	}
+	return true, ""
+}
+
+func (c *cache) usageEntryForResultLocked(resID sharedResultID, res *sharedResult) CacheUsageEntry {
+	createdAt := res.createdAtUnixNano
+	lastUsedAt := res.lastUsedAtUnixNano
+	if createdAt == 0 {
+		createdAt = lastUsedAt
+	}
+	if lastUsedAt == 0 {
+		lastUsedAt = createdAt
+	}
+	recordType := res.recordType
+	if recordType == "" {
+		recordType = "dagql.unknown"
+	}
+	description := res.description
+	if description == "" {
+		description = fmt.Sprintf("dagql cache result %d", resID)
+	}
+	sizeBytes := res.sizeEstimateBytes
+	if sizeBytes < 0 {
+		sizeBytes = 0
+	}
+	return CacheUsageEntry{
+		ID:                        fmt.Sprintf("dagql.result.%d", resID),
+		Description:               description,
+		RecordType:                recordType,
+		SizeBytes:                 sizeBytes,
+		CreatedTimeUnixNano:       createdAt,
+		MostRecentUseTimeUnixNano: lastUsedAt,
+		ActivelyUsed:              atomic.LoadInt64(&res.refCount) > 0,
+	}
+}
+
+func (c *cache) pruneResultLocked(candidate pruneCandidate) (OnReleaseFunc, bool) {
+	res := c.resultsByID[candidate.resID]
+	if res == nil {
+		return nil, false
+	}
+	if atomic.LoadInt64(&res.refCount) > 0 {
+		return nil, false
+	}
+	deleteResultDepLocked(c.resultsByID, candidate.resID)
+	c.removeResultFromEgraphLocked(res)
+	return res.onRelease, true
+}
+
+func deleteResultDepLocked(resultsByID map[sharedResultID]*sharedResult, depID sharedResultID) {
+	for _, res := range resultsByID {
+		if res == nil || len(res.deps) == 0 {
+			continue
+		}
+		delete(res.deps, depID)
+	}
 }
 
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
@@ -795,10 +1053,6 @@ func (c *cache) GetOrInitCall(
 	if key.DoNotCache {
 		// don't cache, don't dedupe calls, just call it
 
-		// we currently still have to appease the buildkit cache key machinery underlying function calls,
-		// so make sure it gets a random storage key
-		ctx = ctxWithStorageKey(ctx, rand.Text())
-
 		val, err := fn(ctx)
 		if err != nil {
 			return nil, err
@@ -807,16 +1061,14 @@ func (c *cache) GetOrInitCall(
 			return nil, nil
 		}
 
-		// Normalize the returned value for this outer call boundary. Even though this
-		// call itself is DoNotCache, we still clear nested call metadata (cache-hit flags,
-		// ID overrides, and cache entry ownership) so this outer call reports its own
-		// metadata rather than inheriting inner call state.
 		detached := &sharedResult{
-			constructor:        val.ID(),
 			self:               val.Unwrap(),
 			hasValue:           true,
 			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
+			outputDigest:       val.ID().Digest(),
+			outputExtraDigests: val.ID().ExtraDigests(),
+			outputEffectIDs:    val.ID().AllEffectIDs(),
 		}
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			detached.onRelease = onReleaser.OnRelease
@@ -826,6 +1078,7 @@ func (c *cache) GetOrInitCall(
 		}
 		perCall := Result[Typed]{
 			shared: detached,
+			id:     val.ID(),
 		}
 		if detached.objType != nil {
 			normalized, err := detached.objType.New(perCall)
@@ -837,403 +1090,310 @@ func (c *cache) GetOrInitCall(
 		return perCall, nil
 	}
 
+	// Call identity is recipe-based; extra digests are output-equivalence digests.
 	callKey := key.ID.Digest().String()
+	if ctx.Value(cacheContextKey{callKey, c}) != nil {
+		return nil, ErrCacheRecursiveCall
+	}
 	callConcKeys := callConcurrencyKeys{
 		callKey:        callKey,
 		concurrencyKey: key.ConcurrencyKey,
 	}
 
-	// The storage key is the key for what's actually stored on disk.
-	// By default it's just the call key, but if we have a TTL then there
-	// can be different results stored on disk for a single call key, necessitating
-	// this separate storage key.
-	storageKey := callKey
-
-	var persistToDB func(context.Context) error
-	if key.TTL != 0 && c.db != nil {
-		cachedCall, err := c.db.SelectCall(ctx, callKey)
-		if err == nil || errors.Is(err, sql.ErrNoRows) {
-			noHit := errors.Is(err, sql.ErrNoRows)
-			now := time.Now().Unix()
-			expiration := now + key.TTL
-
-			// TODO:(sipsma) we unfortunately have to incorporate the session ID into the storage key
-			// for now in order to get functions that make SetSecret calls to behave as "per-session"
-			// caches (while *also* retaining the correct behavior in all other cases). It would be
-			// nice to find some more elegant way of modeling this that disentangles this cache
-			// from engine client metadata.
-			switch {
-			case noHit || cachedCall == nil:
-				md, err := engine.ClientMetadataFromContext(ctx)
-				if err != nil {
-					return nil, fmt.Errorf("get client metadata: %w", err)
-				}
-				storageKey = hashutil.NewHasher().
-					WithString(storageKey).
-					WithString(md.SessionID).
-					DigestAndClose()
-
-				// Nothing saved in the cache yet, use a new expiration. Don't save yet, that only happens
-				// once a call completes successfully and has been determined to be safe to cache.
-				persistToDB = func(ctx context.Context) error {
-					return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
-						CallKey:        callKey,
-						StorageKey:     storageKey,
-						Expiration:     expiration,
-						PrevStorageKey: "",
-					})
-				}
-
-			case cachedCall.Expiration < now:
-				md, err := engine.ClientMetadataFromContext(ctx)
-				if err != nil {
-					return nil, fmt.Errorf("get client metadata: %w", err)
-				}
-				storageKey = hashutil.NewHasher().
-					WithString(storageKey).
-					WithString(md.SessionID).
-					DigestAndClose()
-
-				// We do have a cached entry, but it expired, so don't use it. Use a new expiration, but again
-				// don't store it yet until the call completes successfully and is determined to be safe
-				// to cache.
-				persistToDB = func(ctx context.Context) error {
-					return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
-						CallKey:        callKey,
-						StorageKey:     storageKey,
-						Expiration:     expiration,
-						PrevStorageKey: cachedCall.StorageKey,
-					})
-				}
-
-			default:
-				// We have a cached entry and it hasn't expired yet, use it
-				storageKey = cachedCall.StorageKey
-			}
-		} else {
-			slog.Error("failed to select call from cache", "err", err)
-		}
+	c.egraphMu.Lock()
+	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID, key.IsPersistable, key.TTL)
+	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if hit {
+		return hitRes, nil
 	}
 
-	ctx = ctxWithStorageKey(ctx, storageKey)
-
-	if ctx.Value(cacheContextKey{storageKey, c}) != nil {
-		return nil, ErrCacheRecursiveCall
-	}
-
-	contentKey := key.ID.ContentDigest().String()
-
-	c.mu.Lock()
+	c.callsMu.Lock()
 	if c.ongoingCalls == nil {
-		c.ongoingCalls = make(map[callConcurrencyKeys]*sharedResult)
-	}
-	if c.completedCalls == nil {
-		c.completedCalls = make(map[string]*resultList)
-	}
-	if c.completedCallsByContent == nil {
-		c.completedCallsByContent = make(map[string]*resultList)
-	}
-
-	if lst, ok := c.completedCalls[storageKey]; ok {
-		if res := lst.first(); res != nil {
-			res.refCount++
-			c.mu.Unlock()
-			if !res.hasValue {
-				if shouldTrackNilResult(ctx) {
-					return Result[Typed]{
-						shared:   res,
-						hitCache: true,
-					}, nil
-				}
-				return nil, nil
-			}
-			retRes := Result[Typed]{
-				shared:   res,
-				hitCache: true,
-			}
-			if res.objType != nil {
-				retObjRes, err := res.objType.New(retRes)
-				if err != nil {
-					return nil, fmt.Errorf("reconstruct object result from cache: %w", err)
-				}
-				return retObjRes, nil
-			}
-			return retRes, nil
-		}
-	}
-
-	if contentKey != "" {
-		if lst, ok := c.completedCallsByContent[contentKey]; ok {
-			if res := lst.first(); res != nil {
-				res.refCount++
-				c.mu.Unlock()
-				if !res.hasValue {
-					if shouldTrackNilResult(ctx) {
-						return Result[Typed]{
-							shared:                res,
-							idOverride:            key.ID,
-							hitCache:              true,
-							hitContentDigestCache: true,
-						}, nil
-					}
-					return nil, nil
-				}
-				// if the cache hit was only due to a matching content digest, rather than recipe,
-				// keep using the same ID as the input. This ensures that the client keeps seeing
-				// the recipe they expected rather than a different random one that happened to
-				// have the same content, while still allowing the underlying result be re-used.
-				retRes := Result[Typed]{
-					shared:                res,
-					idOverride:            key.ID,
-					hitCache:              true,
-					hitContentDigestCache: true,
-				}
-				if res.objType != nil {
-					retObjRes, err := res.objType.New(retRes)
-					if err != nil {
-						return nil, fmt.Errorf("reconstruct content-hit object result from cache: %w", err)
-					}
-					return retObjRes, nil
-				}
-				return retRes, nil
-			}
-		}
+		c.ongoingCalls = make(map[callConcurrencyKeys]*ongoingCall)
 	}
 
 	if key.ConcurrencyKey != "" {
-		if res, ok := c.ongoingCalls[callConcKeys]; ok {
+		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
+			if key.IsPersistable {
+				oc.isPersistable = true
+			}
 			// already an ongoing call
-			res.waiters++
-			c.mu.Unlock()
-			return c.wait(ctx, res, false)
+			oc.waiters++
+			c.callsMu.Unlock()
+			return c.wait(ctx, oc, key.ID)
 		}
 	}
+
+	// Intentional tradeoff: we do not perform a second e-graph lookup while
+	// holding callsMu. A concurrent completion can index and drop its
+	// singleflight entry between the first lookup and this point, which may lead
+	// to occasional redundant execution instead of a late cache hit. We accept
+	// that waste to avoid paying an extra lookup on this miss path.
 
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
-	callCtx := context.WithValue(ctx, cacheContextKey{storageKey, c}, struct{}{})
+	callCtx := context.WithValue(ctx, cacheContextKey{callKey, c}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
-	res := &sharedResult{
-		cache: c,
-
-		storageKey:          storageKey,
+	oc := &ongoingCall{
 		callConcurrencyKeys: callConcKeys,
-
-		persistToDB: persistToDB,
-
-		waitCh:  make(chan struct{}),
-		cancel:  cancel,
-		waiters: 1,
+		isPersistable:       key.IsPersistable,
+		ttlSeconds:          key.TTL,
+		waitCh:              make(chan struct{}),
+		cancel:              cancel,
+		waiters:             1,
 	}
 
 	if key.ConcurrencyKey != "" {
-		c.ongoingCalls[callConcKeys] = res
+		c.ongoingCalls[callConcKeys] = oc
 	}
 
 	go func() {
-		defer close(res.waitCh)
+		defer close(oc.waitCh)
 		val, err := fn(callCtx)
-		res.err = err
-		if val != nil {
-			// Normalize nested call metadata at this outer call boundary.
-			res.constructor = val.ID()
-			res.self = val.Unwrap()
-			res.postCall = val.PostCall
-			res.safeToPersistCache = val.IsSafeToPersistCache()
-			res.onRelease = nil
-			res.objType = nil
-			res.hasValue = true
-			if cacheBackedRes, ok := val.(cacheBackedResult); ok {
-				if shared := cacheBackedRes.cacheSharedResult(); shared != nil && shared.cache != nil {
-					// Transfer ownership of the inner cache ref to this outer cache entry.
-					res.onRelease = val.Release
-				}
-			}
-			if res.onRelease == nil {
-				if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
-					res.onRelease = onReleaser.OnRelease
-				}
-			}
-			if obj, ok := val.(AnyObjectResult); ok {
-				res.objType = obj.ObjectType()
-			}
-			if res.constructor != nil {
-				res.contentDigestKey = res.constructor.ContentDigest().String()
-				res.resultCallKey = res.constructor.Digest().String()
-			}
-		}
+		oc.err = err
+		oc.val = val
 	}()
 
-	c.mu.Unlock()
-	return c.wait(ctx, res, true)
+	c.callsMu.Unlock()
+	return c.wait(ctx, oc, key.ID)
 }
 
-func (c *cache) wait(ctx context.Context, res *sharedResult, isFirstCaller bool) (AnyResult, error) {
-	var hitCache bool
-	var err error
+func (c *cache) wait(
+	ctx context.Context,
+	oc *ongoingCall,
+	requestID *call.ID,
+) (AnyResult, error) {
+	var waitErr error
+	sessionID := ""
+	if md, mdErr := engine.ClientMetadataFromContext(ctx); mdErr == nil {
+		sessionID = md.SessionID
+	}
 
-	// first check just if the call is done already, if it is we consider it a cache hit
+	// wait for completion or caller cancellation.
 	select {
-	case <-res.waitCh:
-		hitCache = true
-		err = res.err
-	default:
-		// call wasn't done in fast path check, wait for either the call to
-		// be done or the caller's ctx to be canceled
-		select {
-		case <-res.waitCh:
-			err = res.err
-		case <-ctx.Done():
-			err = context.Cause(ctx)
-		}
+	case <-oc.waitCh:
+		waitErr = oc.err
+	case <-ctx.Done():
+		waitErr = context.Cause(ctx)
 	}
 
-	c.mu.Lock()
-
-	res.waiters--
-	if res.waiters == 0 {
-		// no one else is waiting, can cancel the callCtx
-		res.cancel(err)
+	c.callsMu.Lock()
+	oc.waiters--
+	lastWaiter := oc.waiters == 0
+	if lastWaiter {
+		delete(c.ongoingCalls, oc.callConcurrencyKeys)
+		oc.cancel(waitErr)
+	}
+	c.callsMu.Unlock()
+	if waitErr != nil {
+		return nil, waitErr
 	}
 
-	if err == nil {
-		safeToPersistCache := res.safeToPersistCache
+	oc.initCompletedResultOnce.Do(func() {
+		oc.initCompletedResultErr = c.initCompletedResult(ctx, oc, requestID, sessionID)
+	})
+	if oc.initCompletedResultErr != nil {
+		return nil, oc.initCompletedResultErr
+	}
+	if oc.res == nil {
+		return nil, fmt.Errorf("cache wait completed without initialized result")
+	}
 
-		delete(c.ongoingCalls, res.callConcurrencyKeys)
-		lst, ok := c.completedCalls[res.storageKey]
-		if ok {
-			if existing := lst.first(); existing != nil {
-				res = existing
-			} else {
-				lst.add(res)
-			}
-		} else {
-			lst = newResultList()
-			lst.add(res)
-			c.completedCalls[res.storageKey] = lst
-		}
+	atomic.AddInt64(&oc.res.refCount, 1)
+	c.egraphMu.Lock()
+	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
+	c.egraphMu.Unlock()
 
-		if res.resultCallKey != "" && res.resultCallKey != res.storageKey {
-			resultKey := res.resultCallKey
-			lst := c.completedCalls[resultKey]
-			if lst == nil {
-				lst = newResultList()
-				c.completedCalls[resultKey] = lst
-			}
-			lst.add(res)
+	retID := requestID
+	for _, extra := range oc.res.outputExtraDigests {
+		if extra.Digest == "" {
+			continue
 		}
+		retID = retID.With(call.WithExtraDigest(extra))
+	}
+	retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
 
-		if res.contentDigestKey != "" {
-			contentKey := res.contentDigestKey
-			lst := c.completedCallsByContent[contentKey]
-			if lst == nil {
-				lst = newResultList()
-				c.completedCallsByContent[contentKey] = lst
-			}
-			lst.add(res)
-		}
+	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
+	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
+		retID = retID.With(call.WithAppendedImplicitInputs(call.NewArgument(
+			"sessionID",
+			call.NewLiteralString(sessionID),
+			false,
+		)))
+	}
 
-		res.refCount++
-		c.mu.Unlock()
+	retRes := Result[Typed]{
+		shared:   oc.res,
+		id:       retID,
+		hitCache: false,
+	}
 
-		if isFirstCaller && res.persistToDB != nil && safeToPersistCache {
-			err := res.persistToDB(ctx)
-			if err != nil {
-				slog.Error("failed to persist cache expiration", "err", err)
-			}
-		}
-
-		if isFirstCaller {
-			hitCache = false
-		}
-		if !res.hasValue {
-			if shouldTrackNilResult(ctx) {
-				return Result[Typed]{
-					shared:   res,
-					hitCache: hitCache,
-				}, nil
-			}
-			return nil, nil
-		}
-		retRes := Result[Typed]{
-			shared:   res,
-			hitCache: hitCache,
-		}
-		if res.objType != nil {
-			retObjRes, err := res.objType.New(retRes)
-			if err != nil {
-				return nil, fmt.Errorf("reconstruct object result from cache wait: %w", err)
-			}
-			return retObjRes, nil
-		}
+	if !retRes.shared.hasValue {
 		return retRes, nil
 	}
+	if retRes.shared.objType == nil {
+		return retRes, nil
+	}
+	retObjRes, constructErr := retRes.shared.objType.New(retRes)
+	if constructErr != nil {
+		return nil, fmt.Errorf("reconstruct object result from cache wait: %w", constructErr)
+	}
+	return retObjRes, nil
+}
 
-	if res.refCount == 0 && res.waiters == 0 {
-		// error happened and no refs left, delete it now
-		delete(c.ongoingCalls, res.callConcurrencyKeys)
-		if lst := c.completedCalls[res.storageKey]; lst != nil {
-			lst.remove(res)
-			if lst.empty() {
-				delete(c.completedCalls, res.storageKey)
+func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, requestID *call.ID, sessionID string) error {
+	resWasCacheBacked := false
+	now := time.Now()
+	var (
+		resultID         *call.ID
+		resultTermSelf   digest.Digest
+		resultTermInputs []digest.Digest
+		hasResultTerm    bool
+	)
+
+	// Materialize shared result for this completed call.
+	oc.res = &sharedResult{
+		cache: c,
+	}
+	if oc.val != nil {
+		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.cache != nil {
+			oc.res = existingRes
+			resWasCacheBacked = true
+		} else {
+			oc.res.self = oc.val.Unwrap()
+			oc.res.hasValue = true
+			oc.res.postCall = oc.val.PostCall
+			oc.res.safeToPersistCache = oc.val.IsSafeToPersistCache()
+
+			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
+				oc.res.onRelease = onReleaser.OnRelease
+			}
+			if obj, ok := oc.val.(AnyObjectResult); ok {
+				oc.res.objType = obj.ObjectType()
 			}
 		}
 	}
+	requestIDForIndex := requestID
+	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
+	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
+		requestIDForIndex = requestID.With(call.WithAppendedImplicitInputs(call.NewArgument(
+			"sessionID",
+			call.NewLiteralString(sessionID),
+			false,
+		)))
+	}
 
-	c.mu.Unlock()
-	return nil, err
+	if oc.res.createdAtUnixNano == 0 {
+		oc.res.createdAtUnixNano = now.UnixNano()
+	}
+	touchSharedResultLastUsed(oc.res, now.UnixNano())
+	if oc.res.recordType == "" {
+		oc.res.recordType = requestIDForIndex.Name()
+	}
+	if oc.res.recordType == "" {
+		oc.res.recordType = "dagql.unknown"
+	}
+	if oc.res.description == "" {
+		oc.res.description = requestIDForIndex.Path()
+	}
+	if oc.res.description == "" {
+		oc.res.description = requestIDForIndex.DisplaySelf()
+	}
+	c.refreshResultUsage(ctx, oc.res)
+	estimatedSize := estimateSharedResultSizeBytes(requestIDForIndex, oc.res)
+	if estimatedSize > oc.res.sizeEstimateBytes {
+		// TODO: replace this approximation with concrete snapshot/object accounting.
+		oc.res.sizeEstimateBytes = estimatedSize
+	}
+
+	// TTL merge policy for shared results:
+	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
+	// - if any writer provides TTL, we keep the earliest non-zero expiry.
+	// - 0 only remains when all writers are 0.
+	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
+		oc.res.expiresAtUnix,
+		candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds),
+	)
+	if oc.val != nil {
+		resultID = oc.val.ID()
+		if !resWasCacheBacked {
+			oc.res.outputDigest = resultID.Digest()
+			oc.res.outputExtraDigests = resultID.ExtraDigests()
+			oc.res.outputEffectIDs = resultID.AllEffectIDs()
+		}
+	}
+	if resultID != nil && !resWasCacheBacked {
+		selfDigest, inputDigests, deriveErr := resultID.SelfDigestAndInputs()
+		if deriveErr != nil {
+			return fmt.Errorf("derive result term digests: %w", deriveErr)
+		}
+		resultTermSelf = selfDigest
+		resultTermInputs = inputDigests
+		hasResultTerm = true
+	}
+
+	requestSelf, requestInputs, err := requestIDForIndex.SelfDigestAndInputs()
+	if err != nil {
+		return fmt.Errorf("derive request term digests: %w", err)
+	}
+
+	c.egraphMu.Lock()
+	c.indexWaitResultInEgraphLocked(
+		requestIDForIndex,
+		requestSelf,
+		requestInputs,
+		resultTermSelf,
+		resultTermInputs,
+		hasResultTerm,
+		oc.res,
+	)
+	if oc.isPersistable {
+		c.markResultAsPersistedRootLocked(oc.res)
+	}
+	c.egraphMu.Unlock()
+	return nil
 }
 
-func (c *cache) waitArbitrary(ctx context.Context, res *sharedArbitraryResult, isFirstCaller bool) (ArbitraryCachedResult, error) {
-	var hitCache bool
-	var err error
+func candidateSharedResultExpiryUnix(nowUnix, ttlSeconds int64) int64 {
+	if ttlSeconds <= 0 {
+		return 0
+	}
+	return nowUnix + ttlSeconds
+}
 
-	select {
-	case <-res.waitCh:
-		hitCache = true
-		err = res.err
+func mergeSharedResultExpiryUnix(existingExpiresAtUnix, candidateExpiresAtUnix int64) int64 {
+	switch {
+	case existingExpiresAtUnix == 0 && candidateExpiresAtUnix == 0:
+		return 0
+	case existingExpiresAtUnix == 0:
+		return candidateExpiresAtUnix
+	case candidateExpiresAtUnix == 0:
+		return existingExpiresAtUnix
+	case candidateExpiresAtUnix < existingExpiresAtUnix:
+		return candidateExpiresAtUnix
 	default:
-		select {
-		case <-res.waitCh:
-			err = res.err
-		case <-ctx.Done():
-			err = context.Cause(ctx)
-		}
+		return existingExpiresAtUnix
 	}
+}
 
-	c.mu.Lock()
-	res.waiters--
-	if res.waiters == 0 {
-		res.cancel(err)
+func estimateSharedResultSizeBytes(requestID *call.ID, res *sharedResult) int64 {
+	var size int64 = 1
+	if requestID != nil {
+		size += int64(len(requestID.Path()))
+		size += int64(len(requestID.Name()))
 	}
-
-	if err == nil {
-		delete(c.ongoingArbitraryCalls, res.callKey)
-		if existing := c.completedArbitraryCalls[res.callKey]; existing != nil {
-			res = existing
-		} else {
-			c.completedArbitraryCalls[res.callKey] = res
-		}
-		res.refCount++
-		c.mu.Unlock()
-
-		if isFirstCaller {
-			hitCache = false
-		}
-		return arbitraryResult{
-			shared:   res,
-			hitCache: hitCache,
-		}, nil
+	if res == nil {
+		return size
 	}
-
-	if res.refCount == 0 && res.waiters == 0 {
-		if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
-			delete(c.ongoingArbitraryCalls, res.callKey)
-		}
-		if existing := c.completedArbitraryCalls[res.callKey]; existing == res {
-			delete(c.completedArbitraryCalls, res.callKey)
-		}
+	size += int64(len(res.outputDigest))
+	for _, extra := range res.outputExtraDigests {
+		size += int64(len(extra.Label))
+		size += int64(len(extra.Digest))
 	}
-
-	c.mu.Unlock()
-	return nil, err
+	for _, effectID := range res.outputEffectIDs {
+		size += int64(len(effectID))
+	}
+	return size
 }

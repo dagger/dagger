@@ -18,7 +18,6 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -117,18 +116,13 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 		return fmt.Errorf("evaluate after: %w", err)
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return fmt.Errorf("no buildkit session group in context")
-	}
-
-	return MountRef(ctx, beforeRef, bkSessionGroup, func(beforeMount string, _ *mount.Mount) error {
+	return MountRef(ctx, beforeRef, nil, func(beforeMount string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(beforeMount, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
 
-		return MountRef(ctx, afterRef, bkSessionGroup, func(afterMount string, _ *mount.Mount) error {
+		return MountRef(ctx, afterRef, nil, func(afterMount string, _ *mount.Mount) error {
 			afterDir, err := containerdfs.RootPath(afterMount, ch.After.Self().Dir)
 			if err != nil {
 				return err
@@ -230,10 +224,14 @@ func (*Changeset) TypeDescription() string {
 	return "A comparison between two directories representing changes that can be applied."
 }
 
-var _ Evaluatable = (*Changeset)(nil)
+var _ Syncable = (*Changeset)(nil)
 
-func (ch *Changeset) Evaluate(context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (ch *Changeset) Evaluate(context.Context) error {
+	return nil
+}
+
+func (ch *Changeset) Sync(ctx context.Context) error {
+	return ch.Evaluate(ctx)
 }
 
 const ChangesetPatchFilename = "diff.patch"
@@ -269,41 +267,32 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
-	}
-	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 
-	newRef, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
+	newRef, err := query.BuildkitCache().New(ctx, nil, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("Changeset.asPatch"))
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, beforeRef, bkSessionGroup, func(before string, _ *mount.Mount) error {
+	err = MountRef(ctx, beforeRef, nil, func(before string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(before, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
-		return MountRef(ctx, afterRef, bkSessionGroup, func(after string, _ *mount.Mount) error {
+		return MountRef(ctx, afterRef, nil, func(after string, _ *mount.Mount) error {
 			afterDir, err := containerdfs.RootPath(after, ch.After.Self().Dir)
 			if err != nil {
 				return err
 			}
-			return MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
+			return MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) (rerr error) {
 				beforeMount := filepath.Join(root, "a")
 				afterMount := filepath.Join(root, "b")
 				if err := os.Mkdir(beforeMount, 0755); err != nil {
@@ -355,9 +344,10 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 	return &File{
-		Result:   snap,
-		File:     ChangesetPatchFilename,
-		Platform: query.Platform(),
+		File:      ChangesetPatchFilename,
+		Platform:  query.Platform(),
+		LazyState: NewLazyState(),
+		Snapshot:  snap,
 	}, nil
 }
 
@@ -367,9 +357,20 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return fmt.Errorf("compute paths: %w", err)
 	}
 
-	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
+	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return err
+	}
+	var dir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, ch.Before, &dir,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*Directory](ch.After.ID())},
+			},
+		},
+	); err != nil {
+		return fmt.Errorf("get changeset diff directory: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -384,13 +385,14 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export changeset to host %s", destPath))
 	defer telemetry.EndWithCause(span, &rerr)
 
-	root, closer, err := mountObj(ctx, dir)
+	// TODO: stop using mountObj, it is weird as hell
+	root, closer, err := mountObj(ctx, dir.Self())
 	if err != nil {
 		return fmt.Errorf("failed to mount directory: %w", err)
 	}
 	defer closer(false)
 
-	root, err = containerdfs.RootPath(root, dir.Dir)
+	root, err = containerdfs.RootPath(root, dir.Self().Dir)
 	if err != nil {
 		return err
 	}
@@ -542,9 +544,7 @@ func (ch *Changeset) WithChangeset(
 
 	conflicts := ourPaths.CheckConflicts(theirPaths)
 
-	if conflicts.IsEmpty() {
-		return mergeChangesetsWithoutGit(ctx, ch, other)
-	} else if onConflictStrategy == FailEarlyOnConflict {
+	if !conflicts.IsEmpty() && onConflictStrategy == FailEarlyOnConflict {
 		return nil, conflicts.Error()
 	}
 
@@ -602,10 +602,7 @@ func (ch *Changeset) WithChangesets(
 	}
 
 	err := checkAllPairwiseConflicts(ctx, ch, others)
-
-	if err == nil {
-		return mergeChangesetsWithoutGit(ctx, ch, others...)
-	} else if onConflictStrategy == FailEarlyOnConflicts {
+	if err != nil && onConflictStrategy == FailEarlyOnConflicts {
 		return nil, err
 	}
 
@@ -682,12 +679,20 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 		return nil, err
 	}
 
+	afterRef, err := afterDir.getSnapshot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("evaluate merged directory snapshot: %w", err)
+	}
+	if afterRef == nil {
+		return nil, fmt.Errorf("evaluate merged directory snapshot: nil")
+	}
+
 	var after dagql.ObjectResult[*Directory]
 	if err := srv.Select(ctx, srv.Root(), &after,
 		dagql.Selector{
 			Field: "__immutableRef",
 			Args: []dagql.NamedInput{
-				{Name: "ref", Value: dagql.NewString(afterDir.Result.ID())},
+				{Name: "ref", Value: dagql.NewString(afterRef.ID())},
 			},
 		},
 	); err != nil {
@@ -739,24 +744,19 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 		return nil, fmt.Errorf("evaluate base: %w", err)
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	newRef, err := query.BuildkitCache().New(ctx, baseRef, bkSessionGroup,
+	newRef, err := query.BuildkitCache().New(ctx, baseRef, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(description))
 	if err != nil {
 		return nil, err
 	}
 
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
 		workDir, err := containerdfs.RootPath(root, base.Dir)
 		if err != nil {
 			return err
@@ -773,9 +773,11 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 	}
 
 	return &Directory{
-		Result:   snap,
-		Dir:      base.Dir,
-		Platform: query.Platform(),
+		Dir:       base.Dir,
+		Platform:  query.Platform(),
+		Services:  slices.Clone(base.Services),
+		LazyState: NewLazyState(),
+		Snapshot:  snap,
 	}, nil
 }
 
@@ -900,12 +902,7 @@ func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
 		return fmt.Errorf("evaluate patch ref: %w", err)
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return fmt.Errorf("no buildkit session group in context")
-	}
-
-	return MountRef(ctx, patchRef, bkSessionGroup, func(patchMount string, _ *mount.Mount) error {
+	return MountRef(ctx, patchRef, nil, func(patchMount string, _ *mount.Mount) error {
 		patchPath, err := containerdfs.RootPath(patchMount, patch.File)
 		if err != nil {
 			return err
@@ -1032,32 +1029,4 @@ func toSet(slice []string) map[string]struct{} {
 		set[s] = struct{}{}
 	}
 	return set
-}
-
-// mergeChangesetsWithoutGit merges changesets without using git by applying
-// each changeset sequentially. This is only safe when there are no file overlaps
-// between changesets.
-func mergeChangesetsWithoutGit(ctx context.Context, ch *Changeset, others ...*Changeset) (*Changeset, error) {
-	// Merge before directories (same as git path)
-	before, err := mergeBeforeDirectories(ctx, ch, others...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Start with merged before and apply each changeset sequentially
-	afterDir := before.Self()
-
-	afterDir, err = afterDir.WithChanges(ctx, ch)
-	if err != nil {
-		return nil, fmt.Errorf("apply changeset: %w", err)
-	}
-
-	for i, other := range others {
-		afterDir, err = afterDir.WithChanges(ctx, other)
-		if err != nil {
-			return nil, fmt.Errorf("apply changeset %d: %w", i, err)
-		}
-	}
-
-	return newChangesetFromMerge(ctx, before, afterDir)
 }

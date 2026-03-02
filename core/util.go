@@ -17,12 +17,9 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
@@ -32,7 +29,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -40,27 +36,9 @@ var (
 	errEmptyResultRef = fmt.Errorf("empty result reference")
 )
 
-// requiresBuildkitSessionGroup returns a session group for operations that need client resources
-// (credentials, secrets, etc). Some operations run outside the DagOp context (e.g., Stat called
-// internally by Directory.Directory), so we fall back to the buildkit client's session.
-func requiresBuildkitSessionGroup(ctx context.Context) bksession.Group {
-	if g, ok := buildkit.CurrentBuildkitSessionGroup(ctx); ok {
-		return g
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil
-	}
-	return buildkit.NewSessionGroup(bk.ID())
-}
-
-type Evaluatable interface {
+type Syncable interface {
 	dagql.Typed
-	Evaluate(context.Context) (*buildkit.Result, error)
+	Sync(context.Context) error
 }
 
 type Digestable interface {
@@ -80,18 +58,6 @@ func DigestOf(v any) (digest.Digest, error) {
 	return digest.FromBytes(vs), nil
 }
 
-type Inputs interface {
-	// Inputs returns a list of an object inputs (build graph dependencies)
-	Inputs(context.Context) ([]llb.State, error)
-}
-
-func InputsOf(ctx context.Context, v any) ([]llb.State, error) {
-	if v, ok := v.(Inputs); ok {
-		return v.Inputs(ctx)
-	}
-	return nil, nil
-}
-
 func absPath(workDir string, containerPath string) string {
 	if path.IsAbs(containerPath) {
 		return containerPath
@@ -102,23 +68,6 @@ func absPath(workDir string, containerPath string) string {
 	}
 
 	return path.Join(workDir, containerPath)
-}
-
-func defToState(def *pb.Definition) (llb.State, error) {
-	if def == nil || def.Def == nil {
-		// NB(vito): llb.Scratch().Marshal().ToPB() produces an empty
-		// *pb.Definition. If we don't convert it properly back to a llb.Scratch()
-		// we'll hit 'cannot marshal empty definition op' when trying to marshal it
-		// again.
-		return llb.Scratch(), nil
-	}
-
-	defop, err := llb.NewDefinitionOp(def)
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	return llb.NewState(defop), nil
 }
 
 func findUID(f io.Reader, uname string) (int, error) {
@@ -261,6 +210,10 @@ func mergeImageConfig(dst, src dockerspec.DockerOCIImageConfig) dockerspec.Docke
 	return res
 }
 
+func MergeImageConfig(dst, src dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
+	return mergeImageConfig(dst, src)
+}
+
 func ptr[T any](v T) *T {
 	return &v
 }
@@ -279,8 +232,8 @@ func mountRefAsReadOnly(opt *mountRefOpt) {
 //
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
-func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string, *mount.Mount) error, optFns ...mountRefOptFn) error {
-	dir, m, closer, err := MountRefCloser(ctx, ref, g, optFns...)
+func MountRef(ctx context.Context, ref bkcache.Ref, _ bksession.Group, f func(string, *mount.Mount) error, optFns ...mountRefOptFn) error {
+	dir, m, closer, err := MountRefCloser(ctx, ref, nil, optFns...)
 	if err != nil {
 		return err
 	}
@@ -300,7 +253,7 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 // To simplify external logic, when the ref is nil, i.e. scratch, a tmpdir is created (and deleted when the closer func is called).
 //
 // NOTE: prefer MountRef where possible, unless finer-grained control of when the directory is unmounted is needed.
-func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, optFns ...mountRefOptFn) (_ string, _ *mount.Mount, _ func() error, rerr error) {
+func MountRefCloser(ctx context.Context, ref bkcache.Ref, _ bksession.Group, optFns ...mountRefOptFn) (_ string, _ *mount.Mount, _ func() error, rerr error) {
 	var opt mountRefOpt
 	for _, optFn := range optFns {
 		optFn(&opt)
@@ -315,7 +268,7 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, opt
 			return os.RemoveAll(dir)
 		}, nil
 	}
-	mountable, err := ref.Mount(ctx, opt.readOnly, g)
+	mountable, err := ref.Mount(ctx, opt.readOnly, nil)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -343,39 +296,6 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, opt
 		err = errors.Join(err, unmount())
 		return err
 	}, nil
-}
-
-// mountLLB is a utility for easily mounting an llb definition
-func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) error {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: llb,
-	})
-	if err != nil {
-		return err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		tmp, err := os.MkdirTemp("", "mount")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(tmp)
-		return f(tmp)
-	}
-	return ref.Mount(ctx, f)
 }
 
 func Supports(ctx context.Context, minVersion string) bool {
@@ -433,9 +353,8 @@ func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 }
 
 type mountObjOpt struct {
-	commitSnapshot          bool
-	cacheDesc               string
-	allowNilBuildkitSession bool
+	commitSnapshot bool
+	cacheDesc      string
 }
 
 type mountObjOptFn func(opt *mountObjOpt)
@@ -447,32 +366,10 @@ func withSavedSnapshot(format string, a ...any) mountObjOptFn {
 	}
 }
 
-func allowNilBuildkitSession(opt *mountObjOpt) {
-	opt.allowNilBuildkitSession = true
-}
-
 type fileOrDirectory interface {
 	*File | *Directory
-	getResult() bkcache.ImmutableRef
-	setResult(bkcache.ImmutableRef)
-	Evaluatable
-}
-
-// execInMount evaluates a file or directory, mounts it, then calls the supplied callback function.
-func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...mountObjOptFn) (T, error) {
-	root, closer, err := mountObj(ctx, obj, optFns...)
-	if err != nil {
-		return nil, err
-	}
-	err = f(root)
-	if err != nil {
-		_, closeErr := closer(true)
-		if closeErr != nil {
-			err = errors.Join(err, closeErr)
-		}
-		return nil, err
-	}
-	return closer(false)
+	getSnapshot(context.Context) (bkcache.ImmutableRef, error)
+	setSnapshot(bkcache.ImmutableRef)
 }
 
 // mountObj evaluates an object and mounts the root fs and returns the mounted path and a closer, which will unmount
@@ -494,13 +391,6 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 		}
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		if !opt.allowNilBuildkitSession {
-			return "", nil, fmt.Errorf("no buildkit session group in context")
-		}
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return "", nil, err
@@ -512,7 +402,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 		if opt.cacheDesc == "" {
 			return "", nil, fmt.Errorf("mountObj saveSnapshotOpt missing cache description")
 		}
-		newRef, err = query.BuildkitCache().New(ctx, parentRef, bkSessionGroup,
+		newRef, err = query.BuildkitCache().New(ctx, parentRef, nil,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(opt.cacheDesc))
 		if err != nil {
 			return "", nil, err
@@ -528,7 +418,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 	if !opt.commitSnapshot {
 		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
 	}
-	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
+	rootPath, _, closer, err := MountRefCloser(ctx, mountRef, nil, mountRefOpts...)
 	if err != nil {
 		return "", nil, err
 	}
@@ -544,7 +434,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 				if err != nil {
 					return nil, err
 				}
-				obj.setResult(snap)
+				obj.setSnapshot(snap)
 			}
 			return obj, nil
 		}, nil
@@ -562,10 +452,17 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 // RestoreErrPath will restore the path of an error, which is useful for both removing buildkit mount root paths and referencing uncleaned paths
 // Note: TrimErrPathPrefix should be used instead when a root prefix is known
 func RestoreErrPath(err error, path string) error {
-	if pe, ok := err.(*os.PathError); ok {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
 		pe.Path = path
-	} else if err != nil {
-		slog.Warn("RestorePathErr: unhandled type", "type", fmt.Sprintf("%T", err))
+	} else {
+		var le *os.LinkError
+		if errors.As(err, &le) {
+			le.Old = path
+			le.New = path
+		} else if err != nil {
+			slog.Warn("RestorePathErr: unhandled type", "type", fmt.Sprintf("%T", err))
+		}
 	}
 	return err
 }
@@ -586,25 +483,7 @@ func TrimErrPathPrefix(err error, prefix string) error {
 }
 
 func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
-	ref := t.getResult()
-	if ref != nil {
-		return ref, nil
-	}
-	res, err := t.Evaluate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if res == nil {
-		return nil, nil
-	}
-	cacheRef, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	if cacheRef == nil {
-		return nil, nil
-	}
-	return cacheRef.CacheRef(ctx)
+	return t.getSnapshot(ctx)
 }
 
 func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {

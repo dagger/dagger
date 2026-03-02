@@ -197,6 +197,76 @@ func TestSessionCacheTelemetryBehavior(t *testing.T) {
 	assert.DeepEqual(t, []bool{false, false, true}, cachedVals)
 }
 
+func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	key := cacheTestID("telemetry-hit-only")
+	key2 := cacheTestID("telemetry-hit-only-second")
+
+	var beginCalls atomic.Int32
+	var doneCalls atomic.Int32
+	var cachedValsMu sync.Mutex
+	var cachedVals []bool
+	telemetryOpt := WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+		beginCalls.Add(1)
+		return ctx, func(_ AnyResult, cached bool, _ *error) {
+			doneCalls.Add(1)
+			cachedValsMu.Lock()
+			cachedVals = append(cachedVals, cached)
+			cachedValsMu.Unlock()
+		}
+	})
+	hitOnlyOpt := WithTelemetryPolicy(TelemetryPolicyCacheHitOnly)
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt, hitOnlyOpt)
+	assert.NilError(t, err)
+	assert.Equal(t, int32(0), beginCalls.Load())
+	assert.Equal(t, int32(0), doneCalls.Load())
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected initializer call")
+	}, telemetryOpt, hitOnlyOpt)
+	assert.NilError(t, err)
+	assert.Equal(t, int32(1), beginCalls.Load())
+	assert.Equal(t, int32(1), doneCalls.Load())
+	assert.DeepEqual(t, []bool{true}, cachedVals)
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected initializer call")
+	}, telemetryOpt, hitOnlyOpt)
+	assert.NilError(t, err)
+	assert.Equal(t, int32(1), beginCalls.Load())
+	assert.Equal(t, int32(1), doneCalls.Load())
+	assert.DeepEqual(t, []bool{true}, cachedVals)
+
+	repeatedCtx := WithRepeatedTelemetry(ctx)
+	_, err = sc.GetOrInitCall(repeatedCtx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected initializer call")
+	}, telemetryOpt, hitOnlyOpt)
+	assert.NilError(t, err)
+	assert.Equal(t, int32(2), beginCalls.Load())
+	assert.Equal(t, int32(2), doneCalls.Load())
+	assert.DeepEqual(t, []bool{true, true}, cachedVals)
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key2}, ValueFunc(cacheTestIntResult(key2, 2)), telemetryOpt, hitOnlyOpt)
+	assert.NilError(t, err)
+	assert.Equal(t, int32(2), beginCalls.Load())
+	assert.Equal(t, int32(2), doneCalls.Load())
+
+	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key2}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected initializer call")
+	}, telemetryOpt)
+	assert.NilError(t, err)
+	assert.Equal(t, int32(3), beginCalls.Load())
+	assert.Equal(t, int32(3), doneCalls.Load())
+	assert.DeepEqual(t, []bool{true, true, true}, cachedVals)
+}
+
 func TestSessionCacheDoNotCacheResultNotTrackedOnClose(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -222,6 +292,42 @@ func TestSessionCacheDoNotCacheResultNotTrackedOnClose(t *testing.T) {
 
 	assert.NilError(t, res.Release(ctx))
 	assert.Assert(t, is.Equal(int32(1), releaseCalls.Load()))
+}
+
+func TestSessionCacheDoNotCacheNilResult(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	key := cacheTestID("session-donotcache-nil")
+	initCalls := 0
+
+	res, err := sc.GetOrInitCall(ctx, CacheKey{
+		ID:         key,
+		DoNotCache: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return nil, nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res == nil)
+	assert.Equal(t, 1, initCalls)
+	assert.Equal(t, 0, base.Size())
+
+	res, err = sc.GetOrInitCall(ctx, CacheKey{
+		ID:         key,
+		DoNotCache: true,
+	}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return nil, nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res == nil)
+	assert.Equal(t, 2, initCalls)
+	assert.Equal(t, 0, base.Size())
 }
 
 func TestSessionCacheReleaseAndCloseWithNilResult(t *testing.T) {

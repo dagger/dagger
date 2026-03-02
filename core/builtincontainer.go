@@ -8,6 +8,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/core/containersource"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -58,23 +59,26 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 		return nil, err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group found")
-	}
-
+	bkSessionGroup := buildkit.NewSessionGroup(bk.ID())
 	ref, err := src.Snapshot(ctx, bkSessionGroup)
 	if err != nil {
 		return nil, err
 	}
-	rootfsDir := &Directory{
-		Result: ref,
+	container := NewContainer(platform)
+	container.OpID = dagql.CurrentID(ctx)
+	if container.OpID == nil {
+		return nil, fmt.Errorf("missing operation ID for built-in container")
 	}
-	updatedRootFS, err := UpdatedRootFS(ctx, rootfsDir)
+	rootfsDir := &Directory{
+		Dir:       "/",
+		Platform:  platform,
+		LazyState: NewLazyState(),
+		Snapshot:  ref,
+	}
+	updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update rootfs: %w", err)
 	}
-	container := NewContainer(platform)
 	container.FS = updatedRootFS
 	return container, nil
 }

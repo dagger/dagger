@@ -8,6 +8,8 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -19,26 +21,26 @@ import (
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/transfer/archive"
+	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/containersource"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
+	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
+	dockerfileparser "github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/parser"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/containerutil"
+	"github.com/dagger/dagger/util/llbtodagger"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -106,6 +108,14 @@ type Container struct {
 
 	// DefaultArgs have been explicitly set by the user
 	DefaultArgs bool
+
+	Parent dagql.ObjectResult[*Container]
+	LazyState
+
+	// OpID is the operation call ID that should be used as the base when
+	// synthesizing updated container child selection IDs (e.g. rootfs, file,
+	// directory) after operations like exec/import.
+	OpID *call.ID
 }
 
 func (*Container) Type() *ast.Type {
@@ -120,16 +130,21 @@ func (*Container) TypeDescription() string {
 }
 
 func NewContainer(platform Platform) *Container {
-	return &Container{Platform: platform}
+	return &Container{
+		Platform:  platform,
+		LazyState: NewLazyState(),
+	}
 }
 
-// Clone returns a deep copy of the container suitable for modifying in a
-// WithXXX method.
-func (container *Container) Clone() *Container {
-	if container == nil {
-		return nil
+func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
+	if parent.Self() == nil {
+		return &Container{
+			Parent:    parent,
+			LazyState: NewLazyState(),
+		}
 	}
-	cp := *container
+
+	cp := *parent.Self()
 	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
 	cp.Config.Env = slices.Clone(cp.Config.Env)
 	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
@@ -142,33 +157,50 @@ func (container *Container) Clone() *Container {
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
+	cp.Parent = parent
+	cp.LazyState = NewLazyState()
+	cp.OpID = nil
 	return &cp
 }
 
-func (container *Container) WithoutInputs() *Container {
-	container = container.Clone()
+var _ dagql.OnReleaser = (*Container)(nil)
 
-	container.FS = nil
-	container.Meta = nil
-
-	for i, mount := range container.Mounts {
-		mount.DirectorySource = nil
-		mount.FileSource = nil
-		mount.CacheSource = nil
-		mount.TmpfsSource = nil
-		container.Mounts[i] = mount
+func (container *Container) Evaluate(ctx context.Context) error {
+	if container == nil {
+		return nil
 	}
-
-	return container
+	return container.LazyState.Evaluate(ctx, "Container")
 }
 
-var _ dagql.OnReleaser = (*Container)(nil)
+func (container *Container) Sync(ctx context.Context) error {
+	if err := container.Evaluate(ctx); err != nil {
+		return err
+	}
+	if container == nil {
+		return nil
+	}
+	if container.FS != nil && container.FS.Self() != nil {
+		if err := container.FS.Self().Evaluate(ctx); err != nil {
+			return err
+		}
+	}
+	if container.Meta != nil {
+		if err := container.Meta.Evaluate(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func (container *Container) OnRelease(ctx context.Context) error {
 	if container == nil {
 		return nil
 	}
-	// TODO: this might be problematic if directories overlap, could release same result multiple times
+	/* TODO: we don't do this anymore because the dagql cache should know our deps and handle their releases as needed
+	  Leaving for the moment as a reference and reminder that we gotta make the dagql cache do that
+
+
+	// this might be problematic if directories overlap, could release same result multiple times
 	if rootfs := container.FS; rootfs != nil {
 		rootfsRes := rootfs.Self().Result
 		if rootfsRes != nil {
@@ -211,6 +243,7 @@ func (container *Container) OnRelease(ctx context.Context) error {
 			}
 		}
 	}
+	*/
 	return nil
 }
 
@@ -240,31 +273,6 @@ type ContainerSocket struct {
 	Owner         *Ownership
 }
 
-// FSState returns the container's root filesystem mount state. If there is
-// none (as with an empty container ID), it returns scratch.
-func (container *Container) FSState() (llb.State, error) {
-	if container.FS == nil {
-		return llb.Scratch(), nil
-	}
-
-	return container.FS.Self().StateWithSourcePath()
-}
-
-// MetaState returns the container's metadata mount state. If the container has
-// yet to run, it returns nil.
-func (container *Container) MetaState() (*llb.State, error) {
-	if container.Meta == nil {
-		return nil, nil
-	}
-
-	metaSt, err := defToState(container.Meta.LLB)
-	if err != nil {
-		return nil, err
-	}
-
-	return &metaSt, nil
-}
-
 // ContainerMount is a mount point configured in a container.
 type ContainerMount struct {
 	// The path of the mount within the container.
@@ -286,6 +294,9 @@ type ContainerMount struct {
 }
 
 type CacheMountSource struct {
+	// The cache volume backing this mount.
+	Volume dagql.ObjectResult[*CacheVolume]
+
 	// The base layers underneath the cache mount, if any
 	Base *dagql.ObjectResult[*Directory]
 
@@ -299,117 +310,6 @@ type CacheMountSource struct {
 type TmpfsMountSource struct {
 	// Configure the size of the mounted tmpfs in bytes
 	Size int
-}
-
-func handleMountValues[T any](
-	mnt ContainerMount,
-	onDir func(*dagql.ObjectResult[*Directory]) (T, error),
-	onFile func(*dagql.ObjectResult[*File]) (T, error),
-	onCache func(*CacheMountSource) (T, error),
-	onTmpfs func(*TmpfsMountSource) (T, error),
-) (T, error) {
-	switch {
-	case mnt.DirectorySource != nil:
-		return onDir(mnt.DirectorySource)
-	case mnt.FileSource != nil:
-		return onFile(mnt.FileSource)
-	case mnt.CacheSource != nil:
-		return onCache(mnt.CacheSource)
-	case mnt.TmpfsSource != nil:
-		return onTmpfs(mnt.TmpfsSource)
-	default:
-		var zero T
-		return zero, fmt.Errorf("no mount source configured for %s", mnt.Target)
-	}
-}
-
-func handleMountValue[T any](
-	mnt ContainerMount,
-	onDir func(*dagql.ObjectResult[*Directory]) T,
-	onFile func(*dagql.ObjectResult[*File]) T,
-	onCache func(*CacheMountSource) T,
-	onTmpfs func(*TmpfsMountSource) T,
-) T {
-	t, _ := handleMountValues(mnt,
-		func(dir *dagql.ObjectResult[*Directory]) (T, error) {
-			return onDir(dir), nil
-		},
-		func(file *dagql.ObjectResult[*File]) (T, error) {
-			return onFile(file), nil
-		},
-		func(cache *CacheMountSource) (T, error) {
-			return onCache(cache), nil
-		},
-		func(tmpfs *TmpfsMountSource) (T, error) {
-			return onTmpfs(tmpfs), nil
-		},
-	)
-	return t
-}
-
-func handleMount(
-	mnt ContainerMount,
-	onDir func(*dagql.ObjectResult[*Directory]),
-	onFile func(*dagql.ObjectResult[*File]),
-	onCache func(*CacheMountSource),
-	onTmpfs func(*TmpfsMountSource),
-) {
-	handleMountValues(mnt,
-		func(dir *dagql.ObjectResult[*Directory]) (any, error) {
-			onDir(dir)
-			return nil, nil
-		},
-		func(file *dagql.ObjectResult[*File]) (any, error) {
-			onFile(file)
-			return nil, nil
-		},
-		func(cache *CacheMountSource) (any, error) {
-			onCache(cache)
-			return nil, nil
-		},
-		func(tmpfs *TmpfsMountSource) (any, error) {
-			onTmpfs(tmpfs)
-			return nil, nil
-		},
-	)
-}
-
-// SourceState returns the state of the source of the mount.
-func (mnt ContainerMount) SourceState() (llb.State, error) {
-	switch {
-	case mnt.DirectorySource != nil:
-		return mnt.DirectorySource.Self().StateWithSourcePath()
-	case mnt.FileSource != nil:
-		return mnt.FileSource.Self().State()
-	default:
-		return llb.Scratch(), nil
-	}
-}
-
-// GetLLB returns the associated LLB with a mount
-func (mnt *ContainerMount) GetLLB() *pb.Definition {
-	var llb *pb.Definition
-	handleMount(*mnt,
-		func(dir *dagql.ObjectResult[*Directory]) {
-			if dir != nil && dir.Self() != nil {
-				llb = dir.Self().LLB
-			}
-		},
-		func(file *dagql.ObjectResult[*File]) {
-			if file != nil && file.Self() != nil {
-				llb = file.Self().LLB
-			}
-		},
-		func(cacheMount *CacheMountSource) {
-			if cacheMount != nil && cacheMount.Base != nil && cacheMount.Base.Self() != nil {
-				llb = cacheMount.Base.Self().LLB
-			}
-		},
-		func(tmpMount *TmpfsMountSource) {
-			// no LLB
-		},
-	)
-	return llb
 }
 
 type ContainerMounts []ContainerMount
@@ -495,173 +395,150 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 	return ctr.Self(), nil
 }
 
-// FromCanonicalRef implements the dagop portion of the "from" command: it fetches an image, and updates the root fs
-// to point to a snapshot of the referenced image
+// FromCanonicalRef returns a lazy initializer for digest-addressed image pulls.
+// It updates only rootfs snapshot state.
 func (container *Container) FromCanonicalRef(
 	ctx context.Context,
 	refName reference.Canonical,
-	// cfgBytes is optional, will be retrieved if not provided
-	cfgBytes []byte,
-) (*Container, error) {
-	container = container.Clone()
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	platform := container.Platform
-
-	refStr := refName.String()
-
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	hsm, err := containersource.NewSource(containersource.SourceOpt{
-		Snapshotter:   bk.Worker.Snapshotter,
-		ContentStore:  bk.Worker.ContentStore(),
-		ImageStore:    bk.Worker.ImageStore,
-		CacheAccessor: query.BuildkitCache(),
-		RegistryHosts: bk.Worker.RegistryHosts,
-		ResolverType:  containersource.ResolverTypeRegistry,
-		LeaseManager:  bk.Worker.LeaseManager(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	attrs := map[string]string{}
-	id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
-		Architecture: platform.Architecture,
-		OS:           platform.OS,
-		Variant:      platform.Variant,
-		OSVersion:    platform.OSVersion,
-		OSFeatures:   platform.OSFeatures,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
-	if err != nil {
-		return nil, err
-	}
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group found")
-	}
-
-	ref, err := src.Snapshot(ctx, bkSessionGroup)
-	if err != nil {
-		return nil, err
-	}
-
-	rootfsDir := &Directory{
-		Result: ref,
-	}
-	if container.FS != nil {
-		rootfsDir.Dir = container.FS.Self().Dir
-		if rootfsDir.Dir == "" {
-			return nil, fmt.Errorf("SetFSFromCanonicalRef got an empty dir")
-		} else if rootfsDir.Dir != "/" {
-			return nil, fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
+) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
 		}
-		rootfsDir.Platform = container.FS.Self().Platform
-		rootfsDir.Services = container.FS.Self().Services
-	} else {
-		rootfsDir.Dir = "/"
-	}
-	updatedRootFS, err := UpdatedRootFS(ctx, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update rootfs: %w", err)
-	}
-	container.FS = updatedRootFS
-	return container, nil
-}
 
-// FromCanonicalRefUpdateConfig is must be called outside of a dagop context, and is responsible for fetching the image config
-// and applying it to the container's metadata
-func (container *Container) FromCanonicalRefUpdateConfig(
-	ctx context.Context,
-	refName reference.Canonical,
-	// cfgBytes is optional, will be retrieved if not provided
-	cfgBytes []byte,
-) (*Container, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
+		platform := container.Platform
+		refStr := refName.String()
 
-	platform := container.Platform
-	refStr := refName.String()
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get buildkit client: %w", err)
+		}
 
-	// since this is an image ref w/ a digest, always check the local cache for the image
-	// first before making any network requests
-	resolveMode := llb.ResolveModePreferLocal
-	if cfgBytes == nil {
-		_, _, cfgBytes, err = bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
-			Platform: ptr(platform.Spec()),
-			ImageOpt: &sourceresolver.ResolveImageOpt{
-				ResolveMode: resolveMode.String(),
-			},
+		hsm, err := containersource.NewSource(containersource.SourceOpt{
+			Snapshotter:   bk.Worker.Snapshotter,
+			ContentStore:  bk.Worker.ContentStore(),
+			ImageStore:    bk.Worker.ImageStore,
+			CacheAccessor: query.BuildkitCache(),
+			RegistryHosts: bk.Worker.RegistryHosts,
+			ResolverType:  containersource.ResolverTypeRegistry,
+			LeaseManager:  bk.Worker.LeaseManager(),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
+			return err
 		}
-	}
 
-	var imgSpec dockerspec.DockerOCIImage
-	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-		return nil, err
-	}
+		attrs := map[string]string{}
+		id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
+			Architecture: platform.Architecture,
+			OS:           platform.OS,
+			Variant:      platform.Variant,
+			OSVersion:    platform.OSVersion,
+			OSFeatures:   platform.OSFeatures,
+		})
+		if err != nil {
+			return err
+		}
 
-	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	container.ImageRef = refStr
-	container.Platform = Platform(platforms.Normalize(imgSpec.Platform))
+		src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
+		if err != nil {
+			return err
+		}
 
-	return container, nil
+		bkSessionGroup := buildkit.NewSessionGroup(bk.ID())
+		ref, err := src.Snapshot(ctx, bkSessionGroup)
+		if err != nil {
+			return err
+		}
+
+		if container.FS == nil || container.FS.Self() == nil {
+			return fmt.Errorf("missing rootfs directory for fromCanonicalRef")
+		}
+		rootfsDir := container.FS.Self()
+		if rootfsDir.Dir == "" {
+			rootfsDir.Dir = "/"
+		} else if rootfsDir.Dir != "/" {
+			return fmt.Errorf("SetFSFromCanonicalRef got %s as dir; however it will be lost", rootfsDir.Dir)
+		}
+		rootfsDir.setSnapshot(ref)
+
+		return nil
+	}, nil
 }
 
 const defaultDockerfileName = "Dockerfile"
 
+func isKnownDockerfileSyntaxFrontend(syntaxRef string) bool {
+	ref := strings.TrimSpace(strings.ToLower(syntaxRef))
+	if ref == "" {
+		return false
+	}
+
+	known := []string{
+		"docker/dockerfile",
+		"docker/dockerfile-upstream",
+		"docker.io/docker/dockerfile",
+		"docker.io/docker/dockerfile-upstream",
+		"index.docker.io/docker/dockerfile",
+		"index.docker.io/docker/dockerfile-upstream",
+		"moby/dockerfile",
+		"moby/dockerfile-upstream",
+		"docker.io/moby/dockerfile",
+		"docker.io/moby/dockerfile-upstream",
+		"index.docker.io/moby/dockerfile",
+		"index.docker.io/moby/dockerfile-upstream",
+	}
+	for _, prefix := range known {
+		if ref == prefix || strings.HasPrefix(ref, prefix+":") || strings.HasPrefix(ref, prefix+"@") {
+			return true
+		}
+	}
+	return false
+}
+
 func (container *Container) Build(
 	ctx context.Context,
 	dockerfileDir *Directory,
-	// contextDir is dockerfileDir with files excluded as per dockerignore file
-	contextDir *Directory,
+	// contextDirID is dockerfileDir with files excluded as per dockerignore file.
+	contextDirID *call.ID,
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
 	secrets []dagql.ObjectResult[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
-	sshSocket *Socket,
+	sshSocketID *call.ID,
 ) (*Container, error) {
-	container = container.Clone()
-
-	secretNameToLLBID := make(map[string]string)
-	for _, secret := range secrets {
-		secretDgst := SecretIDDigest(secret.ID())
-		secretName, ok := secretStore.GetSecretName(secretDgst)
-		if !ok {
-			return nil, fmt.Errorf("secret not found: %s", secretDgst)
-		}
-		container.Secrets = append(container.Secrets, ContainerSecret{
-			Secret:    secret,
-			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
-		})
-		secretNameToLLBID[secretName] = secretDgst.String()
+	dockerfilePath := dockerfile
+	if dockerfilePath == "" {
+		dockerfilePath = defaultDockerfileName
 	}
-
-	// set image ref to empty string
-	container.ImageRef = ""
+	dockerfileRef, err := dockerfileDir.getSnapshot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Dockerfile directory snapshot: %w", err)
+	}
+	if dockerfileRef == nil {
+		return nil, fmt.Errorf("failed to load Dockerfile %q: directory is empty", dockerfilePath)
+	}
+	var dockerfileBytes []byte
+	err = MountRef(ctx, dockerfileRef, nil, func(root string, _ *mount.Mount) error {
+		resolvedDockerfilePath, err := containerdfs.RootPath(root, path.Join(dockerfileDir.Dir, dockerfilePath))
+		if err != nil {
+			return err
+		}
+		dockerfileBytes, err = os.ReadFile(resolvedDockerfilePath)
+		if err != nil {
+			return TrimErrPathPrefix(err, root)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Dockerfile %q: %w", dockerfilePath, err)
+	}
+	if syntaxRef, _, _, ok := dockerfileparser.DetectSyntax(dockerfileBytes); ok && !isKnownDockerfileSyntaxFrontend(syntaxRef) {
+		return nil, fmt.Errorf("dockerBuild syntax frontend %q is unsupported in hard-cutover path", syntaxRef)
+	}
+	mainContext := llbtodagger.DockerfileMainContextSentinelState()
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -671,155 +548,241 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	platform := container.Platform
-
-	opts := map[string]string{
-		"platform":      platform.Format(),
-		"contextsubdir": contextDir.Dir,
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	if dockerfile != "" {
-		opts["filename"] = filepath.Join(dockerfileDir.Dir, dockerfile)
-	} else {
-		opts["filename"] = filepath.Join(dockerfileDir.Dir, defaultDockerfileName)
-	}
-
-	if target != "" {
-		opts["target"] = target
-	}
-
+	buildArgMap := make(map[string]string, len(buildArgs))
 	for _, buildArg := range buildArgs {
-		opts["build-arg:"+buildArg.Name] = buildArg.Value
+		buildArgMap[buildArg.Name] = buildArg.Value
 	}
-
-	inputs := map[string]*pb.Definition{
-		dockerui.DefaultLocalNameContext:    contextDir.LLB,
-		dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
-	}
-
-	// FIXME: this is a terrible way to pass this around
-	solveCtx := buildkit.WithSecretTranslator(ctx, func(name string, optional bool) (string, error) {
-		llbID, ok := secretNameToLLBID[name]
+	secretIDsByLLBID := make(map[string]*call.ID, len(secrets))
+	returnedSecretMounts := make([]ContainerSecret, 0, len(secrets))
+	for _, secret := range secrets {
+		secretDgst := SecretIDDigest(secret.ID())
+		secretName, ok := secretStore.GetSecretName(secretDgst)
 		if !ok {
-			if optional {
-				// set to a purposely invalid name, so we don't get something else
-				return "notfound:" + identity.NewID(), nil
-			}
-			return "", fmt.Errorf("secret not found: %s", name)
+			return nil, fmt.Errorf("secret not found: %s", secretDgst)
 		}
-		return llbID, nil
-	})
-
-	if sshSocket != nil {
-		solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
-			return sshSocket.LLBID(), nil
+		if secretName == "" {
+			return nil, fmt.Errorf("secret %s has no name and cannot be referenced from Dockerfile secret id", secretDgst)
+		}
+		if existing, found := secretIDsByLLBID[secretName]; found {
+			if existing.Digest() != secret.ID().Digest() {
+				return nil, fmt.Errorf("multiple secrets provided for dockerBuild secret id %q", secretName)
+			}
+			continue
+		}
+		secretIDsByLLBID[secretName] = secret.ID()
+		returnedSecretMounts = append(returnedSecretMounts, ContainerSecret{
+			Secret:    secret,
+			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
 		})
 	}
+	sshSocketIDsByLLBID := map[string]*call.ID{}
+	if sshSocketID != nil {
+		sshSocketIDsByLLBID[""] = sshSocketID
+	}
 
-	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
+	convertOpt := dockerfile2llb.ConvertOpt{
+		Config: dockerui.Config{
+			BuildArgs: buildArgMap,
+			Target:    target,
+		},
+		MainContext:    &mainContext,
+		TargetPlatform: ptr(container.Platform.Spec()),
+		MetaResolver:   bk,
+	}
+
+	st, img, _, _, err := dockerfile2llb.Dockerfile2LLB(ctx, dockerfileBytes, convertOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert Dockerfile to LLB: %w", err)
+	}
+	def, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Dockerfile LLB: %w", err)
+	}
+	containerID, err := llbtodagger.DefinitionToIDWithOptions(def.ToPB(), img, llbtodagger.DefinitionToIDOptions{
+		MainContextDirectoryID: contextDirID,
+		SecretIDsByLLBID:       secretIDsByLLBID,
+		SSHSocketIDsByLLBID:    sshSocketIDsByLLBID,
+		NoInit:                 noInit,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
-
-	bkref, err := res.SingleRef()
+	loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
 	}
+	loadedContainer := loadedContainerRes.Self()
+	if loadedContainer == nil {
+		return nil, fmt.Errorf("failed to load container from converted ID: nil container")
+	}
+	loadedContainerCopy := *loadedContainer
+	loadedContainerCopy.Secrets = slices.Clone(loadedContainerCopy.Secrets)
+	loadedContainer = &loadedContainerCopy
+	loadedContainer.Secrets = append(loadedContainer.Secrets, returnedSecretMounts...)
 
-	var st llb.State
-	if bkref == nil {
-		st = llb.Scratch()
-	} else {
-		st, err = bkref.ToState()
+	// TODO: remove commented code once fully replaced, just a reference on how it used to work for now
+	/*
+		if sshSocket != nil {
+			solveCtx = buildkit.WithSSHTranslator(solveCtx, func(id string, optional bool) (string, error) {
+				return sshSocket.LLBID(), nil
+			})
+		}
+	*/
+
+	// TODO: remove commented code once fully replaced, just a reference on how it used to work for now
+	/*
+		// set image ref to empty string
+		container.ImageRef = ""
+
+		opts := map[string]string{
+			"platform":      platform.Format(),
+			"contextsubdir": contextDir.Dir,
+		}
+
+		if dockerfile != "" {
+			opts["filename"] = filepath.Join(dockerfileDir.Dir, dockerfile)
+		} else {
+			opts["filename"] = filepath.Join(dockerfileDir.Dir, defaultDockerfileName)
+		}
+
+		if target != "" {
+			opts["target"] = target
+		}
+
+		for _, buildArg := range buildArgs {
+			opts["build-arg:"+buildArg.Name] = buildArg.Value
+		}
+
+		inputs := map[string]*pb.Definition{
+			dockerui.DefaultLocalNameContext:    contextDir.LLB,
+			dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
+		}
+
+		res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
+			Frontend:       "dockerfile.v0",
+			FrontendOpt:    opts,
+			FrontendInputs: inputs,
+		})
 		if err != nil {
 			return nil, err
 		}
-	}
+	*/
 
-	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-
-	dag, err := buildkit.DefToDAG(def.ToPB())
-	if err != nil {
-		return nil, err
-	}
-	if err := dag.Walk(func(dag *buildkit.OpDAG) error {
-		// forcibly inject our trace context into each op, since st.Marshal
-		// isn't strong enough to do so
-		desc := dag.Metadata.Description
-		if desc == nil {
-			desc = map[string]string{}
-		}
-		if desc["traceparent"] == "" {
-			telemetry.Propagator.Inject(ctx,
-				propagation.MapCarrier(desc))
-		}
-
-		execOp, isExecOp := dag.AsExec()
-		if noInit && isExecOp {
-			execMD, ok, err := buildkit.ExecutionMetadataFromDescription(desc)
-			if err != nil {
-				return fmt.Errorf("failed to get execution metadata: %w", err)
-			}
-			if !ok {
-				execMD = &buildkit.ExecutionMetadata{}
-			}
-			execMD.NoInit = true
-			if err := buildkit.AddExecutionMetadataToDescription(desc, execMD); err != nil {
-				return fmt.Errorf("failed to add execution metadata: %w", err)
-			}
-			execOp.Meta.Env = append(execOp.Meta.Env,
-				buildkit.DaggerNoInitEnv+"=true",
-			)
-		}
-		dag.Metadata.Description = desc
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("walk DAG: %w", err)
-	}
-	newDef, err := dag.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	if newDef != nil {
-		newDef.Source = nil
-	}
-
-	rootfsDir := NewDirectory(newDef, "/", container.Platform, container.Services)
-	container.FS, err = UpdatedRootFS(ctx, rootfsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
-	}
-
-	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
-	if found {
-		var imgSpec dockerspec.DockerOCIImage
-		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+	// TODO: remove commented code once fully replaced, just a reference on how it used to work for now
+	/*
+		bkref, err := res.SingleRef()
+		if err != nil {
 			return nil, err
 		}
 
-		container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	}
+		var st llb.State
+		if bkref == nil {
+			st = llb.Scratch()
+		} else {
+			st, err = bkref.ToState()
+			if err != nil {
+				return nil, err
+			}
+		}
 
-	return container, nil
+		def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
+		if err != nil {
+			return nil, err
+		}
+
+		dag, err := buildkit.DefToDAG(def.ToPB())
+		if err != nil {
+			return nil, err
+		}
+		if err := dag.Walk(func(dag *buildkit.OpDAG) error {
+			// forcibly inject our trace context into each op, since st.Marshal
+			// isn't strong enough to do so
+			desc := dag.Metadata.Description
+			if desc == nil {
+				desc = map[string]string{}
+			}
+			if desc["traceparent"] == "" {
+				telemetry.Propagator.Inject(ctx,
+					propagation.MapCarrier(desc))
+			}
+
+			execOp, isExecOp := dag.AsExec()
+			if noInit && isExecOp {
+				execMD, ok, err := buildkit.ExecutionMetadataFromDescription(desc)
+				if err != nil {
+					return fmt.Errorf("failed to get execution metadata: %w", err)
+				}
+				if !ok {
+					execMD = &buildkit.ExecutionMetadata{}
+				}
+				execMD.NoInit = true
+				if err := buildkit.AddExecutionMetadataToDescription(desc, execMD); err != nil {
+					return fmt.Errorf("failed to add execution metadata: %w", err)
+				}
+				execOp.Meta.Env = append(execOp.Meta.Env,
+					buildkit.DaggerNoInitEnv+"=true",
+				)
+			}
+			dag.Metadata.Description = desc
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("walk DAG: %w", err)
+		}
+		newDef, err := dag.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		if newDef != nil {
+			newDef.Source = nil
+		}
+
+		rootfsDir := NewDirectory(newDef, "/", container.Platform, container.Services)
+		container.FS, err = UpdatedRootFS(ctx, rootfsDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
+		}
+
+		cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
+		if found {
+			var imgSpec dockerspec.DockerOCIImage
+			if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+				return nil, err
+			}
+
+			container.Config = mergeImageConfig(container.Config, imgSpec.Config)
+		}
+	*/
+
+	return loadedContainer, nil
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	if container.FS != nil {
 		return container.FS.Self(), nil
 	}
-	return NewScratchDirectoryDagOp(ctx, container.Platform)
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	var rootfs dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &rootfs, dagql.Selector{
+		Field: "directory",
+	}); err != nil {
+		return nil, err
+	}
+
+	return rootfs.Self(), nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResult[*Directory]) (*Container, error) {
-	container = container.Clone()
 	container.FS = &dir
 
 	// set image ref to empty string
@@ -828,15 +791,20 @@ func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResu
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithDirectory(
 	ctx context.Context,
 	subdir string,
 	src dagql.ObjectResult[*Directory],
 	filter CopyFilter,
 	owner string,
+	permissions *int,
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
+	requiredSourcePath string,
+	destPathHintIsDirectory bool,
+	copySourcePathContentsWhenDir bool,
 ) (*Container, error) {
-	container = container.Clone()
-
 	mnt, mntSubpath, err := locatePath(container, subdir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", subdir, err)
@@ -854,7 +822,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithDirectory(ctx, subdir, src, filter, owner)
+		return container.WithDirectory(ctx, subdir, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
 	}
 
 	args := []dagql.NamedInput{
@@ -878,6 +846,24 @@ func (container *Container) WithDirectory(
 		}
 		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	}
+	if permissions != nil {
+		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
+	}
+	if doNotCreateDestPath {
+		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
+	}
+	if attemptUnpackDockerCompatibility {
+		args = append(args, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
+	}
+	if requiredSourcePath != "" {
+		args = append(args, dagql.NamedInput{Name: "requiredSourcePath", Value: dagql.String(requiredSourcePath)})
+	}
+	if destPathHintIsDirectory {
+		args = append(args, dagql.NamedInput{Name: "destPathHintIsDirectory", Value: dagql.Boolean(true)})
+	}
+	if copySourcePathContentsWhenDir {
+		args = append(args, dagql.NamedInput{Name: "copySourcePathContentsWhenDir", Value: dagql.Boolean(true)})
 	}
 
 	//nolint:dupl
@@ -924,6 +910,7 @@ func (container *Container) WithDirectory(
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithFile(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -931,9 +918,9 @@ func (container *Container) WithFile(
 	src dagql.ObjectResult[*File],
 	permissions *int,
 	owner string,
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
 ) (*Container, error) {
-	container = container.Clone()
-
 	mnt, mntSubpath, err := locatePath(container, destPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", destPath, err)
@@ -946,7 +933,7 @@ func (container *Container) WithFile(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithFile(ctx, srv, destPath, src, permissions, owner)
+		return container.WithFile(ctx, srv, destPath, src, permissions, owner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
 	}
 
 	args := []dagql.NamedInput{
@@ -964,6 +951,12 @@ func (container *Container) WithFile(
 		}
 		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	}
+	if doNotCreateDestPath {
+		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
+	}
+	if attemptUnpackDockerCompatibility {
+		args = append(args, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
 	}
 
 	//nolint:dupl
@@ -1008,9 +1001,8 @@ func (container *Container) WithFile(
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutPaths(ctx context.Context, srv *dagql.Server, destPaths ...string) (*Container, error) {
-	container = container.Clone()
-
 	for _, destPath := range destPaths {
 		var err error
 		container, err = container.withoutPath(ctx, srv, destPath)
@@ -1083,6 +1075,7 @@ func (container *Container) withoutPath(
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithFiles(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -1091,12 +1084,10 @@ func (container *Container) WithFiles(
 	permissions *int,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	for _, file := range src {
 		destPath := filepath.Join(destDir, filepath.Base(file.Self().File))
 		var err error
-		container, err = container.WithFile(ctx, srv, destPath, file, permissions, owner)
+		container, err = container.WithFile(ctx, srv, destPath, file, permissions, owner, false, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add file %s: %w", destPath, err)
 		}
@@ -1105,6 +1096,7 @@ func (container *Container) WithFiles(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithNewFile(
 	ctx context.Context,
 	dest string,
@@ -1112,8 +1104,6 @@ func (container *Container) WithNewFile(
 	permissions fs.FileMode,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	_, fileName := filepath.Split(filepath.Clean(dest))
 
 	srv, err := CurrentDagqlServer(ctx)
@@ -1137,12 +1127,11 @@ func (container *Container) WithNewFile(
 		return nil, fmt.Errorf("failed to create new file %s: %w", dest, err)
 	}
 
-	return container.WithFile(ctx, srv, dest, newFile, nil, owner)
+	return container.WithFile(ctx, srv, dest, newFile, nil, owner, false, false)
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkPath string) (*Container, error) {
-	container = container.Clone()
-
 	mnt, mntSubpath, err := locatePath(container, linkPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate path %s: %w", linkPath, err)
@@ -1204,6 +1193,7 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 	}
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedDirectory(
 	ctx context.Context,
 	target string,
@@ -1211,8 +1201,6 @@ func (container *Container) WithMountedDirectory(
 	owner string,
 	readonly bool,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var err error
@@ -1235,6 +1223,7 @@ func (container *Container) WithMountedDirectory(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedFile(
 	ctx context.Context,
 	target string,
@@ -1242,8 +1231,6 @@ func (container *Container) WithMountedFile(
 	owner string,
 	readonly bool,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var err error
@@ -1266,18 +1253,15 @@ func (container *Container) WithMountedFile(
 	return container, nil
 }
 
-var SeenCacheKeys = new(sync.Map)
-
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedCache(
 	ctx context.Context,
 	target string,
-	cache *CacheVolume,
+	cache dagql.ObjectResult[*CacheVolume],
 	source dagql.ObjectResult[*Directory],
 	sharingMode CacheSharingMode,
 	owner string,
 ) (*Container, error) {
-	container = container.Clone()
-
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -1289,12 +1273,9 @@ func (container *Container) WithMountedCache(
 		sharingMode = CacheSharingModeShared
 	}
 
-	mount := ContainerMount{
-		Target: target,
-		CacheSource: &CacheMountSource{
-			ID:          cache.Sum(),
-			SharingMode: sharingMode,
-		},
+	cacheSelf := cache.Self()
+	if cacheSelf == nil {
+		return nil, errors.New("cache volume is nil")
 	}
 
 	if owner != "" {
@@ -1309,11 +1290,30 @@ func (container *Container) WithMountedCache(
 				return nil, err
 			}
 		}
-		var err error
+	}
+	if owner != "" && source.Self() != nil {
 		source, err = container.chownDir(ctx, source, owner)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	cacheMountID := cacheSelf.Sum()
+	if source.Self() != nil {
+		sourceDigest, err := source.Self().Digest(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cache source digest: %w", err)
+		}
+		cacheMountID += ":" + sourceDigest
+	}
+
+	mount := ContainerMount{
+		Target: target,
+		CacheSource: &CacheMountSource{
+			Volume:      cache,
+			ID:          cacheMountID,
+			SharingMode: sharingMode,
+		},
 	}
 	mount.CacheSource.Base = &source
 	container.Mounts = container.Mounts.With(mount)
@@ -1321,14 +1321,11 @@ func (container *Container) WithMountedCache(
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	SeenCacheKeys.Store(cache.Keys[0], struct{}{})
-
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	container.Mounts = container.Mounts.With(ContainerMount{
@@ -1344,6 +1341,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string, 
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedSecret(
 	ctx context.Context,
 	target string,
@@ -1351,8 +1349,6 @@ func (container *Container) WithMountedSecret(
 	owner string,
 	mode fs.FileMode,
 ) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	ownership, err := container.ownership(ctx, owner)
@@ -1373,9 +1369,8 @@ func (container *Container) WithMountedSecret(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutMount(ctx context.Context, target string) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	var found bool
@@ -1390,6 +1385,20 @@ func (container *Container) WithoutMount(ctx context.Context, target string) (*C
 
 	if found {
 		container.Mounts = slices.Delete(container.Mounts, foundIdx, foundIdx+1)
+	}
+
+	var secretFound bool
+	var secretFoundIdx int
+	for i := len(container.Secrets) - 1; i >= 0; i-- {
+		if container.Secrets[i].MountPath == target {
+			secretFound = true
+			secretFoundIdx = i
+			break
+		}
+	}
+
+	if secretFound {
+		container.Secrets = slices.Delete(container.Secrets, secretFoundIdx, secretFoundIdx+1)
 	}
 
 	// set image ref to empty string
@@ -1407,9 +1416,8 @@ func (container *Container) MountTargets(ctx context.Context) ([]string, error) 
 	return mounts, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket, owner string) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	ownership, err := container.ownership(ctx, owner)
@@ -1442,9 +1450,8 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutUnixSocket(ctx context.Context, target string) (*Container, error) {
-	container = container.Clone()
-
 	target = absPath(container.Config.WorkingDir, target)
 
 	for i, sock := range container.Sockets {
@@ -1460,13 +1467,12 @@ func (container *Container) WithoutUnixSocket(ctx context.Context, target string
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithSecretVariable(
 	ctx context.Context,
 	name string,
 	secret dagql.ObjectResult[*Secret],
 ) (*Container, error) {
-	container = container.Clone()
-
 	container.Secrets = append(container.Secrets, ContainerSecret{
 		Secret:  secret,
 		EnvName: name,
@@ -1478,9 +1484,8 @@ func (container *Container) WithSecretVariable(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutSecretVariable(ctx context.Context, name string) (*Container, error) {
-	container = container.Clone()
-
 	for i, secret := range container.Secrets {
 		if secret.EnvName == name {
 			container.Secrets = slices.Delete(container.Secrets, i, i+1)
@@ -1494,30 +1499,52 @@ func (container *Container) WithoutSecretVariable(ctx context.Context, name stri
 	return container, nil
 }
 
-func (container *Container) Directory(ctx context.Context, dirPath string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, dirPath string) (dagql.ObjectResult[*Directory], error) {
+	var dir dagql.ObjectResult[*Directory]
+
 	mnt, subpath, err := locatePath(container, dirPath)
 	if err != nil {
-		return nil, err
+		return dir, err
 	}
 
-	var dir *Directory
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dir, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	directorySelector := dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(subpath)},
+		},
+	}
+
 	switch {
 	case mnt == nil: // rootfs
+		rootfs := container.FS
 		if container.FS == nil {
-			dir, err = NewScratchDirectoryDagOp(ctx, container.Platform)
+			var scratchRootfs dagql.ObjectResult[*Directory]
+			err = srv.Select(ctx, srv.Root(), &scratchRootfs, dagql.Selector{
+				Field: "directory",
+			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to create scratch directory: %w", err)
+				return dir, err
 			}
-			dir, err = dir.Directory(ctx, subpath)
-		} else {
-			dir, err = container.FS.Self().Directory(ctx, subpath)
+			rootfs = &scratchRootfs
 		}
+		if subpath == "" || subpath == "." {
+			return *rootfs, nil
+		}
+		err = srv.Select(ctx, *rootfs, &dir, directorySelector)
 	case mnt.DirectorySource != nil: // mounted directory
-		dir, err = mnt.DirectorySource.Self().Directory(ctx, subpath)
+		if subpath == "" || subpath == "." {
+			return *mnt.DirectorySource, nil
+		}
+		err = srv.Select(ctx, *mnt.DirectorySource, &dir, directorySelector)
 	case mnt.FileSource != nil: // mounted file
-		return nil, fmt.Errorf("path %s is a file, not a directory", dirPath)
+		return dir, fmt.Errorf("path %s is a file, not a directory", dirPath)
 	default:
-		return nil, fmt.Errorf("invalid path %s in container mounts", dirPath)
+		return dir, fmt.Errorf("invalid path %s in container mounts", dirPath)
 	}
 
 	switch {
@@ -1525,32 +1552,53 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 		return dir, nil
 	case errors.As(err, &notADirectoryError{}):
 		// fix the error message to use dirPath rather than subpath
-		return nil, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", dirPath)}
+		return dir, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", dirPath)}
 	default:
-		return nil, err
+		return dir, err
 	}
 }
 
-func (container *Container) File(ctx context.Context, filePath string) (*File, error) {
+func (container *Container) File(ctx context.Context, filePath string) (dagql.ObjectResult[*File], error) {
+	var f dagql.ObjectResult[*File]
+
 	mnt, subpath, err := locatePath(container, filePath)
 	if err != nil {
-		return nil, err
+		return f, err
 	}
 
-	var f *File
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return f, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	fileSelector := dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(subpath)},
+		},
+	}
+
 	switch {
 	case mnt == nil: // rootfs
-		if container.FS == nil {
-			return nil, fmt.Errorf("container rootfs is not set")
+		rootfs := container.FS
+		if rootfs == nil {
+			var scratchRootfs dagql.ObjectResult[*Directory]
+			err = srv.Select(ctx, srv.Root(), &scratchRootfs, dagql.Selector{
+				Field: "directory",
+			})
+			if err != nil {
+				return f, err
+			}
+			rootfs = &scratchRootfs
 		}
-		f, err = container.FS.Self().File(ctx, subpath)
+		err = srv.Select(ctx, *rootfs, &f, fileSelector)
 	case mnt.DirectorySource != nil: // mounted directory
-		f, err = mnt.DirectorySource.Self().File(ctx, subpath)
+		err = srv.Select(ctx, *mnt.DirectorySource, &f, fileSelector)
 		err = RestoreErrPath(err, filePath) // preserve the full filePath, rather than subpath
 	case mnt.FileSource != nil: // mounted file
-		return mnt.FileSource.Self(), nil
+		return *mnt.FileSource, nil
 	default:
-		return nil, fmt.Errorf("invalid path %s in container mounts", filePath)
+		return f, fmt.Errorf("invalid path %s in container mounts", filePath)
 	}
 
 	switch {
@@ -1558,9 +1606,9 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 		return f, nil
 	case errors.As(err, &notAFileError{}):
 		// fix the error message to use filePath rather than subpath
-		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", filePath)}
+		return f, notAFileError{fmt.Errorf("path %s is a directory, not a file", filePath)}
 	default:
-		return nil, err
+		return f, err
 	}
 }
 
@@ -1693,8 +1741,8 @@ func (container *Container) ImageConfig(ctx context.Context) (dockerspec.DockerO
 	return container.Config, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func(dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig) (*Container, error) {
-	container = container.Clone()
 	container.Config = updateFn(container.Config)
 	return container, nil
 }
@@ -1703,44 +1751,10 @@ type ContainerGPUOpts struct {
 	Devices []string
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpts) (*Container, error) {
-	container = container.Clone()
 	container.EnabledGPUs = gpuOpts.Devices
 	return container, nil
-}
-
-func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	if container == nil {
-		return nil, nil
-	}
-	if container.FS == nil {
-		return nil, nil
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	st, err := container.FSState()
-	if err != nil {
-		return nil, err
-	}
-
-	def, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	return bk.Solve(ctx, bkgw.SolveRequest{
-		Evaluate:   true,
-		Definition: def.ToPB(),
-	})
 }
 
 func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
@@ -1762,7 +1776,18 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 	var exists bool
 	switch {
 	case mnt == nil: // rootfs
-		err = srv.Select(ctx, container.FS, &exists, dagql.Selector{
+		rootfs := container.FS
+		if rootfs == nil {
+			var scratchRootfs dagql.ObjectResult[*Directory]
+			err = srv.Select(ctx, srv.Root(), &scratchRootfs, dagql.Selector{
+				Field: "directory",
+			})
+			if err != nil {
+				return false, err
+			}
+			rootfs = &scratchRootfs
+		}
+		err = srv.Select(ctx, *rootfs, &exists, dagql.Selector{
 			Field: "exists",
 			Args:  args,
 		})
@@ -1808,7 +1833,18 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 	var stat *Stat
 	switch {
 	case mnt == nil: // rootfs
-		err = srv.Select(ctx, container.FS, &stat, dagql.Selector{
+		rootfs := container.FS
+		if rootfs == nil {
+			var scratchRootfs dagql.ObjectResult[*Directory]
+			err = srv.Select(ctx, srv.Root(), &scratchRootfs, dagql.Selector{
+				Field: "directory",
+			})
+			if err != nil {
+				return nil, err
+			}
+			rootfs = &scratchRootfs
+		}
+		err = srv.Select(ctx, *rootfs, &stat, dagql.Selector{
 			Field: "stat",
 			Args:  args,
 		})
@@ -1840,9 +1876,8 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 	return stat, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithAnnotation(ctx context.Context, key, value string) (*Container, error) {
-	container = container.Clone()
-
 	container.Annotations = append(container.Annotations, containerutil.ContainerAnnotation{
 		Key:   key,
 		Value: value,
@@ -1854,9 +1889,8 @@ func (container *Container) WithAnnotation(ctx context.Context, key, value strin
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutAnnotation(ctx context.Context, name string) (*Container, error) {
-	container = container.Clone()
-
 	for i, annotation := range container.Annotations {
 		if annotation.Key == name {
 			container.Annotations = slices.Delete(container.Annotations, i, i+1)
@@ -1948,12 +1982,7 @@ func (container *Container) AsTarball(
 		return nil, err
 	}
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group found")
-	}
-
-	bkref, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
+	bkref, err := query.BuildkitCache().New(ctx, nil, nil,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("dagop.fs container.asTarball "+filePath),
@@ -1966,7 +1995,7 @@ func (container *Container) AsTarball(
 			bkref.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	err = MountRef(ctx, bkref, bkSessionGroup, func(out string, _ *mount.Mount) error {
+	err = MountRef(ctx, bkref, nil, func(out string, _ *mount.Mount) error {
 		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, filePath), inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
 		if err != nil {
 			return fmt.Errorf("container image to tarball file conversion failed: %w", err)
@@ -1977,13 +2006,16 @@ func (container *Container) AsTarball(
 		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
 
-	f = NewFile(nil, filePath, query.Platform(), nil)
 	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return nil, err
 	}
 	bkref = nil
-	f.Result = snap
+	f = &File{
+		File:     filePath,
+		Platform: query.Platform(),
+		Snapshot: snap,
+	}
 	return f, nil
 }
 
@@ -2041,7 +2073,7 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buil
 		}
 
 		eg.Go(func() error {
-			fsRef, err := getRefOrEvaluate(ctx, rootFS)
+			fsRef, err := rootFS.getSnapshot(ctx)
 			if err != nil {
 				return err
 			}
@@ -2118,8 +2150,6 @@ func (container *Container) Import(
 	store := query.OCIStore()
 	lm := query.LeaseManager()
 
-	container = container.Clone()
-
 	var release func(context.Context) error
 	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
 		// override outer ctx with release ctx and set release
@@ -2148,7 +2178,17 @@ func (container *Container) Import(
 		return nil, fmt.Errorf("recover: %w", err)
 	}
 
-	return container.FromInternal(ctx, *manifestDesc)
+	ctr, err := container.FromInternal(ctx, *manifestDesc)
+	if err != nil {
+		return nil, err
+	}
+	if ctr.FS == nil || ctr.FS.Self() == nil {
+		return nil, fmt.Errorf("missing rootfs directory for import")
+	}
+	if err := ctr.FS.Self().Evaluate(ctx); err != nil {
+		return nil, fmt.Errorf("evaluate imported rootfs: %w", err)
+	}
+	return ctr, nil
 }
 
 // FromInternal creates a Container from an OCI image descriptor, loading the
@@ -2166,36 +2206,57 @@ func (container *Container) FromInternal(
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	// NB: the repository portion of this ref doesn't actually matter, but it's
-	// pleasant to see something recognizable.
-	dummyRepo := "dagger/import"
-
-	st := llb.OCILayout(
-		fmt.Sprintf("%s@%s", dummyRepo, desc.Digest),
-		llb.OCIStore("", buildkit.OCIStoreName),
-		llb.Platform(container.Platform.Spec()),
-		buildkit.WithTracePropagation(ctx),
-	)
-
-	execDef, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
+	hsm, err := containersource.NewSource(containersource.SourceOpt{
+		Snapshotter:   bk.Worker.Snapshotter,
+		ContentStore:  bk.Worker.ContentStore(),
+		ImageStore:    bk.Worker.ImageStore,
+		CacheAccessor: query.BuildkitCache(),
+		RegistryHosts: bk.Worker.RegistryHosts,
+		ResolverType:  containersource.ResolverTypeOCILayout,
+		LeaseManager:  bk.Worker.LeaseManager(),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
+		return nil, err
 	}
 
-	container = container.Clone()
-	rootfsDir := NewDirectory(execDef.ToPB(), "/", container.Platform, container.Services)
-	container.FS, err = UpdatedRootFS(ctx, rootfsDir)
+	refStr := fmt.Sprintf("dagger/import@%s", desc.Digest)
+	attrs := map[string]string{
+		pb.AttrOCILayoutStoreID:   buildkit.OCIStoreName,
+		pb.AttrOCILayoutSessionID: bk.ID(),
+	}
+	id, err := hsm.Identifier(refStr, attrs, &pb.Platform{
+		Architecture: container.Platform.Architecture,
+		OS:           container.Platform.OS,
+		Variant:      container.Platform.Variant,
+		OSVersion:    container.Platform.OSVersion,
+		OSFeatures:   container.Platform.OSFeatures,
+	})
+	if err != nil {
+		return nil, err
+	}
+	src, err := hsm.Resolve(ctx, id, query.BuildkitSession())
+	if err != nil {
+		return nil, err
+	}
+
+	rootfsDir := &Directory{
+		Dir:       "/",
+		Platform:  container.Platform,
+		Services:  container.Services,
+		LazyState: NewLazyState(),
+	}
+	container.FS, err = UpdatedRootFS(ctx, container, rootfsDir)
 	if err != nil {
 		return nil, fmt.Errorf("updated rootfs: %w", err)
 	}
-
-	// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
-	_, err = bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: container.FS.Self().LLB,
-		Evaluate:   true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("solve: %w", err)
+	rootfsDir.LazyInit = func(ctx context.Context) error {
+		bkSessionGroup := buildkit.NewSessionGroup(bk.ID())
+		ref, err := src.Snapshot(ctx, bkSessionGroup)
+		if err != nil {
+			return err
+		}
+		rootfsDir.setSnapshot(ref)
+		return nil
 	}
 
 	manifestBlob, err := content.ReadBlob(ctx, query.OCIStore(), desc)
@@ -2221,9 +2282,8 @@ func (container *Container) FromInternal(
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExposedPort(port Port) (*Container, error) {
-	container = container.Clone()
-
 	// replace existing port to avoid duplicates
 	gotOne := false
 
@@ -2249,9 +2309,8 @@ func (container *Container) WithExposedPort(port Port) (*Container, error) {
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutExposedPort(port int, protocol NetworkProtocol) (*Container, error) {
-	container = container.Clone()
-
 	filtered := []Port{}
 	filteredOCI := map[string]struct{}{}
 	for _, p := range container.Ports {
@@ -2268,9 +2327,8 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.ObjectResult[*Service], alias string) (*Container, error) {
-	container = container.Clone()
-
 	host, err := svc.Self().Hostname(ctx, svc.ID())
 	if err != nil {
 		return nil, err
@@ -2701,40 +2759,22 @@ func (*TerminalLegacy) TypeDescription() string {
 	return "An interactive terminal that clients can connect to."
 }
 
-func (*TerminalLegacy) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (*TerminalLegacy) Evaluate(ctx context.Context) error {
+	return nil
+}
+
+func (terminal *TerminalLegacy) Sync(ctx context.Context) error {
+	return terminal.Evaluate(ctx)
 }
 
 // UpdatedRootFS returns an updated rootfs for a given directory after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
+// The returned ObjectResult uses owner.OpID as the operation ID base.
 func UpdatedRootFS(
 	ctx context.Context,
+	owner *Container,
 	dir *Directory,
 ) (*dagql.ObjectResult[*Directory], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curSrv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
-	}
-	fieldSpec, ok := objType.FieldSpec("rootfs", view)
-	if !ok {
-		return nil, fmt.Errorf("field spec for rootfs not found in object type Container")
-	}
-	astType := fieldSpec.Type.Type()
-	rootfsID := curID.Append(
-		astType, "rootfs",
-		call.WithView(view),
-		call.WithModule(fieldSpec.Module))
-	updatedRootfs, err := dagql.NewObjectResultForID(dir, curSrv, rootfsID)
+	updatedRootfs, err := updatedContainerSelectionResult(ctx, owner, dir, "rootfs", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2742,40 +2782,15 @@ func UpdatedRootFS(
 }
 
 // updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
-//
-//nolint:dupl
+// The returned ObjectResult uses owner.OpID as the operation ID base.
 func updatedDirMount(
 	ctx context.Context,
+	owner *Container,
 	dir *Directory,
 	mntTarget string,
 ) (*dagql.ObjectResult[*Directory], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curSrv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
-	}
-	fieldSpec, ok := objType.FieldSpec("directory", view)
-	if !ok {
-		return nil, fmt.Errorf("field spec for directory not found in object type Container")
-	}
-	astType := fieldSpec.Type.Type()
 	dirIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	dirID := curID.Append(
-		astType, "directory",
-		call.WithView(view),
-		call.WithModule(fieldSpec.Module),
-		call.WithArgs(dirIDPathArg))
-	updatedDirMnt, err := dagql.NewObjectResultForID(dir, curSrv, dirID)
+	updatedDirMnt, err := updatedContainerSelectionResult(ctx, owner, dir, "directory", []*call.Argument{dirIDPathArg})
 	if err != nil {
 		return nil, err
 	}
@@ -2783,42 +2798,66 @@ func updatedDirMount(
 }
 
 // updatedFileMount returns an updated mount for a given file after an exec/import/etc.
-// The returned ObjectResult uses the ID of the current operation.
-//
-//nolint:dupl
+// The returned ObjectResult uses owner.OpID as the operation ID base.
 func updatedFileMount(
 	ctx context.Context,
+	owner *Container,
 	file *File,
 	mntTarget string,
 ) (*dagql.ObjectResult[*File], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curSrv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curID := dagql.CurrentID(ctx)
-	view := curID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return nil, fmt.Errorf("object type Container not found in server")
-	}
-	fieldSpec, ok := objType.FieldSpec("file", view)
-	if !ok {
-		return nil, fmt.Errorf("field spec for file not found in object type Container")
-	}
-	astType := fieldSpec.Type.Type()
 	fileIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	fileID := curID.Append(
-		astType, "file",
-		call.WithView(view),
-		call.WithModule(fieldSpec.Module),
-		call.WithArgs(fileIDPathArg))
-	updatedFileMnt, err := dagql.NewObjectResultForID(file, curSrv, fileID)
+	updatedFileMnt, err := updatedContainerSelectionResult(ctx, owner, file, "file", []*call.Argument{fileIDPathArg})
 	if err != nil {
 		return nil, err
 	}
 	return &updatedFileMnt, nil
+}
+
+func updatedContainerSelectionResult[T dagql.Typed](
+	ctx context.Context,
+	owner *Container,
+	val T,
+	fieldName string,
+	args []*call.Argument,
+) (dagql.ObjectResult[T], error) {
+	if owner == nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("missing container owner for %s selection", fieldName)
+	}
+	if owner.OpID == nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("missing operation ID on container for %s selection", fieldName)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return dagql.ObjectResult[T]{}, err
+	}
+	curSrv, err := query.Server.Server(ctx)
+	if err != nil {
+		return dagql.ObjectResult[T]{}, err
+	}
+	view := owner.OpID.View()
+	objType, ok := curSrv.ObjectType("Container")
+	if !ok {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("object type Container not found in server")
+	}
+	fieldSpec, ok := objType.FieldSpec(fieldName, view)
+	if !ok {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("field spec for %s not found in object type Container", fieldName)
+	}
+	newID := owner.OpID.Append(
+		fieldSpec.Type.Type(),
+		fieldName,
+		call.WithView(view),
+		call.WithArgs(args...),
+	)
+	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, newID)
+	if err != nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("decode %s input args: %w", fieldName, err)
+	}
+	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
+	if err != nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("resolve %s identity: %w", fieldName, err)
+	}
+	newID = newID.With(identityOpt)
+	return dagql.NewObjectResultForID(val, curSrv, newID)
 }

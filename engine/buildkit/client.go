@@ -196,6 +196,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	if v := SSHTranslatorFromContext(ctx); v != nil {
 		gw.sshTranslator = v
 	}
+
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
 		return nil, WrapError(ctx, err, c)

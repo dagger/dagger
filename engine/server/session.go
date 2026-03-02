@@ -405,15 +405,27 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	errs = errors.Join(errs, sess.analytics.Close())
 
 	beforeDagqlEntries := srv.baseDagqlCache.Size()
+	beforeDagqlStats := srv.baseDagqlCache.EntryStats()
 	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
 		slog.Error("error releasing dagql cache", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
 	}
 	afterDagqlEntries := srv.baseDagqlCache.Size()
+	afterDagqlStats := srv.baseDagqlCache.EntryStats()
 	if afterDagqlEntries != beforeDagqlEntries {
-		slog.Debug("released dagql cache refs for session", "beforeEntries", beforeDagqlEntries, "afterEntries", afterDagqlEntries)
+		slog.Debug(
+			"released dagql cache refs for session",
+			"beforeEntries", beforeDagqlEntries,
+			"afterEntries", afterDagqlEntries,
+			"beforeRetainedCalls", beforeDagqlStats.RetainedCalls,
+			"afterRetainedCalls", afterDagqlStats.RetainedCalls,
+		)
 	} else {
-		slog.Debug("session dagql cache release did not change base cache size", "entries", afterDagqlEntries)
+		slog.Debug(
+			"session dagql cache release did not change base cache size",
+			"entries", afterDagqlEntries,
+			"retainedCalls", afterDagqlStats.RetainedCalls,
+		)
 	}
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
@@ -437,6 +449,10 @@ type ClientInitOpts struct {
 	// If the client is running from a function in a module, this is the encoded dagQL ID
 	// of that module.
 	EncodedModuleID string
+
+	// If the client is running from a function in a module, this is the encoded
+	// content-scoped module dagQL ID.
+	EncodedContentModuleID string
 
 	// If the client is running from a function in a module, this is the encoded function call
 	// metadata (of type core.FunctionCall)
@@ -638,7 +654,7 @@ func (srv *Server) initializeDaggerClient(
 		}
 		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
 		if err != nil {
-			return fmt.Errorf("failed to load module: %w", err)
+			return fmt.Errorf("failed to load module during client init: %w", err)
 		}
 		client.mod = modInst.Self()
 
@@ -975,11 +991,12 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			AllowedLLMModules: allowedLLMModules,
 			EagerRuntime:      eagerRuntime,
 		},
-		CallID:              execMD.CallID,
-		CallerClientID:      execMD.CallerClientID,
-		EncodedModuleID:     execMD.EncodedModuleID,
-		EncodedFunctionCall: execMD.EncodedFunctionCall,
-		ParentIDs:           execMD.ParentIDs,
+		CallID:                 execMD.CallID,
+		CallerClientID:         execMD.CallerClientID,
+		EncodedModuleID:        execMD.EncodedModuleID,
+		EncodedContentModuleID: execMD.EncodedContentModuleID,
+		EncodedFunctionCall:    execMD.EncodedFunctionCall,
+		ParentIDs:              execMD.ParentIDs,
 	}).ServeHTTP(w, r)
 }
 

@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/engine/server/resource"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
@@ -108,12 +107,12 @@ func (ms *mockServer) EngineLocalCacheEntries(context.Context) (*EngineCacheEntr
 func (ms *mockServer) PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error) {
 	return nil, nil
 }
-func (ms *mockServer) EngineLocalCachePolicy() *bkclient.PruneInfo { return nil }
-func (ms *mockServer) BuildkitCache() bkcache.Manager              { return nil }
-func (ms *mockServer) BuildkitSession() *bksession.Manager         { return nil }
-func (ms *mockServer) Locker() *locker.Locker                      { return nil }
-func (ms *mockServer) SecretSalt() []byte                          { return nil }
-func (ms *mockServer) FileSyncer() *filesync.FileSyncer            { return nil }
+func (ms *mockServer) EngineLocalCachePolicy() *EngineCachePolicy { return nil }
+func (ms *mockServer) BuildkitCache() bkcache.Manager             { return nil }
+func (ms *mockServer) BuildkitSession() *bksession.Manager        { return nil }
+func (ms *mockServer) Locker() *locker.Locker                     { return nil }
+func (ms *mockServer) SecretSalt() []byte                         { return nil }
+func (ms *mockServer) FileSyncer() *filesync.FileSyncer           { return nil }
 func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error) {
 	return nil, nil
 }

@@ -2,8 +2,8 @@ package core
 
 import (
 	"context"
+	"time"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -37,6 +37,20 @@ type EngineCachePruneOptions struct {
 	TargetSpace      string
 }
 
+// EngineCachePolicy is the engine's default local-cache pruning policy.
+//
+// It is core-owned so the query/core API surface does not leak buildkit types.
+type EngineCachePolicy struct {
+	All          bool
+	Filters      []string
+	KeepDuration time.Duration
+
+	MaxUsedSpace  int64
+	TargetSpace   int64
+	ReservedSpace int64
+	MinFreeSpace  int64
+}
+
 func (*EngineCache) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "EngineCache",
@@ -66,8 +80,12 @@ func (*EngineCacheEntrySet) TypeDescription() string {
 	return "A set of cache entries returned by a query to a cache"
 }
 
-func (*EngineCacheEntrySet) Evaluate(context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (*EngineCacheEntrySet) Evaluate(context.Context) error {
+	return nil
+}
+
+func (entrySet *EngineCacheEntrySet) Sync(ctx context.Context) error {
+	return entrySet.Evaluate(ctx)
 }
 
 type EngineCacheEntry struct {

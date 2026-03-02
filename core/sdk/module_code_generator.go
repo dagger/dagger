@@ -27,6 +27,11 @@ func (sdk *codeGeneratorModule) Codegen(
 		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
+	source, err = scopeSourceForSDKOperation(ctx, source, "codegen", dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scope module source for sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)

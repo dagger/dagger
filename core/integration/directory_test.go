@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -291,6 +292,27 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().WithDirectory("/", c.Directory()).Sync(ctx)
 		require.NoError(t, err)
 	})
+}
+
+func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	src := c.Directory().
+		WithNewDirectory("nested", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700}).
+		WithNewFile("nested/file.txt", "nested", dagger.DirectoryWithNewFileOpts{Permissions: 0o600}).
+		WithNewFile("root.txt", "root", dagger.DirectoryWithNewFileOpts{Permissions: 0o640})
+
+	dir := c.Directory().WithDirectory("out", src, dagger.DirectoryWithDirectoryOpts{
+		Permissions: 0o751,
+	})
+
+	ctr := c.Container().From(alpineImage).WithDirectory("/", dir)
+	stdout, err := ctr.WithExec([]string{"sh", "-lc", "stat -c '%a %n' /out /out/nested /out/nested/file.txt /out/root.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "751 /out")
+	require.Contains(t, stdout, "751 /out/nested")
+	require.Contains(t, stdout, "751 /out/nested/file.txt")
+	require.Contains(t, stdout, "751 /out/root.txt")
 }
 
 func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {
@@ -1357,7 +1379,7 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 
 		digest, err := dir.Digest(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", digest)
+		require.Equal(t, "sha256:0e5db88383bce812f795689f5318a2b2f4fde740ef31c2a2365a46368aafddd2", digest)
 	})
 }
 
@@ -2722,16 +2744,18 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 	// if this side-effect were to ever change (i.e. adopting SOURCE_DATE_EPOCH functionality),
 	// then this test will break.
 
+	randID := rand.Text()
+
 	c := connect(ctx, t)
 	d1, err := c.Directory().
 		WithoutFile("non-existent").
-		WithNewFile("file", "data").
+		WithNewFile("file", randID).
 		Sync(ctx)
 	require.NoError(t, err)
 
 	d2, err := c.Directory().
 		WithoutFile("also-non-existent").
-		WithNewFile("file", "data").
+		WithNewFile("file", randID).
 		Sync(ctx)
 	require.NoError(t, err)
 

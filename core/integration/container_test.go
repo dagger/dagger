@@ -191,7 +191,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			{
 				container {
 					from(address: "` + alpineImage + `") {
-						withError(err: "error raised")
+						withError(err: "error raised") {
+							sync
+						}
 					}
 				}
 			}`,
@@ -203,7 +205,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			{
 				container {
 					from(address: "` + alpineImage + `") {
-						withError(err: "")
+						withError(err: "") {
+							sync
+						}
 					}
 				}
 			}`,
@@ -214,7 +218,9 @@ func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
 			_, err := testutil.Query[struct {
 				Container struct {
 					From struct {
-						WithError struct{}
+						WithError struct {
+							Sync string
+						}
 					}
 				}
 			}](t, tc.query, nil)
@@ -1205,6 +1211,61 @@ func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T
 	require.NoError(t, err)
 	require.Equal(t, "some-content", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
 	require.Equal(t, "sub-content", execRes.Container.From.WithMountedDirectory.WithExec.WithExec.Stdout)
+}
+
+func (ContainerSuite) TestWithMountedDirectoryReadOnly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dirRes, err := testutil.QueryWithClient[struct {
+		Directory struct {
+			WithNewFile struct {
+				ID string
+			}
+		}
+	}](c, t,
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					id
+				}
+			}
+		}`, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.ID
+
+	execRes, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					WithExec struct {
+						Stdout   string
+						WithExec struct {
+							Stdout string
+						}
+					}
+				}
+			}
+		}
+	}](c, t,
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "`+alpineImage+`") {
+					withMountedDirectory(path: "/mnt", source: $id, readOnly: true) {
+						withExec(args: ["cat", "/mnt/some-file"]) {
+							stdout
+							withExec(args: ["sh", "-lc", "if touch /mnt/should-fail 2>/dev/null; then echo writable; else echo readonly; fi"]) {
+								stdout
+							}
+						}
+					}
+				}
+			}
+		}`, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, "some-content", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
+	require.Equal(t, "readonly\n", execRes.Container.From.WithMountedDirectory.WithExec.WithExec.Stdout)
 }
 
 func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t *testctx.T) {
@@ -5491,11 +5552,5 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	require.NoError(t, err)
 	require.NoError(t, c2.Close())
 
-	// TODO: once https://github.com/dagger/dagger/issues/8955 is fixed, enable this test, and delete the tests below
-	// require.Equal(t, 1, int(numConnections.Load()), "socket should be accessed exactly once")
-
-	if int(numConnections.Load()) == 1 {
-		t.Errorf("Congrats you fixed the bug; please enable the above test and delete this line")
-	}
-	require.Positive(t, int(numConnections.Load()), "the socket was never connected to")
+	require.Equal(t, 1, int(numConnections.Load()), "socket should be accessed exactly once")
 }

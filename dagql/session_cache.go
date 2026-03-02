@@ -18,9 +18,6 @@ type SessionCache struct {
 	isClosed bool
 
 	seenKeys sync.Map
-
-	// noCacheNext keeps track of keys for which the next cache attempt should bypass the cache.
-	noCacheNext sync.Map
 }
 
 func NewSessionCache(
@@ -36,10 +33,21 @@ type CacheCallOpt interface {
 }
 
 type CacheCallOpts struct {
-	Telemetry TelemetryFunc
+	Telemetry       TelemetryFunc
+	TelemetryPolicy TelemetryPolicy
 }
 
 type TelemetryFunc func(context.Context) (context.Context, func(AnyResult, bool, *error))
+
+// TelemetryPolicy controls when telemetry is emitted for a cache call.
+type TelemetryPolicy int
+
+const (
+	// TelemetryPolicyDefault emits telemetry around first-seen calls.
+	TelemetryPolicyDefault TelemetryPolicy = iota
+	// TelemetryPolicyCacheHitOnly emits telemetry only when the call result is a cache hit.
+	TelemetryPolicyCacheHitOnly
+)
 
 func (o CacheCallOpts) SetCacheCallOpt(opts *CacheCallOpts) {
 	*opts = o
@@ -54,6 +62,12 @@ func (f CacheCallOptFunc) SetCacheCallOpt(opts *CacheCallOpts) {
 func WithTelemetry(telemetry TelemetryFunc) CacheCallOpt {
 	return CacheCallOptFunc(func(opts *CacheCallOpts) {
 		opts.Telemetry = telemetry
+	})
+}
+
+func WithTelemetryPolicy(policy TelemetryPolicy) CacheCallOpt {
+	return CacheCallOptFunc(func(opts *CacheCallOpts) {
+		opts.TelemetryPolicy = policy
 	})
 }
 
@@ -114,61 +128,54 @@ func (c *SessionCache) GetOrInitCall(
 		keys = &c.seenKeys
 	}
 	callKey := key.ID.Digest().String()
-	_, seen := keys.LoadOrStore(callKey, struct{}{})
-	if o.Telemetry != nil && (!seen || key.DoNotCache) {
-		// track keys globally in addition to any local key stores, otherwise we'll
-		// see dupes when e.g. IDs returned out of the "bubble" are loaded
-		c.seenKeys.Store(callKey, struct{}{})
-
-		telemetryCtx, done := o.Telemetry(ctx)
-		defer func() {
-			var cached bool
-			if res != nil {
-				cached = res.HitCache()
-			}
-			done(res, cached, &err)
-		}()
-		ctx = telemetryCtx
-	}
-
-	// If this callKey previously failed, force the next attempt to be DoNotCache
-	// to bypass any potentially stale cached error.
-	forcedDoNotCache := false
-	if _, ok := c.noCacheNext.Load(callKey); ok && !key.DoNotCache {
-		key.DoNotCache = true
-		forcedDoNotCache = true
-	}
-
-	ctx = withTrackNilResult(ctx)
-
-	res, err = c.cache.GetOrInitCall(ctx, key, fn)
-	if err != nil {
-		// mark that the next attempt should run with DoNotCache
-		c.noCacheNext.Store(callKey, struct{}{})
-		return nil, err
-	}
-
-	// success: we're in a good state now, allow normal caching again
-	c.noCacheNext.Delete(callKey)
-
-	// If we forced DoNotCache due to a prior failure, we need to re-insert the successful
-	// result into the underlying cache under the original key so subsequent calls find it.
-	// The call above used a random storage key (due to DoNotCache=true), so the result
-	// won't be found by future lookups using the original key.
-	// NOTE: this complication can be removed once we are off the buildkit solver as errors
-	// won't be cached for the duration of a session.
-	if forcedDoNotCache {
-		key.DoNotCache = false
-		cachedRes, cacheErr := c.cache.GetOrInitCall(ctx, key, ValueFunc(res))
-		if cacheErr == nil {
-			res = cachedRes
+	switch o.TelemetryPolicy {
+	case TelemetryPolicyCacheHitOnly:
+		res, err = c.cache.GetOrInitCall(ctx, key, fn)
+		if err != nil {
+			return nil, err
 		}
-		// If caching fails, we still return the successful result, just won't be cached
+
+		if o.Telemetry != nil && res != nil && res.HitCache() {
+			_, seen := keys.LoadOrStore(callKey, struct{}{})
+			if !seen || key.DoNotCache {
+				// track keys globally in addition to any local key stores, otherwise we'll
+				// see dupes when e.g. IDs returned out of the "bubble" are loaded
+				c.seenKeys.Store(callKey, struct{}{})
+
+				_, done := o.Telemetry(ctx)
+				done(res, true, &err)
+			}
+		}
+
+	default:
+		_, seen := keys.LoadOrStore(callKey, struct{}{})
+		if o.Telemetry != nil && (!seen || key.DoNotCache) {
+			// track keys globally in addition to any local key stores, otherwise we'll
+			// see dupes when e.g. IDs returned out of the "bubble" are loaded
+			c.seenKeys.Store(callKey, struct{}{})
+
+			telemetryCtx, done := o.Telemetry(ctx)
+			defer func() {
+				var cached bool
+				if res != nil {
+					cached = res.HitCache()
+				}
+				done(res, cached, &err)
+			}()
+			ctx = telemetryCtx
+		}
+
+		res, err = c.cache.GetOrInitCall(ctx, key, fn)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	nilResult := false
-	if valueRes, ok := res.(cacheValueResult); ok && !valueRes.cacheHasValue() {
-		nilResult = true
+	if res != nil {
+		if shared := res.cacheSharedResult(); shared != nil && !shared.hasValue {
+			nilResult = true
+		}
 	}
 
 	c.mu.Lock()
@@ -183,7 +190,7 @@ func (c *SessionCache) GetOrInitCall(
 		return nil, err
 	}
 
-	if res != nil && (!key.DoNotCache || forcedDoNotCache) {
+	if res != nil && !key.DoNotCache {
 		c.results = append(c.results, res)
 	}
 

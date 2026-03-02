@@ -94,7 +94,6 @@ type InstallHook interface {
 // soon.
 type AroundFunc func(
 	context.Context,
-	AnyObjectResult,
 	*call.ID,
 ) (context.Context, func(res AnyResult, cached bool, err *error))
 
@@ -673,6 +672,25 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	callCtx := srvToContext(idToContext(ctx, id), s)
+
+	// Before recursing, check if we already have a cached result for this ID.
+	var opts []CacheCallOpt
+	if s.telemetry != nil {
+		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+			return s.telemetry(ctx, id)
+		}))
+		// only emit telemetry in this case if there was a cache hit, otherwise don't send telemetry until we really execute it
+		opts = append(opts, WithTelemetryPolicy(TelemetryPolicyCacheHitOnly))
+	}
+	if res, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
+		ID: id,
+	}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("cache miss")
+	}, opts...); err == nil {
+		return res, nil
+	}
+
 	var base AnyResult
 	var err error
 	if id.Receiver() != nil {
@@ -713,8 +731,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("toSelectable: %w", err)
 	}
-
-	return baseObj.Call(ctx, s, id)
+	return baseObj.Call(callCtx, s, id)
 }
 
 // Select evaluates a series of chained field selections starting from the

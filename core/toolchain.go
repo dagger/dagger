@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/dagger/dagger/core/modules"
@@ -33,6 +34,13 @@ func NewToolchainRegistry(parent *Module) *ToolchainRegistry {
 	return &ToolchainRegistry{
 		entries: make(map[string]*ToolchainEntry),
 		parent:  parent,
+	}
+}
+
+func (r *ToolchainRegistry) Clone(clonedParent *Module) *ToolchainRegistry {
+	return &ToolchainRegistry{
+		entries: maps.Clone(r.entries),
+		parent:  clonedParent,
 	}
 }
 
@@ -91,6 +99,10 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 	if mainObjDef == nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no main object", tcMod.Name())
 	}
+	parentModuleID, err := parentMod.IDModule(ctx)
+	if err != nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve parent module identity for toolchain %q: %w", tcMod.Name(), err)
+	}
 
 	// Check if toolchain has a constructor
 	hasConstructor := mainObjDef.Constructor.Valid
@@ -101,8 +113,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 		if err != nil {
 			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
 		}
-		spec.Module = parentMod.IDModule()
-		spec.GetCacheConfig = parentMod.CacheConfigForCall
+		spec.Module = parentModuleID
 
 		return dagql.Field[*ModuleObject]{
 			Spec: &spec,
@@ -143,8 +154,8 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 	}
 	// But use the toolchain name from the parent module
 	spec.Name = fun.Name
-	spec.Module = parentMod.IDModule()
-	spec.GetCacheConfig = modFun.CacheConfigForCall
+	spec.Module = parentModuleID
+	spec.GetDynamicInput = modFun.DynamicInputsForCall
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,

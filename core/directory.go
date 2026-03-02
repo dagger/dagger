@@ -1,6 +1,7 @@
 package core
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,11 +19,9 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
@@ -33,20 +32,23 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/chrootarchive"
+	"github.com/docker/docker/pkg/idtools"
 )
 
 // Directory is a content-addressed directory.
 type Directory struct {
-	LLB    *pb.Definition
-	Result bkcache.ImmutableRef // only valid when returned by dagop
-
-	Dir      string
+	Dir      string // a selected subdir of the rootfs of the on-disk Result, if any
 	Platform Platform
-
 	// Services necessary to provision the directory.
 	Services ServiceBindings
+
+	Parent dagql.ObjectResult[*Directory]
+	LazyState
+	// Below is lazily initialized and shoud not be accessed directly
+	Snapshot bkcache.ImmutableRef
 }
 
 func (*Directory) Type() *ast.Type {
@@ -60,145 +62,84 @@ func (*Directory) TypeDescription() string {
 	return "A directory."
 }
 
-func (dir *Directory) getResult() bkcache.ImmutableRef {
-	return dir.Result
-}
-func (dir *Directory) setResult(ref bkcache.ImmutableRef) {
-	dir.Result = ref
-}
-
 func (dir *Directory) IsRootDir() bool {
 	return dir.Dir == "" || dir.Dir == "/"
 }
 
-func NewDirectory(def *pb.Definition, dir string, platform Platform, services ServiceBindings) *Directory {
-	return &Directory{
-		LLB:      def,
-		Dir:      dir,
-		Platform: platform,
-		Services: services,
-	}
-}
-
-func NewScratchDirectoryDagOp(ctx context.Context, platform Platform) (*Directory, error) {
-	return &Directory{
-		Dir:      "/",
-		Platform: platform,
-	}, nil
-}
-
-func NewDirectorySt(ctx context.Context, st llb.State, dir string, platform Platform, services ServiceBindings) (*Directory, error) {
-	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-
-	return NewDirectory(def.ToPB(), dir, platform, services), nil
-}
-
-// Clone returns a deep copy of the container suitable for modifying in a
-// WithXXX method.
-func (dir *Directory) Clone() *Directory {
-	if dir == nil {
+// Create a new directory derived from the given parent directory. Child
+// snapshots are always resolved lazily via getSnapshot parent fallback.
+func NewDirectoryChild(parent dagql.ObjectResult[*Directory]) *Directory {
+	if parent.Self() == nil {
 		return nil
 	}
-	cp := *dir
+
+	cp := *parent.Self()
 	cp.Services = slices.Clone(cp.Services)
 
+	cp.Parent = parent
+	cp.LazyState = NewLazyState()
+	cp.Snapshot = nil
+
 	return &cp
-}
-
-func (dir *Directory) WithoutInputs() *Directory {
-	dir = dir.Clone()
-
-	dir.LLB = nil
-	dir.Result = nil
-
-	return dir
 }
 
 var _ dagql.OnReleaser = (*Directory)(nil)
 
 func (dir *Directory) OnRelease(ctx context.Context) error {
-	if dir.Result != nil {
-		return dir.Result.Release(ctx)
+	if dir.Snapshot != nil {
+		return dir.Snapshot.Release(ctx)
 	}
 	return nil
 }
 
-func (dir *Directory) State() (llb.State, error) {
-	if dir.LLB == nil {
-		return llb.Scratch(), nil
-	}
-
-	return defToState(dir.LLB)
+func (dir *Directory) Evaluate(ctx context.Context) error {
+	return dir.LazyState.Evaluate(ctx, "Directory")
 }
 
-func (dir *Directory) StateWithSourcePath() (llb.State, error) {
-	dirSt, err := dir.State()
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	if dir.Dir == "/" {
-		return dirSt, nil
-	}
-
-	if dir.Dir == "" {
-		return llb.State{}, fmt.Errorf("got empty dir path, which shouldnt happen")
-	}
-
-	return llb.Scratch().File(
-		llb.Copy(dirSt, dir.Dir, ".", &llb.CopyInfo{
-			CopyDirContentsOnly: true,
-		}),
-	), nil
+func (dir *Directory) Sync(ctx context.Context) error {
+	return dir.Evaluate(ctx)
 }
 
-func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
-	def, err := st.Marshal(ctx,
-		llb.Platform(dir.Platform.Spec()),
-		buildkit.WithTracePropagation(ctx),
-		buildkit.WithPassthrough(), // these spans aren't particularly interesting
-	)
-	if err != nil {
-		return err
-	}
-
-	dir.LLB = def.ToPB()
-	return nil
-}
-
-func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	if dir.LLB == nil {
-		return nil, nil
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
+func (dir *Directory) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
+	if err := dir.Evaluate(ctx); err != nil {
 		return nil, err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	if dir.Snapshot != nil {
+		return dir.Snapshot, nil
 	}
+	if dir.Parent.Self() != nil {
+		return dir.Parent.Self().getSnapshot(ctx)
+	}
+	return nil, nil
+}
 
-	return bk.Solve(ctx, bkgw.SolveRequest{
-		Evaluate:   true,
-		Definition: dir.LLB,
-	})
+func (dir *Directory) setSnapshot(ref bkcache.ImmutableRef) {
+	dir.Snapshot = ref
+}
+
+func (dir *Directory) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
+	if dir.Parent.Self() != nil {
+		return dir.Parent.Self().getSnapshot(ctx)
+	}
+	return nil, nil
 }
 
 func (dir *Directory) Digest(ctx context.Context) (string, error) {
-	result, err := dir.Evaluate(ctx)
+	snapshot, err := dir.getSnapshot(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to evaluate directory: %w", err)
 	}
-	if result == nil {
+	if snapshot == nil {
 		return "", fmt.Errorf("failed to evaluate null directory")
 	}
 
-	digest, err := result.Ref.Digest(ctx, dir.Dir)
+	digest, err := bkcontenthash.Checksum(
+		ctx,
+		snapshot,
+		dir.Dir,
+		bkcontenthash.ChecksumOpts{},
+		nil,
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to compute digest: %w", err)
 	}
@@ -210,24 +151,32 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 	src = path.Join(dir.Dir, src)
 	paths := []string{}
 	useSlash := SupportsDirSlash(ctx)
-	_, err := execInMount(ctx, dir, func(root string) error {
-		resolvedDir, err := containerdfs.RootPath(root, src)
-		if err != nil {
-			return err
-		}
-		entries, err := os.ReadDir(resolvedDir)
-		if err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			path := entry.Name()
-			if useSlash && entry.IsDir() {
-				path += "/"
+	snapshot, err := dir.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		err = errEmptyResultRef
+	} else {
+		err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+			resolvedDir, err := containerdfs.RootPath(root, src)
+			if err != nil {
+				return err
 			}
-			paths = append(paths, path)
-		}
-		return nil
-	})
+			entries, err := os.ReadDir(resolvedDir)
+			if err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				path := entry.Name()
+				if useSlash && entry.IsDir() {
+					path += "/"
+				}
+				paths = append(paths, path)
+			}
+			return nil
+		}, mountRefAsReadOnly)
+	}
 	if err != nil {
 		if errors.Is(err, errEmptyResultRef) {
 			// empty directory, i.e. llb.Scratch()
@@ -269,58 +218,66 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	onlyPrefixIncludes := !strings.ContainsAny(patternWithoutTrailingGlob(pat), patternChars)
 
 	useSlash := SupportsDirSlash(ctx)
-	_, err = execInMount(ctx, dir, func(root string) error {
-		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
-		if err != nil {
-			return err
-		}
-
-		return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
-			if prevErr != nil {
-				return prevErr
-			}
-
-			path, err := filepath.Rel(resolvedDir, path)
-			if err != nil {
-				return err
-			}
-			// Skip root
-			if path == "." {
-				return nil
-			}
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				break
-			}
-
-			match, err := pat.Match(path)
+	snapshot, err := dir.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		err = errEmptyResultRef
+	} else {
+		err = MountRef(ctx, snapshot, nil, func(root string, _ *mount.Mount) error {
+			resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 			if err != nil {
 				return err
 			}
 
-			if match {
-				if useSlash && d.IsDir() {
-					path += "/"
+			return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
+				if prevErr != nil {
+					return prevErr
 				}
-				paths = append(paths, path)
-			} else if d.IsDir() && onlyPrefixIncludes {
-				// fsutils Optimization: we can skip walking this dir if no include
-				// patterns could match anything inside it.
-				dirSlash := path + string(filepath.Separator)
-				if !pat.Exclusion() {
-					patStr := patternWithoutTrailingGlob(pat) + string(filepath.Separator)
-					if !strings.HasPrefix(patStr, dirSlash) {
-						return filepath.SkipDir
+
+				path, err := filepath.Rel(resolvedDir, path)
+				if err != nil {
+					return err
+				}
+				// Skip root
+				if path == "." {
+					return nil
+				}
+
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					break
+				}
+
+				match, err := pat.Match(path)
+				if err != nil {
+					return err
+				}
+
+				if match {
+					if useSlash && d.IsDir() {
+						path += "/"
+					}
+					paths = append(paths, path)
+				} else if d.IsDir() && onlyPrefixIncludes {
+					// fsutils Optimization: we can skip walking this dir if no include
+					// patterns could match anything inside it.
+					dirSlash := path + string(filepath.Separator)
+					if !pat.Exclusion() {
+						patStr := patternWithoutTrailingGlob(pat) + string(filepath.Separator)
+						if !strings.HasPrefix(patStr, dirSlash) {
+							return filepath.SkipDir
+						}
 					}
 				}
-			}
 
-			return nil
-		})
-	})
+				return nil
+			})
+		}, mountRefAsReadOnly)
+	}
 	if err != nil {
 		if errors.Is(err, errEmptyResultRef) {
 			// empty directory, i.e. llb.Scratch()
@@ -332,9 +289,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	return paths, nil
 }
 
-func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
-	dir = dir.Clone()
-
+func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (LazyInitFunc, error) {
 	err := validateFileName(dest)
 	if err != nil {
 		return nil, err
@@ -344,106 +299,126 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 		permissions = 0o644
 	}
 
-	return execInMount(ctx, dir, func(root string) error {
-		resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
+	return func(ctx context.Context) error {
+		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
 		}
-		destPathDir, _ := filepath.Split(resolvedDest)
-		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
 		if err != nil {
 			return err
 		}
-		dst, err := os.OpenFile(resolvedDest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, permissions)
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content))))),
+		)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			if dst != nil {
-				_ = dst.Close()
-			}
-		}()
-
-		_, err = dst.Write(content)
-		if err != nil {
-			return err
-		}
-
-		err = dst.Close()
-		if err != nil {
-			return err
-		}
-		dst = nil
-
-		if ownership != nil {
-			err = os.Chown(resolvedDest, ownership.UID, ownership.GID)
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
 			if err != nil {
-				return fmt.Errorf("failed to set chown %s: err", resolvedDest)
+				return err
 			}
-		}
+			destPathDir, _ := filepath.Split(resolvedDest)
+			err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+			if err != nil {
+				return err
+			}
+			dst, err := os.OpenFile(resolvedDest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, permissions)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if dst != nil {
+					_ = dst.Close()
+				}
+			}()
 
+			_, err = dst.Write(content)
+			if err != nil {
+				return err
+			}
+
+			err = dst.Close()
+			if err != nil {
+				return err
+			}
+			dst = nil
+
+			if ownership != nil {
+				err = os.Chown(resolvedDest, ownership.UID, ownership.GID)
+				if err != nil {
+					return fmt.Errorf("failed to set chown %s: err", resolvedDest)
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
 		return nil
-	}, withSavedSnapshot("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content)))))
+	}, nil
 }
 
-func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, error) {
-	dir = dir.Clone()
-
-	parentRef, err := getRefOrEvaluate(ctx, dir)
-	if err != nil {
-		return nil, err
-	}
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
-	}
-	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("patch"))
-	if err != nil {
-		return nil, err
-	}
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+func (dir *Directory) WithPatch(ctx context.Context, patch string) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		parentRef, err := dir.getParentSnapshot(ctx)
 		if err != nil {
 			return err
 		}
-		apply := exec.Command("git", "apply", "--allow-empty", "-")
-		apply.Dir = resolvedDir
-		apply.Stdin = strings.NewReader(patch)
-		apply.Stdout = stdio.Stdout
-		apply.Stderr = stdio.Stderr
-		if err := apply.Run(); err != nil {
-			// NB: we could technically populate a buildkit.ExecError here, but that
-			// feels like it leaks implementation details; "exit status 128" isn't
-			// exactly clear
-			return errors.New("failed to apply patch")
+
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
 		}
+
+		ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		defer stdio.Close()
+
+		newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription("patch"))
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) (rerr error) {
+			resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+			if err != nil {
+				return err
+			}
+			apply := exec.Command("git", "apply", "--allow-empty", "-")
+			apply.Dir = resolvedDir
+			apply.Stdin = strings.NewReader(patch)
+			apply.Stdout = stdio.Stdout
+			apply.Stderr = stdio.Stderr
+			if err := apply.Run(); err != nil {
+				// NB: we could technically populate a buildkit.ExecError here, but that
+				// feels like it leaks implementation details; "exit status 128" isn't
+				// exactly clear
+				return errors.New("failed to apply patch")
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		snap, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snap
 		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	snap, err := newRef.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dir.Result = snap
-	return dir, nil
+	}, nil
 }
 
 func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool, paths []string, globs []string) ([]*SearchResult, error) {
@@ -463,7 +438,7 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool,
 		}
 	}
 
-	ref, err := getRefOrEvaluate(ctx, dir)
+	ref, err := dir.getSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -472,19 +447,10 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool,
 		return []*SearchResult{}, nil
 	}
 
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
-	}
-	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
+	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 
 	results := []*SearchResult{}
-	err = MountRef(ctx, ref, bkSessionGroup, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, ref, nil, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
@@ -533,12 +499,11 @@ func cleanDotsAndSlashes(path string) string {
 	return filepath.Join(cleaned...)
 }
 
-func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
+func (dir *Directory) Subdirectory(ctx context.Context, parent dagql.ObjectResult[*Directory], subdir string) (*Directory, error) {
+	dir = NewDirectoryChild(parent)
 	if cleanDotsAndSlashes(subdir) == "" {
 		return dir, nil
 	}
-
-	dir = dir.Clone()
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -578,10 +543,7 @@ func (e notADirectoryError) Unwrap() error {
 	return e.inner
 }
 
-func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
-	dir = dir.Clone()
-	filePath := path.Join(dir.Dir, file)
-
+func (dir *Directory) Subfile(ctx context.Context, parent dagql.ObjectResult[*Directory], file string) (*File, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -600,60 +562,26 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", file)}
 	}
 
-	dirRef, err := getRefOrEvaluate(ctx, dir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get directory ref: %w", err)
+	filePath := path.Join(dir.Dir, file)
+	subfile := &File{
+		File:      filePath,
+		Platform:  dir.Platform,
+		Services:  slices.Clone(dir.Services),
+		Parent:    parent,
+		LazyState: NewLazyState(),
+	}
+	subfile.LazyInit = func(ctx context.Context) error {
+		parentSnapshot, err := parent.Self().getSnapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get directory ref: %w", err)
+		}
+		if parentSnapshot != nil {
+			subfile.Snapshot = parentSnapshot.Clone()
+		}
+		return nil
 	}
 
-	return &File{
-		LLB:      dir.LLB,
-		Result:   dirRef,
-		File:     filePath,
-		Platform: dir.Platform,
-		Services: dir.Services,
-	}, nil
-}
-
-func (dir *Directory) FileLLB(ctx context.Context, parent dagql.ObjectResult[*Directory], file string) (*File, error) {
-	err := validateFileName(file)
-	if err != nil {
-		return nil, err
-	}
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dagql server: %w", err)
-	}
-
-	internalSpanCtx, internalSpan := Tracer(ctx).Start(ctx, fmt.Sprintf("file %s", file),
-		telemetry.Internal(),
-	)
-	defer telemetry.EndWithCause(internalSpan, nil)
-
-	var fileStat *Stat
-	err = srv.Select(internalSpanCtx, parent, &fileStat,
-		dagql.Selector{
-			Field: "stat",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(file)},
-			},
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if fileStat.IsDir() {
-		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", file)}
-	}
-
-	return &File{
-		LLB:      dir.LLB,
-		Result:   dir.Result,
-		File:     path.Join(dir.Dir, file),
-		Platform: dir.Platform,
-		Services: dir.Services,
-	}, nil
+	return subfile, nil
 }
 
 type notAFileError struct {
@@ -688,203 +616,253 @@ func (dir *Directory) WithDirectory(
 	srcID *call.ID,
 	filter CopyFilter,
 	owner string,
-) (*Directory, error) {
-	dir = dir.Clone()
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current query: %w", err)
-	}
-	srv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	srcObj, err := dagql.NewID[*Directory](srcID).Load(ctx, srv)
-	if err != nil {
-		return nil, err
-	}
-	src := srcObj.Self()
-
-	destDir = path.Join(dir.Dir, destDir)
-
-	dirRef, err := getRefOrEvaluate(ctx, dir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get directory ref: %w", err)
-	}
-	srcRef, err := getRefOrEvaluate(ctx, src)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
-	}
-
-	canDoDirectMerge :=
-		filter.IsEmpty() &&
-			destDir == "/" &&
-			src.Dir == "/" &&
-			owner == ""
-
-	cache := query.BuildkitCache()
-
-	if dirRef == nil {
-		// handle case where WithDirectory is called on an empty dir (i.e. scratch dir)
-		// note this always occurs when creating the rebasedDir (to prevent infinite recursion)
-
-		if canDoDirectMerge && srcRef != nil {
-			dir.Result = srcRef.Clone()
-			return dir, nil
-		}
-		newRef, err := query.BuildkitCache().New(ctx, nil, nil,
-			bkcache.CachePolicyRetain,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-			bkcache.WithDescription("Directory.withDirectory source"))
+	permissions *int,
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
+	requiredSourcePath string,
+	destPathHintIsDirectory bool,
+	copySourcePathContentsWhenDir bool,
+) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		dirRef, err := dir.getParentSnapshot(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("buildkitcache.New failed: %w", err)
+			return fmt.Errorf("failed to get directory ref: %w", err)
 		}
 
-		err = MountRef(ctx, newRef, nil, func(copyDest string, destMnt *mount.Mount) error {
-			resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
-			if err != nil {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get current query: %w", err)
+		}
+		srv, err := query.Server.Server(ctx)
+		if err != nil {
+			return err
+		}
+
+		srcObj, err := dagql.NewID[*Directory](srcID).Load(ctx, srv)
+		if err != nil {
+			return err
+		}
+		src := srcObj.Self()
+
+		destDir := path.Join(dir.Dir, destDir)
+		if doNotCreateDestPath {
+			if err := ensureCopyDestParentExists(ctx, dirRef, destDir); err != nil {
 				return err
 			}
-			if srcRef == nil {
-				err = os.MkdirAll(resolvedCopyDest, 0755)
+		}
+
+		srcRef, err := src.getSnapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get source directory ref: %w", err)
+		}
+		if requiredSourcePath != "" {
+			if err := ensureRequiredCopySourcePathExists(ctx, srcRef, src.Dir, requiredSourcePath); err != nil {
+				return err
+			}
+		}
+
+		canDoDirectMerge :=
+			filter.IsEmpty() &&
+				destDir == "/" &&
+				src.Dir == "/" &&
+				owner == "" &&
+				permissions == nil &&
+				!attemptUnpackDockerCompatibility
+
+		cache := query.BuildkitCache()
+		copySourceToScratch := func() (bkcache.ImmutableRef, error) {
+			newRef, err := query.BuildkitCache().New(ctx, nil, nil,
+				bkcache.CachePolicyRetain,
+				bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+				bkcache.WithDescription("Directory.withDirectory source"))
+			if err != nil {
+				return nil, fmt.Errorf("buildkitcache.New failed: %w", err)
+			}
+
+			err = MountRef(ctx, newRef, nil, func(copyDest string, destMnt *mount.Mount) error {
+				resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
 				if err != nil {
 					return err
 				}
+				if srcRef == nil {
+					err = os.MkdirAll(resolvedCopyDest, 0755)
+					if err != nil {
+						return err
+					}
+					if permissions != nil {
+						if err := os.Chmod(resolvedCopyDest, os.FileMode(*permissions)); err != nil {
+							return fmt.Errorf("failed to chmod %s: %w", resolvedCopyDest, err)
+						}
+					}
+					if owner != "" {
+						ownership, err := parseDirectoryOwner(owner)
+						if err != nil {
+							return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+						}
+						if err := os.Chown(resolvedCopyDest, ownership.UID, ownership.GID); err != nil {
+							return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
+						}
+					}
+					return nil
+				}
+				mounter, err := srcRef.Mount(ctx, true, nil)
+				if err != nil {
+					return fmt.Errorf("failed to mount source directory: %w", err)
+				}
+				ms, unmountSrc, err := mounter.Mount()
+				if err != nil {
+					return fmt.Errorf("failed to mount source directory: %w", err)
+				}
+				defer unmountSrc()
+				if len(ms) == 0 {
+					return fmt.Errorf("no mounts returned for source directory")
+				}
+				srcMnt := ms[0]
+				lm := snapshot.LocalMounterWithMounts(ms)
+				mntedSrcPath, err := lm.Mount()
+				if err != nil {
+					return fmt.Errorf("failed to mount source directory: %w", err)
+				}
+				defer lm.Unmount()
+				resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
+				if err != nil {
+					return err
+				}
+				srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
+				if err != nil {
+					return fmt.Errorf("failed to create source path resolver: %w", err)
+				}
+				destResolver, err := pathResolverForMount(destMnt, copyDest)
+				if err != nil {
+					return fmt.Errorf("failed to create destination path resolver: %w", err)
+				}
+
+				var ownership *Ownership
 				if owner != "" {
-					ownership, err := parseDirectoryOwner(owner)
+					ownership, err = parseDirectoryOwner(owner)
 					if err != nil {
 						return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 					}
-					if err := os.Chown(resolvedCopyDest, ownership.UID, ownership.GID); err != nil {
-						return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
+				}
+
+				var opts []fscopy.Opt
+				opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
+					AlwaysReplaceExistingDestPaths: true,
+					CopyDirContents:                true,
+					EnableHardlinkOptimization:     true,
+					SourcePathResolver:             srcResolver,
+					DestPathResolver:               destResolver,
+					Mode:                           permissions,
+				}))
+				effectiveSrcPath, effectiveInclude, err := maybeUseSourcePathContentsWhenDir(resolvedSrcPath, filter.Include, copySourcePathContentsWhenDir)
+				if err != nil {
+					return err
+				}
+
+				for _, pattern := range effectiveInclude {
+					opts = append(opts, fscopy.WithIncludePattern(pattern))
+				}
+				for _, pattern := range filter.Exclude {
+					opts = append(opts, fscopy.WithExcludePattern(pattern))
+				}
+				if filter.Gitignore {
+					opts = append(opts, fscopy.WithGitignore())
+				}
+				if ownership != nil {
+					opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
+				}
+
+				if attemptUnpackDockerCompatibility {
+					didUnpack, err := attemptCopyArchiveUnpack(
+						ctx,
+						effectiveSrcPath,
+						resolvedCopyDest,
+						effectiveInclude,
+						filter.Exclude,
+						filter.Gitignore,
+						ownership,
+						permissions,
+						newRef.IdentityMapping(),
+						destPathHintIsDirectory,
+					)
+					if err != nil {
+						return fmt.Errorf("failed to unpack source archive: %w", err)
+					}
+					if didUnpack {
+						return nil
 					}
 				}
+
+				if err := fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
+					return fmt.Errorf("failed to copy source directory: %w", err)
+				}
+				return nil
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			rebasedDirRef, err := newRef.Commit(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+			}
+			return rebasedDirRef, nil
+		}
+
+		if dirRef == nil {
+			// handle case where WithDirectory is called on an empty dir (i.e. scratch dir)
+			// note this always occurs when creating the rebasedDir
+
+			if canDoDirectMerge && srcRef != nil {
+				dir.Snapshot = srcRef.Clone()
 				return nil
 			}
-			mounter, err := srcRef.Mount(ctx, true, nil)
-			if err != nil {
-				return fmt.Errorf("failed to mount source directory: %w", err)
-			}
-			ms, unmountSrc, err := mounter.Mount()
-			if err != nil {
-				return fmt.Errorf("failed to mount source directory: %w", err)
-			}
-			defer unmountSrc()
-			if len(ms) == 0 {
-				return fmt.Errorf("no mounts returned for source directory")
-			}
-			srcMnt := ms[0]
-			lm := snapshot.LocalMounterWithMounts(ms)
-			mntedSrcPath, err := lm.Mount()
-			if err != nil {
-				return fmt.Errorf("failed to mount source directory: %w", err)
-			}
-			defer lm.Unmount()
-			resolvedSrcPath, err := containerdfs.RootPath(mntedSrcPath, src.Dir)
+			rebasedDirRef, err := copySourceToScratch()
 			if err != nil {
 				return err
 			}
-			srcResolver, err := pathResolverForMount(&srcMnt, mntedSrcPath)
-			if err != nil {
-				return fmt.Errorf("failed to create source path resolver: %w", err)
-			}
-			destResolver, err := pathResolverForMount(destMnt, copyDest)
-			if err != nil {
-				return fmt.Errorf("failed to create destination path resolver: %w", err)
-			}
-			var opts []fscopy.Opt
-			opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
-				AlwaysReplaceExistingDestPaths: true,
-				CopyDirContents:                true,
-				EnableHardlinkOptimization:     true,
-				SourcePathResolver:             srcResolver,
-				DestPathResolver:               destResolver,
-			}))
-			for _, pattern := range filter.Include {
-				opts = append(opts, fscopy.WithIncludePattern(pattern))
-			}
-			for _, pattern := range filter.Exclude {
-				opts = append(opts, fscopy.WithExcludePattern(pattern))
-			}
-			if filter.Gitignore {
-				opts = append(opts, fscopy.WithGitignore())
-			}
-			if owner != "" {
-				ownership, err := parseDirectoryOwner(owner)
-				if err != nil {
-					return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-				}
-				opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
-			}
-			if err := fscopy.Copy(ctx, resolvedSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
-				return fmt.Errorf("failed to copy source directory: %w", err)
-			}
+			dir.Snapshot = rebasedDirRef
 			return nil
-		})
+		}
+
+		mergeRefs := []bkcache.ImmutableRef{dirRef}
+
+		if canDoDirectMerge {
+			// Directly merge the states together, which is lazy, uses hardlinks instead of
+			// copies and caches inputs individually instead of invalidating the whole
+			// chain following any modified input.
+			if srcRef == nil {
+				dir.Snapshot = dirRef.Clone()
+				return nil
+			}
+			mergeRefs = append(mergeRefs, srcRef)
+		} else {
+			// Even if we can't merge directly, we can still get some optimization by
+			// copying to scratch and then merging that. This still results in an on-disk
+			// copy but preserves the other caching benefits of MergeOp. This is the same
+			// behavior as "COPY --link" in Dockerfiles.
+			//
+			// NOTE: do this directly rather than recursively selecting withDirectory,
+			// which can resolve to this same object and deadlock on lazy-state mutex.
+			rebasedDirRef, err := copySourceToScratch()
+			if err != nil {
+				return err
+			}
+			defer rebasedDirRef.Release(context.WithoutCancel(ctx))
+			mergeRefs = append(mergeRefs, rebasedDirRef)
+		}
+
+		ref, err := cache.Merge(ctx, mergeRefs, nil)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("failed to merge directories: %w", err)
 		}
-
-		dirRef, err = newRef.Commit(ctx)
+		err = ref.Finalize(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+			return err
 		}
-
-		dir.Result = dirRef
-		return dir, nil
-	}
-
-	mergeRefs := []bkcache.ImmutableRef{dirRef}
-
-	if canDoDirectMerge {
-		// Directly merge the states together, which is lazy, uses hardlinks instead of
-		// copies and caches inputs individually instead of invalidating the whole
-		// chain following any modified input.
-		if srcRef == nil {
-			dir.Result = dirRef
-			return dir, nil
-		}
-		mergeRefs = append(mergeRefs, srcRef)
-	} else {
-		// Even if we can't merge directly, we can still get some optimization by
-		// copying to scratch and then merging that. This still results in an on-disk
-		// copy but preserves the other caching benefits of MergeOp. This is the same
-		// behavior as "COPY --link" in Dockerfiles.
-
-		var rebasedDir dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, srv.Root(), &rebasedDir,
-			dagql.Selector{Field: "directory"}, // scratch
-			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(destDir)},
-				{Name: "source", Value: dagql.NewID[*Directory](srcID)},
-				{Name: "exclude", Value: asArrayInput(filter.Exclude, dagql.NewString)},
-				{Name: "include", Value: asArrayInput(filter.Include, dagql.NewString)},
-				{Name: "gitignore", Value: dagql.Boolean(filter.Gitignore)},
-				{Name: "owner", Value: dagql.String(owner)},
-			}},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		rebasedDirRef, err := getRefOrEvaluate(ctx, rebasedDir.Self())
-		if err != nil {
-			return nil, fmt.Errorf("failed to get rebased dir for merging: %w", err)
-		}
-		mergeRefs = append(mergeRefs, rebasedDirRef)
-	}
-
-	ref, err := cache.Merge(ctx, mergeRefs, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to merge directories: %w", err)
-	}
-	err = ref.Finalize(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dir.Result = ref
-	return dir, nil
+		dir.Snapshot = ref
+		return nil
+	}, nil
 }
 
 func copyFile(srcPath, dstPath string, tryHardlink bool) (err error) {
@@ -952,6 +930,247 @@ func copyFile(srcPath, dstPath string, tryHardlink bool) (err error) {
 	return os.Chtimes(dstPath, modTime, modTime)
 }
 
+func attemptCopyArchiveUnpack(
+	ctx context.Context,
+	srcRoot string,
+	destPath string,
+	includePatterns []string,
+	excludePatterns []string,
+	useGitignore bool,
+	ownership *Ownership,
+	permissions *int,
+	idmap *idtools.IdentityMapping,
+	destPathHintIsDirectory bool,
+) (bool, error) {
+	// Keep default path untouched for anything non-canonical to this compatibility mode.
+	if useGitignore || len(excludePatterns) > 0 || len(includePatterns) == 0 {
+		return false, nil
+	}
+
+	matches, ok, err := resolveAttemptUnpackMatches(srcRoot, includePatterns)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	if len(matches) == 0 {
+		// No matches means no copy work to do; handled here to keep fallback copy from
+		// re-applying broader include semantics.
+		return true, nil
+	}
+
+	var opts []fscopy.Opt
+	opts = append(opts, fscopy.WithCopyInfo(fscopy.CopyInfo{
+		AlwaysReplaceExistingDestPaths: true,
+		CopyDirContents:                true,
+		Mode:                           permissions,
+	}))
+	if ownership != nil {
+		opts = append(opts, fscopy.WithChown(ownership.UID, ownership.GID))
+	}
+
+	for _, src := range matches {
+		resolvedSrcPath, err := containerdfs.RootPath(srcRoot, src)
+		if err != nil {
+			return false, err
+		}
+
+		unpacked, err := unpackArchiveFile(resolvedSrcPath, destPath, ownership, idmap)
+		if err != nil {
+			return false, err
+		}
+		if unpacked {
+			continue
+		}
+
+		if len(matches) == 1 {
+			copiedAsSingleFile, err := copyAttemptUnpackNonArchiveSingleFile(resolvedSrcPath, src, destPath, permissions, ownership, destPathHintIsDirectory)
+			if err != nil {
+				return false, err
+			}
+			if copiedAsSingleFile {
+				continue
+			}
+		}
+
+		if err := fscopy.Copy(ctx, srcRoot, src, destPath, ".", opts...); err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func maybeUseSourcePathContentsWhenDir(
+	resolvedSrcPath string,
+	includePatterns []string,
+	copySourcePathContentsWhenDir bool,
+) (string, []string, error) {
+	if !copySourcePathContentsWhenDir || len(includePatterns) != 1 {
+		return resolvedSrcPath, includePatterns, nil
+	}
+	inc := includePatterns[0]
+	if inc == "" || strings.HasPrefix(inc, "!") || strings.ContainsAny(inc, "*?[") {
+		return resolvedSrcPath, includePatterns, nil
+	}
+
+	candidate, err := containerdfs.RootPath(resolvedSrcPath, inc)
+	if err != nil {
+		return "", nil, err
+	}
+
+	info, err := os.Stat(candidate)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return resolvedSrcPath, includePatterns, nil
+		}
+		return "", nil, err
+	}
+	if !info.IsDir() {
+		return resolvedSrcPath, includePatterns, nil
+	}
+
+	return candidate, nil, nil
+}
+
+func copyAttemptUnpackNonArchiveSingleFile(
+	resolvedSrcPath string,
+	srcPatternPath string,
+	destPath string,
+	permissions *int,
+	ownership *Ownership,
+	destPathHintIsDirectory bool,
+) (bool, error) {
+	srcInfo, err := os.Stat(resolvedSrcPath)
+	if err != nil {
+		return false, err
+	}
+	if !srcInfo.Mode().IsRegular() {
+		return false, nil
+	}
+
+	destFilePath := destPath
+	if destPathHintIsDirectory {
+		destInfo, err := os.Stat(destPath)
+		if err == nil {
+			if !destInfo.IsDir() {
+				return false, fmt.Errorf("destination path %q exists and is not a directory", destPath)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		destFilePath = filepath.Join(destPath, filepath.Base(srcPatternPath))
+	} else if destInfo, err := os.Stat(destPath); err == nil && destInfo.IsDir() {
+		destFilePath = filepath.Join(destPath, filepath.Base(srcPatternPath))
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destFilePath), 0o755); err != nil {
+		return false, err
+	}
+	tryHardlink := permissions == nil && ownership == nil
+	if err := copyFile(resolvedSrcPath, destFilePath, tryHardlink); err != nil {
+		return false, err
+	}
+	if permissions != nil {
+		if err := os.Chmod(destFilePath, os.FileMode(*permissions)); err != nil {
+			return false, err
+		}
+	}
+	if ownership != nil {
+		if err := os.Chown(destFilePath, ownership.UID, ownership.GID); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func resolveAttemptUnpackMatches(srcRoot string, includePatterns []string) ([]string, bool, error) {
+	seen := make(map[string]struct{}, len(includePatterns))
+	out := make([]string, 0, len(includePatterns))
+
+	for _, includePattern := range includePatterns {
+		if includePattern == "" || strings.HasPrefix(includePattern, "!") {
+			return nil, false, nil
+		}
+		matches, err := fscopy.ResolveWildcards(srcRoot, includePattern, true)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, match := range matches {
+			if _, ok := seen[match]; ok {
+				continue
+			}
+			seen[match] = struct{}{}
+			out = append(out, match)
+		}
+	}
+
+	return out, true, nil
+}
+
+func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership, idmap *idtools.IdentityMapping) (bool, error) {
+	if !isArchivePath(srcPath) {
+		return false, nil
+	}
+
+	var chowner fscopy.Chowner
+	if ownership != nil {
+		chowner = func(*fscopy.User) (*fscopy.User, error) {
+			return &fscopy.User{UID: ownership.UID, GID: ownership.GID}, nil
+		}
+	}
+
+	if err := fscopy.MkdirAll(destPath, 0o755, chowner, nil); err != nil {
+		return false, err
+	}
+
+	file, err := os.Open(srcPath)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+
+	opts := &archive.TarOptions{
+		BestEffortXattrs: true,
+	}
+	if idmap != nil {
+		opts.IDMap = *idmap
+	}
+	if err := chrootarchive.Untar(file, destPath, opts); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func isArchivePath(path string) bool {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	if fi.Mode()&os.ModeType != 0 {
+		return false
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	rdr, err := archive.DecompressStream(file)
+	if err != nil {
+		return false
+	}
+	defer rdr.Close()
+
+	tr := tar.NewReader(rdr)
+	_, err = tr.Next()
+	return err == nil
+}
+
 func isDir(path string) (bool, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -963,462 +1182,544 @@ func isDir(path string) (bool, error) {
 	return fi.Mode().IsDir(), nil
 }
 
+func ensureRequiredCopySourcePathExists(ctx context.Context, srcRef bkcache.ImmutableRef, srcDir string, requiredSourcePath string) error {
+	requiredSourcePath = strings.TrimPrefix(path.Clean(requiredSourcePath), "/")
+	requiredDisplayPath := "/" + requiredSourcePath
+	if requiredSourcePath == "" || requiredSourcePath == "." {
+		requiredSourcePath = ""
+		requiredDisplayPath = "/"
+	}
+	if srcRef == nil {
+		return fmt.Errorf("%q: not found", requiredDisplayPath)
+	}
+
+	return MountRef(ctx, srcRef, nil, func(root string, _ *mount.Mount) error {
+		resolvedSrcDir, err := containerdfs.RootPath(root, path.Clean(srcDir))
+		if err != nil {
+			return err
+		}
+		resolvedRequiredPath, err := containerdfs.RootPath(resolvedSrcDir, requiredSourcePath)
+		if err != nil {
+			return err
+		}
+		_, err = os.Lstat(resolvedRequiredPath)
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%q: not found", requiredDisplayPath)
+		}
+		return TrimErrPathPrefix(err, root)
+	})
+}
+
+func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRef, destPath string) error {
+	parentPath := filepath.Dir(path.Clean(destPath))
+	if parentPath == "." {
+		parentPath = "/"
+	}
+
+	if baseRef == nil {
+		if parentPath == "/" {
+			return nil
+		}
+		return &os.PathError{Op: "lstat", Path: parentPath, Err: syscall.ENOENT}
+	}
+
+	return MountRef(ctx, baseRef, nil, func(root string, _ *mount.Mount) error {
+		resolvedParentPath, err := containerdfs.RootPath(root, parentPath)
+		if err != nil {
+			return err
+		}
+		_, err = os.Lstat(resolvedParentPath)
+		return TrimErrPathPrefix(err, root)
+	})
+}
+
 func (dir *Directory) WithFile(
 	ctx context.Context,
-	srv *dagql.Server,
 	destPath string,
 	src *File,
 	permissions *int,
 	owner string,
-) (*Directory, error) {
-	dir = dir.Clone()
-
-	srcCacheRef, err := getRefOrEvaluate(ctx, src)
-	if err != nil {
-		return nil, err
-	}
-
-	dirCacheRef, err := getRefOrEvaluate(ctx, dir)
-	if err != nil {
-		return nil, err
-	}
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	destPath = path.Join(dir.Dir, destPath)
-	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(src.File))))
-	if err != nil {
-		return nil, err
-	}
-
-	var realDestPath string
-	if err := MountRef(ctx, newRef, bkSessionGroup, func(root string, destMnt *mount.Mount) (rerr error) {
-		mntedDestPath, err := containerdfs.RootPath(root, destPath)
-		if err != nil {
-			return err
-		}
-		destIsDir, err := isDir(mntedDestPath)
-		if err != nil {
-			return err
-		}
-		if destIsDir {
-			_, srcFilename := filepath.Split(src.File)
-			mntedDestPath = path.Join(mntedDestPath, srcFilename)
-		}
-
-		destPathDir, _ := filepath.Split(mntedDestPath)
-		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
+) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		srcCacheRef, err := src.getSnapshot(ctx)
 		if err != nil {
 			return err
 		}
 
-		resolvedDestRelPath, err := filepath.Rel(root, mntedDestPath)
+		dirCacheRef, err := dir.getParentSnapshot(ctx)
 		if err != nil {
 			return err
 		}
-		switch destMnt.Type {
-		case "bind", "rbind":
-			realDestPath = filepath.Join(destMnt.Source, resolvedDestRelPath)
-		case "overlay":
-			// touch the dest parent dir to trigger a copy-up of parent dirs
-			// we never try to keep directory modtimes consistent right now, so
-			// this is okay
-			if err := os.Chtimes(destPathDir, time.Now(), time.Now()); err != nil {
-				return fmt.Errorf("failed to touch overlay parent dir %s: %w", destPathDir, err)
+
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+
+		destPath := path.Join(dir.Dir, destPath)
+		if doNotCreateDestPath {
+			if err := ensureCopyDestParentExists(ctx, dirCacheRef, destPath); err != nil {
+				return err
 			}
-
-			var upperdir string
-			for _, opt := range destMnt.Options {
-				if strings.HasPrefix(opt, "upperdir=") {
-					upperdir = strings.TrimPrefix(opt, "upperdir=")
-					break
-				}
-			}
-			if upperdir == "" {
-				return fmt.Errorf("overlay mount missing upperdir option")
-			}
-			realDestPath = filepath.Join(upperdir, resolvedDestRelPath)
-		default:
-			return fmt.Errorf("unsupported mount type for destination: %s", destMnt.Type)
 		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-
-	var realSrcPath string
-	if err := MountRef(ctx, srcCacheRef, bkSessionGroup, func(root string, srcMnt *mount.Mount) (rerr error) {
-		srcPath, err := containerdfs.RootPath(root, src.File)
+		newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(src.File))))
 		if err != nil {
 			return err
 		}
-		srcResolver, err := pathResolverForMount(srcMnt, root)
-		if err != nil {
-			return err
-		}
-		realSrcPath, err = srcResolver(srcPath)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
 
-	tryHardlink := permissions == nil && owner == ""
-
-	err = copyFile(realSrcPath, realDestPath, tryHardlink)
-	if err != nil {
-		return nil, err
-	}
-
-	if permissions != nil {
-		if err := os.Chmod(realDestPath, os.FileMode(*permissions)); err != nil {
-			return nil, fmt.Errorf("failed to set chmod %s: err", destPath)
-		}
-	}
-	if owner != "" {
-		ownership, err := parseDirectoryOwner(owner)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-		}
-		if err := os.Chown(realDestPath, ownership.UID, ownership.GID); err != nil {
-			return nil, fmt.Errorf("failed to set chown %s: err", destPath)
-		}
-	}
-
-	snap, err := newRef.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dir.Result = snap
-	return dir, nil
-}
-
-// TODO: address https://github.com/dagger/dagger/pull/6556/files#r1482830091
-func (dir *Directory) WithFiles(
-	ctx context.Context,
-	srv *dagql.Server,
-	destDir string,
-	src []*File,
-	permissions *int,
-) (*Directory, error) {
-	dir = dir.Clone()
-
-	var err error
-	for _, file := range src {
-		dir, err = dir.WithFile(
-			ctx,
-			srv,
-			path.Join(destDir, path.Base(file.File)),
-			file,
-			permissions,
-			"",
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return dir, nil
-}
-
-func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
-	dir = dir.Clone()
-	return execInMount(ctx, dir, func(root string) error {
-		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
-		if err != nil {
-			return err
-		}
-		return filepath.WalkDir(resolvedDir, func(path string, d os.DirEntry, err error) error {
+		var realDestPath string
+		var realUnpackDestPath string
+		if err := MountRef(ctx, newRef, nil, func(root string, destMnt *mount.Mount) (rerr error) {
+			mntedDestPath, err := containerdfs.RootPath(root, destPath)
 			if err != nil {
 				return err
 			}
-			modTime := time.Unix(int64(unix), 0)
-			return os.Chtimes(path, modTime, modTime)
-		})
-	}, withSavedSnapshot("withTimestamps %d", unix))
+			mntedUnpackDestPath := mntedDestPath
+			destIsDir, err := isDir(mntedDestPath)
+			if err != nil {
+				return err
+			}
+			if destIsDir {
+				_, srcFilename := filepath.Split(src.File)
+				mntedDestPath = path.Join(mntedDestPath, srcFilename)
+			}
+
+			destPathDir, _ := filepath.Split(mntedDestPath)
+			err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+			if err != nil {
+				return err
+			}
+
+			resolvedDestRelPath, err := filepath.Rel(root, mntedDestPath)
+			if err != nil {
+				return err
+			}
+			resolvedUnpackDestRelPath, err := filepath.Rel(root, mntedUnpackDestPath)
+			if err != nil {
+				return err
+			}
+			switch destMnt.Type {
+			case "bind", "rbind":
+				realDestPath = filepath.Join(destMnt.Source, resolvedDestRelPath)
+				realUnpackDestPath = filepath.Join(destMnt.Source, resolvedUnpackDestRelPath)
+			case "overlay":
+				// touch the dest parent dir to trigger a copy-up of parent dirs
+				// we never try to keep directory modtimes consistent right now, so
+				// this is okay
+				if err := os.Chtimes(destPathDir, time.Now(), time.Now()); err != nil {
+					return fmt.Errorf("failed to touch overlay parent dir %s: %w", destPathDir, err)
+				}
+
+				var upperdir string
+				for _, opt := range destMnt.Options {
+					if strings.HasPrefix(opt, "upperdir=") {
+						upperdir = strings.TrimPrefix(opt, "upperdir=")
+						break
+					}
+				}
+				if upperdir == "" {
+					return fmt.Errorf("overlay mount missing upperdir option")
+				}
+				realDestPath = filepath.Join(upperdir, resolvedDestRelPath)
+				realUnpackDestPath = filepath.Join(upperdir, resolvedUnpackDestRelPath)
+			default:
+				return fmt.Errorf("unsupported mount type for destination: %s", destMnt.Type)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		var realSrcPath string
+		if err := MountRef(ctx, srcCacheRef, nil, func(root string, srcMnt *mount.Mount) (rerr error) {
+			srcPath, err := containerdfs.RootPath(root, src.File)
+			if err != nil {
+				return err
+			}
+			srcResolver, err := pathResolverForMount(srcMnt, root)
+			if err != nil {
+				return err
+			}
+			realSrcPath, err = srcResolver(srcPath)
+			if err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		var ownership *Ownership
+		if owner != "" {
+			ownership, err = parseDirectoryOwner(owner)
+			if err != nil {
+				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+			}
+		}
+
+		unpacked := false
+		if attemptUnpackDockerCompatibility {
+			unpacked, err = unpackArchiveFile(realSrcPath, realUnpackDestPath, ownership, newRef.IdentityMapping())
+			if err != nil {
+				return fmt.Errorf("failed to unpack source archive: %w", err)
+			}
+		}
+
+		if !unpacked {
+			tryHardlink := permissions == nil && ownership == nil
+
+			err = copyFile(realSrcPath, realDestPath, tryHardlink)
+			if err != nil {
+				return err
+			}
+
+			if permissions != nil {
+				if err := os.Chmod(realDestPath, os.FileMode(*permissions)); err != nil {
+					return fmt.Errorf("failed to set chmod %s: err", destPath)
+				}
+			}
+			if ownership != nil {
+				if err := os.Chown(realDestPath, ownership.UID, ownership.GID); err != nil {
+					return fmt.Errorf("failed to set chown %s: err", destPath)
+				}
+			}
+		}
+
+		snap, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snap
+		return nil
+	}, nil
 }
 
-func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permissions fs.FileMode) (*Directory, error) {
-	dir = dir.Clone()
+func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withTimestamps %d", unix)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+			if err != nil {
+				return err
+			}
+			return filepath.WalkDir(resolvedDir, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				modTime := time.Unix(int64(unix), 0)
+				return os.Chtimes(path, modTime, modTime)
+			})
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+		return nil
+	}, nil
+}
 
+func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permissions fs.FileMode) (LazyInitFunc, error) {
 	dest = path.Clean(dest)
 	if strings.HasPrefix(dest, "../") {
 		return nil, fmt.Errorf("cannot create directory outside parent: %s", dest)
 	}
 
-	// be sure to create the file under the working directory
-	dest = path.Join(dir.Dir, dest)
-
 	if permissions == 0 {
 		permissions = 0755
 	}
 
-	return execInMount(ctx, dir, func(root string) error {
-		resolvedDir, err := containerdfs.RootPath(root, dest)
+	return func(ctx context.Context) error {
+		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
 		}
-		return TrimErrPathPrefix(os.MkdirAll(resolvedDir, permissions), root)
-	}, withSavedSnapshot("withNewDirectory %s", dest))
-}
-
-func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
-	dir = dir.Clone()
-
-	thisDirPath := dir.Dir
-	if thisDirPath == "" {
-		thisDirPath = "/"
-	}
-	otherDirPath := other.Dir
-	if otherDirPath == "" {
-		otherDirPath = "/"
-	}
-	if thisDirPath != otherDirPath {
-		// this shouldnt happen (since core/schema/directory.go code performs copies the directory to /)
-		return nil, fmt.Errorf("internal error: Directory.diff received different relative paths: %q != %q", dir.Dir, other.Dir)
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current query: %w", err)
-	}
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	thisDirRef, err := getRefOrEvaluate(ctx, dir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get directory ref: %w", err)
-	}
-	otherDirRef, err := getRefOrEvaluate(ctx, other)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get other directory ref: %w", err)
-	}
-
-	cache := query.BuildkitCache()
-
-	var ref bkcache.ImmutableRef
-	if thisDirRef == nil {
-		// lower is nil, so the diff is just the upper ref
-		ref = otherDirRef
-	} else {
-		ref, err = cache.Diff(ctx, thisDirRef, otherDirRef, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to diff directories: %w", err)
-		}
-	}
-
-	newRef, err := cache.New(ctx, ref, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("diff"))
-	if err != nil {
-		return nil, err
-	}
-
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
-		fullPath, err := RootPathWithoutFinalSymlink(root, dir.Dir)
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
 		if err != nil {
 			return err
 		}
-		return os.MkdirAll(fullPath, 0755)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	dirRef, err := newRef.Commit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to commit diff directory: %w", err)
-	}
-
-	dir.Result = dirRef
-	return dir, nil
-}
-
-func (dir *Directory) FindUp(ctx context.Context, name string, start string) (string, error) {
-	if name == "" {
-		return "", fmt.Errorf("name cannot be empty")
-	}
-
-	// Start from the given path or current directory
-	searchPath := start
-	if searchPath == "" {
-		searchPath = "."
-	}
-
-	// Clean the search path
-	searchPath = path.Clean(searchPath)
-	if strings.HasPrefix(searchPath, "../") {
-		return "", fmt.Errorf("cannot search outside parent: %s", searchPath)
-	}
-
-	currentPath := searchPath
-
-	for {
-		currentDir, err := dir.Directory(ctx, currentPath)
-		if err != nil {
-			return "", err
-		}
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return "", err
-		}
-		exists, err := currentDir.Exists(ctx, srv, name, "", true)
-		if err != nil {
-			return "", err
-		}
-		if exists {
-			return path.Clean(path.Join(currentPath, name)), nil
-		}
-		parentPath := path.Dir(currentPath)
-		if parentPath == currentPath {
-			break
-		}
-		currentPath = parentPath
-	}
-	return "", nil
-}
-
-func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Directory, error) {
-	dir = dir.Clone()
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dagql server: %w", err)
-	}
-
-	var diffDir dagql.ObjectResult[*Directory]
-	err = srv.Select(ctx, changes.Before, &diffDir,
-		dagql.Selector{Field: "diff", Args: []dagql.NamedInput{
-			{Name: "other", Value: dagql.NewID[*Directory](changes.After.ID())},
-		}},
-	)
-	if err != nil {
-		return nil, err
-	}
-	if diffDir.Self().Dir != "/" {
-		return nil, fmt.Errorf("internal error: expected diff Dir path to be %q but got %q", "/", diffDir.Self().Dir)
-	}
-
-	parentRef, err := getRefOrEvaluate(ctx, dir)
-	if err != nil {
-		return nil, err
-	}
-
-	var diffDirRef bkcache.ImmutableRef
-
-	if dir.IsRootDir() {
-		// no need to rebase the directory, since diffDir will also be stored under the root
-		diffDirRef, err = getRefOrEvaluate(ctx, diffDir.Self())
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		var rebasedDir dagql.ObjectResult[*Directory]
-		err = srv.Select(ctx, srv.Root(), &rebasedDir,
-			dagql.Selector{Field: "directory"}, // scratch
-			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(dir.Dir)},
-				{Name: "source", Value: dagql.NewID[*Directory](diffDir.ID())},
-			}},
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("withNewDirectory %s", dest)),
 		)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		diffDirRef, err = getRefOrEvaluate(ctx, rebasedDir.Self())
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			resolvedDir, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
+			if err != nil {
+				return err
+			}
+			return TrimErrPathPrefix(os.MkdirAll(resolvedDir, permissions), root)
+		})
 		if err != nil {
-			return nil, err
+			return err
 		}
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current query: %w", err)
-	}
-
-	mergeRefs := []bkcache.ImmutableRef{parentRef, diffDirRef}
-	ref, err := query.BuildkitCache().Merge(ctx, mergeRefs, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to merge directories: %w", err)
-	}
-	err = ref.Finalize(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dir.Result = ref
-
-	paths, err := changes.ComputePaths(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("compute paths: %w", err)
-	}
-
-	if len(paths.Removed) > 0 {
-		srv, err := CurrentDagqlServer(ctx)
+		snapshot, err := newRef.Commit(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get dagql server: %w", err)
+			return err
 		}
-
-		dir, _, err = dir.Without(ctx, srv, paths.Removed...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to remove paths: %w", err)
-		}
-	}
-
-	return dir, nil
+		dir.Snapshot = snapshot
+		return nil
+	}, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (_ *Directory, anyPathsRemoved bool, _ error) {
-	dir = dir.Clone()
-	dir, err := execInMount(ctx, dir, func(root string) error {
-		for _, p := range paths {
-			p = path.Join(dir.Dir, p)
-			var matches []string
-			if strings.Contains(p, "*") {
-				var err error
-				matches, err = fscopy.ResolveWildcards(root, p, true)
-				if err != nil {
-					return err
+func (dir *Directory) Diff(ctx context.Context, other *Directory) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		thisDirRef, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get directory ref: %w", err)
+		}
+
+		thisDirPath := dir.Dir
+		if thisDirPath == "" {
+			thisDirPath = "/"
+		}
+		otherDirPath := other.Dir
+		if otherDirPath == "" {
+			otherDirPath = "/"
+		}
+		if thisDirPath != otherDirPath {
+			// this shouldnt happen (since core/schema/directory.go code performs copies the directory to /)
+			return fmt.Errorf("internal error: Directory.diff received different relative paths: %q != %q", dir.Dir, other.Dir)
+		}
+
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get current query: %w", err)
+		}
+		otherDirRef, err := other.getSnapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get other directory ref: %w", err)
+		}
+
+		cache := query.BuildkitCache()
+
+		var ref bkcache.ImmutableRef
+		if thisDirRef == nil {
+			// lower is nil, so the diff is just the upper ref
+			ref = otherDirRef
+		} else {
+			ref, err = cache.Diff(ctx, thisDirRef, otherDirRef, nil)
+			if err != nil {
+				return fmt.Errorf("failed to diff directories: %w", err)
+			}
+		}
+
+		newRef, err := cache.New(ctx, ref, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription("diff"))
+		if err != nil {
+			return err
+		}
+
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			fullPath, err := RootPathWithoutFinalSymlink(root, dir.Dir)
+			if err != nil {
+				return err
+			}
+			return os.MkdirAll(fullPath, 0755)
+		})
+		if err != nil {
+			return err
+		}
+
+		dirRef, err := newRef.Commit(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to commit diff directory: %w", err)
+		}
+
+		dir.Snapshot = dirRef
+		return nil
+	}, nil
+}
+
+func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get dagql server: %w", err)
+		}
+		if dir.Parent.Self() == nil {
+			return fmt.Errorf("directory has no parent for withChanges")
+		}
+		curDir := dir.Parent
+
+		patch, err := changes.AsPatch(ctx)
+		if err != nil {
+			return fmt.Errorf("get changes patch: %w", err)
+		}
+		if patch != nil {
+			patchBytes, err := patch.Contents(ctx, nil, nil)
+			if err != nil {
+				if !errors.Is(err, errEmptyResultRef) {
+					return fmt.Errorf("read changes patch: %w", err)
 				}
-			} else {
-				matches = []string{p}
+				patchBytes = nil
 			}
 
-			for _, m := range matches {
-				fullPath, err := RootPathWithoutFinalSymlink(root, m)
+			if len(patchBytes) > 0 {
+				err = srv.Select(ctx, curDir, &curDir, dagql.Selector{
+					Field: "withPatch",
+					Args: []dagql.NamedInput{
+						{Name: "patch", Value: dagql.NewString(string(patchBytes))},
+					},
+				})
 				if err != nil {
-					return err
-				}
-				_, statErr := os.Lstat(fullPath)
-				if errors.Is(statErr, os.ErrNotExist) {
-					continue
-				} else if statErr != nil {
-					return statErr
-				}
-
-				anyPathsRemoved = true
-				err = os.RemoveAll(fullPath)
-				if err != nil {
-					return err
+					return fmt.Errorf("apply patch: %w", err)
 				}
 			}
 		}
+
+		paths, err := changes.ComputePaths(ctx)
+		if err != nil {
+			return fmt.Errorf("compute paths: %w", err)
+		}
+		if len(paths.Removed) == 0 {
+			snapshot, err := curDir.Self().getSnapshot(ctx)
+			if err != nil {
+				return fmt.Errorf("get directory snapshot: %w", err)
+			}
+			if snapshot != nil {
+				dir.Snapshot = snapshot.Clone()
+			}
+			return nil
+		}
+
+		err = srv.Select(ctx, curDir, &curDir, dagql.Selector{
+			Field: "withoutFiles",
+			Args: []dagql.NamedInput{
+				{Name: "paths", Value: asArrayInput(paths.Removed, dagql.NewString)},
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("remove paths: %w", err)
+		}
+
+		snapshot, err := curDir.Self().getSnapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("get directory snapshot: %w", err)
+		}
+		if snapshot != nil {
+			dir.Snapshot = snapshot.Clone()
+		}
+
 		return nil
-	}, withSavedSnapshot("without %s", strings.Join(paths, ",")))
-	if err != nil {
-		return nil, false, err
-	}
-	return dir, anyPathsRemoved, nil
+	}, nil
+}
+
+func (dir *Directory) Without(ctx context.Context, opID *call.ID, paths ...string) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("without %s", strings.Join(paths, ","))),
+		)
+		if err != nil {
+			return err
+		}
+
+		var anyPathsRemoved bool
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			for _, p := range paths {
+				p = path.Join(dir.Dir, p)
+				var matches []string
+				if strings.Contains(p, "*") {
+					var err error
+					matches, err = fscopy.ResolveWildcards(root, p, true)
+					if err != nil {
+						return err
+					}
+				} else {
+					matches = []string{p}
+				}
+
+				for _, m := range matches {
+					fullPath, err := RootPathWithoutFinalSymlink(root, m)
+					if err != nil {
+						return err
+					}
+					_, statErr := os.Lstat(fullPath)
+					if errors.Is(statErr, os.ErrNotExist) {
+						continue
+					} else if statErr != nil {
+						return statErr
+					}
+
+					anyPathsRemoved = true
+					err = os.RemoveAll(fullPath)
+					if err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+
+		if !anyPathsRemoved && opID.Receiver() != nil {
+			dag, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get dagql server: %w", err)
+			}
+			// trigger an equivalence union between this ID and its parent, which makes
+			// sense when we don't actually remove any paths (i.e. this is a no-op)
+			// TODO: this id load works but could be more aesthetic looking by adding a dedicated
+			// method to the dagql cache for just adding a newly discovered digest to an existing op
+			opID := opID.With(call.WithExtraDigest(call.ExtraDigest{
+				Digest: opID.Receiver().Digest(),
+				Label:  "Directory.Without no-op equivalence union",
+			}))
+			_, err = dag.Load(ctx, opID)
+			if err != nil {
+				return fmt.Errorf("failed to load op ID for equivalence union: %w", err)
+			}
+		}
+
+		return nil
+	}, nil
 }
 
 func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
@@ -1476,15 +1777,13 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
 	}
 
-	immutableRef, err := getRefOrEvaluate(ctx, dir)
+	immutableRef, err := dir.getSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if immutableRef == nil {
 		return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
 	}
-
-	bkSessionGroup := requiresBuildkitSessionGroup(ctx)
 
 	osStatFunc := os.Stat
 	rootPathFunc := containerdfs.RootPath
@@ -1496,7 +1795,7 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 	}
 
 	var fileInfo os.FileInfo
-	err = MountRef(ctx, immutableRef, bkSessionGroup, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, path.Join(dir.Dir, targetPath))
 		if err != nil {
 			return err
@@ -1505,6 +1804,9 @@ func (dir *Directory) Stat(ctx context.Context, srv *dagql.Server, targetPath st
 		return TrimErrPathPrefix(err, root)
 	})
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
+		}
 		return nil, err
 	}
 
@@ -1542,53 +1844,67 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
 	defer telemetry.EndWithCause(span, &rerr)
 
-	root, closer, err := mountObj(ctx, dir)
+	immutableRef, err := dir.getSnapshot(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to mount directory: %w", err)
+		return fmt.Errorf("failed to evaluate directory: %w", err)
 	}
-	defer closer(false)
-
-	root, err = containerdfs.RootPath(root, dir.Dir)
-	if err != nil {
-		return err
+	if immutableRef == nil {
+		return errEmptyResultRef
 	}
 
-	return bk.LocalDirExport(ctx, root, destPath, merge, nil)
-}
-
-// Root removes any relative path from the directory.
-func (dir *Directory) Root() (*Directory, error) {
-	dir = dir.Clone()
-	dir.Dir = "/"
-	return dir, nil
-}
-
-func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
-	dir = dir.Clone()
-	return execInMount(ctx, dir, func(root string) error {
-		linkName = path.Join(dir.Dir, linkName)
-		linkDir, linkBasename := filepath.Split(linkName)
-		resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
+	return MountRef(ctx, immutableRef, nil, func(root string, _ *mount.Mount) error {
+		root, err = containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
 		}
-		err = os.MkdirAll(resolvedLinkDir, 0755)
-		if err != nil {
-			return err
-		}
-		resolvedLinkName := path.Join(resolvedLinkDir, linkBasename)
-		return os.Symlink(target, resolvedLinkName)
-	}, withSavedSnapshot("symlink %s -> %s", linkName, target))
-}
-
-func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
-	return mountLLB(ctx, dir.LLB, func(root string) error {
-		src, err := containerdfs.RootPath(root, dir.Dir)
-		if err != nil {
-			return err
-		}
-		return f(src)
+		return bk.LocalDirExport(ctx, root, destPath, merge, nil)
 	})
+}
+
+func (dir *Directory) WithSymlink(ctx context.Context, target, linkName string) (LazyInitFunc, error) {
+	return func(ctx context.Context) error {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			fullLinkName := path.Join(dir.Dir, linkName)
+			linkDir, linkBasename := filepath.Split(fullLinkName)
+			resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
+			if err != nil {
+				return err
+			}
+			err = os.MkdirAll(resolvedLinkDir, 0755)
+			if err != nil {
+				return err
+			}
+			resolvedLinkName := path.Join(resolvedLinkDir, linkBasename)
+			return os.Symlink(target, resolvedLinkName)
+		})
+		if err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
+		return nil
+	}, nil
 }
 
 func parseDirectoryOwner(owner string) (*Ownership, error) {
@@ -1614,34 +1930,61 @@ func parseDirectoryOwner(owner string) (*Ownership, error) {
 	}, nil
 }
 
-func (dir *Directory) Chown(ctx context.Context, chownPath string, owner string) (*Directory, error) {
+func (dir *Directory) Chown(ctx context.Context, chownPath string, owner string) (LazyInitFunc, error) {
 	ownership, err := parseDirectoryOwner(owner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 	}
-
-	dir = dir.Clone()
-	return execInMount(ctx, dir, func(root string) error {
-		chownPath := path.Join(dir.Dir, chownPath)
-		chownPath, err := containerdfs.RootPath(root, chownPath)
+	return func(ctx context.Context) error {
+		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return err
 		}
-
-		err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+		parentSnapshot, err := dir.getParentSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		newRef, err := query.BuildkitCache().New(
+			ctx,
+			parentSnapshot,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("chown %s %s", chownPath, owner)),
+		)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, newRef, nil, func(root string, _ *mount.Mount) error {
+			chownPath := path.Join(dir.Dir, chownPath)
+			chownPath, err := containerdfs.RootPath(root, chownPath)
 			if err != nil {
 				return err
 			}
-			if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
-				return fmt.Errorf("failed to set chown %s: %w", path, err)
+
+			err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
+					return fmt.Errorf("failed to set chown %s: %w", path, err)
+				}
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("failed to walk %s: %w", chownPath, err)
 			}
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
+			return err
 		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot = snapshot
 		return nil
-	}, withSavedSnapshot("chown %s %s", chownPath, owner))
+	}, nil
 }
 
 func validateFileName(file string) error {

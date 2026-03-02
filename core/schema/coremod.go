@@ -41,7 +41,7 @@ func (m *CoreMod) View() (call.View, bool) {
 
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
-		&querySchema{dag},
+		&querySchema{},
 		&environmentSchema{dag}, // install environment middleware first
 		&directorySchema{},
 		&fileSchema{},
@@ -433,16 +433,24 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		return nil, err
 	}
 
-	query, err := core.CurrentQuery(ctx)
+	q, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get current query: %w", err)
+		return nil, fmt.Errorf("current query: %w", err)
 	}
-	c, err := query.Cache(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get query cache: %w", err)
+		return nil, fmt.Errorf("current dagql server: %w", err)
 	}
-	dag := obj.coreMod.Dag.WithCache(c)
-
+	if len(idp.Modules()) > 0 {
+		deps, err := q.IDDeps(ctx, &idp)
+		if err != nil {
+			return nil, fmt.Errorf("get result dependencies: %w", err)
+		}
+		dag, err = deps.Schema(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get schema from dependencies: %w", err)
+		}
+	}
 	val, err := dag.Load(ctx, &idp)
 	if err != nil {
 		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)

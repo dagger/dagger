@@ -31,10 +31,9 @@ type ModDeps struct {
 	Mods []Mod // TODO hide
 
 	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
-	lazilyLoadedSchema         *dagql.Server
-	lazilyLoadedSchemaJSONFile dagql.Result[*File]
-	loadSchemaErr              error
-	loadSchemaLock             sync.Mutex
+	lazilyLoadedSchema *dagql.Server
+	loadSchemaErr      error
+	loadSchemaLock     sync.Mutex
 }
 
 func NewModDeps(root *Query, mods []Mod) *ModDeps {
@@ -72,7 +71,7 @@ func (d *ModDeps) LookupDep(name string) (Mod, bool) {
 
 // The combined schema exposed by each mod in this set of dependencies
 func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
-	schema, _, err := d.lazilyLoadSchema(ctx, []string{})
+	schema, err := d.lazilyLoadSchema(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -82,11 +81,25 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // It is meant for consumption from modules, which have some APIs hidden from their codegen.
 func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Result[*File], _ error) {
-	_, schemaJSONFile, err := d.lazilyLoadSchema(ctx, hiddenTypes)
+	dag, err := d.lazilyLoadSchema(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return schemaJSONFile, nil
+	err = dag.Select(ctx, dag.Root(), &inst,
+		dagql.Selector{
+			Field: "__schemaJSONFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "hiddenTypes",
+					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
+				},
+			},
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to select introspection JSON file: %w", err)
+	}
+	return inst, nil
 }
 
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
@@ -108,28 +121,26 @@ func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, 
 	return typeDefs, nil
 }
 
-func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
+func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	loadedSchema *dagql.Server,
-	loadedSchemaJSONFile dagql.Result[*File],
 	rerr error,
 ) {
 	d.loadSchemaLock.Lock()
 	defer d.loadSchemaLock.Unlock()
 	if d.lazilyLoadedSchema != nil {
-		return d.lazilyLoadedSchema, d.lazilyLoadedSchemaJSONFile, nil
+		return d.lazilyLoadedSchema, nil
 	}
 	if d.loadSchemaErr != nil {
-		return nil, loadedSchemaJSONFile, d.loadSchemaErr
+		return nil, d.loadSchemaErr
 	}
 	defer func() {
 		d.lazilyLoadedSchema = loadedSchema
-		d.lazilyLoadedSchemaJSONFile = loadedSchemaJSONFile
 		d.loadSchemaErr = rerr
 	}()
 
 	dagqlCache, err := d.root.Cache(ctx)
 	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
+		return nil, fmt.Errorf("failed to get cache: %w", err)
 	}
 	dag := dagql.NewServer(d.root, dagqlCache)
 	for _, mod := range d.Mods {
@@ -148,14 +159,14 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 	for _, mod := range d.Mods {
 		err := mod.Install(ctx, dag)
 		if err != nil {
-			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
+			return nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 
 		// TODO support core interfaces types
 		if userMod, ok := mod.(*Module); ok {
 			defs, err := mod.TypeDefs(ctx, dag)
 			if err != nil {
-				return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
+				return nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
 			}
 			for _, def := range defs {
 				switch def.Kind {
@@ -181,21 +192,24 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 		obj := objType.typeDef
 		class, found := dag.ObjectType(obj.Name)
 		if !found {
-			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to find object %q in schema", obj.Name)
+			return nil, fmt.Errorf("failed to find object %q in schema", obj.Name)
 		}
 		for _, ifaceType := range ifaces {
 			iface := ifaceType.typeDef
 			if !obj.IsSubtypeOf(iface) {
 				continue
 			}
+			ifaceModule, err := ifaceType.mod.IDModule(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve module identity for interface %q: %w", iface.Name, err)
+			}
 			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
 			class.Extend(
 				dagql.FieldSpec{
-					Name:           asIfaceFieldName,
-					Description:    fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:           &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:         ifaceType.mod.IDModule(),
-					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
+					Name:        asIfaceFieldName,
+					Description: fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
+					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
+					Module:      ifaceModule,
 				},
 				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
@@ -213,21 +227,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 		}
 	}
 
-	if err := dag.Select(ctx, dag.Root(), &loadedSchemaJSONFile,
-		dagql.Selector{
-			Field: "__schemaJSONFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "hiddenTypes",
-					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
-				},
-			},
-		},
-	); err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
-	}
-
-	return dag, loadedSchemaJSONFile, nil
+	return dag, nil
 }
 
 // Search the deps for the given type def, returning the ModType if found. This does not recurse

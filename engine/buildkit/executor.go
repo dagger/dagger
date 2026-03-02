@@ -64,10 +64,11 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	CallID              *call.ID
-	EncodedModuleID     string
-	EncodedFunctionCall json.RawMessage
-	CallerClientID      string
+	CallID                 *call.ID
+	EncodedModuleID        string
+	EncodedContentModuleID string
+	EncodedFunctionCall    json.RawMessage
+	CallerClientID         string
 
 	// Client resource IDs passed to this client from parent object fields.
 	// Needed to handle finding any secrets, sockets or other client resources
@@ -75,8 +76,10 @@ type ExecutionMetadata struct {
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
 
-	// Arbitrary to mixin to the cache key for this operation.
-	CacheMixin digest.Digest
+	// If set, overrides the buildkit cache key used for this execution.
+	// Bridges us to the non-buildkit world by just telling buildkit to do
+	// exactly what we say for now.
+	OverrideBuildkitCacheKey digest.Digest
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string

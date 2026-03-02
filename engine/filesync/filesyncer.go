@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/moby/locker"
+	digest "github.com/opencontainers/go-digest"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
@@ -47,6 +48,7 @@ func NewFileSyncer(opt FileSyncerOpt) *FileSyncer {
 type SnapshotOpts struct {
 	IncludePatterns []string
 	ExcludePatterns []string
+	FollowPaths     []string
 	GitIgnore       bool
 	CacheBuster     string
 
@@ -56,14 +58,20 @@ type SnapshotOpts struct {
 	RelativePath string
 }
 
-func (ls *FileSyncer) Snapshot(ctx context.Context, session session.Group, sm *session.Manager, clientPath string, opts SnapshotOpts) (bkcache.ImmutableRef, error) {
+func (ls *FileSyncer) Snapshot(
+	ctx context.Context,
+	session session.Group,
+	sm *session.Manager,
+	clientPath string,
+	opts SnapshotOpts,
+) (bkcache.ImmutableRef, digest.Digest, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if clientMetadata.ClientID == "" {
-		return nil, fmt.Errorf("no clientID in the current session")
+		return nil, "", fmt.Errorf("no clientID in the current session")
 	}
 
 	timeoutCtx, cancel := context.WithCancelCause(ctx)
@@ -72,7 +80,7 @@ func (ls *FileSyncer) Snapshot(ctx context.Context, session session.Group, sm *s
 
 	caller, err := sm.Get(timeoutCtx, clientMetadata.ClientID, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %w", err)
+		return nil, "", fmt.Errorf("failed to get session: %w", err)
 	}
 
 	// If relPath is ".", we want to use the root path so we can unset it
@@ -81,15 +89,21 @@ func (ls *FileSyncer) Snapshot(ctx context.Context, session session.Group, sm *s
 		opts.RelativePath = ""
 	}
 
-	ref, err := ls.snapshot(ctx, session, caller, clientPath, opts)
+	ref, dgst, err := ls.snapshot(ctx, session, caller, clientPath, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to snapshot: %w", err)
+		return nil, "", fmt.Errorf("failed to snapshot: %w", err)
 	}
 
-	return ref, nil
+	return ref, dgst, nil
 }
 
-func (ls *FileSyncer) snapshot(ctx context.Context, session session.Group, caller session.Caller, clientPath string, opts SnapshotOpts) (_ bkcache.ImmutableRef, rerr error) {
+func (ls *FileSyncer) snapshot(
+	ctx context.Context,
+	session session.Group,
+	caller session.Caller,
+	clientPath string,
+	opts SnapshotOpts,
+) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "filesync")
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -104,13 +118,13 @@ func (ls *FileSyncer) snapshot(ctx context.Context, session session.Group, calle
 	}.AppendToOutgoingContext(ctx)
 	diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(statCtx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create diff copy client: %w", err)
+		return nil, "", fmt.Errorf("failed to create diff copy client: %w", err)
 	}
 
 	var statMsg fstypes.Stat
 	if err := diffCopyClient.RecvMsg(&statMsg); err != nil {
 		diffCopyClient.CloseSend()
-		return nil, fmt.Errorf("failed to receive stat message: %w", err)
+		return nil, "", fmt.Errorf("failed to receive stat message: %w", err)
 	}
 	diffCopyClient.CloseSend()
 
@@ -122,7 +136,7 @@ func (ls *FileSyncer) snapshot(ctx context.Context, session session.Group, calle
 
 	ref, release, err := ls.getRef(ctx, session, drive)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer func() {
 		if err := release(ctx); err != nil {
@@ -130,12 +144,12 @@ func (ls *FileSyncer) snapshot(ctx context.Context, session session.Group, calle
 		}
 	}()
 
-	finalRef, err := ls.sync(ctx, ref, session, caller, drive, clientPath, opts)
+	finalRef, dgst, err := ls.sync(ctx, ref, session, caller, drive, clientPath, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sync: %w", err)
+		return nil, "", fmt.Errorf("failed to sync: %w", err)
 	}
 
-	return finalRef, nil
+	return finalRef, dgst, nil
 }
 
 func (ls *FileSyncer) sync(
@@ -146,10 +160,10 @@ func (ls *FileSyncer) sync(
 	drive string,
 	clientPath string,
 	opts SnapshotOpts,
-) (_ bkcache.ImmutableRef, rerr error) {
+) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
 	// first ensure that all the parent dirs under the client's rootfs (above the given clientPath) are synced in correctly
 	if err := ls.syncParentDirs(ctx, ref, caller, clientPath, drive, opts); err != nil {
-		return nil, fmt.Errorf("failed to sync parent dirs: %w", err)
+		return nil, "", fmt.Errorf("failed to sync parent dirs: %w", err)
 	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -158,11 +172,11 @@ func (ls *FileSyncer) sync(
 	}()
 
 	// now sync in the clientPath dir
-	remote := newRemoteFS(caller, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.GitIgnore)
+	remote := newRemoteFS(caller, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.FollowPaths, opts.GitIgnore)
 	// local mirror should not apply gitignore; remote stats carry ignore metadata.
-	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.RelativePath)
+	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.FollowPaths, opts.RelativePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create local fs: %w", err)
+		return nil, "", fmt.Errorf("failed to create local fs: %w", err)
 	}
 
 	return local.Sync(ctx, remote, ls.cacheManager, session, false)
@@ -197,12 +211,12 @@ func (ls *FileSyncer) syncParentDirs(
 		root = drive + "/"
 	}
 
-	remote := newRemoteFS(caller, root, includes, excludes, false)
-	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, opts.RelativePath)
+	remote := newRemoteFS(caller, root, includes, excludes, nil, false)
+	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, nil, opts.RelativePath)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}
-	_, err = local.Sync(ctx, remote, ls.cacheManager, nil, true)
+	_, _, err = local.Sync(ctx, remote, ls.cacheManager, nil, true)
 	if err != nil {
 		return fmt.Errorf("failed to sync to local fs: %w", err)
 	}

@@ -32,7 +32,6 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	"dagger.io/dagger/telemetry"
@@ -94,15 +93,19 @@ func (svc *Service) Clone() *Service {
 	cp := *svc
 	cp.Args = slices.Clone(cp.Args)
 	if cp.Container != nil {
-		cp.Container = cp.Container.Clone()
+		cp.Container = cloneContainerForTerminal(cp.Container)
 	}
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
 	return &cp
 }
 
-func (svc *Service) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (svc *Service) Evaluate(ctx context.Context) error {
+	return nil
+}
+
+func (svc *Service) Sync(ctx context.Context) error {
+	return svc.Evaluate(ctx)
 }
 
 func (svc *Service) WithHostname(hostname string) *Service {
@@ -135,7 +138,19 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		return upstream.Host, nil
 	case svc.Container != nil, // container=>container
 		len(svc.HostSockets) > 0: // container=>host
-		return network.HostHash(id.Digest()), nil
+		if id == nil {
+			return "", errors.New("service ID is nil")
+		}
+		// Hostname identity should follow output-equivalence identity
+		// (e.g. content digests) rather than strict recipe identity so
+		// equivalent services converge across sessions.
+		// TODO: Deeper integration with dagql cache would enable equivalence set
+		// matching, but this digest suffices for now
+		hostDigest := id.ContentPreferredDigest()
+		if hostDigest == "" {
+			hostDigest = id.Digest()
+		}
+		return network.HostHash(hostDigest), nil
 	default:
 		return "", errors.New("unknown service type")
 	}
@@ -220,7 +235,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			}
 			portForward, ok := socketStore.GetSocketPortForward(svc.HostSockets[0].IDDigest)
 			if !ok {
-				return "", fmt.Errorf("socket not found: %s", svc.HostSockets[0].IDDigest)
+				return "", fmt.Errorf("service endpoint: socket not found: %s", svc.HostSockets[0].IDDigest)
 			}
 			port = portForward.FrontendOrBackendPort()
 		}
@@ -376,7 +391,11 @@ func (svc *Service) startContainer(
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
-		domain = network.ModuleDomain(mod.ResultID, clientMetadata.SessionID)
+		modID, err := mod.SourceContentScopedID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module source content scoped ID: %w", err)
+		}
+		domain = network.ModuleDomain(modID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
 			// it, to support services returned by modules and re-configured with
@@ -397,56 +416,20 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, states, _, refs, _, err := getAllContainerMounts(ctx, ctr)
+	mountData, err := ctr.GetMountData(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
-
-	inputs := make([]bkcache.ImmutableRef, len(states))
-	eg, egctx := errgroup.WithContext(ctx)
-	for _, pbmount := range pbmounts {
-		if pbmount.Input == pb.Empty {
-			continue
+	cleanup.Add("release owned mount input refs", func() error {
+		var errs error
+		for _, ref := range mountData.OwnedInputs {
+			errs = errors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
 		}
+		return errs
+	})
 
-		if ref := refs[pbmount.Input]; ref != nil {
-			inputs[pbmount.Input] = ref
-			continue
-		}
-
-		st := states[pbmount.Input]
-		def, err := st.Marshal(egctx)
-		if err != nil {
-			return nil, err
-		}
-		if def == nil {
-			continue
-		}
-
-		eg.Go(func() error {
-			res, err := bk.Solve(egctx, bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: def.ToPB(),
-			})
-			if err != nil {
-				return err
-			}
-			ref, err := res.Ref.Result(egctx)
-			if err != nil {
-				return err
-			}
-			if ref != nil {
-				inputs[pbmount.Input] = ref.Sys().(*worker.WorkerRef).ImmutableRef
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	workerRefs := make([]*worker.WorkerRef, 0, len(inputs))
-	for _, ref := range inputs {
+	workerRefs := make([]*worker.WorkerRef, 0, len(mountData.Inputs))
+	for _, ref := range mountData.Inputs {
 		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
 	}
 
@@ -456,20 +439,51 @@ func (svc *Service) startContainer(
 	mm := bkmounts.NewMountManager(name, cache, session)
 
 	bkSessionGroup := bksession.NewGroup(bk.ID())
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, "", pbmounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, "", mountData.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 		return cache.New(ctx, ref, bkSessionGroup)
 	}, runtime.GOOS)
 	if err != nil {
 		return nil, fmt.Errorf("prepare mounts: %w", err)
 	}
 
+	cacheMountsByOutputIdx := map[int]*CacheMountSource{}
+	for i, mnt := range ctr.Mounts {
+		if mnt.Readonly || mnt.CacheSource == nil {
+			continue
+		}
+		cacheMountsByOutputIdx[i+2] = mnt.CacheSource
+	}
+
 	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
+		active := active
 		cleanup.Add("release active ref", func() error {
 			return active.Ref.Release(context.WithoutCancel(ctx))
 		})
 	}
 	for _, o := range p.OutputRefs {
+		o := o
 		cleanup.Add("release output ref", func() error {
+			if cacheSrc, ok := cacheMountsByOutputIdx[o.MountIndex]; ok {
+				if cacheSrc.Volume.Self() == nil {
+					return fmt.Errorf("cache mount %q has nil cache volume source", cacheSrc.ID)
+				}
+				switch outputRef := o.Ref.(type) {
+				case bkcache.MutableRef:
+					iref, err := outputRef.Commit(context.WithoutCancel(ctx))
+					if err != nil {
+						return fmt.Errorf("commit cache mount %q: %w", cacheSrc.ID, err)
+					}
+					if err := cacheSrc.Volume.Self().setSnapshotForMount(context.WithoutCancel(ctx), cacheSrc.ID, iref); err != nil {
+						return fmt.Errorf("set cache mount %q snapshot: %w", cacheSrc.ID, err)
+					}
+				case bkcache.ImmutableRef:
+					if err := cacheSrc.Volume.Self().setSnapshotForMount(context.WithoutCancel(ctx), cacheSrc.ID, outputRef); err != nil {
+						return fmt.Errorf("set cache mount %q snapshot: %w", cacheSrc.ID, err)
+					}
+				default:
+					return fmt.Errorf("cache mount %q output has unexpected ref type %T", cacheSrc.ID, o.Ref)
+				}
+			}
 			return o.Ref.Release(context.WithoutCancel(ctx))
 		})
 	}
@@ -904,7 +918,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	for _, sock := range svc.HostSockets {
 		port, ok := sockStore.GetSocketPortForward(sock.IDDigest)
 		if !ok {
-			return nil, fmt.Errorf("socket not found: %s", sock.IDDigest)
+			return nil, fmt.Errorf("service reverse tunnel: socket not found: %s", sock.IDDigest)
 		}
 		desc := fmt.Sprintf("tunnel %s %d -> %d", port.Protocol, port.FrontendOrBackendPort(), port.Backend)
 		descs = append(descs, desc)
@@ -1053,8 +1067,8 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
 	}
 
-	// release unconditionally here, since we Clone it using the __immutableRef
-	// API call below
+	// Release unconditionally here, since we take our own cloned ref for the
+	// returned directory object below.
 	defer immutableRef.Release(ctx)
 
 	// Create a new mutable ref to leave the service with, to prevent further
@@ -1097,25 +1111,21 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
-	var snapshot dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
-		Field: "__immutableRef",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "ref",
-				Value: dagql.String(immutableRef.ID()),
-			},
-		},
-	}); err != nil {
+	snapshot := &Directory{
+		Dir:       source.Dir,
+		Platform:  source.Platform,
+		Services:  slices.Clone(source.Services),
+		LazyState: NewLazyState(),
+		Snapshot:  immutableRef.Clone(),
+	}
+	snapshot.LazyInitComplete = true
+
+	inst, err := dagql.NewObjectResultForCurrentID(ctx, srv, snapshot)
+	if err != nil {
 		return res, false, err
 	}
 
-	// ensure we actually run the __immutableRef DagOp that does a Clone()
-	if _, err := snapshot.Self().Evaluate(ctx); err != nil {
-		return res, false, fmt.Errorf("failed to evaluate snapshot: %w", err)
-	}
-
-	return snapshot, true, nil
+	return inst, true, nil
 }
 
 func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath string) error {

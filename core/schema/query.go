@@ -15,7 +15,6 @@ import (
 )
 
 type querySchema struct {
-	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &querySchema{}
@@ -27,8 +26,9 @@ func (s *querySchema) Install(srv *dagql.Server) {
 		// JSON and written to a core.File. This is currently used internally for calling
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
-		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile,
-			dagql.CachePerSchema[*core.Query, schemaJSONArgs](srv)).
+		dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
+			IsPersistable().
+			WithInput(dagql.PerSchemaInput(srv)).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
@@ -135,8 +135,6 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 
 type schemaJSONArgs struct {
 	HiddenTypes []string `default:"[]"`
-	Schema      string   `internal:"true" default:"" name:"schema"`
-	RawDagOpInternalArgs
 }
 
 func (s *querySchema) schemaJSONFile(
@@ -147,43 +145,40 @@ func (s *querySchema) schemaJSONFile(
 	const schemaJSONFilename = "schema.json"
 	const perm fs.FileMode = 0644
 
-	if args.InDagOp() {
-		f, err := core.NewFileWithContents(ctx, schemaJSONFilename, []byte(args.Schema), perm, nil, parent.Self().Platform())
-		if err != nil {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, dag.View, dag)
+	if err != nil {
+		return inst, err
+	}
+
+	dirInst, err := (&directorySchema{}).directory(ctx, parent, struct{}{})
+	if err != nil {
+		return inst, err
+	}
+
+	file := &core.File{
+		File:      schemaJSONFilename,
+		Platform:  parent.Self().Platform(),
+		Parent:    dirInst,
+		LazyState: core.NewLazyState(),
+	}
+
+	initFn, err := file.WithContents(ctx, moduleSchemaJSON, perm, nil)
+	if err != nil {
+		return inst, err
+	}
+	if initFn != nil {
+		if err := initFn(ctx); err != nil {
 			return inst, err
 		}
-
-		return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
 	}
+	file.LazyInitComplete = true
 
-	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, s.srv.View, s.srv)
-	if err != nil {
-		return inst, err
-	}
-	args.Schema = string(moduleSchemaJSON)
-
-	newID := dagql.CurrentID(ctx).
-		WithArgument(call.NewArgument(
-			"schema",
-			call.NewLiteralString(args.Schema),
-			false,
-		))
-	ctxDagOp := dagql.ContextWithID(ctx, newID)
-
-	f, effectID, err := DagOpFile(ctxDagOp, s.srv, parent.Self(), args, nil, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename))
-	if err != nil {
-		return inst, err
-	}
-
-	if _, err := f.Evaluate(ctx); err != nil {
-		return inst, err
-	}
-
-	curID := dagql.CurrentID(ctx)
-	if effectID != "" {
-		curID = curID.AppendEffectIDs(effectID)
-	}
-	return dagql.NewObjectResultForID(f, s.srv, curID)
+	return dagql.NewObjectResultForCurrentID(ctx, dag, file)
 }
 
 func dagqlToCodegenType(dagqlType *introspection.Type) (*codegenintrospection.Type, error) {

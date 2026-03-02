@@ -6,7 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 type cacheSchema struct{}
@@ -19,7 +19,7 @@ func (s *cacheSchema) Name() string {
 
 func (s *cacheSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("cacheVolume", s.cacheVolume, s.cacheVolumeCacheKey).
+		dagql.NodeFuncWithDynamicInputs("cacheVolume", s.cacheVolume, s.cacheVolumeCacheKey).
 			Doc("Constructs a cache volume for a given cache key.").
 			Args(
 				dagql.Arg("key").Doc(`A string identifier to target this cache volume (e.g., "modules-cache").`),
@@ -42,9 +42,9 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args cacheArgs,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+	req dagql.DynamicInputRequest,
+) (*dagql.DynamicInputResponse, error) {
+	resp := &dagql.DynamicInputResponse{CacheKey: req.CacheKey}
 	if args.Namespace != "" {
 		return resp, nil
 	}
@@ -57,9 +57,11 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 		return nil, err
 	}
 	namespaceKey := namespaceFromModule(m)
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(
-		hashutil.HashStrings(resp.CacheKey.ID.Digest().String(), namespaceKey),
-	)
+	resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+		"namespace",
+		dagql.NewString(namespaceKey).ToLiteral(),
+		false,
+	))
 	return resp, nil
 }
 
