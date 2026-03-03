@@ -1003,7 +1003,7 @@ func (p *collectLogProcessor) OnEmit(ctx context.Context, record *sdklog.Record)
 	return nil
 }
 
-func (p *collectLogProcessor) Enabled(ctx context.Context, record sdklog.Record) bool {
+func (p *collectLogProcessor) Enabled(ctx context.Context, param sdklog.EnabledParameters) bool {
 	return true
 }
 

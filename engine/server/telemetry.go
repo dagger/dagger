@@ -475,8 +475,9 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	return nil
 }
 
-func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
-func (ps clientLogs) Shutdown(context.Context) error       { return nil }
+func (ps clientLogs) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }
+func (ps clientLogs) ForceFlush(ctx context.Context) error                   { return nil }
+func (ps clientLogs) Shutdown(context.Context) error                         { return nil }
 
 func insertLogRecordParam(rec *sdklog.Record) (*clientdb.InsertLogParams, error) {
 	traceID := rec.TraceID().String()
