@@ -171,6 +171,11 @@ class GitRepositoryID(Scalar):
     object of type GitRepository."""
 
 
+class HealthcheckConfigID(Scalar):
+    """The `HealthcheckConfigID` scalar type represents an identifier for
+    an object of type HealthcheckConfig."""
+
+
 class HostID(Scalar):
     """The `HostID` scalar type represents an identifier for an object of
     type Host."""
@@ -1722,6 +1727,12 @@ class Container(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
+    def docker_healthcheck(self) -> "HealthcheckConfig":
+        """Retrieves this container's configured docker healthcheck."""
+        _args: list[Arg] = []
+        _ctx = self._select("dockerHealthcheck", _args)
+        return HealthcheckConfig(_ctx)
+
     async def entrypoint(self) -> list[str]:
         """Return the container's OCI entrypoint.
 
@@ -2600,6 +2611,54 @@ class Container(Type):
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
 
+    def with_docker_healthcheck(
+        self,
+        args: list[str],
+        *,
+        shell: bool | None = None,
+        interval: str | None = None,
+        timeout: str | None = None,
+        start_period: str | None = None,
+        start_interval: str | None = None,
+        retries: int | None = None,
+    ) -> Self:
+        """Retrieves this container with the specificed docker healtcheck command
+        set.
+
+        Parameters
+        ----------
+        args:
+            Healthcheck command to execute. Example: ["go", "run", "main.go"].
+        shell:
+            When true, command must be a single element, which is run using
+            the container's shell
+        interval:
+            Interval between running healthcheck. Example: "30s"
+        timeout:
+            Healthcheck timeout. Example: "3s"
+        start_period:
+            StartPeriod allows for failures during this initial startup period
+            which do not count towards maximum number of retries. Example:
+            "0s"
+        start_interval:
+            StartInterval configures the duration between checks during the
+            startup phase. Example: "5s"
+        retries:
+            The maximum number of consecutive failures before the container is
+            marked as unhealthy. Example: "3"
+        """
+        _args = [
+            Arg("args", args),
+            Arg("shell", shell, None),
+            Arg("interval", interval, None),
+            Arg("timeout", timeout, None),
+            Arg("startPeriod", start_period, None),
+            Arg("startInterval", start_interval, None),
+            Arg("retries", retries, None),
+        ]
+        _ctx = self._select("withDockerHealthcheck", _args)
+        return Container(_ctx)
+
     def with_entrypoint(
         self,
         args: list[str],
@@ -3359,6 +3418,14 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withoutDirectory", _args)
+        return Container(_ctx)
+
+    def without_docker_healthcheck(self) -> Self:
+        """Retrieves this container without a configured docker healtcheck
+        command.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutDockerHealthcheck", _args)
         return Container(_ctx)
 
     def without_entrypoint(
@@ -8867,6 +8934,183 @@ class GitRepository(Type):
 
 
 @typecheck
+class HealthcheckConfig(Type):
+    """Image healthcheck configuration."""
+
+    async def args(self) -> list[str]:
+        """Healthcheck command arguments.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("args", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> HealthcheckConfigID:
+        """A unique identifier for this HealthcheckConfig.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        HealthcheckConfigID
+            The `HealthcheckConfigID` scalar type represents an identifier for
+            an object of type HealthcheckConfig.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(HealthcheckConfigID)
+
+    async def interval(self) -> str:
+        """Interval between running healthcheck. Example:30s
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("interval", _args)
+        return await _ctx.execute(str)
+
+    async def retries(self) -> int:
+        """The maximum number of consecutive failures before the container is
+        marked as unhealthy. Example:3
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("retries", _args)
+        return await _ctx.execute(int)
+
+    async def shell(self) -> bool:
+        """Healthcheck command is a shell command.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("shell", _args)
+        return await _ctx.execute(bool)
+
+    async def start_interval(self) -> str:
+        """StartInterval configures the duration between checks during the
+        startup phase. Example:5s
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("startInterval", _args)
+        return await _ctx.execute(str)
+
+    async def start_period(self) -> str:
+        """StartPeriod allows for failures during this initial startup period
+        which do not count towards maximum number of retries. Example:0s
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("startPeriod", _args)
+        return await _ctx.execute(str)
+
+    async def timeout(self) -> str:
+        """Healthcheck timeout. Example:3s
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("timeout", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class Host(Type):
     """Information about the host environment."""
 
@@ -12182,6 +12426,16 @@ class Client(Root):
         _ctx = self._select("loadGitRepositoryFromID", _args)
         return GitRepository(_ctx)
 
+    def load_healthcheck_config_from_id(
+        self, id: HealthcheckConfigID
+    ) -> HealthcheckConfig:
+        """Load a HealthcheckConfig from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadHealthcheckConfigFromID", _args)
+        return HealthcheckConfig(_ctx)
+
     def load_host_from_id(self, id: HostID) -> Host:
         """Load a Host from its ID."""
         _args = [
@@ -14140,6 +14394,8 @@ __all__ = [
     "GitRefID",
     "GitRepository",
     "GitRepositoryID",
+    "HealthcheckConfig",
+    "HealthcheckConfigID",
     "Host",
     "HostID",
     "ImageLayerCompression",

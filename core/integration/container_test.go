@@ -5499,3 +5499,135 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	}
 	require.Positive(t, int(numConnections.Load()), "the socket was never connected to")
 }
+
+func (ContainerSuite) TestHealthcheckIsPublished(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithDockerHealthcheck([]string{"sh", "-c", "date --iso-8601=seconds > /tmp/healthcheck.log"}, dagger.ContainerWithDockerHealthcheckOpts{
+			Interval:      "25s",
+			Timeout:       "31s",
+			StartPeriod:   "1m",
+			StartInterval: "4s",
+			Retries:       8,
+		})
+
+	testRef := registryRef("healthcheck-publish")
+	pushedRef, err := ctr.Publish(ctx, testRef)
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
+
+	pulledCtr := c.Container().From(pushedRef)
+	configuredHealthcheck := pulledCtr.DockerHealthcheck()
+
+	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sh", "-c", "date --iso-8601=seconds > /tmp/healthcheck.log"}, healthcheckArgs)
+
+	healthcheckInterval, err := configuredHealthcheck.Interval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "25s", healthcheckInterval)
+
+	healthcheckTimeout, err := configuredHealthcheck.Timeout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "31s", healthcheckTimeout)
+
+	healthcheckStartPeriod, err := configuredHealthcheck.StartPeriod(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1m0s", healthcheckStartPeriod)
+
+	healthcheckStartInterval, err := configuredHealthcheck.StartInterval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "4s", healthcheckStartInterval)
+
+	healthcheckRetries, err := configuredHealthcheck.Retries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 8, healthcheckRetries)
+}
+
+func (ContainerSuite) TestHealthcheckDefaults(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithDockerHealthcheck([]string{"/this-will-fail-and-thats-ok"})
+
+	configuredHealthcheck := ctr.DockerHealthcheck()
+
+	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/this-will-fail-and-thats-ok"}, healthcheckArgs)
+
+	healthcheckShell, err := configuredHealthcheck.Shell(ctx)
+	require.NoError(t, err)
+	require.False(t, healthcheckShell)
+
+	healthcheckInterval, err := configuredHealthcheck.Interval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0s", healthcheckInterval)
+
+	healthcheckTimeout, err := configuredHealthcheck.Timeout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0s", healthcheckTimeout)
+
+	healthcheckStartPeriod, err := configuredHealthcheck.StartPeriod(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0s", healthcheckStartPeriod)
+
+	healthcheckStartInterval, err := configuredHealthcheck.StartInterval(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0s", healthcheckStartInterval)
+
+	healthcheckRetries, err := configuredHealthcheck.Retries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, healthcheckRetries)
+}
+
+func (ContainerSuite) TestHealthcheckIsExported(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	imagePath := filepath.Join(t.TempDir(), identity.NewID()+".tar")
+	ctr := c.Container().
+		From(alpineImage).
+		WithDockerHealthcheck([]string{"sh", "-c", "echo ok"})
+
+	actual, err := ctr.Export(ctx, imagePath)
+	require.NoError(t, err)
+	require.Equal(t, imagePath, actual)
+
+	dockerManifestBytes := readTarFile(t, imagePath, "manifest.json")
+	var dockerManifest []struct {
+		Config string
+	}
+	require.NoError(t, json.Unmarshal(dockerManifestBytes, &dockerManifest))
+	require.Len(t, dockerManifest, 1)
+
+	configBytes := readTarFile(t, imagePath, dockerManifest[0].Config)
+	var img struct {
+		Config struct {
+			Healthcheck *struct {
+				Test []string `json:"Test"`
+			} `json:"Healthcheck"`
+		} `json:"config"`
+	}
+	require.NoError(t, json.Unmarshal(configBytes, &img))
+	require.NotNil(t, img.Config.Healthcheck)
+	require.Equal(t, []string{"CMD", "sh", "-c", "echo ok"}, img.Config.Healthcheck.Test)
+}
+
+func (ContainerSuite) TestWithoutHealthcheck(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithDockerHealthcheck([]string{"/waiter-check-please"}).
+		WithoutDockerHealthcheck()
+
+	configuredHealthcheck := ctr.DockerHealthcheck()
+
+	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
+	require.NoError(t, err)
+	require.Empty(t, healthcheckArgs)
+}

@@ -105,6 +105,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container's configured docker healthcheck.
+     */
+    public function dockerHealthcheck(): HealthcheckConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerHealthcheck');
+        return new \Dagger\HealthcheckConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return the container's OCI entrypoint.
      */
     public function entrypoint(): array
@@ -564,6 +573,41 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with the specificed docker healtcheck command set.
+     */
+    public function withDockerHealthcheck(
+        array $args,
+        ?bool $shell = null,
+        ?string $interval = null,
+        ?string $timeout = null,
+        ?string $startPeriod = null,
+        ?string $startInterval = null,
+        ?int $retries = null,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDockerHealthcheck');
+        $innerQueryBuilder->setArgument('args', $args);
+        if (null !== $shell) {
+        $innerQueryBuilder->setArgument('shell', $shell);
+        }
+        if (null !== $interval) {
+        $innerQueryBuilder->setArgument('interval', $interval);
+        }
+        if (null !== $timeout) {
+        $innerQueryBuilder->setArgument('timeout', $timeout);
+        }
+        if (null !== $startPeriod) {
+        $innerQueryBuilder->setArgument('startPeriod', $startPeriod);
+        }
+        if (null !== $startInterval) {
+        $innerQueryBuilder->setArgument('startInterval', $startInterval);
+        }
+        if (null !== $retries) {
+        $innerQueryBuilder->setArgument('retries', $retries);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -1030,6 +1074,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
         }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container without a configured docker healtcheck command.
+     */
+    public function withoutDockerHealthcheck(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDockerHealthcheck');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
