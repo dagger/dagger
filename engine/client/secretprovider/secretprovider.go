@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/session/secrets"
@@ -24,6 +26,10 @@ var resolvers = map[string]SecretResolver{
 	"libsecret": libsecretProvider,
 	"aws+sm":    awsSecretManagerProvider,
 	"aws+ps":    awsParameterStoreProvider,
+}
+
+func Schemes() []string {
+	return slices.Collect(maps.Keys(resolvers))
 }
 
 func ResolverForID(id string) (SecretResolver, string, error) {

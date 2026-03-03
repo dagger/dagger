@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -51,7 +52,8 @@ func (s *addressSchema) value(ctx context.Context, parent *core.Address, args st
 
 func (s *addressSchema) address(ctx context.Context, root *core.Query, args struct {
 	Value dagql.String
-}) (*core.Address, error) {
+},
+) (*core.Address, error) {
 	addr := args.Value.String()
 	if addr == "" {
 		return nil, fmt.Errorf("resource cannot have empty address")
@@ -398,9 +400,9 @@ func (s *addressSchema) secret(
 ) {
 	var cacheKey string
 	addr := r.Self().Value
-	// MY_SECRET -> env://MY_SECRET
+
 	if !strings.Contains(addr, ":") {
-		addr = "env://" + addr
+		return inst, fmt.Errorf("no secret scheme provided. must be one of: [%s]", strings.Join(secretprovider.Schemes(), ", "))
 	}
 	// legacy format:
 	// env:MY_SECRET -> env://MY_SECRET
