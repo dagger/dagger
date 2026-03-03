@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/cellbuf"
+	"github.com/muesli/reflow/truncate"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/bubbline/editline"
@@ -786,7 +787,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		fe.renderProgress(out, r, fe.window.Height, "")
+		fe.renderProgress(out, r, fe.window.Height, 0, "")
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
@@ -1092,32 +1093,58 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 		progPrefix = "  "
 	}
 
-	// All span rows (no viewport windowing — render everything)
-	if fe.renderProgress(out, r, fe.window.Height, progPrefix) {
-		fmt.Fprintln(out)
-	}
-
-	// Zoomed logs below progress
+	// Pre-render chrome below progress to measure its height.
+	var logsView string
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 && !fe.hasShownRootError() {
 		logs.SetHeight(fe.window.Height / 3)
 		logs.SetPrefix(progPrefix)
-		fmt.Fprint(out, logs.View())
+		logsView = logs.View()
+	}
+	var editlineStr string
+	if fe.editline != nil {
+		editlineStr = fe.editlineView()
+	}
+	var formStr string
+	if fe.form != nil {
+		formStr = fe.formView()
+	}
+	keymapStr := fe.keymapView()
+
+	// Compute how many lines the chrome below progress will consume.
+	chromeHeight := lipgloss.Height(keymapStr) + 1 // +1 for gap line after progress
+	if logsView != "" {
+		chromeHeight += lipgloss.Height(logsView) + 1 // +1 for trailing newline
+	}
+	if editlineStr != "" {
+		chromeHeight += lipgloss.Height(editlineStr)
+	}
+	if formStr != "" {
+		chromeHeight += lipgloss.Height(formStr)
+	}
+
+	// Render progress rows, budget-aware of chrome below
+	if fe.renderProgress(out, r, fe.window.Height, chromeHeight, progPrefix) {
 		fmt.Fprintln(out)
 	}
 
-	// Build complete view string
+	// Append pre-rendered chrome
+	if logsView != "" {
+		fmt.Fprint(out, logsView)
+		fmt.Fprintln(out)
+	}
+
 	mainView := buf.String()
 
-	if fe.editline != nil {
-		mainView += fe.editlineView()
+	if editlineStr != "" {
+		mainView += editlineStr
 	}
-	if fe.form != nil {
-		mainView += fe.formView()
+	if formStr != "" {
+		mainView += formStr
 	}
 	if !strings.HasSuffix(mainView, "\n") {
 		mainView += "\n"
 	}
-	mainView += fe.keymapView()
+	mainView += keymapStr
 
 	// Sidebar
 	sidebarContent := fe.viewSidebar()
@@ -1125,8 +1152,17 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 		mainView = fe.renderWithSidebar(mainView, sidebarContent)
 	}
 
-	// Split into lines for tuist
+	// Split into lines for tuist, truncating each to the terminal width
+	// so that no line wraps to multiple physical rows. Without this,
+	// tuist's diff renderer (which counts logical lines) miscounts
+	// cursor positions and corrupts the display.
 	lines := strings.Split(strings.TrimSuffix(mainView, "\n"), "\n")
+	if fe.window.Width > 0 {
+		w := uint(fe.window.Width)
+		for i, line := range lines {
+			lines[i] = truncate.String(line, w)
+		}
+	}
 	return tuist.RenderResult{Lines: lines}
 }
 
@@ -1190,7 +1226,7 @@ func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, pre
 	return lines
 }
 
-func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, height int, prefix string) (rendered bool) {
+func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, screenHeight, chromeHeight int, prefix string) (rendered bool) {
 	if fe.rowsView == nil {
 		return
 	}
@@ -1206,11 +1242,60 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, height int
 		return
 	}
 
-	// Render ALL rows — no viewport windowing. Tuist's diff renderer
-	// handles offscreen content (unchanged lines are never written to
-	// the terminal). Users scroll their native terminal scrollback.
-	for _, row := range rows.Order {
-		lines := fe.renderedRowLines(r, row, prefix)
+	// Pre-render every row so we have line counts.
+	allLines := make([][]string, len(rows.Order))
+	totalLines := 0
+	for i, row := range rows.Order {
+		allLines[i] = fe.renderedRowLines(r, row, prefix)
+		totalLines += len(allLines[i])
+	}
+
+	// If everything fits on screen, render it all.
+	if totalLines+chromeHeight <= screenHeight {
+		for _, lines := range allLines {
+			if len(lines) > 0 {
+				rendered = true
+			}
+			for _, line := range lines {
+				fmt.Fprintln(out, line)
+			}
+		}
+		return
+	}
+
+	// Content exceeds the screen. Render rows up to and including
+	// focus, then fill "after" rows within ~50% of the remaining
+	// screen budget. Rows above focus scroll into terminal scrollback
+	// naturally.
+	focusIdx := fe.focusedIdx
+	if focusIdx < 0 || focusIdx >= len(rows.Order) {
+		focusIdx = len(rows.Order) - 1
+	}
+	focusedHeight := len(allLines[focusIdx])
+	afterBudget := (screenHeight - chromeHeight - focusedHeight) / 2
+	if afterBudget < 0 {
+		afterBudget = 0
+	}
+
+	// Fill "after" rows within the budget.
+	afterCount := 0
+	afterUsed := 0
+	for i := focusIdx + 1; i < len(rows.Order); i++ {
+		n := len(allLines[i])
+		if afterUsed+n > afterBudget {
+			break
+		}
+		afterUsed += n
+		afterCount++
+	}
+
+	// Render: all rows before focus (scrollback), focused row, and
+	// the after rows that fit.
+	limit := focusIdx + 1 + afterCount
+	if limit > len(rows.Order) {
+		limit = len(rows.Order)
+	}
+	for _, lines := range allLines[:limit] {
 		if len(lines) > 0 {
 			rendered = true
 		}
