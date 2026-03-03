@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"

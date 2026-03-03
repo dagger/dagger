@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/trace/embedded"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 )
 
 func WithTracePropagation(ctx context.Context) llb.ConstraintsOpt {

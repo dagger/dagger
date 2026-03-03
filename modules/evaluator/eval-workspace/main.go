@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 
 	"dagger/workspace/internal/dagger"
 )

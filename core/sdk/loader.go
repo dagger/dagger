@@ -8,11 +8,11 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 )
 

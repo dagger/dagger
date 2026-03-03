@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type moduleTypes struct {

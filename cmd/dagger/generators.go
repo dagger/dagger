@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (

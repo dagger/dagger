@@ -11,11 +11,11 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"go.opentelemetry.io/otel/trace"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type portHealthChecker struct {

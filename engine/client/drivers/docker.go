@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/util/traceexec"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/docker/cli/cli/connhelper/commandconn"
 )
 

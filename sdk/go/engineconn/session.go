@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type cliSessionConn struct {

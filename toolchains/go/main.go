@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 
 	"github.com/containerd/platforms"

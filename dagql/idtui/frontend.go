@@ -24,12 +24,12 @@ import (
 	"golang.org/x/term"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type (
