@@ -30,6 +30,29 @@ func TestType(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, b.String())
 	})
+	
+	t.Run("scalar with glob comment", func(t *testing.T) {
+		wantFile := "testdata/type_test_scalar_comment_glob_want.ts"
+
+		var fieldArgsTypeJSON = `
+      {
+        "kind": "SCALAR"  ,
+        "name": "Container",
+        "description": "Hola **/*.go"
+    }
+`
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, fieldArgsTypeJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
 
 	t.Run("scalar multiline comment", func(t *testing.T) {
 		wantFile := "testdata/type_test_scalar_multiline_comment_want.ts"
