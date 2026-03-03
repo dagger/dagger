@@ -30,7 +30,7 @@ func TestType(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, b.String())
 	})
-	
+
 	t.Run("scalar with glob comment", func(t *testing.T) {
 		wantFile := "testdata/type_test_scalar_comment_glob_want.ts"
 
