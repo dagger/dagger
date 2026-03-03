@@ -1,6 +1,6 @@
 {
   "name": "myblueprint-ts",
-  "engineVersion": "v0.19.8",
+  "engineVersion": "v0.20.0",
   "sdk": {
     "source": "typescript"
   },

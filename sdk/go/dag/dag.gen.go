@@ -58,6 +58,12 @@ func CacheVolume(key string) *dagger.CacheVolume {
 	return client.CacheVolume(key)
 }
 
+// Creates an empty changeset
+func Changeset() *dagger.Changeset {
+	client := initClient()
+	return client.Changeset()
+}
+
 // Dagger Cloud configuration and state
 func Cloud() *dagger.Cloud {
 	client := initClient()

@@ -4635,6 +4635,9 @@ type Query {
     key: String!
   ): CacheVolume!
 
+  """Creates an empty changeset"""
+  changeset: Changeset!
+
   """Dagger Cloud configuration and state"""
   cloud: Cloud!
 

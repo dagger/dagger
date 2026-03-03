@@ -9,7 +9,7 @@ attrs==25.4.0
     # via cattrs
 backoff==2.2.1
     # via gql
-beartype==0.18.5
+beartype==0.22.9
     # via dagger-io (sdk/pyproject.toml)
 cattrs==25.3.0
     # via dagger-io (sdk/pyproject.toml)
@@ -28,10 +28,12 @@ gql==4.0.0
     # via dagger-io (sdk/pyproject.toml)
 graphql-core==3.2.4
     # via gql
-h11==0.14.0
+h11==0.16.0
     # via httpcore
-httpcore==1.0.5
-    # via httpx
+httpcore==1.0.9
+    # via
+    #   dagger-io (sdk/pyproject.toml)
+    #   httpx
 httpx==0.27.2
     # via gql
 idna==3.8

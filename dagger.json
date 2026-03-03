@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.19.11",
+  "engineVersion": "v0.20.0",
   "sdk": {
     "source": "go"
   },
@@ -52,9 +52,7 @@
           ]
         }
       ],
-      "ignoreChecks": [
-        "*"
-      ]
+      "ignoreChecks": ["*"]
     },
     {
       "name": "golint",
@@ -123,9 +121,7 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": [
-            "scanSource"
-          ],
+          "function": ["scanSource"],
           "argument": "source",
           "ignore": [
             "bin",

@@ -11460,6 +11460,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Creates an empty changeset
+   */
+  changeset = (): Changeset => {
+    const ctx = this._ctx.select("changeset")
+    return new Changeset(ctx)
+  }
+
+  /**
    * Dagger Cloud configuration and state
    */
   cloud = (): Cloud => {
