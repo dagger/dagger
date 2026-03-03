@@ -93,13 +93,14 @@ def _find_module_spec() -> importlib.machinery.ModuleSpec | None:
 
 
 def _collect_package_files(pkg_path: Path, source_files: list[str]) -> None:
-    """Collect .py files from a package directory into source_files."""
-    # Add __init__.py first if it exists
-    init_file = pkg_path / "__init__.py"
-    if init_file.exists():
-        source_files.append(str(init_file))
+    """Collect .py files from a package directory into source_files.
 
-    # Add other .py files
+    __init__.py is added last so that any class definitions in it
+    take precedence over same-named classes in other files. This
+    matches Python's import semantics where ``import pkg`` loads
+    ``__init__.py`` as the primary module entry point.
+    """
+    # Add other .py files first
     source_files.extend(
         str(py_file)
         for py_file in pkg_path.glob("*.py")
@@ -110,3 +111,8 @@ def _collect_package_files(pkg_path: Path, source_files: list[str]) -> None:
     for subdir in pkg_path.iterdir():
         if subdir.is_dir() and not subdir.name.startswith("_"):
             source_files.extend(str(py_file) for py_file in subdir.glob("*.py"))
+
+    # Add __init__.py last so its definitions take precedence
+    init_file = pkg_path / "__init__.py"
+    if init_file.exists():
+        source_files.append(str(init_file))

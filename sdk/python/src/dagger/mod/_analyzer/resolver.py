@@ -216,8 +216,12 @@ class TypeResolver:
         # Check for Self
         if name == "Self":
             if self._current_class:
+                if self._current_class in self.declared_interfaces:
+                    kind = "interface"
+                else:
+                    kind = "object"
                 return ResolvedType(
-                    kind="object",
+                    kind=kind,
                     name=self._current_class,
                     is_self=True,
                 )
@@ -262,8 +266,12 @@ class TypeResolver:
         # Handle typing.Self or typing_extensions.Self
         if attr_name == "Self":
             if self._current_class:
+                if self._current_class in self.declared_interfaces:
+                    kind = "interface"
+                else:
+                    kind = "object"
                 return ResolvedType(
-                    kind="object",
+                    kind=kind,
                     name=self._current_class,
                     is_self=True,
                 )
@@ -288,48 +296,30 @@ class TypeResolver:
         location: LocationMetadata | None,
     ) -> ResolvedType:
         """Resolve a subscript like list[str], Optional[T], Union[A, B]."""
-        value = node.value
         slice_val = node.slice
 
         # Get the base type name
-        if isinstance(value, ast.Name):
-            base_name = value.id
-        elif isinstance(value, ast.Attribute):
-            base_name = value.attr
-        else:
-            # Try to evaluate
-            try:
-                evaled = self.namespace.eval_annotation(node, location=location)
-                return self._resolve_evaluated(evaled, location)
-            except TypeResolutionError:
-                annotation_str = ast.unparse(node)
-                msg = "Unable to resolve subscripted type"
-                raise TypeResolutionError(
-                    msg, annotation=annotation_str, location=location
-                ) from None
+        base_name = self._get_subscript_base_name(node, location)
+        if base_name is None:
+            evaled = self.namespace.eval_annotation(node, location=location)
+            return self._resolve_evaluated(evaled, location)
 
-        # Handle list[T]
-        if base_name in ("list", "List", "Sequence"):
-            element_type = self._get_single_subscript_arg(slice_val, location)
-            return ResolvedType(
-                kind="list",
-                name="list",
-                element_type=element_type,
-            )
+        if base_name in ("list", "List", "Sequence", "tuple", "Tuple"):
+            return self._resolve_sequence_subscript(base_name, slice_val, location)
 
-        # Handle Optional[T]
         if base_name == "Optional":
             inner_type = self._get_single_subscript_arg(slice_val, location)
             inner_type.is_optional = True
             return inner_type
 
-        # Handle Union[A, B, ...]
         if base_name == "Union":
             return self._resolve_union_subscript(slice_val, location)
 
-        # Handle Annotated[T, ...] - extract base type
-        is_annotated = base_name == "Annotated"
-        if is_annotated and isinstance(slice_val, ast.Tuple) and slice_val.elts:
+        if (
+            base_name == "Annotated"
+            and isinstance(slice_val, ast.Tuple)
+            and slice_val.elts
+        ):
             return self._resolve_ast(slice_val.elts[0], location)
 
         # Unknown generic - try to evaluate
@@ -337,8 +327,54 @@ class TypeResolver:
             evaled = self.namespace.eval_annotation(node, location=location)
             return self._resolve_evaluated(evaled, location)
         except TypeResolutionError:
-            # Fallback to treating as object
             return ResolvedType(kind="object", name=base_name)
+
+    def _get_subscript_base_name(
+        self,
+        node: ast.Subscript,
+        location: LocationMetadata | None,
+    ) -> str | None:
+        """Extract the base name from a subscript, or None if unresolvable."""
+        value = node.value
+        if isinstance(value, ast.Name):
+            return value.id
+        if isinstance(value, ast.Attribute):
+            return value.attr
+        # Try to evaluate; raise if that also fails
+        try:
+            self.namespace.eval_annotation(node, location=location)
+        except TypeResolutionError:
+            annotation_str = ast.unparse(node)
+            msg = "Unable to resolve subscripted type"
+            raise TypeResolutionError(
+                msg, annotation=annotation_str, location=location
+            ) from None
+        return None
+
+    def _resolve_sequence_subscript(
+        self,
+        base_name: str,
+        slice_val: ast.expr,
+        location: LocationMetadata | None,
+    ) -> ResolvedType:
+        """Resolve list[T], tuple[T, ...], or Sequence[T]."""
+        if base_name in ("tuple", "Tuple") and isinstance(slice_val, ast.Tuple):
+            non_ellipsis = [
+                el
+                for el in slice_val.elts
+                if not (isinstance(el, ast.Constant) and el.value is ...)
+            ]
+            if non_ellipsis:
+                element_type = self._resolve_ast(non_ellipsis[0], location)
+            else:
+                element_type = ResolvedType(kind="primitive", name="Any")
+        else:
+            element_type = self._get_single_subscript_arg(slice_val, location)
+        return ResolvedType(
+            kind="list",
+            name="list",
+            element_type=element_type,
+        )
 
     def _resolve_union(
         self,
@@ -416,8 +452,12 @@ class TypeResolver:
         # Handle Self
         if t is typing_extensions.Self:
             if self._current_class:
+                if self._current_class in self.declared_interfaces:
+                    kind = "interface"
+                else:
+                    kind = "object"
                 return ResolvedType(
-                    kind="object",
+                    kind=kind,
                     name=self._current_class,
                     is_self=True,
                 )
