@@ -305,7 +305,7 @@ type Site {
       .withDirectory(workspaceRootPath, directory)
       .withWorkdir(workspaceSitePath)
       .withMountedCache(
-        "./node_modules/.cache",
+        "./node_modules",
         cacheVolume(siteCacheVolumeKey(ws)),
         sharing: CacheSharingMode.LOCKED,
       )
@@ -387,9 +387,7 @@ type Site {
     }
     let before = ws.directory("/", include: [packageJsonPath])
     let inferredIncludes = runtimeExternalPaths(ws)
-    let effectiveIncludes = if (
-      inferredIncludes.length == 0 and packageJson.include.length > 0
-    ) {
+    let effectiveIncludes = if (inferredIncludes.length == 0 and packageJson.include.length > 0) {
       packageJson.include
     } else {
       inferredIncludes
