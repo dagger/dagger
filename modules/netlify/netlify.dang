@@ -32,7 +32,6 @@ type Netlify {
           path: path,
           token: token,
           cliVersion: cliVersion,
-          linkedSite: linkedSiteID(ws, path),
         )
       }
   }
@@ -49,39 +48,17 @@ type Netlify {
     }
   }
 
-  let linkedSiteID(ws: Workspace!, path: String!): String {
-    let statePath = if (path == ".") {
-      ".netlify/state.json"
-    } else {
-      path + "/.netlify/state.json"
-    }
-
-    let stateFile = ws
-      .directory(".", include: [statePath])
-      .stat(statePath)
-
-    if (stateFile == null) {
-      null
-    } else {
-      let stateJSON = ws.file(statePath).asJSON
-      let hasSiteID = stateJSON
-        .fields
-        .filter { field => field == "siteId" }
-        .length > 0
-      let hasSnakeSiteID = stateJSON
-        .fields
-        .filter { field => field == "site_id" }
-        .length > 0
-
-      if (hasSiteID) {
-        stateJSON.field(["siteId"]).asString :: String
-      } else if (hasSnakeSiteID) {
-        stateJSON.field(["site_id"]).asString :: String
-      } else {
-        null
-      }
-    }
+  """
+  Link one discovered site path to a Netlify project by writing .netlify/state.json.
+  """
+  pub link(
+    ws: Workspace!,
+    path: String!,
+    siteID: String!,
+  ): Changeset! {
+    site(ws, path).link(ws, siteID)
   }
+
 }
 
 type Site {
@@ -92,7 +69,35 @@ type Site {
 
   let token: Secret
   let cliVersion: String!
-  let linkedSite: String
+  let workspaceRootPath: String! = "/workspace"
+
+  let siteWorkspacePath: String! {
+    if (path == ".") {
+      workspaceRootPath
+    } else {
+      workspaceRootPath + "/" + path
+    }
+  }
+
+  let statePath: String! {
+    if (path == ".") {
+      ".netlify/state.json"
+    } else {
+      path + "/.netlify/state.json"
+    }
+  }
+
+  let configPath: String! {
+    if (path == ".") {
+      "netlify.toml"
+    } else {
+      path + "/netlify.toml"
+    }
+  }
+
+  let siteConfigIncludes: [String!]! {
+    [configPath, statePath]
+  }
 
   let requireToken: Secret! {
     if (token == null) {
@@ -109,19 +114,41 @@ type Site {
       .withSecretVariable("NETLIFY_AUTH_TOKEN", requireToken)
   }
 
-  let requireSite(site: String): String! {
-    if (site != null) {
-      if (site == "") {
-        raise "site is empty"
-      } else {
-        site
-      }
-    } else if (linkedSite == null) {
-      raise "no linked site found; pass deploy(site: ...) or run netlify link"
-    } else if (linkedSite == "") {
-      raise "linked site is empty"
+  let withSiteWorkspace(ws: Workspace!): Container! {
+    cli
+      .withDirectory(
+        workspaceRootPath,
+        ws.directory(".", include: siteConfigIncludes),
+      )
+      .withWorkdir(siteWorkspacePath)
+  }
+
+  let optionalSiteFlag(site: String): [String!]! {
+    if (site == null) {
+      []
+    } else if (site == "") {
+      raise "site is empty"
     } else {
-      linkedSite
+      ["--site", site]
+    }
+  }
+
+  """
+  Link this site path to a Netlify project by writing .netlify/state.json.
+  """
+  pub link(ws: Workspace!, siteID: String!): Changeset! {
+    if (siteID == "") {
+      raise "siteID is empty"
+    } else {
+      let before = ws.directory("/", include: siteConfigIncludes)
+      let after = withSiteWorkspace(ws)
+        .withExec(
+          ["netlify", "link", "--id", siteID],
+          expect: ReturnType.SUCCESS,
+        )
+        .directory(workspaceRootPath)
+
+      after.changes(before)
     }
   }
 
@@ -131,8 +158,11 @@ type Site {
   `production`, `deploy-preview`, `branch-deploy`, `dev`, or `branch:<name>`.
   If not set, no `--context` flag is passed and Netlify CLI defaults apply.
   `site` maps directly to `netlify deploy --site`.
+  If `site` is omitted, Netlify CLI resolves it natively from local link state
+  (.netlify/state.json) or NETLIFY_SITE_ID in the environment.
   """
   pub deploy(
+    ws: Workspace!,
     build: Directory!,
     message: String!,
     context: String,
@@ -142,19 +172,17 @@ type Site {
       "netlify",
       "deploy",
       "--dir=/build",
-      "--site",
-      requireSite(site),
       "--message",
       message,
       "--json",
-    ]
+    ] + optionalSiteFlag(site)
     if (context != null) {
       if (context != "") {
         deployCmd = deployCmd + ["--context", context]
       }
     }
 
-    let out = cli
+    let out = withSiteWorkspace(ws)
       .withMountedDirectory("/build", build)
       .withExec(deployCmd)
       .stdout
