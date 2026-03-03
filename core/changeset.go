@@ -326,7 +326,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 					var exitErr *exec.ExitError
 					// Check if it's exit code 1, which is expected for git diff when files differ
 					if errors.As(err, &exitErr) && exitErr.ExitCode() != 1 {
-						// NB: we could technically populate a buildkit.ExecError here, but that
+						// NB: we could technically populate an ExecError here, but that
 						// feels like it leaks implementation details; "exit status 128" isn't
 						// exactly clear
 						return fmt.Errorf("failed to generate patch: %w", err)

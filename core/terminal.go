@@ -7,8 +7,10 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/muesli/termenv"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
@@ -61,22 +63,26 @@ func (container *Container) Terminal(
 	svcID *call.ID,
 	args *TerminalArgs,
 ) error {
-	return container.terminal(ctx, svcID, args, nil)
+	return container.terminal(ctx, svcID, args, nil, nil, nil)
 }
 
-func (container *Container) TerminalError(
+func (container *Container) TerminalExecError(
 	ctx context.Context,
 	svcID *call.ID,
-	richErr *buildkit.RichError,
+	execMD *buildkit.ExecutionMetadata,
+	execMeta *executor.Meta,
+	execErr error,
 ) error {
-	return container.terminal(ctx, svcID, nil, richErr)
+	return container.terminal(ctx, svcID, nil, execMD, execMeta, execErr)
 }
 
 func (container *Container) terminal(
 	ctx context.Context,
 	svcID *call.ID,
 	args *TerminalArgs,
-	richErr *buildkit.RichError,
+	execMD *buildkit.ExecutionMetadata,
+	execMeta *executor.Meta,
+	execErr error,
 ) error {
 	container = cloneContainerForTerminal(container)
 
@@ -87,7 +93,7 @@ func (container *Container) terminal(
 		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
 
-	term, output, err := prepTerminal(ctx, svcID, richErr)
+	term, output, err := prepTerminal(ctx, svcID, execErr)
 	if err != nil {
 		return err
 	}
@@ -95,14 +101,19 @@ func (container *Container) terminal(
 	container.Config.Env = prepTerminalEnv(output, container.Config.Env)
 
 	var svc *Service
-	if richErr == nil {
+	if execMD == nil && execMeta == nil {
 		svc, err = container.AsService(ctx, ContainerAsServiceArgs{
 			Args:                          args.Cmd,
 			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
 			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 		})
 	} else {
-		svc, err = container.AsRecoveredService(ctx, richErr)
+		svc = &Service{
+			Creator:   trace.SpanContextFromContext(ctx),
+			Container: container,
+			ExecMD:    execMD,
+			ExecMeta:  execMeta,
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
@@ -220,7 +231,7 @@ func (*Service) Terminal(
 	})
 }
 
-func prepTerminal(ctx context.Context, svcID *call.ID, richErr *buildkit.RichError) (*buildkit.TerminalClient, *termenv.Output, error) {
+func prepTerminal(ctx context.Context, svcID *call.ID, execErr error) (*buildkit.TerminalClient, *termenv.Output, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get current query: %w", err)
@@ -236,7 +247,7 @@ func prepTerminal(ctx context.Context, svcID *call.ID, richErr *buildkit.RichErr
 	}
 
 	output := idtui.NewOutput(term.Stderr)
-	if richErr == nil {
+	if execErr == nil {
 		fmt.Fprint(
 			term.Stderr,
 			output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
@@ -253,9 +264,9 @@ func prepTerminal(ctx context.Context, svcID *call.ID, richErr *buildkit.RichErr
 		return nil, nil, fmt.Errorf("failed to serialize service ID: %w", err)
 	}
 	fmt.Fprint(term.Stderr, dump.Newline)
-	if richErr != nil {
+	if execErr != nil {
 		fmt.Fprintf(term.Stderr,
-			output.String("! %s").Foreground(termenv.ANSIYellow).String(), richErr.Error())
+			output.String("! %s").Foreground(termenv.ANSIYellow).String(), execErr.Error())
 		fmt.Fprint(term.Stderr, dump.Newline)
 	}
 

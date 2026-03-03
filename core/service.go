@@ -22,13 +22,9 @@ import (
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	bkcontainer "github.com/dagger/dagger/internal/buildkit/frontend/gateway/container"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	bkmounts "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/mounts"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -141,11 +137,8 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		if id == nil {
 			return "", errors.New("service ID is nil")
 		}
-		// Hostname identity should follow output-equivalence identity
-		// (e.g. content digests) rather than strict recipe identity so
-		// equivalent services converge across sessions.
-		// TODO: Deeper integration with dagql cache would enable equivalence set
-		// matching, but this digest suffices for now
+		// Hostname identity follows output-equivalence identity so equivalent
+		// services can converge and share bindings.
 		hostDigest := id.ContentPreferredDigest()
 		if hostDigest == "" {
 			hostDigest = id.Digest()
@@ -416,39 +409,22 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	mountData, err := ctr.GetMountData(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not get mounts: %w", err)
-	}
-
-	workerRefs := make([]*worker.WorkerRef, 0, len(mountData.Inputs))
-	for _, ref := range mountData.Inputs {
-		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
-	}
-
 	svcID := identity.NewID()
 
-	name := fmt.Sprintf("container %s", svcID)
-	mm := bkmounts.NewMountManager(name, cache, session)
-
 	bkSessionGroup := bksession.NewGroup(bk.ID())
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, "", mountData.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+	p, err := prepareMounts(ctx, ctr, nil, nil, nil, cache, session, bkSessionGroup, "", runtime.GOOS, func(_ string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 		return cache.New(ctx, ref, bkSessionGroup)
-	}, runtime.GOOS)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("prepare mounts: %w", err)
 	}
 
-	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
-		cleanup.Add("release active ref", func() error {
-			return active.Ref.Release(context.WithoutCancel(ctx))
-		})
-	}
-	for _, o := range p.OutputRefs {
-		cleanup.Add("release output ref", func() error {
-			return o.Ref.Release(context.WithoutCancel(ctx))
-		})
-	}
+	cleanup.Add("release active refs", func() error {
+		return p.releaseActives(context.WithoutCancel(ctx))
+	})
+	cleanup.Add("release output refs", func() error {
+		return p.releaseOutputRefs(context.WithoutCancel(ctx))
+	})
 
 	meta := svc.ExecMeta
 	if meta == nil {
@@ -677,7 +653,7 @@ func (svc *Service) startContainer(
 			var gwErr *gwpb.ExitError
 			if errors.As(exitErr, &gwErr) {
 				// Create ExecError with available service information
-				return nil, &buildkit.ExecError{
+				return nil, &ExecError{
 					Err:      telemetry.TrackOrigin(gwErr, svc.Creator),
 					Cmd:      meta.Args,
 					ExitCode: int(gwErr.ExitCode),

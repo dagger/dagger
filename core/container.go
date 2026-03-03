@@ -294,14 +294,8 @@ type ContainerMount struct {
 }
 
 type CacheMountSource struct {
-	// The base layers underneath the cache mount, if any
-	Base *dagql.ObjectResult[*Directory]
-
-	// The ID of the cache mount
-	ID string
-
-	// The sharing mode of the cache mount
-	SharingMode CacheSharingMode
+	// The cache volume backing this mount.
+	Volume dagql.ObjectResult[*CacheVolume]
 }
 
 type TmpfsMountSource struct {
@@ -1250,61 +1244,32 @@ func (container *Container) WithMountedFile(
 	return container, nil
 }
 
-var SeenCacheKeys = new(sync.Map)
-
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedCache(
 	ctx context.Context,
 	target string,
-	cache *CacheVolume,
-	source dagql.ObjectResult[*Directory],
-	sharingMode CacheSharingMode,
-	owner string,
+	cache dagql.ObjectResult[*CacheVolume],
 ) (*Container, error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	target = absPath(container.Config.WorkingDir, target)
 
-	if sharingMode == "" {
-		sharingMode = CacheSharingModeShared
+	cacheSelf := cache.Self()
+	if cacheSelf == nil {
+		return nil, errors.New("cache volume is nil")
+	}
+	if cacheSelf.getSnapshot() == nil {
+		return nil, errors.New("cache volume snapshot is nil")
 	}
 
 	mount := ContainerMount{
 		Target: target,
 		CacheSource: &CacheMountSource{
-			ID:          cache.Sum(),
-			SharingMode: sharingMode,
+			Volume: cache,
 		},
 	}
-
-	if owner != "" {
-		if source.Self() == nil {
-			// create a scratch directory for chownDir to operate on
-			err = srv.Select(ctx, srv.Root(), &source,
-				dagql.Selector{
-					Field: "directory",
-				},
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-		var err error
-		source, err = container.chownDir(ctx, source, owner)
-		if err != nil {
-			return nil, err
-		}
-	}
-	mount.CacheSource.Base = &source
 	container.Mounts = container.Mounts.With(mount)
 
 	// set image ref to empty string
 	container.ImageRef = ""
-
-	SeenCacheKeys.Store(cache.Keys[0], struct{}{})
 
 	return container, nil
 }
@@ -2399,15 +2364,6 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 	}, nil
 }
 
-func (container *Container) AsRecoveredService(ctx context.Context, richErr *buildkit.RichError) (*Service, error) {
-	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
-		ExecMeta:  richErr.Meta,
-		ExecMD:    richErr.ExecMD,
-	}, nil
-}
-
 func (container *Container) openFile(ctx context.Context, path string) (io.ReadCloser, error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2504,6 +2460,17 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 	}
 
 	return &Ownership{uid, gid}, nil
+}
+
+func (container *Container) ResolveOwnership(ctx context.Context, owner string) (string, error) {
+	ownership, err := container.ownership(ctx, owner)
+	if err != nil {
+		return "", err
+	}
+	if ownership == nil {
+		return "", nil
+	}
+	return strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID), nil
 }
 
 func (container *Container) command(opts ContainerExecOpts) ([]string, error) {

@@ -10,11 +10,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
-	llberror "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
@@ -797,30 +793,16 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Args:                          []string{},
 		UseEntrypoint:                 true,
 		ExperimentalPrivilegedNesting: true,
-	}, &execMD)
+	}, &execMD, true)
 	if err != nil {
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get buildkit client: %w", err)
-	}
-
 	err = execCtr.Sync(ctx)
 	if err != nil {
-		id, ok, extractErr := extractError(ctx, bk, err)
-		if extractErr != nil {
-			// if the module hasn't provided us with a nice error, just return the
-			// original error
-			return nil, err
-		}
-		if ok {
-			errInst, err := id.Load(ctx, opts.Server)
+		var modExecErr *ModuleExecError
+		if errors.As(err, &modExecErr) {
+			errInst, err := modExecErr.ErrorID.Load(ctx, opts.Server)
 			if err != nil {
 				return nil, fmt.Errorf("load error instance: %w", err)
 			}
@@ -859,6 +841,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returnValueAny)
 	if err != nil {
 		return nil, fmt.Errorf("convert return value: %w", err)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	safeToPersistCache := true
@@ -928,58 +915,6 @@ func (fn *ModuleFunction) hasWorkspaceArgs() bool {
 		}
 	}
 	return false
-}
-
-func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {
-	var id dagql.ID[*Error]
-
-	var execErr *llberror.ExecError
-	if errors.As(baseErr, &execErr) {
-		defer func() {
-			execErr.Release()
-			execErr.OwnerBorrowed = true
-		}()
-	}
-
-	var ierr buildkit.RichError
-	if !errors.As(baseErr, &ierr) {
-		return id, false, nil
-	}
-
-	// get the mnt containing module response data (in this case, the error ID)
-	var metaMountResult bksolver.Result
-	var foundMounts []string
-	for i, mnt := range ierr.Mounts {
-		foundMounts = append(foundMounts, mnt.Dest)
-		if mnt.Dest == modMetaDirPath {
-			metaMountResult = execErr.Mounts[i]
-			break
-		}
-	}
-	if metaMountResult == nil {
-		slog.Warn("find meta mount", "mounts", foundMounts, "want", modMetaDirPath)
-		return id, false, nil
-	}
-
-	workerRef, ok := metaMountResult.Sys().(*bkworker.WorkerRef)
-	if !ok {
-		return id, false, errors.Join(baseErr, fmt.Errorf("invalid ref type: %T", metaMountResult.Sys()))
-	}
-	mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(client.ID()))
-	if err != nil {
-		return id, false, errors.Join(err, baseErr)
-	}
-
-	idBytes, err := buildkit.ReadSnapshotPath(ctx, client, mntable, modMetaErrorPath, -1)
-	if err != nil {
-		return id, false, errors.Join(err, baseErr)
-	}
-
-	if err := id.Decode(string(idBytes)); err != nil {
-		return id, false, errors.Join(err, baseErr)
-	}
-
-	return id, true, nil
 }
 
 func (fn *ModuleFunction) ReturnType() (ModType, error) {

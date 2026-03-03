@@ -402,7 +402,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (LazyInitFunc
 			apply.Stdout = stdio.Stdout
 			apply.Stderr = stdio.Stderr
 			if err := apply.Run(); err != nil {
-				// NB: we could technically populate a buildkit.ExecError here, but that
+				// NB: we could technically populate an ExecError here, but that
 				// feels like it leaks implementation details; "exit status 128" isn't
 				// exactly clear
 				return errors.New("failed to apply patch")

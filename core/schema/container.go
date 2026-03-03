@@ -31,6 +31,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
@@ -320,7 +321,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withMountedCache", s.withMountedCache).
+		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheCacheKey).
 			Doc(`Retrieves this container plus a cache volume mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the cache directory (e.g., "/root/.npm").`),
@@ -1146,7 +1147,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 
 	ctr := core.NewContainerChild(parent)
 	ctr.OpID = opID
-	err = ctr.WithExec(ctx, args.ContainerExecOpts, md)
+	err = ctr.WithExec(ctx, args.ContainerExecOpts, md, false)
 	if err != nil {
 		return inst, err
 	}
@@ -1805,29 +1806,107 @@ type containerWithMountedCacheArgs struct {
 	Expand  bool                  `default:"false"`
 }
 
-func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedCacheArgs) (*core.Container, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
-	}
-	if ownerNeedsLookup(args.Owner) {
-		if err := parent.Self().Evaluate(ctx); err != nil {
-			return nil, err
-		}
+func (s *containerSchema) withMountedCacheCacheKey(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerWithMountedCacheArgs,
+	req dagql.DynamicInputRequest,
+) (*dagql.DynamicInputResponse, error) {
+	resp := &dagql.DynamicInputResponse{CacheKey: req.CacheKey}
+	if resp.CacheKey.ID == nil {
+		return nil, errors.New("cache key ID is nil")
 	}
 
-	var dir dagql.ObjectResult[*core.Directory]
-	if args.Source.Valid {
-		var err error
-		dir, err = args.Source.Value.Load(ctx, srv)
-		if err != nil {
-			return nil, err
-		}
+	hasSourceArg := resp.CacheKey.ID.Arg("source") != nil
+	hasSharingArg := resp.CacheKey.ID.Arg("sharing") != nil
+	hasOwnerArg := resp.CacheKey.ID.Arg("owner") != nil
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	cache, err := args.Cache.Load(ctx, srv)
 	if err != nil {
 		return nil, err
+	}
+	if cache.Self() == nil {
+		return nil, errors.New("cache volume is nil")
+	}
+
+	cacheSelf := cache.Self()
+	sharing := cacheSelf.Sharing
+	if sharing == "" {
+		sharing = core.CacheSharingModeShared
+	}
+	needsRewrite := hasSourceArg || hasSharingArg || hasOwnerArg
+	if hasSharingArg {
+		sharing = args.Sharing
+	}
+
+	owner := cacheSelf.Owner
+	if hasOwnerArg {
+		owner = args.Owner
+	}
+	if ownerNeedsLookup(owner) {
+		if err := parent.Self().Evaluate(ctx); err != nil {
+			return nil, err
+		}
+		owner, err = parent.Self().ResolveOwnership(ctx, owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
+		}
+		needsRewrite = true
+	}
+
+	source := cacheSelf.Source
+	if hasSourceArg {
+		source = args.Source
+	}
+	if !needsRewrite {
+		return resp, nil
+	}
+
+	cacheSelectArgs := []dagql.NamedInput{
+		{Name: "key", Value: dagql.NewString(cacheSelf.Key)},
+		{Name: "namespace", Value: dagql.NewString(cacheSelf.Namespace)},
+		{Name: "sharing", Value: sharing},
+		{Name: "owner", Value: dagql.NewString(owner)},
+	}
+	if source.Valid {
+		cacheSelectArgs = append(cacheSelectArgs, dagql.NamedInput{
+			Name:  "source",
+			Value: dagql.Opt(dagql.NewID[*core.Directory](source.Value.ID())),
+		})
+	}
+
+	var resolvedCache dagql.Result[*core.CacheVolume]
+	if err := srv.Select(ctx, srv.Root(), &resolvedCache, dagql.Selector{
+		Field: "cacheVolume",
+		Args:  cacheSelectArgs,
+	}); err != nil {
+		return nil, err
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+		"cache",
+		dagql.NewID[*core.CacheVolume](resolvedCache.ID()).ToLiteral(),
+		false,
+	))
+
+	return resp, nil
+}
+
+func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedCacheArgs) (*core.Container, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	cache, err := args.Cache.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	if cache.Self() == nil {
+		return nil, errors.New("cache volume is nil")
 	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
@@ -1836,14 +1915,7 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.Obj
 	}
 
 	ctr := core.NewContainerChild(parent)
-	return ctr.WithMountedCache(
-		ctx,
-		path,
-		cache.Self(),
-		dir,
-		args.Sharing,
-		args.Owner,
-	)
+	return ctr.WithMountedCache(ctx, path, cache)
 }
 
 type containerWithMountedTempArgs struct {
