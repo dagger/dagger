@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -73,11 +74,15 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 			if cfg.ModuleConfig != nil && cfg.ModuleConfig.ModuleName != "" {
 				cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleConfig.ModuleSourcePath)
 			}
+			// Buffer stderr so post-command noise (go list debug output, etc.)
+			// doesn't pollute the TUI. Only print it if the command fails.
+			var stderrBuf bytes.Buffer
 			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+			cmd.Stderr = &stderrBuf
 			slog.Info("running post-command:", "args", strings.Join(cmd.Args, " "))
 			err := cmd.Run()
 			if err != nil {
+				os.Stderr.Write(stderrBuf.Bytes())
 				slog.Error("post-command failed", "error", err)
 				return err
 			}

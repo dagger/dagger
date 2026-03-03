@@ -45,10 +45,6 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 			}
 			return astFile, nil
 		},
-		// Print some debug logs with timing information to stdout
-		Logf: func(format string, args ...any) {
-			fmt.Printf(format+"\n", args...)
-		},
 	}, ".")
 	if err != nil {
 		return nil, nil, err
