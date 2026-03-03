@@ -61,7 +61,7 @@ func (s checksSchema) resultEmoji(_ context.Context, parent *core.Check, args st
 	return parent.ResultEmoji(), nil
 }
 
-func (s checksSchema) list(ctx context.Context, parent *core.CheckGroup, args struct{}) ([]*core.Check, error) {
+func (s checksSchema) list(_ context.Context, parent *core.CheckGroup, args struct{}) ([]*core.Check, error) {
 	return parent.List(), nil
 }
 
