@@ -95,7 +95,7 @@ def _build_object_typedef(obj_meta: ObjectTypeMetadata) -> dagger.TypeDef:
     has_constructor = (
         obj_meta.constructor
         and not obj_meta.is_interface
-        and obj_meta.constructor.parameters
+        and (obj_meta.constructor.parameters or obj_meta.constructor.doc)
     )
     if has_constructor:
         ctor_def = _build_function_def(obj_meta.constructor)  # type: ignore[arg-type]

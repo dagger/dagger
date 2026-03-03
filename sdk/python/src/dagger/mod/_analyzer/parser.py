@@ -249,34 +249,14 @@ class ModuleParser:
         if decorator_info and "deprecated" in decorator_info.kwargs:
             deprecated = decorator_info.kwargs["deprecated"]
 
-        # Extract fields and functions
-        fields: list[FieldMetadata] = []
-        functions: list[FunctionMetadata] = []
-        constructor: FunctionMetadata | None = None
+        # Extract fields, functions, and constructor
+        fields, functions, init_params, constructor = self._extract_class_members(
+            node, file_path
+        )
 
-        # Track field names for type hints resolution
-        field_annotations: dict[str, ast.expr] = {}
-
-        for item in node.body:
-            # Extract annotated assignments (field declarations)
-            if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
-                field_annotations[item.target.id] = item.annotation
-                field = self._parse_field(item, file_path, node.name)
-                if field is not None:
-                    fields.append(field)
-
-            # Extract methods
-            elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                # Check for @classmethod create() - alternative constructor
-                if item.name == "create" and is_classmethod(item):
-                    constructor = self._parse_constructor(item, file_path, node.name)
-                elif has_decorator(item, "function"):
-                    func = self._parse_function(item, file_path, node.name)
-                    functions.append(func)
-
-        # If no alternative constructor, create one from __init__
+        # Resolve constructor
         if constructor is None and not is_interface:
-            constructor = self._create_default_constructor(node, fields, file_path)
+            constructor = self._resolve_constructor(node, file_path, init_params)
 
         self._resolver.set_current_class(None)
 
@@ -288,6 +268,89 @@ class ModuleParser:
             fields=fields,
             functions=functions,
             constructor=constructor,
+            location=get_location(node, str(file_path)),
+        )
+
+    def _extract_class_members(
+        self,
+        node: ast.ClassDef,
+        file_path: Path,
+    ) -> tuple[
+        list[FieldMetadata],
+        list[FunctionMetadata],
+        list[ParameterMetadata],
+        FunctionMetadata | None,
+    ]:
+        """Extract fields, functions, init params, and constructor from a class body."""
+        fields: list[FieldMetadata] = []
+        functions: list[FunctionMetadata] = []
+        init_params: list[ParameterMetadata] = []
+        constructor: FunctionMetadata | None = None
+
+        for item in node.body:
+            if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                self._process_annotated_assign(
+                    item, file_path, node.name, fields, init_params
+                )
+            elif isinstance(item, ast.Assign):
+                ext_func = self._parse_external_constructor(item, file_path, node.name)
+                if ext_func is not None:
+                    functions.append(ext_func)
+            elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if item.name == "create" and is_classmethod(item):
+                    constructor = self._parse_constructor(item, file_path, node.name)
+                elif has_decorator(item, "function"):
+                    func = self._parse_function(item, file_path, node.name)
+                    functions.append(func)
+
+        return fields, functions, init_params, constructor
+
+    def _process_annotated_assign(
+        self,
+        item: ast.AnnAssign,
+        file_path: Path,
+        class_name: str,
+        fields: list[FieldMetadata],
+        init_params: list[ParameterMetadata],
+    ) -> None:
+        """Process an annotated assignment for both field and constructor param."""
+        is_initvar = self._is_initvar_annotation(item.annotation)
+
+        if not is_initvar:
+            field = self._parse_field(item, file_path, class_name)
+            if field is not None:
+                fields.append(field)
+
+        param = self._parse_class_assignment_as_param(
+            item, file_path, class_name, is_initvar=is_initvar
+        )
+        if param is not None:
+            init_params.append(param)
+
+    def _resolve_constructor(
+        self,
+        node: ast.ClassDef,
+        file_path: Path,
+        init_params: list[ParameterMetadata],
+    ) -> FunctionMetadata:
+        """Resolve the constructor: inherited or default from init params."""
+        inherited = self._find_inherited_constructor(node, file_path)
+        if inherited is not None:
+            return inherited
+
+        return FunctionMetadata(
+            python_name="__init__",
+            api_name="",
+            return_type_annotation=node.name,
+            resolved_return_type=ResolvedType(kind="object", name=node.name),
+            parameters=init_params,
+            doc=get_docstring(node),
+            deprecated=None,
+            cache_policy=None,
+            is_check=False,
+            is_async=False,
+            is_classmethod=False,
+            is_constructor=True,
             location=get_location(node, str(file_path)),
         )
 
@@ -341,6 +404,10 @@ class ModuleParser:
         # Get default value
         has_default = "default" in field_kwargs or "default_factory" in field_kwargs
         default_value = field_kwargs.get("default")
+        if default_value is None and "default_factory" in field_kwargs:
+            # default_factory is a callable; use its result as the default
+            # (e.g., default_factory=list → [])
+            default_value = field_kwargs["default_factory"]
 
         return FieldMetadata(
             python_name=python_name,
@@ -354,6 +421,240 @@ class ModuleParser:
             doc=annotated_meta.doc,
             location=location,
         )
+
+    def _is_initvar_annotation(self, annotation: ast.expr) -> bool:
+        """Check if annotation is ``dataclasses.InitVar[T]`` or ``InitVar[T]``."""
+        if not isinstance(annotation, ast.Subscript):
+            return False
+        value = annotation.value
+        if isinstance(value, ast.Attribute):
+            return value.attr == "InitVar"
+        return isinstance(value, ast.Name) and value.id == "InitVar"
+
+    def _unwrap_initvar(self, annotation: ast.expr) -> ast.expr:
+        """Unwrap InitVar[T] to get the inner type T."""
+        if self._is_initvar_annotation(annotation):
+            return annotation.slice  # type: ignore[return-value]
+        return annotation
+
+    def _parse_class_assignment_as_param(
+        self,
+        node: ast.AnnAssign,
+        file_path: Path,
+        class_name: str,
+        *,
+        is_initvar: bool = False,
+    ) -> ParameterMetadata | None:
+        """Parse an annotated class assignment as a potential constructor parameter.
+
+        Handles all class-level annotated assignments including:
+        - dagger.field() with init=True (default)
+        - dataclasses.InitVar[T] declarations
+        - Simple annotated assignments (e.g., name: str = "default")
+
+        Returns None if the assignment has init=False.
+        """
+        assert self._resolver is not None
+        assert isinstance(node.target, ast.Name)
+
+        python_name = node.target.id
+
+        # Get effective annotation (unwrap InitVar if needed)
+        annotation = (
+            self._unwrap_initvar(node.annotation) if is_initvar else node.annotation
+        )
+
+        # Determine init eligibility and default value
+        has_default = False
+        default_value = None
+
+        if node.value is not None:
+            if isinstance(node.value, ast.Call):
+                # Extract kwargs from any field-like call
+                call_kwargs: dict[str, Any] = {}
+                for keyword in node.value.keywords:
+                    if keyword.arg is not None:
+                        call_kwargs[keyword.arg] = self._eval_constant(keyword.value)
+
+                # If init=False, this is not a constructor parameter
+                if call_kwargs.get("init") is False:
+                    return None
+
+                # Extract default value from the call
+                if "default" in call_kwargs:
+                    has_default = True
+                    default_value = call_kwargs["default"]
+                elif "default_factory" in call_kwargs:
+                    has_default = True
+                    default_value = call_kwargs["default_factory"]
+            else:
+                # Simple expression as default value
+                has_default = True
+                default_value = self._eval_constant(node.value)
+
+        # Resolve type
+        location = get_location(node, str(file_path))
+        resolved_type = self._resolver.resolve(annotation, location=location)
+
+        # Extract Annotated metadata
+        annotated_meta = extract_annotated_metadata(annotation)
+
+        # Build parameter
+        api_name = normalize_name(python_name)
+        if annotated_meta and annotated_meta.name:
+            api_name = annotated_meta.name
+
+        return ParameterMetadata(
+            python_name=python_name,
+            api_name=api_name,
+            type_annotation=get_annotation_string(annotation),
+            resolved_type=resolved_type,
+            is_nullable=resolved_type.is_optional,
+            has_default=has_default,
+            default_value=(
+                self._serialize_default(default_value) if has_default else None
+            ),
+            doc=annotated_meta.doc if annotated_meta else None,
+            ignore=annotated_meta.ignore if annotated_meta else None,
+            default_path=annotated_meta.default_path if annotated_meta else None,
+            default_address=annotated_meta.default_address if annotated_meta else None,
+            deprecated=annotated_meta.deprecated if annotated_meta else None,
+            alt_name=annotated_meta.name if annotated_meta else None,
+            location=location,
+        )
+
+    def _parse_external_constructor(
+        self,
+        node: ast.Assign,
+        file_path: Path,
+        class_name: str,
+    ) -> FunctionMetadata | None:
+        """Parse external constructor pattern: ``name = function(ClassName)``.
+
+        Handles:
+        - ``external = function(External)``
+        - ``alternative = function(doc="...")(External)``
+        """
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            return None
+
+        call_node = node.value
+        if not isinstance(call_node, ast.Call):
+            return None
+
+        match = self._match_function_constructor(call_node)
+        if match is None:
+            return None
+        target_class_name, func_kwargs = match
+
+        target_obj = self._objects.get(target_class_name)
+        if target_obj is None:
+            return None
+
+        ctor = target_obj.constructor
+        doc = func_kwargs.get("doc")
+        if doc is None and ctor:
+            doc = ctor.doc
+        if doc is None:
+            doc = target_obj.doc
+
+        return FunctionMetadata(
+            python_name=node.targets[0].id,
+            api_name=normalize_name(node.targets[0].id),
+            return_type_annotation=target_class_name,
+            resolved_return_type=ResolvedType(kind="object", name=target_class_name),
+            parameters=list(ctor.parameters) if ctor else [],
+            doc=doc,
+            deprecated=func_kwargs.get("deprecated"),
+            cache_policy=func_kwargs.get("cache"),
+            is_check=False,
+            is_async=False,
+            is_classmethod=False,
+            is_constructor=False,
+            location=get_location(node, str(file_path)),
+        )
+
+    def _match_function_constructor(
+        self,
+        call_node: ast.Call,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Match ``function(Cls)`` or ``function(doc="...")(Cls)`` patterns.
+
+        Returns (target_class_name, kwargs) or None.
+        """
+        if self._is_function_ref(call_node.func):
+            return self._extract_function_call_target(call_node, call_node)
+        if (
+            isinstance(call_node.func, ast.Call)
+            and self._is_function_ref(call_node.func.func)
+            and call_node.args
+            and isinstance(call_node.args[0], ast.Name)
+        ):
+            return self._extract_function_call_target(call_node, call_node.func)
+        return None
+
+    def _extract_function_call_target(
+        self,
+        args_node: ast.Call,
+        kwargs_node: ast.Call,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Extract target class name and kwargs from a function() call."""
+        if not args_node.args or not isinstance(args_node.args[0], ast.Name):
+            return None
+        target = args_node.args[0].id
+        kwargs: dict[str, Any] = {}
+        for kw in kwargs_node.keywords:
+            if kw.arg is not None:
+                kwargs[kw.arg] = self._eval_constant(kw.value)
+        return target, kwargs
+
+    def _is_function_ref(self, node: ast.expr) -> bool:
+        """Check if a node references 'function' or 'dagger.function'."""
+        if isinstance(node, ast.Name):
+            return node.id == "function"
+        if isinstance(node, ast.Attribute):
+            return node.attr == "function"
+        return False
+
+    def _find_inherited_constructor(
+        self,
+        node: ast.ClassDef,
+        file_path: Path,
+    ) -> FunctionMetadata | None:
+        """Look for an alternative constructor (create classmethod) in base classes."""
+        for base in node.bases:
+            base_name = None
+            if isinstance(base, ast.Name):
+                base_name = base.id
+            elif isinstance(base, ast.Attribute):
+                base_name = base.attr
+
+            if base_name is None:
+                continue
+
+            # Search for the base class definition in all parsed ASTs
+            base_class = self._find_class_def(base_name)
+            if base_class is None:
+                continue
+
+            # Check for create classmethod in the base class
+            for item in base_class.body:
+                if (
+                    isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and item.name == "create"
+                    and is_classmethod(item)
+                ):
+                    return self._parse_constructor(item, file_path, node.name)
+
+        return None
+
+    def _find_class_def(self, class_name: str) -> ast.ClassDef | None:
+        """Find a class definition by name in all parsed ASTs."""
+        for tree in self._asts.values():
+            for ast_node in ast.iter_child_nodes(tree):
+                if isinstance(ast_node, ast.ClassDef) and ast_node.name == class_name:
+                    return ast_node
+        return None
 
     def _parse_function(
         self,
@@ -446,49 +747,6 @@ class ModuleParser:
             is_classmethod=True,
             is_constructor=True,
             location=location,
-        )
-
-    def _create_default_constructor(
-        self,
-        node: ast.ClassDef,
-        fields: list[FieldMetadata],
-        file_path: Path,
-    ) -> FunctionMetadata:
-        """Create a default constructor from dataclass-style fields."""
-        assert self._resolver is not None
-
-        # Convert fields to constructor parameters
-        parameters: list[ParameterMetadata] = [
-            ParameterMetadata(
-                python_name=field.python_name,
-                api_name=field.api_name,
-                type_annotation=field.type_annotation,
-                resolved_type=field.resolved_type,
-                is_nullable=field.resolved_type.is_optional,
-                has_default=field.has_default,
-                default_value=field.default_value,
-                doc=field.doc,
-                deprecated=field.deprecated,
-                location=field.location,
-            )
-            for field in fields
-            if field.init
-        ]
-
-        return FunctionMetadata(
-            python_name="__init__",
-            api_name="",  # Constructor has empty API name
-            return_type_annotation=node.name,
-            resolved_return_type=ResolvedType(kind="object", name=node.name),
-            parameters=parameters,
-            doc=get_docstring(node),
-            deprecated=None,
-            cache_policy=None,
-            is_check=False,
-            is_async=False,
-            is_classmethod=False,
-            is_constructor=True,
-            location=get_location(node, str(file_path)),
         )
 
     def _parse_parameters(
@@ -641,7 +899,7 @@ class ModuleParser:
             location=get_location(node, str(file_path)),
         )
 
-    def _eval_constant(self, node: ast.expr | None) -> Any:  # noqa: PLR0911, C901
+    def _eval_constant(self, node: ast.expr | None) -> Any:  # noqa: PLR0911
         """Evaluate a constant expression to a Python value."""
         if node is None:
             return None
@@ -649,12 +907,16 @@ class ModuleParser:
         if isinstance(node, ast.Constant):
             return node.value
         if isinstance(node, ast.Name):
-            if node.id == "True":
-                return True
-            if node.id == "False":
-                return False
-            if node.id == "None":
-                return None
+            name_map = {
+                "True": True,
+                "False": False,
+                "None": None,
+                # Callable defaults used as default_factory in fields
+                "list": [],
+                "dict": {},
+            }
+            if node.id in name_map:
+                return name_map[node.id]
             return node.id  # Return as string
         if isinstance(node, ast.List):
             return [self._eval_constant(el) for el in node.elts]
