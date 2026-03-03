@@ -11,6 +11,7 @@ This module handles:
 from __future__ import annotations
 
 import ast
+import enum
 import types
 import typing
 from typing import Any, get_args, get_origin
@@ -56,6 +57,23 @@ DAGGER_SCALAR_TYPES = {
     "GitRepositoryID",
     "GitRefID",
     "TerminalID",
+}
+
+# Dagger enum types from the API
+DAGGER_ENUM_TYPES = {
+    "CacheSharingMode",
+    "ChangesetMergeConflict",
+    "ChangesetsMergeConflict",
+    "ExistsType",
+    "FileType",
+    "FunctionCachePolicy",
+    "ImageLayerCompression",
+    "ImageMediaTypes",
+    "ModuleSourceExperimentalFeature",
+    "ModuleSourceKind",
+    "NetworkProtocol",
+    "ReturnType",
+    "TypeDefKind",
 }
 
 # Primitive type mapping
@@ -203,7 +221,7 @@ class TypeResolver:
                 msg, annotation=annotation_str, location=location
             ) from None
 
-    def _resolve_name(  # noqa: PLR0911, C901
+    def _resolve_name(  # noqa: PLR0911, PLR0912, C901
         self,
         name: str,
         location: LocationMetadata | None,
@@ -245,6 +263,8 @@ class TypeResolver:
             return ResolvedType(kind="object", name=name)
         if name in DAGGER_SCALAR_TYPES:
             return ResolvedType(kind="scalar", name=name)
+        if name in DAGGER_ENUM_TYPES:
+            return ResolvedType(kind="enum", name=name)
 
         # Try to resolve from namespace
         try:
@@ -286,6 +306,8 @@ class TypeResolver:
                 return ResolvedType(kind="object", name=attr_name)
             if attr_name in DAGGER_SCALAR_TYPES:
                 return ResolvedType(kind="scalar", name=attr_name)
+            if attr_name in DAGGER_ENUM_TYPES:
+                return ResolvedType(kind="enum", name=attr_name)
 
         # Try to resolve by attribute name
         return self._resolve_name(attr_name, location)
@@ -519,6 +541,12 @@ class TypeResolver:
                 return ResolvedType(kind="object", name=name)
             if name in DAGGER_SCALAR_TYPES:
                 return ResolvedType(kind="scalar", name=name)
+            if name in DAGGER_ENUM_TYPES:
+                return ResolvedType(kind="enum", name=name)
+
+            # Check if it's an enum subclass (e.g., dependency enums)
+            if issubclass(t, enum.Enum):
+                return ResolvedType(kind="enum", name=name)
 
             # Assume it's an object type
             return ResolvedType(kind="object", name=name)
