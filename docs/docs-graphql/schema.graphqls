@@ -4299,6 +4299,11 @@ type ModuleSource {
   engineVersion: String!
 
   """
+  The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+  """
+  generatedContextChangeset: Changeset!
+
+  """
   The generated files and directories made on top of the module source's context directory.
   """
   generatedContextDirectory: Directory!
