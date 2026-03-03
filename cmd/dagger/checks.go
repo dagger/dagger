@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -21,6 +23,9 @@ import (
 var (
 	checksListMode bool
 )
+
+//go:embed checks.graphql
+var loadChecksQuery string
 
 func init() {
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
@@ -58,9 +63,9 @@ Examples:
 					checks = mod.Checks()
 				}
 				if checksListMode {
-					return listChecks(ctx, checks, cmd)
+					return listChecks(ctx, dag, checks, cmd)
 				} else {
-					return runChecks(ctx, checks, cmd)
+					return runChecks(ctx, dag, checks, cmd)
 				}
 			},
 		)
@@ -77,32 +82,49 @@ func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error)
 	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
 
-func loadCheckGroupInfo(ctx context.Context, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
+func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
 	ctx, span := Tracer().Start(ctx, "fetch check information")
 	defer span.End()
 
-	checks, err := checkgroup.List(ctx)
+	// Intentionally execute the list query subtree without tracing to avoid
+	// per-check name/description span noise in "dagger check -l".
+	noTraceCtx := trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
+
+	id, err := checkgroup.ID(noTraceCtx)
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
-	info := &CheckGroupInfo{}
-	for _, check := range checks {
-		checkInfo := &CheckInfo{}
 
-		name, err := check.Name(ctx)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
+	var res struct {
+		CheckGroup struct {
+			List []struct {
+				Name        string
+				Description string
+			}
 		}
-		checkInfo.Name = cliName(name)
+	}
 
-		description, err := check.Description(ctx)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
+	err = dag.Do(noTraceCtx, &dagger.Request{
+		Query:  loadChecksQuery,
+		OpName: "CheckGroupListDetails",
+		Variables: map[string]any{
+			"checkGroup": id,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	info := &CheckGroupInfo{Checks: make([]*CheckInfo, 0, len(res.CheckGroup.List))}
+	for _, check := range res.CheckGroup.List {
+		checkInfo := &CheckInfo{
+			Name:        cliName(check.Name),
+			Description: check.Description,
 		}
-		checkInfo.Description = description
-
 		info.Checks = append(info.Checks, checkInfo)
 	}
 	return info, nil
@@ -118,8 +140,8 @@ type CheckInfo struct {
 }
 
 // 'dagger checks -l'
-func listChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
-	info, err := loadCheckGroupInfo(ctx, checkgroup)
+func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
+	info, err := loadCheckGroupInfo(ctx, dag, checkgroup)
 	if err != nil {
 		return err
 	}
@@ -139,7 +161,7 @@ func listChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.C
 }
 
 // 'dagger checks' (runs by default)
-func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Command) error {
+func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, _ *cobra.Command) error {
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
@@ -147,17 +169,37 @@ func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Comm
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	checks, err := checkgroup.Run().List(ctx)
+	id, err := checkgroup.ID(ctx)
 	if err != nil {
 		return err
 	}
-	var failed int
-	for _, check := range checks {
-		passed, err := check.Passed(ctx)
-		if err != nil {
-			return err
+
+	var res struct {
+		CheckGroup struct {
+			Run struct {
+				List []struct {
+					Passed bool
+				}
+			}
 		}
-		if !passed {
+	}
+
+	err = dag.Do(ctx, &dagger.Request{
+		Query:  loadChecksQuery,
+		OpName: "CheckGroupRunStatuses",
+		Variables: map[string]any{
+			"checkGroup": id,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		return err
+	}
+
+	var failed int
+	for _, check := range res.CheckGroup.Run.List {
+		if !check.Passed {
 			failed++
 		}
 	}
