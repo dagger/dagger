@@ -423,7 +423,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
 
-	type skipErr struct{ error }
+	var errSkipDriver = errors.New("skip driver")
 
 	startAndWait := func(driver drivers.Driver) error {
 		c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
@@ -435,12 +435,15 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 			ClientID:         c.ID,
 			CloudAuth:        params.CloudAuth,
 		})
+		if err != nil {
+			return fmt.Errorf("%w: provision: %w", errSkipDriver, err)
+		}
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 		slog.Debug("connecting", "runner", c.RunnerHost)
 
 		bkClient, bkInfo, err := newBuildkitClient(ctx, remote, c.connector)
 		if err != nil {
-			return skipErr{fmt.Errorf("new client: %w", err)}
+			return fmt.Errorf("%w: new client: %w", errSkipDriver, err)
 		}
 		c.bkClient = bkClient
 		c.bkVersion = bkInfo.BuildkitVersion.Version
@@ -460,7 +463,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		defer telemetry.EndWithCause(span, &err)
 		c.imageLoader, err = imageBackend.Loader(imgloadCtx)
 		if err != nil {
-			return skipErr{fmt.Errorf("failed to get image loader: %w", err)}
+			return fmt.Errorf("%w: failed to get image loader: %w", errSkipDriver, err)
 		}
 		return nil
 	}
@@ -470,7 +473,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, skipErr{}) {
+		if !errors.Is(err, errSkipDriver) {
 			break
 		}
 	}
