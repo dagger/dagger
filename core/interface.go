@@ -481,7 +481,7 @@ func (iface *InterfaceAnnotatedValue) TypeDefinition(view call.View) *ast.Defini
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       iface.Type().Name(),
-		Directives: []*ast.Directive{dagql.Origin(iface.UnderlyingType.SourceMod().Name())},
+		Directives: []*ast.Directive{dagql.Origin(iface.IfaceType.mod.OriginalName)},
 	}
 	if iface.TypeDef.SourceMap.Valid {
 		def.Directives = append(def.Directives, iface.TypeDef.SourceMap.Value.TypeDirective())
