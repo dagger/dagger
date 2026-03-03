@@ -11256,6 +11256,15 @@ impl ModuleSource {
         let query = self.selection.select("engineVersion");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+    pub fn generated_context_changeset(&self) -> Changeset {
+        let query = self.selection.select("generatedContextChangeset");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");

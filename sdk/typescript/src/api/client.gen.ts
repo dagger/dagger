@@ -10731,6 +10731,14 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+   */
+  generatedContextChangeset = (): Changeset => {
+    const ctx = this._ctx.select("generatedContextChangeset")
+    return new Changeset(ctx)
+  }
+
+  /**
    * The generated files and directories made on top of the module source's context directory.
    */
   generatedContextDirectory = (): Directory => {

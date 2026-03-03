@@ -10657,6 +10657,14 @@ class ModuleSource(Type):
         _ctx = self._select("engineVersion", _args)
         return await _ctx.execute(str)
 
+    def generated_context_changeset(self) -> Changeset:
+        """The generated files and directories made on top of the module source's
+        context directory, returned as a Changeset.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("generatedContextChangeset", _args)
+        return Changeset(_ctx)
+
     def generated_context_directory(self) -> Directory:
         """The generated files and directories made on top of the module source's
         context directory.

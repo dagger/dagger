@@ -10539,6 +10539,15 @@ func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+func (r *ModuleSource) GeneratedContextChangeset() *Changeset {
+	q := r.query.Select("generatedContextChangeset")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // The generated files and directories made on top of the module source's context directory.
 func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
