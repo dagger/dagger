@@ -68,6 +68,25 @@ def get_docstring(
     return ast.get_docstring(node)
 
 
+def _parse_docstring_deprecated(raw_doc: str) -> tuple[str | None, str | None]:
+    """Parse a docstring that may contain a ``.. deprecated::`` directive.
+
+    Returns (doc, deprecated) where:
+    - doc is the non-deprecated portion (or None if only deprecation)
+    - deprecated is the deprecation message (or None if not deprecated)
+    """
+    import re
+
+    match = re.search(r"\.\.\s+deprecated::\s*(.*)", raw_doc, re.IGNORECASE)
+    if not match:
+        return raw_doc, None
+
+    deprecated_msg = match.group(1).strip()
+    # Get the doc portion before the deprecated directive
+    doc_part = raw_doc[: match.start()].strip()
+    return doc_part or None, deprecated_msg or ""
+
+
 class ModuleParser:
     """Parser for extracting declarations from Python source files.
 
@@ -113,6 +132,9 @@ class ModuleParser:
 
         # Phase 2: Collect declaration names (for forward references)
         self._collect_declaration_names()
+
+        # Phase 2.5: Collect module-level constants for default resolution
+        self._collect_module_constants()
 
         # Phase 3: Build namespace and resolver
         self._build_namespace()
@@ -163,6 +185,26 @@ class ModuleParser:
             if isinstance(base, ast.Name) and base.id == "Enum":
                 return True
         return False
+
+    def _collect_module_constants(self) -> None:
+        """Collect module-level constant assignments for default value resolution.
+
+        This allows resolving references like ``FAVES`` when used as
+        default values in function signatures.
+        """
+        self._module_constants: dict[str, ast.expr] = {}
+        for tree in self._asts.values():
+            for node in ast.iter_child_nodes(tree):
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            self._module_constants[target.id] = node.value
+                elif (
+                    isinstance(node, ast.AnnAssign)
+                    and isinstance(node.target, ast.Name)
+                    and node.value is not None
+                ):
+                    self._module_constants[node.target.id] = node.value
 
     def _build_namespace(self) -> None:
         """Build the namespace for type resolution."""
@@ -299,6 +341,10 @@ class ModuleParser:
             elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if item.name == "create" and is_classmethod(item):
                     constructor = self._parse_constructor(item, file_path, node.name)
+                elif item.name == "__init__":
+                    constructor = self._parse_init_constructor(
+                        item, file_path, node.name
+                    )
                 elif has_decorator(item, "function"):
                     func = self._parse_function(item, file_path, node.name)
                     functions.append(func)
@@ -376,8 +422,14 @@ class ModuleParser:
         if node.value is not None and isinstance(node.value, ast.Call):
             func = node.value.func
             # Check for field(), dagger.field(), mod.field()
+            # but NOT dataclasses.field() or other non-dagger field() calls
             is_name_field = isinstance(func, ast.Name) and func.id == "field"
-            is_attr_field = isinstance(func, ast.Attribute) and func.attr == "field"
+            is_attr_field = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "field"
+                and isinstance(func.value, ast.Name)
+                and func.value.id not in ("dataclasses", "attrs", "attr", "pydantic")
+            )
             is_field_call = is_name_field or is_attr_field
 
             if is_field_call:
@@ -749,6 +801,38 @@ class ModuleParser:
             location=location,
         )
 
+    def _parse_init_constructor(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        file_path: Path,
+        class_name: str,
+    ) -> FunctionMetadata:
+        """Parse an explicit __init__ method as a constructor.
+
+        When __init__ is defined explicitly, its parameters override
+        the auto-generated parameters from field declarations.
+        """
+        location = get_location(node, str(file_path))
+
+        # Parse parameters (skip self)
+        parameters = self._parse_parameters(node, file_path, skip_first=True)
+
+        return FunctionMetadata(
+            python_name="__init__",
+            api_name="",
+            return_type_annotation=class_name,
+            resolved_return_type=ResolvedType(kind="object", name=class_name),
+            parameters=parameters,
+            doc=get_docstring(node),
+            deprecated=None,
+            cache_policy=None,
+            is_check=False,
+            is_async=False,
+            is_classmethod=False,
+            is_constructor=True,
+            location=location,
+        )
+
     def _parse_parameters(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -866,14 +950,13 @@ class ModuleParser:
                 for target in item.targets:
                     if isinstance(target, ast.Name):
                         member_name = target.id
-                        # Get value
-                        if isinstance(item.value, ast.Constant):
-                            value = str(item.value.value)
-                        else:
-                            value = member_name
+                        value, inline_doc = self._extract_enum_member_value(
+                            item.value, member_name
+                        )
 
                         # Check for docstring following assignment
-                        doc = None
+                        doc = inline_doc
+                        deprecated = None
                         next_idx = i + 1
                         if next_idx < len(node.body):
                             next_item = node.body[next_idx]
@@ -882,13 +965,15 @@ class ModuleParser:
                                 and isinstance(next_item.value, ast.Constant)
                                 and isinstance(next_item.value.value, str)
                             ):
-                                doc = next_item.value.value.strip()
+                                raw_doc = next_item.value.value.strip()
+                                doc, deprecated = _parse_docstring_deprecated(raw_doc)
 
                         members.append(
                             EnumMemberMetadata(
                                 name=member_name,
                                 value=value,
                                 doc=doc,
+                                deprecated=deprecated,
                             )
                         )
 
@@ -899,7 +984,35 @@ class ModuleParser:
             location=get_location(node, str(file_path)),
         )
 
-    def _eval_constant(self, node: ast.expr | None) -> Any:  # noqa: PLR0911
+    def _extract_enum_member_value(
+        self,
+        value_node: ast.expr,
+        member_name: str,
+    ) -> tuple[str, str | None]:
+        """Extract value and optional inline doc from an enum member assignment.
+
+        Handles:
+        - Simple string: ``ACTIVE = "ACTIVE value"`` → ("ACTIVE value", None)
+        - Tuple (legacy): ``ACTIVE = "here", "doc"`` → ("here", "doc")
+        - Other: uses member name as value
+        """
+        if isinstance(value_node, ast.Constant):
+            return str(value_node.value), None
+
+        # Legacy dagger.Enum pattern: MEMBER = "value", "description"
+        if isinstance(value_node, ast.Tuple) and len(value_node.elts) >= 1:
+            first = value_node.elts[0]
+            value = str(first.value) if isinstance(first, ast.Constant) else member_name
+            doc = None
+            if len(value_node.elts) > 1:
+                second = value_node.elts[1]
+                if isinstance(second, ast.Constant) and isinstance(second.value, str):
+                    doc = second.value
+            return value, doc
+
+        return member_name, None
+
+    def _eval_constant(self, node: ast.expr | None) -> Any:  # noqa: PLR0911, C901
         """Evaluate a constant expression to a Python value."""
         if node is None:
             return None
@@ -917,7 +1030,13 @@ class ModuleParser:
             }
             if node.id in name_map:
                 return name_map[node.id]
+            # Try resolving module-level constants
+            if hasattr(self, "_module_constants") and node.id in self._module_constants:
+                return self._eval_constant(self._module_constants[node.id])
             return node.id  # Return as string
+        if isinstance(node, ast.Attribute):
+            # Handle enum member references like Status.INACTIVE → "INACTIVE"
+            return node.attr
         if isinstance(node, ast.List):
             return [self._eval_constant(el) for el in node.elts]
         if isinstance(node, ast.Tuple):

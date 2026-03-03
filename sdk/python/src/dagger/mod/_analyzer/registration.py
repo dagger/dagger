@@ -92,10 +92,16 @@ def _build_object_typedef(obj_meta: ObjectTypeMetadata) -> dagger.TypeDef:
         type_def = type_def.with_function(func_def)
 
     # Add constructor (for objects only)
+    # Register when: explicit method (create/init), or has params/doc
     has_constructor = (
         obj_meta.constructor
         and not obj_meta.is_interface
-        and (obj_meta.constructor.parameters or obj_meta.constructor.doc)
+        and (
+            obj_meta.constructor.is_classmethod  # explicit create() classmethod
+            or obj_meta.constructor.python_name == "__init__"  # explicit __init__
+            or obj_meta.constructor.parameters
+            or obj_meta.constructor.doc
+        )
     )
     if has_constructor:
         ctor_def = _build_function_def(obj_meta.constructor)  # type: ignore[arg-type]
@@ -145,9 +151,18 @@ def _build_function_def(func_meta: FunctionMetadata) -> dagger.Function:
 
 
 def _add_parameter(
-    func_def: dagger.Function, param_meta: ParameterMetadata
+    func_def: dagger.Function,
+    param_meta: ParameterMetadata,
 ) -> dagger.Function:
     """Add a parameter to a function definition."""
+    # Validate: deprecated parameters must be optional
+    if param_meta.deprecated and not param_meta.is_optional:
+        msg = (
+            f"Can't deprecate required parameter '{param_meta.python_name}'. "
+            "Mark it optional or provide a default value."
+        )
+        raise AnalysisError(msg)
+
     arg_typedef = _resolved_type_to_typedef(param_meta.resolved_type)
 
     # Note: optionality from type (T | None) is already handled by
@@ -162,8 +177,15 @@ def _add_parameter(
         if param_meta.default_value is not None:
             with contextlib.suppress(TypeError, ValueError):
                 default_value = dagger.JSON(json.dumps(param_meta.default_value))
-        else:
+        elif param_meta.resolved_type.is_optional:
+            # Type is already nullable, send explicit null
             default_value = dagger.JSON("null")
+        else:
+            # Dynamic default (callable factory) for non-nullable type.
+            # Make the type optional so the engine accepts omission.
+            # Do NOT send a default value — the engine will omit this
+            # param from inputs, and the runtime will use default_factory.
+            arg_typedef = arg_typedef.with_optional(True)
 
     return func_def.with_arg(
         param_meta.api_name,
