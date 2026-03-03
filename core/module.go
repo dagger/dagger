@@ -365,6 +365,7 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 
 		enum := &ModuleEnum{
 			TypeDef: enumDef,
+			module:  mod,
 		}
 		enum.Install(dag)
 	}

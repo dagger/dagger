@@ -2040,6 +2040,35 @@
                 "ofType": null
               }
             }
+          }
+        ],
+        "description": "Indicates the origin of the typedef",
+        "locations": [
+          "OBJECT",
+          "INTERFACE",
+          "ENUM",
+          "SCALAR"
+        ],
+        "name": "origin"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "module",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
           },
           {
             "defaultValue": null,
