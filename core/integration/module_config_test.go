@@ -21,6 +21,8 @@ import (
 type ConfigSuite struct{}
 
 func TestConfig(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ConfigSuite{})
 }
 

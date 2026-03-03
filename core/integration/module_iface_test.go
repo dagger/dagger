@@ -16,6 +16,8 @@ import (
 type InterfaceSuite struct{}
 
 func TestInterface(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(InterfaceSuite{})
 }
 

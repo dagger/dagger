@@ -19,6 +19,8 @@ import (
 type CLISuite struct{}
 
 func TestCLI(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(CLISuite{})
 }
 

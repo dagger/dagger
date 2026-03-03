@@ -15,6 +15,9 @@ import (
 type GoSuite struct{}
 
 func TestGo(t *testing.T) {
+	ctx := context.Background()
+	ensureEngineTar(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(GoSuite{})
 }
 

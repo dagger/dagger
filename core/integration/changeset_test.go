@@ -13,6 +13,8 @@ import (
 type ChangesetSuite struct{}
 
 func TestChangeset(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ChangesetSuite{})
 }
 

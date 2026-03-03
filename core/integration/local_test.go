@@ -17,6 +17,8 @@ import (
 type LocalDirSuite struct{}
 
 func TestLocalDir(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(LocalDirSuite{})
 }
 

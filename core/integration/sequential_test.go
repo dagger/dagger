@@ -16,6 +16,8 @@ import (
 type SequentialSuite struct{}
 
 func TestSequential(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t,
 		// omitting testctx.WithParallel middleware to get the desired sequential behavior
 		oteltest.WithTracing[*testing.T](),

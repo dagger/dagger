@@ -19,6 +19,8 @@ import (
 type HostSuite struct{}
 
 func TestHost(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(HostSuite{})
 }
 

@@ -19,6 +19,8 @@ import (
 type ShellSuite struct{}
 
 func TestShell(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ShellSuite{})
 }
 

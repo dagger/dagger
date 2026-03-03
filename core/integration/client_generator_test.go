@@ -19,6 +19,8 @@ const defaultGenDir = "./dagger"
 type ClientGeneratorTest struct{}
 
 func TestClientGenerator(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ClientGeneratorTest{})
 }
 

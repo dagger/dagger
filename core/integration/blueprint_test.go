@@ -14,6 +14,8 @@ import (
 type BlueprintSuite struct{}
 
 func TestBlueprint(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(BlueprintSuite{})
 }
 

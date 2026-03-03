@@ -18,6 +18,9 @@ import (
 type DockerfileSuite struct{}
 
 func TestDockerfile(t *testing.T) {
+	ctx := context.Background()
+	ensureRegistries(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(DockerfileSuite{})
 }
 

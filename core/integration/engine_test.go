@@ -31,6 +31,9 @@ import (
 type EngineSuite struct{}
 
 func TestEngine(t *testing.T) {
+	ctx := context.Background()
+	ensureEngineTar(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(EngineSuite{})
 }
 
@@ -46,11 +49,9 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 	// This loads the engine.tar file from the host into the container, that
 	// was set up by the test caller. This is used to spin up additional dev
 	// engines.
-	var tarPath string
-	if v, ok := os.LookupEnv("_DAGGER_TESTS_ENGINE_TAR"); ok {
-		tarPath = v
-	} else {
-		tarPath = "./bin/engine.tar"
+	tarPath := os.Getenv("_DAGGER_TESTS_ENGINE_TAR")
+	if tarPath == "" {
+		panic("_DAGGER_TESTS_ENGINE_TAR not set — call ensureEngineTar before ensureEngine")
 	}
 	devEngineTar := c.Host().File(tarPath)
 

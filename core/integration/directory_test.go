@@ -20,6 +20,8 @@ import (
 type DirectorySuite struct{}
 
 func TestDirectory(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(DirectorySuite{})
 }
 

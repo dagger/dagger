@@ -26,6 +26,9 @@ import (
 type ProvisionSuite struct{}
 
 func TestProvision(t *testing.T) {
+	ctx := context.Background()
+	ensureEngineTar(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ProvisionSuite{})
 }
 

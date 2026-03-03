@@ -17,6 +17,8 @@ import (
 type AddressSuite struct{}
 
 func TestAddress(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(AddressSuite{})
 }
 

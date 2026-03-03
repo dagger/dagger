@@ -19,6 +19,8 @@ import (
 type SecretProvider struct{}
 
 func TestSecretProvider(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(SecretProvider{})
 }
 

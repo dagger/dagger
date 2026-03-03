@@ -28,6 +28,8 @@ dagger call test update --pkg=./core/integration --run="TestLLM" --env-file=file
 type LLMSuite struct{}
 
 func TestLLM(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(LLMSuite{})
 }
 

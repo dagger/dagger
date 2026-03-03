@@ -18,6 +18,8 @@ import (
 type GPUSuite struct{}
 
 func TestGPU(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(GPUSuite{})
 }
 

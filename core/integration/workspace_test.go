@@ -14,6 +14,8 @@ import (
 type WorkspaceSuite struct{}
 
 func TestWorkspace(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(WorkspaceSuite{})
 }
 

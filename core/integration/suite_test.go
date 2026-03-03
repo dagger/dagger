@@ -29,6 +29,162 @@ import (
 	"github.com/dagger/testctx/oteltest"
 )
 
+var (
+	baseOnce      sync.Once
+	registryOnce  sync.Once
+	engineTarOnce sync.Once
+	engineOnce    sync.Once
+
+	engineStarted          bool
+	startedRegistry        *dagger.Service
+	startedPrivateRegistry *dagger.Service
+)
+
+// ensureBase computes version/tag and exports the CLI binary.
+// Uses dag.* (outer session).
+func ensureBase(ctx context.Context) {
+	baseOnce.Do(func() {
+		version, err := dag.Version().Version(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("ensureBase: failed to get version: %v", err))
+		}
+		tag, err := dag.Version().ImageTag(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("ensureBase: failed to get image tag: %v", err))
+		}
+		os.Setenv("_EXPERIMENTAL_DAGGER_VERSION", version)
+		os.Setenv("_EXPERIMENTAL_DAGGER_TAG", tag)
+		engine.Version = version
+		engine.Tag = tag
+
+		_, err = dag.Cli().Binary().Export(ctx, "/.dagger-cli")
+		if err != nil {
+			panic(fmt.Sprintf("ensureBase: failed to export CLI binary: %v", err))
+		}
+		os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", "/.dagger-cli")
+		os.Setenv("_TEST_DAGGER_CLI_LINUX_BIN", "/.dagger-cli")
+
+		os.Setenv("_DAGGER_TESTS_REPO_PATH", "../..")
+	})
+}
+
+// ensureRegistries creates and starts registry services.
+// Must be called BEFORE ensureEngine.
+func ensureRegistries(ctx context.Context) {
+	registryOnce.Do(func() {
+		if engineStarted {
+			panic("ensureRegistries must be called before ensureEngine")
+		}
+		ensureBase(ctx)
+
+		registrySvc := dag.Container().
+			From("registry:2").
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+		const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
+		privateRegistrySvc := dag.Container().
+			From("registry:2").
+			WithNewFile("/auth/htpasswd", htpasswd).
+			WithEnvVariable("REGISTRY_AUTH", "htpasswd").
+			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
+			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+		var err error
+		startedRegistry, err = registrySvc.Start(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("ensureRegistries: failed to start registry: %v", err))
+		}
+		startedPrivateRegistry, err = privateRegistrySvc.Start(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("ensureRegistries: failed to start private registry: %v", err))
+		}
+
+		registryEndpoint, err := startedRegistry.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 5000, Scheme: "tcp"})
+		if err != nil {
+			panic(fmt.Sprintf("ensureRegistries: failed to get registry endpoint: %v", err))
+		}
+		privateRegistryEndpoint, err := startedPrivateRegistry.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 5000, Scheme: "tcp"})
+		if err != nil {
+			panic(fmt.Sprintf("ensureRegistries: failed to get private registry endpoint: %v", err))
+		}
+		registryHost = mustParseEndpointHost(registryEndpoint)
+		privateRegistryHost = mustParseEndpointHost(privateRegistryEndpoint)
+	})
+}
+
+// ensureEngineTar builds and exports engine.tar for tests that spin up
+// additional dev engines. Must be called BEFORE ensureEngine.
+func ensureEngineTar(ctx context.Context) {
+	engineTarOnce.Do(func() {
+		if engineStarted {
+			panic("ensureEngineTar must be called before ensureEngine")
+		}
+		ensureBase(ctx)
+
+		engineDev := dag.EngineDev()
+		if registryHost != "" {
+			engineDev = engineDev.
+				WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
+				WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`)
+		}
+		engineTar := engineDev.
+			WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
+			WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
+			WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+			Container(dagger.EngineDevContainerOpts{Version: engine.Version, Tag: engine.Tag}).
+			AsTarball()
+		if _, err := engineTar.Export(ctx, "/tmp/engine.tar"); err != nil {
+			panic(fmt.Sprintf("ensureEngineTar: failed to export engine tar: %v", err))
+		}
+		os.Setenv("_DAGGER_TESTS_ENGINE_TAR", "/tmp/engine.tar")
+	})
+}
+
+// ensureEngine starts the inner engine and unsets session vars.
+// After this, dag.* calls no longer work. All ensure* helpers that
+// need dag.* must be called before this.
+func ensureEngine(ctx context.Context) {
+	engineOnce.Do(func() {
+		ensureBase(ctx)
+
+		engineRunVol := dag.CacheVolume("integ-test-engine-run")
+		engineDev := dag.EngineDev()
+		if registryHost != "" {
+			engineDev = engineDev.
+				WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
+				WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`)
+		}
+		engineSvc, err := engineDev.TestEngine(dagger.EngineDevTestEngineOpts{
+			RegistrySvc:        startedRegistry,
+			PrivateRegistrySvc: startedPrivateRegistry,
+			EngineRunVol:       engineRunVol,
+			Version:            engine.Version,
+			Tag:                engine.Tag,
+		}).Start(ctx)
+		if err != nil {
+			var execErr *dagger.ExecError
+			if errors.As(err, &execErr) {
+				panic(fmt.Sprintf("ensureEngine: engine failed to start: %v\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr))
+			}
+			panic(fmt.Sprintf("ensureEngine: engine failed to start: %v", err))
+		}
+
+		endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+		if err != nil {
+			panic(fmt.Sprintf("ensureEngine: failed to get engine endpoint: %v", err))
+		}
+		os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
+
+		// Point of no return: unset session vars so connect() routes to inner engine
+		os.Unsetenv("DAGGER_SESSION_PORT")
+		os.Unsetenv("DAGGER_SESSION_TOKEN")
+		engineStarted = true
+	})
+}
+
 func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
@@ -45,115 +201,7 @@ func TestMain(m *testing.M) {
 		os.Exit(res)
 	}
 
-	ctx := context.Background()
-
-	// Create shared registry services (must happen before unsetting session vars,
-	// since dag.* needs the outer session to function)
-	registrySvc := dag.Container().
-		From("registry:2").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
-
-	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
-	privateRegistrySvc := dag.Container().
-		From("registry:2").
-		WithNewFile("/auth/htpasswd", htpasswd).
-		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
-		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
-		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
-
-	// Start registries to get their endpoints for the test process
-	// (the test container doesn't have service bindings, so tests that need
-	// direct HTTP access to registries use these endpoints)
-	startedRegistry, err := registrySvc.Start(ctx)
-	if err != nil {
-		panic(err)
-	}
-	startedPrivateRegistry, err := privateRegistrySvc.Start(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	registryEndpoint, err := startedRegistry.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 5000, Scheme: "tcp"})
-	if err != nil {
-		panic(err)
-	}
-	privateRegistryEndpoint, err := startedPrivateRegistry.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 5000, Scheme: "tcp"})
-	if err != nil {
-		panic(err)
-	}
-
-	// Strip tcp:// scheme to get host:port for use as registry addresses.
-	// These are set as package-level vars so tests can build registry refs
-	// that are reachable from both the test process and the inner engine.
-	registryHost = mustParseEndpointHost(registryEndpoint)
-	privateRegistryHost = mustParseEndpointHost(privateRegistryEndpoint)
-
-	// Compute version/tag once for consistent values across engine, engine tar,
-	// and test binary. Must happen before TestEngine so version is baked in.
-	version, err := dag.Version().Version(ctx)
-	if err != nil {
-		panic(err)
-	}
-	tag, err := dag.Version().ImageTag(ctx)
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("_EXPERIMENTAL_DAGGER_VERSION", version)
-	os.Setenv("_EXPERIMENTAL_DAGGER_TAG", tag)
-	// Set engine.Version/Tag directly since init() already ran before TestMain
-	// and couldn't read the env vars we just set.
-	engine.Version = version
-	engine.Tag = tag
-
-	// Start inner engine with shared registries and buildkit HTTP config
-	// for the endpoint addresses (so the engine can push/pull via HTTP).
-	engineRunVol := dag.CacheVolume("integ-test-engine-run")
-	engineSvc, err := dag.EngineDev().
-		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
-		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
-		TestEngine(dagger.EngineDevTestEngineOpts{
-			RegistrySvc:        startedRegistry,
-			PrivateRegistrySvc: startedPrivateRegistry,
-			EngineRunVol:       engineRunVol,
-			Version:            version,
-			Tag:                tag,
-		}).Start(ctx)
-	if err != nil {
-		var execErr *dagger.ExecError
-		if errors.As(err, &execErr) {
-			panic(fmt.Sprintf("engine failed to start: %v\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr))
-		}
-		panic(fmt.Sprintf("engine failed to start: %v", err))
-	}
-
-	// Export engine tar for tests that spin up additional dev engines
-	// (must happen before FinalizeTestMain which unsets session vars)
-	engineTar := dag.EngineDev().
-		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, registryHost), `http = true`).
-		WithBuildkitConfig(fmt.Sprintf(`registry."%s"`, privateRegistryHost), `http = true`).
-		// Allow HTTP for test registries used by remotecache_test.go
-		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
-		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
-		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
-		Container(dagger.EngineDevContainerOpts{Version: version, Tag: tag}).
-		AsTarball()
-	_, err = engineTar.Export(ctx, "/tmp/engine.tar")
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("_DAGGER_TESTS_ENGINE_TAR", "/tmp/engine.tar")
-
-	// Set repo path
-	os.Setenv("_DAGGER_TESTS_REPO_PATH", "../..")
-
-	// Export CLI, set runner host, and unset session vars
-	testutil.FinalizeTestMain(ctx, engineSvc)
-
 	res := oteltest.Main(m)
-
 	if origAuthSock != "" {
 		os.Setenv("SSH_AUTH_SOCK", origAuthSock)
 	}
@@ -273,10 +321,16 @@ var (
 )
 
 func registryRef(name string) string {
+	if registryHost == "" {
+		panic("registryHost not configured — call ensureRegistries before ensureEngine")
+	}
 	return fmt.Sprintf("%s/%s:%s", registryHost, name, identity.NewID())
 }
 
 func privateRegistryRef(name string) string {
+	if privateRegistryHost == "" {
+		panic("privateRegistryHost not configured — call ensureRegistries before ensureEngine")
+	}
 	return fmt.Sprintf("%s/%s:%s", privateRegistryHost, name, identity.NewID())
 }
 

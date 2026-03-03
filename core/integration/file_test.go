@@ -24,6 +24,8 @@ import (
 type FileSuite struct{}
 
 func TestFile(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(FileSuite{})
 }
 

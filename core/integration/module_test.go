@@ -41,6 +41,8 @@ import (
 type ModuleSuite struct{}
 
 func TestModule(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ModuleSuite{})
 }
 

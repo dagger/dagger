@@ -19,6 +19,9 @@ import (
 type PlatformSuite struct{}
 
 func TestPlatform(t *testing.T) {
+	ctx := context.Background()
+	ensureRegistries(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(PlatformSuite{})
 }
 

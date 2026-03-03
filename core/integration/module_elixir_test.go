@@ -13,6 +13,8 @@ import (
 type ElixirSuite struct{}
 
 func TestElixir(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ElixirSuite{})
 }
 

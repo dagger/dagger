@@ -29,6 +29,8 @@ import (
 type GitSuite struct{}
 
 func TestGit(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(GitSuite{})
 }
 

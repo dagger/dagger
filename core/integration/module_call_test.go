@@ -24,6 +24,8 @@ import (
 type CallSuite struct{}
 
 func TestCall(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(CallSuite{})
 }
 

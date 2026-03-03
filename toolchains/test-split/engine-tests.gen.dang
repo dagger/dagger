@@ -44,20 +44,20 @@ type TestSplit {
   }
 
   """
-  Test Base (lighter tests, excludes heavy suites split into test-base-heavy)
+  Test Base (lighter tests, base-only deps — no registries, no engine.tar)
   """
   pub testBase: Void @check {
     testSkip(
-      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace", "TestGit", "TestRemoteCache", "TestLegacy", "TestServices", "TestPlatform", "TestSecretProvider", "TestConfig"],
+      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace", "TestGit", "TestRemoteCache", "TestLegacy", "TestServices", "TestPlatform", "TestSecretProvider", "TestConfig", "TestClient", "TestFuture"],
       pkg: "./core/integration",
     )
   }
 
   """
-  Test Base Heavy (git, remote cache, services, platform, secret providers, legacy, config)
+  Test Base Heavy (base-only deps — no registries, no engine.tar)
   """
   pub testBaseHeavy: Void @check {
-    testSpecific(["TestGit", "TestGitCredential", "TestRemoteCache", "TestLegacy", "TestServices", "TestPlatform", "TestSecretProvider", "TestConfig"])
+    testSpecific(["TestGit", "TestGitCredential", "TestLegacy", "TestSecretProvider", "TestConfig", "TestCLI"])
   }
 
   """
@@ -82,10 +82,10 @@ type TestSplit {
   }
 
   """
-  Test CLI Engine
+  Test Engine (needs engine.tar)
   """
-  pub testCliEngine: Void @check {
-    testSpecific(["TestCLI", "TestEngine"])
+  pub testEngine: Void @check {
+    testSpecific(["TestEngine"])
   }
 
   """
@@ -96,7 +96,10 @@ type TestSplit {
   }
 
   """
-  Test Container (excluding DinD/nested engine tests)
+  Test Container (needs registries + engine.tar, excluding DinD/nested engine tests).
+  TestContainer runs first alphabetically and sets up the superset of deps
+  (registries + engine.tar) needed by TestDockerfile (registries), TestPlatform
+  (registries), and TestServices (registries + engine.tar).
   """
   pub testContainer: Void @check {
     go
@@ -106,7 +109,7 @@ type TestSplit {
       .withMountedCache("/run", cacheVolume("integ-test-engine-run"))
       .withExec(
         ["go", "test", "./core/integration",
-         "-run", "TestContainer|TestDockerfile",
+         "-run", "TestContainer|TestDockerfile|TestServices|TestPlatform",
          "-skip", "TestInsecureRootCapabilitesWithService|TestImageLoadCompatibility|TestSaveHostDocker|TestLoadHostDocker|TestSaveHostContainerd|TestLoadHostContainerd|TestLoadSaveNone|TestSaveInNested|TestWithRegistryAuthFileAndDirectoryAccess|TestCrossSessionDockerbuildSockets",
          "-v", "-parallel", "2", "-count", "1", "-timeout", "30m"],
         experimentalPrivilegedNesting: true,
@@ -160,10 +163,10 @@ type TestSplit {
   }
 
   """
-  Test Module Runtimes
+  Test Module Runtimes (base-only deps — no registries, no engine.tar)
   """
   pub testModuleRuntimes: Void @check {
-    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
+    testSpecific(["TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
   }
 
   """
@@ -178,5 +181,12 @@ type TestSplit {
   """
   pub testWorkspaces: Void @check {
     testSpecific(["TestWorkspace"])
+  }
+
+  """
+  Test Engine Tar (needs engine.tar but not registries)
+  """
+  pub testEngineTar: Void @check {
+    testSpecific(["TestClient", "TestFuture", "TestGo", "TestRemoteCache"])
   }
 }

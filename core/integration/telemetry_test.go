@@ -15,6 +15,8 @@ import (
 type TelemetrySuite struct{}
 
 func TestTelemetry(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(TelemetrySuite{})
 }
 

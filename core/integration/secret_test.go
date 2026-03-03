@@ -21,6 +21,8 @@ var secretKeyBytes []byte
 type SecretSuite struct{}
 
 func TestSecret(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(SecretSuite{})
 }
 

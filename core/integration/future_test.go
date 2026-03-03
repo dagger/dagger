@@ -16,6 +16,9 @@ import (
 type FutureSuite struct{}
 
 func TestFuture(t *testing.T) {
+	ctx := context.Background()
+	ensureEngineTar(ctx)
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(FutureSuite{})
 }
 

@@ -17,6 +17,8 @@ import (
 type UserDefaultsSuite struct{}
 
 func TestUserDefaults(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(UserDefaultsSuite{})
 }
 
