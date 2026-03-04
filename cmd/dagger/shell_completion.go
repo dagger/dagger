@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"codeberg.org/vito/tuist"
+	"github.com/vito/tuist"
 	"mvdan.cc/sh/v3/syntax"
 )
 
