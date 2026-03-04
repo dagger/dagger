@@ -771,7 +771,7 @@ var _ ScalarType = ID[Typed]{}
 
 // TypeDefinition returns the GraphQL definition of the type.
 func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
-	return &ast.Definition{
+	typedef := &ast.Definition{
 		Kind: ast.Scalar,
 		Name: i.TypeName(),
 		Description: fmt.Sprintf(
@@ -779,9 +779,14 @@ func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
 			i.TypeName(),
 			i.inner.Type().Name(),
 		),
-		BuiltIn:    true,
-		Directives: []*ast.Directive{i.sourceMap},
+		BuiltIn: true,
 	}
+
+	if i.sourceMap != nil {
+		typedef.Directives = append(typedef.Directives, i.sourceMap)
+	}
+
+	return typedef
 }
 
 // New creates a new ID with the given value.

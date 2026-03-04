@@ -478,7 +478,7 @@ func (s EnvHook) InstallObject(targetType dagql.ObjectType, directives ...*ast.D
 		}
 	}
 
-	if err := s.ExtendEnvType(targetType); err != nil {
+	if err := s.ExtendEnvType(targetType, directives...); err != nil {
 		panic(err)
 	}
 }
