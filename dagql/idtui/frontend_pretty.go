@@ -1607,9 +1607,8 @@ func (fe *frontendPretty) findFocusInSubtree(st *SpanTreeView, offset int) int {
 	return -1
 }
 
-// renderTreeGap renders the gap line(s) that precede a row in tree rendering.
-// This replaces renderRowGap for tree-based rendering, using the tree prefix
-// instead of calling fancyIndent.
+// renderTreeGap renders the gap line(s) that precede a row in tree rendering,
+// using the tree prefix instead of calling fancyIndent.
 func (fe *frontendPretty) renderTreeGap(r *renderer, row *dagui.TraceRow, gapPrefix string) []string {
 	if fe.shell != nil {
 		if row.Depth == 0 && row.Previous != nil {
@@ -2279,62 +2278,47 @@ func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
 	fe.recalculateViewLocked()
 }
 
-// renderProgressFinal renders all rows using direct rendering (no component
-// caching). Used by FinalRender after the TUI has stopped.
+// renderProgressFinal renders all rows using the tree-based SpanTreeView
+// structure. Uses the same renderTreeGap and renderRowContent as the live
+// TUI path, ensuring consistent output between live and final renders.
 func (fe *frontendPretty) renderProgressFinal(out TermOutput, r *renderer) {
 	if fe.rowsView == nil {
 		return
 	}
-	for _, row := range fe.rows.Order {
-		fe.renderRow(out, r, row, "")
-	}
-}
-
-// renderRowGap renders the gap line(s) that precede a row, based on the
-// relationship with the previous visual row. Returns the gap lines (if any).
-// This is intentionally NOT part of SpanTreeView so that gap changes don't
-// require re-rendering the row's content.
-func (fe *frontendPretty) renderRowGap(r *renderer, row *dagui.TraceRow, prefix string) []string {
-	if fe.shell != nil {
-		if row.Depth == 0 && row.Previous != nil {
-			return []string{prefix}
+	for i, treeView := range fe.topTrees {
+		if i > 0 {
+			row := fe.rows.BySpan[treeView.spanID]
+			if row != nil {
+				for _, gap := range fe.renderTreeGap(r, row, treeView.prefix.cont) {
+					fmt.Fprintln(out, gap)
+				}
+			}
 		}
-		return nil
+		fe.renderTreeFinal(out, r, treeView)
 	}
-	if row.PreviousVisual != nil &&
-		row.PreviousVisual.Depth >= row.Depth &&
-		!row.Chained &&
-		( // ensure gaps after last nested child
-		row.PreviousVisual.Depth > row.Depth ||
-			// ensure gaps before unchained calls
-			row.Span.Call() != nil ||
-			// ensure gaps before checks
-			row.Span.CheckName != "" ||
-			// ensure gaps before generators
-			row.Span.GeneratorName != "" ||
-			// ensure gaps between calls and non-calls
-			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
-			// ensure gaps between messages
-			(row.PreviousVisual.Span.Message != "" && row.Span.Message != "") ||
-			// ensure gaps going from tool calls to messages
-			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
-		buf := new(strings.Builder)
-		out := NewOutput(buf, termenv.WithProfile(fe.profile))
-		fmt.Fprint(out, prefix)
-		r.fancyIndent(out, row.PreviousVisual, false, false)
-		return []string{buf.String()}
-	}
-	return nil
 }
 
-// renderRow renders a full row including gap lines. Used by the final render
-// path which doesn't use per-span caching.
-func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool { //nolint: gocyclo
-	for _, gap := range fe.renderRowGap(r, row, prefix) {
-		fmt.Fprintln(out, gap)
+// renderTreeFinal recursively renders a SpanTreeView node and its children
+// for the final (non-interactive) output.
+func (fe *frontendPretty) renderTreeFinal(out TermOutput, r *renderer, st *SpanTreeView) {
+	row := fe.rows.BySpan[st.spanID]
+	if row == nil {
+		return
 	}
-	fe.renderRowContent(out, r, row, prefix)
-	return true
+
+	// Use the tree's pre-computed prefix via indentFunc, same as live rendering.
+	r.indentFunc = st.indentFunc(out)
+	fe.renderRowContent(out, r, row, "")
+
+	for _, child := range st.children {
+		childRow := fe.rows.BySpan[child.spanID]
+		if childRow != nil {
+			for _, gap := range fe.renderTreeGap(r, childRow, st.childrenGapPrefix) {
+				fmt.Fprintln(out, gap)
+			}
+		}
+		fe.renderTreeFinal(out, r, child)
+	}
 }
 
 // renderRowContent renders the actual content of a row (step + logs + errors
