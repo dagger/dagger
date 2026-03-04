@@ -57,6 +57,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	dagql.Fields[core.Port]{}.Install(srv)
 
 	dagql.Fields[Label]{}.Install(srv)
+	dagql.Fields[HealthcheckConfig]{}.Install(srv)
 
 	dagql.Fields[*core.Query]{
 		dagql.Func("pipeline", s.pipeline).

@@ -156,14 +156,14 @@ type JavaSdkDev {
 
     let initialState = directory
     let bumped = directory
-    for (pom in [
+    [
       sourcePath + "/dagger-codegen-maven-plugin/pom.xml",
       sourcePath + "/dagger-java-annotation-processor/pom.xml",
       sourcePath + "/dagger-java-sdk/pom.xml",
       sourcePath + "/dagger-java-samples/pom.xml",
       sourcePath + "/pom.xml",
       sourcePath + "/runtime/template/pom.xml",
-    ]) {
+    ].each { pom =>
       initialState = initialState.withFile(pom, workspace.file(pom))
       bumped = bumped.withFile(pom, bumpCtr.file(workspacePath + "/" + pom))
     }
@@ -190,13 +190,13 @@ type JavaSdkDev {
   """
   pub bumpDeps: Changeset! {
     let ctr = devContainer
-    for (modPath in [
+    [
       sourcePath + "/dagger-codegen-maven-plugin/",
       sourcePath + "/dagger-java-annotation-processor",
       sourcePath + "/dagger-java-sdk",
       sourcePath + "/dagger-java-samples",
       sourcePath,
-    ]) {
+    ].each { modPath =>
       ctr = ctr
         .withWorkdir(workspacePath + "/" + modPath)
         .withExec(["mvn", "versions:update-properties"])

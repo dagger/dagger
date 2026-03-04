@@ -1,0 +1,18 @@
+query CheckGroupListDetails($id: CheckGroupID!) {
+  group: loadCheckGroupFromID(id: $id) {
+    list {
+      name
+      description
+    }
+  }
+}
+
+query CheckGroupRunStatuses($checkGroup: CheckGroupID!) {
+  checkGroup: loadCheckGroupFromID(id: $checkGroup) {
+    run {
+      list {
+        passed
+      }
+    }
+  }
+}

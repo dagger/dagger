@@ -2591,3 +2591,115 @@ func calculateNestingLimit(ctx context.Context, c *dagger.Client, t *testctx.T) 
 
 	return calculatedNestingLimit
 }
+
+func (ServiceSuite) TestHealthcheckCommand(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	maingo := `package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"time"
+)
+
+func main() {
+	http.HandleFunc("/test-file-was-created", func(w http.ResponseWriter, r *http.Request) {
+		for i := 0; i < 10; i++ {
+			f, err := os.Open("/the-check-was-run")
+			if err != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+			_ = f.Close()
+			fmt.Fprintf(w, "OK")
+			return
+		}
+		fmt.Fprintf(w, "FAIL")
+	})
+
+	fmt.Println(http.ListenAndServe(":8080", nil))
+}`
+	buildctr := c.Container().
+		From(golangImage).
+		WithWorkdir("/work").
+		WithNewFile("/work/main.go", maingo).
+		WithExec([]string{"go", "build", "-o=app", "main.go"})
+
+	for _, tt := range []struct {
+		name    string
+		shell   bool
+		command []string
+	}{
+		{
+			name:    "shell",
+			shell:   true,
+			command: []string{"touch /the-check-was-run"},
+		},
+		{
+			name:    "cmd",
+			shell:   false,
+			command: []string{"/bin/touch", "/the-check-was-run"},
+		},
+	} {
+		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
+			binctr := c.Container().
+				From(alpineImage).
+				WithFile("/bin/app", buildctr.File("/work/app")).
+				WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
+				WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
+				WithDockerHealthcheck(tt.command, dagger.ContainerWithDockerHealthcheckOpts{
+					Shell:         tt.shell,
+					Interval:      "1s",
+					Timeout:       "3s",
+					StartPeriod:   "10s",
+					StartInterval: "1s",
+					Retries:       1,
+				}).
+				WithExposedPort(8080)
+
+			curlctr := c.Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-c", "apk add curl"})
+
+			output, err := curlctr.
+				WithServiceBinding("myapp", binctr.AsService()).
+				WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/test-file-was-created'"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "OK", output)
+		})
+	}
+}
+
+func (ServiceSuite) TestServiceHealthcheckFailure(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srv := c.Container().
+		From("python").
+		WithDefaultArgs([]string{"python", "-m", "http.server", "8080"}).
+		WithExposedPort(8080).
+		WithDockerHealthcheck([]string{"sh", "-c", "echo 'check said no' && echo 'eek an error' >&2 && exit 42"}).
+		AsService()
+
+	host, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	client := c.Container().
+		From(alpineImage).
+		WithServiceBinding("www", srv).
+		WithExec([]string{"wget", "http://www:8080"})
+
+	_, err = client.Sync(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "start "+host+" (aliased as www): health check errored: exit code:")
+
+	var execErr *dagger.ExecError
+	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
+
+	// Verify the ExecError contains expected information
+	require.Equal(t, "check said no\n", execErr.Stdout)
+	require.Equal(t, "eek an error\n", execErr.Stderr)
+	require.Equal(t, []string{"sh", "-c", "echo 'check said no' && echo 'eek an error' >&2 && exit 42"}, execErr.Cmd)
+}

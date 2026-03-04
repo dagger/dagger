@@ -2,7 +2,7 @@
   "name": "security",
   "engineVersion": "v0.20.0",
   "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk@be6466632453a52120517e5551c266a239d3899b"
+    "source": "github.com/vito/dang/dagger-sdk@8966295a629141c5b9e905ece9cf0cdafa20520e"
   },
   "dependencies": [
     {
